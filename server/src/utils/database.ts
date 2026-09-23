@@ -173,6 +173,26 @@ export function lockedOwnerScope<QDB, TB extends keyof QDB>(
 }
 
 /**
+ * FL-34: a live photo's motion part keeps visibility `hidden` while its still is Locked, so it is Locked
+ * media in all but name. This matches such a motion part unless its still belongs to `lockedOwnerId` (the
+ * viewer, when their session is elevated). Filters apply it negated to any read that can return hidden
+ * assets; the `hidden` test first keeps the lookup off every other row.
+ */
+export function isMotionOfLockedStill(eb: ExpressionBuilder<DB, 'asset'>, lockedOwnerId?: string) {
+  return eb.and([
+    eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+    eb.exists(
+      eb
+        .selectFrom('asset as lockedStill')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
+        .where((eb) => isLockedAsset(eb, 'lockedStill'))
+        .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
+    ),
+  ]);
+}
+
+/**
  * FL-34: whether a stack's primary asset is Locked media that `lockedOwnerId` (the viewer, when
  * their session is elevated) does not own. Such a stack is left out of a read, so its primary id
  * never reaches anyone but that owner's elevated session. A stack with a Locked member becomes
@@ -554,6 +574,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(options.visibility === undefined || options.visibility === AssetVisibility.Locked, (qb) =>
       withLockedOwnerScope(qb, options.lockedOwnerId),
     )
+    .$if(!!options.hideLockedMotion, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))))
     .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
     .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
     .$if(options.tagIds === null, (qb) =>
@@ -974,6 +995,9 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
       .where((eb) =>
         eb.or([eb('asset.visibility', '!=', AssetVisibility.Locked), eb('asset.ownerId', '=', scope.lockedOwnerId)]),
+      )
+      .$if(!!scope.lockedMotion, (qb) =>
+        qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),

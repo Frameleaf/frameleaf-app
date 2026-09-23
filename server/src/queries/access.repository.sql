@@ -193,6 +193,18 @@ where
   "asset"."id" in ($1)
   and "asset"."ownerId" = $2
   and "asset"."visibility" != $3
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1 as "exists"
+      from
+        "asset" as "lockedStill"
+      where
+        "lockedStill"."livePhotoVideoId" = "asset"."id"
+        and "lockedStill"."visibility" = 'locked'
+    )
+  )
 
 -- AccessRepository.asset.checkPartnerAccess
 select
@@ -210,6 +222,18 @@ where
     or "asset"."visibility" = 'hidden'
   )
   and "asset"."id" in ($2)
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1 as "exists"
+      from
+        "asset" as "lockedStill"
+      where
+        "lockedStill"."livePhotoVideoId" = "asset"."id"
+        and "lockedStill"."visibility" = 'locked'
+    )
+  )
 
 -- AccessRepository.asset.checkSharedLinkAccess
 select
@@ -246,6 +270,18 @@ from
   inner join "asset" on "asset"."id" = "asset_file"."assetId"
 where
   "asset"."visibility" != $1
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1 as "exists"
+      from
+        "asset" as "lockedStill"
+      where
+        "lockedStill"."livePhotoVideoId" = "asset"."id"
+        and "lockedStill"."visibility" = 'locked'
+    )
+  )
   and "asset"."ownerId" = $2
   and "asset_file"."id" in ($3)
 

@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -510,6 +511,25 @@ describe(AssetRepository.name, () => {
     it('should return an empty array when given an empty input', async () => {
       const { sut } = setup();
       await expect(sut.createAll([])).resolves.toStrictEqual([]);
+    });
+  });
+
+  describe('motion parts of Locked live photos (FL-34)', () => {
+    it('should keep a Locked still’s motion part from partners and ordinary sessions', async () => {
+      const { ctx } = setup();
+      const access = ctx.get(AccessRepository);
+      const { user: owner } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id });
+      const { asset: motion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      const { asset: plainMotion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked, livePhotoVideoId: motion.id });
+      await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: plainMotion.id });
+      const ids = new Set([motion.id, plainMotion.id]);
+
+      await expect(access.asset.checkPartnerAccess(partner.id, ids)).resolves.toEqual(new Set([plainMotion.id]));
+      await expect(access.asset.checkOwnerAccess(owner.id, ids, false)).resolves.toEqual(new Set([plainMotion.id]));
+      await expect(access.asset.checkOwnerAccess(owner.id, ids, true)).resolves.toEqual(ids);
     });
   });
 

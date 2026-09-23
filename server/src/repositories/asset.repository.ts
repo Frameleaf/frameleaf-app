@@ -52,6 +52,7 @@ import {
   hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
+  isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
   unnest,
@@ -1189,6 +1190,10 @@ export class AssetRepository {
           })
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.albumId, (qb) =>
             qb
@@ -1306,6 +1311,10 @@ export class AssetRepository {
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
