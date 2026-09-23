@@ -28,6 +28,7 @@ import {
   user_metadata_audit,
 } from 'src/schema/functions.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
+import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
@@ -152,6 +153,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 export class ImmichDatabase {
   tables = [
     ActivityTable,
+    AdminAuditEventTable,
     AlbumAssetTable,
     AlbumAssetAuditTable,
     AlbumAuditTable,
@@ -292,6 +294,7 @@ export interface DB {
   kysely_migrations: { timestamp: string; name: string };
 
   activity: ActivityTable;
+  admin_audit_event: AdminAuditEventTable;
 
   album: AlbumTable;
   album_audit: AlbumAuditTable;
