@@ -521,8 +521,8 @@ describe(AssetController.name, () => {
       expect(body).toEqual(
         factory.responses.validationError([
           {
-            path: ['edits', 0, 'parameters'],
-            message: expect.stringContaining("Invalid parameters for action 'rotate', expecting keys: angle"),
+            path: ['edits', 0, 'parameters', 'angle'],
+            message: 'Invalid input: expected number, received undefined',
           },
         ]),
       );
