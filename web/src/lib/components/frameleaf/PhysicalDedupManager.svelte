@@ -140,6 +140,13 @@
       : null,
   );
   const reviewBlocked = $derived(blocksReview(applyBlocked));
+  /**
+   * Decisions stay open while no copy is selected, so leaving every group out can be undone; they
+   * only lock while a preview is prepared or a plan is being or has been applied.
+   */
+  const decisionsLocked = $derived(
+    applyBlocked === 'running' || applyBlocked === 'applying' || applyBlocked === 'applied',
+  );
   const reviewed = $derived(reviewMatches(review, plan, excluded));
   const canConfirm = $derived(
     !!plan && reviewed && !stale && !applyBlocked && !busy && matchesConfirmation(plan, confirmation),
@@ -363,11 +370,15 @@
   );
 
   const planBadge = $derived.by(() => {
-    if (applied || plan?.mode === PhysicalDeduplicationPlanMode.Apply) {
-      return { label: $t('frameleaf_dedup_plan_applied'), tone: 'teal' as const };
-    }
     if (planApply && isApplyActive(planApply)) {
       return { label: $t('frameleaf_dedup_plan_applying'), tone: 'blue' as const };
+    }
+    if (applied) {
+      return { label: $t('frameleaf_dedup_plan_applied'), tone: 'teal' as const };
+    }
+    if (plan?.mode === PhysicalDeduplicationPlanMode.Apply) {
+      // Its job stopped or failed after changing some files; the rest need a new plan.
+      return { label: $t('frameleaf_dedup_plan_partly_applied'), tone: 'warning' as const };
     }
     if (reviewed) {
       return { label: $t('frameleaf_dedup_plan_reviewed'), tone: 'blue' as const };
@@ -609,7 +620,7 @@
                       <input
                         type="checkbox"
                         checked={!kept}
-                        disabled={busy || reviewBlocked}
+                        disabled={busy || decisionsLocked}
                         onchange={() => toggleGroup(group.retained!.assetId)}
                       />
                       <span>{$t('frameleaf_dedup_group_include')}</span>

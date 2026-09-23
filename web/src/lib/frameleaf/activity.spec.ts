@@ -130,6 +130,22 @@ describe('fromMediaOperation', () => {
     expect(done).toMatchObject({ canCancel: false, canRetry: false, canDismiss: true, progress: 100 });
   });
 
+  it('titles a deduplication plan, names it and never offers a copied retry (FL-73)', () => {
+    const item = fromMediaOperation(
+      operation({
+        kind: MediaOperationKind.PhysicalDeduplication,
+        status: MediaOperationStatus.Failed,
+        label: 'PD-ABABABAB',
+        settings: { planId: 'PD-ABABABAB', copies: 2, resolution: '3840×2160' },
+      }),
+    );
+
+    expect(item.titleKey).toBe('frameleaf_activity_title_physical_deduplication');
+    expect(item.details).toEqual(['PD-ABABABAB']);
+    expect(item.canRetry).toBe(false);
+    expect(item.canDismiss).toBe(true);
+  });
+
   it('keeps cancelling as running until the server settles it', () => {
     const item = fromMediaOperation(operation({ status: MediaOperationStatus.Cancelling }));
 

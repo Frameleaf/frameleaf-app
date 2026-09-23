@@ -96,7 +96,7 @@ export const planMetrics = (plan: PhysicalDeduplicationPlanDto): DedupMetrics =>
 export type DedupSelection = {
   /** Copies the plan applies with these decisions, listed and unlisted. */
   copies: number;
-  /** Copies in the plan that are not listed because they are another account's Locked media. */
+  /** Unlisted copies the plan applies with these decisions: another account's Locked media. */
   hiddenCopies: number;
   /** Bytes of the listed copies the plan applies. Unlisted copies are measured by the review. */
   listedBytes: number;
@@ -117,7 +117,11 @@ export const planSelection = (plan: PhysicalDeduplicationPlanDto, excluded: Read
       retainedIds.has(copy.retainedAssetId),
   );
   const included = listed.filter((copy) => !excluded.has(copy.retainedAssetId!));
-  const hiddenCopies = Math.max(0, plan.applicableCopies - listed.length);
+  // Unlisted copies belong to a group too: the ones of a group left out are left out with it.
+  const hiddenInExcluded = plan.retained
+    .filter((retained) => excluded.has(retained.assetId))
+    .reduce((total, retained) => total + retained.hiddenCopies, 0);
+  const hiddenCopies = Math.max(0, plan.applicableCopies - listed.length - hiddenInExcluded);
 
   return {
     copies: included.length + hiddenCopies,
