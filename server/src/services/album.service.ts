@@ -93,10 +93,13 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds] = await Promise.all([
+    const [results, smartBackedIds, ruleAlbumIds, rules] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumIds(ids),
+      this.classificationRepository.getRuleAlbumIds(ids),
+      this.classificationRepository.getRules(auth.user.id),
     ]);
+    const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const albumMetadata: Record<string, AlbumAssetCount> = {};
     for (const metadata of results) {
       albumMetadata[metadata.albumId] = metadata;
@@ -104,7 +107,11 @@ export class AlbumService extends BaseService {
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
     return buildAlbumTree(
-      albums.map((album) => ({ ...this.toListItem(album, albumMetadata), isSmart: smartBackedIds.has(album.id) })),
+      albums.map((album) => ({
+        ...this.toListItem(album, albumMetadata),
+        isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
+        smartRuleId: ruleByAlbum.get(album.id) ?? null,
+      })),
     );
   }
 
@@ -154,6 +161,25 @@ export class AlbumService extends BaseService {
       contributorCounts: isShared
         ? await this.albumRepository.getContributorCounts(album.id, privacyOptions)
         : undefined,
+      ...(await this.smartStateOf(auth, album.id)),
+    };
+  }
+
+  /**
+   * Whether an album is filled automatically (FL-60): a built-in smart album, or one of the viewer's
+   * own classification rules. Another person's rule id is never returned.
+   */
+  private async smartStateOf(
+    auth: AuthDto,
+    albumId: string,
+  ): Promise<{ isSmart: boolean; smartRuleId: string | null }> {
+    const [builtIn, rule] = await Promise.all([
+      this.smartAlbumRepository.getSmartBackedAlbumIds([albumId]),
+      this.classificationRepository.getRuleByAlbumId(albumId),
+    ]);
+    return {
+      isSmart: builtIn.has(albumId) || !!rule,
+      smartRuleId: rule && rule.ownerId === auth.user.id ? rule.id : null,
     };
   }
 
@@ -366,6 +392,8 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
+    // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
+    await this.classificationRepository.recordAlbumAdditions(id, newAssetIds);
     if (newAssetIds.length > 0) {
       await this.albumRepository.update(
         id,
@@ -446,6 +474,10 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+    for (const albumId of allowedAlbumIds) {
+      const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
+      await this.classificationRepository.recordAlbumAdditions(albumId, added);
+    }
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
     }
@@ -467,6 +499,7 @@ export class AlbumService extends BaseService {
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
+    await this.recordSmartAlbumRemovals(id, removedIds);
     if (removedIds.length > 0) {
       if (album.albumThumbnailAssetId && removedIds.includes(album.albumThumbnailAssetId)) {
         await this.albumRepository.updateThumbnails();
@@ -481,6 +514,22 @@ export class AlbumService extends BaseService {
     }
 
     return results;
+  }
+
+  /**
+   * Taking items out of a smart album by hand is a decision later evaluation keeps (FL-60): a rule's
+   * match is rejected (and what the rule added besides the album is taken back), and a built-in smart
+   * album excludes the item.
+   */
+  private async recordSmartAlbumRemovals(albumId: string, assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    const outcome = await this.classificationRepository.recordAlbumRemovals(albumId, assetIds);
+    for (const assetId of outcome.untagged) {
+      await this.eventRepository.emit('AssetUntag', { assetId });
+    }
+    await this.smartAlbumRepository.excludeFromAlbum(albumId, assetIds);
   }
 
   async addUsers(auth: AuthDto, id: string, { albumUsers }: AddUsersDto): Promise<AlbumResponseDto> {

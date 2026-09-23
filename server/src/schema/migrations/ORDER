@@ -153,3 +153,4 @@
 2100000000560-AddOperationalMetricSample
 2100000000580-AddStudioExportVersions
 2100000000590-HardenMediaOperationRetryAndCheckpoints
+2100000000610-AddClassificationRule

@@ -22,6 +22,7 @@ import {
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { ClassificationService } from 'src/services/classification.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
@@ -183,6 +184,7 @@ export class BulkOperationService {
     private livePhoto: LivePhotoService,
     private duplicateDecisions: DuplicateDecisionService,
     private mediaHealth: MediaHealthService,
+    private classification: ClassificationService,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -792,6 +794,12 @@ export class BulkOperationService {
               : { id: assetId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
           );
         }
+        break;
+      }
+
+      case MediaOperationBulkAction.ApplyClassificationRule: {
+        // FL-60: the rule re-reads and re-matches every item now; only its owner's unlocked items change.
+        outcomes.push(...(await this.classification.applyBulkBatch(auth, payload.classificationRuleId, allowed)));
         break;
       }
 

@@ -9154,6 +9154,732 @@
         "x-immich-state": "Beta"
       }
     },
+    "/classification/assets/{id}": {
+      "get": {
+        "description": "Which of your rules put this item in a smart album, added a tag to it or archived it.",
+        "operationId": "getAssetClassifications",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClassificationContributionDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve classification contributions for an asset",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/preview": {
+      "post": {
+        "description": "What a draft rule matches, without writing anything. Rules with visual categories are previewed over a bounded sample of your newest items.",
+        "operationId": "previewClassificationRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules": {
+      "get": {
+        "description": "Your smart album rules, optionally only the one behind an album.",
+        "operationId": "getClassificationRules",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "description": "Only the rule behind this album",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClassificationRuleResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List classification rules",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Create a smart album and the rule that fills it. Nothing is matched until the rule is applied. Archiving matches requires `archiveConsent`.",
+        "operationId": "createClassificationRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationRuleCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationRuleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules/{id}": {
+      "delete": {
+        "description": "Stop the rule. Its album stays as an ordinary album with everything in it.",
+        "operationId": "deleteClassificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "One of your smart album rules and its counts.",
+        "operationId": "getClassificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationRuleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "description": "Change what the rule matches, what it does, or turn it off. A rule that is off keeps what it applied. Turning archiving on requires `archiveConsent`.",
+        "operationId": "updateClassificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationRuleUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationRuleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules/{id}/apply": {
+      "post": {
+        "description": "Apply the rule to up to 500 items from its plan. Larger plans run as an `apply-classification-rule` bulk media operation.",
+        "operationId": "applyClassificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationApplyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply a classification rule",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules/{id}/decisions": {
+      "post": {
+        "description": "Accept matches (they stay whatever later processing finds) or reject them (what the rule applied is taken back and never applied again).",
+        "operationId": "decideClassificationRuleMatches",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationDecisionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationDecisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review classification rule matches",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules/{id}/matches": {
+      "get": {
+        "description": "The rule’s matches with one decision, suggestions to review by default.",
+        "operationId": "getClassificationRuleMatches",
+        "parameters": [
+          {
+            "name": "decision",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "suggested",
+              "$ref": "#/components/schemas/ClassificationMatchDecision"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationMatchPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List classification rule matches",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/rules/{id}/plan": {
+      "post": {
+        "description": "What applying the rule now would add, suggest and take back, without writing anything. Manual decisions are never part of it.",
+        "operationId": "planClassificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationPlanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Plan a classification rule re-evaluation",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/classification/settings": {
+      "get": {
+        "description": "Whether rules may use visual categories, whether those can be compared now, and the default action.",
+        "operationId": "getClassificationSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve classification rule settings",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/cluster-groups/requests": {
       "get": {
         "description": "Retrieve the pending requests for the current user to join a cluster group.",
@@ -35632,6 +36358,23 @@
         ],
         "type": "object"
       },
+      "AdminConfigSmartAlbumRulesDto": {
+        "properties": {
+          "defaultAction": {
+            "$ref": "#/components/schemas/ClassificationRuleAction",
+            "description": "The action a new rule starts with"
+          },
+          "visualCategories": {
+            "description": "Whether rules may match visual category phrases",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultAction",
+          "visualCategories"
+        ],
+        "type": "object"
+      },
       "AdminConfigSmartAlbumsDto": {
         "properties": {
           "builtIn": {
@@ -35640,6 +36383,9 @@
           "enabled": {
             "description": "Master smart-album enabled toggle",
             "type": "boolean"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/AdminConfigSmartAlbumRulesDto"
           }
         },
         "required": [
@@ -36055,7 +36801,7 @@
             "type": "boolean"
           },
           "isSmart": {
-            "description": "True when the album is filled by the smart album rules. Only populated by GET /albums/tree.",
+            "description": "True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.",
             "type": "boolean"
           },
           "kind": {
@@ -36077,6 +36823,11 @@
           "shared": {
             "description": "Is shared album",
             "type": "boolean"
+          },
+          "smartRuleId": {
+            "description": "Your classification rule behind this smart album, when it is one of yours",
+            "nullable": true,
+            "type": "string"
           },
           "sortOrder": {
             "description": "Sibling display position. Lower values appear first.",
@@ -41662,6 +42413,818 @@
         ],
         "type": "object"
       },
+      "ClassificationApplyDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Items from the plan; empty records the check when nothing changed",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "ClassificationApplyResponseDto": {
+        "properties": {
+          "added": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastAppliedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "removed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "suggested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unchanged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "lastAppliedAt",
+          "removed",
+          "suggested",
+          "unchanged"
+        ],
+        "type": "object"
+      },
+      "ClassificationContributionDto": {
+        "properties": {
+          "albumId": {
+            "type": "string"
+          },
+          "albumName": {
+            "type": "string"
+          },
+          "archived": {
+            "description": "True when this rule archived the item",
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ClassificationMatchDecision"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "score": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClassificationTagDto"
+              }
+            ],
+            "description": "The tag this rule added, when it added one",
+            "nullable": true
+          }
+        },
+        "required": [
+          "albumId",
+          "albumName",
+          "archived",
+          "decision",
+          "ruleId",
+          "score",
+          "tag"
+        ],
+        "type": "object"
+      },
+      "ClassificationDecisionDto": {
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ClassificationReviewDecision"
+          }
+        },
+        "required": [
+          "assetIds",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "ClassificationDecisionResponseDto": {
+        "properties": {
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skipped",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "ClassificationMatchDecision": {
+        "description": "What became of an asset a classification rule matched",
+        "enum": [
+          "matched",
+          "suggested",
+          "accepted",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "ClassificationMatchDto": {
+        "properties": {
+          "archiveContributed": {
+            "type": "boolean"
+          },
+          "assetId": {
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ClassificationMatchDecision"
+          },
+          "score": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "tagContributed": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "archiveContributed",
+          "assetId",
+          "decision",
+          "score",
+          "tagContributed",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ClassificationMatchPageDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClassificationMatchDto"
+            },
+            "type": "array"
+          },
+          "nextPage": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextPage",
+          "total"
+        ],
+        "type": "object"
+      },
+      "ClassificationMediaType": {
+        "description": "Which media a classification rule considers",
+        "enum": [
+          "any",
+          "photo",
+          "video"
+        ],
+        "type": "string"
+      },
+      "ClassificationPlanResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Items that would be added or suggested",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "assetIds": {
+            "description": "Every item applying would change, for the apply call or a bulk job",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "durable": {
+            "description": "True when applying must run as a durable bulk job",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "The first items that would be added",
+            "items": {
+              "$ref": "#/components/schemas/ClassificationScoredAssetDto"
+            },
+            "type": "array"
+          },
+          "matched": {
+            "description": "Items the rule matches now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "Items the rule applied that no longer match",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "True when there were more changes than one apply can carry",
+            "type": "boolean"
+          },
+          "visualSearchAvailable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "added",
+          "assetIds",
+          "durable",
+          "items",
+          "matched",
+          "removed",
+          "truncated",
+          "visualSearchAvailable"
+        ],
+        "type": "object"
+      },
+      "ClassificationPreviewDto": {
+        "properties": {
+          "mediaType": {
+            "$ref": "#/components/schemas/ClassificationMediaType",
+            "default": "any"
+          },
+          "personIds": {
+            "default": [],
+            "description": "Match any of these people",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "sampleSize": {
+            "default": 500,
+            "description": "How many of the newest items a visual preview reads",
+            "maximum": 2000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tagIds": {
+            "default": [],
+            "description": "Match any of these tags, or a tag beneath one of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "takenAfter": {
+            "default": null,
+            "description": "Taken on or after this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "takenBefore": {
+            "default": null,
+            "description": "Taken on or before this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "threshold": {
+            "default": 0.25,
+            "description": "The confidence a visual phrase has to reach",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "visualQueries": {
+            "default": [],
+            "description": "Visual category phrases compared with each item",
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ClassificationPreviewResponseDto": {
+        "properties": {
+          "exact": {
+            "description": "True when `matched` counts the whole library, false for a bounded sample",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "The first matches, best first",
+            "items": {
+              "$ref": "#/components/schemas/ClassificationScoredAssetDto"
+            },
+            "type": "array"
+          },
+          "matched": {
+            "description": "Items that match among those read",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sampled": {
+            "description": "Items read: the whole library when exact, otherwise the newest items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visualSearchAvailable": {
+            "description": "False when visual phrases cannot be compared right now",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "exact",
+          "items",
+          "matched",
+          "sampled",
+          "visualSearchAvailable"
+        ],
+        "type": "object"
+      },
+      "ClassificationReviewDecision": {
+        "description": "Keep the matches, or turn them down and undo what the rule applied",
+        "enum": [
+          "accepted",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "ClassificationRuleAction": {
+        "description": "What a classification rule does with a match",
+        "enum": [
+          "review",
+          "tag"
+        ],
+        "type": "string"
+      },
+      "ClassificationRuleCountsDto": {
+        "properties": {
+          "accepted": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rejected": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "suggested": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted",
+          "matched",
+          "rejected",
+          "suggested"
+        ],
+        "type": "object"
+      },
+      "ClassificationRuleCreateDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ClassificationRuleAction",
+            "description": "Defaults to the server default rule action"
+          },
+          "albumName": {
+            "description": "Name of the smart album",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "archive": {
+            "default": false,
+            "description": "Archive matches; requires archiveConsent",
+            "type": "boolean"
+          },
+          "archiveConsent": {
+            "description": "The owner explicitly agrees that matches are archived",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Description of the smart album",
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "icon": {
+            "description": "Icon of the smart album",
+            "maxLength": 80,
+            "type": "string"
+          },
+          "mediaType": {
+            "$ref": "#/components/schemas/ClassificationMediaType",
+            "default": "any"
+          },
+          "parentId": {
+            "description": "Collection to create the smart album inside",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "personIds": {
+            "default": [],
+            "description": "Match any of these people",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "tagIds": {
+            "default": [],
+            "description": "Match any of these tags, or a tag beneath one of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "tagName": {
+            "description": "The rule-owned tag a match receives; null tags nothing",
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "takenAfter": {
+            "default": null,
+            "description": "Taken on or after this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "takenBefore": {
+            "default": null,
+            "description": "Taken on or before this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "threshold": {
+            "default": 0.25,
+            "description": "The confidence a visual phrase has to reach",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "visualQueries": {
+            "default": [],
+            "description": "Visual category phrases compared with each item",
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumName"
+        ],
+        "type": "object"
+      },
+      "ClassificationRuleResponseDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ClassificationRuleAction"
+          },
+          "albumId": {
+            "type": "string"
+          },
+          "albumName": {
+            "type": "string"
+          },
+          "archive": {
+            "type": "boolean"
+          },
+          "archiveConsentAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ClassificationRuleCountsDto"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastAppliedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "mediaType": {
+            "$ref": "#/components/schemas/ClassificationMediaType"
+          },
+          "personIds": {
+            "description": "Match any of these people",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClassificationTagDto"
+              }
+            ],
+            "nullable": true
+          },
+          "tagIds": {
+            "description": "Match any of these tags, or a tag beneath one of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "takenAfter": {
+            "description": "Taken on or after this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "takenBefore": {
+            "description": "Taken on or before this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "threshold": {
+            "description": "The confidence a visual phrase has to reach",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "visualQueries": {
+            "description": "Visual category phrases compared with each item",
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "albumId",
+          "albumName",
+          "archive",
+          "archiveConsentAt",
+          "counts",
+          "createdAt",
+          "enabled",
+          "id",
+          "lastAppliedAt",
+          "mediaType",
+          "personIds",
+          "tag",
+          "tagIds",
+          "takenAfter",
+          "takenBefore",
+          "threshold",
+          "updatedAt",
+          "visualQueries"
+        ],
+        "type": "object"
+      },
+      "ClassificationRuleUpdateDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ClassificationRuleAction"
+          },
+          "archive": {
+            "description": "Archive matches; turning it on requires archiveConsent",
+            "type": "boolean"
+          },
+          "archiveConsent": {
+            "description": "The owner explicitly agrees that matches are archived",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "A disabled rule keeps what it applied and stops changing anything",
+            "type": "boolean"
+          },
+          "mediaType": {
+            "$ref": "#/components/schemas/ClassificationMediaType"
+          },
+          "personIds": {
+            "description": "Match any of these people",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "tagIds": {
+            "description": "Match any of these tags, or a tag beneath one of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "tagName": {
+            "description": "The rule-owned tag a match receives; null tags nothing",
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "takenAfter": {
+            "description": "Taken on or after this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "takenBefore": {
+            "description": "Taken on or before this day (YYYY-MM-DD)",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "threshold": {
+            "description": "The confidence a visual phrase has to reach",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "visualQueries": {
+            "description": "Visual category phrases compared with each item",
+            "items": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ClassificationScoredAssetDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "score": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "assetId",
+          "score"
+        ],
+        "type": "object"
+      },
+      "ClassificationSettingsDto": {
+        "properties": {
+          "defaultAction": {
+            "$ref": "#/components/schemas/ClassificationRuleAction"
+          },
+          "inlineLimit": {
+            "description": "Changes above this many run as a durable bulk job",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "visualCategories": {
+            "description": "Whether rules may use visual category phrases",
+            "type": "boolean"
+          },
+          "visualSearchAvailable": {
+            "description": "Whether visual phrases can be compared right now",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultAction",
+          "inlineLimit",
+          "visualCategories",
+          "visualSearchAvailable"
+        ],
+        "type": "object"
+      },
+      "ClassificationTagDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "ClusterGroupRequestCreateDto": {
         "properties": {
           "userId": {
@@ -46781,7 +48344,8 @@
           "undo-duplicates",
           "relink-missing-media",
           "recover-damaged-media",
-          "trash-damaged-media"
+          "trash-damaged-media",
+          "apply-classification-rule"
         ],
         "type": "string"
       },
@@ -46868,6 +48432,12 @@
           "albumId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "classificationRuleId": {
+            "description": "For `apply-classification-rule`: the rule to apply to the items (FL-60)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
           "dateMode": {
@@ -58092,6 +59662,17 @@
         ],
         "type": "object"
       },
+      "SmartAlbumBuiltInKind": {
+        "enum": [
+          "travel",
+          "documents",
+          "screenshots",
+          "food",
+          "pets",
+          "nature"
+        ],
+        "type": "string"
+      },
       "SmartAlbumReevaluateEstimateDto": {
         "properties": {
           "totalAssets": {
@@ -58116,16 +59697,8 @@
       "SmartAlbumReevaluateRequestDto": {
         "properties": {
           "kind": {
-            "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind.",
-            "enum": [
-              "travel",
-              "documents",
-              "screenshots",
-              "food",
-              "pets",
-              "nature"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/SmartAlbumBuiltInKind",
+            "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind."
           }
         },
         "type": "object"
