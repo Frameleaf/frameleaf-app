@@ -10,7 +10,6 @@ class FaceManager {
   #cleared = false;
 
   readonly faceNames = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<Faces, string>();
 
     for (const face of this.data) {
@@ -24,7 +23,6 @@ class FaceManager {
   });
 
   readonly people = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const people = new Map<string, PersonResponseDto>();
 
     for (const face of this.data) {

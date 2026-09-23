@@ -68,6 +68,20 @@ test.describe('Timeline', () => {
   });
 
   test.describe('/photos', () => {
+    test('Persists the initial library view only after the router is ready', async ({ page }) => {
+      const routingErrors: string[] = [];
+      page.on('pageerror', (error) => {
+        if (error.message.includes('before router is initialized')) {
+          routingErrors.push(error.message);
+        }
+      });
+      await page.goto('/photos');
+      await expect(page.getByRole('button', { name: 'Browse', exact: true })).toBeVisible();
+      await expect.poll(() => new URL(page.url()).searchParams.has('fl')).toBe(true);
+      await expect(page.getByTestId('frameleaf-show-more')).toHaveCount(0);
+      expect(routingErrors).toEqual([]);
+    });
+
     test('Open /photos', async ({ page }) => {
       await page.goto(`/photos`);
       await page.waitForSelector('#asset-grid');

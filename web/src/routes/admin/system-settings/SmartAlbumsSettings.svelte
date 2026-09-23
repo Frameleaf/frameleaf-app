@@ -3,6 +3,7 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -10,7 +11,11 @@
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Button, modalManager, toastManager } from '@immich/ui';
   import { mdiRefresh } from '@mdi/js';
-  import { Kind, type AdminConfigSmartAlbumKindDto } from '@immich/sdk';
+  import {
+    ClassificationRuleAction,
+    SmartAlbumBuiltInKind as SmartAlbumKind,
+    type AdminConfigSmartAlbumKindDto,
+  } from '@immich/sdk';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
@@ -21,6 +26,8 @@
 
   const smartAlbums = $derived(configToEdit.smartAlbums!);
   const savedSmartAlbums = $derived(config.smartAlbums!);
+  const rules = $derived(smartAlbums.rules!);
+  const savedRules = $derived(savedSmartAlbums.rules!);
 
   // List-type fields are displayed as newline-joined text and parsed back on input.
   // Using $derived ensures textareas always reflect the live config — including after a Reset.
@@ -30,7 +37,14 @@
       .map((l) => l.trim())
       .filter(Boolean);
 
-  const kindKeys = [Kind.Travel, Kind.Documents, Kind.Screenshots, Kind.Food, Kind.Pets, Kind.Nature] as const;
+  const kindKeys = [
+    SmartAlbumKind.Travel,
+    SmartAlbumKind.Documents,
+    SmartAlbumKind.Screenshots,
+    SmartAlbumKind.Food,
+    SmartAlbumKind.Pets,
+    SmartAlbumKind.Nature,
+  ] as const;
   type KindKey = (typeof kindKeys)[number];
 
   const kindTitle = (kind: KindKey): string => {
@@ -74,6 +88,29 @@
           {disabled}
           bind:checked={smartAlbums.enabled}
           isEdited={smartAlbums.enabled !== savedSmartAlbums.enabled}
+        />
+
+        <!--
+          The design's "Categories & smart albums" section (settings-catalog.mjs): curated smart albums,
+          custom visual categories, then the default rule action. Archiving is never a default (FL-60).
+        -->
+        <SettingToggle
+          title={$t('admin.smart_albums_rules_visual')}
+          subtitle={$t('admin.smart_albums_rules_visual_description')}
+          {disabled}
+          bind:checked={rules.visualCategories}
+          isEdited={rules.visualCategories !== savedRules.visualCategories}
+        />
+        <SettingSelect
+          label={$t('admin.smart_albums_rules_default_action')}
+          desc={$t('admin.smart_albums_rules_default_action_description')}
+          {disabled}
+          options={[
+            { value: ClassificationRuleAction.Review, text: $t('frameleaf_rules_action_review') },
+            { value: ClassificationRuleAction.Tag, text: $t('frameleaf_rules_action_tag') },
+          ]}
+          bind:value={rules.defaultAction}
+          isEdited={rules.defaultAction !== savedRules.defaultAction}
         />
 
         <hr />

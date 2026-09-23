@@ -5,6 +5,7 @@
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
+  import DetailPanelClassification from '$lib/components/asset-viewer/DetailPanelClassification.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
   import DocumentTextSection from '$lib/components/frameleaf/DocumentTextSection.svelte';
   import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
@@ -188,6 +189,9 @@
 
     {#if authManager.authenticated && authManager.preferences.tags.enabled}
       <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+    {/if}
+    {#if authManager.authenticated}
+      <DetailPanelClassification {asset} {isOwner} />
     {/if}
   </section>
 

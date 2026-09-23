@@ -25,6 +25,7 @@ import {
   MediaOperationCheckpoint,
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
+import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { isGranted, requireAccess } from 'src/utils/access.js';
 import {
   BULK_ACTION_PERMISSIONS,
@@ -58,6 +59,7 @@ import {
   isActiveMediaOperation,
   isPausableMediaOperationKind,
 } from 'src/utils/media-operation.js';
+import { PreservationPackageError, isPreservationKind, parsePreservationSnapshot } from 'src/utils/preservation.js';
 
 const DEFAULT_TAKE = 100;
 
@@ -280,6 +282,7 @@ export class MediaOperationService {
     private access: AccessRepository,
     private icloud: ICloudSyncRepository,
     private jobs: JobRepository,
+    private preservation: PreservationRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -543,8 +546,28 @@ export class MediaOperationService {
       throw new BadRequestException('Apply a new reviewed plan from the Physical deduplication page');
     }
 
+    // FL-78: a library scan reads the library's folders afresh and admits one scan per library; it is
+    // started again from Libraries, where the folders and the owner are checked first.
+    if (operation.kind === MediaOperationKind.LibraryScan) {
+      throw new BadRequestException('Scan the library again from Libraries');
+    }
+
     if (operation.kind === MediaOperationKind.ICloudSync) {
       return this.retryICloudSync(auth, operation);
+    }
+
+    if (isPreservationKind(operation.kind)) {
+      return this.retryPreservation(auth, operation);
+    }
+
+    // FL-106: a Studio export is a version of its project. Its render and its publication each had
+    // their automatic retry; exporting again makes a new version against the project as it is now,
+    // with its sources re-checked, rather than a copy of a job whose version already ended.
+    if (
+      operation.kind === MediaOperationKind.StudioExport ||
+      operation.kind === MediaOperationKind.StudioExportPublish
+    ) {
+      throw new BadRequestException('Export the project again from Studio');
     }
 
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
@@ -888,6 +911,80 @@ export class MediaOperationService {
         break;
       }
     }
+  }
+
+  /**
+   * Retry a preservation job (FL-74) from Activity the way the preservation page does: it carries on
+   * from its package's or restoration's own rows. One job per package or restoration (asking while
+   * one runs answers with it), failed items get their automatic retry back, and an export holding
+   * Locked items is retried only from an unlocked session, as it could only be asked for from one.
+   */
+  private async retryPreservation(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('Only a failed or cancelled job can be retried');
+    }
+
+    let snapshot: ReturnType<typeof parsePreservationSnapshot>;
+    try {
+      snapshot = parsePreservationSnapshot(operation.kind, operation.snapshot);
+    } catch (error) {
+      if (error instanceof PreservationPackageError) {
+        throw new BadRequestException('This job can no longer be retried');
+      }
+      throw error;
+    }
+    const restoreId = 'restoreId' in snapshot ? snapshot.restoreId : null;
+    const active = restoreId
+      ? await this.preservation.activeOperation(auth.user.id, 'restoreId', restoreId)
+      : await this.preservation.activeOperation(auth.user.id, 'packageId', snapshot.packageId);
+    if (active) {
+      return this.present(auth, active);
+    }
+
+    const found = await this.preservation.getPackage(snapshot.packageId, auth.user.id);
+    if (!found || found.removedAt) {
+      throw new BadRequestException('The package this job worked on has been removed');
+    }
+    if (restoreId) {
+      const restore = await this.preservation.getRestore(restoreId, auth.user.id);
+      if (!restore) {
+        throw new BadRequestException('The restoration this job worked on is gone');
+      }
+      if (operation.kind === MediaOperationKind.PreservationRestore) {
+        if (!['ready', 'restoring', 'completed'].includes(restore.status)) {
+          throw new BadRequestException('Review the package before restoring it');
+        }
+        await this.preservation.resetFailedRestoreItems(restore.id);
+      }
+    } else if (operation.kind === MediaOperationKind.PreservationExport) {
+      if (found.includeLocked && !getLockedOwnerId(auth)) {
+        throw new ForbiddenException('Unlock the Locked view to retry a package that includes Locked items');
+      }
+      await this.preservation.resetFailedItems(found.id);
+    }
+
+    // Two requests racing past the check above meet at the one-active-retry index (FL-43): one
+    // inserts, the other is answered with the winner instead of a unique violation.
+    const { operation: retried, created } = await this.repository.createRetry({
+      ownerId: operation.ownerId,
+      kind: operation.kind,
+      destination: operation.destination,
+      destinationDetail: operation.destinationDetail,
+      label: operation.label,
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: operation.id,
+      projectId: null,
+      revisionId: null,
+      snapshot: { ...(operation.snapshot as Record<string, unknown>), requestKey: null },
+      settings: operation.settings,
+      estimate: null,
+      maxAttempts: operation.maxAttempts,
+    });
+    if (created) {
+      this.logger.log(`Preservation job ${operation.id} retried as ${retried.id}`);
+    }
+    return this.present(auth, retried);
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<MediaOperation> {

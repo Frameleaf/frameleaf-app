@@ -168,7 +168,6 @@
   let adaptiveImage = $state<HTMLDivElement | undefined>();
 
   const faceToNameMap = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<Faces, string>();
     for (const face of faceManager.data) {
       if (!face.person) {

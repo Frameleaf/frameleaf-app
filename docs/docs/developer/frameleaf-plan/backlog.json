@@ -2250,10 +2250,10 @@
         "web/src/routes/(user)/workflows",
         "server/src/services/workflow.service.ts",
         "server/src/services/workflow-execution.service.ts",
-        "web/src/lib/modals/AppDownloadModal.svelte",
-        "web/src/lib/modals/ObtainiumConfigModal.svelte",
-        "prototypes/frameleaf/src/WorkflowDesigner.jsx",
-        "prototypes/frameleaf/src/workflow-schema.mjs"
+        "web/src/lib/components/frameleaf/WorkflowDesigner.svelte",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
+        "design/frameleaf/template/src/WorkflowDesigner.jsx",
+        "design/frameleaf/template/src/workflow-schema.mjs"
       ],
       "phase": 4,
       "priority": "Medium",

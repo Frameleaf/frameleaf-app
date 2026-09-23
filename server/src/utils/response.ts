@@ -39,7 +39,7 @@ export const waitForDrain = (response: Writable) =>
     }
   });
 
-export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values }: CookieResponse) => {
+export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values, rememberMe }: CookieResponse) => {
   const defaults: CookieOptions = {
     path: '/',
     sameSite: 'lax',
@@ -48,14 +48,16 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values 
     maxAge: Duration.fromObject({ days: 400 }).toMillis(),
   };
 
+  const authentication = { ...defaults, maxAge: rememberMe === false ? undefined : defaults.maxAge };
+
   const cookieOptions: Record<ImmichCookie, CookieOptions> = {
-    [ImmichCookie.AuthType]: defaults,
-    [ImmichCookie.AccessToken]: defaults,
+    [ImmichCookie.AuthType]: authentication,
+    [ImmichCookie.AccessToken]: authentication,
     [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
     [ImmichCookie.OAuthState]: defaults,
     [ImmichCookie.OAuthCodeVerifier]: defaults,
     // no httpOnly so that the client can know the auth state
-    [ImmichCookie.IsAuthenticated]: { ...defaults, httpOnly: false },
+    [ImmichCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
     [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
   };
 

@@ -341,6 +341,10 @@
         move(shortcut.id === 'next' ? 1 : -1);
         return;
       }
+      default: {
+        // Every other shortcut acts on the active group, below.
+        break;
+      }
     }
     if (!active || !actionable) {
       return;

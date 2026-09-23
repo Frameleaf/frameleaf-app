@@ -6,12 +6,15 @@
     title,
     closeLabel,
     open = $bindable(false),
+    onRequestClose,
     wide = false,
     children,
   }: {
     title: string;
     closeLabel: string;
     open?: boolean;
+    /** Lets a caller guard X and Escape before the dialog closes. */
+    onRequestClose?: () => void;
     /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. */
     wide?: boolean;
     children: Snippet;
@@ -25,6 +28,7 @@
   // has not been ported) has no `.frameleaf[data-theme]` ancestor to inherit from, so the
   // token scope is applied here directly rather than assumed from the caller's tree.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  const requestClose = () => (onRequestClose ? onRequestClose() : (open = false));
 
   $effect(() => {
     if (!open || dialog.open) {
@@ -48,11 +52,15 @@
   class:wide
   data-theme={appTheme}
   aria-labelledby={titleId}
+  oncancel={(event) => {
+    event.preventDefault();
+    requestClose();
+  }}
   onclose={() => (open = false)}
 >
   <header>
     <h2 id={titleId}>{title}</h2>
-    <button type="button" aria-label={closeLabel} onclick={() => (open = false)}>×</button>
+    <button type="button" aria-label={closeLabel} onclick={requestClose}>×</button>
   </header>
   {@render children()}
 </dialog>

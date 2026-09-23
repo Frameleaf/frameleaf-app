@@ -13,7 +13,7 @@
    * (FL-36) through `infoPanel`. This component owns the session, the layouts and the key map.
    */
   import { browser } from '$app/environment';
-  import { replaceState } from '$app/navigation';
+  import { afterNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
@@ -174,6 +174,10 @@
 
   let helpOpen = $state(false);
   let restored = false;
+  let routerReady = $state(false);
+  afterNavigate(() => {
+    routerReady = true;
+  });
 
   const manager = $derived(timelineManager as TimelineManager);
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
@@ -222,7 +226,7 @@
       return;
     }
     session.persist(authManager.authenticated ? authManager.user.id : undefined);
-    if (syncUrl) {
+    if (syncUrl && routerReady) {
       const next = session.viewUrl(page.url);
       if (next.href !== page.url.href) {
         replaceState(next, page.state);
@@ -559,7 +563,9 @@
         {/snippet}
       </LibraryTimeline>
 
-      <ShowMore {session} {onShowMore} {loading} />
+      {#if onShowMore}
+        <ShowMore {session} {onShowMore} {loading} />
+      {/if}
 
       {#if comparing}
         <div class="fl-library-compare">

@@ -324,7 +324,8 @@ export class AssetService extends BaseService {
     }
 
     if (visibility === AssetVisibility.Locked) {
-      await this.lockAssets(auth, ids, AssetLockReason.Marked);
+      // `update` and `updateAll` push the final state of `ids` (and their stacks) once they are done
+      await this.lockAssets(auth, ids, AssetLockReason.Marked, { pushedByCaller: ids });
       return undefined;
     }
 
@@ -338,11 +339,24 @@ export class AssetService extends BaseService {
    * assets were is released in the lock's transaction; the people whose featured face moved get a new
    * thumbnail, and a profile picture copied from one of the photos is replaced.
    */
-  private async lockAssets(auth: AuthDto, ids: string[], reason: AssetLockReason): Promise<void> {
+  private async lockAssets(
+    auth: AuthDto,
+    ids: string[],
+    reason: AssetLockReason,
+    { pushedByCaller = [] }: { pushedByCaller?: string[] } = {},
+  ): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
     const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
-      await this.notifyAssetsUpdated(locked, auth.user.id);
+      // everything the lock carried along (stack siblings, live photo parts), not what the caller pushes
+      const pushed = new Set(pushedByCaller);
+      await this.notifyAssetsUpdated(
+        locked.filter((id) => !pushed.has(id)),
+        auth.user.id,
+      );
     }
   }
 
@@ -580,7 +594,10 @@ export class AssetService extends BaseService {
       ...videoDuplicateFrameFiles.map(({ path }) => path),
     ];
 
-    if (deleteOnDisk && !asset.isOffline) {
+    // FL-78: an external library item only references its original, which stays in the library's
+    // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
+    // above are Frameleaf's own and go either way.
+    if (deleteOnDisk && !asset.isOffline && !asset.libraryId) {
       files.push(
         assetFiles.sidecarFile?.path,
         removedAsset.originalPath,

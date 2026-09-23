@@ -15,6 +15,7 @@ import {
 } from 'src/repositories/render-worker.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -194,6 +195,15 @@ describe(RenderWorkerService.name, () => {
     issueReadGrants: ReturnType<typeof vi.fn>;
     verifyReadGrant: ReturnType<typeof vi.fn>;
   };
+  let studioExports: Record<
+    | 'onRenderClaimed'
+    | 'onRenderCompleted'
+    | 'onRenderFailed'
+    | 'onRenderCancelAcknowledged'
+    | 'listRemoteReferences'
+    | 'acknowledgeRemoteReference',
+    ReturnType<typeof vi.fn>
+  >;
   let studioProjects: {
     getById: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
@@ -269,6 +279,14 @@ describe(RenderWorkerService.name, () => {
       getById: vi.fn().mockResolvedValue(undefined),
       getRevision: vi.fn().mockResolvedValue(undefined),
     };
+    studioExports = {
+      onRenderClaimed: vi.fn().mockResolvedValue(undefined),
+      onRenderCompleted: vi.fn().mockResolvedValue({ accepted: true }),
+      onRenderFailed: vi.fn().mockResolvedValue(undefined),
+      onRenderCancelAcknowledged: vi.fn().mockResolvedValue(undefined),
+      listRemoteReferences: vi.fn().mockResolvedValue([]),
+      acknowledgeRemoteReference: vi.fn().mockResolvedValue(true),
+    };
     mocks.user.get.mockImplementation((id: string) =>
       Promise.resolve(id === OWNER_A ? { ...userStub.user1, id: OWNER_A } : undefined),
     );
@@ -283,6 +301,7 @@ describe(RenderWorkerService.name, () => {
       mocks.user as never,
       studioResources as unknown as StudioResourceService,
       studioProjects as unknown as StudioProjectRepository,
+      studioExports as unknown as StudioExportService,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -676,6 +695,29 @@ describe(RenderWorkerService.name, () => {
           });
         });
 
+        it('refuses, without claiming, a job whose project is in the trash (FL-106)', async () => {
+          studioProjects.getById.mockResolvedValue(projectRow({ deletedAt: new Date() }));
+
+          const claim = await sut.claim(SESSION_A, {} as never);
+
+          expect(claim).toBeUndefined();
+          expect(workers.claimQueued).not.toHaveBeenCalled();
+          expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
+          expect(workers.recordRefusal).toHaveBeenCalledWith(storedOp.id, RenderWorkerRefusalReason.ManifestIncomplete);
+        });
+
+        it('records what a Studio export claim may read before handing it out (FL-106)', async () => {
+          await sut.claim(SESSION_A, {} as never);
+
+          expect(studioExports.onRenderClaimed).toHaveBeenCalledWith(
+            expect.objectContaining({ id: storedOp.id, claimToken: 'claim-1' }),
+            expect.objectContaining({
+              workerId: workerA.id,
+              entries: expect.arrayContaining([expect.objectContaining({ key: 'library-asset:clip-1' })]),
+            }),
+          );
+        });
+
         it('reads the graph from storage at the named revision and resolves it as a background runner', async () => {
           await sut.claim(SESSION_A, {} as never);
 
@@ -932,6 +974,8 @@ describe(RenderWorkerService.name, () => {
     });
 
     it("fails the job instead of publishing a result that is not the owner's asset (FL-43)", async () => {
+      // A Studio export's result is adopted by publication (FL-106); a quick edit names its own.
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...claimedByA, kind: MediaOperationKind.QuickEdit } as never);
       const foreign = '0195e2a0-0000-4000-8000-0000000000f1';
       vi.mocked(operations.isPublishableResult).mockResolvedValue(false);
 
@@ -951,6 +995,8 @@ describe(RenderWorkerService.name, () => {
     });
 
     it("publishes a result that is the owner's own asset (FL-43)", async () => {
+      // A Studio export's result is adopted by publication (FL-106); a quick edit names its own.
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...claimedByA, kind: MediaOperationKind.QuickEdit } as never);
       const mine = '0195e2a0-0000-4000-8000-0000000000f2';
 
       const result = await sut.complete(SESSION_A, claimedByA.id, {
@@ -1469,6 +1515,133 @@ describe(RenderWorkerService.name, () => {
         authStub.user1.user.id,
         expect.anything(),
       );
+    });
+  });
+
+  describe('Studio export results (FL-106)', () => {
+    const validating = operationStub({
+      status: MediaOperationStatus.Validating,
+      claimToken: 'claim-1',
+      claimedBy: workerA.id,
+    });
+    const output = {
+      path: '/data/exports/owner/studio-exports/staging/op/out.mp4',
+      checksum: 'a'.repeat(64),
+      sizeInBytes: '1024',
+      contentType: 'video/mp4',
+    };
+
+    beforeEach(() => {
+      vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
+        Promise.resolve(
+          id === validating.id && workerId === workerA.id && claimToken === 'claim-1'
+            ? (validating as never)
+            : undefined,
+        ),
+      );
+    });
+
+    it('refuses a worker-supplied result asset: only publication adopts one', async () => {
+      await expect(
+        sut.complete(SESSION_A, validating.id, {
+          claimToken: 'claim-1',
+          resultAssetId: '00000000-0000-4000-8000-000000000001',
+          output,
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a completion without the file it produced', async () => {
+      await expect(
+        sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', resultAssetId: null } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('stages the output for publication and completes the render without a result asset', async () => {
+      const result = await sut.complete(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+      expect(studioExports.onRenderCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ id: validating.id }),
+        workerA.id,
+        expect.objectContaining({ path: output.path, checksum: output.checksum, remoteRef: null }),
+      );
+      expect(operations.complete).toHaveBeenCalledWith(validating.id, 'claim-1', { resultAssetId: null });
+    });
+
+    it('does not complete the render when its version is no longer waiting for it', async () => {
+      studioExports.onRenderCompleted.mockResolvedValue({ accepted: false });
+
+      const result = await sut.complete(SESSION_A, validating.id, {
+        claimToken: 'claim-1',
+        resultAssetId: null,
+        output,
+      } as never);
+
+      expect(result).toEqual({ accepted: false, refusal: null });
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('fails the version only once the render failed for good', async () => {
+      vi.mocked(operations.fail).mockResolvedValueOnce('retrying');
+      await sut.fail(SESSION_A, validating.id, { claimToken: 'claim-1', error: 'gpu lost', errorCode: 'gpu' } as never);
+      expect(studioExports.onRenderFailed).not.toHaveBeenCalled();
+
+      vi.mocked(operations.fail).mockResolvedValueOnce('failed');
+      await sut.fail(SESSION_A, validating.id, { claimToken: 'claim-1', error: 'gpu lost', errorCode: 'gpu' } as never);
+      expect(studioExports.onRenderFailed).toHaveBeenCalledWith(expect.objectContaining({ id: validating.id }), {
+        errorCode: 'gpu',
+        error: 'gpu lost',
+      });
+    });
+
+    it('settles the version and the remote obligation when a cancel is acknowledged', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...validating,
+        status: MediaOperationStatus.Cancelling,
+      } as never);
+
+      await sut.acknowledgeCancel(SESSION_A, validating.id, { claimToken: 'claim-1', released: true } as never);
+
+      expect(studioExports.onRenderCancelAcknowledged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: validating.id }),
+        workerA.id,
+        true,
+      );
+    });
+
+    it("lists only this worker's remote references and refuses to acknowledge another's", async () => {
+      studioExports.listRemoteReferences.mockResolvedValue([
+        {
+          id: 'ref-1',
+          operationId: validating.id,
+          reason: 'cancel',
+          remoteRef: null,
+          requestedAt: new Date('2026-09-23T10:00:00.000Z'),
+        },
+      ]);
+
+      await expect(sut.listRemoteReferences(SESSION_A)).resolves.toEqual([
+        {
+          id: 'ref-1',
+          operationId: validating.id,
+          reason: 'cancel',
+          remoteRef: null,
+          requestedAt: '2026-09-23T10:00:00.000Z',
+        },
+      ]);
+      expect(studioExports.listRemoteReferences).toHaveBeenCalledWith(workerA.id);
+
+      studioExports.acknowledgeRemoteReference.mockResolvedValue(false);
+      await expect(sut.acknowledgeRemoteReference(SESSION_B, 'ref-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(studioExports.acknowledgeRemoteReference).toHaveBeenCalledWith('ref-1', workerB.id);
     });
   });
 });

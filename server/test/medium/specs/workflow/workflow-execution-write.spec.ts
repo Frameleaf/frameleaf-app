@@ -15,6 +15,7 @@ import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
@@ -45,7 +46,14 @@ class WorkflowWriteTestContext extends MediumTestContext<typeof WorkflowExecutio
         UserRepository,
         WorkflowRepository,
       ],
-      mock: [ConfigRepository, EventRepository, JobRepository, PluginRepository, SystemMetadataRepository],
+      mock: [
+        ConfigRepository,
+        EventRepository,
+        JobRepository,
+        PluginRepository,
+        SystemMetadataRepository,
+        WebsocketRepository,
+      ],
     });
   }
 
@@ -55,6 +63,7 @@ class WorkflowWriteTestContext extends MediumTestContext<typeof WorkflowExecutio
     // the eligibility gate requires enrichment metadata — same as production.
     this.getMock(SystemMetadataRepository).get.mockResolvedValue(null);
     this.getMock(EventRepository).emit.mockResolvedValue();
+    this.getMock(WebsocketRepository).clientSend.mockReturnValue();
     this.getMock(PluginRepository).getForLoad.mockResolvedValue([]);
     // sets the jwt secret used to sign the per-run auth token
     await this.sut.onPluginLoad();
@@ -77,6 +86,17 @@ const createWorkflow = async (ctx: WorkflowWriteTestContext, ownerId: string) =>
       ARRAY[${WorkflowType.AssetV1}]::varchar[], false, ARRAY[]::varchar[], NULL)
   `.execute(ctx.database);
 
+  const stepId = randomUUID();
+  // the plugin repository is mocked: what the run checks the definition against (FL-82)
+  ctx.getMock(PluginRepository).getForValidation.mockResolvedValue([
+    {
+      id: methodId,
+      name: 'fakeAssetWriter',
+      pluginName: `write-restriction-${pluginId}`,
+      types: [WorkflowType.AssetV1],
+      schema: null,
+    },
+  ]);
   return ctx.get(WorkflowRepository).create(
     {
       enabled: true,
@@ -84,7 +104,15 @@ const createWorkflow = async (ctx: WorkflowWriteTestContext, ownerId: string) =>
       ownerId,
       trigger: WorkflowTrigger.AssetCreate,
     },
-    [{ enabled: true, pluginMethodId: methodId, config: {} }],
+    {
+      version: 1,
+      trigger: WorkflowTrigger.AssetCreate,
+      extra: {},
+      steps: [
+        { id: stepId, method: `write-restriction-${pluginId}#fakeAssetWriter`, config: {}, enabled: true, extra: {} },
+      ],
+    },
+    [{ id: stepId, order: 0, enabled: true, pluginMethodId: methodId, config: {} }],
   );
 };
 

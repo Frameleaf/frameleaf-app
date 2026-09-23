@@ -1,3 +1,4 @@
+import type { Translations } from 'svelte-i18n';
 /**
  * The Studio preview client (FL-96, `STU-402`).
  *
@@ -193,7 +194,7 @@ export interface StudioPreviewView {
    */
   staleFrame: StudioPreviewFrameView | null;
   /** i18n key for the current non-ready state. */
-  messageKey: string | null;
+  messageKey: Translations | null;
   /** Stable code behind `unavailable`, for diagnostics. Never the primary message. */
   errorCode: string | null;
   /** The revision the server last reported, so the host can reconcile the project. */
@@ -223,13 +224,13 @@ export const unsavedStudioPreviewView = (): StudioPreviewView => ({
   errorCode: 'unsaved',
 });
 
-const messageKeys: Record<Exclude<StudioPreviewPhase, 'idle' | 'ready'>, string> = {
+const messageKeys: Record<Exclude<StudioPreviewPhase, 'idle' | 'ready'>, Translations> = {
   rendering: 'frameleaf_studio_preview_rendering',
   stale: 'frameleaf_studio_preview_stale',
   unavailable: 'frameleaf_studio_preview_unavailable',
 };
 
-export const studioPreviewMessageKey = (phase: StudioPreviewPhase): string | null =>
+export const studioPreviewMessageKey = (phase: StudioPreviewPhase): Translations | null =>
   phase === 'idle' || phase === 'ready' ? null : messageKeys[phase];
 
 /**

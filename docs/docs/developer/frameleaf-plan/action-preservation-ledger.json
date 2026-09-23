@@ -6,7 +6,7 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "d219cdd43224fb5e09cafcc6a67196b997a20a5b33b58a113b4fc1d67a1ee7bc"
+      "sha256": "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "4d9c7c4bbeb4d6922b8c4775fb51806d99f7b8e753af0bd451bace1c1de87271",
+  "sourceEvidenceSha256": "535324eaced4bbed1cb7daacc2298d5a77a34d8d327469715f071182a85a84ab",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -130,15 +130,15 @@
       ]
     }
   ],
-  "expectedInventory": { "webRoutes": 92, "settings": 535, "freecut": 210, "native": 227 },
+  "expectedInventory": { "webRoutes": 94, "settings": 535, "freecut": 210, "native": 227 },
   "counts": {
-    "webRoutes": 92,
+    "webRoutes": 94,
     "webActions": 153,
     "settings": 535,
     "freecut": 210,
     "native": 227,
-    "sourceRows": 1217,
-    "canonicalRequirements": 1197
+    "sourceRows": 1219,
+    "canonicalRequirements": 1199
   },
   "dispositionVocabulary": [
     "retained-production-route",
@@ -18458,6 +18458,35 @@
       }
     },
     {
+      "requirementId": "route:/utilities/downloads",
+      "aliases": ["route:/utilities/downloads"],
+      "kinds": ["web-route"],
+      "title": "utilities route /utilities/downloads",
+      "sourceRowIds": ["web-routes:/utilities/downloads"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/utilities/downloads/+page.svelte",
+        "web/src/routes/(user)/utilities/downloads/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "ADM-105", "jiraKey": "FL-82", "url": "https://heroit.atlassian.net/browse/FL-82" },
+        "secondary": [
+          { "planId": "ADM-001", "jiraKey": "FL-66", "url": "https://heroit.atlassian.net/browse/FL-66" },
+          { "planId": "ADM-005", "jiraKey": "FL-67", "url": "https://heroit.atlassian.net/browse/FL-67" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "aliases": ["route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]"],
       "kinds": ["web-route"],
@@ -18668,6 +18697,35 @@
           "status": "explicit-per-source-row",
           "evidence": ["source-row-mappings", "scripts/frameleaf-high-risk-workflows.test.mjs"]
         }
+      }
+    },
+    {
+      "requirementId": "route:/utilities/obtainium",
+      "aliases": ["route:/utilities/obtainium"],
+      "kinds": ["web-route"],
+      "title": "utilities route /utilities/obtainium",
+      "sourceRowIds": ["web-routes:/utilities/obtainium"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+        "web/src/routes/(user)/utilities/obtainium/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "ADM-105", "jiraKey": "FL-82", "url": "https://heroit.atlassian.net/browse/FL-82" },
+        "secondary": [
+          { "planId": "ADM-001", "jiraKey": "FL-66", "url": "https://heroit.atlassian.net/browse/FL-66" },
+          { "planId": "ADM-005", "jiraKey": "FL-67", "url": "https://heroit.atlassian.net/browse/FL-67" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
       }
     },
     {
@@ -25239,7 +25297,7 @@
       "sourceRowIds": ["settings:roadmap:migration"],
       "entrypoints": [
         "README.md",
-        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration"
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
       ],
       "owners": {
         "primary": { "planId": "IMP-007", "jiraKey": "FL-75", "url": "https://heroit.atlassian.net/browse/FL-75" },
@@ -56650,7 +56708,7 @@
       "title": "Server migration",
       "entrypoints": [
         "README.md",
-        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration"
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
       ],
       "qualification": "planned-not-qualified",
       "mappings": {
@@ -56658,13 +56716,12 @@
         "newUi": {
           "status": "mapped-unqualified",
           "target": {
-            "module": "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte",
-            "area": "maintenance",
-            "section": "server-migration",
-            "interimFor": "storage/migration"
+            "module": "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte",
+            "area": "storage",
+            "section": "migration"
           },
           "evidence": [
-            "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.spec.ts",
+            "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.spec.ts",
             "web/src/lib/frameleaf/migration-report.spec.ts",
             "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
             "docs/docs/administration/server-migration.md"
@@ -74796,6 +74853,42 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/utilities/downloads",
+      "canonicalRequirementId": "route:/utilities/downloads",
+      "rawRequirementId": "route:/utilities/downloads",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/utilities/downloads",
+      "kind": "web-route",
+      "title": "utilities route /utilities/downloads",
+      "entrypoints": [
+        "web/src/routes/(user)/utilities/downloads/+page.svelte",
+        "web/src/routes/(user)/utilities/downloads/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/utilities/downloads/+page.svelte",
+            "web/src/routes/(user)/utilities/downloads/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/utilities/downloads/+page.svelte",
+            "web/src/routes/(user)/utilities/downloads/+page.ts"
+          ]
+        },
+        "newUi": { "status": "not-qualified", "target": "/utilities/downloads", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "canonicalRequirementId": "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "rawRequirementId": "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
@@ -75053,6 +75146,42 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/utilities/obtainium",
+      "canonicalRequirementId": "route:/utilities/obtainium",
+      "rawRequirementId": "route:/utilities/obtainium",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/utilities/obtainium",
+      "kind": "web-route",
+      "title": "utilities route /utilities/obtainium",
+      "entrypoints": [
+        "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+        "web/src/routes/(user)/utilities/obtainium/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+            "web/src/routes/(user)/utilities/obtainium/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+            "web/src/routes/(user)/utilities/obtainium/+page.ts"
+          ]
+        },
+        "newUi": { "status": "not-qualified", "target": "/utilities/obtainium", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/workflows",
       "canonicalRequirementId": "route:/workflows",
       "rawRequirementId": "route:/workflows",
@@ -75176,12 +75305,14 @@
     "web-routes:/utilities": "route:/utilities",
     "web-routes:/utilities/corrupt-media": "route:/utilities/corrupt-media",
     "web-routes:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]": "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
+    "web-routes:/utilities/downloads": "route:/utilities/downloads",
     "web-routes:/utilities/geolocation": "route:/utilities/geolocation",
     "web-routes:/utilities/geolocation/photos/[photoId]": "route:/utilities/geolocation/photos/[photoId]",
     "web-routes:/utilities/icloud-sync": "route:/utilities/icloud-sync",
     "web-routes:/utilities/large-files/[[photos=photos]]/[[assetId=id]]": "route:/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/utilities/live-photos": "route:/utilities/live-photos",
     "web-routes:/utilities/missing-media": "route:/utilities/missing-media",
+    "web-routes:/utilities/obtainium": "route:/utilities/obtainium",
     "web-routes:/workflows": "route:/workflows",
     "web-routes:/workflows/[workflowId]": "route:/workflows/[workflowId]",
     "web-routes:/admin": "route:/admin",
@@ -76423,6 +76554,7 @@
       "route:/user-settings",
       "route:/utilities",
       "route:/utilities/corrupt-media",
+      "route:/utilities/downloads",
       "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "route:/utilities/geolocation",
       "route:/utilities/geolocation/photos/[photoId]",
@@ -76430,6 +76562,7 @@
       "route:/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
       "route:/utilities/live-photos",
       "route:/utilities/missing-media",
+      "route:/utilities/obtainium",
       "route:/workflows",
       "route:/workflows/[workflowId]"
     ],
@@ -76490,6 +76623,7 @@
       "route:/user-settings",
       "route:/utilities",
       "route:/utilities/corrupt-media",
+      "route:/utilities/downloads",
       "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "route:/utilities/geolocation",
       "route:/utilities/geolocation/photos/[photoId]",
@@ -76497,6 +76631,7 @@
       "route:/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
       "route:/utilities/live-photos",
       "route:/utilities/missing-media",
+      "route:/utilities/obtainium",
       "route:/workflows",
       "route:/workflows/[workflowId]"
     ],
@@ -76785,6 +76920,8 @@
     "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts": [
       "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]"
     ],
+    "web/src/routes/(user)/utilities/downloads/+page.svelte": ["route:/utilities/downloads"],
+    "web/src/routes/(user)/utilities/downloads/+page.ts": ["route:/utilities/downloads"],
     "web/src/routes/(user)/utilities/geolocation/+page.svelte": [
       "native:web/src/routes/(user)/utilities/geolocation/+page.svelte",
       "route:/utilities/geolocation"
@@ -76815,6 +76952,8 @@
       "route:/utilities/missing-media"
     ],
     "web/src/routes/(user)/utilities/missing-media/+page.ts": ["route:/utilities/missing-media"],
+    "web/src/routes/(user)/utilities/obtainium/+page.svelte": ["route:/utilities/obtainium"],
+    "web/src/routes/(user)/utilities/obtainium/+page.ts": ["route:/utilities/obtainium"],
     "web/src/routes/(user)/workflows/+page.svelte": [
       "native:web/src/routes/(user)/workflows/+page.svelte",
       "route:/workflows"
@@ -78598,7 +78737,7 @@
     "Existing production route:backup/takeout": ["setting:roadmap:takeout"],
     "server/src/controllers/takeout.controller.ts": ["setting:roadmap:takeout"],
     "README.md": ["setting:roadmap:migration"],
-    "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration": [
+    "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration": [
       "setting:roadmap:migration"
     ],
     "Existing production route:backup/preservation": ["setting:roadmap:preservation"],

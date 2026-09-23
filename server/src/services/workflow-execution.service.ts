@@ -7,9 +7,11 @@ import {
   WorkflowTrigger,
 } from '@immich/plugin-sdk';
 import { HttpException, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { WorkflowRepository, WorkflowRunLog } from 'src/repositories/workflow.repository.js';
 import type { JobOf } from 'src/types.js';
 import { DummyValue, OnEvent, OnJob } from 'src/decorators.js';
 import { AlbumsAddAssetsDto, CreateAlbumDto, GetAlbumsDto } from 'src/dtos/album.dto.js';
@@ -25,12 +27,14 @@ import {
   JobStatus,
   QueueName,
   WorkflowResult,
+  WorkflowRunErrorCode,
   WorkflowType,
 } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { TagService } from 'src/services/tag.service.js';
+import { definitionFromSteps, redactRunError, workflowIssues } from 'src/utils/workflow-definition.js';
 
 const dummy = () => {
   throw new Error(
@@ -44,6 +48,28 @@ type ExecuteOptions<T extends WorkflowType> = {
 };
 
 type AssetTrigger = { userId: string; assetId: string; trigger: WorkflowTrigger };
+
+type RunnableWorkflow = NonNullable<Awaited<ReturnType<WorkflowRepository['getForWorkflowRun']>>>;
+
+const definitionOf = (workflow: RunnableWorkflow) =>
+  workflow.definition ??
+  definitionFromSteps(
+    workflow.trigger,
+    workflow.steps.map((step) => ({ ...step, enabled: true })),
+  );
+
+const definitionSha256 = (definition: ReturnType<typeof definitionFromSteps>) =>
+  createHash('sha256')
+    .update(
+      JSON.stringify(definition, (_key, value: unknown) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+            )
+          : value,
+      ),
+    )
+    .digest('hex');
 
 type HostContext = {
   allowedHosts: string[];
@@ -376,18 +402,20 @@ export class WorkflowExecutionService extends BaseService {
   }
 
   private async onAssetTrigger({ userId, assetId, trigger }: AssetTrigger) {
-    const items = await this.workflowRepository.search({ userId, trigger });
+    // paused workflows get no job at all; one paused after this still skips at run time
+    const items = await this.workflowRepository.search({ userId, trigger, enabled: true });
     await this.jobRepository.queueAll(
       items.map((workflow) => ({
         name: JobName.WorkflowAssetTrigger,
-        data: { workflowId: workflow.id, assetId, trigger },
+        data: { workflowId: workflow.id, assetId },
       })),
     );
   }
 
   @OnJob({ name: JobName.WorkflowAssetTrigger, queue: QueueName.Workflow })
-  handleAssetTrigger({ workflowId, assetId }: JobOf<JobName.WorkflowAssetTrigger>) {
-    return this.execute(workflowId, [assetId], (type) => {
+  handleAssetTrigger(job: JobOf<JobName.WorkflowAssetTrigger>) {
+    const { assetId } = job;
+    return this.execute(job, [assetId], (type) => {
       const assetService = BaseService.create(AssetService, this);
 
       switch (type) {
@@ -422,17 +450,6 @@ export class WorkflowExecutionService extends BaseService {
                 // TODO allow setting to null
                 description: asset.exifInfo?.description ?? undefined,
                 rating: asset.exifInfo?.rating,
-
-                // TODO add to update dto
-                // make: asset.exifInfo?.make,
-                // model: asset.exifInfo?.model,
-                // city: asset.exifInfo?.city,
-                // state: asset.exifInfo?.state,
-                // country: asset.exifInfo?.country,
-                // lensModel: asset.exifInfo?.lensModel,
-                // fNumber: asset.exifInfo?.fNumber,
-                // fps: asset.exifInfo?.fps,
-                // iso: asset.exifInfo?.iso,
               });
             },
           } satisfies ExecuteOptions<typeof type>;
@@ -442,17 +459,49 @@ export class WorkflowExecutionService extends BaseService {
   }
 
   /**
+   * Why a stored workflow cannot run completely on this server right now, if it cannot (FL-82).
+   *
+   * Every step of the definition must be provided by an enabled plugin, fit the trigger and have
+   * valid parameters, and every enabled step must be present as a runnable step. A plugin upgrade
+   * that drops a method deletes its runnable steps; without this check the rest of the workflow
+   * would run without them — an action without the filter meant to limit it.
+   */
+  private async getRunProblem(workflow: RunnableWorkflow): Promise<string | undefined> {
+    const methods = await this.pluginRepository.getForValidation();
+    const definition =
+      workflow.definition ??
+      definitionFromSteps(
+        workflow.trigger,
+        workflow.steps.map((step) => ({ ...step, enabled: true })),
+      );
+    const [issue] = workflowIssues(definition, methods);
+    if (issue) {
+      return issue.message;
+    }
+    const expected = definition.steps.filter((step) => step.enabled).map((step) => step.id);
+    const runnable = workflow.steps.map((step) => step.id);
+    if (expected.length !== runnable.length || expected.some((id, index) => id !== runnable[index])) {
+      return 'Some steps are not ready to run. Open this workflow and save it again.';
+    }
+  }
+
+  /**
    * Central choke point for every workflow trigger handler. Any new
    * `WorkflowTrigger` value with an `@OnJob` handler MUST route through here,
    * passing the set of asset ids whose data will be exposed to the plugin.
    * The privacy gate (`isWorkflowEligible`) runs once per asset before any
    * read/write callback is invoked, so individual handlers can't forget it.
+   *
+   * A run is one durable job. A failed step gets one automatic retry, starting at that step (the
+   * steps before it already applied), then only manual retries. Pausing or deleting the workflow
+   * cancels runs that have not started, including a pending retry; a step already running finishes.
    */
   private async execute<T extends WorkflowType>(
-    workflowId: string,
+    job: JobOf<JobName.WorkflowAssetTrigger>,
     assetIds: string[],
     getHandler: (type: T) => ExecuteOptions<T> | undefined,
   ): Promise<JobStatus | undefined> {
+    const { workflowId, assetId } = job;
     const workflow = await this.workflowRepository.getForWorkflowRun(workflowId);
     if (!workflow) {
       return;
@@ -461,10 +510,50 @@ export class WorkflowExecutionService extends BaseService {
     const { machineLearning } = await this.getConfig({ withCache: true });
     // Match `onAssetMetadataExtracted` — either NSFW OR description can flag NSFW.
     const requireEnrichment = machineLearning.nsfwDetection.enabled || machineLearning.imageDescription.enabled;
-    for (const assetId of assetIds) {
-      if (!(await this.workflowRepository.isWorkflowEligible(assetId, { requireEnrichment }))) {
+    for (const id of assetIds) {
+      if (!(await this.workflowRepository.isWorkflowEligible(id, { requireEnrichment }))) {
         return JobStatus.Skipped;
       }
+    }
+
+    const runId = job.runId ?? crypto.randomUUID();
+    const attempt = job.attempt ?? 0;
+    const log = async (entry: Omit<WorkflowRunLog, 'workflowId' | 'runId' | 'attempt' | 'triggerDataId'>) => {
+      if (workflow.logging) {
+        await this.workflowRepository.log({ ...entry, workflowId, runId, attempt, triggerDataId: assetId });
+      }
+    };
+
+    const problem = await this.getRunProblem(workflow);
+    if (problem) {
+      this.logger.warn(`Workflow ${workflowId} was not run: ${problem}`);
+      await log({ result: WorkflowResult.Error, errorCode: WorkflowRunErrorCode.Unsupported, error: problem });
+      return JobStatus.Skipped;
+    }
+
+    // Track only configuration this run successfully persisted. Reloading the latest definition here
+    // would also trust an owner's intervening edit and could skip a newly restrictive filter.
+    const expectedDefinition = structuredClone(definitionOf(workflow));
+    let steps = workflow.steps;
+    if (job.fromStepId) {
+      if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(expectedDefinition)) {
+        await log({
+          result: WorkflowResult.Error,
+          errorCode: WorkflowRunErrorCode.Unsupported,
+          error: 'The workflow changed before its retry, so the retry was not run.',
+        });
+        return JobStatus.Skipped;
+      }
+      const index = steps.findIndex((step) => step.id === job.fromStepId);
+      if (index === -1) {
+        await log({
+          result: WorkflowResult.Error,
+          errorCode: WorkflowRunErrorCode.Unsupported,
+          error: 'The workflow changed before its retry, so the retry was not run.',
+        });
+        return JobStatus.Skipped;
+      }
+      steps = steps.slice(index);
     }
 
     // TODO infer from steps
@@ -490,9 +579,8 @@ export class WorkflowExecutionService extends BaseService {
     const { read, write } = handler;
     const readResult = await read(type);
     let data = readResult.data;
-    const runId = crypto.randomUUID();
 
-    for (const step of workflow.steps) {
+    for (const step of steps) {
       try {
         const payload: WorkflowEventPayload<typeof type> = {
           trigger: workflow.trigger,
@@ -538,34 +626,44 @@ export class WorkflowExecutionService extends BaseService {
         }
 
         if (result?.config) {
-          await this.workflowRepository.updateStep(step.id, { config: result.config });
+          await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config);
+          const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
+          if (definitionStep) {
+            definitionStep.config = structuredClone(result.config);
+          }
         }
 
         const shouldContinue = result?.workflow?.continue ?? true;
         if (!shouldContinue) {
-          if (workflow.logging) {
-            await this.workflowRepository.log({
-              workflowId,
-              result: WorkflowResult.Halted,
-              workflowStepId: step.id,
-              triggerDataId: readResult.entityId,
-              runId,
-            });
-          }
-
+          await log({ result: WorkflowResult.Halted, workflowStepId: step.id });
           this.logger.debug(`Workflow ${workflowId} run ${runId} stopped on step ${step.id}`);
           return;
         }
       } catch (error) {
-        this.logger.error(`Error executing workflow ${workflowId} run ${runId}:`, error);
+        this.logger.error(`Error executing workflow ${workflowId} run ${runId} (attempt ${attempt}):`, error);
 
-        if (workflow.logging) {
-          await this.workflowRepository.log({
-            workflowId,
-            result: WorkflowResult.Error,
-            workflowStepId: step.id,
-            triggerDataId: readResult.entityId,
-            runId,
+        const message = redactRunError(
+          error instanceof Error ? error.message : String(error),
+          (step.config as Record<string, unknown> | null) ?? null,
+        );
+        await log({
+          result: WorkflowResult.Error,
+          workflowStepId: step.id,
+          errorCode: WorkflowRunErrorCode.StepFailed,
+          error: message,
+        });
+
+        if (attempt === 0 && !job.manual) {
+          await this.jobRepository.queue({
+            name: JobName.WorkflowAssetTrigger,
+            data: {
+              workflowId,
+              assetId,
+              runId,
+              attempt: 1,
+              fromStepId: step.id,
+              definitionSha256: definitionSha256(expectedDefinition),
+            },
           });
         }
 
@@ -573,15 +671,7 @@ export class WorkflowExecutionService extends BaseService {
       }
     }
 
-    if (workflow.logging) {
-      await this.workflowRepository.log({
-        workflowId,
-        result: WorkflowResult.Completed,
-        triggerDataId: readResult.entityId,
-        runId,
-      });
-    }
-
+    await log({ result: WorkflowResult.Completed });
     this.logger.debug(`Workflow ${workflowId} run ${runId} executed successfully`);
   }
 }

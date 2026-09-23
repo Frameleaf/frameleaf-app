@@ -290,12 +290,6 @@
     }
   };
 
-  /** Every id currently loaded, in visible order: the order a shift-click range is taken against. */
-  const orderedIds = () =>
-    timelineManager.months.flatMap((month) =>
-      month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
-    );
-
   const anchorAsset = () => {
     const anchorId = session.session.anchorId;
     if (!anchorId) {

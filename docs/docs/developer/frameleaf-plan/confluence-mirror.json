@@ -48,6 +48,16 @@
   },
   "pages": [
     {
+      "bytes": 10523,
+      "category": "reference",
+      "id": "63111169",
+      "source": "docs/docs/administration/server-migration.md",
+      "sourceSha256": "b8db949967c3235c75eefcc2011bf949e164549c8b5673223b82747fd1a0ae61",
+      "title": "Administration Reference — Server-to-server migration",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63111169/Administration+Reference+Server-to-server+migration",
+      "version": 1
+    },
+    {
       "bytes": 12350,
       "category": "audits",
       "id": "61407287",
@@ -469,14 +479,14 @@
       "version": 2
     },
     {
-      "bytes": 7066,
+      "bytes": 9297,
       "category": "features",
       "id": "61374992",
       "source": "docs/docs/features/preservation.md",
-      "sourceSha256": "f2e650f9cfef0a19806545da5a474715397abc29b5096cfe42b7e022f40eedaa",
+      "sourceSha256": "5e0f8a3cb00193ebe5a5698e9ae5d3d71b6d6f9ecd8858e9b21eec52c9b43512",
       "title": "Feature Reference — Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 4197,
@@ -640,17 +650,17 @@
       "version": 8
     },
     {
-      "bytes": 5804,
+      "bytes": 5786,
       "category": "plan",
       "id": "61440795",
       "source": "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
-      "sourceSha256": "d5f847e3a93d9086c0075dd49dbc070957d6116e7bcfc63125299a86049c29aa",
+      "sourceSha256": "61c790669a0788ccbb497d1f7fdd263d9f59277e585eda2085609aec836d69ef",
       "title": "Documentation and Jira Reproducibility Contract",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440795/Documentation+and+Jira+Reproducibility+Contract",
-      "verification": "Version 6 mirrors the 72-page/32-current/26-source verified readback contract including the September 22, 2026 agent handoff, committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143; banner states not merged, no PR; all four narrative markers present; full page read back after update.",
+      "verification": "Version 7 full published page read back and matched the complete source-owned body; reconciles 73 receipts, 37 current, 36 historical and 31 required sources. Local integration candidate, not merged or deployed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 6
+      "verifiedAt": "2026-09-23T18:17:33.245Z",
+      "version": 7
     },
     {
       "bytes": 34396,

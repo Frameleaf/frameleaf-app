@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { mediumFactory } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -33,6 +34,34 @@ describe(OAuthController.name, () => {
   });
 
   describe('POST /oauth/callback', () => {
+    it('rejects a non-boolean cookie preference before authentication', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/oauth/callback')
+        .send({ url: 'https://example.test/auth/login?code=test', rememberMe: 'false' });
+      expect(status).toBe(400);
+      expect(service.callback).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, true, false])('sets callback cookie persistence for rememberMe=%s', async (rememberMe) => {
+      service.callback.mockResolvedValue(mediumFactory.loginResponse());
+      const { status, headers } = await request(ctx.getHttpServer())
+        .post('/oauth/callback')
+        .send({ url: 'https://example.test/auth/login?code=test', rememberMe });
+
+      expect(status).toBe(201);
+      const cookies = headers['set-cookie'];
+      expect(cookies).toHaveLength(5);
+      expect(cookies[0]).toContain('immich_oauth_state=;');
+      expect(cookies[1]).toContain('immich_oauth_code_verifier=;');
+      for (const cookie of cookies.slice(2)) {
+        expect(cookie.includes('Max-Age=34560000')).toBe(rememberMe !== false);
+        expect(cookie.includes('Expires=')).toBe(rememberMe !== false);
+        expect(cookie.includes('HttpOnly')).toBe(!cookie.startsWith('immich_is_authenticated='));
+        expect(cookie).toContain('SameSite=Lax');
+        expect(cookie).toContain('Path=/');
+      }
+    });
+
     it('should require a url', async () => {
       const { status, body } = await request(ctx.getHttpServer()).post('/oauth/callback').send({});
 
