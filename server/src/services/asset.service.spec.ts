@@ -885,6 +885,25 @@ describe(AssetService.name, () => {
       expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset));
     });
 
+    it('never deletes the original or sidecar of an external library item (FL-78)', async () => {
+      const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
+        .file({ type: AssetFileType.Thumbnail })
+        .file({ type: AssetFileType.Preview })
+        .build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: asset.files.map(({ path }) => path) },
+      });
+      const deleted = mocks.job.queue.mock.calls.flatMap(([item]) => (item.data as { files?: string[] }).files ?? []);
+      expect(deleted).not.toContain(asset.originalPath);
+      expect(mocks.user.updateUsage).not.toHaveBeenCalled();
+    });
+
     it('should delete the entire stack if deleted asset was the primary asset and the stack would only contain one asset afterwards', async () => {
       const asset = AssetFactory.from()
         .stack({}, (builder) => builder.asset())
