@@ -7912,6 +7912,206 @@
         },
         "type": "object"
       },
+      "DuplicateActiveGroupDto": {
+        "properties": {
+          "duplicateId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "memberIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "duplicateId",
+          "memberIds"
+        ],
+        "type": "object"
+      },
+      "DuplicateActiveOperationDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaOperationBulkAction"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateActiveGroupDto"
+            },
+            "type": "array"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "groups",
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "DuplicateDecisionBatchDto": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateDecisionGroupDto"
+            },
+            "type": "array"
+          },
+          "operationId": {
+            "description": "The durable job that applied these decisions",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "undoable": {
+            "description": "Every decision of the job is applied and none has been undone",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "groups",
+          "operationId",
+          "undoable"
+        ],
+        "type": "object"
+      },
+      "DuplicateDecisionGroupDto": {
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/DuplicateDecisionKind"
+          },
+          "decisionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "duplicateId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "keepAssetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "memberIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "trashAssetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "undoing": {
+            "description": "An undo job has started on this decision",
+            "type": "boolean"
+          },
+          "undone": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "applied",
+          "decision",
+          "decisionId",
+          "duplicateId",
+          "keepAssetIds",
+          "memberIds",
+          "trashAssetIds",
+          "undoing",
+          "undone"
+        ],
+        "type": "object"
+      },
+      "DuplicateDecisionHistoryDto": {
+        "properties": {
+          "active": {
+            "description": "Decision and undo jobs still running",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateActiveOperationDto"
+            },
+            "type": "array"
+          },
+          "recent": {
+            "description": "The most recent decision jobs, newest first",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateDecisionBatchDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "active",
+          "recent"
+        ],
+        "type": "object"
+      },
+      "DuplicateDecisionKind": {
+        "description": "What the owner decided for a duplicate group",
+        "enum": [
+          "keepers",
+          "keep-all",
+          "stack"
+        ],
+        "type": "string"
+      },
+      "DuplicateGroupBlock": {
+        "description": "Why a duplicate group cannot be decided from this session",
+        "enum": [
+          "hidden-members",
+          "other-owner"
+        ],
+        "type": "string"
+      },
+      "DuplicateGroupKind": {
+        "description": "Whether a duplicate group holds copies of one photo or frames of a burst",
+        "enum": [
+          "duplicates",
+          "burst"
+        ],
+        "type": "string"
+      },
+      "DuplicateQualityReason": {
+        "description": "Evidence behind a duplicate keeper suggestion",
+        "enum": [
+          "original-format",
+          "largest-file",
+          "highest-resolution",
+          "most-metadata",
+          "compressed-copy",
+          "lower-resolution"
+        ],
+        "type": "string"
+      },
       "DuplicateResolveDto": {
         "properties": {
           "groups": {
@@ -7990,6 +8190,98 @@
           "assets",
           "duplicateId",
           "suggestedKeepAssetIds"
+        ],
+        "type": "object"
+      },
+      "DuplicateReviewGroupDto": {
+        "properties": {
+          "assets": {
+            "description": "The photos of the group this session may see",
+            "items": {
+              "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          },
+          "blockedReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DuplicateGroupBlock"
+              }
+            ],
+            "nullable": true
+          },
+          "duplicateId": {
+            "description": "Duplicate group ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "editable": {
+            "description": "Whether this session may decide the group",
+            "type": "boolean"
+          },
+          "hiddenMemberCount": {
+            "description": "Photos of the group this session does not see",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DuplicateGroupKind"
+          },
+          "qualities": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateReviewQualityDto"
+            },
+            "type": "array"
+          },
+          "suggestedKeepAssetIds": {
+            "description": "The suggested keeper, from resolution, format and original provenance. Never set for a burst",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "totalBytes": {
+            "description": "Size of the originals shown, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assets",
+          "blockedReason",
+          "duplicateId",
+          "editable",
+          "hiddenMemberCount",
+          "kind",
+          "qualities",
+          "suggestedKeepAssetIds",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
+      "DuplicateReviewQualityDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Evidence for or against keeping this copy",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateQualityReason"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "reasons"
         ],
         "type": "object"
       },
@@ -10241,7 +10533,9 @@
           "refresh-metadata",
           "refresh-encoded",
           "refresh-faces",
-          "relink-live-photo"
+          "relink-live-photo",
+          "resolve-duplicates",
+          "undo-duplicates"
         ],
         "type": "string"
       },
@@ -10343,6 +10637,14 @@
           "description": {
             "maxLength": 10000,
             "type": "string"
+          },
+          "duplicateGroups": {
+            "description": "Duplicate review decisions, one complete group each (FL-61)",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationDuplicateGroupDto"
+            },
+            "maxItems": 5000,
+            "type": "array"
           },
           "latitude": {
             "maximum": 90,
@@ -10943,6 +11245,53 @@
           "status",
           "totalUnits",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaOperationDuplicateGroupDto": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/DuplicateDecisionKind"
+          },
+          "decisionId": {
+            "description": "For `undo-duplicates`: the recorded decision to reverse",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "duplicateId": {
+            "description": "Duplicate group ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "keepAssetIds": {
+            "description": "Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "type": "array"
+          },
+          "memberIds": {
+            "description": "Every photo of the group, as reviewed",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "minItems": 2,
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "duplicateId",
+          "keepAssetIds",
+          "memberIds"
         ],
         "type": "object"
       },
@@ -37108,6 +37457,52 @@
         "x-immich-state": "Stable"
       }
     },
+    "/duplicates/decisions": {
+      "get": {
+        "description": "Your most recent duplicate decision jobs, which can be undone while nothing has changed since, and the decision jobs still running.",
+        "operationId": "getDuplicateDecisions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateDecisionHistoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve recent duplicate decisions",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "duplicate.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/duplicates/resolve": {
       "post": {
         "description": "Resolve duplicate groups by synchronizing metadata across assets and deleting/trashing duplicates.",
@@ -37164,6 +37559,55 @@
           }
         ],
         "x-immich-permission": "duplicate.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/duplicates/review": {
+      "get": {
+        "description": "Your duplicate groups, each read as a whole: whether it holds copies of one photo or frames of a burst, the evidence behind the suggested keeper, and whether this session may decide it. A group with photos this session does not see, or with another account’s photo, is listed but cannot be decided.",
+        "operationId": "getDuplicateReview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DuplicateReviewGroupDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the duplicate review",
+        "tags": [
+          "Duplicates"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "duplicate.read",
         "x-immich-state": "Alpha"
       }
     },

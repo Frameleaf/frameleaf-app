@@ -15,6 +15,8 @@
   import { browser } from '$app/environment';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
@@ -173,6 +175,8 @@
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
   const showInfoPanel = $derived(session.layout === 'work' && !mediaQueryManager.maxMd);
   const selecting = $derived(session.selection.length > 0);
+  /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
+  const comparing = $derived(session.state.view === 'compare');
 
   $effect(() => {
     if (options) {
@@ -450,6 +454,11 @@
     if (!shortcut) {
       return;
     }
+    // FL-61: while Compare is open only Escape (back to the results) reaches the library; selecting,
+    // grouping or acting on the selection underneath would change what is being compared
+    if (comparing && shortcut.id !== 'close') {
+      return;
+    }
     switch (shortcut.id) {
       case 'help': {
         event.preventDefault();
@@ -475,6 +484,11 @@
         return;
       }
       case 'close': {
+        if (comparing) {
+          event.preventDefault();
+          session.patchView({ view: 'grid' });
+          return;
+        }
         if (session.openAssetId) {
           event.preventDefault();
           session.close();
@@ -531,11 +545,20 @@
           {@render children?.()}
           <ResultsToolbar {session} {onOpenFilterPanel}>
             {@render toolbar?.()}
+            {#if session.selection.length >= 2 && !snapshot && !selectionMode}
+              <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
+            {/if}
           </ResultsToolbar>
         {/snippet}
       </LibraryTimeline>
 
       <ShowMore {session} {onShowMore} {loading} />
+
+      {#if comparing}
+        <div class="fl-library-compare">
+          <LibraryCompare selection={session.selection} onDone={() => session.patchView({ view: 'grid' })} />
+        </div>
+      {/if}
     </div>
 
     {#if showInfoPanel}
@@ -590,11 +613,19 @@
     min-height: 0;
   }
   .fl-library-main {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
+  }
+  .fl-library-compare {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    overflow-y: auto;
+    background: var(--fl-canvas);
   }
   .fl-library-panel {
     flex: 0 0 320px;

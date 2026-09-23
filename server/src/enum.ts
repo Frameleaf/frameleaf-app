@@ -1004,12 +1004,76 @@ export enum MediaOperationBulkAction {
   RefreshFaces = 'refresh-faces',
   /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
   RelinkLivePhoto = 'relink-live-photo',
+  /** Apply the owner's duplicate review decisions, one complete group at a time (FL-61). */
+  ResolveDuplicates = 'resolve-duplicates',
+  /** Reverse earlier duplicate review decisions that nothing has changed since (FL-61). */
+  UndoDuplicates = 'undo-duplicates',
 }
 
 export const MediaOperationBulkActionSchema = z
   .enum(MediaOperationBulkAction)
   .describe('Bulk action a durable media operation applies')
   .meta({ id: 'MediaOperationBulkAction' });
+
+/**
+ * What the owner decided for one duplicate group (FL-61).
+ *
+ * - `keepers`: keep the chosen photos and move every other photo of the group to the trash.
+ * - `keep-all`: every photo stays; the group is dismissed.
+ * - `stack`: every photo stays, stacked together with the first keeper (or the first photo) on top.
+ */
+export enum DuplicateDecisionKind {
+  Keepers = 'keepers',
+  KeepAll = 'keep-all',
+  Stack = 'stack',
+}
+
+export const DuplicateDecisionKindSchema = z
+  .enum(DuplicateDecisionKind)
+  .describe('What the owner decided for a duplicate group')
+  .meta({ id: 'DuplicateDecisionKind' });
+
+/**
+ * How a duplicate group reads (FL-61). A `burst` is several moments captured in quick succession, not
+ * copies of one photo, so its frames are never suggested for the trash.
+ */
+export enum DuplicateGroupKind {
+  Duplicates = 'duplicates',
+  Burst = 'burst',
+}
+
+export const DuplicateGroupKindSchema = z
+  .enum(DuplicateGroupKind)
+  .describe('Whether a duplicate group holds copies of one photo or frames of a burst')
+  .meta({ id: 'DuplicateGroupKind' });
+
+/** Why a duplicate group cannot be decided from this session (FL-61). */
+export enum DuplicateGroupBlock {
+  /** Some photos of the group are not shown to this session (suppressed while not unlocked). */
+  HiddenMembers = 'hidden-members',
+  /** The group holds photos another account owns: only the owner of every photo may decide. */
+  OtherOwner = 'other-owner',
+}
+
+export const DuplicateGroupBlockSchema = z
+  .enum(DuplicateGroupBlock)
+  .describe('Why a duplicate group cannot be decided from this session')
+  .meta({ id: 'DuplicateGroupBlock' });
+
+/** The evidence behind a keeper suggestion, per photo (FL-61). Translated by the client. */
+export enum DuplicateQualityReason {
+  OriginalFormat = 'original-format',
+  LargestFile = 'largest-file',
+  HighestResolution = 'highest-resolution',
+  MostMetadata = 'most-metadata',
+  CompressedCopy = 'compressed-copy',
+  LowerResolution = 'lower-resolution',
+}
+
+export const DuplicateQualityReasonSchema = z
+  .enum(DuplicateQualityReason)
+  .describe('Evidence behind a duplicate keeper suggestion')
+  .meta({ id: 'DuplicateQualityReason' });
 
 /** The outcome recorded for one item of a bulk operation. */
 export enum MediaOperationItemStatus {
