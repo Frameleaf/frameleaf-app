@@ -11,6 +11,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
   let db: Kysely<DB>;
   let repository: ICloudMetadataRepository;
   let service: ICloudMetadataService;
+  // the lock follow-up (FL-34) runs in AssetService on this event
+  const events = { emit: vi.fn() };
   beforeAll(async () => {
     db = await getKyselyDB();
     await sql`DROP SCHEMA public CASCADE`.execute(db);
@@ -52,7 +54,7 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     }
     await migration.up(db);
     repository = new ICloudMetadataRepository(db);
-    service = new ICloudMetadataService(repository);
+    service = new ICloudMetadataService(repository, events as never);
   });
   afterAll(async () => {
     await db?.destroy();
@@ -108,6 +110,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       visibility: 'locked',
       fileCreatedAt: new Date('2020-03-04T12:34:56Z'),
     });
+    // the lock's follow-up (new face thumbnails, replaced profile pictures) runs once it commits (FL-34)
+    expect(events.emit).toHaveBeenCalledWith('AssetLockAll', { assetIds: [ctx.assetId], userId: ctx.ownerId });
     expect(
       await first(
         sql`SELECT "dateTimeOriginal","lockedProperties",description,latitude,longitude,"timeZone" FROM asset_exif WHERE "assetId"=${ctx.assetId}::uuid`,
