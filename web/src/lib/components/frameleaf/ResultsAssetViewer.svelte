@@ -17,8 +17,9 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { AssetResponseDto } from '@immich/sdk';
+  import type { AlbumResponseDto, AssetResponseDto } from '@immich/sdk';
   import { goto } from '$app/navigation';
+  import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -30,11 +31,20 @@
     onRemove,
     /** Where to go when the list runs out. */
     emptyRoute = Route.photos(),
+    /** The album or shared space the list belongs to, for likes, comments and album actions. */
+    album,
+    /** Whether the album has other members, so the viewer offers its conversation. */
+    isShared = false,
+    /** What the viewer's activity side panel shows for the open item (FL-55 shared spaces). */
+    activityPanel,
   }: {
     assets: AssetResponseDto[];
     onAssetChange?: (asset: AssetResponseDto) => void;
     onRemove?: (id: string) => void;
     emptyRoute?: string;
+    album?: AlbumResponseDto;
+    isShared?: boolean;
+    activityPanel?: Snippet<[AssetResponseDto]>;
   } = $props();
 
   const filmstripAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
@@ -63,7 +73,9 @@
     switch (action.type) {
       case AssetAction.ARCHIVE:
       case AssetAction.DELETE:
-      case AssetAction.TRASH: {
+      case AssetAction.TRASH:
+      // An item moved to Locked leaves every list but Locked's own.
+      case AssetAction.SET_VISIBILITY_LOCKED: {
         const nextAsset = cursor.nextAsset ?? cursor.previousAsset;
         onRemove?.(action.asset.id);
         if (assets.length <= 1) {
@@ -98,6 +110,9 @@
           handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
         }}
         {filmstripAssets}
+        {album}
+        {isShared}
+        {activityPanel}
       />
     {/await}
   </Portal>

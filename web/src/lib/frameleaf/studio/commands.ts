@@ -1110,9 +1110,15 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     prototypeSource: 'beyond the prototype: procedural motion modifiers',
   }),
   define({
+    /**
+     * Not a graph change, for all three review rows: FL-89 stores comments beside the graph,
+     * against the revision the reviewer was looking at. A reviewer holds no lease and may be a
+     * revision behind, and neither may stop them commenting. Not undoable either: a comment is
+     * a shared record other people may already have read, removed explicitly, not by undo.
+     */
     id: 'review.add',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     owner: 'FL-94',
     prototypeSource: 'addReviewComment',
@@ -1120,7 +1126,7 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   define({
     id: 'review.remove',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     owner: 'FL-94',
     prototypeSource: 'removeReviewComment',
@@ -1128,7 +1134,7 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
   define({
     id: 'review.update',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     owner: 'FL-94',
     prototypeSource: 'updateReviewComment',

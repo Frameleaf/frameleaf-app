@@ -11,6 +11,7 @@ import {
   studioPreviewTimeAtFrame,
   studioPreviewTimeKey,
   toPreviewTimeWire,
+  unsavedStudioPreviewView,
   type StudioPreviewFrameView,
   type StudioPreviewIntent,
   type StudioPreviewRecord,
@@ -20,7 +21,7 @@ import {
 
 const intent = (overrides: Partial<StudioPreviewIntent> = {}): StudioPreviewIntent => ({
   projectId: 'project-1',
-  revisionDigest: 'rev-a',
+  revision: 1,
   time: rational(1001, 30_000),
   quality: 'standard',
   viewportWidth: 1920,
@@ -30,7 +31,7 @@ const intent = (overrides: Partial<StudioPreviewIntent> = {}): StudioPreviewInte
 
 const record = (overrides: Partial<StudioPreviewRecord> = {}): StudioPreviewRecord => ({
   id: 'preview-1',
-  revisionDigest: 'rev-a',
+  revision: 1,
   status: 'ready',
   etag: '"rev-rev-a-abc"',
   framePts: '3003',
@@ -44,7 +45,7 @@ const transportError = (failure: StudioPreviewTransportFailure) => Object.assign
 
 const frameView = (overrides: Partial<StudioPreviewFrameView> = {}): StudioPreviewFrameView => ({
   previewId: 'preview-1',
-  revisionDigest: 'rev-a',
+  revision: 1,
   time: rational(1001, 30_000),
   quality: 'standard',
   objectUrl: 'blob:a',
@@ -59,8 +60,8 @@ const stubTransport = (overrides: Partial<StudioPreviewTransport> = {}): StudioP
   let counter = 0;
   return {
     request: vi.fn(async (asked: StudioPreviewIntent) => ({
-      preview: record({ id: `preview-${++counter}`, revisionDigest: asked.revisionDigest }),
-      currentRevisionDigest: asked.revisionDigest,
+      preview: record({ id: `preview-${++counter}`, revision: asked.revision }),
+      currentRevision: asked.revision,
       supersededPreviewIds: [],
     })),
     poll: vi.fn(async () => record()),
@@ -98,7 +99,7 @@ describe('preview identity', () => {
 
   it.each([
     ['project', intent({ projectId: 'project-2' })],
-    ['revision', intent({ revisionDigest: 'rev-b' })],
+    ['revision', intent({ revision: 2 })],
     ['time', intent({ time: rational(1002, 30_000) })],
     ['quality', intent({ quality: 'full' as const })],
     ['viewport', intent({ viewportWidth: 1280 })],
@@ -119,24 +120,33 @@ describe('studioPreviewMessageKey', () => {
     expect(studioPreviewMessageKey('stale')).toBe('frameleaf_studio_preview_stale');
     expect(studioPreviewMessageKey('unavailable')).toBe('frameleaf_studio_preview_unavailable');
   });
+
+  it('says an unsaved draft has nothing to preview rather than that a render failed', () => {
+    const view = unsavedStudioPreviewView();
+
+    expect(view.phase).toBe('unavailable');
+    expect(view.messageKey).toBe('frameleaf_studio_preview_unsaved');
+    expect(view.frame).toBeNull();
+    expect(view.currentRevision).toBeNull();
+  });
 });
 
 describe('isStudioPreviewAnswerCurrent', () => {
   it('accepts an answer for the current revision and seek', () => {
     expect(
-      isStudioPreviewAnswerCurrent({ revisionDigest: 'rev-a', seekGeneration: 3 }, { revisionDigest: 'rev-a', seekGeneration: 3 }),
+      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 1, seekGeneration: 3 }),
     ).toBe(true);
   });
 
   it('discards an answer from an older seek', () => {
     expect(
-      isStudioPreviewAnswerCurrent({ revisionDigest: 'rev-a', seekGeneration: 2 }, { revisionDigest: 'rev-a', seekGeneration: 3 }),
+      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 2 }, { revision: 1, seekGeneration: 3 }),
     ).toBe(false);
   });
 
   it('discards an answer from a superseded revision even at the current seek', () => {
     expect(
-      isStudioPreviewAnswerCurrent({ revisionDigest: 'rev-a', seekGeneration: 3 }, { revisionDigest: 'rev-b', seekGeneration: 3 }),
+      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 2, seekGeneration: 3 }),
     ).toBe(false);
   });
 });
@@ -153,7 +163,7 @@ describe('StudioPreviewCache', () => {
     const cache = new StudioPreviewCache({ release: vi.fn() });
     cache.set(intent(), frameView());
 
-    expect(cache.get(intent({ revisionDigest: 'rev-b' }))).toBeUndefined();
+    expect(cache.get(intent({ revision: 2 }))).toBeUndefined();
   });
 
   it('releases a whole revision in one step', () => {
@@ -162,7 +172,7 @@ describe('StudioPreviewCache', () => {
     cache.set(intent(), frameView({ objectUrl: 'blob:a' }));
     cache.set(intent({ time: rational(2) }), frameView({ objectUrl: 'blob:b' }));
 
-    cache.dropRevision('rev-a');
+    cache.dropRevision(1);
 
     expect(release.mock.calls.map(([url]) => url).sort()).toEqual(['blob:a', 'blob:b']);
     expect(cache.size).toBe(0);
@@ -174,7 +184,7 @@ describe('StudioPreviewCache', () => {
     const cache = new StudioPreviewCache({ release });
     cache.set(intent(), frameView({ objectUrl: 'blob:onscreen' }));
 
-    cache.dropRevision('rev-a', new Set(['blob:onscreen']));
+    cache.dropRevision(1, new Set(['blob:onscreen']));
 
     expect(release).not.toHaveBeenCalled();
   });
@@ -201,11 +211,11 @@ describe('StudioPreviewCache', () => {
     const release = vi.fn();
     const cache = new StudioPreviewCache({ release });
     cache.set(intent(), frameView({ objectUrl: 'blob:a' }));
-    cache.set(intent({ revisionDigest: 'rev-b' }), frameView({ revisionDigest: 'rev-b', objectUrl: 'blob:b' }));
+    cache.set(intent({ revision: 2 }), frameView({ revision: 2, objectUrl: 'blob:b' }));
 
-    cache.keepOnly('rev-b');
+    cache.keepOnly(2);
 
-    expect(cache.revisions()).toEqual(['rev-b']);
+    expect(cache.revisions()).toEqual([2]);
     expect(release).toHaveBeenCalledWith('blob:a');
   });
 });
@@ -256,8 +266,8 @@ describe('createStudioPreviewClient', () => {
           });
         }
         return {
-          preview: record({ id: `preview-${asked.time.num}`, revisionDigest: asked.revisionDigest }),
-          currentRevisionDigest: asked.revisionDigest,
+          preview: record({ id: `preview-${asked.time.num}`, revision: asked.revision }),
+          currentRevision: asked.revision,
           supersededPreviewIds: [],
         };
       }),
@@ -280,7 +290,7 @@ describe('createStudioPreviewClient', () => {
     const transport = stubTransport({
       request: vi.fn(async () => ({
         preview: record(),
-        currentRevisionDigest: 'rev-b',
+        currentRevision: 2,
         supersededPreviewIds: [],
       })),
     });
@@ -291,14 +301,14 @@ describe('createStudioPreviewClient', () => {
 
     expect(client.view().phase).toBe('stale');
     expect(client.view().frame).toBeNull();
-    expect(client.view().currentRevisionDigest).toBe('rev-b');
+    expect(client.view().currentRevision).toBe(2);
     expect(transport.fetchFrame).not.toHaveBeenCalled();
   });
 
-  it('turns a stale-revision refusal into the stale state with the current digest', async () => {
+  it('turns a stale-revision refusal into the stale state with the current revision', async () => {
     const transport = stubTransport({
       request: vi.fn(async () => {
-        throw transportError({ kind: 'stale-revision', currentRevisionDigest: 'rev-b' });
+        throw transportError({ kind: 'stale-revision', currentRevision: 2 });
       }),
     });
     const client = createStudioPreviewClient(clientOptions(transport));
@@ -307,7 +317,7 @@ describe('createStudioPreviewClient', () => {
     await client.idle();
 
     expect(client.view().phase).toBe('stale');
-    expect(client.view().currentRevisionDigest).toBe('rev-b');
+    expect(client.view().currentRevision).toBe(2);
   });
 
   it('demotes the frame on screen to a labelled stale frame rather than dropping it silently', async () => {
@@ -316,7 +326,7 @@ describe('createStudioPreviewClient', () => {
 
     client.request(intent());
     await client.idle();
-    client.revisionAdvanced('rev-b');
+    client.revisionAdvanced(2);
 
     const view = client.view();
     expect(view.phase).toBe('stale');
@@ -331,17 +341,86 @@ describe('createStudioPreviewClient', () => {
 
     client.request(intent());
     await client.idle();
-    client.revisionAdvanced('rev-b');
+    client.revisionAdvanced(2);
 
     // Still alive while it is the thing on screen.
     expect(release).not.toHaveBeenCalledWith('blob:preview-1');
 
-    client.request(intent({ revisionDigest: 'rev-b' }));
+    client.request(intent({ revision: 2 }));
     await client.idle();
 
     expect(client.view().phase).toBe('ready');
     expect(client.view().staleFrame).toBeNull();
     expect(release).toHaveBeenCalledWith('blob:preview-1');
+  });
+
+  it('does not announce a stale picture when the revision advances before anything was shown', async () => {
+    const transport = stubTransport();
+    const client = createStudioPreviewClient(clientOptions(transport));
+
+    client.revisionAdvanced(3);
+
+    expect(client.view().phase).toBe('idle');
+    expect(client.view().messageKey).toBeNull();
+    expect(client.view().currentRevision).toBe(3);
+  });
+
+  it('neither paints nor caches a frame that finishes after the stored revision advanced', async () => {
+    const release = vi.fn();
+    let finishRequest: (() => void) | undefined;
+    const transport = stubTransport({
+      request: vi.fn(async (asked: StudioPreviewIntent) => {
+        await new Promise<void>((resolve) => {
+          finishRequest = resolve;
+        });
+        return {
+          preview: record({ id: 'preview-late', revision: asked.revision, status: 'pending' }),
+          currentRevision: asked.revision,
+          supersededPreviewIds: [],
+        };
+      }),
+    });
+    const client = createStudioPreviewClient(clientOptions(transport, release));
+
+    client.request(intent({ revision: 1 }));
+    // Autosave stored revision 2 while revision 1's frame was still being asked for.
+    client.revisionAdvanced(2);
+    finishRequest?.();
+    await client.idle();
+
+    expect(client.view().phase).toBe('stale');
+    expect(client.view().frame).toBeNull();
+    expect(transport.fetchFrame).not.toHaveBeenCalled();
+    // The server-side render is released rather than left running for a graph nobody sees.
+    expect(transport.cancel).toHaveBeenCalledWith('preview-late');
+  });
+
+  it('drops a seek still queued for the old revision when the revision advances', async () => {
+    let finishFirst: (() => void) | undefined;
+    const transport = stubTransport({
+      request: vi.fn(async (asked: StudioPreviewIntent) => {
+        if (!finishFirst) {
+          await new Promise<void>((resolve) => {
+            finishFirst = resolve;
+          });
+        }
+        return {
+          preview: record({ id: `preview-${asked.time.num}`, revision: asked.revision }),
+          currentRevision: asked.revision,
+          supersededPreviewIds: [],
+        };
+      }),
+    });
+    const client = createStudioPreviewClient(clientOptions(transport));
+
+    client.request(intent({ time: rational(1) }));
+    client.request(intent({ time: rational(2) }));
+    client.revisionAdvanced(2);
+    finishFirst?.();
+    await client.idle();
+
+    // Only the first, already in flight, reached the server; the queued seek was dropped.
+    expect(transport.request).toHaveBeenCalledTimes(1);
   });
 
   it('drops every cached frame of a revision that is superseded', async () => {
@@ -350,11 +429,11 @@ describe('createStudioPreviewClient', () => {
 
     client.request(intent());
     await client.idle();
-    client.request(intent({ revisionDigest: 'rev-b' }));
+    client.request(intent({ revision: 2 }));
     await client.idle();
 
     // Asking for the old frame again must render, not hit the cache.
-    client.request(intent({ revisionDigest: 'rev-a' }));
+    client.request(intent({ revision: 1 }));
     await client.idle();
 
     expect(transport.request).toHaveBeenCalledTimes(3);
@@ -365,7 +444,7 @@ describe('createStudioPreviewClient', () => {
     const transport = stubTransport({
       request: vi.fn(async () => ({
         preview: record({ status: 'pending' }),
-        currentRevisionDigest: 'rev-a',
+        currentRevision: 1,
         supersededPreviewIds: [],
       })),
       poll: vi.fn(async () => {
@@ -386,7 +465,7 @@ describe('createStudioPreviewClient', () => {
     const transport = stubTransport({
       request: vi.fn(async () => ({
         preview: record({ status: 'rendering' }),
-        currentRevisionDigest: 'rev-a',
+        currentRevision: 1,
         supersededPreviewIds: [],
       })),
       poll: vi.fn(async () => record({ status: 'rendering' })),
@@ -404,7 +483,7 @@ describe('createStudioPreviewClient', () => {
     const transport = stubTransport({
       request: vi.fn(async () => ({
         preview: record({ status: 'failed', errorCode: 'worker_lost' }),
-        currentRevisionDigest: 'rev-a',
+        currentRevision: 1,
         supersededPreviewIds: [],
       })),
     });

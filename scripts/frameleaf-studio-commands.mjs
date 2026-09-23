@@ -1294,7 +1294,7 @@ export const catalogue = [
   {
     id: 'review.add',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -1307,7 +1307,7 @@ export const catalogue = [
   {
     id: 'review.remove',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -1320,7 +1320,7 @@ export const catalogue = [
   {
     id: 'review.update',
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',

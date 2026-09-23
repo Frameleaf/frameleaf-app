@@ -5,6 +5,7 @@ import { AppController } from 'src/controllers/app.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
@@ -26,6 +27,10 @@ import { MaintenanceController } from 'src/controllers/maintenance.controller.js
 import { MapController } from 'src/controllers/map.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
+import {
+  RenderWorkerAdminController,
+  RenderWorkerController,
+} from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
@@ -45,6 +50,7 @@ import { SharedLinkController } from 'src/controllers/shared-link.controller.js'
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
+import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
@@ -67,6 +73,7 @@ export const controllers = [
   AssetDevelopController,
   AssetFilesController,
   AssetMediaController,
+  AssetRestorationController,
   AuthController,
   AuthAdminController,
   BestPhotosController,
@@ -86,6 +93,8 @@ export const controllers = [
   MapController,
   MediaHealthController,
   MediaOperationController,
+  RenderWorkerAdminController,
+  RenderWorkerController,
   MemoryController,
   MlDestinationController,
   NotificationController,
@@ -105,6 +114,7 @@ export const controllers = [
   SharedSpaceController,
   StackController,
   StudioPreviewController,
+  StudioProjectController,
   SyncController,
   SystemConfigController,
   SystemMetadataController,

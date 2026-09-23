@@ -5658,6 +5658,567 @@
         ],
         "type": "object"
       },
+      "AssetRestorationDestinationDto": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "The server would admit this workload on this destination right now"
+          },
+          "consentGranted": {
+            "type": "boolean",
+            "description": "True when no consent is needed or an administrator recorded it"
+          },
+          "consentRequired": {
+            "type": "boolean"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/AssetRestorationEstimateDto"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealth"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "leavesNetwork": {
+            "type": "boolean",
+            "description": "Media sent to this destination leaves the network"
+          },
+          "name": {
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "nullable": true,
+            "description": "Why the destination cannot be chosen, or null"
+          },
+          "refusalDetail": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "consentGranted",
+          "consentRequired",
+          "estimate",
+          "health",
+          "id",
+          "kind",
+          "leavesNetwork",
+          "name",
+          "refusal",
+          "refusalDetail"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationEstimateDto": {
+        "properties": {
+          "bytesPerSecond": {
+            "type": "number",
+            "format": "double",
+            "description": "Measured upload throughput for this destination and workload, or null with no samples",
+            "nullable": true
+          },
+          "fullBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Approximate bytes the full render sends"
+          },
+          "fullSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Estimated full render time from measured throughput, or null when nothing is measured",
+            "nullable": true
+          },
+          "previewBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Approximate bytes the preview sends"
+          },
+          "previewSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Estimated preview time from measured throughput, or null when nothing is measured",
+            "nullable": true
+          },
+          "sampleCount": {
+            "type": "integer",
+            "description": "Successful requests the throughput was measured from"
+          },
+          "windowDays": {
+            "type": "integer",
+            "description": "Length of the measurement window"
+          }
+        },
+        "required": [
+          "bytesPerSecond",
+          "fullBytes",
+          "fullSeconds",
+          "previewBytes",
+          "previewSeconds",
+          "sampleCount",
+          "windowDays"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationFileKind": {
+        "description": "Which file of a restoration to fetch",
+        "enum": [
+          "before",
+          "after",
+          "result",
+          "result_preview"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationListResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "currentRestorationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The restoration the owner chose as the playback version; null means the original",
+            "nullable": true
+          },
+          "items": {
+            "description": "Every restoration of the asset, newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "currentRestorationId",
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationMode": {
+        "description": "Restoration model family",
+        "enum": [
+          "faithful",
+          "creative"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationOptionsDto": {
+        "properties": {
+          "adapterInstalled": {
+            "type": "boolean",
+            "description": "The server has a restoration adapter. False means every request will fail honestly."
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationDestinationDto"
+            },
+            "type": "array"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Video length; null for stills",
+            "nullable": true
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "outputHeight": {
+            "type": "integer",
+            "description": "Height the full render would produce after the 4K cap"
+          },
+          "outputWidth": {
+            "type": "integer",
+            "description": "Width the full render would produce after the 4K cap"
+          },
+          "previewSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Length of a video preview clip; null for stills",
+            "nullable": true
+          },
+          "sourceHeight": {
+            "type": "integer"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/AssetRestorationSourceType"
+          },
+          "sourceWidth": {
+            "type": "integer"
+          },
+          "upscale": {
+            "type": "integer"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "adapterInstalled",
+          "assetId",
+          "destinations",
+          "durationSeconds",
+          "mode",
+          "outputHeight",
+          "outputWidth",
+          "previewSeconds",
+          "sourceHeight",
+          "sourceType",
+          "sourceWidth",
+          "upscale",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationRegionDto": {
+        "properties": {
+          "h": {
+            "type": "number",
+            "format": "double",
+            "description": "Preview area height as a fraction of the frame",
+            "maximum": 1,
+            "minimum": 0.1
+          },
+          "startSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Video only: where the preview clip starts. Ignored for stills.",
+            "minimum": 0
+          },
+          "w": {
+            "type": "number",
+            "format": "double",
+            "description": "Preview area width as a fraction of the frame",
+            "maximum": 1,
+            "minimum": 0.1
+          },
+          "x": {
+            "type": "number",
+            "format": "double",
+            "description": "Left edge of the preview area as a fraction of the frame width",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "format": "double",
+            "description": "Top edge of the preview area as a fraction of the frame height",
+            "maximum": 1,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationRequestDto": {
+        "properties": {
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The processing destination this restoration runs on. Required; never inferred."
+          },
+          "keepGrain": {
+            "type": "boolean",
+            "description": "Preserve fine film grain instead of smoothing it",
+            "default": false
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "region": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetRestorationRegionDto"
+              }
+            ],
+            "default": {
+              "h": 0.5,
+              "w": 0.5,
+              "x": 0.25,
+              "y": 0.25
+            }
+          },
+          "upscale": {
+            "default": 2,
+            "description": "Upscale factor. Output is additionally capped at 4K.",
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "destinationId",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationResponseDto": {
+        "properties": {
+          "activeOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The job currently running for this restoration, for cancel and retry; null when idle",
+            "nullable": true
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The bound destination, or null once an administrator removed it",
+            "nullable": true
+          },
+          "destinationKind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetRestorationEstimateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "fullOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The durable job that renders the full result",
+            "nullable": true
+          },
+          "hasPreview": {
+            "type": "boolean",
+            "description": "Both preview files exist"
+          },
+          "hasResult": {
+            "type": "boolean",
+            "description": "The full-resolution result exists"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Restoration ID"
+          },
+          "isCurrent": {
+            "type": "boolean",
+            "description": "The owner chose this result as the asset’s playback version"
+          },
+          "keepGrain": {
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "modelName": {
+            "type": "string",
+            "description": "Model the adapter reported, for provenance",
+            "nullable": true
+          },
+          "modelVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "outputHeight": {
+            "type": "integer",
+            "nullable": true
+          },
+          "outputWidth": {
+            "type": "integer",
+            "nullable": true
+          },
+          "previewExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "previewOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The durable job that rendered the preview",
+            "nullable": true
+          },
+          "previewReadyAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "previewRegion": {
+            "$ref": "#/components/schemas/AssetRestorationRegionDto"
+          },
+          "restoredAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "resultExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Per-asset sequence number, 1 for the first restoration",
+            "minimum": 1
+          },
+          "sourceDurationSeconds": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sourceHeight": {
+            "type": "integer"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/AssetRestorationSourceType"
+          },
+          "sourceWidth": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetRestorationStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upscale": {
+            "type": "integer"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "activeOperationId",
+          "assetId",
+          "createdAt",
+          "destinationId",
+          "destinationKind",
+          "destinationName",
+          "error",
+          "estimate",
+          "fullOperationId",
+          "hasPreview",
+          "hasResult",
+          "id",
+          "isCurrent",
+          "keepGrain",
+          "mode",
+          "modelName",
+          "modelVersion",
+          "outputHeight",
+          "outputWidth",
+          "previewExpiresAt",
+          "previewOperationId",
+          "previewReadyAt",
+          "previewRegion",
+          "restoredAt",
+          "resultExpiresAt",
+          "reviewedAt",
+          "revision",
+          "sourceDurationSeconds",
+          "sourceHeight",
+          "sourceType",
+          "sourceWidth",
+          "status",
+          "updatedAt",
+          "upscale",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationSelectDto": {
+        "properties": {
+          "restorationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Restored revision to use as the playback version; omitted, the original is used"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "AssetRestorationSourceType": {
+        "description": "Whether the restored source is a still image or a video",
+        "enum": [
+          "image",
+          "video"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationStatus": {
+        "description": "Lifecycle state of a restoration",
+        "enum": [
+          "preview_queued",
+          "preview_rendering",
+          "preview_ready",
+          "preview_failed",
+          "preview_cancelled",
+          "accepted",
+          "restoring",
+          "restored",
+          "restore_failed",
+          "restore_cancelled",
+          "rejected",
+          "discarded",
+          "expired"
+        ],
+        "type": "string"
+      },
       "AssetStackResponseDto": {
         "properties": {
           "assetCount": {
@@ -12063,6 +12624,7 @@
           "AlbumInvite",
           "AlbumUpdate",
           "ClusterGroupRequest",
+          "SharedSpaceMention",
           "Custom"
         ],
         "type": "string"
@@ -15252,6 +15814,939 @@
         ],
         "type": "string"
       },
+      "RenderWorkerAdmissionDto": {
+        "properties": {
+          "codecs": {
+            "description": "Encoder and decoder names the check verified",
+            "items": {
+              "maxLength": 60,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "conformanceReportedAt": {
+            "description": "When the conformance check ran",
+            "format": "date-time",
+            "type": "string"
+          },
+          "engineDigest": {
+            "description": "Digest of the engine and patches actually loaded",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enrolmentSecret": {
+            "minLength": 16,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "description": "GPU memory measured by the conformance check",
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "softwareRenderer": {
+            "description": "True when the renderer is a software or fallback device",
+            "type": "boolean"
+          },
+          "workerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conformanceReportedAt",
+          "engineDigest",
+          "enrolmentSecret",
+          "gpuMemoryBytes",
+          "softwareRenderer",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerAuditDto": {
+        "properties": {
+          "actorId": {
+            "description": "The administrator who acted, when one did",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": {},
+            "description": "Operator detail. Never a secret, never a path",
+            "nullable": true,
+            "type": "object"
+          },
+          "event": {
+            "$ref": "#/components/schemas/RenderWorkerAuditEvent"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "operationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "nullable": true
+          },
+          "workerId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actorId",
+          "createdAt",
+          "detail",
+          "event",
+          "id",
+          "operationId",
+          "reason",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerAuditEvent": {
+        "description": "Render worker audit event",
+        "enum": [
+          "enrolled",
+          "admitted",
+          "refused",
+          "claim_refused",
+          "limit_exceeded",
+          "revoked",
+          "updated"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerCancelAckDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "released": {
+            "description": "True when remote resources are confirmed gone",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimToken",
+          "released"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCheckpointCompleteDto": {
+        "properties": {
+          "chunkKey": {
+            "description": "Must match the planned chunk; a re-planned chunk cannot be completed",
+            "minLength": 1,
+            "type": "string"
+          },
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputChecksum": {
+            "pattern": "^[\\da-f]+$",
+            "type": "string"
+          },
+          "outputPath": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey",
+          "claimToken",
+          "outputChecksum",
+          "outputPath",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCheckpointPlanDto": {
+        "properties": {
+          "chunkKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "configDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "endTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "historyDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "prerollTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "requiresSequentialContext": {
+            "type": "boolean"
+          },
+          "seed": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "timebase": {
+            "pattern": "^\\d+\\/\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey",
+          "claimToken",
+          "configDigest",
+          "endTicks",
+          "historyDigest",
+          "inputDigest",
+          "seed",
+          "sequence",
+          "startTicks",
+          "timebase"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimDto": {
+        "properties": {
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationCheckpointDto"
+            },
+            "type": "array"
+          },
+          "claimToken": {
+            "description": "Required on every write to this operation",
+            "format": "uuid",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/RenderWorkerInputGrantDto"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "leaseMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/RenderWorkerClaimLimitsDto"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "revisionId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "snapshot": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "attempt",
+          "checkpoints",
+          "claimToken",
+          "inputs",
+          "kind",
+          "leaseMs",
+          "limits",
+          "operationId",
+          "projectId",
+          "revisionId",
+          "settings",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimLimitsDto": {
+        "properties": {
+          "maxOutputBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxOutputBytes",
+          "maxWallClockMs"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimRequestDto": {
+        "properties": {
+          "kinds": {
+            "description": "Narrow the claim to these kinds",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RenderWorkerCompleteDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "resultAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "resultAssetId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCreateDto": {
+        "properties": {
+          "conformanceMaxAgeMs": {
+            "maximum": 9007199254740991,
+            "minimum": 60000,
+            "type": "integer"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "engineDigest": {
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Operation kinds this worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "kinds",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCreateResponseDto": {
+        "properties": {
+          "enrolmentSecret": {
+            "description": "Shown once. Give it to the worker; the server keeps only its hash",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/RenderWorkerDto"
+          }
+        },
+        "required": [
+          "enrolmentSecret",
+          "worker"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerDto": {
+        "properties": {
+          "activeOperations": {
+            "description": "Operations the worker currently holds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "conformanceMaxAgeMs": {
+            "description": "Oldest conformance evidence admission accepts, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "engineDigest": {
+            "description": "Engine and patch digest the worker must keep reporting",
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "description": "GPU memory the worker was qualified with, in bytes",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Render worker ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Operation kinds this worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "lastAdmittedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "maxConcurrentOperations": {
+            "description": "Operations this worker may hold at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "description": "Most output bytes one operation may produce here",
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "description": "Longest one operation may run here, in milliseconds",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "What the administrator calls this worker",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RenderWorkerStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeOperations",
+          "conformanceMaxAgeMs",
+          "createdAt",
+          "destination",
+          "engineDigest",
+          "gpuMemoryBytes",
+          "id",
+          "kinds",
+          "lastAdmittedAt",
+          "lastSeenAt",
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs",
+          "name",
+          "revokedAt",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerFailDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "error": {
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "errorCode": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "error",
+          "errorCode"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerHeartbeatDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputBytes": {
+            "description": "Total output bytes produced so far",
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerHeartbeatResponseDto": {
+        "properties": {
+          "cancelRequested": {
+            "description": "The owner asked to stop; acknowledge with cancel-ack",
+            "type": "boolean"
+          },
+          "leaseExtended": {
+            "type": "boolean"
+          },
+          "leaseMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Set when a limit stopped the operation",
+            "nullable": true
+          }
+        },
+        "required": [
+          "cancelRequested",
+          "leaseExtended",
+          "leaseMs",
+          "refusal"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerInputGrantDto": {
+        "properties": {
+          "checksum": {
+            "description": "Digest the manifest was resolved against, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "inputId": {
+            "description": "FL-90 resource key, or `source` for a single-asset workload",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Resource class: library-asset, edited-master, font, lut, …",
+            "type": "string"
+          },
+          "resourceId": {
+            "description": "Asset or resource id. Never a path",
+            "type": "string"
+          },
+          "url": {
+            "description": "Relative URL, valid for this claim only and only until expiresAt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "expiresAt",
+          "inputId",
+          "kind",
+          "resourceId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitDto": {
+        "properties": {
+          "maxConcurrentOperations": {
+            "description": "Operations one account may have claimed at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "type": "string"
+          },
+          "subject": {
+            "description": "`instance` for the default, otherwise a user ID",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs",
+          "subject",
+          "updatedAt",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitUpdateDto": {
+        "properties": {
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Omit or null for the instance default",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitsResponseDto": {
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/RenderWorkerLimitDto"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/RenderWorkerLimitDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "instance",
+          "users"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerProgressDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "processedUnits": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "rendering"
+            ],
+            "type": "string"
+          },
+          "totalUnits": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimToken",
+          "processedUnits",
+          "status",
+          "totalUnits"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerRefusalReason": {
+        "description": "Render worker refusal reason",
+        "enum": [
+          "invalid_credential",
+          "worker_revoked",
+          "session_expired",
+          "conformance_stale",
+          "conformance_replayed",
+          "engine_digest_mismatch",
+          "software_renderer",
+          "destination_mismatch",
+          "worker_mismatch",
+          "scope_exceeded",
+          "worker_concurrency_exceeded",
+          "user_concurrency_exceeded",
+          "gpu_memory_insufficient",
+          "wall_clock_exceeded",
+          "output_bytes_exceeded",
+          "destination_unavailable",
+          "manifest_incomplete"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerSessionDto": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "heartbeatIntervalMs": {
+            "description": "How often the worker should heartbeat a held claim",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "leaseMs": {
+            "description": "How long a claim lasts without a heartbeat",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "sessionToken": {
+            "description": "Present as the x-frameleaf-worker-session header on every worker call",
+            "type": "string"
+          },
+          "workerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "heartbeatIntervalMs",
+          "leaseMs",
+          "scopes",
+          "sessionToken",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerStatus": {
+        "description": "Render worker status",
+        "enum": [
+          "active",
+          "revoked"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerUpdateDto": {
+        "properties": {
+          "conformanceMaxAgeMs": {
+            "maximum": 9007199254740991,
+            "minimum": 60000,
+            "type": "integer"
+          },
+          "engineDigest": {
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RenderWorkerWriteResultDto": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "accepted",
+          "refusal"
+        ],
+        "type": "object"
+      },
       "ReverseGeocodingStateResponseDto": {
         "properties": {
           "lastImportFileName": {
@@ -16895,6 +18390,39 @@
         },
         "type": "object"
       },
+      "SharedSpaceActivityResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          },
+          "lastVisitedAt": {
+            "description": "When this member last marked the shared space seen; null if they never have",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "unreadCount": {
+            "description": "Events by other members since then that this member may see. Capped at 500.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore",
+          "lastVisitedAt",
+          "unreadCount"
+        ],
+        "type": "object"
+      },
       "SharedSpaceAlbumResponseDto": {
         "properties": {
           "albumName": {
@@ -16969,6 +18497,231 @@
           "albums"
         ],
         "type": "object"
+      },
+      "SharedSpaceCommentCreateDto": {
+        "properties": {
+          "assetId": {
+            "description": "The item to comment on. Left out, the comment is on the space itself.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "comment": {
+            "description": "The text. Mention a member with @{userId}; every mention must name a current member.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The item commented on; null for a comment on the space itself",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "canDelete": {
+            "description": "True when the caller may remove the comment",
+            "type": "boolean"
+          },
+          "canEdit": {
+            "description": "True when the caller may change the text",
+            "type": "boolean"
+          },
+          "comment": {
+            "description": "The text, with @{userId} mention tokens",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was written",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Comment ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mentions": {
+            "description": "Members named in the comment",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "description": "When it was last edited",
+            "format": "date-time",
+            "type": "string"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The author"
+          }
+        },
+        "required": [
+          "assetId",
+          "canDelete",
+          "canEdit",
+          "comment",
+          "createdAt",
+          "id",
+          "mentions",
+          "updatedAt",
+          "user"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentUpdateDto": {
+        "properties": {
+          "comment": {
+            "description": "The text. Mention a member with @{userId}; every mention must name a current member.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentsResponseDto": {
+        "properties": {
+          "comments": {
+            "description": "Oldest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceEventResponseDto": {
+        "properties": {
+          "activityId": {
+            "description": "The comment or like this event announces, if any",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "Who did it; null once that account is gone",
+            "nullable": true
+          },
+          "assetCount": {
+            "description": "How many of the items this event is about the reader may see",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "assetIds": {
+            "description": "The items this event is about that the reader may see and that are still in the shared space. Empty for a removal.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "description": "The comment text, for a comment event. Mentions are @{userId} tokens.",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mentions": {
+            "description": "Members named in the comment",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "description": "A linked album's or person's name as the space knew it, or the new role; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "targetUser": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The member a member event is about; null otherwise",
+            "nullable": true
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SharedSpaceEventType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "activityId",
+          "actor",
+          "assetCount",
+          "assetIds",
+          "comment",
+          "createdAt",
+          "id",
+          "mentions",
+          "subject",
+          "targetUser",
+          "type"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceEventType": {
+        "description": "Shared space event type",
+        "enum": [
+          "AssetsAdded",
+          "AssetsRemoved",
+          "AlbumLinked",
+          "AlbumUnlinked",
+          "PersonLinked",
+          "PersonUnlinked",
+          "MemberJoined",
+          "MemberLeft",
+          "MemberRemoved",
+          "MemberRoleChanged",
+          "Comment",
+          "Like"
+        ],
+        "type": "string"
       },
       "SharedSpaceMemberResponseDto": {
         "properties": {
@@ -18943,8 +20696,14 @@
             "format": "date-time",
             "type": "string"
           },
+          "revision": {
+            "description": "The stored project revision this frame was rendered for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "revisionDigest": {
-            "description": "The exact revision this frame is bound to",
+            "description": "Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved",
             "type": "string"
           },
           "seekGeneration": {
@@ -18985,6 +20744,7 @@
           "quality",
           "readyAt",
           "requestedAt",
+          "revision",
           "revisionDigest",
           "seekGeneration",
           "sizeInBytes",
@@ -19008,19 +20768,19 @@
       "StudioPreviewRequestDto": {
         "properties": {
           "projectId": {
-            "description": "Studio project the frame belongs to",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Studio project the frame belongs to"
           },
           "quality": {
             "$ref": "#/components/schemas/StudioPreviewQuality"
           },
-          "revisionDigest": {
-            "description": "Exact graph revision digest the frame is bound to; a superseded revision is refused",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
+          "revision": {
+            "description": "Stored project revision the frame is bound to; a superseded revision is refused",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
           },
           "seekGeneration": {
             "default": 0,
@@ -19045,7 +20805,7 @@
         "required": [
           "projectId",
           "quality",
-          "revisionDigest",
+          "revision",
           "time",
           "viewportHeight",
           "viewportWidth"
@@ -19054,9 +20814,11 @@
       },
       "StudioPreviewResponseDto": {
         "properties": {
-          "currentRevisionDigest": {
-            "description": "The revision the project is on now",
-            "type": "string"
+          "currentRevision": {
+            "description": "The stored revision the project is on now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "preview": {
             "$ref": "#/components/schemas/StudioPreviewDto"
@@ -19072,7 +20834,7 @@
           }
         },
         "required": [
-          "currentRevisionDigest",
+          "currentRevision",
           "preview",
           "supersededPreviewIds"
         ],
@@ -23196,6 +24958,856 @@
           "year"
         ],
         "type": "object"
+      },
+      "StudioCommandSummaryDto": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "description": "Command id to how many times it appeared",
+            "type": "object"
+          },
+          "total": {
+            "description": "Commands in the batch",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioCommentCreateDto": {
+        "properties": {
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioTimeDto"
+          }
+        },
+        "required": [
+          "revision",
+          "text",
+          "time"
+        ],
+        "type": "object"
+      },
+      "StudioCommentDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvedById": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The revision the reviewer was looking at",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioTimeDto"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "id",
+          "projectId",
+          "resolvedAt",
+          "resolvedById",
+          "revision",
+          "text",
+          "time",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StudioCommentListResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Oldest first",
+            "items": {
+              "$ref": "#/components/schemas/StudioCommentDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioCommentUpdateDto": {
+        "properties": {
+          "resolved": {
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioProjectAccess": {
+        "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
+        "enum": [
+          "owner",
+          "reviewer"
+        ],
+        "type": "string"
+      },
+      "StudioProjectCreateDto": {
+        "properties": {
+          "clientId": {
+            "description": "This editor instance; it receives the lease",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "description": "An initial document, saved as revision 1"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Idempotency key for the initial save",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "spaceId": {
+            "description": "Share the project with a shared space for review",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDetailDto": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/StudioProjectAccess"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Key-sorted SHA-256 of the head envelope; null when withheld",
+            "nullable": true,
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "nullable": true
+          },
+          "id": {
+            "description": "Studio project ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "The only account that may write",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectResourcesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "revision": {
+            "description": "Head revision number; 0 until the first save",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaceId": {
+            "description": "Shared space whose members may review the project",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "withheld": {
+            "description": "The graph was withheld because a source is unavailable to you",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "access",
+          "createdAt",
+          "digest",
+          "envelope",
+          "id",
+          "lease",
+          "name",
+          "ownerId",
+          "resources",
+          "revision",
+          "spaceId",
+          "updatedAt",
+          "withheld"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDiffDto": {
+        "properties": {
+          "added": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "byteDelta": {
+            "description": "Size change of the serialized graph",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "changed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "commands": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioCommandSummaryDto"
+              }
+            ],
+            "description": "Commands the saves between the two revisions reported"
+          },
+          "from": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "identical": {
+            "description": "The two envelopes have the same digest",
+            "type": "boolean"
+          },
+          "paths": {
+            "description": "Changed graph paths, aggregated and capped",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "More paths changed than are listed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "added",
+          "byteDelta",
+          "changed",
+          "commands",
+          "from",
+          "identical",
+          "paths",
+          "removed",
+          "to",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDto": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/StudioProjectAccess"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Studio project ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "The only account that may write",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Head revision number; 0 until the first save",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaceId": {
+            "description": "Shared space whose members may review the project",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "createdAt",
+          "id",
+          "lease",
+          "name",
+          "ownerId",
+          "revision",
+          "spaceId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StudioProjectEnvelopeDto": {
+        "properties": {
+          "engine": {
+            "description": "The engine that produced the graph; `freecut`",
+            "type": "string"
+          },
+          "engineRevision": {
+            "description": "Pinned engine revision the editor was built from",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "graph": {
+            "additionalProperties": {},
+            "description": "Opaque engine document, stored and returned byte for byte",
+            "type": "object"
+          },
+          "schemaVersion": {
+            "description": "Envelope shape version; the server accepts exactly one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine",
+          "engineRevision",
+          "graph",
+          "schemaVersion"
+        ],
+        "type": "object"
+      },
+      "StudioProjectHistoryResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectRevisionDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectLeaseDto": {
+        "properties": {
+          "autosaveDebounceMs": {
+            "description": "Pause in editing after which the client saves",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "description": "When the current lease lapses",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "heldByAnother": {
+            "description": "A live lease belongs to another editor instance",
+            "type": "boolean"
+          },
+          "heldByYou": {
+            "description": "This client holds the write lease",
+            "type": "boolean"
+          },
+          "leaseMs": {
+            "description": "Lease length the server grants",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "renewMs": {
+            "description": "How often the holder should renew",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autosaveDebounceMs",
+          "expiresAt",
+          "heldByAnother",
+          "heldByYou",
+          "leaseMs",
+          "renewMs"
+        ],
+        "type": "object"
+      },
+      "StudioProjectLeaseRequestDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "takeover": {
+            "description": "Take a live lease away from another of your editor instances; never implicit",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clientId"
+        ],
+        "type": "object"
+      },
+      "StudioProjectListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Matching projects, before paging",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectResourcesDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When the resolution ran",
+            "format": "date-time",
+            "type": "string"
+          },
+          "complete": {
+            "description": "Every referenced source resolved for the acting account",
+            "type": "boolean"
+          },
+          "refusedCount": {
+            "description": "References that were refused for the acting account",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "complete",
+          "refusedCount"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRestoreDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "description": "The current head; the restore appends after it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The historical revision to bring back",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clientId",
+          "expectedRevision",
+          "requestKey",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRevisionDetailDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Null for a reviewer; the digest travels with the graph",
+            "nullable": true,
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "nullable": true
+          },
+          "graphBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectResourcesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "restoredFromRevision": {
+            "description": "Set when this revision restored an earlier one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          },
+          "withheld": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "digest",
+          "envelope",
+          "graphBytes",
+          "id",
+          "resources",
+          "restoredFromRevision",
+          "revision",
+          "summary",
+          "withheld"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRevisionDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Null for a reviewer; the digest travels with the graph",
+            "nullable": true,
+            "type": "string"
+          },
+          "graphBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "restoredFromRevision": {
+            "description": "Set when this revision restored an earlier one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "digest",
+          "graphBytes",
+          "id",
+          "restoredFromRevision",
+          "revision",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "StudioProjectSaveDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+          },
+          "expectedRevision": {
+            "description": "The head this document was built on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestKey": {
+            "description": "Stable per attempt; a retry carries the same key",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          }
+        },
+        "required": [
+          "clientId",
+          "envelope",
+          "expectedRevision",
+          "requestKey"
+        ],
+        "type": "object"
+      },
+      "StudioProjectSaveResponseDto": {
+        "properties": {
+          "digest": {
+            "description": "Digest of the head envelope",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "replayed": {
+            "description": "This request key was already accepted; the earlier result is returned",
+            "type": "boolean"
+          },
+          "revision": {
+            "description": "The head after this request",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revisionId": {
+            "description": "The revision row; null when nothing was written",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "unchanged": {
+            "description": "The document equals the head, so no revision was written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "digest",
+          "lease",
+          "replayed",
+          "revision",
+          "revisionId",
+          "unchanged"
+        ],
+        "type": "object"
+      },
+      "StudioProjectUpdateDto": {
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "spaceId": {
+            "description": "Set or clear the reviewing shared space",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioTimeDto": {
+        "properties": {
+          "den": {
+            "description": "Denominator",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "description": "Numerator; zero is the start of the sequence",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -24673,6 +27285,487 @@
           "Maintenance (admin)"
         ],
         "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers": {
+      "get": {
+        "description": "Every enrolled worker identity with its destination, scopes, ceilings and current load.",
+        "operationId": "listRenderWorkers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List render workers",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates a worker identity and returns its enrolment secret once. The server stores only a hash; the secret cannot be recovered later.",
+        "operationId": "createRenderWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerCreateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Enrol a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/audit": {
+      "get": {
+        "description": "Enrolments, admissions, refusals, limit breaches and revocations, newest first. Never a secret or a path.",
+        "operationId": "searchRenderWorkerAudit",
+        "parameters": [
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "workerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerAuditDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search the render worker audit trail",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/limits": {
+      "get": {
+        "description": "The instance default and every per-account ceiling on concurrent operations, wall-clock and output size.",
+        "operationId": "getRenderWorkerLimits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerLimitsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Sets the instance default when `userId` is omitted, otherwise the ceiling for one account.",
+        "operationId": "updateRenderWorkerLimits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerLimitUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerLimitDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/limits/{id}": {
+      "delete": {
+        "description": "The account falls back to the instance default.",
+        "operationId": "deleteRenderWorkerUserLimit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove an account’s render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/{id}": {
+      "delete": {
+        "description": "Revokes the identity and every session it holds. Claims it held expire into the recovery pass; the record is kept for the audit trail.",
+        "operationId": "revokeRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revoke a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "One worker identity with its current load.",
+        "operationId": "getRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Changes the name, scopes, required engine digest and ceilings. A revoked worker cannot be changed.",
+        "operationId": "updateRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a render worker",
+        "tags": [
+          "Render workers"
+        ],
         "x-immich-history": [
           {
             "version": "v3.0.0",
@@ -29144,6 +32237,549 @@
         ],
         "x-immich-permission": "asset.download",
         "x-immich-state": "Stable"
+      }
+    },
+    "/assets/{id}/restorations": {
+      "get": {
+        "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
+        "operationId": "getAssetRestorations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List restorations of an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.",
+        "operationId": "requestAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Request a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/current": {
+      "put": {
+        "description": "Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.",
+        "operationId": "setCurrentAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationSelectDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose the restoration used for playback",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/options": {
+      "get": {
+        "description": "The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.",
+        "operationId": "getAssetRestorationOptions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetRestorationMode"
+                }
+              ],
+              "default": "faithful"
+            }
+          },
+          {
+            "name": "upscale",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 2,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationOptionsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get restoration options for an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}": {
+      "delete": {
+        "description": "Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.",
+        "operationId": "discardAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discard a restoration",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/accept": {
+      "post": {
+        "description": "Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.",
+        "operationId": "acceptAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/file": {
+      "get": {
+        "description": "Streams the preview input, the restored preview, the full result or its playback rendition.",
+        "operationId": "viewAssetRestorationFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetRestorationFileKind"
+                }
+              ],
+              "default": "after"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a restoration file",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/reject": {
+      "post": {
+        "description": "Records the rejection. The preview files are kept briefly for comparison and then removed.",
+        "operationId": "rejectAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reject a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
       }
     },
     "/assets/{id}/thumbnail": {
@@ -38467,6 +42103,690 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/render-workers/admission": {
+      "post": {
+        "description": "Exchanges the enrolment secret and fresh conformance evidence for a scoped, expiring session credential. Refusals are audited and answered generically.",
+        "operationId": "admitRenderWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerAdmissionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerSessionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Admit a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/claims": {
+      "post": {
+        "description": "Returns the oldest queued operation this worker is admitted to run, with its claim token, checkpoints and short-lived input grants. Answers 204 when nothing is admissible.",
+        "operationId": "claimRenderOperation",
+        "parameters": [
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerClaimRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerClaimDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Claim the next admitted operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/cancel-ack": {
+      "post": {
+        "description": "The worker confirms it stopped. Only then does the operation become `cancelled`.",
+        "operationId": "acknowledgeRenderCancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCancelAckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Acknowledge a cancellation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/checkpoints": {
+      "post": {
+        "description": "Records a chunk and every digest that identifies it. Re-planning a sequence replaces its identity.",
+        "operationId": "planRenderCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCheckpointPlanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Plan a render checkpoint",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/checkpoints/{sequence}/complete": {
+      "post": {
+        "description": "Marks a planned chunk rendered. The chunk key must still match; a re-planned chunk cannot be completed.",
+        "operationId": "completeRenderCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sequence",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCheckpointCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Complete a render checkpoint",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/complete": {
+      "post": {
+        "description": "Publishes a validated result under the same claim. A previous valid result is kept until this succeeds.",
+        "operationId": "completeRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Complete a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/fail": {
+      "post": {
+        "description": "Records a stable error code and operator detail. A finished operation is not reopened.",
+        "operationId": "failRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerFailDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Fail a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/heartbeat": {
+      "post": {
+        "description": "Extends the lease, enforces the wall-clock and output ceilings and reports whether the owner asked to cancel.",
+        "operationId": "heartbeatRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerHeartbeatDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerHeartbeatResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Heartbeat a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/inputs/{grant}": {
+      "get": {
+        "description": "Streams one input under a grant issued with the claim. The grant is bound to this operation, this claim and this session, and owner access is re-checked on every read.",
+        "operationId": "readRenderOperationInput",
+        "parameters": [
+          {
+            "name": "grant",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maxLength": 8192,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Read an operation input",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/progress": {
+      "post": {
+        "description": "Counted units only; the percentage is derived on the server.",
+        "operationId": "reportRenderOperationProgress",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerProgressDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Report progress on a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/validate": {
+      "post": {
+        "description": "Moves the operation to `validating`. Nothing is published until `complete`.",
+        "operationId": "validateRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Begin validating a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/runpod/backfill": {
       "post": {
         "description": "Queues smart-search, face detection, duplicates, OCR, image description, and NSFW detection.",
@@ -42139,6 +46459,80 @@
         "x-immich-permission": "albumUser.update"
       }
     },
+    "/shared-spaces/{id}/activity": {
+      "get": {
+        "description": "The shared space’s activity feed, newest first: items added and removed, albums and people linked and unlinked, members joining, leaving, being removed or changing role, comments and likes — by every member. Only current members may read it. Every event is narrowed to the caller before it is sent: an item the caller cannot see (Locked, marked sensitive, hidden by their own settings, or no longer in the space) is never named, and an event with nothing visible left is not sent at all, so nothing can be inferred from a count. `unreadCount` is the events by other members since the caller last marked the space seen, computed the same way. Page with `before` and `take`.",
+        "operationId": "getSharedSpaceActivity",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events before this moment, for paging",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "What happened in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/shared-spaces/{id}/albums": {
       "get": {
         "description": "The albums members have linked into the shared space, one level: a space links albums, never another space and never a collection. A link is a reference, not a move and not a share — the album keeps its owner, its members, its access rules and its place in its owner’s tree, and this response grants no access to it. The count and the tile picture come only from items that are in both the album and the space, with media marked sensitive and Locked media excluded.",
@@ -42309,6 +46703,260 @@
           }
         ],
         "x-immich-permission": "album.update"
+      }
+    },
+    "/shared-spaces/{id}/comments": {
+      "get": {
+        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.",
+        "operationId": "getSharedSpaceComments",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "assetId",
+            "required": false,
+            "in": "query",
+            "description": "Comments on this item. Left out, the comments on the space itself.",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List comments in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.read"
+      },
+      "post": {
+        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.",
+        "operationId": "createSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSpaceCommentCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Comment in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.create"
+      }
+    },
+    "/shared-spaces/{id}/comments/{commentId}": {
+      "delete": {
+        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.",
+        "operationId": "deleteSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "description": "The comment",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a shared space comment",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.delete"
+      },
+      "put": {
+        "description": "Change what a comment says. Only its author may. Mentions are re-read from the new text under the same rules, and members newly mentioned are notified.",
+        "operationId": "updateSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "description": "The comment",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSpaceCommentUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Edit a shared space comment",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.update"
       }
     },
     "/shared-spaces/{id}/invitation": {
@@ -43226,7 +47874,7 @@
     },
     "/studio/previews": {
       "post": {
-        "description": "Asks for one frame of a project at an exact revision, rational time, quality and viewport. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
+        "description": "Asks for one frame of a project's current stored revision at an exact rational time, quality and viewport. The server reads the graph from project storage and resolves its sources for the caller; a request naming a superseded revision is refused with the current one. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
         "operationId": "requestStudioPreview",
         "parameters": [],
         "requestBody": {
@@ -47053,6 +51701,1045 @@
         ],
         "x-immich-permission": "workflow.read"
       }
+    },
+    "/studio/projects": {
+      "get": {
+        "description": "Projects you own and projects shared with a space you belong to, most recently changed first.",
+        "operationId": "searchStudioProjects",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio projects",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates an empty project owned by you and hands the write lease to the given editor instance. An initial document, when given, is saved as revision 1.",
+        "operationId": "createStudioProject",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}": {
+      "get": {
+        "description": "The project with its head document. A reviewer receives the document only when every source it references is available to them; otherwise it is withheld.",
+        "operationId": "getStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Rename the project or set the shared space whose members may review it. Owner only.",
+        "operationId": "updateStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Removes the project, its history and its comments. Owner only. Finished jobs keep their lineage.",
+        "operationId": "deleteStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/comments": {
+      "get": {
+        "description": "Comments pinned to the timeline, oldest first.",
+        "operationId": "getStudioProjectComments",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio review comments",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Owner and reviewers may comment. The time is an exact fraction of seconds. No lease is needed.",
+        "operationId": "addStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCommentCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/comments/{commentId}": {
+      "put": {
+        "description": "The author edits the text; the author or the owner resolves or reopens it.",
+        "operationId": "updateStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCommentUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "The author or the project owner may remove a comment.",
+        "operationId": "removeStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/lease": {
+      "post": {
+        "description": "One editor instance writes at a time. The holder renews with the same call; a free or lapsed lease is taken; a live lease held elsewhere is refused with `409` unless `takeover` is set explicitly.",
+        "operationId": "acquireStudioProjectLease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectLeaseRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectLeaseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Acquire or renew the write lease",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/lease/release": {
+      "post": {
+        "description": "Gives the lease back so another editor instance can take it without waiting for it to lapse.",
+        "operationId": "releaseStudioProjectLease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectLeaseRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Release the write lease",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/restore": {
+      "post": {
+        "description": "Appends a new revision with the content of an earlier one. History is never rewritten; the restore is itself a revision.",
+        "operationId": "restoreStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions": {
+      "post": {
+        "description": "Autosave. Stores the complete document as the next revision when `expectedRevision` is the head and the caller holds the lease. The same `requestKey` with the same document replays the earlier result; an unchanged document writes nothing.",
+        "operationId": "saveStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Revisions newest first, without their documents.",
+        "operationId": "getStudioProjectHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio project history",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions/{revision}": {
+      "get": {
+        "description": "One historical revision with its document, under the same review rule as the head.",
+        "operationId": "getStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectRevisionDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions/{revision}/diff": {
+      "get": {
+        "description": "What changed between `against` and this revision, as graph paths and counts. No graph values are returned.",
+        "operationId": "diffStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "against",
+            "required": true,
+            "in": "query",
+            "description": "The earlier revision to compare with",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDiffDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Compare two Studio project revisions",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
     }
   },
   "servers": [
@@ -47190,6 +52877,10 @@
       "description": "Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed."
     },
     {
+      "name": "Render workers",
+      "description": "Render workers are the GPU processes that run Studio exports, restorations and edits. An administrator enrols a worker identity and sets its ceilings; the worker is admitted against conformance evidence, claims queued media operations one at a time and reads their inputs only through grants scoped to that claim."
+    },
+    {
       "name": "RunPod (admin)",
       "description": "Provision the Immich machine-learning container on RunPod cloud GPUs. The integration manages a single pod, transparently routes ML jobs to it, and stops it when idle to control cost."
     },
@@ -47260,6 +52951,10 @@
     {
       "name": "Shared spaces",
       "description": "A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first."
+    },
+    {
+      "name": "Studio projects",
+      "description": "A Studio project is an edit in progress: an opaque engine document stored as immutable revisions behind one writer lease, with a history that only appends, review comments pinned to exact timeline instants, and read-only review for members of a shared space the owner chose."
     }
   ]
 }
