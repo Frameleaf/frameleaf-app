@@ -223,7 +223,7 @@ export class SystemConfigDraftStore {
     for (const earlier of this.conflicts) {
       const theirs = get(latestConfig, earlier.path) as unknown;
       const mine = get(snapshot, earlier.path) as unknown;
-      if (!conflicts.some(({ path }) => path === earlier.path) && !isEqual(theirs, mine)) {
+      if (conflicts.every(({ path }) => path !== earlier.path) && !isEqual(theirs, mine)) {
         conflicts.push({ ...earlier, mine, theirs });
       }
     }
