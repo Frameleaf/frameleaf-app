@@ -290,6 +290,7 @@ export class AuthService extends BaseService {
       includeNsfw,
       tagIds: suppression.tagIds,
       personIds: suppression.personIds,
+      petIds: suppression.petIds,
       scope: suppression.scope,
     };
   }

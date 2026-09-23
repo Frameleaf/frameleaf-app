@@ -560,6 +560,7 @@ export class NotificationService extends BaseService {
       includeNsfw: isNsfwHidingEnabled(machineLearning),
       tagIds: suppression.tagIds,
       personIds: suppression.personIds,
+      petIds: suppression.petIds,
       scope: suppression.scope,
     };
   }

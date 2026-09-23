@@ -21240,6 +21240,13 @@
             },
             "type": "array"
           },
+          "petIds": {
+            "description": "Pet IDs to suppress from locked browsing sessions",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "scope": {
             "$ref": "#/components/schemas/SuppressionScope",
             "description": "Whether suppression applies only to owned assets or all visible assets"
@@ -21254,6 +21261,7 @@
         },
         "required": [
           "personIds",
+          "petIds",
           "scope",
           "tagIds"
         ],
@@ -21270,6 +21278,15 @@
         "properties": {
           "personIds": {
             "description": "Person IDs to suppress from locked browsing sessions",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "petIds": {
+            "description": "Pet IDs to suppress from locked browsing sessions",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",

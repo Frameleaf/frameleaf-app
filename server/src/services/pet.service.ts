@@ -20,6 +20,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { requireAccess } from 'src/utils/access.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   filterReviewedCandidates,
   normalizePetName,
@@ -51,7 +52,11 @@ export class PetService {
   // ------------------------------------------------------------------------- identity
 
   async getAll(auth: AuthDto, dto: PetSearchDto): Promise<PetResponseDto[]> {
-    const pets = await this.petRepository.getAll(auth.user.id, { withHidden: dto.withHidden ?? false });
+    // FL-58: suppressed pets, like suppressed people and tags, stay out of a session that is not unlocked
+    const pets = await this.petRepository.getAll(auth.user.id, {
+      withHidden: dto.withHidden ?? false,
+      ...getHiddenContentQueryOptions(auth),
+    });
     return pets.map((pet) => mapPet(pet));
   }
 

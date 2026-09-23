@@ -578,6 +578,7 @@ describe(SearchService.name, () => {
       mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
       mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
       mocks.person.getByName.mockResolvedValue([]);
+      mocks.search.searchPetsByName.mockResolvedValue([]);
     });
 
     it('should answer natural language searches with smart search and structured filters', async () => {
@@ -770,6 +771,103 @@ describe(SearchService.name, () => {
       expect(fallbackResult.warnings).toEqual([
         'People names are searched semantically until Ask Search can resolve names to person IDs.',
       ]);
+    });
+
+    it('should resolve a pet name into the caller’s own pet filter', async () => {
+      const petId = newUuid();
+      mocks.search.searchPetsByName.mockResolvedValue([{ id: petId, name: 'Biscuit' }]);
+
+      const result = await sut.askSearch(authStub.user1, { query: 'photos of biscuit in Banff' });
+
+      expect(result.warnings).toEqual([]);
+      expect(result.plan.filters).toEqual(expect.objectContaining({ petIds: [petId], city: 'Banff' }));
+      expect(result.plan.filters).toEqual(expect.not.objectContaining({ personIds: expect.anything() }));
+      expect(mocks.search.searchPetsByName).toHaveBeenCalledWith(authStub.user1.user.id, 'biscuit', {});
+      expect(mocks.search.searchSmart).toHaveBeenCalledWith(
+        { page: 1, size: 100 },
+        expect.objectContaining({ petIds: [petId], viewingUserId: authStub.user1.user.id }),
+      );
+    });
+
+    it('should resolve people and pets named together', async () => {
+      const petId = newUuid();
+      const person = PersonFactory.create({
+        personGroupId: 'person-1',
+        name: 'Alice',
+        ownerId: authStub.user1.user.id,
+      });
+      mocks.person.getByName.mockImplementation((_userId, name) => Promise.resolve(name === 'Alice' ? [person] : []));
+      mocks.search.searchPetsByName.mockImplementation((_ownerId, name) =>
+        Promise.resolve(name === 'Rex' ? [{ id: petId, name: 'Rex' }] : []),
+      );
+
+      const result = await sut.askSearch(authStub.user1, { query: 'photos with Alice and Rex' });
+
+      expect(result.plan.filters).toEqual(expect.objectContaining({ personIds: ['person-1'], petIds: [petId] }));
+    });
+
+    it('should prefer an exact name, a person before a pet, then the closest person', async () => {
+      const petId = newUuid();
+      const ownerId = authStub.user1.user.id;
+      const alex = PersonFactory.create({ personGroupId: 'person-alex', name: 'Alexander', ownerId });
+      const max = PersonFactory.create({ personGroupId: 'person-max', name: 'Max', ownerId });
+
+      // an exact pet name beats a fuzzy person match
+      mocks.person.getByName.mockResolvedValueOnce([alex]);
+      mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Alex' }]);
+      const exactPet = await sut.askSearch(authStub.user1, { query: 'photos of alex' });
+      expect(exactPet.plan.filters).toEqual(expect.objectContaining({ petIds: [petId] }));
+      expect(exactPet.plan.filters).toEqual(expect.not.objectContaining({ personIds: expect.anything() }));
+
+      // an exact person name beats an exact pet name
+      mocks.person.getByName.mockResolvedValueOnce([max]);
+      mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Max' }]);
+      const exactPerson = await sut.askSearch(authStub.user1, { query: 'photos of max' });
+      expect(exactPerson.plan.filters).toEqual(expect.objectContaining({ personIds: ['person-max'] }));
+      expect(exactPerson.plan.filters).toEqual(expect.not.objectContaining({ petIds: expect.anything() }));
+
+      // with no exact name the closest person wins over the closest pet, as before pets existed
+      mocks.person.getByName.mockResolvedValueOnce([alex]);
+      mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Alexa' }]);
+      const fuzzy = await sut.askSearch(authStub.user1, { query: 'photos of alexandr' });
+      expect(fuzzy.plan.filters).toEqual(expect.objectContaining({ personIds: ['person-alex'] }));
+      expect(fuzzy.plan.filters).toEqual(expect.not.objectContaining({ petIds: expect.anything() }));
+    });
+
+    it('should resolve pets with the session privacy so suppressed pets stay unresolved', async () => {
+      const hiddenContent = {
+        userId: authStub.user1.user.id,
+        includeNsfw: false,
+        tagIds: [],
+        personIds: [],
+        petIds: [newUuid()],
+        scope: 'owned' as const,
+      };
+      const auth = { ...authStub.user1, hiddenContent, hideNsfwAssets: true };
+
+      const result = await sut.askSearch(auth, { query: 'photos of Biscuit' });
+
+      expect(mocks.search.searchPetsByName).toHaveBeenCalledWith(auth.user.id, 'Biscuit', { hiddenContent });
+      expect(mocks.person.getByName).toHaveBeenCalledWith(auth.user.id, 'Biscuit', {
+        hiddenContent,
+        withHidden: false,
+      });
+      expect(result.warnings).toEqual([
+        'People names are searched semantically until Ask Search can resolve names to person IDs.',
+      ]);
+    });
+
+    it('should still resolve pets for an API key without person read permission', async () => {
+      const petId = newUuid();
+      const auth = AuthFactory.from(authStub.user1.user)
+        .apiKey({ permissions: [Permission.AssetRead] })
+        .build();
+      mocks.search.searchPetsByName.mockResolvedValue([{ id: petId, name: 'Biscuit' }]);
+
+      const result = await sut.askSearch(auth, { query: 'photos of Biscuit' });
+
+      expect(mocks.person.getByName).not.toHaveBeenCalled();
+      expect(result.plan.filters).toEqual(expect.objectContaining({ petIds: [petId] }));
     });
 
     it('should use OCR-backed metadata search for document-like queries', async () => {

@@ -218,6 +218,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -361,6 +373,18 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
           )
         order by
           "asset"."fileCreatedAt" asc
@@ -514,6 +538,18 @@ select
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
           )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
         order by
           "asset"."fileCreatedAt" asc
       ) as agg
@@ -658,6 +694,18 @@ select
             where
               "asset_face"."assetId" = "asset"."id"
               and "person"."isHidden" = $2
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
           )
         order by
           "asset"."fileCreatedAt" asc
