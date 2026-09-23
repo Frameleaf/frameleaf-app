@@ -14,6 +14,7 @@
   import Chip from '$lib/components/frameleaf/Chip.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
+  import RestorationModelsDialog from '$lib/components/frameleaf/RestorationModelsDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import Toggle from '$lib/components/frameleaf/Toggle.svelte';
   import {
@@ -28,6 +29,7 @@
     parseOptionalNumber,
     routableDestinations,
   } from '$lib/frameleaf/ml-destinations';
+  import { allowsRestoration } from '$lib/frameleaf/restoration-models';
   import { handleError } from '$lib/utils/handle-error';
   import {
     createMlDestination,
@@ -120,6 +122,11 @@
     );
     statusMessage = $t('admin.frameleaf_ml_destinations_consent_revoked', { values: { name: destination.name } });
   };
+
+  /* ---------------- restoration models (FL-114) ---------------- */
+
+  let restorationTarget = $state<MlDestinationResponseDto | null>(null);
+  let restorationOpen = $state(false);
 
   /* ---------------- probe, enable, delete ---------------- */
 
@@ -452,6 +459,17 @@
                 : $t('admin.frameleaf_ml_destinations_probe')}
             </Button>
             <Button onclick={() => openEdit(destination)} disabled={busy !== null}>{$t('edit')}</Button>
+            {#if allowsRestoration(destination)}
+              <Button
+                onclick={() => {
+                  restorationTarget = destination;
+                  restorationOpen = true;
+                }}
+                disabled={busy !== null}
+              >
+                {$t('admin.frameleaf_restoration_models_action')}
+              </Button>
+            {/if}
             {#if destination.consent.required}
               {#if destination.consent.acknowledgedAt}
                 <Button onclick={() => void revokeConsent(destination)} disabled={busy !== null}>
@@ -541,6 +559,8 @@
     </div>
   </div>
 </Dialog>
+
+<RestorationModelsDialog destination={restorationTarget} bind:open={restorationOpen} />
 
 <Dialog title={$t('admin.frameleaf_ml_destinations_delete_dialog_title')} closeLabel={$t('close')} bind:open={deleteOpen}>
   <div class="dialog-body">
