@@ -7,7 +7,14 @@ import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchFilter, SearchOrder } from 'src/dtos/search.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, VectorIndex } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  ImageEnrichmentFilter,
+  PetObservationState,
+  VectorIndex,
+} from 'src/enum.js';
 import { probes } from 'src/repositories/database.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
@@ -457,6 +464,44 @@ export class SearchRepository {
         `,
       )
       .limit(20)
+      .execute();
+  }
+
+  /**
+   * FL-49: the pet twin of `PersonRepository.getByName`, for Ask Search. The same trigram rule and
+   * order (word similarity 0.5, closest first), over the owner's own, not hidden pets only, and only a
+   * pet with at least one confirmed photo the caller may see (timeline, not trashed, not hidden
+   * content), so a suppressed pet never resolves in a session that is not unlocked.
+   *
+   * Like the pet repository it reads, it carries no `@GenerateSql` example and adds no snapshot.
+   */
+  searchPetsByName(ownerId: string, petName: string, options: HiddenContentQueryOptions = {}) {
+    return this.db
+      .with('similarity_threshold', (db) =>
+        db.selectNoFrom(sql`set_config('pg_trgm.word_similarity_threshold', '0.5', true)`.as('thresh')),
+      )
+      .selectFrom(['similarity_threshold', 'pet'])
+      .select(['pet.id', 'pet.name'])
+      .where('pet.ownerId', '=', ownerId)
+      .where('pet.isHidden', '=', false)
+      .where(() => sql<boolean>`f_unaccent("pet"."name") %> f_unaccent(${petName})`)
+      .where((eb) =>
+        eb.exists((eb) =>
+          eb
+            .selectFrom('pet_observation')
+            .innerJoin('asset', (join) =>
+              join
+                .onRef('asset.id', '=', 'pet_observation.assetId')
+                .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .on('asset.deletedAt', 'is', null),
+            )
+            .whereRef('pet_observation.petId', '=', 'pet.id')
+            .where('pet_observation.state', '=', PetObservationState.Confirmed)
+            .$call((qb) => withHiddenContentFilter(qb, options)),
+        ),
+      )
+      .orderBy(sql`f_unaccent("pet"."name") <->>> f_unaccent(${petName})`)
+      .limit(100)
       .execute();
   }
 
