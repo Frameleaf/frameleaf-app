@@ -69,6 +69,21 @@ describe(ActivityService.name, () => {
 
       expect(mocks.activity.search).toHaveBeenCalledWith({ assetId, albumId, isLiked: undefined, excludeNsfw: true });
     });
+
+    it('names the viewer as the only Locked owner in an elevated session, and nobody otherwise', async () => {
+      const [albumId, userId] = newUuids();
+
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.activity.search.mockResolvedValue([]);
+
+      const elevated = AuthFactory.from({ id: userId }).session({ hasElevatedPermission: true }).build();
+      await sut.getAll(elevated, { albumId });
+      expect(mocks.activity.search).toHaveBeenCalledWith(expect.objectContaining({ albumId, lockedOwnerId: userId }));
+
+      mocks.activity.search.mockClear();
+      await sut.getAll(AuthFactory.from({ id: userId }).session().build(), { albumId });
+      expect(mocks.activity.search.mock.calls[0][0]).not.toHaveProperty('lockedOwnerId');
+    });
   });
 
   describe('getStatistics', () => {
