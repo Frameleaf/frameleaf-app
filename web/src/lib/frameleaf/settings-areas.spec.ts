@@ -29,6 +29,8 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('notifications')).toBe('notifications');
     // Google Photos imports sit with the other imports (FL-65).
     expect(areaForSection('takeout')).toBe('backup');
+    // External library settings live with the Libraries manager (FL-78).
+    expect(areaForSection('external-library')).toBe('libraries');
     expect(areaForSection('unknown')).toBeUndefined();
   });
 
