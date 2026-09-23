@@ -226,7 +226,7 @@ describe('Frameleaf primary destinations', () => {
     expect(currentPrimaryDestination(Route.users())).toBeNull();
   });
 
-  it('treats /admin and /user-settings as the prototype\'s one settings screen', () => {
+  it("treats /admin and /user-settings as the prototype's one settings screen", () => {
     expect(isSettingsRoute(Route.systemSettings())).toBe(true);
     expect(isSettingsRoute(Route.users())).toBe(true);
     expect(isSettingsRoute(Route.userSettings())).toBe(true);

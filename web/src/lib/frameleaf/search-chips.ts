@@ -1,9 +1,5 @@
 import type { SearchFilter } from '@immich/sdk';
-import {
-  discoveryTextField,
-  type DiscoveryQuery,
-  type DiscoveryTextField,
-} from '$lib/components/discovery/query';
+import { discoveryTextField, type DiscoveryQuery, type DiscoveryTextField } from '$lib/components/discovery/query';
 import type { FilterEntityKind } from '$lib/frameleaf/filter-entity-names';
 
 /**

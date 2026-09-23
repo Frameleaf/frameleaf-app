@@ -227,8 +227,7 @@ export class TrashService extends BaseService {
   /** The whole-trash actions of the original API, over the same scope as a review, without one. */
   private async applyUnreviewed(auth: AuthDto, action: TrashReviewAction.RestoreAll | TrashReviewAction.Empty) {
     const changed =
-      (await this.trashRepository.applyReviewed(auth.user.id, action, undefined, this.scopeOf(auth), () => true)) ??
-      [];
+      (await this.trashRepository.applyReviewed(auth.user.id, action, undefined, this.scopeOf(auth), () => true)) ?? [];
     await this.afterChange(auth, action, changed);
     return { count: changed.length };
   }

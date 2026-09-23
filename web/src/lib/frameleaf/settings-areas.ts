@@ -4,7 +4,6 @@
  * system-config forms; this module only decides where each one lives, which area a legacy
  * `?isOpen=<key>` deep link opens, and what a search over the page returns.
  */
-
 import type { Component } from 'svelte';
 
 export type SettingsGroupId = 'library' | 'server';
@@ -19,15 +18,7 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
-  | 'storage'
-  | 'backup'
-  | 'intelligence'
-  | 'editing'
-  | 'care'
-  | 'processing'
-  | 'security'
-  | 'notifications'
-  | 'server';
+  'storage' | 'backup' | 'intelligence' | 'editing' | 'care' | 'processing' | 'security' | 'notifications' | 'server';
 
 export type SettingsAreaDefinition = {
   id: SettingsAreaId;

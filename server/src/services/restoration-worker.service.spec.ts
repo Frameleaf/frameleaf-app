@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AssetRestorationMode, AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
+import {
+  AssetRestorationMode,
+  AssetRestorationSourceType,
+  AssetRestorationStatus,
+} from 'src/dtos/asset-restoration.dto.js';
 import {
   AssetType,
   JobName,
@@ -151,10 +155,14 @@ describe(RestorationWorkerService.name, () => {
       getForOwner: vi.fn(),
       listByAsset: vi.fn(),
       getCurrent: vi.fn(),
-      update: vi.fn().mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
-      transition: vi.fn().mockImplementation((id: string, _from: unknown, patch: Partial<AssetRestoration>) =>
-        Promise.resolve(row({ id, ...patch })),
-      ),
+      update: vi
+        .fn()
+        .mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
+      transition: vi
+        .fn()
+        .mockImplementation((id: string, _from: unknown, patch: Partial<AssetRestoration>) =>
+          Promise.resolve(row({ id, ...patch })),
+        ),
       setCurrent: vi.fn(),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
@@ -197,17 +205,31 @@ describe(RestorationWorkerService.name, () => {
     // FL-72: no library routes on the restoration worker's endpoint and nothing shares its GPU.
     mocks.mlDestination.getRoutes.mockResolvedValue([]);
     mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan]);
-    mocks.machineLearning.probe.mockResolvedValue({ ...mlProbeStub.healthy, workloads: [MlWorkload.RestorationFaithful] });
-    mocks.media.decodeImage.mockResolvedValue({ data: Buffer.alloc(12, 128), info: { width: 4000, height: 3000, channels: 3 } } as never);
+    mocks.machineLearning.probe.mockResolvedValue({
+      ...mlProbeStub.healthy,
+      workloads: [MlWorkload.RestorationFaithful],
+    });
+    mocks.media.decodeImage.mockResolvedValue({
+      data: Buffer.alloc(12, 128),
+      info: { width: 4000, height: 3000, channels: 3 },
+    } as never);
     mocks.media.getImageMetadata
       .mockResolvedValueOnce({ width: 1024, height: 768, isTransparent: false })
       .mockResolvedValueOnce({ width: 2048, height: 1536, isTransparent: false });
     mocks.storage.checkFileExists.mockResolvedValue(true);
 
     // MachineLearningRepository.restore (FL-114): `restore(selection, input, options)`, mocked here.
-    restore = vi.fn().mockImplementation((_selection, _input, options) =>
-      Promise.resolve({ outputPath: options.outputPath, width: 2048, height: 1536, modelName: 'faithful-v1', modelVersion: '1.0' }),
-    );
+    restore = vi
+      .fn()
+      .mockImplementation((_selection, _input, options) =>
+        Promise.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: 'faithful-v1',
+          modelVersion: '1.0',
+        }),
+      );
     (mocks.machineLearning as unknown as { restore: unknown }).restore = restore;
 
     sut = new RestorationWorkerService(
@@ -249,15 +271,31 @@ describe(RestorationWorkerService.name, () => {
       );
       // Exactly the named destination; the cap is the preview's own size times the upscale.
       expect(restore).toHaveBeenCalledWith(
-        expect.objectContaining({ destinationId: mlDestinationStub.lan.id, kind: MlDestinationKind.Lan, workload: MlWorkload.RestorationFaithful }),
+        expect.objectContaining({
+          destinationId: mlDestinationStub.lan.id,
+          kind: MlDestinationKind.Lan,
+          workload: MlWorkload.RestorationFaithful,
+        }),
         expect.objectContaining({ kind: 'image', width: 1024, height: 768 }),
-        expect.objectContaining({ mode: AssetRestorationMode.Faithful, upscale: 2, maxWidth: 2048, maxHeight: 1536, jobId: OPERATION_ID }),
+        expect.objectContaining({
+          mode: AssetRestorationMode.Faithful,
+          upscale: 2,
+          maxWidth: 2048,
+          maxHeight: 1536,
+          jobId: OPERATION_ID,
+        }),
       );
       // Validation is recorded on the job before anything is published.
       expect(operations.beginValidation).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
       expect(mocks.storage.rename).toHaveBeenCalledTimes(2);
-      expect(mocks.storage.rename).toHaveBeenCalledWith(expect.stringContaining('/before-'), expect.stringMatching(/_restore_.*_before\.jpg$/));
-      expect(mocks.storage.rename).toHaveBeenCalledWith(expect.stringContaining('/after-'), expect.stringMatching(/_restore_.*_after\.png$/));
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect.stringContaining('/before-'),
+        expect.stringMatching(/_restore_.*_before\.jpg$/),
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        expect.stringContaining('/after-'),
+        expect.stringMatching(/_restore_.*_after\.png$/),
+      );
       expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewRendering],
@@ -265,7 +303,9 @@ describe(RestorationWorkerService.name, () => {
           status: AssetRestorationStatus.PreviewReady,
           modelName: 'faithful-v1',
           previewExpiresAt: expect.any(Date),
-          provenance: expect.objectContaining({ preview: expect.objectContaining({ destinationId: mlDestinationStub.lan.id }) }),
+          provenance: expect.objectContaining({
+            preview: expect.objectContaining({ destinationId: mlDestinationStub.lan.id }),
+          }),
         }),
       );
       expect(operations.complete).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { resultAssetId: null });
@@ -303,7 +343,10 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(
         operation({
-          snapshot: snapshot({ destinationId: mlDestinationStub.runPodVideo.id, destinationKind: MlDestinationKind.RunPodVideo }),
+          snapshot: snapshot({
+            destinationId: mlDestinationStub.runPodVideo.id,
+            destinationKind: MlDestinationKind.RunPodVideo,
+          }),
         }),
         CLAIM,
       );
@@ -312,14 +355,21 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
         CLAIM,
-        expect.objectContaining({ errorCode: RestorationErrorCode.DestinationRefused, error: expect.stringContaining('consent') }),
+        expect.objectContaining({
+          errorCode: RestorationErrorCode.DestinationRefused,
+          error: expect.stringContaining('consent'),
+        }),
       );
     });
 
     it('refuses to run when the original changed since the preview was requested', async () => {
       await sut.run(operation({ snapshot: snapshot({ sourceChecksumHex: 'deadbeef' }) }), CLAIM);
       expect(restore).not.toHaveBeenCalled();
-      expect(operations.fail).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.objectContaining({ errorCode: RestorationErrorCode.SourceChanged }));
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.SourceChanged }),
+      );
     });
 
     it('rejects an output above the cap it gave the adapter', async () => {
@@ -330,7 +380,11 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(operations.fail).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.objectContaining({ errorCode: RestorationErrorCode.OutputInvalid }));
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.OutputInvalid }),
+      );
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).toHaveBeenCalled();
     });
@@ -352,44 +406,64 @@ describe(RestorationWorkerService.name, () => {
 
       expect(restorations.update).not.toHaveBeenCalled();
       expect(restore).not.toHaveBeenCalled();
-      expect(operations.fail).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.objectContaining({ errorCode: RestorationErrorCode.StageNotRunnable }));
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.StageNotRunnable }),
+      );
     });
 
     it('resumes a stage that a previous attempt left running or failed', async () => {
-      restorations.get.mockResolvedValue(row({ status: AssetRestorationStatus.PreviewFailed, error: 'earlier attempt' }));
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.PreviewFailed, error: 'earlier attempt' }),
+      );
       await sut.run(operation({ attempt: 2 }), CLAIM);
-      expect(restorations.update).toHaveBeenCalledWith(RESTORATION_ID, expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, error: null }));
+      expect(restorations.update).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, error: null }),
+      );
       expect(operations.complete).toHaveBeenCalled();
     });
 
     it('refuses a job whose snapshot it cannot read', async () => {
       await sut.run(operation({ snapshot: { version: 7 } }), CLAIM);
-      expect(operations.fail).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.objectContaining({ errorCode: RestorationErrorCode.SnapshotInvalid }));
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.SnapshotInvalid }),
+      );
       expect(restorations.get).not.toHaveBeenCalled();
     });
 
     it('removes the published files again when the owner discarded the restoration mid-render', async () => {
       restorations.transition.mockResolvedValue(undefined);
       await sut.run(operation(), CLAIM);
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: expect.arrayContaining([expect.stringMatching(/_after\.png$/)]) } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: expect.arrayContaining([expect.stringMatching(/_after\.png$/)]) },
+      });
       expect(operations.complete).not.toHaveBeenCalled();
-      expect(operations.fail).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.objectContaining({ errorCode: RestorationErrorCode.StageNotRunnable }));
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.StageNotRunnable }),
+      );
     });
   });
 
   describe('run: cancellation', () => {
     it('acknowledges an owner cancel and marks the stage cancelled instead of failed', async () => {
       operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-      operations.getForOwner.mockResolvedValue(operation({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() }));
+      operations.getForOwner.mockResolvedValue(
+        operation({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() }),
+      );
 
       await sut.run(operation(), CLAIM);
 
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, { released: true });
-      expect(restorations.transition).toHaveBeenCalledWith(
-        RESTORATION_ID,
-        [AssetRestorationStatus.PreviewRendering],
-        { status: AssetRestorationStatus.PreviewCancelled },
-      );
+      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
+        status: AssetRestorationStatus.PreviewCancelled,
+      });
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
@@ -445,7 +519,14 @@ describe(RestorationWorkerService.name, () => {
 
     describe('a restoration worker on the GPU library analysis uses (FL-72)', () => {
       const shared = { ...mlDestinationStub.lan, sharesLibraryHardware: true };
-      const counts = (active: number, waiting: number) => ({ active, waiting, completed: 0, failed: 0, delayed: 0, paused: 0 });
+      const counts = (active: number, waiting: number) => ({
+        active,
+        waiting,
+        completed: 0,
+        failed: 0,
+        delayed: 0,
+        paused: 0,
+      });
 
       beforeEach(() => {
         mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, shared]);
@@ -460,7 +541,9 @@ describe(RestorationWorkerService.name, () => {
         await sut.tick();
 
         expect(operations.claimNext).toHaveBeenCalledWith(
-          expect.objectContaining({ holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: [shared.id] } }),
+          expect.objectContaining({
+            holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: [shared.id] },
+          }),
         );
       });
 
@@ -495,7 +578,12 @@ describe(RestorationWorkerService.name, () => {
     it('aligns rows with finished jobs and applies preview retention, leaving recovery to the one sweep', async () => {
       restorations.listExpiredPreviews.mockResolvedValue([
         row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg', previewAfterPath: '/a.png' }),
-        row({ id: 'other', status: AssetRestorationStatus.Rejected, previewBeforePath: '/rb.jpg', previewAfterPath: null }),
+        row({
+          id: 'other',
+          status: AssetRestorationStatus.Rejected,
+          previewBeforePath: '/rb.jpg',
+          previewAfterPath: null,
+        }),
       ]);
 
       const result = await sut.sweep();
@@ -506,9 +594,18 @@ describe(RestorationWorkerService.name, () => {
       // An unreviewed preview expires; a decided one only loses its files.
       expect(restorations.update).toHaveBeenCalledWith(
         RESTORATION_ID,
-        expect.objectContaining({ status: AssetRestorationStatus.Expired, previewBeforePath: null, previewAfterPath: null, previewExpiresAt: null }),
+        expect.objectContaining({
+          status: AssetRestorationStatus.Expired,
+          previewBeforePath: null,
+          previewAfterPath: null,
+          previewExpiresAt: null,
+        }),
       );
-      expect(restorations.update).toHaveBeenCalledWith('other', { previewBeforePath: null, previewAfterPath: null, previewExpiresAt: null });
+      expect(restorations.update).toHaveBeenCalledWith('other', {
+        previewBeforePath: null,
+        previewAfterPath: null,
+        previewExpiresAt: null,
+      });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/b.jpg', '/a.png'] } });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/rb.jpg'] } });
       expect(result.removed).toBe(3);

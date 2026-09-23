@@ -131,7 +131,7 @@ export type StudioCommentPatch = {
 };
 
 /** A shared space row, as much of it as the project needs to decide whether it may be linked. */
-export type StudioSpace = { id: string; ownerId: string; kind: string; deletedAt: Date | null };
+export type StudioSpace = { id: string; kind: string; deletedAt: Date | null };
 
 class DuplicateRequestKey extends Error {}
 
@@ -235,8 +235,7 @@ export class StudioProjectRepository {
   /** Unscoped read. The service decides access from `ownerId` and `spaceId`; nothing else may. */
   async getById(id: string): Promise<StudioProject | undefined> {
     return this.db.selectFrom('studio_project').selectAll().where('id', '=', id).executeTakeFirst() as unknown as
-      | StudioProject
-      | undefined;
+      StudioProject | undefined;
   }
 
   /**
@@ -244,7 +243,10 @@ export class StudioProjectRepository {
    * membership test is the same `album_user` row the album access checks use, re-read here on
    * every call, so a revoked reviewer's list loses the project at once.
    */
-  async listVisible(userId: string, page: StudioProjectListOptions): Promise<{ items: StudioProject[]; total: number }> {
+  async listVisible(
+    userId: string,
+    page: StudioProjectListOptions,
+  ): Promise<{ items: StudioProject[]; total: number }> {
     const state = page.state ?? 'active';
     let query = this.db.selectFrom('studio_project');
 
@@ -310,7 +312,10 @@ export class StudioProjectRepository {
 
   async update(id: string, patch: StudioProjectPatch): Promise<StudioProject | undefined> {
     const values: Partial<
-      Pick<StudioProject, 'name' | 'spaceId' | 'archivedAt' | 'thumbnailAssetId' | 'duplicatedFromId' | 'importedFromDigest'>
+      Pick<
+        StudioProject,
+        'name' | 'spaceId' | 'archivedAt' | 'thumbnailAssetId' | 'duplicatedFromId' | 'importedFromDigest'
+      >
     > = {};
     if (patch.name !== undefined) {
       values.name = patch.name;
@@ -424,7 +429,7 @@ export class StudioProjectRepository {
   async getSpace(spaceId: string): Promise<StudioSpace | undefined> {
     return this.db
       .selectFrom('album')
-      .select(['id', 'ownerId', 'kind', 'deletedAt'])
+      .select(['id', 'kind', 'deletedAt'])
       .where('id', '=', spaceId)
       .executeTakeFirst() as unknown as Promise<StudioSpace | undefined>;
   }
@@ -754,7 +759,11 @@ export class StudioProjectRepository {
     return { items: items as unknown as StudioProjectComment[], total };
   }
 
-  async updateComment(projectId: string, id: string, patch: StudioCommentPatch): Promise<StudioProjectComment | undefined> {
+  async updateComment(
+    projectId: string,
+    id: string,
+    patch: StudioCommentPatch,
+  ): Promise<StudioProjectComment | undefined> {
     const values: { text?: string; resolvedById?: string | null; resolvedAt?: RawBuilder<Date> | null } = {};
     if (patch.text !== undefined) {
       values.text = patch.text;

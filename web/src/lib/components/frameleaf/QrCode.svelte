@@ -34,8 +34,10 @@
   });
 
   const safeFileName = (name: string | undefined) =>
-    (name || 'frameleaf-link').replaceAll(/[^\w.-]+/g, '-').replaceAll(/^-+|-+$/g, '').slice(0, 60) ||
-    'frameleaf-link';
+    (name || 'frameleaf-link')
+      .replaceAll(/[^\w.-]+/g, '-')
+      .replaceAll(/^-+|-+$/g, '')
+      .slice(0, 60) || 'frameleaf-link';
 
   const downloadPng = () => {
     if (!('symbol' in encoded) || !encoded.symbol) {

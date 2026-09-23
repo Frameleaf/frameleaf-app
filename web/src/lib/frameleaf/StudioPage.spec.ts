@@ -297,7 +297,11 @@ describe('Studio preview area', () => {
 
   it('says a frame could not be rendered instead of showing an empty monitor', async () => {
     await mounted(
-      previewView({ phase: 'unavailable', messageKey: 'frameleaf_studio_preview_unavailable', errorCode: 'worker_lost' }),
+      previewView({
+        phase: 'unavailable',
+        messageKey: 'frameleaf_studio_preview_unavailable',
+        errorCode: 'worker_lost',
+      }),
     );
 
     expect(screen.getByTestId('studio-preview-state')).toHaveAttribute('data-preview-phase', 'unavailable');
@@ -351,14 +355,18 @@ describe('Studio engine resolution', () => {
       throw new Error('chunk 404');
     });
 
-    await expect(loadStudioEngine()).resolves.toMatchObject({ status: 'absent', reason: 'load-failed', detail: 'chunk 404' });
+    await expect(loadStudioEngine()).resolves.toMatchObject({
+      status: 'absent',
+      reason: 'load-failed',
+      detail: 'chunk 404',
+    });
   });
 
   it('refuses to register two engines in one page', () => {
     registerStudioEngine(async () => ({ engineRevision: pinnedFreecutRevision, features: [], mount: vi.fn() }));
 
-    expect(() => registerStudioEngine(async () => ({ engineRevision: pinnedFreecutRevision, features: [], mount: vi.fn() }))).toThrow(
-      TypeError,
-    );
+    expect(() =>
+      registerStudioEngine(async () => ({ engineRevision: pinnedFreecutRevision, features: [], mount: vi.fn() })),
+    ).toThrow(TypeError);
   });
 });

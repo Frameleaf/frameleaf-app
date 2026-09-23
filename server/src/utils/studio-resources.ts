@@ -632,8 +632,7 @@ const forbiddenSchemes = /^(blob|data|file|filesystem|chrome|chrome-extension|mo
 /** Anything with a scheme, an absolute path or a traversal segment. */
 const locatorPattern = /^(?:[a-z][\d+.a-z-]*:|\/|\\\\|[a-z]:\\)|(?:^|[/\\])\.\.(?:[/\\]|$)/i;
 
-export const isExternalLocator = (value: string): boolean =>
-  forbiddenSchemes.test(value) || locatorPattern.test(value);
+export const isExternalLocator = (value: string): boolean => forbiddenSchemes.test(value) || locatorPattern.test(value);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
@@ -954,9 +953,7 @@ export type StudioSequenceCheck = {
   refused: Array<{
     id: string;
     reason:
-      | StudioRefusalReason.UnknownSequence
-      | StudioRefusalReason.CyclicSequence
-      | StudioRefusalReason.DepthExceeded;
+      StudioRefusalReason.UnknownSequence | StudioRefusalReason.CyclicSequence | StudioRefusalReason.DepthExceeded;
     detail: string;
   }>;
 };

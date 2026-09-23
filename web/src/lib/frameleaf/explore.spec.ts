@@ -1,5 +1,9 @@
-import { BEST_PHOTOS_QUALITY_MIN_SCORE, buildExploreShortcuts, emptyExploreShortcutCounts } from '$lib/frameleaf/explore';
 import { describe, expect, it } from 'vitest';
+import {
+  BEST_PHOTOS_QUALITY_MIN_SCORE,
+  buildExploreShortcuts,
+  emptyExploreShortcutCounts,
+} from '$lib/frameleaf/explore';
 
 describe('explore', () => {
   describe('BEST_PHOTOS_QUALITY_MIN_SCORE', () => {

@@ -282,9 +282,9 @@ describe(UserService.name, () => {
       const unlocked = { ...locked, session: { id: newUuid(), hasElevatedPermission: true } } as typeof locked;
       const tagId = newUuid();
 
-      await expect(
-        sut.updateMyPreferences(locked, { privacy: { suppression: { tagIds: [tagId] } } }),
-      ).rejects.toThrow('Unlock with your PIN before changing Locked rules');
+      await expect(sut.updateMyPreferences(locked, { privacy: { suppression: { tagIds: [tagId] } } })).rejects.toThrow(
+        'Unlock with your PIN before changing Locked rules',
+      );
 
       await expect(
         sut.updateMyPreferences(unlocked, { privacy: { suppression: { tagIds: [tagId], scope: 'visible' } } }),

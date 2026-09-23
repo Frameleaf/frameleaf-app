@@ -535,9 +535,9 @@ describe(StudioPreviewService.name, () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
       projects.getReadableRevision.mockResolvedValue(8);
 
-      await expect(
-        sut.getFrame(authStub.user1, frameStub().id, { ifNoneMatch: etag() }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.getFrame(authStub.user1, frameStub().id, { ifNoneMatch: etag() })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
 
     it('refuses a row recorded before previews were bound to project storage', async () => {

@@ -102,7 +102,12 @@ export const ratingControlValue = (condition: Condition): string => {
       return String(value.eq);
     }
   }
-  if (isOnly(condition, 'gte') && Number.isInteger(value.gte) && (value.gte as number) >= 0 && (value.gte as number) <= 5) {
+  if (
+    isOnly(condition, 'gte') &&
+    Number.isInteger(value.gte) &&
+    (value.gte as number) >= 0 &&
+    (value.gte as number) <= 5
+  ) {
     return `min${value.gte}`;
   }
   return CUSTOM_CONDITION;
@@ -316,12 +321,7 @@ export interface ChipLabelOptions {
   locale?: string;
 }
 
-const valueLabel = (
-  $t: MessageFormatter,
-  field: string,
-  value: unknown,
-  options: ChipLabelOptions,
-): string => {
+const valueLabel = ($t: MessageFormatter, field: string, value: unknown, options: ChipLabelOptions): string => {
   if (SET_FIELDS.has(field) && typeof value === 'string') {
     return options.nameFor?.(field, value) ?? value;
   }
@@ -354,12 +354,7 @@ const valueLabel = (
   return value === null ? $t('frameleaf_search_not_set') : String(value);
 };
 
-const operatorLabel = (
-  $t: MessageFormatter,
-  field: string,
-  operator: string,
-  formatted: string,
-): string => {
+const operatorLabel = ($t: MessageFormatter, field: string, operator: string, formatted: string): string => {
   switch (operator) {
     case 'eq':
     case 'any':
@@ -452,7 +447,12 @@ export const describeFilterChips = (
 
     return {
       field,
-      personIds: field === 'personIds' ? Object.values(condition).flat().filter((id): id is string => typeof id === 'string') : [],
+      personIds:
+        field === 'personIds'
+          ? Object.values(condition)
+              .flat()
+              .filter((id): id is string => typeof id === 'string')
+          : [],
       label: `${label}: ${parts.join('; ')}`,
     };
   });

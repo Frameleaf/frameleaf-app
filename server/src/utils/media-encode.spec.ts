@@ -224,7 +224,7 @@ describe('applyFloatEncodePixelFormat', () => {
     colorMatrix: ColorMatrix.Bt2020Nc,
   });
 
-  it('replaces the shared chain\'s trailing bare format filter', () => {
+  it("replaces the shared chain's trailing bare format filter", () => {
     expect(applyFloatEncodePixelFormat(['scale=1920:1080', 'format=yuv420p'], softwarePlan)).toEqual([
       'scale=1920:1080',
       'format=gbrpf32le',

@@ -270,9 +270,9 @@ describe(StudioBundleService.name, () => {
     projects = {
       getById: vi.fn(),
       getRevision: vi.fn(),
-      createWithRevision: vi.fn().mockImplementation(() =>
-        Promise.resolve({ project: { id: newUuidV7() } as StudioProject, created: true }),
-      ),
+      createWithRevision: vi
+        .fn()
+        .mockImplementation(() => Promise.resolve({ project: { id: newUuidV7() } as StudioProject, created: true })),
       createUpload: vi.fn(),
       getUpload: vi.fn(),
       deleteUpload: vi.fn(),
@@ -352,9 +352,7 @@ describe(StudioBundleService.name, () => {
       await expect(sut.createExport(owner, projectId, { requestKey: 'k' })).resolves.toMatchObject({ id: first.id });
 
       // The same key for another project is a client bug, never a replay of somebody else's job.
-      await expect(sut.createExport(owner, newUuidV7(), { requestKey: 'k' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(sut.createExport(owner, newUuidV7(), { requestKey: 'k' })).rejects.toBeInstanceOf(ConflictException);
       expect(operations.create).not.toHaveBeenCalled();
     });
   });

@@ -78,7 +78,11 @@
   const stale = $derived(refreshFailed || isStaleSnapshot(inventory.checkedAt, now));
 
   const formatTime = (value: string | null) =>
-    value ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : null;
+    value
+      ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+          new Date(value),
+        )
+      : null;
 
   const reload = async () => {
     refreshing = true;
@@ -215,7 +219,8 @@
         : $t('admin.frameleaf_workers_add_title');
 
   const kindLabel = (entry: WorkerInventoryEntryDto) =>
-    entry.source === WorkerInventorySource.MlDestination && Object.values(MlDestinationKind).includes(entry.kind as MlDestinationKind)
+    entry.source === WorkerInventorySource.MlDestination &&
+    Object.values(MlDestinationKind).includes(entry.kind as MlDestinationKind)
       ? $t(mlDestinationKindLabelKey(entry.kind as MlDestinationKind))
       : entry.kind;
 
@@ -240,7 +245,9 @@
       <dt>{$t('admin.frameleaf_workers_capabilities')}</dt>
       <dd>
         {#if entry.source === WorkerInventorySource.RenderWorker}
-          {entry.renderKinds.length > 0 ? entry.renderKinds.join(', ') : $t('admin.frameleaf_workers_capabilities_none')}
+          {entry.renderKinds.length > 0
+            ? entry.renderKinds.join(', ')
+            : $t('admin.frameleaf_workers_capabilities_none')}
         {:else}
           {workloadList(entry.servedWorkloads)}
         {/if}
@@ -261,7 +268,9 @@
       <div>
         <dt>{$t('admin.frameleaf_workers_routed')}</dt>
         <dd>
-          {entry.routedWorkloads.length > 0 ? workloadList(entry.routedWorkloads) : $t('admin.frameleaf_workers_routed_none')}
+          {entry.routedWorkloads.length > 0
+            ? workloadList(entry.routedWorkloads)
+            : $t('admin.frameleaf_workers_routed_none')}
         </dd>
       </div>
       <div>
@@ -355,7 +364,9 @@
       {#if entry}
         <Badge
           value={$t(readinessLabelKey(entry))}
-          label={$t('admin.frameleaf_workers_state_label', { values: { name: title, state: $t(readinessLabelKey(entry)) } })}
+          label={$t('admin.frameleaf_workers_state_label', {
+            values: { name: title, state: $t(readinessLabelKey(entry)) },
+          })}
           tone={readinessTone(entry.readiness)}
         />
       {:else}
@@ -407,7 +418,9 @@
         {$t('admin.frameleaf_workers_stale', { values: { time: formatTime(inventory.checkedAt) } })}
       </p>
     {:else}
-      <p class="muted">{$t('admin.frameleaf_workers_updated', { values: { time: formatTime(inventory.checkedAt) } })}</p>
+      <p class="muted">
+        {$t('admin.frameleaf_workers_updated', { values: { time: formatTime(inventory.checkedAt) } })}
+      </p>
     {/if}
     {#if notice}
       <Status message={notice} />
@@ -622,7 +635,13 @@
       {:else}
         <label>
           {$t('admin.frameleaf_workers_endpoint_url')}
-          <input type="url" bind:value={form.url} maxlength="2048" placeholder="http://machine-learning:3003" required />
+          <input
+            type="url"
+            bind:value={form.url}
+            maxlength="2048"
+            placeholder="http://machine-learning:3003"
+            required
+          />
         </label>
         <p class="muted">{$t('admin.frameleaf_workers_endpoint_hint')}</p>
         {#if form.kind === 'edit'}

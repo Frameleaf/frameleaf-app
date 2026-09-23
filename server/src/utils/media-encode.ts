@@ -155,8 +155,7 @@ export const selectEncoderPixelFormat = ({
   const toneMapped = policy === EditedMasterColorPolicy.ToneMap;
   const bitDepth = toneMapped || layout.bitDepth <= 8 ? 8 : HIGH_BIT_DEPTH_DELIVERY;
 
-  const encoderName =
-    accel === TranscodeHardwareAcceleration.Disabled ? 'the software encoder' : accel.toUpperCase();
+  const encoderName = accel === TranscodeHardwareAcceleration.Disabled ? 'the software encoder' : accel.toUpperCase();
 
   const byCodec = ENCODER_PIXEL_FORMATS[accel][codec];
   if (!byCodec) {

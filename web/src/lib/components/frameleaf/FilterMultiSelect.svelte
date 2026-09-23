@@ -61,7 +61,11 @@
   const toggle = (value: string) =>
     onChange(
       field,
-      updateSetGroup(condition, mode, selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]),
+      updateSetGroup(
+        condition,
+        mode,
+        selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value],
+      ),
     );
 </script>
 

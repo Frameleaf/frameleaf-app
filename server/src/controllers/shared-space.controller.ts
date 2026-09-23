@@ -108,7 +108,10 @@ export class SharedSpaceController {
       'Withdraw a pending invitation. Only the shared space owner can do this, and it only reaches people who have not joined; removing a member is DELETE /albums/{id}/user/{userId}.',
     history: new HistoryBuilder().added('v3'),
   })
-  removeSharedSpaceInvitation(@Auth() auth: AuthDto, @Param() { id, userId }: SharedSpaceInviteParamDto): Promise<void> {
+  removeSharedSpaceInvitation(
+    @Auth() auth: AuthDto,
+    @Param() { id, userId }: SharedSpaceInviteParamDto,
+  ): Promise<void> {
     return this.service.removeInvitation(auth, id, userId);
   }
 
@@ -292,7 +295,10 @@ export class SharedSpaceController {
       'Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it, and removing a top-level comment removes its replies.',
     history: new HistoryBuilder().added('v3'),
   })
-  deleteSharedSpaceComment(@Auth() auth: AuthDto, @Param() { id, commentId }: SharedSpaceCommentParamDto): Promise<void> {
+  deleteSharedSpaceComment(
+    @Auth() auth: AuthDto,
+    @Param() { id, commentId }: SharedSpaceCommentParamDto,
+  ): Promise<void> {
     return this.service.deleteComment(auth, id, commentId);
   }
 }

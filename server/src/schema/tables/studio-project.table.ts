@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -132,7 +133,7 @@ export class StudioBundleUploadTable {
   path!: string;
 
   @Column({ type: 'bigint' })
-  sizeBytes!: Int8;
+  sizeBytes!: Int8Writable;
 
   /** SHA-256, hex, of the whole file as uploaded. */
   @Column()
@@ -242,10 +243,10 @@ export class StudioProjectCommentTable {
   revision!: number;
 
   @Column({ type: 'bigint' })
-  timeNum!: Int8;
+  timeNum!: Int8Writable;
 
   @Column({ type: 'bigint' })
-  timeDen!: Int8;
+  timeDen!: Int8Writable;
 
   @Column({ type: 'text' })
   text!: string;

@@ -1685,7 +1685,7 @@
       "id": "IMP-002",
       "objective": "The source iCloud route is inventoried and the prototype has sample connections. Bind the real account/authentication/options and job lifecycle.",
       "paths": [
-        "web/src/routes/(user)/utilities/icloud-sync/ICloudSync.svelte",
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
         "server/src/controllers/icloud-sync.controller.ts",
         "server/src/services/icloud-sync.service.ts",
         "server/src/services/icloud-staging.service.ts",
@@ -1721,7 +1721,7 @@
       "objective": "Settings utilities provide local evidence review but not live aggregate scans. Migrate Care queues and the shared MediaHealth source/candidate review.",
       "paths": [
         "web/src/routes/(user)/library-care/+page.svelte",
-        "web/src/routes/(user)/utilities/MediaHealthReview.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "server/src/services/library-care.service.ts",
         "server/src/services/media-health.service.ts",
         "server/src/repositories/library-care.integration.spec.ts",
@@ -2035,8 +2035,8 @@
       "objective": "The prototype offers local password/PIN/key/OAuth/session/supporter and suppression forms. Bind them to their exact owner-scoped APIs.",
       "paths": [
         "web/src/routes/(user)/user-settings",
-        "web/src/lib/modals/ApiKeyCreateModal.svelte",
-        "web/src/lib/modals/ApiKeyUpdateModal.svelte",
+        "web/src/lib/components/frameleaf/access/ApiKeyDialog.svelte",
+        "web/src/lib/components/frameleaf/access/ApiKeysSection.svelte",
         "web/src/lib/modals/AvatarEditModal.svelte",
         "server/src/services/auth.service.ts",
         "server/src/services/session.service.ts",

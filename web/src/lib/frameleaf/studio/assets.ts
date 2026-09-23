@@ -18,7 +18,6 @@
  * - Offline originals are passed through but flagged, so the bin can show them and the
  *   engine can refuse to cut with them, rather than the person finding a broken clip later.
  */
-
 import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
 import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import type { StudioAssetRef } from './host-contract';

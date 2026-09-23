@@ -206,7 +206,10 @@ const PhysicalDeduplicationApplyRequestSchema = z
   .object({
     fingerprint,
     excludedRetainedAssetIds,
-    reviewToken: z.string().regex(/^[\da-f]{64}$/).describe('From the review of this plan'),
+    reviewToken: z
+      .string()
+      .regex(/^[\da-f]{64}$/)
+      .describe('From the review of this plan'),
     confirmation: z.string().max(90).describe('`APPLY <planId>`, typed by the administrator'),
   })
   .meta({ id: 'PhysicalDeduplicationApplyRequestDto' });
@@ -216,7 +219,5 @@ export class PhysicalDeduplicationApplyDto extends createZodDto(PhysicalDeduplic
 export class PhysicalDeduplicationReviewRequestDto extends createZodDto(PhysicalDeduplicationReviewRequestSchema) {}
 export class PhysicalDeduplicationReviewResponseDto extends createZodDto(PhysicalDeduplicationReviewResponseSchema) {}
 export class PhysicalDeduplicationApplyRequestDto extends createZodDto(PhysicalDeduplicationApplyRequestSchema) {}
-export class PhysicalDeduplicationPreviewResponseDto extends createZodDto(
-  PhysicalDeduplicationPreviewResponseSchema,
-) {}
+export class PhysicalDeduplicationPreviewResponseDto extends createZodDto(PhysicalDeduplicationPreviewResponseSchema) {}
 export class PhysicalDeduplicationPreviewRequestDto extends createZodDto(PhysicalDeduplicationPreviewRequestSchema) {}

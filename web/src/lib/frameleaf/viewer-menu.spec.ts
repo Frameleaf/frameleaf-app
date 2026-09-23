@@ -171,7 +171,13 @@ describe('viewerMenuGroups', () => {
   describe('set as group', () => {
     it('is dropped entirely for video', () => {
       const groups = viewerMenuGroups(
-        baseContext({ isVideo: true, isImage: false, hasAlbumContext: true, canEditAlbum: true, hasPersonContext: true }),
+        baseContext({
+          isVideo: true,
+          isImage: false,
+          hasAlbumContext: true,
+          canEditAlbum: true,
+          hasPersonContext: true,
+        }),
       );
       expect(groups.find((group) => group.id === 'set-as')).toBeUndefined();
     });

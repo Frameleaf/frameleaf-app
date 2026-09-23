@@ -162,11 +162,7 @@ export class StudioPreviewRepository {
 
   /** Touch the recency clock. Least-recently-used eviction is only as good as this write. */
   async markAccessed(id: string, at: Date): Promise<void> {
-    await this.db
-      .updateTable('studio_preview_frame')
-      .set({ lastAccessedAt: at })
-      .where('id', '=', id)
-      .execute();
+    await this.db.updateTable('studio_preview_frame').set({ lastAccessedAt: at }).where('id', '=', id).execute();
   }
 
   async markRendering(id: string, operationId: string): Promise<boolean> {
@@ -251,11 +247,7 @@ export class StudioPreviewRepository {
       .where('projectId', '=', projectId)
       .where('ownerId', '=', ownerId)
       .where('revisionDigest', '!=', currentRevisionDigest)
-      .where('status', 'in', [
-        StudioPreviewStatus.Pending,
-        StudioPreviewStatus.Rendering,
-        StudioPreviewStatus.Ready,
-      ])
+      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering, StudioPreviewStatus.Ready])
       .returningAll()
       .execute()) as unknown as StudioPreviewFrame[];
   }
@@ -275,11 +267,7 @@ export class StudioPreviewRepository {
       .set({ status: StudioPreviewStatus.Superseded })
       .where('projectId', '=', projectId)
       .where((eb) => eb.or([eb('projectRevision', 'is', null), eb('projectRevision', '<', revision)]))
-      .where('status', 'in', [
-        StudioPreviewStatus.Pending,
-        StudioPreviewStatus.Rendering,
-        StudioPreviewStatus.Ready,
-      ])
+      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering, StudioPreviewStatus.Ready])
       .returningAll()
       .execute()) as unknown as StudioPreviewFrame[];
   }

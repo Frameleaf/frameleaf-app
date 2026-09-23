@@ -452,7 +452,12 @@
       return;
     }
     const assetIds = current.memory.assets.map((asset) => asset.id);
-    writeStudioHandoff({ source: 'memory', sourceId: current.memory.id, title: $memoryLaneTitle(current.memory), assetIds });
+    writeStudioHandoff({
+      source: 'memory',
+      sourceId: current.memory.id,
+      title: $memoryLaneTitle(current.memory),
+      assetIds,
+    });
     const message = $t('frameleaf_memories_make_movie_queued', { values: { count: assetIds.length } });
     status = message;
     toastManager.primary(message);
@@ -507,7 +512,10 @@
 
         <Text size="small">
           {$t('x_of_total', {
-            values: { x: (assetIndex + 1).toLocaleString($locale), total: current.memory.assets.length.toLocaleString($locale) },
+            values: {
+              x: (assetIndex + 1).toLocaleString($locale),
+              total: current.memory.assets.length.toLocaleString($locale),
+            },
           })}
         </Text>
 
@@ -616,7 +624,10 @@
               <div class="fmp-overlay-bottom">
                 {#await currentMemoryAssetFull then asset}
                   {#if asset}
-                    <IconButton label={$t('view_in_timeline')} href={Route.photos({ at: asset.stack?.primaryAssetId ?? asset.id })}>
+                    <IconButton
+                      label={$t('view_in_timeline')}
+                      href={Route.photos({ at: asset.stack?.primaryAssetId ?? asset.id })}
+                    >
                       <Icon icon={mdiImageSearch} size={20} />
                     </IconButton>
                   {/if}
@@ -683,7 +694,9 @@
 
             <div class="fmp-meta">
               <p>
-                {fromISODateTimeUTC(current.memory.assets[0].localDateTime).toLocaleString(DateTime.DATE_FULL, { locale: $locale })}
+                {fromISODateTimeUTC(current.memory.assets[0].localDateTime).toLocaleString(DateTime.DATE_FULL, {
+                  locale: $locale,
+                })}
               </p>
               <p>
                 {#await currentMemoryAssetFull then asset}

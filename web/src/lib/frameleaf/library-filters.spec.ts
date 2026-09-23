@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
-import { describeFilterField, describeFilterFields, filterFieldEntityIds, filterFieldLabelKey } from './library-filters';
+import {
+  describeFilterField,
+  describeFilterFields,
+  filterFieldEntityIds,
+  filterFieldLabelKey,
+} from './library-filters';
 
 const withFilter = (filter: Record<string, unknown>): DiscoveryQuery =>
   ({ ...emptyDiscoveryQuery(), filter }) as DiscoveryQuery;
@@ -52,9 +57,9 @@ describe('describeFilterField', () => {
   });
 
   it('renders a range from whichever bounds were supplied', () => {
-    expect(describeFilterField(withFilter({ takenAt: { gte: '2026-01-01', lte: '2026-02-01' } }), 'takenAt')?.detail).toBe(
-      '2026-01-01 – 2026-02-01',
-    );
+    expect(
+      describeFilterField(withFilter({ takenAt: { gte: '2026-01-01', lte: '2026-02-01' } }), 'takenAt')?.detail,
+    ).toBe('2026-01-01 – 2026-02-01');
     expect(describeFilterField(withFilter({ takenAt: { gte: '2026-01-01' } }), 'takenAt')?.detail).toBe('2026-01-01');
     expect(describeFilterField(withFilter({ takenAt: { lte: '2026-02-01' } }), 'takenAt')?.detail).toBe('2026-02-01');
   });

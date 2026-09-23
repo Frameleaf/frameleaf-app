@@ -54,8 +54,7 @@ export class AssetRestorationRepository {
 
   async get(id: string): Promise<AssetRestoration | undefined> {
     return (await this.db.selectFrom('asset_restoration').selectAll().where('id', '=', id).executeTakeFirst()) as
-      | AssetRestoration
-      | undefined;
+      AssetRestoration | undefined;
   }
 
   /** Owner-scoped read; the asset id is part of the key so a URL cannot mix two assets. */

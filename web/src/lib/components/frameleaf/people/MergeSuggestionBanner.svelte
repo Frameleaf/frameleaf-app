@@ -41,7 +41,9 @@
   </div>
   <div class="fl-merge-suggestion-copy">
     <strong>{$t('frameleaf_people_merge_suggestion_question')}</strong>
-    <span>{$t('frameleaf_people_merge_suggestion_pair', { values: { first: personName, second: suggestionName } })}</span>
+    <span
+      >{$t('frameleaf_people_merge_suggestion_pair', { values: { first: personName, second: suggestionName } })}</span
+    >
     {#if remaining > 0}
       <small>{$t('frameleaf_people_merge_suggestion_more', { values: { count: remaining } })}</small>
     {/if}

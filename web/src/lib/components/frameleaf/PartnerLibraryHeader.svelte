@@ -62,7 +62,11 @@
     try {
       const updated = await updatePartner({ id: partner.id, partnerUpdateDto: { inTimeline: checked } });
       partner = updated;
-      toastManager.primary($t(checked ? 'frameleaf_sharing.timeline_shown_notice' : 'frameleaf_sharing.timeline_hidden_notice', { values: { possessive } }));
+      toastManager.primary(
+        $t(checked ? 'frameleaf_sharing.timeline_shown_notice' : 'frameleaf_sharing.timeline_hidden_notice', {
+          values: { possessive },
+        }),
+      );
     } catch (error) {
       partner = { ...partner, inTimeline: previous };
       handleError(error, $t('errors.unable_to_change_partner_permission'));
@@ -162,7 +166,9 @@
 
   <div class="ph-actions">
     <a href={Route.userSettings({ isOpen: OpenQueryParam.SHARING })}>{$t('frameleaf_sharing.sharing_settings')}</a>
-    <button type="button" class="danger" onclick={() => (confirmOpen = true)}>{$t('stop_sharing_photos_with_user')}</button>
+    <button type="button" class="danger" onclick={() => (confirmOpen = true)}
+      >{$t('stop_sharing_photos_with_user')}</button
+    >
   </div>
 
   {#if confirmOpen}

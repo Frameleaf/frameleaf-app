@@ -468,8 +468,7 @@ export const enrichmentPlanProgress = (processed: number, total: number): number
   total <= 0 ? 100 : Math.max(0, Math.min(100, Math.round((processed / total) * 1000) / 10));
 
 /** What Activity shows as the job's title. Customer wording; no identifiers. */
-export const enrichmentPlanLabel = (count: number): string =>
-  `Enrichment (${count} ${count === 1 ? 'item' : 'items'})`;
+export const enrichmentPlanLabel = (count: number): string => `Enrichment (${count} ${count === 1 ? 'item' : 'items'})`;
 
 /* -------------------------------------------------------------------------------------------- */
 /* Provenance                                                                                   */

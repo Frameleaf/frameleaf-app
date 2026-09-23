@@ -4,12 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import {
-  PetCandidateTable,
-  PetDetectionTable,
-  PetObservationTable,
-  PetTable,
-} from 'src/schema/tables/pet.table.js';
+import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
 import {
   anyUuid,
   getHiddenContentFilter,
@@ -91,42 +86,46 @@ export class PetRepository {
       ? sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('pet_observation.assetId'), hiddenContent)}`
       : undefined;
     const suppressedPetIds = hiddenContent?.petIds ?? [];
-    return this.db
-      .selectFrom('pet')
-      .selectAll('pet')
-      .select((eb) =>
-        eb
-          .selectFrom('pet_observation')
-          .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
-          .whereRef('pet_observation.petId', '=', 'pet.id')
-          .where('pet_observation.state', '=', PetObservationState.Confirmed)
-          .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
-          .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
-          .select((inner) => inner.fn.countAll<number>().as('count'))
-          .as('assetCount'),
-      )
-      .where('pet.ownerId', '=', ownerId)
-      .$if(!withHidden, (qb) => qb.where('pet.isHidden', '=', false))
-      .$if(suppressedPetIds.length > 0, (qb) => qb.where((eb) => eb.not(eb('pet.id', '=', anyUuid(suppressedPetIds)))))
-      .$if(!!visiblePhoto, (qb) =>
-        qb.where((eb) => {
-          const confirmed = () =>
-            eb
-              .selectFrom('pet_observation')
-              .select('pet_observation.id')
-              .whereRef('pet_observation.petId', '=', 'pet.id')
-              .where('pet_observation.state', '=', PetObservationState.Confirmed);
-          return eb.or([eb.not(eb.exists(confirmed())), eb.exists(confirmed().where(visiblePhoto!))]);
-        }),
-      )
-      // Favorites first and then oldest first, which is a stable order for paging. The
-      // display order the design asks for (favorites, named alphabetically, unnamed last)
-      // is applied in `web/src/lib/frameleaf/pets.ts`, where it is unit tested and where
-      // the locale-aware comparison belongs.
-      .orderBy('pet.isFavorite', 'desc')
-      .orderBy('pet.createdAt', 'asc')
-      .execute()
-      .then((rows) => rows.map((row) => ({ ...row, assetCount: Number(row.assetCount ?? 0) })));
+    return (
+      this.db
+        .selectFrom('pet')
+        .selectAll('pet')
+        .select((eb) =>
+          eb
+            .selectFrom('pet_observation')
+            .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
+            .whereRef('pet_observation.petId', '=', 'pet.id')
+            .where('pet_observation.state', '=', PetObservationState.Confirmed)
+            .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
+            .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
+            .select((inner) => inner.fn.countAll<number>().as('count'))
+            .as('assetCount'),
+        )
+        .where('pet.ownerId', '=', ownerId)
+        .$if(!withHidden, (qb) => qb.where('pet.isHidden', '=', false))
+        .$if(suppressedPetIds.length > 0, (qb) =>
+          qb.where((eb) => eb.not(eb('pet.id', '=', anyUuid(suppressedPetIds)))),
+        )
+        .$if(!!visiblePhoto, (qb) =>
+          qb.where((eb) => {
+            const confirmed = () =>
+              eb
+                .selectFrom('pet_observation')
+                .select('pet_observation.id')
+                .whereRef('pet_observation.petId', '=', 'pet.id')
+                .where('pet_observation.state', '=', PetObservationState.Confirmed);
+            return eb.or([eb.not(eb.exists(confirmed())), eb.exists(confirmed().where(visiblePhoto!))]);
+          }),
+        )
+        // Favorites first and then oldest first, which is a stable order for paging. The
+        // display order the design asks for (favorites, named alphabetically, unnamed last)
+        // is applied in `web/src/lib/frameleaf/pets.ts`, where it is unit tested and where
+        // the locale-aware comparison belongs.
+        .orderBy('pet.isFavorite', 'desc')
+        .orderBy('pet.createdAt', 'asc')
+        .execute()
+        .then((rows) => rows.map((row) => ({ ...row, assetCount: Number(row.assetCount ?? 0) })))
+    );
   }
 
   /** Owner-scoped by construction: a wrong owner gets `undefined`, never another's pet. */
@@ -159,12 +158,7 @@ export class PetRepository {
       return Promise.resolve([]);
     }
 
-    return this.db
-      .selectFrom('pet')
-      .selectAll()
-      .where('id', 'in', ids)
-      .where('ownerId', '=', ownerId)
-      .execute();
+    return this.db.selectFrom('pet').selectAll().where('id', 'in', ids).where('ownerId', '=', ownerId).execute();
   }
 
   create(pet: Insertable<PetTable>): Promise<Pet> {
@@ -276,11 +270,7 @@ export class PetRepository {
     const result = await this.db
       .deleteFrom('pet_observation')
       .where('id', '=', id)
-      .where(
-        'petId',
-        'in',
-        this.db.selectFrom('pet').select('pet.id').where('pet.ownerId', '=', ownerId),
-      )
+      .where('petId', 'in', this.db.selectFrom('pet').select('pet.id').where('pet.ownerId', '=', ownerId))
       .executeTakeFirst();
     return Number(result.numDeletedRows ?? 0) > 0;
   }
@@ -312,7 +302,13 @@ export class PetRepository {
    */
   async mergeInto(
     ownerId: string,
-    { sourceId, targetId, reassign, promote, discard }: {
+    {
+      sourceId,
+      targetId,
+      reassign,
+      promote,
+      discard,
+    }: {
       sourceId: string;
       targetId: string;
       reassign: string[];

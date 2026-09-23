@@ -132,8 +132,7 @@ export class MlDestinationRepository {
         lastProbeAt: probe.probedAt,
         lastProbeHealth: probe.health,
         lastProbeSummary: probe.summary,
-        lastProbeWorkloads:
-          probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
+        lastProbeWorkloads: probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
         ...(probe.hardware === undefined
           ? {}
           : {

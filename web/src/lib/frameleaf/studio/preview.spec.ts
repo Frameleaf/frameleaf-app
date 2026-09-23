@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { rational, FRAME_RATE_NTSC_30 } from './rational-time';
 import {
   StudioPreviewCache,
   createStudioPreviewClient,
@@ -18,6 +17,7 @@ import {
   type StudioPreviewTransport,
   type StudioPreviewTransportFailure,
 } from './preview';
+import { rational, FRAME_RATE_NTSC_30 } from './rational-time';
 
 const intent = (overrides: Partial<StudioPreviewIntent> = {}): StudioPreviewIntent => ({
   projectId: 'project-1',
@@ -133,21 +133,21 @@ describe('studioPreviewMessageKey', () => {
 
 describe('isStudioPreviewAnswerCurrent', () => {
   it('accepts an answer for the current revision and seek', () => {
-    expect(
-      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 1, seekGeneration: 3 }),
-    ).toBe(true);
+    expect(isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 1, seekGeneration: 3 })).toBe(
+      true,
+    );
   });
 
   it('discards an answer from an older seek', () => {
-    expect(
-      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 2 }, { revision: 1, seekGeneration: 3 }),
-    ).toBe(false);
+    expect(isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 2 }, { revision: 1, seekGeneration: 3 })).toBe(
+      false,
+    );
   });
 
   it('discards an answer from a superseded revision even at the current seek', () => {
-    expect(
-      isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 2, seekGeneration: 3 }),
-    ).toBe(false);
+    expect(isStudioPreviewAnswerCurrent({ revision: 1, seekGeneration: 3 }, { revision: 2, seekGeneration: 3 })).toBe(
+      false,
+    );
   });
 });
 

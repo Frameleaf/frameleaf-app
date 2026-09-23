@@ -162,7 +162,11 @@ export class AssetDevelopService {
    * Renders a bounded preview of a recipe straight from the original and returns the bytes.
    * Nothing is stored; the client uses it for the stage and the histogram while editing.
    */
-  async preview(auth: AuthDto, assetId: string, dto: AssetDevelopPreviewDto): Promise<{ buffer: Buffer; contentType: string }> {
+  async preview(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetDevelopPreviewDto,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
     if (!source || source.type !== AssetType.Image) {
@@ -184,7 +188,12 @@ export class AssetDevelopService {
     return { buffer: buffer!, contentType: format === ImageFormat.Webp ? 'image/webp' : 'image/jpeg' };
   }
 
-  async getFile(auth: AuthDto, assetId: string, revisionId: string, kind: AssetDevelopFileKind): Promise<ImmichFileResponse> {
+  async getFile(
+    auth: AuthDto,
+    assetId: string,
+    revisionId: string,
+    kind: AssetDevelopFileKind,
+  ): Promise<ImmichFileResponse> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const revision = await this.requireRevision(assetId, revisionId);
     const filePath = kind === AssetDevelopFileKind.Master ? revision.masterPath : revision.previewPath;
@@ -389,11 +398,7 @@ export class AssetDevelopService {
     return { data, info: info as RawImageInfo, colorspace };
   }
 
-  private async renderRecipe(
-    decoded: { data: Buffer; info: RawImageInfo },
-    recipe: AssetDevelopRecipe,
-    seed: number,
-  ) {
+  private async renderRecipe(decoded: { data: Buffer; info: RawImageInfo }, recipe: AssetDevelopRecipe, seed: number) {
     const geometry = planDevelopGeometry(recipe, decoded.info.width, decoded.info.height);
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
@@ -415,7 +420,11 @@ export class AssetDevelopService {
     }
   }
 
-  private isSRGB(exifInfo: { colorspace?: string | null; profileDescription?: string | null; bitsPerSample?: number | null }) {
+  private isSRGB(exifInfo: {
+    colorspace?: string | null;
+    profileDescription?: string | null;
+    bitsPerSample?: number | null;
+  }) {
     const { colorspace, profileDescription, bitsPerSample } = exifInfo;
     if (colorspace || profileDescription) {
       return [colorspace, profileDescription].some((s) => s?.toLowerCase().includes('srgb'));

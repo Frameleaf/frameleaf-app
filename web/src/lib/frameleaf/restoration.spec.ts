@@ -1,4 +1,12 @@
 import {
+  AssetRestorationStatus,
+  MlAdmissionRefusal,
+  MlDestinationHealth,
+  MlDestinationKind,
+  type AssetRestorationDestinationDto,
+} from '@immich/sdk';
+import { describe, expect, it, vi } from 'vitest';
+import {
   CENTRE_REGION,
   anyRestorationBusy,
   canDecideRestoration,
@@ -15,14 +23,6 @@ import {
   restorationStatusTone,
   retryOperationIdFor,
 } from '$lib/frameleaf/restoration';
-import {
-  AssetRestorationStatus,
-  MlAdmissionRefusal,
-  MlDestinationHealth,
-  MlDestinationKind,
-  type AssetRestorationDestinationDto,
-} from '@immich/sdk';
-import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { params: {} } }));
 
@@ -37,7 +37,15 @@ const destination = (overrides: Partial<AssetRestorationDestinationDto> = {}): A
   consentGranted: true,
   refusal: null,
   refusalDetail: null,
-  estimate: { sampleCount: 0, bytesPerSecond: null, windowDays: 30, previewBytes: 0, fullBytes: 0, previewSeconds: null, fullSeconds: null },
+  estimate: {
+    sampleCount: 0,
+    bytesPerSecond: null,
+    windowDays: 30,
+    previewBytes: 0,
+    fullBytes: 0,
+    previewSeconds: null,
+    fullSeconds: null,
+  },
   ...overrides,
 });
 
@@ -46,7 +54,9 @@ describe('restoration presentation rules (FL-115)', () => {
     expect(isRestorationBusy(AssetRestorationStatus.PreviewRendering)).toBe(true);
     expect(isRestorationBusy(AssetRestorationStatus.Accepted)).toBe(true);
     expect(isRestorationBusy(AssetRestorationStatus.PreviewReady)).toBe(false);
-    expect(anyRestorationBusy([{ status: AssetRestorationStatus.Rejected }, { status: AssetRestorationStatus.Restoring }])).toBe(true);
+    expect(
+      anyRestorationBusy([{ status: AssetRestorationStatus.Rejected }, { status: AssetRestorationStatus.Restoring }]),
+    ).toBe(true);
     expect(canDecideRestoration(AssetRestorationStatus.PreviewReady)).toBe(true);
     expect(canDecideRestoration(AssetRestorationStatus.Restored)).toBe(false);
     expect(canSelectRestoration({ status: AssetRestorationStatus.Restored, hasResult: true })).toBe(true);
@@ -66,11 +76,19 @@ describe('restoration presentation rules (FL-115)', () => {
   });
 
   it('offers the result comparison once restored and the preview comparison while the preview exists', () => {
-    expect(compareKindFor({ status: AssetRestorationStatus.Restored, hasPreview: true, hasResult: true })).toBe('result');
-    expect(compareKindFor({ status: AssetRestorationStatus.PreviewReady, hasPreview: true, hasResult: false })).toBe('preview');
-    expect(compareKindFor({ status: AssetRestorationStatus.Rejected, hasPreview: true, hasResult: false })).toBe('preview');
+    expect(compareKindFor({ status: AssetRestorationStatus.Restored, hasPreview: true, hasResult: true })).toBe(
+      'result',
+    );
+    expect(compareKindFor({ status: AssetRestorationStatus.PreviewReady, hasPreview: true, hasResult: false })).toBe(
+      'preview',
+    );
+    expect(compareKindFor({ status: AssetRestorationStatus.Rejected, hasPreview: true, hasResult: false })).toBe(
+      'preview',
+    );
     expect(compareKindFor({ status: AssetRestorationStatus.Expired, hasPreview: false, hasResult: false })).toBeNull();
-    expect(compareKindFor({ status: AssetRestorationStatus.PreviewRendering, hasPreview: false, hasResult: false })).toBeNull();
+    expect(
+      compareKindFor({ status: AssetRestorationStatus.PreviewRendering, hasPreview: false, hasResult: false }),
+    ).toBeNull();
   });
 
   it('tones the status without carrying meaning by colour alone', () => {
@@ -99,7 +117,12 @@ describe('restoration presentation rules (FL-115)', () => {
   });
 
   it('defaults to a destination that keeps media on the network, keeping a still-admissible previous choice', () => {
-    const runPod = destination({ id: 'runpod', kind: MlDestinationKind.RunPod, leavesNetwork: true, consentRequired: true });
+    const runPod = destination({
+      id: 'runpod',
+      kind: MlDestinationKind.RunPod,
+      leavesNetwork: true,
+      consentRequired: true,
+    });
     const lan = destination({ id: 'lan', kind: MlDestinationKind.Lan });
     expect(defaultDestinationId([runPod, lan], null)).toBe('lan');
     expect(defaultDestinationId([runPod, lan], 'runpod')).toBe('runpod');
@@ -110,8 +133,12 @@ describe('restoration presentation rules (FL-115)', () => {
   });
 
   it('reports when the 4K cap reduced the requested upscale', () => {
-    expect(isOutputCapped({ sourceWidth: 1920, sourceHeight: 1080, outputWidth: 3840, outputHeight: 2160, upscale: 2 })).toBe(false);
-    expect(isOutputCapped({ sourceWidth: 6000, sourceHeight: 4000, outputWidth: 3240, outputHeight: 2160, upscale: 2 })).toBe(true);
+    expect(
+      isOutputCapped({ sourceWidth: 1920, sourceHeight: 1080, outputWidth: 3840, outputHeight: 2160, upscale: 2 }),
+    ).toBe(false);
+    expect(
+      isOutputCapped({ sourceWidth: 6000, sourceHeight: 4000, outputWidth: 3240, outputHeight: 2160, upscale: 2 }),
+    ).toBe(true);
   });
 
   it('turns an editor crop into a valid preview area', () => {

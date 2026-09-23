@@ -4,7 +4,7 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "06f16bd025906f8590381e10e28859156593f0ec312430d3af54b60655c1873a"
+      "sha256": "d219cdd43224fb5e09cafcc6a67196b997a20a5b33b58a113b4fc1d67a1ee7bc"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",

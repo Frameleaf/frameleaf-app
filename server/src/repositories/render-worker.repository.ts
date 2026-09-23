@@ -128,7 +128,11 @@ export class RenderWorkerRepository {
   }
 
   async markSeen(id: string): Promise<void> {
-    await this.db.updateTable('render_worker').set({ lastSeenAt: sql<Date>`now()` }).where('id', '=', id).execute();
+    await this.db
+      .updateTable('render_worker')
+      .set({ lastSeenAt: sql<Date>`now()` })
+      .where('id', '=', id)
+      .execute();
   }
 
   /**
@@ -306,20 +310,22 @@ export class RenderWorkerRepository {
       return Promise.resolve([]);
     }
 
-    return this.db
-      .selectFrom('media_operation')
-      .selectAll()
-      .where('status', '=', MediaOperationStatus.Queued)
-      .where('destination', '=', options.destination)
-      .where('kind', 'in', [...options.kinds])
-      .where('cancelRequestedAt', 'is', null)
-      // A job waiting for its automatic retry is not offered before its retry time (FL-104).
-      .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
-      .$if(options.excludeIds.length > 0, (qb) => qb.where('id', 'not in', [...options.excludeIds]))
-      .orderBy('createdAt', 'asc')
-      .orderBy('id', 'asc')
-      .limit(options.take)
-      .execute() as unknown as Promise<MediaOperationRow[]>;
+    return (
+      this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('status', '=', MediaOperationStatus.Queued)
+        .where('destination', '=', options.destination)
+        .where('kind', 'in', [...options.kinds])
+        .where('cancelRequestedAt', 'is', null)
+        // A job waiting for its automatic retry is not offered before its retry time (FL-104).
+        .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+        .$if(options.excludeIds.length > 0, (qb) => qb.where('id', 'not in', [...options.excludeIds]))
+        .orderBy('createdAt', 'asc')
+        .orderBy('id', 'asc')
+        .limit(options.take)
+        .execute() as unknown as Promise<MediaOperationRow[]>
+    );
   }
 
   /**

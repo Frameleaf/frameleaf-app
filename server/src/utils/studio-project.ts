@@ -190,11 +190,8 @@ export const isStudioLeaseHeld = (lease: StudioLeaseView, now: Date = new Date()
  * A lapsed lease is free for the taking; a live lease held by another session is not, and needs
  * an explicit takeover the person asked for.
  */
-export const canAcquireStudioLease = (
-  lease: StudioLeaseView,
-  sessionId: string,
-  now: Date = new Date(),
-): boolean => !isStudioLeaseHeld(lease, now) || lease.holderSessionId === sessionId;
+export const canAcquireStudioLease = (lease: StudioLeaseView, sessionId: string, now: Date = new Date()): boolean =>
+  !isStudioLeaseHeld(lease, now) || lease.holderSessionId === sessionId;
 
 /* ------------------------------------------------------------------ */
 /* Rational time on a review comment                                    */

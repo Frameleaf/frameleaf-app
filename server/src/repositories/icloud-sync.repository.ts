@@ -3,12 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
-import {
-  MediaOperationDestination,
-  MediaOperationKind,
-  NotificationLevel,
-  NotificationType,
-} from 'src/enum.js';
+import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
@@ -628,10 +623,11 @@ export class ICloudSyncRepository {
     options: { trigger: ICloudRunTrigger; retryOfId?: string | null },
   ): Promise<ICloudRunQueueResult> {
     return this.active(async (db): Promise<ICloudRunQueueResult> => {
-      const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection WHERE id = ${connectionId}::uuid
+      const connection =
+        await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection WHERE id = ${connectionId}::uuid
         AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed' FOR UPDATE`
-        .execute(db)
-        .then(({ rows }) => rows[0]);
+          .execute(db)
+          .then(({ rows }) => rows[0]);
       if (!connection || connection.state === 'disconnected') {
         return { outcome: 'not-found' };
       }

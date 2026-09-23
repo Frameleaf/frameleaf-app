@@ -72,9 +72,12 @@ const sameSet = (left: readonly string[], right: readonly string[]) => {
 };
 
 const answer = (ids: readonly string[], status: MediaOperationItemStatus, reasonKey?: string, message?: string) =>
-  ids.map(
-    (id): BulkOperationItem => ({ id, status, ...(reasonKey ? { reasonKey } : {}), ...(message ? { message } : {}) }),
-  );
+  ids.map((id): BulkOperationItem => ({
+    id,
+    status,
+    ...(reasonKey ? { reasonKey } : {}),
+    ...(message ? { message } : {}),
+  }));
 
 const ok = (ids: readonly string[]) => answer(ids, MediaOperationItemStatus.Ok);
 const skipped = (ids: readonly string[], reasonKey: string) => answer(ids, MediaOperationItemStatus.Skipped, reasonKey);

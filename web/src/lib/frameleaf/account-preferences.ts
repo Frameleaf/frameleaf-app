@@ -11,7 +11,6 @@
  * update sent to the server all work on the same keys. Only changed keys are ever sent, which is
  * what keeps unrelated groups (and the account's private Locked choices) untouched.
  */
-
 import { AssetOrder, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@immich/sdk';
 
 /** One GiB is 1,073,741,824 bytes. Archive sizes are stored as exact byte counts. */

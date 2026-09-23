@@ -214,7 +214,10 @@ describe('chunk reuse', () => {
   });
 
   it('refuses a chunk covering a different range', () => {
-    expect(canReuseChunk(stored(3, { endTicks: 9999n }), plan(3))).toEqual({ reusable: false, reason: 'range-mismatch' });
+    expect(canReuseChunk(stored(3, { endTicks: 9999n }), plan(3))).toEqual({
+      reusable: false,
+      reason: 'range-mismatch',
+    });
   });
 });
 
@@ -239,7 +242,13 @@ describe('resume planning', () => {
 
   it('walks back to a boundary a render may legitimately start at', () => {
     // Chunks 1 and 2 carry serialized filter state, so a resume cannot enter chunk 3 cold.
-    const withState = [plan(0), plan(1, { requiresSequentialContext: true }), plan(2, { requiresSequentialContext: true }), plan(3), plan(4)];
+    const withState = [
+      plan(0),
+      plan(1, { requiresSequentialContext: true }),
+      plan(2, { requiresSequentialContext: true }),
+      plan(3),
+      plan(4),
+    ];
     const result = planChunkResume([stored(0), stored(1), stored(2)], withState);
 
     expect(result.resumeFrom).toBe(1);
@@ -256,7 +265,10 @@ describe('resume planning', () => {
   });
 
   it('reports the end when every chunk is reusable', () => {
-    const result = planChunkResume(planned.map((chunk) => stored(chunk.sequence)), planned);
+    const result = planChunkResume(
+      planned.map((chunk) => stored(chunk.sequence)),
+      planned,
+    );
 
     expect(result.resumeFrom).toBe(planned.length);
     expect(result.reusable).toHaveLength(planned.length);

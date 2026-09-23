@@ -163,10 +163,7 @@ export class UserAdminController {
     description: 'Delete a specific session for a specific user, signing that device out.',
     history: new HistoryBuilder().added('v3').stable('v3'),
   })
-  deleteUserSessionAdmin(
-    @Auth() auth: AuthDto,
-    @Param() { id, sessionId }: UserAdminSessionParamDto,
-  ): Promise<void> {
+  deleteUserSessionAdmin(@Auth() auth: AuthDto, @Param() { id, sessionId }: UserAdminSessionParamDto): Promise<void> {
     return this.service.deleteSession(auth, id, sessionId);
   }
 

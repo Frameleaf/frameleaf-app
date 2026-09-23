@@ -143,7 +143,14 @@
   </header>
 
   <div class="likes">
-    <button type="button" class="like" class:on={liked} aria-pressed={liked} disabled={!enabled} onclick={() => void toggleLike()}>
+    <button
+      type="button"
+      class="like"
+      class:on={liked}
+      aria-pressed={liked}
+      disabled={!enabled}
+      onclick={() => void toggleLike()}
+    >
       <Icon icon={liked ? mdiHeart : mdiHeartOutline} size="18" />
       <span>{liked ? $t('frameleaf_album_activity_liked_label') : $t('frameleaf_album_activity_like')}</span>
     </button>
@@ -223,9 +230,13 @@
             event.preventDefault();
             void send();
           }
-        }}
-      ></textarea>
-      <button type="submit" class="send" aria-label={$t('frameleaf_album_activity_send')} disabled={sending || !draft.trim()}>
+        }}></textarea>
+      <button
+        type="submit"
+        class="send"
+        aria-label={$t('frameleaf_album_activity_send')}
+        disabled={sending || !draft.trim()}
+      >
         <Icon icon={mdiArrowUp} size="18" />
       </button>
     </form>

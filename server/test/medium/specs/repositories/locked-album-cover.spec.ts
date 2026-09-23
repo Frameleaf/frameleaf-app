@@ -51,9 +51,7 @@ const seed = async ({ ctx }: ReturnType<typeof setup>) => {
     fallback.id,
     alreadyLocked.id,
   ]);
-  const { album: otherAlbum } = await ctx.newAlbum({ ownerId: other.id, albumThumbnailAssetId: cover.id }, [
-    cover.id,
-  ]);
+  const { album: otherAlbum } = await ctx.newAlbum({ ownerId: other.id, albumThumbnailAssetId: cover.id }, [cover.id]);
   return { owner, cover, fallback, alreadyLocked, ownAlbum, otherAlbum };
 };
 

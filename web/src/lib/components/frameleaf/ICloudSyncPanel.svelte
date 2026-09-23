@@ -786,11 +786,7 @@
         <div class="ic-dialog-actions">
           <Button variant="quiet" onclick={() => (signInAgain = true)}>{$t('frameleaf_icloud_start_over')}</Button>
           <Button onclick={() => (authOpen = false)}>{$t('cancel')}</Button>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onclick={() => void authenticate(ICloudAuthAction.DeviceApproval)}
-          >
+          <Button variant="primary" disabled={busy} onclick={() => void authenticate(ICloudAuthAction.DeviceApproval)}>
             {$t('frameleaf_icloud_check_approval')}
           </Button>
         </div>

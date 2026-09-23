@@ -4,8 +4,6 @@
  * The enrolment secret returned by `handleCreateRenderWorker` is handed straight back to the
  * caller and never stored or logged here.
  */
-import { getFormatter } from '$lib/utils/i18n';
-import { handleError } from '$lib/utils/handle-error';
 import {
   createRenderWorker,
   deleteRenderWorkerUserLimit,
@@ -17,6 +15,8 @@ import {
   type RenderWorkerUpdateDto,
 } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
+import { handleError } from '$lib/utils/handle-error';
+import { getFormatter } from '$lib/utils/i18n';
 
 export const handleCreateRenderWorker = async (dto: RenderWorkerCreateDto) => {
   const $t = await getFormatter();

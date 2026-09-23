@@ -6,7 +6,6 @@
  * and into the eligibility the route pickers show, so the admin page cannot offer a choice
  * the server would refuse. Nothing here ever picks a destination on the person's behalf.
  */
-
 import {
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -138,8 +137,16 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): string => {
 /* Separate library-analysis and restoration workers (FL-72)                   */
 /* -------------------------------------------------------------------------- */
 
-export const LIBRARY_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment];
-export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative];
+export const LIBRARY_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Face,
+  MlWorkload.Clip,
+  MlWorkload.Ocr,
+  MlWorkload.Enrichment,
+];
+export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+];
 
 export const isLibraryWorkload = (workload: MlWorkload) => LIBRARY_WORKLOADS.includes(workload);
 export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKLOADS.includes(workload);
@@ -167,7 +174,11 @@ export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] => {
  * restoration never share a worker, so choosing one kind of work closes the other. Mirrors the
  * server's refusal so the form never offers a combination it would reject.
  */
-export const workloadBlockedInDraft = (kind: MlDestinationKind, selected: readonly MlWorkload[], workload: MlWorkload) => {
+export const workloadBlockedInDraft = (
+  kind: MlDestinationKind,
+  selected: readonly MlWorkload[],
+  workload: MlWorkload,
+) => {
   if (!workloadsForKind(kind).includes(workload)) {
     return true;
   }

@@ -1,3 +1,5 @@
+import { AssetRestorationMode, MlWorkload, RestorationModelState } from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
 import {
   allowsRestoration,
   measurementValues,
@@ -5,8 +7,6 @@ import {
   restorationModelStateLabelKey,
   restorationModelStateTone,
 } from '$lib/frameleaf/restoration-models';
-import { AssetRestorationMode, MlWorkload, RestorationModelState } from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 describe('restoration models presentation', () => {
   it('offers the report only where restoration work is allowed', () => {

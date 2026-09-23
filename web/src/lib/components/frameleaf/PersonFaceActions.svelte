@@ -64,7 +64,9 @@
 
   const matches = $derived(
     searchTerm.trim()
-      ? candidates.filter((candidate) => candidate.name.toLocaleLowerCase().includes(searchTerm.trim().toLocaleLowerCase()))
+      ? candidates.filter((candidate) =>
+          candidate.name.toLocaleLowerCase().includes(searchTerm.trim().toLocaleLowerCase()),
+        )
       : candidates,
   );
 
@@ -179,88 +181,88 @@
 </script>
 
 <div class="fl-face-trigger">
-<Menu label={$t('frameleaf_faces_options_for', { values: { name: person.name } })} align="end" bind:open>
-  {#snippet trigger()}
-    <Icon icon={mdiDotsVertical} aria-hidden="true" size="16" />
-  {/snippet}
-  {#if mode === 'menu'}
-    <MenuItem onSelect={openPerson}>
-      <Icon icon={mdiAccountOutline} aria-hidden="true" size="18" />
-      {$t('frameleaf_faces_open_person')}
-    </MenuItem>
-    <MenuItem onSelect={enterReassignMode} disabled={isBusy} keepOpen>
-      <Icon icon={mdiAccountEditOutline} aria-hidden="true" size="18" />
-      {$t('frameleaf_faces_reassign')}
-    </MenuItem>
-    <MenuItem onSelect={enterCreateMode} disabled={isBusy} keepOpen>
-      <Icon icon={mdiAccountPlusOutline} aria-hidden="true" size="18" />
-      {$t('frameleaf_faces_create_new_person')}
-    </MenuItem>
-    <MenuItem onSelect={removeFace} disabled={isBusy}>
-      <Icon icon={mdiClose} aria-hidden="true" size="18" />
-      {$t('frameleaf_faces_remove_face')}
-    </MenuItem>
-    {#if !person.isHidden}
-      <MenuItem onSelect={hideFace} disabled={isBusy}>
-        <Icon icon={mdiEyeOffOutline} aria-hidden="true" size="18" />
-        {$t('frameleaf_faces_hide_face')}
+  <Menu label={$t('frameleaf_faces_options_for', { values: { name: person.name } })} align="end" bind:open>
+    {#snippet trigger()}
+      <Icon icon={mdiDotsVertical} aria-hidden="true" size="16" />
+    {/snippet}
+    {#if mode === 'menu'}
+      <MenuItem onSelect={openPerson}>
+        <Icon icon={mdiAccountOutline} aria-hidden="true" size="18" />
+        {$t('frameleaf_faces_open_person')}
       </MenuItem>
-    {/if}
-  {:else if mode === 'reassign'}
-    <div class="fl-face-picker">
-      <Input
-        bind:ref={searchInputEl}
-        bind:value={searchTerm}
-        size="tiny"
-        placeholder={$t('frameleaf_faces_find_person')}
-        aria-label={$t('frameleaf_faces_find_person')}
-        onkeydown={(event: KeyboardEvent) => {
-          // Keep typing (including arrow keys while editing text) from being swallowed by
-          // the owning Menu's roving-focus handler; Escape still closes the whole popup.
-          event.stopPropagation();
-          if (event.key === 'Enter' && matches[0]) {
-            event.preventDefault();
-            void reassignTo(matches[0]);
-          }
+      <MenuItem onSelect={enterReassignMode} disabled={isBusy} keepOpen>
+        <Icon icon={mdiAccountEditOutline} aria-hidden="true" size="18" />
+        {$t('frameleaf_faces_reassign')}
+      </MenuItem>
+      <MenuItem onSelect={enterCreateMode} disabled={isBusy} keepOpen>
+        <Icon icon={mdiAccountPlusOutline} aria-hidden="true" size="18" />
+        {$t('frameleaf_faces_create_new_person')}
+      </MenuItem>
+      <MenuItem onSelect={removeFace} disabled={isBusy}>
+        <Icon icon={mdiClose} aria-hidden="true" size="18" />
+        {$t('frameleaf_faces_remove_face')}
+      </MenuItem>
+      {#if !person.isHidden}
+        <MenuItem onSelect={hideFace} disabled={isBusy}>
+          <Icon icon={mdiEyeOffOutline} aria-hidden="true" size="18" />
+          {$t('frameleaf_faces_hide_face')}
+        </MenuItem>
+      {/if}
+    {:else if mode === 'reassign'}
+      <div class="fl-face-picker">
+        <Input
+          bind:ref={searchInputEl}
+          bind:value={searchTerm}
+          size="tiny"
+          placeholder={$t('frameleaf_faces_find_person')}
+          aria-label={$t('frameleaf_faces_find_person')}
+          onkeydown={(event: KeyboardEvent) => {
+            // Keep typing (including arrow keys while editing text) from being swallowed by
+            // the owning Menu's roving-focus handler; Escape still closes the whole popup.
+            event.stopPropagation();
+            if (event.key === 'Enter' && matches[0]) {
+              event.preventDefault();
+              void reassignTo(matches[0]);
+            }
+          }}
+        />
+        <div class="fl-face-picker-list">
+          {#if isLoadingCandidates}
+            <p class="fl-face-picker-empty">{$t('loading')}</p>
+          {:else if matches.length === 0}
+            <p class="fl-face-picker-empty">{$t('no_people_found')}</p>
+          {:else}
+            {#each matches.slice(0, 8) as candidate (candidate.id)}
+              <MenuItem onSelect={() => reassignTo(candidate)} disabled={isBusy}>
+                {candidate.name}
+              </MenuItem>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    {:else if mode === 'create'}
+      <form
+        class="fl-face-picker"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void createAndAssign();
         }}
-      />
-      <div class="fl-face-picker-list">
-        {#if isLoadingCandidates}
-          <p class="fl-face-picker-empty">{$t('loading')}</p>
-        {:else if matches.length === 0}
-          <p class="fl-face-picker-empty">{$t('no_people_found')}</p>
-        {:else}
-          {#each matches.slice(0, 8) as candidate (candidate.id)}
-            <MenuItem onSelect={() => reassignTo(candidate)} disabled={isBusy}>
-              {candidate.name}
-            </MenuItem>
-          {/each}
-        {/if}
-      </div>
-    </div>
-  {:else if mode === 'create'}
-    <form
-      class="fl-face-picker"
-      onsubmit={(event) => {
-        event.preventDefault();
-        void createAndAssign();
-      }}
-    >
-      <Input
-        bind:ref={nameInputEl}
-        bind:value={newName}
-        size="tiny"
-        placeholder={$t('name')}
-        aria-label={$t('frameleaf_faces_new_person_name')}
-        onkeydown={(event: KeyboardEvent) => event.stopPropagation()}
-      />
-      <div class="fl-face-picker-actions">
-        <button type="button" onclick={resetToMenu}>{$t('cancel')}</button>
-        <button type="submit" class="primary" disabled={!newName.trim() || isBusy}>{$t('create_person')}</button>
-      </div>
-    </form>
-  {/if}
-</Menu>
+      >
+        <Input
+          bind:ref={nameInputEl}
+          bind:value={newName}
+          size="tiny"
+          placeholder={$t('name')}
+          aria-label={$t('frameleaf_faces_new_person_name')}
+          onkeydown={(event: KeyboardEvent) => event.stopPropagation()}
+        />
+        <div class="fl-face-picker-actions">
+          <button type="button" onclick={resetToMenu}>{$t('cancel')}</button>
+          <button type="submit" class="primary" disabled={!newName.trim() || isBusy}>{$t('create_person')}</button>
+        </div>
+      </form>
+    {/if}
+  </Menu>
 </div>
 
 <style>

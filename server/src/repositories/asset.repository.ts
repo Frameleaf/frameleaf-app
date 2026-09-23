@@ -32,6 +32,7 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
@@ -879,7 +880,8 @@ export class AssetRepository {
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
-      .where(sql<boolean>`case
+      .where(
+        sql<boolean>`case
         when coalesce((select phase from immich_fork.state where id = 1), 'inactive') = 'active' then exists (
           select 1
           from immich_fork.asset_privacy as privacy_asset
@@ -887,7 +889,8 @@ export class AssetRepository {
             and privacy_asset."isNsfw" = true
         )
         else asset.is_nsfw = true
-      end`)
+      end`,
+      )
       .where('asset.deletedAt', 'is', null)
       .where(isNotLocked('asset'))
       .where((eb) =>
@@ -1356,19 +1359,21 @@ export class AssetRepository {
 
     const date = truncatedDate<Date>(order, 'DAY');
 
-    return this.db
-      .selectFrom('asset')
-      .select(date.as('date'))
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('ownerId', '=', asUuid(ownerId))
-      .where(column, '>=', dto.from)
-      .where(column, '<', dto.to)
-      .where('deletedAt', 'is', null)
-      // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
-      .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
-      .groupBy(date)
-      .orderBy('date', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(date.as('date'))
+        .select((eb) => eb.fn.countAll<number>().as('count'))
+        .where('ownerId', '=', asUuid(ownerId))
+        .where(column, '>=', dto.from)
+        .where(column, '<', dto.to)
+        .where('deletedAt', 'is', null)
+        // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
+        .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
+        .groupBy(date)
+        .orderBy('date', 'asc')
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [{}, { user: { id: DummyValue.UUID } }] })

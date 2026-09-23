@@ -290,7 +290,8 @@ export class StudioProjectService {
 
   async get(auth: AuthDto, id: string, clientId: string | null = null): Promise<StudioProjectDetailDto> {
     const { project, access } = await this.findAccessible(auth, id);
-    const head = project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
+    const head =
+      project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
 
     if (!head) {
       return {
@@ -305,7 +306,7 @@ export class StudioProjectService {
     const exposure = await this.decideExposure(auth, project, access, head);
     return {
       ...this.mapProject(project, access, auth.user.id, clientId),
-      envelope: exposure.withheld ? null : envelopeOf(head),
+      envelope: exposure.withheld ? null : (envelopeOf(head) as StudioProjectDetailDto['envelope']),
       digest: exposure.withheld ? null : head.digest,
       withheld: exposure.withheld,
       resources: exposure.resources,
@@ -525,7 +526,8 @@ export class StudioProjectService {
     this.assertHead(project, dto.expectedRevision);
     this.assertLease(project, auth.user.id, dto.clientId);
 
-    const head = project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
+    const head =
+      project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
     if (head && head.digest === digest) {
       return {
         revision: head.revision,
@@ -618,7 +620,7 @@ export class StudioProjectService {
     return {
       ...this.mapRevision(revision, access),
       digest: exposure.withheld ? null : revision.digest,
-      envelope: exposure.withheld ? null : envelopeOf(revision),
+      envelope: exposure.withheld ? null : (envelopeOf(revision) as StudioProjectRevisionDetailDto['envelope']),
       withheld: exposure.withheld,
       resources: exposure.resources,
     };
@@ -725,7 +727,12 @@ export class StudioProjectService {
   }
 
   /** The author edits the text; the author or the owner resolves. */
-  async updateComment(auth: AuthDto, id: string, commentId: string, dto: StudioCommentUpdateDto): Promise<StudioCommentDto> {
+  async updateComment(
+    auth: AuthDto,
+    id: string,
+    commentId: string,
+    dto: StudioCommentUpdateDto,
+  ): Promise<StudioCommentDto> {
     const { project, access } = await this.findAccessible(auth, id);
     const comment = await this.repository.getComment(project.id, commentId);
     if (!comment) {
@@ -773,7 +780,10 @@ export class StudioProjectService {
     }
   }
 
-  private async findAccessible(auth: AuthDto, id: string): Promise<{ project: StudioProject; access: StudioProjectAccess }> {
+  private async findAccessible(
+    auth: AuthDto,
+    id: string,
+  ): Promise<{ project: StudioProject; access: StudioProjectAccess }> {
     this.requireInteractive(auth);
 
     const project = await this.repository.getById(id);
@@ -1088,12 +1098,18 @@ export class StudioProjectService {
   /* Mapping                                                              */
   /* ------------------------------------------------------------------ */
 
-  private mapLease(project: StudioProject, userId: string, clientId: string | null, now = new Date()): StudioProjectLeaseDto {
+  private mapLease(
+    project: StudioProject,
+    userId: string,
+    clientId: string | null,
+    now = new Date(),
+  ): StudioProjectLeaseDto {
     const held = isStudioLeaseHeld(
       { holderId: project.leaseHolderId, holderSessionId: project.leaseClientId, expiresAt: project.leaseExpiresAt },
       now,
     );
-    const heldByYou = held && project.leaseHolderId === userId && clientId !== null && project.leaseClientId === clientId;
+    const heldByYou =
+      held && project.leaseHolderId === userId && clientId !== null && project.leaseClientId === clientId;
     return {
       heldByYou,
       heldByAnother: held && !heldByYou,

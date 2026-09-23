@@ -1,8 +1,8 @@
 import { AlbumKind, AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
+import { getAllAlbums } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
-import { getAllAlbums } from '@immich/sdk';
 import UploadMenuButton from './UploadMenuButton.svelte';
 
 /**

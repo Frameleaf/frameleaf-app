@@ -50,9 +50,7 @@ type CutFrame = VideoMomentFrameInsert;
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const isEligible = (source: Pick<VideoMomentSourceRow, 'status' | 'deletedAt' | 'visibility'>) =>
-  source.status === AssetStatus.Active &&
-  source.deletedAt === null &&
-  source.visibility !== AssetVisibility.Hidden;
+  source.status === AssetStatus.Active && source.deletedAt === null && source.visibility !== AssetVisibility.Hidden;
 
 const ffmpegFor = (config: Pick<SystemConfig, 'ffmpeg' | 'image'>) => ({
   ...config.ffmpeg,

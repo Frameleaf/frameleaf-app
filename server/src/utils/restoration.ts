@@ -144,7 +144,8 @@ export const restorationOutputPaths = (base: string, assetId: string, restoratio
 };
 
 /** Scratch space for chunk outputs and temporary files; removed once the result is published. */
-export const restorationWorkDir = (base: string, restorationId: string) => path.join(base, `restore_${restorationId}_work`);
+export const restorationWorkDir = (base: string, restorationId: string) =>
+  path.join(base, `restore_${restorationId}_work`);
 
 /* ------------------------------------------------------------------ */
 /* Sizing                                                              */
@@ -203,7 +204,8 @@ export const previewInputBytes = (
 ): number => {
   const area = Math.min(1, Math.max(0.01, region.w * region.h));
   if (sourceType === AssetRestorationSourceType.Video) {
-    const clip = durationSeconds && durationSeconds > 0 ? Math.min(1, RESTORATION_PREVIEW_SECONDS / durationSeconds) : 1;
+    const clip =
+      durationSeconds && durationSeconds > 0 ? Math.min(1, RESTORATION_PREVIEW_SECONDS / durationSeconds) : 1;
     return Math.round(sourceBytes * area * clip);
   }
   const rect = previewRegionPixels(region, width, height);
@@ -294,7 +296,12 @@ export const canRunStage = (stage: RestorationStage, status: AssetRestorationSta
 export const STAGE_STATUSES: Readonly<
   Record<
     RestorationStage,
-    { running: AssetRestorationStatus; done: AssetRestorationStatus; failed: AssetRestorationStatus; cancelled: AssetRestorationStatus }
+    {
+      running: AssetRestorationStatus;
+      done: AssetRestorationStatus;
+      failed: AssetRestorationStatus;
+      cancelled: AssetRestorationStatus;
+    }
   >
 > = {
   preview: {
@@ -363,7 +370,10 @@ export const parseRestorationSnapshot = (value: unknown): RestorationSnapshot | 
 export type RestorationChunk = { sequence: number; startSeconds: number; endSeconds: number };
 
 /** Cut a video into chunks of at most `chunkSeconds`. The last chunk absorbs the remainder. */
-export const planRestorationChunks = (durationSeconds: number, chunkSeconds = RESTORATION_CHUNK_SECONDS): RestorationChunk[] => {
+export const planRestorationChunks = (
+  durationSeconds: number,
+  chunkSeconds = RESTORATION_CHUNK_SECONDS,
+): RestorationChunk[] => {
   if (!(durationSeconds > 0)) {
     return [];
   }

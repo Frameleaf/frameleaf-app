@@ -65,19 +65,10 @@
     type DiscoveryQuery,
     type DiscoveryTextField,
   } from '$lib/components/discovery/query';
-  import {
-    isCommandQuery,
-    navigationCommands,
-    searchCommands,
-    type CommandItem,
-  } from '$lib/frameleaf/command-palette';
+  import { isCommandQuery, navigationCommands, searchCommands, type CommandItem } from '$lib/frameleaf/command-palette';
   import { discoveryContextChips, withoutDiscoveryContext } from '$lib/frameleaf/search-chips';
   import { describeFilterChips, ENRICHMENT_QUICK_FILTERS } from '$lib/frameleaf/search-filters';
-  import {
-    emptyFilterPanelOptions,
-    loadFilterPanelOptions,
-    loadMatchingCount,
-  } from '$lib/frameleaf/search-options';
+  import { emptyFilterPanelOptions, loadFilterPanelOptions, loadMatchingCount } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
   import { Route } from '$lib/route';
   import { searchStore } from '$lib/stores/search.svelte';

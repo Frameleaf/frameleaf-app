@@ -46,10 +46,7 @@ describe('enrichment facet', () => {
   });
 
   it('is cleared by removing its field and by resetting every filter', () => {
-    const query = withDiscoveryEnrichment(
-      { ...base(), filter: { city: { eq: 'Banff' } } },
-      ImageEnrichmentFilter.Nsfw,
-    );
+    const query = withDiscoveryEnrichment({ ...base(), filter: { city: { eq: 'Banff' } } }, ImageEnrichmentFilter.Nsfw);
     expect(withoutDiscoveryFilter(query, ENRICHMENT_FIELD).imageEnrichment).toBeUndefined();
     expect(withoutDiscoveryFilter(query, ENRICHMENT_FIELD).filter).toEqual({ city: { eq: 'Banff' } });
     expect(withoutDiscoveryFilters(query).imageEnrichment).toBeUndefined();

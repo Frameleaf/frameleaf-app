@@ -12,6 +12,12 @@
  * inline edits and `updateAssetImageEnrichment` for the enrichment card.
  */
 import {
+  AssetTypeEnum,
+  type AssetImageEnrichmentResponseDto,
+  type AssetResponseDto,
+  type ExifResponseDto,
+} from '@immich/sdk';
+import {
   cameraLabel,
   dimensionsLabel,
   exposureParts,
@@ -19,12 +25,6 @@ import {
   formatFileSize,
   megapixels,
 } from '$lib/frameleaf/viewer-headline';
-import {
-  AssetTypeEnum,
-  type AssetImageEnrichmentResponseDto,
-  type AssetResponseDto,
-  type ExifResponseDto,
-} from '@immich/sdk';
 
 /* ---------------------------------------------------------------- coordinates */
 
@@ -139,9 +139,7 @@ const TONES: Record<SensitivityState, SensitivityReview['tone']> = {
   missing: 'neutral',
 };
 
-export function sensitivityReview(
-  enrichment: AssetImageEnrichmentResponseDto | undefined,
-): SensitivityReview | null {
+export function sensitivityReview(enrichment: AssetImageEnrichmentResponseDto | undefined): SensitivityReview | null {
   const detection = enrichment?.nsfwDetection;
   if (!detection) {
     return null;
@@ -179,15 +177,7 @@ export function sensitivityReview(
 
 /* ---------------------------------------------------------------- detail rows */
 
-export type InfoDetailRowId =
-  | 'filename'
-  | 'path'
-  | 'image'
-  | 'camera'
-  | 'lens'
-  | 'exposure'
-  | 'video'
-  | 'checksum';
+export type InfoDetailRowId = 'filename' | 'path' | 'image' | 'camera' | 'lens' | 'exposure' | 'video' | 'checksum';
 
 export interface InfoDetailRow {
   id: InfoDetailRowId;

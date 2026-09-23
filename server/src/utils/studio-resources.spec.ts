@@ -377,9 +377,7 @@ describe(checkNestedSequences.name, () => {
 
   it('refuses a target the graph does not define', () => {
     const { refused } = checkNestedSequences(new Map([['main', ['missing']]]));
-    expect(refused).toEqual([
-      expect.objectContaining({ id: 'missing', reason: StudioRefusalReason.UnknownSequence }),
-    ]);
+    expect(refused).toEqual([expect.objectContaining({ id: 'missing', reason: StudioRefusalReason.UnknownSequence })]);
   });
 
   it('refuses every member of a cycle, including a self-reference', () => {

@@ -36,7 +36,14 @@
   import { getAssetUrls } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { joinPaths, TreeNode } from '$lib/utils/tree-utils';
-  import { createTag, deleteTag, searchAssets, updateTag, type AssetResponseDto, type TagResponseDto } from '@immich/sdk';
+  import {
+    createTag,
+    deleteTag,
+    searchAssets,
+    updateTag,
+    type AssetResponseDto,
+    type TagResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiDeleteOutline,
@@ -266,7 +273,11 @@
       {/if}
     </Pane>
 
-    <Pane label={selected ? $t('frameleaf_tags_preview_of', { values: { tag: selected.name } }) : $t('frameleaf_tags_choose_title')}>
+    <Pane
+      label={selected
+        ? $t('frameleaf_tags_preview_of', { values: { tag: selected.name } })
+        : $t('frameleaf_tags_choose_title')}
+    >
       {#if selected}
         <Breadcrumbs node={navNode} icon={mdiTagMultiple} title={$t('tags')} {getLink} />
         <div class="tag-browser-detail-title">
@@ -304,7 +315,10 @@
         </div>
 
         {#if coverAssets.length > 0}
-          <div class="tag-browser-strip" aria-label={$t('frameleaf_tags_preview_of', { values: { tag: selected.name } })}>
+          <div
+            class="tag-browser-strip"
+            aria-label={$t('frameleaf_tags_preview_of', { values: { tag: selected.name } })}
+          >
             {#each coverAssets as asset (asset.id)}
               <img src={getAssetUrls(asset).thumbnail} alt="" loading="lazy" />
             {/each}
@@ -335,7 +349,15 @@
 </div>
 
 {#if dialog}
-  <Dialog title={dialog.type === 'create' ? $t('frameleaf_tags_new') : dialog.type === 'rename' ? $t('frameleaf_tags_rename') : $t('delete_tag')} closeLabel={$t('close')} bind:open={dialogOpen}>
+  <Dialog
+    title={dialog.type === 'create'
+      ? $t('frameleaf_tags_new')
+      : dialog.type === 'rename'
+        ? $t('frameleaf_tags_rename')
+        : $t('delete_tag')}
+    closeLabel={$t('close')}
+    bind:open={dialogOpen}
+  >
     {#if dialog.type === 'create'}
       <form
         onsubmit={(event) => {
@@ -388,7 +410,9 @@
     {:else}
       <p>
         {dialog.childCount > 0
-          ? $t('frameleaf_tags_delete_confirm_with_children', { values: { tag: dialog.tag.name, count: dialog.childCount } })
+          ? $t('frameleaf_tags_delete_confirm_with_children', {
+              values: { tag: dialog.tag.name, count: dialog.childCount },
+            })
           : $t('frameleaf_tags_delete_confirm', { values: { tag: dialog.tag.name } })}
       </p>
       <div class="tag-browser-dialog-actions">

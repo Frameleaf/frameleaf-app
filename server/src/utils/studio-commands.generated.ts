@@ -29,23 +29,10 @@ export type StudioCommandScope =
   | 'track';
 
 export type StudioCommandCapability =
-  | 'analysisWorker'
-  | 'generationWorker'
-  | 'gpuWorker'
-  | 'renderWorker'
-  | 'restorationWorker'
-  | 'transcriptionWorker';
+  'analysisWorker' | 'generationWorker' | 'gpuWorker' | 'renderWorker' | 'restorationWorker' | 'transcriptionWorker';
 
 export type StudioPayloadFieldType =
-  | 'boolean'
-  | 'duration'
-  | 'number'
-  | 'object'
-  | 'object[]'
-  | 'rate'
-  | 'string'
-  | 'string[]'
-  | 'time';
+  'boolean' | 'duration' | 'number' | 'object' | 'object[]' | 'rate' | 'string' | 'string[]' | 'time';
 
 export type StudioPayloadField = StudioPayloadFieldType | `${StudioPayloadFieldType}?`;
 

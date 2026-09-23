@@ -836,9 +836,9 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([parent.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(parent));
 
-      await expect(
-        sut.create(AuthFactory.create(owner), { albumName: 'Nested', parentId: parent.id }),
-      ).rejects.toThrow('Albums nest only inside a collection');
+      await expect(sut.create(AuthFactory.create(owner), { albumName: 'Nested', parentId: parent.id })).rejects.toThrow(
+        'Albums nest only inside a collection',
+      );
       expect(mocks.album.create).not.toHaveBeenCalled();
     });
 
@@ -959,9 +959,9 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
 
-      await expect(
-        sut.update(AuthFactory.create(owner), album.id, { parentId: album.id }),
-      ).rejects.toThrow('An album cannot be its own parent');
+      await expect(sut.update(AuthFactory.create(owner), album.id, { parentId: album.id })).rejects.toThrow(
+        'An album cannot be its own parent',
+      );
       expect(mocks.album.reparent).not.toHaveBeenCalled();
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
@@ -1017,7 +1017,9 @@ describe(AlbumService.name, () => {
       const sharedWithMe = AlbumFactory.from().albumUser({ userId: owner.id, role: AlbumUserRole.Viewer }).build();
       const space = AlbumFactory.from({ kind: AlbumKind.Space }).owner(owner).build();
       const auth = AuthFactory.create(owner);
-      mocks.album.getAll.mockResolvedValue([collection, inside, loose, sharedWithMe, space].map((item) => getForAlbum(item)));
+      mocks.album.getAll.mockResolvedValue(
+        [collection, inside, loose, sharedWithMe, space].map((item) => getForAlbum(item)),
+      );
       mocks.album.getMetadataForIds.mockResolvedValue([
         { albumId: collection.id, assetCount: 1, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
         { albumId: inside.id, assetCount: 4, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },

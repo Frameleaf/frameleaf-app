@@ -45,7 +45,9 @@ type EventMap = {
   ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
 
   // shared space events (FL-55): members named in a comment
-  SharedSpaceMention: [{ id: string; assetId: string | null; activityId: string; userIds: string[]; senderName: string }];
+  SharedSpaceMention: [
+    { id: string; assetId: string | null; activityId: string; userIds: string[]; senderName: string },
+  ];
   // shared space events (FL-55): somebody answered a member's comment
   SharedSpaceReply: [
     {

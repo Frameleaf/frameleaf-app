@@ -109,10 +109,7 @@
   };
 </script>
 
-<div
-  class="fl-account"
-  use:clickOutside={{ onOutclick: close, onEscape: close }}
->
+<div class="fl-account" use:clickOutside={{ onOutclick: close, onEscape: close }}>
   <button
     type="button"
     class="fl-account-button"

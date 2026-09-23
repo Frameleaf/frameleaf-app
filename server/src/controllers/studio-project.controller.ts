@@ -288,7 +288,8 @@ export class StudioProjectController {
   @Authenticated()
   @Endpoint({
     summary: 'Compare two Studio project revisions',
-    description: 'What changed between `against` and this revision, as graph paths and counts. No graph values are returned.',
+    description:
+      'What changed between `against` and this revision, as graph paths and counts. No graph values are returned.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   diffStudioProjectRevision(

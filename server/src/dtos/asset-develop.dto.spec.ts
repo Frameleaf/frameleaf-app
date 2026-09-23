@@ -27,9 +27,9 @@ describe('AssetDevelopRecipeDto', () => {
     expect(AssetDevelopRecipeSchema.safeParse({ version: 1, exposure: 3 }).success).toBe(false);
     expect(AssetDevelopRecipeSchema.safeParse({ version: 1, grain: -1 }).success).toBe(false);
     expect(AssetDevelopRecipeSchema.safeParse({ version: 1, rotation: 45 }).success).toBe(false);
-    expect(
-      AssetDevelopRecipeSchema.safeParse({ version: 1, crop: { x: 0.6, y: 0, w: 0.5, h: 1 } }).success,
-    ).toBe(false);
+    expect(AssetDevelopRecipeSchema.safeParse({ version: 1, crop: { x: 0.6, y: 0, w: 0.5, h: 1 } }).success).toBe(
+      false,
+    );
   });
 
   it('defaults render to true on save and bounds the preview size', () => {

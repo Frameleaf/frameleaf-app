@@ -57,7 +57,12 @@
     type DevelopGroupId,
     type DevelopValues,
   } from '$lib/frameleaf/develop';
-  import { PREVIEW_DEBOUNCE_MS, developFileUrl, followDevelop, requestDevelopPreview } from '$lib/frameleaf/develop-api';
+  import {
+    PREVIEW_DEBOUNCE_MS,
+    developFileUrl,
+    followDevelop,
+    requestDevelopPreview,
+  } from '$lib/frameleaf/develop-api';
   import {
     anyRevisionBusy,
     changeDraft,
@@ -395,7 +400,9 @@
   );
   const afterSrc = $derived(!identityTone && serverPreview && previewMatches ? serverPreview.url : originalPreviewUrl);
   const cropFrame = $derived(
-    frame ? { width: frame.fw, height: frame.fh, left: stage.w / 2 - frame.fw / 2, top: stage.h / 2 - frame.fh / 2 } : null,
+    frame
+      ? { width: frame.fw, height: frame.fh, left: stage.w / 2 - frame.fw / 2, top: stage.h / 2 - frame.fh / 2 }
+      : null,
   );
   const aspectRatio = $derived(frame ? aspectRatioValue(recipe.aspect, frame.fw, frame.fh) : null);
   const orientedSource = $derived(frame?.rotated ? { w: source.h, h: source.w } : source);
@@ -649,7 +656,12 @@
   <div class={['ed-shell', isVideo && 'video', isVideo && videoTool === 'restore' && 'restoring']}>
     <header class="ed-top">
       {#if isVideo}
-        <button type="button" class="ed-tool labelled" onclick={() => onClose(saveChangedCurrent)} title={$t('frameleaf_editor_cancel_title')}>
+        <button
+          type="button"
+          class="ed-tool labelled"
+          onclick={() => onClose(saveChangedCurrent)}
+          title={$t('frameleaf_editor_cancel_title')}
+        >
           <Icon icon={mdiClose} size="20" />
           <span>{$t('close')}</span>
         </button>
@@ -743,7 +755,12 @@
           <Icon icon={mdiCompareHorizontal} size="20" />
         </button>
         <span class="ed-sep" aria-hidden="true"></span>
-        <button type="button" class="ed-tool labelled" title={$t('frameleaf_editor_copy_settings')} onclick={copySettings}>
+        <button
+          type="button"
+          class="ed-tool labelled"
+          title={$t('frameleaf_editor_copy_settings')}
+          onclick={copySettings}
+        >
           <Icon icon={mdiContentCopy} size="20" />
           <span>{$t('frameleaf_editor_copy')}</span>
         </button>
@@ -829,7 +846,10 @@
       </section>
     {:else}
       <div class="ed-stage-wrap">
-        <div class={['ed-stage', cropping && 'cropping', dragging && 'dragging']} aria-label={$t('frameleaf_editor_preview')}>
+        <div
+          class={['ed-stage', cropping && 'cropping', dragging && 'dragging']}
+          aria-label={$t('frameleaf_editor_preview')}
+        >
           <div class="ed-canvas" bind:this={canvasEl}>
             {#if restoring && restorationCompare}
               <div class="ed-restore-stage">
@@ -914,7 +934,13 @@
         </div>
       </div>
 
-      <nav class="ed-rail" role="tablist" aria-label={$t('frameleaf_editor_tools_label')} aria-orientation="vertical" onkeydown={railKey}>
+      <nav
+        class="ed-rail"
+        role="tablist"
+        aria-label={$t('frameleaf_editor_tools_label')}
+        aria-orientation="vertical"
+        onkeydown={railKey}
+      >
         {#each tools as item (item.id)}
           <button
             type="button"
@@ -933,7 +959,12 @@
         {/each}
       </nav>
 
-      <section class="ed-panel" id="fl-editor-panel" role="tabpanel" aria-label={$t(tools.find((item) => item.id === tool)!.label)}>
+      <section
+        class="ed-panel"
+        id="fl-editor-panel"
+        role="tabpanel"
+        aria-label={$t(tools.find((item) => item.id === tool)!.label)}
+      >
         {#if tool === 'adjust'}
           <div class="ed-panel-body">
             <div class="ed-panel-head">
@@ -1115,7 +1146,8 @@
               {#each revisions as revision (revision.id)}
                 <div class={['ed-version', revision.isCurrent && 'current']}>
                   <strong>
-                    {revision.label ?? $t('frameleaf_editor_version_number', { values: { revision: revision.revision } })}
+                    {revision.label ??
+                      $t('frameleaf_editor_version_number', { values: { revision: revision.revision } })}
                   </strong>
                   <span
                     class={[

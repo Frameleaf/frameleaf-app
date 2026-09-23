@@ -37,7 +37,10 @@ test.describe('Duplicate review', () => {
 
   test('opens a copy in the viewer and steps through its group with the arrow keys', async ({ page }) => {
     await page.goto('/utilities/duplicates');
-    await page.getByRole('button', { name: /^Open / }).first().click();
+    await page
+      .getByRole('button', { name: /^Open / })
+      .first()
+      .click();
     await page.waitForSelector('#immich-asset-viewer');
 
     const getViewedAssetId = () => new URL(page.url()).pathname.split('/').at(-1) ?? '';

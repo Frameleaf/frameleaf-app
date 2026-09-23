@@ -24,19 +24,33 @@
   let { failure, onRetry, onReload, busy = false }: Props = $props();
 </script>
 
-<div class="mt-2 flex items-start gap-2 text-xs text-red-600 dark:text-red-400" role="alert" data-testid="frameleaf-inline-edit-error">
+<div
+  class="mt-2 flex items-start gap-2 text-xs text-red-600 dark:text-red-400"
+  role="alert"
+  data-testid="frameleaf-inline-edit-error"
+>
   <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden />
   <div class="min-w-0 flex-1">
     <p>{$t(inlineEditMessageKey(failure))}</p>
     {#if onRetry || onReload}
       <div class="mt-1 flex gap-3">
         {#if onRetry}
-          <button type="button" class="underline disabled:no-underline disabled:opacity-60" disabled={busy} onclick={onRetry}>
+          <button
+            type="button"
+            class="underline disabled:no-underline disabled:opacity-60"
+            disabled={busy}
+            onclick={onRetry}
+          >
             {$t('frameleaf_info_retry')}
           </button>
         {/if}
         {#if onReload}
-          <button type="button" class="underline disabled:no-underline disabled:opacity-60" disabled={busy} onclick={onReload}>
+          <button
+            type="button"
+            class="underline disabled:no-underline disabled:opacity-60"
+            disabled={busy}
+            onclick={onReload}
+          >
             {$t('frameleaf_info_reload')}
           </button>
         {/if}

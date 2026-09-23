@@ -51,9 +51,11 @@ describe(AssetDevelopService.name, () => {
       get: vi.fn(),
       getCurrent: vi.fn(),
       create: vi.fn(),
-      update: vi.fn().mockImplementation((id: string, patch: Partial<AssetDevelopRevision>) =>
-        Promise.resolve(revisionStub({ id, ...patch })),
-      ),
+      update: vi
+        .fn()
+        .mockImplementation((id: string, patch: Partial<AssetDevelopRevision>) =>
+          Promise.resolve(revisionStub({ id, ...patch })),
+        ),
       setCurrent: vi.fn().mockResolvedValue(void 0),
       requestCancel: vi.fn().mockResolvedValue(void 0),
       isCancelRequested: vi.fn().mockResolvedValue(false),
@@ -191,7 +193,9 @@ describe(AssetDevelopService.name, () => {
     });
 
     it('only accepts rendered revisions', async () => {
-      developRepository.get.mockResolvedValue(revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Failed }));
+      developRepository.get.mockResolvedValue(
+        revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Failed }),
+      );
       await expect(sut.revert(authStub.user1, asset.id, { revisionId: 'rev' })).rejects.toBeInstanceOf(
         BadRequestException,
       );
@@ -205,7 +209,9 @@ describe(AssetDevelopService.name, () => {
 
   describe('getFile', () => {
     it('serves only rendered files', async () => {
-      developRepository.get.mockResolvedValue(revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued }));
+      developRepository.get.mockResolvedValue(
+        revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued }),
+      );
       await expect(sut.getFile(authStub.user1, asset.id, 'rev', AssetDevelopFileKind.Preview)).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -311,7 +317,12 @@ describe(AssetDevelopService.name, () => {
 
     it('never re-renders an already rendered revision', async () => {
       developRepository.get.mockResolvedValue(
-        revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Rendered, masterPath: '/m', previewPath: '/p' }),
+        revisionStub({
+          assetId: asset.id,
+          status: AssetDevelopRevisionStatus.Rendered,
+          masterPath: '/m',
+          previewPath: '/p',
+        }),
       );
       await expect(sut.handleRender({ id: 'rev' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.decodeImage).not.toHaveBeenCalled();

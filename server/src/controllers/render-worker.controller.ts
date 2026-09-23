@@ -105,7 +105,8 @@ export class RenderWorkerAdminController {
   @Authenticated({ admin: true })
   @Endpoint({
     summary: 'Get render limits',
-    description: 'The instance default and every per-account ceiling on concurrent operations, wall-clock and output size.',
+    description:
+      'The instance default and every per-account ceiling on concurrent operations, wall-clock and output size.',
     history: history(),
   })
   getRenderWorkerLimits(): Promise<RenderWorkerLimitsResponseDto> {
@@ -142,7 +143,8 @@ export class RenderWorkerAdminController {
   @Authenticated({ admin: true })
   @Endpoint({
     summary: 'Search the render worker audit trail',
-    description: 'Enrolments, admissions, refusals, limit breaches and revocations, newest first. Never a secret or a path.',
+    description:
+      'Enrolments, admissions, refusals, limit breaches and revocations, newest first. Never a secret or a path.',
     history: history(),
   })
   searchRenderWorkerAudit(@Query() dto: RenderWorkerAuditSearchDto): Promise<RenderWorkerAuditDto[]> {
@@ -308,7 +310,8 @@ export class RenderWorkerController {
   @Authenticated({ public: true })
   @Endpoint({
     summary: 'Complete a render checkpoint',
-    description: 'Marks a planned chunk rendered. The chunk key must still match; a re-planned chunk cannot be completed.',
+    description:
+      'Marks a planned chunk rendered. The chunk key must still match; a re-planned chunk cannot be completed.',
     history: history(),
   })
   completeRenderCheckpoint(
@@ -342,7 +345,8 @@ export class RenderWorkerController {
   @Authenticated({ public: true })
   @Endpoint({
     summary: 'Complete a claimed operation',
-    description: 'Publishes a validated result under the same claim. A previous valid result is kept until this succeeds.',
+    description:
+      'Publishes a validated result under the same claim. A previous valid result is kept until this succeeds.',
     history: history(),
   })
   completeRenderOperation(

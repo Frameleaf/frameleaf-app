@@ -1,7 +1,7 @@
 import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { describe, expect, it, vi } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
-import { describe, expect, it, vi } from 'vitest';
 import {
   albumTargetRows,
   buildAlbumTargets,

@@ -285,9 +285,7 @@ export type MlAdmissionInput = {
   spentUsd: number;
 };
 
-export type MlAdmissionVerdict =
-  | { admitted: true }
-  | { admitted: false; refusal: MlAdmissionRefusal; detail: string };
+export type MlAdmissionVerdict = { admitted: true } | { admitted: false; refusal: MlAdmissionRefusal; detail: string };
 
 /**
  * The pure admission rule. Evaluated in order so the most fundamental problem is the one
@@ -302,10 +300,18 @@ export const evaluateAdmission = ({
   spentUsd,
 }: MlAdmissionInput): MlAdmissionVerdict => {
   if (!destination) {
-    return { admitted: false, refusal: MlAdmissionRefusal.DestinationMissing, detail: 'the destination does not exist' };
+    return {
+      admitted: false,
+      refusal: MlAdmissionRefusal.DestinationMissing,
+      detail: 'the destination does not exist',
+    };
   }
   if (!destination.enabled) {
-    return { admitted: false, refusal: MlAdmissionRefusal.DestinationDisabled, detail: `${destination.name} is disabled` };
+    return {
+      admitted: false,
+      refusal: MlAdmissionRefusal.DestinationDisabled,
+      detail: `${destination.name} is disabled`,
+    };
   }
   if (!destination.workloads.includes(workload)) {
     return {

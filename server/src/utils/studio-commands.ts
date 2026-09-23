@@ -75,8 +75,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const isStudioCommandId = (value: unknown): value is StudioCommandId =>
   typeof value === 'string' && Object.hasOwn(studioCommandMirror, value);
 
-export const studioCommandDefinition = (id: StudioCommandId): StudioCommandMirror =>
-  studioCommandMirror[id];
+export const studioCommandDefinition = (id: StudioCommandId): StudioCommandMirror => studioCommandMirror[id];
 
 /** Kinds the catalogue can declare, checked structurally rather than by name. */
 const matchesFieldType = (type: string, value: unknown): boolean => {
@@ -199,9 +198,7 @@ export const studioBatchMutatesGraph = (envelopes: readonly StudioCommandEnvelop
   envelopes.some((envelope) => studioCommandMirror[envelope.id].mutatesGraph);
 
 /** Worker capabilities an ordered batch requires, sorted and de-duplicated. */
-export const studioBatchCapabilities = (
-  envelopes: readonly StudioCommandEnvelope[],
-): StudioCommandCapability[] =>
+export const studioBatchCapabilities = (envelopes: readonly StudioCommandEnvelope[]): StudioCommandCapability[] =>
   [
     ...new Set(
       envelopes

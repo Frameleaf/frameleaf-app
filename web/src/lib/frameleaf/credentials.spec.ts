@@ -1,3 +1,4 @@
+import { ConfigCredential, type AdminConfigDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   CREDENTIALS,
@@ -8,7 +9,6 @@ import {
   withCredentialState,
   withoutCredentialValues,
 } from '$lib/frameleaf/credentials';
-import { ConfigCredential, type AdminConfigDto } from '@immich/sdk';
 
 const config = (): AdminConfigDto =>
   ({

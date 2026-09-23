@@ -145,11 +145,7 @@ export const summarizeTrashReview = (rows: readonly TrashReviewRow[]): TrashRevi
 
 /** Search terms for the trash: whitespace separated, every term must appear in the file name. */
 export const trashSearchTerms = (query: string | undefined) =>
-  (query ?? '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 10);
+  (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 10);
 
 /** A term as a literal `ilike` pattern: `%`, `_` and the escape character match themselves. */
 export const escapeLikeTerm = (term: string) => term.replaceAll(/[\\%_]/g, (match) => `\\${match}`);

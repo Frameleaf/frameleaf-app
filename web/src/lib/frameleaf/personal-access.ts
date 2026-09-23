@@ -4,7 +4,6 @@
  * they can be tested on their own. Every action goes to the account's own endpoints; nothing here
  * stores a password, PIN, key or activation key.
  */
-
 import { Permission, type SessionResponseDto } from '@immich/sdk';
 
 /** The server's minimum for a new password (`ChangePasswordDto`). */

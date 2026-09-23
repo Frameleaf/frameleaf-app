@@ -323,7 +323,10 @@ export const planChunkResume = (stored: readonly StoredChunk[], planned: readonl
   const ordered = [...planned].sort((a, b) => a.sequence - b.sequence);
 
   let boundary = 0;
-  while (boundary < ordered.length && canReuseChunk(byFrame.get(ordered[boundary].sequence), ordered[boundary]).reusable) {
+  while (
+    boundary < ordered.length &&
+    canReuseChunk(byFrame.get(ordered[boundary].sequence), ordered[boundary]).reusable
+  ) {
     boundary++;
   }
 

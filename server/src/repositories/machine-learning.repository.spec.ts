@@ -110,9 +110,13 @@ describe(MachineLearningRepository.name, () => {
       vi.stubGlobal('fetch', fetch);
 
       await expect(
-        sut.encodeImage(selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'), imagePath, {
-          ...defaults.machineLearning.clip,
-        }),
+        sut.encodeImage(
+          selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+          imagePath,
+          {
+            ...defaults.machineLearning.clip,
+          },
+        ),
       ).rejects.toThrow(/runpod destination destination-runpod failed: fetch failed/);
 
       expect(fetch).toHaveBeenCalledTimes(1);
@@ -120,18 +124,26 @@ describe(MachineLearningRepository.name, () => {
     });
 
     it('sends the bearer token of the selected endpoint', async () => {
-      const fetch = vi.fn().mockResolvedValue(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 }));
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 }));
       vi.stubGlobal('fetch', fetch);
 
-      await sut.encodeImage(selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'), imagePath, {
-        ...defaults.machineLearning.clip,
-      });
+      await sut.encodeImage(
+        selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
+        imagePath,
+        {
+          ...defaults.machineLearning.clip,
+        },
+      );
 
       expect(fetch.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer lan-token' });
     });
 
     it('records usage once per request with bytes sent, bytes received and the outcome', async () => {
-      const fetch = vi.fn().mockResolvedValue(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 }));
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 }));
       vi.stubGlobal('fetch', fetch);
       const record = vi.fn();
 
@@ -206,12 +218,16 @@ describe(MachineLearningRepository.name, () => {
       vi.stubGlobal('fetch', fetch);
 
       await expect(
-        sut.describeImage(selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'), imagePath, {
-          modelName: qwenModelName,
-          fallbackModelName: florenceModelName,
-          acceleration: MachineLearningHardwareAcceleration.Cuda,
-          device: 'AUTO',
-        }),
+        sut.describeImage(
+          selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+          imagePath,
+          {
+            modelName: qwenModelName,
+            fallbackModelName: florenceModelName,
+            acceleration: MachineLearningHardwareAcceleration.Cuda,
+            device: 'AUTO',
+          },
+        ),
       ).rejects.toThrow('Machine learning request');
 
       expect(fetch).toHaveBeenCalledTimes(1);
@@ -253,9 +269,11 @@ describe(MachineLearningRepository.name, () => {
     });
 
     it('credits a legacy predict container without a capabilities route with the library workloads only', async () => {
-      const fetch = vi.fn().mockImplementation((url: URL) =>
-        Promise.resolve(url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 })),
-      );
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          Promise.resolve(url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 })),
+        );
       vi.stubGlobal('fetch', fetch);
 
       const probe = await sut.probe({ url: localUrl });
@@ -266,9 +284,11 @@ describe(MachineLearningRepository.name, () => {
     });
 
     it('reuses a fresh probe and re-probes once it is stale', async () => {
-      const fetch = vi.fn().mockImplementation((url: URL) =>
-        Promise.resolve(url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 })),
-      );
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          Promise.resolve(url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 })),
+        );
       vi.stubGlobal('fetch', fetch);
 
       await sut.probe({ url: localUrl }, { maxAgeMs: 10_000 });

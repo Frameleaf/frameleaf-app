@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'vitest';
+import en from '$i18n/en.json';
 import {
   ERROR_COPY,
   errorKind,
@@ -5,8 +7,6 @@ import {
   isSpaceUnavailableStatus,
   spaceErrorKind,
 } from '$lib/frameleaf/error-page';
-import en from '$i18n/en.json';
-import { describe, expect, it } from 'vitest';
 
 describe('errorStatus', () => {
   it("prefers the server's own status over SvelteKit's 500 for an unhandled API failure", () => {

@@ -85,9 +85,11 @@ describe(MediaHealthService.name, () => {
     } as unknown as MediaHealthRepository;
     mediaOperationRepository = {
       list: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-      create: vi.fn().mockImplementation((operation) =>
-        Promise.resolve({ ...operation, id: '0195e2a0-0000-7000-8000-0000000000c1', status: 'queued' }),
-      ),
+      create: vi
+        .fn()
+        .mockImplementation((operation) =>
+          Promise.resolve({ ...operation, id: '0195e2a0-0000-7000-8000-0000000000c1', status: 'queued' }),
+        ),
     } as unknown as MediaOperationRepository;
     mediaOperationService = {
       createBulk: vi.fn().mockResolvedValue({ id: '0195e2a0-0000-7000-8000-0000000000b1' }),
@@ -457,22 +459,23 @@ describe(MediaHealthService.name, () => {
         finishedAt: null,
         ...overrides,
       });
-      vi.mocked(mediaOperationRepository.list).mockImplementation(({ kind }) =>
-        Promise.resolve({
-          items:
-            kind === MediaOperationKind.MediaHealth
-              ? [job({ kind, snapshot: { mode: 'scan', userId: 'user-id' } })]
-              : [
-                  job({
-                    id: '0195e2a0-0000-7000-8000-000000000002',
-                    kind,
-                    snapshot: { action: MediaOperationBulkAction.RelinkMissingMedia },
-                    createdAt: new Date('2026-09-23T09:00:00Z'),
-                  }),
-                  job({ id: '0195e2a0-0000-7000-8000-000000000003', kind, snapshot: { action: 'favorite' } }),
-                ],
-          total: 1,
-        }) as never,
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        ({ kind }) =>
+          Promise.resolve({
+            items:
+              kind === MediaOperationKind.MediaHealth
+                ? [job({ kind, snapshot: { mode: 'scan', userId: 'user-id' } })]
+                : [
+                    job({
+                      id: '0195e2a0-0000-7000-8000-000000000002',
+                      kind,
+                      snapshot: { action: MediaOperationBulkAction.RelinkMissingMedia },
+                      createdAt: new Date('2026-09-23T09:00:00Z'),
+                    }),
+                    job({ id: '0195e2a0-0000-7000-8000-000000000003', kind, snapshot: { action: 'favorite' } }),
+                  ],
+            total: 1,
+          }) as never,
       );
 
       const summary = await sut.summary(authStub.user1, {});
@@ -492,21 +495,22 @@ describe(MediaHealthService.name, () => {
             : ({ id: 'corrupt-run', status: 'completed', startedAt: new Date(), finishedAt: new Date() } as never),
         ),
       );
-      vi.mocked(mediaOperationRepository.list).mockImplementation(({ kind }) =>
-        Promise.resolve({
-          items:
-            kind === MediaOperationKind.MediaHealth
-              ? [
-                  {
-                    id: 'job',
-                    status: MediaOperationStatus.Cancelled,
-                    snapshot: { mode: 'scan' },
-                    createdAt: new Date(),
-                  },
-                ]
-              : [],
-          total: 0,
-        }) as never,
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        ({ kind }) =>
+          Promise.resolve({
+            items:
+              kind === MediaOperationKind.MediaHealth
+                ? [
+                    {
+                      id: 'job',
+                      status: MediaOperationStatus.Cancelled,
+                      snapshot: { mode: 'scan' },
+                      createdAt: new Date(),
+                    },
+                  ]
+                : [],
+            total: 0,
+          }) as never,
       );
       vi.mocked(mediaHealthRepository.getActiveTrashFindingIds).mockResolvedValue(['held']);
 
@@ -522,14 +526,22 @@ describe(MediaHealthService.name, () => {
 
     it('leaves the runs of a job that is still running alone', async () => {
       vi.mocked(mediaHealthRepository.getLatestRun).mockResolvedValue({ id: 'run', status: 'paused' } as never);
-      vi.mocked(mediaOperationRepository.list).mockImplementation(({ kind }) =>
-        Promise.resolve({
-          items:
-            kind === MediaOperationKind.MediaHealth
-              ? [{ id: 'job', status: MediaOperationStatus.Paused, snapshot: { mode: 'scan' }, createdAt: new Date() }]
-              : [],
-          total: 0,
-        }) as never,
+      vi.mocked(mediaOperationRepository.list).mockImplementation(
+        ({ kind }) =>
+          Promise.resolve({
+            items:
+              kind === MediaOperationKind.MediaHealth
+                ? [
+                    {
+                      id: 'job',
+                      status: MediaOperationStatus.Paused,
+                      snapshot: { mode: 'scan' },
+                      createdAt: new Date(),
+                    },
+                  ]
+                : [],
+            total: 0,
+          }) as never,
       );
 
       await sut.summary(authStub.user1, {});
@@ -1110,9 +1122,10 @@ describe(MediaHealthService.name, () => {
         return true;
       });
 
-      await expect(
-        sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
-      ).resolves.toEqual({ id: 'asset-1', status: MediaOperationItemStatus.Ok });
+      await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual({
+        id: 'asset-1',
+        status: MediaOperationItemStatus.Ok,
+      });
 
       expect(mediaHealthRepository.relinkManagedAsset).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1186,9 +1199,10 @@ describe(MediaHealthService.name, () => {
       ] as never);
       vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([missingAsset()] as never);
 
-      await expect(
-        sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry),
-      ).resolves.toEqual({ id: 'asset-1', status: MediaOperationItemStatus.Ok });
+      await expect(sut.applyBulkEntry(worker(), MediaOperationBulkAction.RelinkMissingMedia, entry)).resolves.toEqual({
+        id: 'asset-1',
+        status: MediaOperationItemStatus.Ok,
+      });
       expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
     });
 

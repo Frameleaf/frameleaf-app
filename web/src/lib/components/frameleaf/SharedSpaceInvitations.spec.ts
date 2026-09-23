@@ -1,5 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
 import {
   acceptSharedSpaceInvitation,
   declineSharedSpaceInvitation,
@@ -7,6 +5,8 @@ import {
   type SharedSpacePreviewResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
 import SharedSpaceInvitations from './SharedSpaceInvitations.svelte';
 

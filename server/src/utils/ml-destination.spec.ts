@@ -148,7 +148,10 @@ describe('evaluateAdmission', () => {
 describe('resolveEndpoint', () => {
   it('uses the stored URL and token for local and LAN destinations', () => {
     expect(resolveEndpoint(mlDestinationStub.local, null)).toEqual({ url: mlDestinationStub.local.url });
-    expect(resolveEndpoint(mlDestinationStub.lan, null)).toEqual({ url: mlDestinationStub.lan.url, authToken: 'lan-token' });
+    expect(resolveEndpoint(mlDestinationStub.lan, null)).toEqual({
+      url: mlDestinationStub.lan.url,
+      authToken: 'lan-token',
+    });
   });
 
   it('resolves a RunPod destination only to what the RunPod service published', () => {
@@ -181,7 +184,12 @@ describe('consent and probe helpers', () => {
 describe('selectMlDestination', () => {
   it('admits and returns a selection whose accounting hook records the request', async () => {
     const d = deps({});
-    const selection = await selectMlDestination(d, { workload: MlWorkload.Face, destinationId: 'ml-destination-local', jobId: 'asset-1', jobName: 'faceDetection' });
+    const selection = await selectMlDestination(d, {
+      workload: MlWorkload.Face,
+      destinationId: 'ml-destination-local',
+      jobId: 'asset-1',
+      jobName: 'faceDetection',
+    });
 
     expect(selection).toMatchObject({
       destinationId: 'ml-destination-local',
@@ -226,9 +234,10 @@ describe('selectMlDestination', () => {
       destination: mlDestinationStub.runPod,
       runPod: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
     });
-    const error = await selectMlDestination(d, { workload: MlWorkload.Enrichment, destinationId: 'ml-destination-runpod' }).catch(
-      (error_) => error_,
-    );
+    const error = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: 'ml-destination-runpod',
+    }).catch((error_) => error_);
     expect(error).toBeInstanceOf(MlDestinationRefusedError);
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ConsentMissing);
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
@@ -236,9 +245,10 @@ describe('selectMlDestination', () => {
 
   it('refuses when the destination is unreachable and records the failed probe', async () => {
     const d = deps({ probe: mlProbeStub.unreachable });
-    const error = await selectMlDestination(d, { workload: MlWorkload.Face, destinationId: 'ml-destination-local' }).catch(
-      (error_) => error_,
-    );
+    const error = await selectMlDestination(d, {
+      workload: MlWorkload.Face,
+      destinationId: 'ml-destination-local',
+    }).catch((error_) => error_);
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.DestinationUnhealthy);
     expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledWith(
       'ml-destination-local',
@@ -248,9 +258,10 @@ describe('selectMlDestination', () => {
 
   it('refuses a consented RunPod destination with no published worker rather than resolving elsewhere', async () => {
     const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: null });
-    const error = await selectMlDestination(d, { workload: MlWorkload.Enrichment, destinationId: 'ml-destination-runpod' }).catch(
-      (error_) => error_,
-    );
+    const error = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: 'ml-destination-runpod',
+    }).catch((error_) => error_);
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.EndpointUnresolved);
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
   });
@@ -265,7 +276,9 @@ describe('selectMlDestination', () => {
 describe('routedMlDestinationId', () => {
   it('returns the routed destination', async () => {
     const d = deps({ route: { workload: MlWorkload.Clip, destinationId: 'ml-destination-local' } });
-    await expect(routedMlDestinationId(d.mlDestinationRepository, MlWorkload.Clip)).resolves.toBe('ml-destination-local');
+    await expect(routedMlDestinationId(d.mlDestinationRepository, MlWorkload.Clip)).resolves.toBe(
+      'ml-destination-local',
+    );
   });
 
   it('refuses an unrouted workload instead of choosing a destination', async () => {
@@ -296,7 +309,9 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
   });
 
   it('keeps the managed RunPod pod on library analysis and the RunPod video worker on restoration', () => {
-    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.RestorationCreative])).toMatch(/library analysis only/);
+    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.RestorationCreative])).toMatch(
+      /library analysis only/,
+    );
     expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.Enrichment])).toBeNull();
     expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.Clip])).toMatch(/restoration only/);
     expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.RestorationFaithful])).toBeNull();
@@ -377,7 +392,10 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
   });
 
   it('never refuses library work, whatever restoration uses', async () => {
-    const d = conflictDeps([mlDestinationStub.lan], [{ workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id }]);
+    const d = conflictDeps(
+      [mlDestinationStub.lan],
+      [{ workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id }],
+    );
     await expect(restorationRoleConflict(d, mlDestinationStub.local, MlWorkload.Face)).resolves.toBeNull();
     expect(d.mlDestinationRepository.getRoutes).not.toHaveBeenCalled();
   });
@@ -389,7 +407,12 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
 });
 
 describe('worker readiness (FL-72)', () => {
-  const cpuHardware = { preferredAcceleration: 'auto', providers: ['CPUExecutionProvider'], cudaDeviceCount: 0, gpus: [] };
+  const cpuHardware = {
+    preferredAcceleration: 'auto',
+    providers: ['CPUExecutionProvider'],
+    cudaDeviceCount: 0,
+    gpus: [],
+  };
   const cudaHardware = {
     preferredAcceleration: 'cuda',
     providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'],

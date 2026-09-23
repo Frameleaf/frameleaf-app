@@ -1,5 +1,5 @@
-import { canEdit } from '$lib/frameleaf/album-directory';
 import { AlbumKind, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { canEdit } from '$lib/frameleaf/album-directory';
 
 /**
  * Where "Add to album" may put photos, loaded by the picker itself so it works from every view
@@ -35,8 +35,7 @@ export interface AlbumTargetDirectory {
 
 /** One rendered line of the picker: a collection heading or a selectable target. */
 export type AlbumTargetRow =
-  | { type: 'collection'; id: string; name: string }
-  | { type: 'target'; target: AlbumTarget; nested: boolean };
+  { type: 'collection'; id: string; name: string } | { type: 'target'; target: AlbumTarget; nested: boolean };
 
 export const emptyAlbumTargets = (): AlbumTargetDirectory => ({ albums: [], collections: [], spaces: [] });
 

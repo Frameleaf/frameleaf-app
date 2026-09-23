@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import IconChooser from './IconChooser.svelte';
 
 const catalogue = {
@@ -58,13 +58,17 @@ describe('IconChooser', () => {
   it('says so when nothing matches, and reports a failed catalogue load with a retry', async () => {
     render(IconChooser, { value: null, onChange: vi.fn(), inline: true });
     await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search icons' })).toBeEnabled());
-    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search icons' }), { target: { value: 'nothing here' } });
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search icons' }), {
+      target: { value: 'nothing here' },
+    });
     expect(screen.getByText('No icons match. Try a shorter word.')).toBeInTheDocument();
 
     resetIconCatalogueCache();
     sdkMock.getAlbumIconCatalogue.mockRejectedValueOnce(new Error('offline'));
     render(IconChooser, { value: null, onChange: vi.fn(), inline: true });
-    await waitFor(() => expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Unable to load the icon catalogue'));
+    await waitFor(() =>
+      expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Unable to load the icon catalogue'),
+    );
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 

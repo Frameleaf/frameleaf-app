@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import {
   isEnteringViewer,
   isLeavingViewer,
@@ -7,7 +8,6 @@ import {
   VIEWER_LOOKAHEAD,
   VIEWER_SEEK_PAGES,
 } from '$lib/frameleaf/space-viewer';
-import { describe, expect, it } from 'vitest';
 
 const items = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
 

@@ -9,11 +9,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import { Route } from '$lib/route';
-  import {
-    IntegrityReport,
-    ManualJobName,
-    type IntegrityReportSummaryResponseDto,
-  } from '@immich/sdk';
+  import { IntegrityReport, ManualJobName, type IntegrityReportSummaryResponseDto } from '@immich/sdk';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
 

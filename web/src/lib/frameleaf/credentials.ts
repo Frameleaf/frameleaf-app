@@ -8,7 +8,6 @@
  * draft. This module also makes sure no credential value leaves the browser through a generic
  * configuration path: a save, a copy, an export or an import.
  */
-
 import { ConfigCredential, type AdminConfigDto } from '@immich/sdk';
 import { cloneDeep } from 'lodash-es';
 

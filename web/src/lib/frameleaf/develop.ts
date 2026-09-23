@@ -165,9 +165,22 @@ export const PRESETS: readonly DevelopPresetSpec[] = [
     label: 'frameleaf_editor_preset_natural',
     params: { contrast: 6, highlights: -12, shadows: 10, vibrance: 8 },
   },
-  { id: AssetDevelopPreset.Warm, label: 'frameleaf_editor_preset_warm', params: { temperature: 32, tint: 6, vibrance: 8 } },
-  { id: AssetDevelopPreset.Cool, label: 'frameleaf_editor_preset_cool', params: { temperature: -30, tint: -4, contrast: 6 } },
-  { id: AssetDevelopPreset.Mono, label: 'frameleaf_editor_preset_mono', params: { contrast: 8 }, look: { grayscale: 100 } },
+  {
+    id: AssetDevelopPreset.Warm,
+    label: 'frameleaf_editor_preset_warm',
+    params: { temperature: 32, tint: 6, vibrance: 8 },
+  },
+  {
+    id: AssetDevelopPreset.Cool,
+    label: 'frameleaf_editor_preset_cool',
+    params: { temperature: -30, tint: -4, contrast: 6 },
+  },
+  {
+    id: AssetDevelopPreset.Mono,
+    label: 'frameleaf_editor_preset_mono',
+    params: { contrast: 8 },
+    look: { grayscale: 100 },
+  },
   {
     id: AssetDevelopPreset.Silvertone,
     label: 'frameleaf_editor_preset_silvertone',
@@ -261,11 +274,7 @@ export function cssFilterFor(recipe: DevelopSource): CssFilterInfo {
     sepia: round(clamp(look.sepia / 100, 0, 1)),
     blur: round((p.noiseReduction / 100) * 0.6),
   };
-  const parts = [
-    `brightness(${numeric.brightness})`,
-    `contrast(${numeric.contrast})`,
-    `saturate(${numeric.saturate})`,
-  ];
+  const parts = [`brightness(${numeric.brightness})`, `contrast(${numeric.contrast})`, `saturate(${numeric.saturate})`];
   if (numeric.grayscale > 0) {
     parts.push(`grayscale(${numeric.grayscale})`);
   }
@@ -600,9 +609,11 @@ export const rotateRect = (rect: CropRect, clockwise: boolean): CropRect =>
     : { x: rect.y, y: 1 - rect.x - rect.w, w: rect.h, h: rect.w };
 
 export const rotateAspect = (aspect: AspectId): AspectId =>
-  (({ '16:9': '9:16', '9:16': '16:9', Original: 'Original', '1:1': '1:1', Free: 'Free' }) as Partial<
-    Record<AspectId, AspectId>
-  >)[aspect] ?? 'Free';
+  (
+    ({ '16:9': '9:16', '9:16': '16:9', Original: 'Original', '1:1': '1:1', Free: 'Free' }) as Partial<
+      Record<AspectId, AspectId>
+    >
+  )[aspect] ?? 'Free';
 
 /** The recipe fields the server renders as tone; geometry is applied on the stage while editing. */
 export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecipeDto => ({
@@ -617,9 +628,11 @@ export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecip
 /** Stable key of everything that changes the server preview, so stale previews are never shown. */
 export const toneKey = (recipe: AssetDevelopRecipeDto): string => {
   const tone = toneOnlyRecipe(recipe);
-  return JSON.stringify(
-    [...DEVELOP_KEYS.map((key) => tone[key] ?? 0), tone.preset ?? AssetDevelopPreset.Original, tone.presetStrength ?? 100],
-  );
+  return JSON.stringify([
+    ...DEVELOP_KEYS.map((key) => tone[key] ?? 0),
+    tone.preset ?? AssetDevelopPreset.Original,
+    tone.presetStrength ?? 100,
+  ]);
 };
 
 export const formatParam = (spec: DevelopParamSpec, value: number) => {

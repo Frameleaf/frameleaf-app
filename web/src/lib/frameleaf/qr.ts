@@ -359,7 +359,8 @@ class Matrix {
     const n = history[1];
     const core = n > 0 && history[2] === n && history[3] === n * 3 && history[4] === n && history[5] === n;
     return (
-      (core && history[0] >= n * 4 && history[6] >= n ? 1 : 0) + (core && history[6] >= n * 4 && history[0] >= n ? 1 : 0)
+      (core && history[0] >= n * 4 && history[6] >= n ? 1 : 0) +
+      (core && history[6] >= n * 4 && history[0] >= n ? 1 : 0)
     );
   }
   finderPenaltyTerminate(runColor: boolean, runLength: number, history: number[]): number {

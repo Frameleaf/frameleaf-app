@@ -50,8 +50,7 @@ const asIso = (value: Date | string | null | undefined): string | null => {
 
 const asRequiredIso = (value: Date | string): string => asIso(value) as string;
 
-const asString = (value: unknown): string | null =>
-  value === null || value === undefined ? null : String(value);
+const asString = (value: unknown): string | null => (value === null || value === undefined ? null : String(value));
 
 const toPreviewTime = (frame: StudioPreviewFrame): PreviewTime =>
   rational(Number(frame.timeNumerator), Number(frame.timeDenominator));
@@ -585,7 +584,10 @@ export class StudioPreviewService {
       // rather than rounded somewhere downstream.
       return rational(Number(dto.time.numerator), Number(dto.time.denominator));
     } catch {
-      throw new ConflictException({ message: 'Preview time is not an exact rational', code: 'studio_preview_bad_time' });
+      throw new ConflictException({
+        message: 'Preview time is not an exact rational',
+        code: 'studio_preview_bad_time',
+      });
     }
   }
 

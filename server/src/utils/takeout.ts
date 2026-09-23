@@ -133,7 +133,8 @@ export const parseTakeoutOptions = (value: unknown): TakeoutOptions => {
 const photoRoots =
   /^google[\s_-]*(photos|fotos|foto|フォト|사진|相册|相簿|照片|фото|фотографии|รูปภาพ|φωτογραφίες|صور|תמונות|фотографії)$/iu;
 const editedSuffix = /-(edited|modifié|bearbeitet|modificato|editado|modificado|bewerkt|編集済み|편집됨)(?=\.[^.]+$)/iu;
-const lockedFolders = /^(locked folder|gesperrter ordner|dossier verrouillé|carpeta bloqueada|cartella bloccata|pasta trancada|vergrendelde map|ロックされたフォルダ|잠금 폴더)$/iu;
+const lockedFolders =
+  /^(locked folder|gesperrter ordner|dossier verrouillé|carpeta bloqueada|cartella bloccata|pasta trancada|vergrendelde map|ロックされたフォルダ|잠금 폴더)$/iu;
 
 /** Why an archive entry was refused instead of staged. Its name is never used as a path either way. */
 export class TakeoutEntryRejected extends Error {}

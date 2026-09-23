@@ -1,3 +1,4 @@
+import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable } from 'svelte/store';
@@ -6,7 +7,6 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@immich/sdk';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
 import ResultsToolbar from './ResultsToolbar.svelte';
@@ -201,7 +201,11 @@ describe('AssetTile', () => {
 
 describe('LibraryDayGroup', () => {
   const day = (ids: string[]) => {
-    const viewerAssets = ids.map((id) => ({ id, asset: asset({ id }), position: { top: 0, left: 0, width: 100, height: 66 } }));
+    const viewerAssets = ids.map((id) => ({
+      id,
+      asset: asset({ id }),
+      position: { top: 0, left: 0, width: 100, height: 66 },
+    }));
     return {
       day: 22,
       groupTitle: 'Tue, Sep 22',

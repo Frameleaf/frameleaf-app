@@ -73,7 +73,16 @@
     type AssetRestorationResponseDto,
   } from '@immich/sdk';
   import { Icon, modalManager, toastManager } from '@immich/ui';
-  import { mdiAutoFix, mdiCheck, mdiCloudOutline, mdiCompare, mdiDeleteOutline, mdiDownload, mdiRefresh, mdiStop } from '@mdi/js';
+  import {
+    mdiAutoFix,
+    mdiCheck,
+    mdiCloudOutline,
+    mdiCompare,
+    mdiDeleteOutline,
+    mdiDownload,
+    mdiRefresh,
+    mdiStop,
+  } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -116,9 +125,7 @@
   const destinations = $derived(orderedDestinations(options?.destinations ?? []));
   const selected = $derived(destinations.find((item) => item.id === destinationId) ?? null);
   const capped = $derived(options ? isOutputCapped(options) : false);
-  const canRequest = $derived(
-    !!options && !!selected && selected.available && !submitting && !loadError,
-  );
+  const canRequest = $derived(!!options && !!selected && selected.available && !submitting && !loadError);
   const previewEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.previewSeconds, $locale) : null);
   const fullEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.fullSeconds, $locale) : null);
 
@@ -131,7 +138,9 @@
   });
 
   const maxStart = $derived(
-    options?.durationSeconds && options.previewSeconds ? Math.max(0, options.durationSeconds - options.previewSeconds) : 0,
+    options?.durationSeconds && options.previewSeconds
+      ? Math.max(0, options.durationSeconds - options.previewSeconds)
+      : 0,
   );
 
   /* Loading --------------------------------------------------------------- */
@@ -147,7 +156,10 @@
     try {
       const next = await getAssetRestorationOptions({ id: asset.id, mode: nextMode, upscale: nextUpscale });
       options = next;
-      destinationId = defaultDestinationId(next.destinations, untrack(() => destinationId));
+      destinationId = defaultDestinationId(
+        next.destinations,
+        untrack(() => destinationId),
+      );
     } finally {
       optionsPending = false;
     }
@@ -167,7 +179,13 @@
   onMount(async () => {
     stopActivity = activitySession.watch();
     try {
-      await Promise.all([loadList(), loadOptions(untrack(() => mode), untrack(() => upscale))]);
+      await Promise.all([
+        loadList(),
+        loadOptions(
+          untrack(() => mode),
+          untrack(() => upscale),
+        ),
+      ]);
     } catch (error) {
       loadError = $t('frameleaf_restoration_load_error');
       handleError(error, loadError);
@@ -209,7 +227,11 @@
         id: asset.id,
         assetRestorationRequestDto: { mode, upscale, keepGrain, destinationId, region },
       });
-      list = { assetId: asset.id, currentRestorationId: list?.currentRestorationId ?? null, items: [created, ...items] };
+      list = {
+        assetId: asset.id,
+        currentRestorationId: list?.currentRestorationId ?? null,
+        items: [created, ...items],
+      };
       announce = $t('frameleaf_restoration_preview_queued', { values: { revision: created.revision } });
       toastManager.primary(announce);
       void activitySession.refresh();
@@ -380,11 +402,17 @@
   };
 
   const upscaleLabel = (factor: RestorationUpscale) =>
-    factor === 1 ? $t('frameleaf_restoration_upscale_same') : $t('frameleaf_restoration_upscale_times', { values: { factor } });
+    factor === 1
+      ? $t('frameleaf_restoration_upscale_same')
+      : $t('frameleaf_restoration_upscale_times', { values: { factor } });
 
   const itemTitle = (item: AssetRestorationResponseDto) =>
     $t('frameleaf_restoration_item_title', {
-      values: { revision: item.revision, mode: $t(restorationModeKey(item.mode)), upscale: upscaleLabel(item.upscale as RestorationUpscale) },
+      values: {
+        revision: item.revision,
+        mode: $t(restorationModeKey(item.mode)),
+        upscale: upscaleLabel(item.upscale as RestorationUpscale),
+      },
     });
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale) : '');
@@ -399,7 +427,13 @@
   <h3>{$t('frameleaf_restoration_mode')}</h3>
   <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_mode')}>
     {#each RESTORATION_MODES as candidate (candidate)}
-      <button type="button" role="radio" class="ed-chip" aria-checked={mode === candidate} onclick={() => (mode = candidate)}>
+      <button
+        type="button"
+        role="radio"
+        class="ed-chip"
+        aria-checked={mode === candidate}
+        onclick={() => (mode = candidate)}
+      >
         {$t(restorationModeKey(candidate))}
       </button>
     {/each}
@@ -409,14 +443,22 @@
   <h3>{$t('frameleaf_restoration_upscale')}</h3>
   <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_upscale')}>
     {#each RESTORATION_UPSCALES as factor (factor)}
-      <button type="button" role="radio" class="ed-chip" aria-checked={upscale === factor} onclick={() => (upscale = factor)}>
+      <button
+        type="button"
+        role="radio"
+        class="ed-chip"
+        aria-checked={upscale === factor}
+        onclick={() => (upscale = factor)}
+      >
         {upscaleLabel(factor)}
       </button>
     {/each}
   </div>
   {#if options}
     <p class="rs-help">
-      {$t('frameleaf_restoration_output_size', { values: { width: options.outputWidth, height: options.outputHeight } })}
+      {$t('frameleaf_restoration_output_size', {
+        values: { width: options.outputWidth, height: options.outputHeight },
+      })}
       {#if capped}
         · {$t('frameleaf_restoration_output_capped')}
       {/if}
@@ -430,7 +472,13 @@
 
   <h3>{$t('frameleaf_restoration_preview_area')}</h3>
   <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_restoration_preview_area')}>
-    <button type="button" role="radio" class="ed-chip" aria-checked={regionChoice === 'centre'} onclick={() => (regionChoice = 'centre')}>
+    <button
+      type="button"
+      role="radio"
+      class="ed-chip"
+      aria-checked={regionChoice === 'centre'}
+      onclick={() => (regionChoice = 'centre')}
+    >
       {$t('frameleaf_restoration_area_centre')}
     </button>
     <button
@@ -506,7 +554,9 @@
     {/if}
     {#each destinations.filter((candidate) => !candidate.available && candidate.id !== destinationId) as refused (refused.id)}
       <p class="rs-help">
-        {refused.name}: {refused.refusal ? $t(mlRefusalLabelKey(refused.refusal)) : $t('frameleaf_restoration_unavailable')}
+        {refused.name}: {refused.refusal
+          ? $t(mlRefusalLabelKey(refused.refusal))
+          : $t('frameleaf_restoration_unavailable')}
       </p>
     {/each}
 
@@ -514,9 +564,17 @@
     {#if selected}
       <dl class="rs-facts">
         <dt>{$t('frameleaf_restoration_estimate_preview')}</dt>
-        <dd>{previewEstimate ? $t('frameleaf_restoration_about', { values: { time: previewEstimate } }) : $t('frameleaf_restoration_estimate_unmeasured')}</dd>
+        <dd>
+          {previewEstimate
+            ? $t('frameleaf_restoration_about', { values: { time: previewEstimate } })
+            : $t('frameleaf_restoration_estimate_unmeasured')}
+        </dd>
         <dt>{$t('frameleaf_restoration_estimate_full')}</dt>
-        <dd>{fullEstimate ? $t('frameleaf_restoration_about', { values: { time: fullEstimate } }) : $t('frameleaf_restoration_estimate_unmeasured')}</dd>
+        <dd>
+          {fullEstimate
+            ? $t('frameleaf_restoration_about', { values: { time: fullEstimate } })
+            : $t('frameleaf_restoration_estimate_unmeasured')}
+        </dd>
       </dl>
       <p class="rs-help">
         {selected.estimate.sampleCount > 0
@@ -554,7 +612,9 @@
     {@const progress = progressFor(item)}
     <div class={['ed-version', item.isCurrent && 'current']}>
       <strong>{itemTitle(item)}</strong>
-      <span class={['ed-status', tone === 'busy' && 'busy', tone === 'failed' && 'failed', tone === 'neutral' && 'muted']}>
+      <span
+        class={['ed-status', tone === 'busy' && 'busy', tone === 'failed' && 'failed', tone === 'neutral' && 'muted']}
+      >
         {item.isCurrent ? $t('frameleaf_restoration_playing_this') : $t(restorationStatusKey(item.status))}
       </span>
       <small>
@@ -563,13 +623,22 @@
           : ''} · {formatDate(item.createdAt)}
       </small>
       {#if isRestorationBusy(item.status)}
-        <progress class="rs-progress" max="100" value={progress ?? undefined} aria-label={$t('frameleaf_restoration_progress_for', { values: { revision: item.revision } })}></progress>
+        <progress
+          class="rs-progress"
+          max="100"
+          value={progress ?? undefined}
+          aria-label={$t('frameleaf_restoration_progress_for', { values: { revision: item.revision } })}
+        ></progress>
       {/if}
       {#if item.error}
         <small class="rs-error">{item.error}</small>
       {/if}
       {#if item.status === 'preview_ready' && item.previewExpiresAt}
-        <small>{$t('frameleaf_restoration_preview_kept_until', { values: { date: formatDate(item.previewExpiresAt) } })}</small>
+        <small
+          >{$t('frameleaf_restoration_preview_kept_until', {
+            values: { date: formatDate(item.previewExpiresAt) },
+          })}</small
+        >
       {/if}
       <div class="ed-row">
         {#if compareKindFor(item)}
@@ -606,7 +675,11 @@
           </button>
         {/if}
         {#if item.hasResult}
-          <a class="ed-chip" href={restorationFileUrl(asset.id, item.id, AssetRestorationFileKind.Result, item.restoredAt)} download>
+          <a
+            class="ed-chip"
+            href={restorationFileUrl(asset.id, item.id, AssetRestorationFileKind.Result, item.restoredAt)}
+            download
+          >
             <Icon icon={mdiDownload} size="16" />
             {$t('frameleaf_restoration_download_result')}
           </a>

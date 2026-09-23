@@ -129,7 +129,12 @@
   });
 
   // The box holds `@{id}` tokens; underneath, the text reads as it will be shown, with names.
-  const segments = $derived(splitMentions(value, members.map(({ user }) => user)));
+  const segments = $derived(
+    splitMentions(
+      value,
+      members.map(({ user }) => user),
+    ),
+  );
   const hasMentions = $derived(segments.some(({ kind }) => kind === 'mention'));
 </script>
 
@@ -146,8 +151,7 @@
     oninput={syncCaret}
     onclick={syncCaret}
     onkeyup={syncCaret}
-    onkeydown={onKeydown}
-  ></textarea>
+    onkeydown={onKeydown}></textarea>
   {#if open}
     <ul class="mentions" role="listbox" id={listId} aria-label={$t('frameleaf_spaces_comments_mentions')}>
       {#each candidates as candidate, index (candidate.user.id)}

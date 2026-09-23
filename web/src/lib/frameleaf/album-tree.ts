@@ -40,7 +40,11 @@ export interface FrameleafAlbumTree {
 
 export const emptyAlbumTree = (): FrameleafAlbumTree => ({ collections: [], albums: [], spaces: [] });
 
-const toNode = (album: AlbumResponseDto, kind: FrameleafAlbumKind, children: FrameleafAlbumNode[] = []): FrameleafAlbumNode => ({
+const toNode = (
+  album: AlbumResponseDto,
+  kind: FrameleafAlbumKind,
+  children: FrameleafAlbumNode[] = [],
+): FrameleafAlbumNode => ({
   id: album.id,
   name: album.albumName,
   icon: album.icon,

@@ -148,7 +148,9 @@ export const resetGeometry = (): Partial<EditorRecipe> => ({
 });
 
 /** The recipe the editor opens with: the current version's, or the original. */
-export function openingRecipe(develop: { currentRevisionId: string | null; revisions: AssetDevelopRevisionResponseDto[] } | null | undefined) {
+export function openingRecipe(
+  develop: { currentRevisionId: string | null; revisions: AssetDevelopRevisionResponseDto[] } | null | undefined,
+) {
   const current = develop?.revisions.find((revision) => revision.id === develop.currentRevisionId);
   return normalizeRecipe(current?.recipe);
 }

@@ -1,6 +1,11 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { MlAdmissionRefusalSchema, MlDestinationHealthSchema, MlDestinationKindSchema, MlWorkloadSchema } from 'src/enum.js';
+import {
+  MlAdmissionRefusalSchema,
+  MlDestinationHealthSchema,
+  MlDestinationKindSchema,
+  MlWorkloadSchema,
+} from 'src/enum.js';
 
 /**
  * Preview-first restoration (FL-115).
@@ -206,7 +211,9 @@ const AssetRestorationOptionsSchema = z
       .describe('Length of a video preview clip; null for stills'),
     adapterInstalled: z
       .boolean()
-      .describe('Always true since the restoration adapter ships with the server; whether a model can run is reported per destination.'),
+      .describe(
+        'Always true since the restoration adapter ships with the server; whether a model can run is reported per destination.',
+      ),
     destinations: z.array(AssetRestorationDestinationSchema),
   })
   .meta({ id: 'AssetRestorationOptionsDto' });

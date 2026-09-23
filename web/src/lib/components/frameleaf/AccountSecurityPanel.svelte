@@ -77,10 +77,7 @@
           : $t('frameleaf_users_password_no_change_required')}
       </small>
     </div>
-    <Button
-      disabled={!canResetPassword}
-      onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}
-    >
+    <Button disabled={!canResetPassword} onclick={() => modalManager.show(AccountPasswordResetDialog, { user })}>
       {$t('frameleaf_users_password_reset')}
     </Button>
   </div>

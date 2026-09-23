@@ -31,8 +31,18 @@
     children: Snippet;
   }
 
-  let { shelf, currentUserId, collapsed, canEdit, acceptsDrop, onToggle, onNewAlbum, onDrop, actions, children }: Props =
-    $props();
+  let {
+    shelf,
+    currentUserId,
+    collapsed,
+    canEdit,
+    acceptsDrop,
+    onToggle,
+    onNewAlbum,
+    onDrop,
+    actions,
+    children,
+  }: Props = $props();
 
   let over = $state(false);
   const titleId = $props.id();
@@ -94,10 +104,16 @@
     >
       <Icon icon={collapsed ? mdiChevronRight : mdiChevronDown} size="20" />
     </button>
-    <a class="open" href={Route.viewAlbum({ id: collection.id })} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
+    <a
+      class="open"
+      href={Route.viewAlbum({ id: collection.id })}
+      aria-label={$t('frameleaf_albums_open', { values: { name } })}
+    >
       <span class="mosaic" class:single={covers.length === 1} aria-hidden="true">
         {#if covers.length === 0}
-          <span class="mosaic-icon"><AlbumIcon name={collection.icon ?? defaultIconFor(collection.kind)} size="22" /></span>
+          <span class="mosaic-icon"
+            ><AlbumIcon name={collection.icon ?? defaultIconFor(collection.kind)} size="22" /></span
+          >
         {:else if covers.length === 1}
           <img src={covers[0]} alt="" draggable="false" />
         {:else}
@@ -124,7 +140,12 @@
     <div class="side">
       <AlbumAvatarStack users={others} size="md" />
       {#if canEdit}
-        <button type="button" class="new" aria-label={$t('frameleaf_albums_new_album_in', { values: { name } })} onclick={onNewAlbum}>
+        <button
+          type="button"
+          class="new"
+          aria-label={$t('frameleaf_albums_new_album_in', { values: { name } })}
+          onclick={onNewAlbum}
+        >
           <Icon icon={mdiPlus} size="18" />
           <span>{$t('album')}</span>
         </button>
@@ -143,7 +164,9 @@
     border: 1px solid var(--fl-border);
     border-radius: 10px;
     background: var(--fl-panel);
-    transition: border-color 120ms, box-shadow 120ms;
+    transition:
+      border-color 120ms,
+      box-shadow 120ms;
   }
   .shelf.accepts {
     border-style: dashed;

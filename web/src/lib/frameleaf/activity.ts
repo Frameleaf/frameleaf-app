@@ -1,6 +1,3 @@
-import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
-import type { DownloadState } from '$lib/managers/download-manager.svelte';
-import { UploadState, type UploadAsset } from '$lib/types';
 import {
   MediaOperationBulkAction,
   MediaOperationDestination,
@@ -8,6 +5,9 @@ import {
   MediaOperationStatus,
   type MediaOperationDto,
 } from '@immich/sdk';
+import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
+import type { DownloadState } from '$lib/managers/download-manager.svelte';
+import { UploadState, type UploadAsset } from '$lib/types';
 
 /**
  * The Activity page's view model (FL-104), ported from the prototype's `Activity.jsx` and the job
@@ -543,7 +543,8 @@ export const fromBulkOperation = (operation: BulkOperationRecord): ActivityItem 
     // A bulk operation has no name of its own; the action it performs is what identifies it.
     title: operation.requestId,
     titleKey: `frameleaf_bulk_${operation.action.replaceAll('-', '_')}`,
-    progress: operation.total && operation.total > 0 ? clampPercent((operation.processed / operation.total) * 100) : null,
+    progress:
+      operation.total && operation.total > 0 ? clampPercent((operation.processed / operation.total) * 100) : null,
     running,
     paused: false,
     pausePending: false,

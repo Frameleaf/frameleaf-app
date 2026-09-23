@@ -311,11 +311,7 @@
   </form>
 </Dialog>
 
-<Dialog
-  bind:open={detailsOpen}
-  title={$t('frameleaf_pets_edit_details')}
-  closeLabel={$t('close')}
->
+<Dialog bind:open={detailsOpen} title={$t('frameleaf_pets_edit_details')} closeLabel={$t('close')}>
   {#if detailsFor}
     <form class="form" onsubmit={handleDetails}>
       <label>

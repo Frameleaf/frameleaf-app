@@ -37,7 +37,10 @@
   } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import StudioHistoryPanel from '$lib/components/frameleaf/StudioHistoryPanel.svelte';
-  import { loadStudioEngine as defaultLoadStudioEngine, type StudioEngineResolution } from '$lib/frameleaf/studio/engine-loader';
+  import {
+    loadStudioEngine as defaultLoadStudioEngine,
+    type StudioEngineResolution,
+  } from '$lib/frameleaf/studio/engine-loader';
   import type {
     StudioAssetRef,
     StudioAuthContext,

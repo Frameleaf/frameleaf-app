@@ -1,7 +1,8 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
+import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
@@ -72,15 +73,15 @@ export class RenderWorkerTable {
 
   /** Longest a single operation may run on this worker, in milliseconds. Null means no ceiling. */
   @Column({ type: 'bigint', nullable: true })
-  maxWallClockMs!: Int8 | null;
+  maxWallClockMs!: Int8Writable | null;
 
   /** Most output bytes one operation may produce here. Null means no ceiling. */
   @Column({ type: 'bigint', nullable: true })
-  maxOutputBytes!: Int8 | null;
+  maxOutputBytes!: Int8Writable | null;
 
   /** GPU memory the worker was qualified with, in bytes. An operation asking for more is refused. */
   @Column({ type: 'bigint', nullable: true })
-  gpuMemoryBytes!: Int8 | null;
+  gpuMemoryBytes!: Int8Writable | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   lastAdmittedAt!: Timestamp | null;
@@ -124,7 +125,7 @@ export class RenderWorkerSessionTable {
 
   /** What the worker reported at admission. This — not a later claim — is what it may use. */
   @Column({ type: 'bigint', nullable: true })
-  gpuMemoryBytes!: Int8 | null;
+  gpuMemoryBytes!: Int8Writable | null;
 
   @Column({ nullable: true })
   engineDigest!: string | null;
@@ -168,10 +169,10 @@ export class RenderWorkerLimitTable {
   maxConcurrentOperations!: Generated<number>;
 
   @Column({ type: 'bigint', nullable: true })
-  maxWallClockMs!: Int8 | null;
+  maxWallClockMs!: Int8Writable | null;
 
   @Column({ type: 'bigint', nullable: true })
-  maxOutputBytes!: Int8 | null;
+  maxOutputBytes!: Int8Writable | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

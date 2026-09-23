@@ -89,7 +89,6 @@ describe('bulk actions bind to existing endpoints', () => {
     });
   });
 
-
   it('marks sensitive as the lock record, never a visibility, album or enrichment change (FL-34)', async () => {
     const result = await runBulkAction('mark-sensitive', ['a', 'b'], { gateway: api });
     expect(api.lockAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['a', 'b'] } });
@@ -217,7 +216,12 @@ describe('bulk actions bind to existing endpoints', () => {
   it('drops a pair whose photo is not part of this selection before asking the server', async () => {
     await runBulkAction('relink-live-photo', ['photo-a'], {
       gateway: api,
-      payload: { pairs: [{ photoId: 'photo-a', videoId: 'video-a' }, { photoId: 'photo-b', videoId: 'video-b' }] },
+      payload: {
+        pairs: [
+          { photoId: 'photo-a', videoId: 'video-a' },
+          { photoId: 'photo-b', videoId: 'video-b' },
+        ],
+      },
     });
 
     expect(api.relinkLivePhotos).toHaveBeenCalledWith({

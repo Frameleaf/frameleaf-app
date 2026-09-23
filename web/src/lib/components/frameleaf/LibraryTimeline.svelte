@@ -394,19 +394,11 @@
 
       {#each timelineManager.months as month (month.viewId)}
         {#if !month.isLoaded}
-          <div
-            class="fl-month"
-            style:height="{month.height}px"
-            style:transform={`translate3d(0,${month.top}px,0)`}
-          >
+          <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
             <Skeleton height={month.height} title={month.title} />
           </div>
         {:else if month.isInOrNearViewport}
-          <div
-            class="fl-month"
-            style:height="{month.height}px"
-            style:transform={`translate3d(0,${month.top}px,0)`}
-          >
+          <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
             {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
               <LibraryDayGroup
                 {timelineDay}

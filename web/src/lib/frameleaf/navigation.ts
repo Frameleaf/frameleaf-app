@@ -71,8 +71,7 @@ const isWithin = (pathname: string, root: string) => pathname === root || pathna
 const SETTINGS_ROOTS = ['/admin', '/user-settings'];
 
 /** Whether `pathname` is one of the prototype's single "admin" screen's routes. */
-export const isSettingsRoute = (pathname: string): boolean =>
-  SETTINGS_ROOTS.some((root) => isWithin(pathname, root));
+export const isSettingsRoute = (pathname: string): boolean => SETTINGS_ROOTS.some((root) => isWithin(pathname, root));
 
 /**
  * Index pages the prototype's own "collections" screen (`setScreen("collections")` in App.jsx):

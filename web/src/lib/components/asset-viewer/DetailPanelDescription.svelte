@@ -76,7 +76,9 @@
       <Text color="muted">{$t('frameleaf_info_description')}</Text>
       {#if source !== 'none'}
         <Badge size="small" shape="round" color="secondary">
-          {source === 'generated' ? $t('frameleaf_info_description_generated') : $t('frameleaf_info_description_manual')}
+          {source === 'generated'
+            ? $t('frameleaf_info_description_generated')
+            : $t('frameleaf_info_description_manual')}
         </Badge>
       {/if}
     </div>

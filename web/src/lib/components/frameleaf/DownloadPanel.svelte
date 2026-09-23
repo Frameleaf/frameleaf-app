@@ -5,7 +5,14 @@
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { downloadUrlPost } from '$lib/utils';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
-  import { mdiCheckCircle, mdiClose, mdiDownload, mdiDownloadOutline, mdiFileDownloadOutline, mdiReload } from '@mdi/js';
+  import {
+    mdiCheckCircle,
+    mdiClose,
+    mdiDownload,
+    mdiDownloadOutline,
+    mdiFileDownloadOutline,
+    mdiReload,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
 

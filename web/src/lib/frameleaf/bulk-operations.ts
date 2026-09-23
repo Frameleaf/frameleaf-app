@@ -197,9 +197,7 @@ export type BulkGateway = {
 };
 
 /** The production bindings. `downloadArchive` is injected by the caller to avoid a cyclic import. */
-export const createBulkGateway = (
-  downloadArchive: BulkGateway['downloadArchive'],
-): BulkGateway => ({
+export const createBulkGateway = (downloadArchive: BulkGateway['downloadArchive']): BulkGateway => ({
   updateAssets,
   updateAsset,
   lockAssets,
@@ -1179,10 +1177,7 @@ export const removesFromView = (
  *   the action would have put it, or the job cannot say for certain (see `itemsTruncated`).
  */
 export type DurableItemState =
-  | { state: 'pending' }
-  | { state: 'done' }
-  | { state: 'failed'; reasonKey: string }
-  | { state: 'unchanged' };
+  { state: 'pending' } | { state: 'done' } | { state: 'failed'; reasonKey: string } | { state: 'unchanged' };
 
 const FINISHED_JOB: readonly MediaOperationStatus[] = [
   MediaOperationStatus.Completed,
