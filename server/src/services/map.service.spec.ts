@@ -78,6 +78,23 @@ describe(MapService.name, () => {
       expect(markers[0]).toEqual(marker);
     });
 
+    it('should leave out partners who hide their locations from the viewer', async () => {
+      const auth = AuthFactory.create();
+      const hiding = PartnerFactory.create({ sharedWithId: auth.user.id, shareLocation: false });
+      const sharing = PartnerFactory.create({ sharedWithId: auth.user.id, shareLocation: true });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding), getForPartner(sharing)]);
+      mocks.map.getMapMarkers.mockResolvedValue([]);
+
+      await sut.getMapMarkers(auth, { withPartners: true });
+
+      expect(mocks.map.getMapMarkers).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id, sharing.sharedById],
+        expect.arrayContaining([]),
+        { withPartners: true },
+      );
+    });
+
     it('should include assets from shared albums', async () => {
       const auth = AuthFactory.create(userStub.user1);
       const asset = AssetFactory.from()

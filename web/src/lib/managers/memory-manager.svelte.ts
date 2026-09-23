@@ -258,10 +258,37 @@ class MemoryManager {
       return;
     }
 
+    await this.toggleMemorySaved(memory.id);
+  }
+
+  /**
+   * Toggles the saved (favorite) flag of any loaded memory, not just the one currently open.
+   * Used by the memory index, whose cards act on a memory without opening the player.
+   */
+  async toggleMemorySaved(id: string) {
+    const memory = this.#getMemory(id);
+    if (!memory) {
+      return;
+    }
+
     const isSaved = !memory.isSaved;
-    await updateMemory({ id: memory.id, memoryUpdateDto: { isSaved } });
+    await updateMemory({ id, memoryUpdateDto: { isSaved } });
     memory.isSaved = isSaved;
     toastManager.primary(get(t)(isSaved ? 'added_to_favorites' : 'removed_from_favorites'));
+  }
+
+  /**
+   * Removes any loaded memory, not just the one currently open. Navigates away first when the
+   * removed memory is the one currently open, so the url never points at a deleted position.
+   */
+  async removeMemory(id: string) {
+    if (this.current?.memory.id === id) {
+      await this.deleteCurrentMemory();
+      return;
+    }
+
+    await this.#deleteMemory(id);
+    toastManager.primary(get(t)('removed_memory'));
   }
 
   // navigate away before removing something, so the url never points at a deleted position

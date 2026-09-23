@@ -121,8 +121,15 @@ export type PartnerIdOptions = {
   repository: PartnerRepository;
   /** only include partners with `inTimeline: true` */
   timelineEnabled?: boolean;
+  /** only include partners who let `userId` see their asset locations (`shareLocation: true`) */
+  locationSharedOnly?: boolean;
 };
-export const getMyPartnerIds = async ({ userId, repository, timelineEnabled }: PartnerIdOptions) => {
+export const getMyPartnerIds = async ({
+  userId,
+  repository,
+  timelineEnabled,
+  locationSharedOnly,
+}: PartnerIdOptions) => {
   const partnerIds = new Set<string>();
   const partners = await repository.getAll(userId);
   for (const partner of partners) {
@@ -137,6 +144,10 @@ export const getMyPartnerIds = async ({ userId, repository, timelineEnabled }: P
     }
 
     if (timelineEnabled && !partner.inTimeline) {
+      continue;
+    }
+
+    if (locationSharedOnly && !partner.shareLocation) {
       continue;
     }
 

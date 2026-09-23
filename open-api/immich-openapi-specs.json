@@ -2387,6 +2387,47 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/icons": {
+      "get": {
+        "description": "Every Material Design Icons name an album or collection may use, plus the categorised suggested set shown first in icon choosers. Served as data so clients never bundle the catalogue.",
+        "operationId": "getAlbumIconCatalogue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumIconCatalogueResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the album icon catalogue",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/albums/statistics": {
       "get": {
         "description": "Returns statistics about the albums available to the authenticated user.",
@@ -2435,6 +2476,47 @@
         ],
         "x-immich-permission": "album.statistics",
         "x-immich-state": "Stable"
+      }
+    },
+    "/albums/tree": {
+      "get": {
+        "description": "Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. Albums nest one level deep inside collections only; collections and shared spaces are always top level.",
+        "operationId": "getAlbumTree",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumTreeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the album directory",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
       }
     },
     "/albums/{id}": {
@@ -2788,6 +2870,68 @@
         ],
         "x-immich-permission": "albumAsset.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/albums/{id}/collection": {
+      "put": {
+        "description": "Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it; the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.",
+        "operationId": "moveAlbumToCollection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveAlbumDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move an album into or out of a collection",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
       }
     },
     "/albums/{id}/descendant-count": {
@@ -10780,7 +10924,7 @@
         "x-immich-state": "Deprecated"
       },
       "put": {
-        "description": "Specify whether a partner's assets should appear in the user's timeline.",
+        "description": "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
         "operationId": "updatePartner",
         "parameters": [
           {
@@ -22447,6 +22591,39 @@
         ],
         "type": "object"
       },
+      "AlbumCollectionResponseDto": {
+        "properties": {
+          "albumCount": {
+            "description": "Number of albums inside the collection",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "albums": {
+            "description": "Albums inside the collection, in display order",
+            "items": {
+              "$ref": "#/components/schemas/AlbumResponseDto"
+            },
+            "type": "array"
+          },
+          "assetCount": {
+            "description": "Items in the collection and its albums (sum, not deduplicated)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/AlbumResponseDto"
+          }
+        },
+        "required": [
+          "albumCount",
+          "albums",
+          "assetCount",
+          "collection"
+        ],
+        "type": "object"
+      },
       "AlbumDescendantCountResponseDto": {
         "properties": {
           "count": {
@@ -22460,6 +22637,80 @@
           "count"
         ],
         "type": "object"
+      },
+      "AlbumIconCatalogueResponseDto": {
+        "properties": {
+          "names": {
+            "description": "Every valid icon name, sorted",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "suggested": {
+            "description": "Categorised suggested set offered first",
+            "items": {
+              "$ref": "#/components/schemas/AlbumIconGroupResponseDto"
+            },
+            "type": "array"
+          },
+          "version": {
+            "description": "Material Design Icons catalogue version the names come from",
+            "type": "string"
+          }
+        },
+        "required": [
+          "names",
+          "suggested",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AlbumIconGroupResponseDto": {
+        "properties": {
+          "icons": {
+            "description": "Suggested icons in this category",
+            "items": {
+              "$ref": "#/components/schemas/AlbumIconSuggestionResponseDto"
+            },
+            "type": "array"
+          },
+          "label": {
+            "description": "Category label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "icons",
+          "label"
+        ],
+        "type": "object"
+      },
+      "AlbumIconSuggestionResponseDto": {
+        "properties": {
+          "label": {
+            "description": "Human label for search and accessibility",
+            "type": "string"
+          },
+          "name": {
+            "description": "Material Design Icons name, e.g. mdiCameraOutline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AlbumKind": {
+        "description": "Album kind: album (holds photos), collection (groups albums one level deep) or space (shared, top level)",
+        "enum": [
+          "album",
+          "collection",
+          "space"
+        ],
+        "type": "string"
       },
       "AlbumResponseDto": {
         "properties": {
@@ -22524,7 +22775,7 @@
             "type": "boolean"
           },
           "icon": {
-            "description": "Icon key (null = default folder icon)",
+            "description": "Icon: a Material Design Icons name or legacy key (null = default icon)",
             "nullable": true,
             "type": "string"
           },
@@ -22538,6 +22789,13 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isSmart": {
+            "description": "True when the album is filled by the smart album rules. Only populated by GET /albums/tree.",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumKind"
+          },
           "lastModifiedAssetTimestamp": {
             "description": "Last modified asset timestamp",
             "format": "date-time",
@@ -22547,7 +22805,7 @@
             "$ref": "#/components/schemas/AssetOrder"
           },
           "parentId": {
-            "description": "Parent album ID for nesting (null = top-level)",
+            "description": "Collection this album belongs to (null = top-level)",
             "nullable": true,
             "type": "string"
           },
@@ -22583,6 +22841,7 @@
           "icon",
           "id",
           "isActivityEnabled",
+          "kind",
           "parentId",
           "shared",
           "sortOrder",
@@ -22615,6 +22874,37 @@
           "notShared",
           "owned",
           "shared"
+        ],
+        "type": "object"
+      },
+      "AlbumTreeResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums that stand on their own (not inside a visible collection)",
+            "items": {
+              "$ref": "#/components/schemas/AlbumResponseDto"
+            },
+            "type": "array"
+          },
+          "collections": {
+            "description": "Collections visible to the user with their albums",
+            "items": {
+              "$ref": "#/components/schemas/AlbumCollectionResponseDto"
+            },
+            "type": "array"
+          },
+          "spaces": {
+            "description": "Shared spaces, always top level",
+            "items": {
+              "$ref": "#/components/schemas/AlbumResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "collections",
+          "spaces"
         ],
         "type": "object"
       },
@@ -25987,11 +26277,16 @@
             ]
           },
           "icon": {
-            "description": "Optional icon key (see album-icons.ts)",
+            "description": "Optional icon: any Material Design Icons name (see GET /albums/icons)",
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumKind",
+            "default": "album",
+            "description": "What to create: an album (default), a collection of albums or a shared space"
+          },
           "parentId": {
-            "description": "Parent album ID for nesting (omit for top-level)",
+            "description": "Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -29804,6 +30099,21 @@
         ],
         "type": "object"
       },
+      "MoveAlbumDto": {
+        "properties": {
+          "collectionId": {
+            "description": "Collection to move the album into, or null to take it out so it stands on its own",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collectionId"
+        ],
+        "type": "object"
+      },
       "NotificationCreateDto": {
         "properties": {
           "data": {
@@ -30286,6 +30596,10 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
+          },
+          "shareLocation": {
+            "description": "Sharer allows this partner to see asset locations",
+            "type": "boolean"
           }
         },
         "required": [
@@ -30303,11 +30617,12 @@
           "inTimeline": {
             "description": "Show partner assets in timeline",
             "type": "boolean"
+          },
+          "shareLocation": {
+            "description": "Share asset locations with this partner; only the sharing user can change it",
+            "type": "boolean"
           }
         },
-        "required": [
-          "inTimeline"
-        ],
         "type": "object"
       },
       "PeopleResponse": {
@@ -38163,7 +38478,7 @@
             ]
           },
           "icon": {
-            "description": "Icon key (null = clear / use default folder icon)",
+            "description": "Icon: any Material Design Icons name (null = clear / use default icon)",
             "nullable": true,
             "type": "string"
           },
@@ -38175,7 +38490,7 @@
             "$ref": "#/components/schemas/AssetOrder"
           },
           "parentId": {
-            "description": "Parent album ID for nesting (null = move to top-level, omit = no change)",
+            "description": "Collection to move the album into (null = move to top-level, omit = no change)",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",

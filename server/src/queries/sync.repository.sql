@@ -2024,7 +2024,8 @@ order by
 -- SyncRepository.partner.getCreatedAfter
 select
   "sharedById",
-  "createId"
+  "createId",
+  "shareLocation"
 from
   "partner"
 where
@@ -2472,7 +2473,8 @@ select
   "asset_exif"."profileDescription",
   "asset_exif"."rating",
   "asset_exif"."fps",
-  "asset_exif"."updateId"
+  "asset_exif"."updateId",
+  "asset"."ownerId"
 from
   "asset_exif" as "asset_exif"
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"

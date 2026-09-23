@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { Route } from '$lib/route';
   import { placesViewSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -66,7 +65,7 @@
               {city}
             </span>
           </a>
-          {#if $frameleafShell && location}
+          {#if location}
             <!-- Frameleaf (FL-51): every place card links back to the real map, centred on
                  this city, matching `PlaceCard`'s onOpenMap button in the design template. -->
             <a
