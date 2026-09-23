@@ -796,12 +796,70 @@ export enum MediaOperationKind {
   RestorationPreview = 'restoration_preview',
   /** A still-image edit recipe render. */
   QuickEdit = 'quick_edit',
+  /**
+   * A library bulk operation over a frozen set of assets (FL-32). The server applies the action in
+   * batches through the same services a single request would use, so it survives the browser.
+   */
+  Bulk = 'bulk',
 }
 
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
+
+/**
+ * The bulk actions the server is willing to run durably (FL-32).
+ *
+ * Deliberately not the whole selection bar. Anything that only makes sense in the browser tab that
+ * asked for it — a download, a shared link the user is about to copy — stays in the browser, and
+ * so does the Locked folder, whose writes need an elevated session that a background worker does
+ * not have and must not be given.
+ */
+export enum MediaOperationBulkAction {
+  Favorite = 'favorite',
+  Unfavorite = 'unfavorite',
+  Archive = 'archive',
+  Unarchive = 'unarchive',
+  AddToAlbum = 'add-to-album',
+  RemoveFromAlbum = 'remove-from-album',
+  Tag = 'tag',
+  Untag = 'untag',
+  ChangeDate = 'change-date',
+  ChangeDescription = 'change-description',
+  ChangeLocation = 'change-location',
+  MarkSensitive = 'mark-sensitive',
+  UnmarkSensitive = 'unmark-sensitive',
+  Delete = 'delete',
+  DeletePermanently = 'delete-permanently',
+  Restore = 'restore',
+  Stack = 'stack',
+  Unstack = 'unstack',
+  RefreshThumbnails = 'refresh-thumbnails',
+  RefreshMetadata = 'refresh-metadata',
+  RefreshEncoded = 'refresh-encoded',
+  RefreshFaces = 'refresh-faces',
+}
+
+export const MediaOperationBulkActionSchema = z
+  .enum(MediaOperationBulkAction)
+  .describe('Bulk action a durable media operation applies')
+  .meta({ id: 'MediaOperationBulkAction' });
+
+/** The outcome recorded for one item of a bulk operation. */
+export enum MediaOperationItemStatus {
+  /** The server applied the action to this item. */
+  Ok = 'ok',
+  /** Not attempted, or refused before anything changed: no access, or nothing to do. */
+  Skipped = 'skipped',
+  /** Attempted and rejected. Retryable. */
+  Failed = 'failed',
+}
+
+export const MediaOperationItemStatusSchema = z
+  .enum(MediaOperationItemStatus)
+  .describe('Per-item outcome of a bulk media operation')
+  .meta({ id: 'MediaOperationItemStatus' });
 
 /**
  * The durable state machine. `cancelling` is a real persisted state: the request is recorded
