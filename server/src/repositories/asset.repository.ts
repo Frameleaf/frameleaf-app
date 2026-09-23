@@ -52,6 +52,7 @@ import {
   hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
+  isLockedAsset,
   isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
@@ -773,7 +774,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select('asset.id')
       .where('asset.id', '=', anyUuid(ids))
-      .where('asset.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .where((eb) => isLockedAsset(eb))
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
