@@ -21,6 +21,7 @@ import {
   MlUsage,
   ModelTask,
   ModelType,
+  RestorationSelection,
   RestorationWorkerError,
 } from 'src/repositories/machine-learning.repository.js';
 
@@ -366,9 +367,16 @@ describe(MachineLearningRepository.name, () => {
         },
       });
 
-    const restorationSelection = (record: (usage: MlUsage) => void = () => {}): MlSelection => ({
+    const restorationSelection = (record: (usage: MlUsage) => void = () => {}): RestorationSelection => ({
       ...selection(MlDestinationKind.Lan, lanUrl, record, 'lan-token'),
       workload: MlWorkload.RestorationFaithful,
+      cloudUploadAcknowledged: false,
+    });
+
+    const cloudSelection = (cloudUploadAcknowledged: boolean): RestorationSelection => ({
+      ...selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+      workload: MlWorkload.RestorationFaithful,
+      cloudUploadAcknowledged,
     });
 
     const restore = (overrides: Partial<RestorationInferenceRequest> = {}, record?: (usage: MlUsage) => void) =>
@@ -417,6 +425,35 @@ describe(MachineLearningRepository.name, () => {
       expect(fetch).not.toHaveBeenCalled();
       expect(await readFile(sourcePath)).toEqual(original);
       expect(await readFile(outputPath, 'utf8')).toBe('an earlier derivative');
+    });
+
+    it('never uploads to a cloud destination the person did not confirm for this request', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const input = { sourcePath, outputPath, request: request() };
+
+      await expect(sut.restore(cloudSelection(false), input)).rejects.toThrow(/confirmation that media leaves/);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(existsSync(outputPath)).toBe(false);
+    });
+
+    it('sends a cloud destination only a segment that was cut beforehand', async () => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
+      const input = { sourcePath, outputPath, request: request({ segment: { startMs: 0, endMs: 5000 } }) };
+
+      await expect(sut.restore(cloudSelection(true), input)).rejects.toThrow(/Cut the segment/);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('uploads to a confirmed cloud destination', async () => {
+      const fetch = vi.fn().mockResolvedValue(answer(result()));
+      vi.stubGlobal('fetch', fetch);
+
+      await sut.restore(cloudSelection(true), { sourcePath, outputPath, request: request() });
+
+      expect(String(fetch.mock.calls[0][0])).toBe(`${runPodUrl}restoration/restore`);
+      expect(await readFile(outputPath)).toEqual(restored);
     });
 
     it('refuses a selection admitted for another workload', async () => {

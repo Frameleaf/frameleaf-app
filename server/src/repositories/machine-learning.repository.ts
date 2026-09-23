@@ -20,6 +20,7 @@ import {
   RestorationWorkerErrorSchema,
 } from 'src/dtos/restoration-inference.dto.js';
 import {
+  CLOUD_ML_DESTINATION_KINDS,
   LIBRARY_ML_WORKLOADS,
   MachineLearningHardwareAcceleration,
   MlDestinationKind,
@@ -270,6 +271,17 @@ const isMlWorkload = (value: unknown): value is MlWorkload =>
 
 /** How long an admission probe stays fresh before the next request re-probes the endpoint. */
 export const ML_PROBE_FRESHNESS_MS = 10_000;
+
+/**
+ * A selection admitted for a restoration by `selectRestorationDestination`
+ * (`src/utils/restoration.ts`). `cloudUploadAcknowledged` records that the person confirmed,
+ * for this request, that media may leave the network; `restore` refuses a cloud destination
+ * without it, so a caller cannot reach RunPod with a plain library selection.
+ */
+export type RestorationSelection = MlSelection & { cloudUploadAcknowledged: boolean };
+
+/** Longest a single restoration request may take when the caller passes no signal of its own. */
+export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 /** One restoration inference (FL-114): read `sourcePath`, write a new file at `outputPath`. */
 export type RestorationInferenceInput = {
@@ -665,13 +677,21 @@ export class MachineLearningRepository {
    * worker's result. A failure names the destination and is never retried anywhere else.
    */
   async restore(
-    selection: MlSelection,
+    selection: RestorationSelection,
     { sourcePath, outputPath, request, signal }: RestorationInferenceInput,
   ): Promise<RestorationInferenceResult> {
     const payload = RestorationInferenceRequestSchema.parse(request);
     const expected = RESTORATION_WORKLOAD_BY_MODE[payload.mode];
     if (selection.workload !== expected) {
       throw new Error(`A ${payload.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    }
+    const cloud = CLOUD_ML_DESTINATION_KINDS.has(selection.kind);
+    if (cloud && !selection.cloudUploadAcknowledged) {
+      throw new Error(`Restoration on ${selection.kind} needs the person's confirmation that media leaves the network`);
+    }
+    if (cloud && payload.segment) {
+      // A remote worker gets only what the job needs: cut the segment before uploading.
+      throw new Error('Cut the segment before sending a restoration to a cloud destination');
     }
     if (resolve(sourcePath) === resolve(outputPath)) {
       throw new Error('A restoration never writes over its source');
@@ -703,7 +723,7 @@ export class MachineLearningRepository {
           method: 'POST',
           headers: this.authHeaders(selection.endpoint),
           body: form,
-          signal,
+          signal: signal ?? AbortSignal.timeout(RESTORATION_REQUEST_TIMEOUT_MS),
         });
       } catch (error) {
         this.probeCache.delete(selection.endpoint.url);
@@ -774,7 +794,9 @@ export class MachineLearningRepository {
       }
       throw error;
     } finally {
-      await output.close();
+      await output.close().catch((error: unknown) => {
+        this.logger.warn(`Could not close restoration output ${outputPath}: ${error}`);
+      });
       if (!keep) {
         // Only ever the file this call created exclusively above.
         await rm(outputPath, { force: true });
