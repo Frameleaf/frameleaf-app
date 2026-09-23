@@ -68,11 +68,13 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import {
   MlSelectionRequest,
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -322,6 +324,32 @@ export class BaseService {
   protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
     const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
     return this.selectMlDestination({ ...request, destinationId });
+  }
+
+  /**
+   * Once a move of `assetIds` into the Locked folder is committed (FL-53): the people whose featured
+   * face was on them, or on another photo of their stacks, get a thumbnail from the face that replaced
+   * it, and profile pictures copied from a photo now Locked are replaced.
+   */
+  protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
+    await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
+    await this.replaceLockedProfileImages();
+  }
+
+  /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
+  protected async replaceLockedProfileImages(): Promise<void> {
+    const config = await this.getConfig({ withCache: true });
+    await replaceLockedProfileImages(
+      {
+        media: this.mediaRepository,
+        crypto: this.cryptoRepository,
+        storageCore: this.storageCore,
+        user: this.userRepository,
+        job: this.jobRepository,
+        logger: this.logger,
+      },
+      config,
+    );
   }
 
   requireAccess(request: AccessRequest) {

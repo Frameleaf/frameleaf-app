@@ -314,6 +314,127 @@ where
 order by
   "createdAt" desc
 
+-- UserRepository.hasLockedProfileImageSource
+select
+  "user"."id"
+from
+  "user"
+where
+  "user"."id" = $1::uuid
+  and exists (
+    select
+      1
+    from
+      asset as locked_asset
+    where
+      locked_asset.id = "user"."profileImageAssetId"
+      and locked_asset.visibility = 'locked'
+  )
+
+-- UserRepository.getLockedProfileImageSources
+select
+  "user"."id",
+  "user"."profileImagePath",
+  "user"."profileImageAssetId"
+from
+  "user"
+where
+  "user"."profileImageAssetId" is not null
+  and exists (
+    select
+      1
+    from
+      asset as locked_asset
+    where
+      locked_asset.id = "user"."profileImageAssetId"
+      and locked_asset.visibility = 'locked'
+  )
+  and "user"."deletedAt" is null
+
+-- UserRepository.getProfileImageReplacement
+SELECT
+  to_regclass('immich_fork.state')::text AS "stateTable"
+select
+  "asset"."id",
+  "asset_file"."path"
+from
+  "asset"
+  inner join "asset_file" on "asset_file"."assetId" = "asset"."id"
+  and "asset_file"."type" = 'preview'
+where
+  "asset"."ownerId" = $1::uuid
+  and "asset"."type" = 'IMAGE'
+  and "asset"."status" = 'active'
+  and "asset"."visibility" = 'timeline'
+  and "asset"."visibility" != 'locked'
+  and "asset"."deletedAt" is null
+  and not case
+    when "asset"."id" is null then false
+    when coalesce(
+      (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ),
+      'inactive'
+    ) in ('legacy', 'dual-write', 'ready') then exists (
+      select
+        1
+      from
+        asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
+    when (
+      select
+        phase
+      from
+        immich_fork.state
+      where
+        id = 1
+    ) = 'active' then not exists (
+      select
+        1
+      from
+        immich_fork.asset_privacy as privacy_asset
+      where
+        privacy_asset."assetId" = "asset"."id"
+        and privacy_asset."isNsfw" = false
+    )
+    else false
+  end
+order by
+  coalesce(
+    (
+      select
+        best_photo.score
+      from
+        "public"."asset_best_photo_score" as best_photo
+      where
+        best_photo."assetId" = "asset"."id"
+        and best_photo.score >= 0.9
+    ),
+    -1
+  ) desc,
+  "asset"."fileCreatedAt" desc,
+  "asset_file"."isEdited" desc
+limit
+  $2
+
+-- UserRepository.replaceLockedProfileImage
+update "user"
+set
+  "profileImagePath" = $1,
+  "profileImageAssetId" = $2,
+  "profileChangedAt" = $3
+where
+  "user"."id" = $4::uuid
+  and "user"."profileImageAssetId" = $5::uuid
+
 -- UserRepository.getUserStats
 select
   "user"."id" as "userId",
