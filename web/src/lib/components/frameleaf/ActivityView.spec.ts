@@ -32,6 +32,8 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     errorCode: null,
     cancelRequestedAt: null,
     cancelAcknowledgedAt: null,
+    pausable: true,
+    pauseRequestedAt: null,
     startedAt: '2026-09-22T09:50:00.000Z',
     finishedAt: null,
     createdAt: '2026-09-22T09:49:00.000Z',
@@ -93,6 +95,35 @@ describe('Frameleaf Activity page', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
     expect(sdkMock.retryMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
+  });
+
+  it('asks the server to pause and shows pausing until the worker gets there (FL-104)', async () => {
+    sdkMock.pauseMediaOperation.mockResolvedValue(operation({ pauseRequestedAt: '2026-09-23T10:00:00.000Z' }));
+    await mount([operation()]);
+
+    await fireEvent.click(await screen.findByRole('button', { name: /^pause/i }));
+
+    expect(sdkMock.pauseMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
+    await vi.waitFor(() => expect(screen.getByText('Pausing')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /^resume/i })).toBeInTheDocument();
+  });
+
+  it('shows a paused job as paused and resumes it through the server (FL-104)', async () => {
+    sdkMock.resumeMediaOperation.mockResolvedValue(operation({ status: MediaOperationStatus.Queued }));
+    await mount([operation({ status: MediaOperationStatus.Paused, pauseRequestedAt: '2026-09-23T10:00:00.000Z' })]);
+
+    await vi.waitFor(() => expect(screen.getByText('Paused')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^pause/i })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: /^resume/i }));
+    expect(sdkMock.resumeMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
+  });
+
+  it('offers no pause for a kind that runs in one go', async () => {
+    await mount([operation({ kind: MediaOperationKind.StudioPreview, pausable: false })]);
+
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^pause/i })).not.toBeInTheDocument();
   });
 
   it('keeps the last known list when the server cannot be reached', async () => {
