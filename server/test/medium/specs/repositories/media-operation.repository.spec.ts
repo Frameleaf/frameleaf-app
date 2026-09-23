@@ -292,7 +292,7 @@ describe(MediaOperationRepository.name, () => {
         error: 'The worker stopped responding',
       });
 
-      expect(result).toEqual({ requeued: 1, retried: 1, failed: 1, abandonedCancels: 0 });
+      expect(result).toEqual({ requeued: 1, retried: 1, failed: 1, abandonedCancels: 0, paused: 0 });
       await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Queued,
         claimToken: null,
@@ -336,6 +336,193 @@ describe(MediaOperationRepository.name, () => {
       // Nobody confirmed the remote stopped, so the obligation survives.
       expect(after!.cancelAcknowledgedAt).toBeNull();
       await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
+    });
+  });
+
+  describe('pause and resume (FL-104)', () => {
+    const claimExport = (sut: MediaOperationRepository) =>
+      sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
+    const pausable = [MediaOperationKind.StudioExport, MediaOperationKind.Bulk, MediaOperationKind.Restoration];
+
+    it('holds a queued job at once, and no worker claims it until it is resumed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+
+      const paused = await sut.requestPause(operation.id, user.id, pausable);
+      expect(paused).toMatchObject({ status: MediaOperationStatus.Paused });
+      expect(paused!.pauseRequestedAt).not.toBeNull();
+      await expect(claimExport(sut)).resolves.toBeUndefined();
+
+      await expect(sut.resume(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        pauseRequestedAt: null,
+      });
+      await expect(claimExport(sut)).resolves.toMatchObject({ operation: { id: operation.id } });
+    });
+
+    it('lets a claimed job run to its checkpoint, then takes the claim back without counting an attempt', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, { result: { succeeded: 3 } });
+      const claim = await claimExport(sut);
+
+      const requested = await sut.requestPause(operation.id, user.id, pausable);
+      expect(requested).toMatchObject({ status: MediaOperationStatus.Preparing, claimToken: claim!.claimToken });
+      expect(requested!.pauseRequestedAt).not.toBeNull();
+
+      // The worker keeps its lease and learns of the pause from its next write.
+      await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS)).resolves.toBe(true);
+      await expect(sut.settlePause(operation.id, 'not-the-claim')).resolves.toBe(false);
+      await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(true);
+
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Paused,
+        claimToken: null,
+        attempt: 0,
+        result: { succeeded: 3 },
+      });
+      // The handed-back claim writes nothing any more.
+      await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS)).resolves.toBe(false);
+    });
+
+    it('withdraws a pause the worker has not reached, so settling it changes nothing', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestPause(operation.id, user.id, pausable);
+
+      await expect(sut.resume(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Preparing,
+        pauseRequestedAt: null,
+      });
+      await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(false);
+    });
+
+    it('refuses kinds that cannot pause, and jobs that are finishing or finished', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const preview = await newOperation(sut, user.id, { kind: MediaOperationKind.StudioPreview });
+      const validating = await newOperation(sut, user.id);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Validating })
+        .where('id', '=', validating.id)
+        .execute();
+
+      await expect(sut.requestPause(preview.id, user.id, pausable)).resolves.toBeUndefined();
+      await expect(sut.requestPause(validating.id, user.id, pausable)).resolves.toBeUndefined();
+    });
+
+    it('refuses another account’s job', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+
+      await expect(sut.requestPause(operation.id, other.id, pausable)).resolves.toBeUndefined();
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        pauseRequestedAt: null,
+      });
+    });
+
+    it('cancels a paused job outright, since no worker holds it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      await sut.requestPause(operation.id, user.id, pausable);
+
+      const cancelled = await sut.requestCancel(operation.id, user.id);
+
+      expect(cancelled).toMatchObject({ status: MediaOperationStatus.Cancelled, pauseRequestedAt: null });
+      expect(cancelled!.finishedAt).not.toBeNull();
+    });
+
+    it('holds a failed job’s automatic retry for the owner when a pause was asked for', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestPause(operation.id, user.id, pausable);
+
+      await expect(sut.fail(operation.id, claim!.claimToken, { error: 'x', errorCode: 'x' })).resolves.toBe('retrying');
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Paused,
+        autoRetries: 1,
+        claimToken: null,
+      });
+    });
+
+    it('pauses, rather than requeues, a job whose worker vanished after a pause was asked for', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      await claimExport(sut);
+      await sut.requestPause(operation.id, user.id, pausable);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+        .where('id', '=', operation.id)
+        .execute();
+
+      const result = await sut.recoverExpiredClaims({ errorCode: 'worker_lost', error: 'gone' });
+
+      expect(result).toMatchObject({ paused: 1, requeued: 0, retried: 0, failed: 0 });
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Paused,
+        claimToken: null,
+      });
+    });
+
+    it('never settles a pause once the job is validating its output', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestPause(operation.id, user.id, pausable);
+      await sut.beginValidation(operation.id, claim!.claimToken);
+
+      await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(false);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: null })).resolves.toBe(true);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Completed,
+        pauseRequestedAt: null,
+      });
+    });
+
+    it('never touches a job that is already paused during recovery', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      await sut.requestPause(operation.id, user.id, pausable);
+
+      const result = await sut.recoverExpiredClaims({ errorCode: 'worker_lost', error: 'gone' });
+
+      expect(result).toEqual({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0, paused: 0 });
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Paused,
+      });
+    });
+
+    it('tells a bulk runner about the pause in the same write that records its batch', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, { kind: MediaOperationKind.Bulk, totalUnits: '3' });
+      const claim = await sut.claimNext({ kinds: [MediaOperationKind.Bulk], workerId: 'worker-a', leaseMs: LEASE_MS });
+      await sut.requestPause(operation.id, user.id, pausable);
+
+      const written = await sut.setBulkResult(operation.id, claim!.claimToken, {
+        result: { succeeded: 1 },
+        processedUnits: 1,
+        totalUnits: 3,
+        progress: 33,
+        leaseMs: LEASE_MS,
+      });
+
+      expect(written!.pauseRequestedAt).not.toBeNull();
+      expect(written!.cancelRequestedAt).toBeNull();
     });
   });
 

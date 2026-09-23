@@ -183,6 +183,14 @@ export class MediaOperationTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   cancelRequestedAt!: Timestamp | null;
 
+  /**
+   * The owner asked for this job to pause (FL-104, owner request September 23, 2026). A queued job
+   * is paused at once; a claimed one keeps working until its next checkpoint, where the worker hands
+   * the claim back and the job becomes `paused`. Resume clears it. Never set on a finished job.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  pauseRequestedAt!: Timestamp | null;
+
   /** The remote's answer. Until it arrives the job stays `cancelling`, not `cancelled`. */
   @Column({ type: 'timestamp with time zone', nullable: true })
   cancelAcknowledgedAt!: Timestamp | null;
