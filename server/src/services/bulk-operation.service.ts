@@ -14,7 +14,11 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  MediaOperationRepository,
+  type MediaOperationWriteState,
+} from 'src/repositories/media-operation.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -261,7 +265,7 @@ export class BulkOperationService {
     let processed = Math.min(Math.max(0, Number(operation.processedUnits ?? 0)), total);
 
     const started = await this.write(id, claimToken, result, processed, total);
-    if (!(await this.proceed(id, started))) {
+    if (!(await this.proceed(id, claimToken, started))) {
       return;
     }
 
@@ -310,7 +314,7 @@ export class BulkOperationService {
       processed += batch.length;
 
       const written = await this.write(id, claimToken, result, processed, total);
-      if (!(await this.proceed(id, written))) {
+      if (!(await this.proceed(id, claimToken, written))) {
         return;
       }
     }
@@ -322,7 +326,7 @@ export class BulkOperationService {
     if (planned) {
       result = planned;
       const written = await this.write(id, claimToken, result, processed, total);
-      if (!(await this.proceed(id, written))) {
+      if (!(await this.proceed(id, claimToken, written))) {
         return;
       }
 
@@ -359,7 +363,7 @@ export class BulkOperationService {
       result = pruneShiftOrigins(snapshot, mergeBulkOutcomes({ ...result, retry: advanced }, outcomes));
 
       const written = await this.write(id, claimToken, result, processed, total);
-      if (!(await this.proceed(id, written))) {
+      if (!(await this.proceed(id, claimToken, written))) {
         return;
       }
     }
@@ -391,7 +395,7 @@ export class BulkOperationService {
     batch: string[],
   ): Promise<Outcome[] | null> {
     const written = await this.write(job.id, job.claimToken, marked, processed, job.total);
-    if (!(await this.proceed(job.id, written))) {
+    if (!(await this.proceed(job.id, job.claimToken, written))) {
       return null;
     }
 
@@ -446,10 +450,15 @@ export class BulkOperationService {
    * No row means the claim was taken away — another worker has the job now, and this one must not
    * write again. A `cancelling` row means the owner asked to stop: the batch that was in hand has
    * already been recorded, so the cancel is acknowledged and the job ends here.
+   *
+   * A pause request (FL-104) stops the job at this same boundary, but hands it back instead of
+   * ending it: everything up to here is recorded, and resuming carries on from the cursor. If the
+   * owner resumed before the worker got here, the settle matches nothing and the job carries on.
    */
   private async proceed(
     id: string,
-    written: { status: MediaOperationStatus; cancelRequestedAt: Date | null } | undefined,
+    claimToken: string,
+    written: MediaOperationWriteState | undefined,
   ): Promise<boolean> {
     if (!written) {
       this.logger.warn(`Bulk operation ${id}: claim lost, stopping`);
@@ -459,6 +468,11 @@ export class BulkOperationService {
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
       await this.operations.acknowledgeCancel(id, { released: false });
       this.logger.log(`Bulk operation ${id} cancelled by its owner`);
+      return false;
+    }
+
+    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
+      this.logger.log(`Bulk operation ${id} paused by its owner`);
       return false;
     }
 

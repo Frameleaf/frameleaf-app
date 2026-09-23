@@ -284,6 +284,10 @@ export class DuplicateService extends BaseService {
       if (assetUpdate.visibility === AssetVisibility.Locked) {
         // a kept copy that became Locked is no longer a face thumbnail or profile picture (FL-53)
         await this.afterAssetsLocked(idsToKeep);
+        // give every stack sibling the cascade also locked the same real-time update the kept copies
+        // get, so an open web client reflects the whole stack at once (FL-53, `locked-stacks.ts`)
+        const siblingIds = (await this.assetRepository.getStackSiblingIds(idsToKeep)) ?? [];
+        await this.notifyAssetsUpdated([...idsToKeep, ...siblingIds], auth.user.id);
       }
     } else if (idsToKeep.length > 0) {
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null });

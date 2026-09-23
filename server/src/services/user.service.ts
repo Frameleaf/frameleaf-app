@@ -90,7 +90,7 @@ export class UserService extends BaseService {
 
   async updateMyPreferences(auth: AuthDto, dto: UserPreferencesUpdateDto) {
     const metadata = await this.userRepository.getMetadata(auth.user.id);
-    const updated = mergePreferences(getPreferences(metadata), dto);
+    const updated = mergePreferences(getPreferences(metadata), dto, 'user');
 
     await this.userRepository.upsertMetadata(auth.user.id, {
       key: UserMetadataKey.Preferences,

@@ -8,6 +8,7 @@ import {
   fromMediaOperation,
   fromUpload,
   matchesActivityFilter,
+  mediaOperationPauseState,
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
@@ -47,6 +48,8 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     errorCode: null,
     cancelRequestedAt: null,
     cancelAcknowledgedAt: null,
+    pausable: true,
+    pauseRequestedAt: null,
     startedAt: '2026-09-22T09:50:00.000Z',
     finishedAt: null,
     createdAt: '2026-09-22T09:49:00.000Z',
@@ -372,6 +375,113 @@ describe('counts and the indicator', () => {
 
   it('is silent when nothing is running', () => {
     expect(activityIndicatorState([])).toEqual({ count: 0, progress: null });
+  });
+});
+
+describe('pause and resume (FL-104)', () => {
+  it('offers pause on a running pausable job and counts its work', () => {
+    const item = fromMediaOperation(operation());
+
+    expect(item).toMatchObject({ canPause: true, canResume: false, paused: false, pausePending: false });
+    expect(item).toMatchObject({ done: 420, total: 1000 });
+    expect(item.pauseBlockedKey).toBeUndefined();
+  });
+
+  it('reads a paused job as paused: unfinished, cancellable, resumable, not counted as running', () => {
+    const item = fromMediaOperation(
+      operation({ status: MediaOperationStatus.Paused, pauseRequestedAt: '2026-09-23T10:00:00.000Z' }),
+    );
+
+    expect(item).toMatchObject({
+      statusKey: 'frameleaf_activity_status_paused',
+      tone: 'warning',
+      paused: true,
+      running: false,
+      finished: false,
+      canResume: true,
+      canPause: false,
+      canCancel: true,
+      canRetry: false,
+      canDismiss: false,
+    });
+    expect(matchesActivityFilter(item, 'running')).toBe(true);
+    expect(matchesActivityFilter(item, 'done')).toBe(false);
+    expect(activityIndicatorState([item])).toEqual({ count: 0, progress: null });
+  });
+
+  it('reads a pause the worker has not reached as pausing, with resume to withdraw it', () => {
+    const item = fromMediaOperation(operation({ pauseRequestedAt: '2026-09-23T10:00:00.000Z' }));
+
+    expect(item).toMatchObject({
+      statusKey: 'frameleaf_activity_status_pausing',
+      running: true,
+      pausePending: true,
+      canResume: true,
+      canPause: false,
+    });
+  });
+
+  it('says why a job cannot pause: a one-shot kind, validating, stopping', () => {
+    expect(
+      mediaOperationPauseState(
+        operation({ kind: MediaOperationKind.StudioPreview, pausable: false, status: MediaOperationStatus.Rendering }),
+      ).pauseBlockedKey,
+    ).toBe('frameleaf_running_pause_unavailable_kind');
+    expect(mediaOperationPauseState(operation({ status: MediaOperationStatus.Validating })).pauseBlockedKey).toBe(
+      'frameleaf_running_pause_unavailable_finishing',
+    );
+    expect(mediaOperationPauseState(operation({ status: MediaOperationStatus.Cancelling })).pauseBlockedKey).toBe(
+      'frameleaf_running_pause_unavailable_stopping',
+    );
+    const completed = operation({ status: MediaOperationStatus.Completed });
+    expect(mediaOperationPauseState(completed).pauseBlockedKey).toBeUndefined();
+  });
+
+  it('keeps a paused bulk job out of retry and clearing, and counts items answered of items requested', () => {
+    const item = fromMediaOperation(
+      operation({
+        kind: MediaOperationKind.Bulk,
+        status: MediaOperationStatus.Paused,
+        pauseRequestedAt: '2026-09-23T10:00:00.000Z',
+        processedUnits: '600',
+        totalUnits: '1200',
+        bulk: {
+          action: MediaOperationBulkAction.Favorite,
+          requested: 1200,
+          succeeded: 590,
+          failed: 0,
+          skipped: 10,
+          snapshotTruncated: false,
+          itemsTruncated: false,
+          retried: 0,
+        },
+      }),
+    );
+
+    expect(item).toMatchObject({ paused: true, canRetry: false, canDismiss: false, canCancel: true, canResume: true });
+    expect(item).toMatchObject({ done: 600, total: 1200 });
+  });
+
+  it('keeps paused work up with the running work', () => {
+    const list = buildActivityList({
+      operations: [
+        operation({
+          id: '0195e2a0-0000-7000-8000-000000000021',
+          status: MediaOperationStatus.Completed,
+          startedAt: '2026-09-23T11:00:00.000Z',
+        }),
+        operation({
+          id: '0195e2a0-0000-7000-8000-000000000022',
+          status: MediaOperationStatus.Paused,
+          startedAt: '2026-09-23T08:00:00.000Z',
+        }),
+      ],
+    });
+
+    expect(list.map((item) => item.statusKey)).toEqual([
+      'frameleaf_activity_status_paused',
+      'frameleaf_activity_status_completed',
+    ]);
   });
 });
 
