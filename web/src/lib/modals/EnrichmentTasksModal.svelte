@@ -67,7 +67,7 @@
 
   const handleSmartAlbums = async () => {
     const value = selectedKind?.value;
-    const kind: Kind | undefined = value ? (value as Kind) : undefined;
+    const kind = (value as Kind | undefined) || undefined;
     busy = true;
     try {
       const props = kind ? { kind, kindLabel: kindTitle(kind) } : {};

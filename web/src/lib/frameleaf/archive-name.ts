@@ -30,12 +30,14 @@ const SEGMENT_MAX_LENGTH = 40;
  *  in this module, used only when every localized input sanitizes away to nothing. */
 const ASCII_SAFE_FALLBACK = 'frameleaf';
 
-const RESERVED_CHARACTERS = /[<>:"/\\|?*\u0000-\u001F]/g;
+// Control characters never get this far: NON_ASCII_PRINTABLE has already removed them.
+const RESERVED_CHARACTERS = /[<>:"/\\|?*]/g;
 const SEPARATOR_RUN = /[\s_]+/g;
 const HYPHEN_RUN = /-+/g;
 const EDGE_HYPHENS = /^-+|-+$/g;
 const COMBINING_MARKS = /[̀-ͯ]/g;
-const NON_ASCII_PRINTABLE = /[^\x20-\x7E]/g;
+/** Anything outside printable ASCII, space (U+0020) through tilde (U+007E). */
+const NON_ASCII_PRINTABLE = /[^ -~]/g;
 
 /**
  * One name, filter detail or other descriptive fragment, made filesystem- and ASCII-safe.
