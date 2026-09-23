@@ -24,6 +24,12 @@ import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
+import {
+  eventStoryPlace,
+  formatLocalDateRange,
+  isEventStory,
+  isYearInReview,
+} from '$lib/frameleaf/memory-stories';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -395,6 +401,19 @@ export const memoryLaneTitle = derived(t, ($t) => {
       return memoryDate.day === now.day && memoryDate.month === now.month
         ? $t('years_ago', { values: { years: now.year - memory.data.year } })
         : memoryDate.toLocaleString(DateTime.DATE_MED, { locale: get(locale) });
+    }
+
+    // FL-62: event stories and year-in-review recaps. An event story names its place when
+    // it has one and otherwise reads as its local day range; the range comes from the
+    // server's `yyyy-MM-dd` local days, so it is not re-zoned here.
+    if (isEventStory(memory)) {
+      return (
+        eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale))
+      );
+    }
+
+    if (isYearInReview(memory)) {
+      return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
     }
 
     return $t('unknown');
