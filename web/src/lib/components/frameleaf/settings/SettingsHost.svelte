@@ -1,32 +1,36 @@
 <script lang="ts">
   /**
-   * The Frameleaf settings host (FL-71), ported from the design template's `CommandCenter.jsx`
-   * shell: a rail of areas grouped as "Your library" and "Your server", one search over every
-   * section, an area heading with plain headline copy, and the area's sections as cards. Every
-   * section is an existing system-config form; the host only decides which ones are on screen.
+   * The Frameleaf Command Center (FL-71), ported from the design template's `CommandCenter.jsx`
+   * shell (lines 568-852): one full-screen settings screen for every account. The navigation has
+   * the "Settings" title with its collapse control, "Back to library", the areas grouped as in
+   * `settings-catalog.mjs` and the account foot; the context bar names the server, the "Viewing"
+   * scope and the settings search; the page shows one area's section directory, or one section
+   * with its breadcrumb. An area or section the account may not use is not offered at all: server
+   * settings are only in the section list the page passes for an administrator.
    *
-   * URL contract: `?area=<id>` selects an area. The older `?isOpen=<key>` links from the queue
-   * and storage pages still work: the first known key selects its area and the page scrolls to
-   * that section; nested groups keep reading `isOpen` through the accordion manager.
+   * URL contract (`commandCenterUrl`): `?area=<id>&section=<key>`. Older `?isOpen=<key>` (and
+   * `?open=oauth`) links still open the section that key names (nested groups keep reading `isOpen` through the accordion
+   * manager), and `?scope=` carries the "Viewing" choice between areas.
    *
-   * FL-66: every section edits one settings draft (`system-config-draft.svelte.ts`), so changes
-   * made in one area are kept while another is open. Areas with unsaved changes are marked in the
-   * rail, the draft's messages sit under the heading, and the settings bar at the bottom saves
-   * every page together. The "Change history" area lists the saved settings changes the server
-   * recorded; it reloads after every save.
+   * FL-66: every server section edits one settings draft (`system-config-draft.svelte.ts`), so
+   * changes made in one area are kept while another is open. Areas with unsaved changes are marked
+   * in the navigation, the draft's messages sit under the heading, and the settings bar saves every
+   * page together. "Change history" lists the saved settings changes the server recorded.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
-  import { utilitiesUrl, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
+  import SettingsDirectory from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
-  import SettingsSection from '$lib/components/frameleaf/settings/SettingsSection.svelte';
+  import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
+    commandCenterUrl,
+    isAreaAvailable,
     isScreenArea,
     resolveSettingsArea,
+    resolveSettingsSection,
     searchSettingsSections,
     sectionsForArea,
     SETTINGS_AREAS,
@@ -37,17 +41,28 @@
   } from '$lib/frameleaf/settings-areas';
   import { sectionForConfigPath } from '$lib/frameleaf/system-config-draft';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { QueryParameter } from '$lib/constants';
+  import { utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAdminConfigHistory, type SystemConfigHistoryEntryDto } from '@immich/sdk';
+  import { sidebarCollapsed } from '$lib/stores/preferences.store';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
+  import {
+    AnalyticsScopeKind,
+    getAdminConfigHistory,
+    getAnalyticsScopes,
+    type AnalyticsScopeOptionDto,
+    type SystemConfigHistoryEntryDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiAccountOutline,
-    mdiTools,
+    mdiArrowLeft,
     mdiBackupRestore,
     mdiBellOutline,
     mdiChartTimelineVariant,
+    mdiChevronDoubleLeft,
+    mdiChevronDoubleRight,
+    mdiChevronRight,
     mdiDesktopTowerMonitor,
     mdiFolderOutline,
     mdiHarddisk,
@@ -58,36 +73,29 @@
     mdiServerOutline,
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
+    mdiTools,
   } from '@mdi/js';
-  import { onMount, untrack, type Snippet } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { untrack, type Snippet } from 'svelte';
+  import { t, type Translations } from 'svelte-i18n';
 
   let {
     sections,
     disabled = false,
-    utilityOnly = false,
     areaPanel,
+    sectionBody,
   }: {
     sections: SettingsHostSection[];
     disabled?: boolean;
-    utilityOnly?: boolean;
-    /** An area's own manager inside the command center. */
+    /** An area's own manager inside the command center (the Libraries manager). */
     areaPanel?: Snippet<[SettingsAreaId]>;
+    /** Draws an account section that has no `component` of its own. */
+    sectionBody?: Snippet<[SettingsHostSection]>;
   } = $props();
-  const visibleAreas = $derived(SETTINGS_AREAS.filter((item) => authManager.user.isAdmin || item.id === 'utilities'));
-  const utilityMatches = $derived(
-    utilityToolsFor(authManager.user.isAdmin).filter((tool) =>
-      `${$t(tool.titleKey)} ${$t(tool.descriptionKey)}`.toLowerCase().includes(query.trim().toLowerCase()),
-    ),
-  );
-  const PANEL_AREAS: ReadonlySet<SettingsAreaId> = new Set(['libraries']);
 
+  const isAdmin = $derived(authManager.user.isAdmin);
   const settingsDraft = getSystemConfigDraft();
 
-  const AREA_PARAM = 'area';
-
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
-    utilities: { title: $t('utilities'), description: $t('frameleaf_utilities_description'), icon: mdiTools },
     analytics: {
       title: $t('frameleaf_settings_area_analytics'),
       description: $t('frameleaf_settings_area_analytics_description'),
@@ -112,11 +120,6 @@
       title: $t('frameleaf_settings_area_editing'),
       description: $t('frameleaf_settings_area_editing_description'),
       icon: mdiMovieOpenOutline,
-    },
-    libraries: {
-      title: $t('frameleaf_settings_area_libraries'),
-      description: $t('frameleaf_settings_area_libraries_description'),
-      icon: mdiFolderOutline,
     },
     care: {
       title: $t('frameleaf_settings_area_care'),
@@ -143,6 +146,21 @@
       description: $t('frameleaf_settings_area_server_description'),
       icon: mdiServerOutline,
     },
+    preferences: {
+      title: $t('frameleaf_settings_area_preferences'),
+      description: $t('frameleaf_settings_area_preferences_description'),
+      icon: mdiAccountOutline,
+    },
+    libraries: {
+      title: $t('frameleaf_settings_area_libraries'),
+      description: $t('frameleaf_settings_area_libraries_description'),
+      icon: mdiFolderOutline,
+    },
+    utilities: {
+      title: $t('utilities'),
+      description: $t('frameleaf_utilities_description'),
+      icon: mdiTools,
+    },
     history: {
       title: $t('frameleaf_settings_area_history'),
       description: $t('frameleaf_settings_area_history_description'),
@@ -157,28 +175,120 @@
     personal: $t('frameleaf_settings_group_personal'),
   });
 
-  const area = $derived(
-    resolveSettingsArea({
-      area: page.url.searchParams.get(AREA_PARAM),
-      isOpen: page.url.searchParams.get(QueryParameter.IS_OPEN),
-    }),
+  /** Areas this account may open: every area with a section it is offered, or a screen of its own. */
+  const visibleAreas = $derived(
+    SETTINGS_AREAS.filter(
+      (item) =>
+        isAreaAvailable(item, isAdmin) &&
+        (isScreenArea(item.id) || item.id === 'libraries' || sectionsForArea(sections, item.id).length > 0),
+    ),
   );
+
+  // Older links name a section with `isOpen`; the sign-in provider section also answers `?open=oauth`
+  // and the provider's own return to this page (FL-67).
+  const legacyOpen = $derived(
+    [
+      page.url.searchParams.get('isOpen'),
+      page.url.searchParams.get('open'),
+      !page.url.searchParams.has('area') && (page.url.searchParams.has('code') || page.url.searchParams.has('error'))
+        ? 'oauth'
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+  const requestedArea = $derived(
+    resolveSettingsArea({ area: page.url.searchParams.get('area'), isOpen: legacyOpen, isAdmin }),
+  );
+  // An area this account may not open falls back to the first one it may.
+  const area = $derived(
+    visibleAreas.some((item) => item.id === requestedArea) ? requestedArea : (visibleAreas[0]?.id ?? 'utilities'),
+  );
+  const areaDefinition = $derived(SETTINGS_AREAS.find((item) => item.id === area));
   const areaSections = $derived(sectionsForArea(sections, area));
+  const selectedKey = $derived(
+    resolveSettingsSection(area, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
+  );
+  const selected = $derived(areaSections.find((section) => section.key === selectedKey));
+
+  /** The navigation's pages under the current area: its sections, or the utility tools. */
+  const utilityTools = $derived(utilityToolsFor(isAdmin));
+  const children = $derived(
+    area === 'utilities'
+      ? utilityTools.map((tool) => ({ key: tool.id as string, title: $t(tool.titleKey) }))
+      : area === 'libraries'
+        ? []
+        : areaSections.map((section) => ({ key: section.key, title: section.title })),
+  );
+  const activeChild = $derived(
+    area === 'utilities' ? utilityTool(page.url.searchParams.get('section'))?.id : selected?.key,
+  );
 
   let query = $state('');
-  const results = $derived(searchSettingsSections(sections, query));
   const searching = $derived(query.trim().length > 0);
+  const areaOfSection = (section: SettingsHostSection) =>
+    SETTINGS_AREAS.find((item) =>
+      section.admin ? item.sections.includes(section.key) : item.personal?.includes(section.key),
+    )?.id;
 
-  const areaOf = (key: string) => SETTINGS_AREAS.find((item) => item.sections.includes(key))?.id;
+  type SearchResult = {
+    id: string;
+    area: SettingsAreaId;
+    section?: string;
+    overline: string;
+    title: string;
+    subtitle: string;
+  };
+  const results = $derived.by((): SearchResult[] => {
+    if (!searching) {
+      return [];
+    }
+    const needle = query.trim().toLowerCase();
+    const areaResults = visibleAreas
+      .filter((item) => `${areaCopy[item.id].title} ${areaCopy[item.id].description}`.toLowerCase().includes(needle))
+      .map((item) => ({
+        id: `area:${item.id}`,
+        area: item.id,
+        overline: groupCopy[item.group],
+        title: areaCopy[item.id].title,
+        subtitle: areaCopy[item.id].description,
+      }));
+    const sectionResults = searchSettingsSections(sections, query).flatMap((section): SearchResult[] => {
+      const owner = areaOfSection(section);
+      return owner && visibleAreas.some((item) => item.id === owner)
+        ? [
+            {
+              id: `${owner}:${section.key}`,
+              area: owner,
+              section: section.key,
+              overline: areaCopy[owner].title,
+              title: section.title,
+              subtitle: section.subtitle,
+            },
+          ]
+        : [];
+    });
+    const toolResults = utilityTools
+      .filter((tool) => `${$t(tool.titleKey)} ${$t(tool.descriptionKey)}`.toLowerCase().includes(needle))
+      .map((tool) => ({
+        id: `utilities:${tool.id}`,
+        area: 'utilities' as const,
+        section: tool.id,
+        overline: areaCopy.utilities.title,
+        title: $t(tool.titleKey),
+        subtitle: $t(tool.descriptionKey),
+      }));
+    return [...areaResults, ...sectionResults, ...toolResults];
+  });
 
   /** Areas holding unsaved changes of the settings draft. */
   const pendingAreas = $derived.by(() => {
     const areas = new Set<SettingsAreaId>();
     for (const change of settingsDraft?.changes ?? []) {
-      const section = sectionForConfigPath(change.path);
-      const area = section ? areaOf(section) : undefined;
-      if (area) {
-        areas.add(area);
+      const key = sectionForConfigPath(change.path);
+      const owner = key ? SETTINGS_AREAS.find((item) => item.sections.includes(key))?.id : undefined;
+      if (owner) {
+        areas.add(owner);
       }
     }
     return areas;
@@ -218,238 +328,377 @@
     }
   });
 
+  // The "Viewing" choices an administrator has: the server, each account and each library.
+  let scopes = $state<AnalyticsScopeOptionDto[]>([]);
+  $effect(() => {
+    if (!isAdmin) {
+      return;
+    }
+    let cancelled = false;
+    void getAnalyticsScopes()
+      .then((result) => {
+        if (!cancelled) {
+          scopes = result.scopes;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          scopes = [];
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+  const scope = $derived(page.url.searchParams.get('scope') ?? 'all');
+  const SCOPE_GROUPS = [AnalyticsScopeKind.Host, AnalyticsScopeKind.Account, AnalyticsScopeKind.Library] as const;
+  const scopeGroups = $derived(
+    SCOPE_GROUPS.map((kind) => ({ kind, options: scopes.filter((option) => option.kind === kind) })).filter(
+      (group) => group.options.length > 0,
+    ),
+  );
+
   const areaTitles = $derived(
     Object.fromEntries(Object.entries(areaCopy).map(([id, copy]) => [id, copy.title])) as Record<string, string>,
   );
+  const serverSections = $derived(sections.filter((section) => section.admin));
 
-  const selectArea = async (next: SettingsAreaId, sectionKey?: string) => {
+  /** Opens an area, or one of its sections, keeping the "Viewing" scope. */
+  const navigate = async (next: SettingsAreaId, section?: string) => {
     query = '';
-    if (next === 'utilities') {
-      // Utilities live at one address for every account; the administrator's host links there.
-      await goto(utilitiesUrl(utilityTool(sectionKey ?? null)?.id), { noScroll: true, keepFocus: true });
-      return;
+    sidebarStore.isOpen = false;
+    const currentScope = page.url.searchParams.get('scope') ?? undefined;
+    await goto(commandCenterUrl(next, section, { scope: currentScope }), { keepFocus: true });
+  };
+
+  const changeScope = async (value: string) => {
+    const url = new URL(page.url);
+    if (value === 'all') {
+      url.searchParams.delete('scope');
+    } else {
+      url.searchParams.set('scope', value);
     }
-    const url = new URL(utilityOnly ? Route.systemSettings() : page.url, page.url);
-    for (const key of ['section', 'status', 'assetId', 'at', 'index', 'workflowId', 'selected', 'new', 'edit']) {
-      url.searchParams.delete(key);
-    }
-    url.searchParams.set(AREA_PARAM, next);
     await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
-    if (sectionKey) {
-      scrollTo(sectionKey);
-    }
   };
-
-  const scrollTo = (key: string) => {
-    setTimeout(
-      () => document.querySelector(`#setting-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-      50,
-    );
-  };
-
-  onMount(() => {
-    const requested = (page.url.searchParams.get(QueryParameter.IS_OPEN) ?? '')
-      .split(' ')
-      .find((key) => areaOf(key) === area);
-    if (requested) {
-      scrollTo(requested);
-    }
-  });
 </script>
 
-<div class="host">
-  <nav class="rail" aria-label={$t('frameleaf_settings_nav_label')}>
-    {#each SETTINGS_GROUP_ORDER.filter((group) => visibleAreas.some((item) => item.group === group)) as group (group)}
-      <div class="rail-group">
-        <p>{groupCopy[group]}</p>
-        {#each visibleAreas.filter((item) => item.group === group) as item (item.id)}
-          <button
-            type="button"
-            class="area"
-            class:selected={!searching && item.id === area}
-            aria-current={!searching && item.id === area ? 'page' : undefined}
-            onclick={() => selectArea(item.id)}
-          >
-            <Icon icon={areaCopy[item.id].icon} size="1.125rem" aria-hidden={true} />
-            <span>{areaCopy[item.id].title}</span>
-            {#if item.id === 'history' && history && history.length > 0}
-              <small class="count">{history.length}</small>
-            {/if}
-            {#if pendingAreas.has(item.id)}
-              <span class="pending" title={$t('unsaved_change')}>
-                <span class="sr-only">{$t('unsaved_change')}</span>
-              </span>
-            {/if}
-          </button>
-          {#if !searching && item.id === area && areaSections.length > 1}
-            <div
-              class="children"
-              aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
+<div class="command-center" class:cc-collapsed={$sidebarCollapsed} class:cc-nav-open={sidebarStore.isOpen}>
+  <aside class="cc-nav">
+    <div class="cc-nav-title">
+      <span>{$t('settings')}</span>
+      <button
+        type="button"
+        aria-label={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+        title={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+        onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
+      >
+        <Icon icon={$sidebarCollapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="1.125rem" aria-hidden />
+      </button>
+    </div>
+    <a class="cc-back" href={Route.photos()} title={$t('frameleaf_cc_back')}>
+      <Icon icon={mdiArrowLeft} size="1.125rem" aria-hidden />
+      <span>{$t('frameleaf_cc_back')}</span>
+    </a>
+    <nav id="settings-navigation" aria-label={$t('frameleaf_settings_nav_label')}>
+      {#each SETTINGS_GROUP_ORDER.filter((group) => visibleAreas.some((item) => item.group === group)) as group (group)}
+        <div class="cc-nav-group">
+          <p>{groupCopy[group]}</p>
+          {#each visibleAreas.filter((item) => item.group === group) as item (item.id)}
+            <button
+              type="button"
+              class="area"
+              class:selected={item.id === area}
+              aria-label={areaCopy[item.id].title}
+              title={areaCopy[item.id].title}
+              aria-current={item.id === area ? 'page' : undefined}
+              onclick={() => navigate(item.id)}
             >
-              {#each areaSections as section (section.key)}
-                <button type="button" onclick={() => selectArea(item.id, section.key)}>{section.title}</button>
-              {/each}
-            </div>
-          {/if}
-        {/each}
-      </div>
-    {/each}
-    <a class="area" href={Route.userSettings()}
-      ><Icon icon={mdiAccountOutline} size="1.125rem" aria-hidden={true} /><span
-        >{$t('frameleaf_utilities_preferences')}</span
-      ></a
-    >
-  </nav>
-
-  <div class="main">
-    <label class="search">
-      <Icon icon={mdiMagnify} size="1.125rem" aria-hidden={true} />
-      <input
-        id="settings-search"
-        type="search"
-        aria-label={$t('frameleaf_settings_search_label')}
-        placeholder={$t('frameleaf_settings_search_placeholder')}
-        bind:value={query}
-      />
-    </label>
-
-    {#if settingsDraft}
-      <SettingsDraftNotices store={settingsDraft} />
-    {/if}
-
-    {#if area === 'utilities'}
-      <UtilitiesArea
-        {query}
-        onNavigate={() => {
-          query = '';
-        }}
-      />
-    {:else if searching}
-      <p class="results" role="status">
-        {results.length + utilityMatches.length > 0
-          ? $t('frameleaf_settings_search_results', { values: { count: results.length + utilityMatches.length } })
-          : $t('frameleaf_settings_search_empty', { values: { query: query.trim() } })}
-      </p>
-      <div class="sections">
-        {#each utilityMatches as tool (tool.id)}
-          <button type="button" class="utility-result" onclick={() => selectArea('utilities', tool.id)}
-            ><strong>{$t('utilities')} › {$t(tool.titleKey)}</strong><span>{$t(tool.descriptionKey)}</span></button
-          >
-        {/each}
-        {#each results as section (section.key)}
-          {@const owner = areaOf(section.key)}
-          <SettingsSection
-            key={section.key}
-            title={section.title}
-            subtitle={section.subtitle}
-            icon={section.icon}
-            overline={owner ? areaCopy[owner].title : undefined}
-          >
-            <section.component />
-          </SettingsSection>
-        {/each}
-      </div>
-    {:else if isScreenArea(area)}
-      <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
-      {#if area === 'analytics'}
-        <AnalyticsArea />
-      {/if}
-    {:else}
-      {#if !(areaPanel && PANEL_AREAS.has(area))}
-        <header class="heading">
-          <p class="overline">{groupCopy[SETTINGS_AREAS.find((item) => item.id === area)?.group ?? 'library']}</p>
-          <h2>{areaCopy[area].title}</h2>
-          <p class="description">{areaCopy[area].description}</p>
-          {#if area === 'care'}
-            <!-- The prototype's health and duplicate sections open the Library Care tools (FL-69). -->
-            <div class="area-actions">
-              {#if authManager.user.isAdmin}
-                <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
-                <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
+              <Icon icon={areaCopy[item.id].icon} size="1.125rem" aria-hidden />
+              <span>{areaCopy[item.id].title}</span>
+              {#if item.id === 'history' && history && history.length > 0}
+                <small class="count">{history.length}</small>
               {/if}
-              <a href={Route.duplicatesUtility()}>{$t('library_care_open_duplicates')}</a>
-            </div>
-          {/if}
-        </header>
-      {/if}
-      {@render areaPanel?.(area)}
-      {#if area === 'history'}
-        <SettingsChangeHistory
-          entries={history}
-          error={historyError}
-          onRetry={() => void loadHistory()}
-          onConfigure={() => selectArea('processing')}
-        />
-      {:else}
-        <div class="sections">
-          {#each areaSections as section (section.key)}
-            <SettingsSection key={section.key} title={section.title} subtitle={section.subtitle} icon={section.icon}>
-              <section.component />
-            </SettingsSection>
+              {#if pendingAreas.has(item.id)}
+                <span class="pending" title={$t('unsaved_change')}></span>
+              {/if}
+            </button>
+            {#if item.id === area && !$sidebarCollapsed && children.length > 0}
+              <div
+                class="cc-nav-children"
+                aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
+              >
+                {#each children as child (child.key)}
+                  <button
+                    type="button"
+                    aria-current={activeChild === child.key ? 'page' : undefined}
+                    onclick={() => navigate(item.id, child.key)}>{child.title}</button
+                  >
+                {/each}
+              </div>
+            {/if}
           {/each}
         </div>
-      {/if}
-    {/if}
+      {/each}
+    </nav>
+    <div class="cc-nav-foot">
+      <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
+      <span>
+        {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
+        <small>{isAdmin ? page.url.host : $t('frameleaf_cc_own')}</small>
+      </span>
+    </div>
+  </aside>
+  {#if sidebarStore.isOpen}
+    <button
+      type="button"
+      class="cc-nav-scrim"
+      aria-label={$t('frameleaf_cc_close')}
+      onclick={() => (sidebarStore.isOpen = false)}
+    ></button>
+  {/if}
 
-    {#if settingsDraft}
-      <SettingsSaveBar store={settingsDraft} {sections} {areaTitles} {disabled} />
-    {/if}
+  <div class="cc-body">
+    <div class="cc-context-bar">
+      <span class="cc-context">
+        <Icon icon={mdiServerOutline} size="1rem" aria-hidden />
+        {page.url.host}
+        <span class="cc-context-divider">/</span>
+        {$t('settings')}
+      </span>
+      {#if isAdmin && scopeGroups.length > 0}
+        <label class="cc-account-scope">
+          <span>{$t('frameleaf_cc_viewing')}</span>
+          <select
+            aria-label={$t('frameleaf_cc_scope')}
+            value={scope}
+            onchange={(event) => changeScope(event.currentTarget.value)}
+          >
+            {#each scopeGroups as group (group.kind)}
+              <optgroup label={$t(`frameleaf_cc_scope_group_${group.kind}` as Translations)}>
+                {#each group.options as option (option.value)}
+                  <option value={option.value}
+                    >{option.kind === AnalyticsScopeKind.Host ? $t('frameleaf_cc_server') : option.label}</option
+                  >
+                {/each}
+              </optgroup>
+            {/each}
+          </select>
+        </label>
+      {:else}
+        <div class="cc-account-scope">
+          <span>{$t('frameleaf_cc_viewing')}</span>
+          <span>{$t('frameleaf_cc_own_library', { values: { name: authManager.user.name } })}</span>
+        </div>
+      {/if}
+      <label class="cc-search">
+        <Icon icon={mdiMagnify} size="1rem" aria-hidden />
+        <input
+          id="settings-search"
+          type="search"
+          aria-label={$t('frameleaf_settings_search_label')}
+          placeholder={$t('frameleaf_cc_search')}
+          bind:value={query}
+        />
+        <kbd>{$t('frameleaf_search_shortcut_hint')}</kbd>
+      </label>
+    </div>
+
+    <main class="cc-main">
+      {#if searching}
+        <header class="cc-page-heading">
+          <p class="cc-overline">{$t('frameleaf_cc_search_overline')}</p>
+          <h1>{$t('frameleaf_cc_search_title')}</h1>
+          <p>{$t('frameleaf_settings_search_results', { values: { count: results.length } })}</p>
+        </header>
+        {#if results.length > 0}
+          <div class="cc-search-results">
+            {#each results as result (result.id)}
+              <button type="button" onclick={() => navigate(result.area, result.section)}>
+                <Icon icon={areaCopy[result.area].icon} size="1.25rem" aria-hidden />
+                <span>
+                  <small>{result.overline}</small>
+                  <strong>{result.title}</strong>
+                  <span>{result.subtitle}</span>
+                </span>
+                <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden />
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <div class="cc-empty" role="status">
+            <h2>{$t('frameleaf_cc_no_results')}</h2>
+            <p>{$t('frameleaf_cc_search_help')}</p>
+            <button type="button" onclick={() => (query = '')}>{$t('frameleaf_cc_clear')}</button>
+          </div>
+        {/if}
+      {:else}
+        {#if settingsDraft && disabled}
+          <p class="cc-notice" role="alert">{$t('admin.config_set_by_file')}</p>
+        {/if}
+        {#if settingsDraft}
+          <SettingsDraftNotices store={settingsDraft} />
+        {/if}
+        {#if area === 'analytics'}
+          <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
+          <AnalyticsArea />
+        {:else if area === 'utilities'}
+          <UtilitiesArea />
+        {:else if area === 'libraries'}
+          <!-- The template hides the heading on the Libraries manager, which carries its own. -->
+          {@render areaPanel?.(area)}
+          {#each areaSections as section (section.key)}
+            <section class="cc-section" id="setting-{section.key}">
+              {#if section.component}
+                <section.component />
+              {:else}
+                {@render sectionBody?.(section)}
+              {/if}
+            </section>
+          {/each}
+        {:else}
+          <header class="cc-page-heading">
+            <p class="cc-overline">
+              {#if selected}
+                <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
+                <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
+                {selected.title}
+              {:else}
+                {groupCopy[areaDefinition?.group ?? 'library']}
+              {/if}
+            </p>
+            <h1>{selected?.title ?? areaCopy[area].title}</h1>
+            <p>{selected?.subtitle ?? areaCopy[area].description}</p>
+          </header>
+          {#if area === 'history'}
+            <SettingsChangeHistory
+              entries={history}
+              error={historyError}
+              onRetry={() => void loadHistory()}
+              onConfigure={() => navigate('processing')}
+            />
+          {:else if selected}
+            <section class="cc-section" id="setting-{selected.key}">
+              {#if selected.component}
+                <selected.component />
+              {:else}
+                {@render sectionBody?.(selected)}
+              {/if}
+            </section>
+          {:else}
+            <SettingsDirectory
+              sections={areaSections}
+              icon={areaCopy[area].icon}
+              onSelect={(key) => navigate(area, key)}
+            />
+          {/if}
+        {/if}
+      {/if}
+
+      {#if settingsDraft}
+        <SettingsSaveBar store={settingsDraft} sections={serverSections} {areaTitles} {disabled} />
+      {/if}
+    </main>
   </div>
 </div>
 
 <style>
-  .utility-result {
-    display: grid;
-    gap: 0.5rem;
-    padding: 1rem;
-    text-align: left;
-    background: var(--fl-panel);
+  /* The template's `command-center.css` shell. */
+  .command-center {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
     color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: 0.25rem;
+    background: var(--fl-canvas);
   }
-  .utility-result span {
-    color: var(--fl-muted);
+  button,
+  a,
+  input,
+  select {
+    font: inherit;
   }
-  .host {
-    display: grid;
-    grid-template-columns: 14.25rem minmax(0, 1fr);
-    gap: 1.25rem;
-    align-items: start;
-    color: var(--fl-text);
+  button {
+    cursor: pointer;
+    color: inherit;
   }
-  .rail {
-    position: sticky;
-    top: 1rem;
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  .cc-nav {
     display: flex;
     flex-direction: column;
-    padding: 0.5rem 0;
+    flex-shrink: 0;
+    width: 228px;
+    padding: 14px 0 0;
     background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
+    border-right: 1px solid var(--fl-border);
   }
-  .rail-group + .rail-group {
-    margin-top: 0.4375rem;
+  .cc-nav-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px 4px 22px;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .cc-nav-title button {
+    display: inline-flex;
+    padding: 6px;
+    background: none;
+    border: 0;
+    border-radius: var(--fl-radius-control);
+  }
+  .cc-nav-title button:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
+  .cc-back {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 12px 6px;
+    padding: 8px 10px;
+    color: var(--fl-muted);
+    text-decoration: none;
+    border-radius: var(--fl-radius-control);
+  }
+  .cc-back:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
+  .cc-nav nav {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .cc-nav-group {
+    margin-top: 7px;
+    padding-bottom: 6px;
     border-top: 1px solid var(--fl-border);
   }
-  .rail-group > p {
-    margin: 0.75rem 1.375rem 0.375rem;
+  .cc-nav-group > p {
+    margin: 12px 22px 6px;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+    font-size: 10px;
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 1.1px;
     text-transform: uppercase;
   }
   .area {
     display: flex;
     align-items: center;
-    gap: 0.6875rem;
+    gap: 11px;
     width: 100%;
-    padding: 0.5rem 1.375rem;
-    text-align: start;
+    min-height: 34px;
+    padding: 8px 22px;
     line-height: 1.3;
+    text-align: start;
     color: var(--fl-muted);
-    background: transparent;
+    background: none;
     border: 0;
   }
   .area:hover {
@@ -470,162 +719,328 @@
     font-size: var(--fl-font-micro);
   }
   .count + .pending {
-    margin-inline-start: 0.375rem;
+    margin-inline-start: 6px;
   }
   .pending {
-    width: 0.375rem;
-    height: 0.375rem;
-    margin-inline-start: auto;
     flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    margin-inline-start: auto;
     background: var(--fl-warning);
     border-radius: 50%;
   }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .children {
+  .cc-nav-children {
     display: flex;
     flex-direction: column;
-    padding: 0.125rem 0 0.375rem 2.75rem;
+    padding: 2px 12px 6px 44px;
   }
-  .children button {
-    min-height: 2rem;
-    padding: 0.25rem 0.5rem;
+  .cc-nav-children button {
+    min-height: 32px;
+    padding: 4px 8px;
     text-align: start;
     color: var(--fl-muted);
-    background: transparent;
+    background: none;
     border: 0;
-    border-radius: var(--fl-radius);
-    font-size: var(--fl-font-small);
+    border-radius: var(--fl-radius-control);
+    font-size: var(--fl-font-micro);
   }
-  .children button:hover {
+  .cc-nav-children button:hover,
+  .cc-nav-children button[aria-current='page'] {
     color: var(--fl-text);
     background: var(--fl-raised);
   }
-  .main {
+  .cc-nav-foot {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    min-width: 0;
+    gap: 10px;
+    padding: 14px 22px;
+    color: var(--fl-muted);
+    border-top: 1px solid var(--fl-border);
+    font-size: var(--fl-font-micro);
   }
-  .search {
+  .cc-nav-foot small {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+  }
+  .cc-nav-scrim {
+    display: none;
+  }
+  .cc-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .cc-context-bar {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    max-width: 26rem;
-    padding: 0.3125rem 0.625rem;
+    justify-content: space-between;
+    gap: 24px;
+    min-height: 53px;
+    padding: 10px 28px;
+    background: var(--fl-panel);
+    border-bottom: 1px solid var(--fl-border);
+    font-size: var(--fl-font-micro);
+  }
+  .cc-context {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fl-muted);
+    white-space: nowrap;
+  }
+  .cc-context-divider {
+    padding: 0 5px;
+  }
+  .cc-account-scope {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fl-muted);
+    white-space: nowrap;
+  }
+  .cc-account-scope select {
+    max-width: 190px;
+    padding: 5px;
+    color: var(--fl-text);
+    background: var(--fl-canvas);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .cc-account-scope > span:last-child {
+    color: var(--fl-text);
+  }
+  .cc-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: min(410px, 55%);
+    padding: 5px 10px;
     color: var(--fl-muted);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .search:focus-within {
+  .cc-search:focus-within {
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
-  .search input {
+  .cc-search input {
     width: 100%;
     min-width: 0;
     margin: 0;
-    padding: 0.1875rem 0;
+    padding: 3px 0;
     color: var(--fl-text);
     background: none;
     border: 0;
     outline: 0;
-    font: inherit;
-  }
-  .results {
-    margin: 0;
-    color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
-  .heading {
-    margin-bottom: 0.25rem;
+  .cc-search kbd {
+    font-size: 10px;
+    white-space: nowrap;
   }
-  .overline {
-    margin: 0 0 0.5rem;
+  .cc-main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 28px 30px 12px;
+    scrollbar-width: thin;
+  }
+  .cc-main > :global(*) {
+    max-width: 1480px;
+    margin-inline: auto;
+  }
+  .cc-page-heading {
+    margin-bottom: 22px;
+  }
+  .cc-overline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-    letter-spacing: 0.08em;
+    font-size: 10px;
+    letter-spacing: 1.3px;
     text-transform: uppercase;
   }
-  .heading h2 {
-    margin: 0;
-    font-size: 1.75rem;
-    font-weight: 550;
-    letter-spacing: -0.02em;
+  .cc-overline button {
+    padding: 0;
+    color: var(--fl-muted);
+    background: none;
+    border: 0;
+    font-size: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
   }
-  .description {
-    margin: 0.5rem 0 0;
+  .cc-overline button:hover {
+    color: var(--fl-accent);
+  }
+  .cc-page-heading h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 550;
+    letter-spacing: -0.9px;
+  }
+  .cc-page-heading > p:last-child {
+    margin: 8px 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.5;
   }
-  .sections {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+  .cc-section {
+    min-width: 0;
+    padding: 20px;
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
   }
-  .area-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
+  .cc-section + .cc-section {
+    margin-top: 16px;
   }
-  .area-actions a {
-    padding: 0.4375rem 0.6875rem;
+  /* The ported forms still carry the legacy inset; keep them flush inside the card. */
+  .cc-section :global(.ms-4) {
+    margin-inline-start: 0;
+  }
+  .cc-notice {
+    margin: 0 0 16px;
+    padding: 12px 14px;
     color: var(--fl-text);
-    text-decoration: none;
+    background: color-mix(in srgb, var(--fl-warning) 12%, var(--fl-panel));
+    border: 1px solid color-mix(in srgb, var(--fl-warning) 40%, var(--fl-border));
+    border-radius: var(--fl-radius-card);
+    font-size: var(--fl-font-small);
+  }
+  .cc-search-results {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .cc-search-results button {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px;
+    text-align: start;
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 0;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .cc-search-results button:last-child {
+    border-bottom: 0;
+  }
+  .cc-search-results button:hover {
+    background: var(--fl-raised);
+  }
+  .cc-search-results button > span {
+    display: grid;
+    flex: 1;
+    gap: 4px;
+  }
+  .cc-search-results small,
+  .cc-search-results button > span > span {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+  }
+  .cc-empty {
+    padding: 50px;
+    text-align: center;
+  }
+  .cc-empty h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 550;
+  }
+  .cc-empty p {
+    margin: 0 0 16px;
+    color: var(--fl-muted);
+  }
+  .cc-empty button {
+    padding: 8px 12px;
+    color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .area-actions a:hover {
-    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
-  }
-  @media (max-width: 56rem) {
-    .utility-result {
-      display: grid;
-      gap: 0.5rem;
-      padding: 1rem;
-      text-align: left;
-      background: var(--fl-panel);
-      color: var(--fl-text);
-      border: 1px solid var(--fl-border);
-      border-radius: 0.25rem;
+  @media (min-width: 701px) {
+    .cc-collapsed .cc-nav {
+      width: 64px;
     }
-    .utility-result span {
-      color: var(--fl-muted);
+    .cc-collapsed .cc-nav-title {
+      justify-content: center;
+      padding: 0 0 4px;
     }
-    .host {
-      grid-template-columns: 1fr;
-    }
-    .rail {
-      position: static;
-      flex-direction: row;
-      flex-wrap: wrap;
-      gap: 0.25rem;
-      padding: 0.5rem;
-    }
-    .rail-group {
-      display: contents;
-    }
-    .rail-group > p,
-    .children {
+    .cc-collapsed .cc-nav-title > span,
+    .cc-collapsed .cc-back > span,
+    .cc-collapsed .cc-nav-group > p,
+    .cc-collapsed .area > span,
+    .cc-collapsed .area > small,
+    .cc-collapsed .cc-nav-foot > span {
       display: none;
     }
-    .area {
-      width: auto;
-      padding: 0.375rem 0.75rem;
-      border-radius: var(--fl-radius-pill);
+    .cc-collapsed .cc-back,
+    .cc-collapsed .area,
+    .cc-collapsed .cc-nav-foot {
+      justify-content: center;
+      padding: 12px;
     }
-    .area.selected {
-      box-shadow: inset 0 0 0 1px var(--fl-accent);
+    .cc-collapsed .cc-back {
+      margin: 0 0 6px;
+    }
+  }
+  @media (max-width: 1000px) {
+    .cc-context-bar {
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .cc-search {
+      flex: 1;
+      min-width: 200px;
+    }
+    .cc-main {
+      padding: 20px;
+    }
+  }
+  @media (max-width: 700px) {
+    .cc-nav {
+      display: none;
+      position: fixed;
+      top: var(--fl-topbar-height-phone);
+      bottom: 0;
+      left: 0;
+      z-index: 60;
+      width: 250px;
+      padding-top: 10px;
+    }
+    .cc-nav-open .cc-nav {
+      display: flex;
+    }
+    .cc-nav-open .cc-nav-scrim {
+      display: block;
+      position: fixed;
+      inset: var(--fl-topbar-height-phone) 0 0;
+      z-index: 59;
+      background: #0007;
+      border: 0;
+    }
+    .area {
+      min-height: 44px;
+    }
+    .cc-context-bar {
+      padding: 9px 14px;
+    }
+    .cc-search {
+      flex-basis: 100%;
+      width: 100%;
+    }
+    .cc-search kbd {
+      display: none;
+    }
+    .cc-main {
+      padding: 18px 14px;
     }
   }
 </style>

@@ -1,25 +1,30 @@
-import { getApiKeys, getSessions } from '@immich/sdk';
+import { getAdminConfigWithRevision, getConfigDefaults } from '@immich/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
+/**
+ * The one Command Center (FL-71) for every account. Only `screen` is read here, so moving between
+ * areas and sections never reloads the page's data. An administrator's server settings, with the
+ * revision the settings draft is made against (FL-66), load with the page; an account without
+ * administration never asks for them.
+ */
 export const load = (async ({ url }) => {
   await authenticate(url);
 
   const $t = await getFormatter();
-  if (url.searchParams.get('area') === 'utilities' || url.searchParams.get('screen') === 'care') {
-    return { keys: [], sessions: [], commandCenter: true, meta: { title: $t('settings') } };
+  const meta = { title: $t('settings') };
+  if (url.searchParams.get('screen') === 'care') {
+    return { screen: 'care' as const, system: null, meta };
   }
 
-  const keys = await getApiKeys();
-  const sessions = await getSessions();
+  if (!authManager.user.isAdmin) {
+    return { screen: 'settings' as const, system: null, meta };
+  }
 
-  return {
-    commandCenter: false,
-    keys,
-    sessions,
-    meta: {
-      title: $t('settings'),
-    },
-  };
+  await systemConfigManager.init();
+  const [current, defaultConfig] = await Promise.all([getAdminConfigWithRevision(), getConfigDefaults()]);
+  return { screen: 'settings' as const, system: { current, defaultConfig }, meta };
 }) satisfies PageLoad;
