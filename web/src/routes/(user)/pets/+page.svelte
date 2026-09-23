@@ -11,12 +11,14 @@
    * Every mutation goes through the real `@immich/sdk` pet services. Nothing on this page
    * is a fixture, and the empty review state says which of the two empty cases applies.
    */
+  import { goto } from '$app/navigation';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PetCard from '$lib/components/frameleaf/pets/PetCard.svelte';
   import PetReviewPanel from '$lib/components/frameleaf/pets/PetReviewPanel.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import { filterPetsByName, petSpeciesOptions, sortPets, speciesLabelKey } from '$lib/frameleaf/pets';
+  import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import {
     PetSpecies,
@@ -252,7 +254,7 @@
             <PetCard
               {pet}
               editing={editingId === pet.id}
-              onOpen={() => openDetails(pet)}
+              onOpen={() => void goto(Route.viewPet({ id: pet.id }))}
               onStartRename={() => (editingId = pet.id)}
               onCommitRename={(name) => void handleRename(pet, name)}
               onCancelRename={() => (editingId = null)}
