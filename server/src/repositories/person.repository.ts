@@ -849,14 +849,20 @@ export class PersonRepository {
 
   @GenerateSql({ params: [{ personGroupId: DummyValue.UUID, assetId: DummyValue.UUID }] })
   getForFeatureFaceUpdate({ personGroupId, assetId }: { personGroupId: string; assetId: string }) {
-    return this.db
-      .selectFrom('asset_face')
-      .select('asset_face.id')
-      .where('asset_face.assetId', '=', assetId)
-      .where('asset_face.personGroupId', '=', personGroupId)
-      .where('asset_face.deletedAt', 'is', null)
-      .innerJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.isOffline', '=', false))
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset_face')
+        .select('asset_face.id')
+        // the caller refuses a Locked photo as a featured face (FL-53)
+        .select(['asset.ownerId', 'asset.visibility'])
+        .where('asset_face.assetId', '=', assetId)
+        .where('asset_face.personGroupId', '=', personGroupId)
+        .where('asset_face.deletedAt', 'is', null)
+        .innerJoin('asset', (join) =>
+          join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.isOffline', '=', false),
+        )
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
