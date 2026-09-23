@@ -573,6 +573,7 @@ describe(AuthService.name, () => {
       const hiddenContent = {
         includeNsfw: true,
         personIds: [],
+        petIds: [],
         scope: 'owned',
         tagIds: [],
         userId: sessionWithToken.user.id,
@@ -621,6 +622,7 @@ describe(AuthService.name, () => {
       const suppressedContent = {
         includeNsfw: true,
         personIds: [],
+        petIds: [],
         scope: 'owned',
         tagIds: [],
         userId: sessionWithToken.user.id,

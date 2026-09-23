@@ -105,6 +105,7 @@ describe(AlbumService.name, () => {
         includeNsfw: true,
         tagIds: [],
         personIds: [],
+        petIds: [],
         scope: 'owned' as const,
       };
       const auth = {

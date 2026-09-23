@@ -20,14 +20,16 @@ describe('hidden content utils', () => {
     includeNsfw: true,
     tagIds: ['tag-1'],
     personIds: ['person-1'],
+    petIds: ['pet-1'],
     scope: 'visible',
   };
 
   describe('emptySuppressionPreferences', () => {
-    it('defaults to owned scope with no tag or person suppression', () => {
+    it('defaults to owned scope with no tag, person or pet suppression', () => {
       expect(emptySuppressionPreferences()).toEqual({
         tagIds: [],
         personIds: [],
+        petIds: [],
         scope: 'owned',
       });
     });
@@ -40,16 +42,18 @@ describe('hidden content utils', () => {
         includeNsfw: false,
         tagIds: [],
         personIds: [],
+        petIds: [],
         scope: 'owned',
       });
     });
   });
 
   describe('hasHiddenContentFilter', () => {
-    it('returns true when NSFW, tag, or person filters are configured', () => {
+    it('returns true when NSFW, tag, person, or pet filters are configured', () => {
       expect(hasHiddenContentFilter({ ...emptyHiddenContentFilter(user.id), includeNsfw: true })).toBe(true);
       expect(hasHiddenContentFilter({ ...emptyHiddenContentFilter(user.id), tagIds: ['tag-1'] })).toBe(true);
       expect(hasHiddenContentFilter({ ...emptyHiddenContentFilter(user.id), personIds: ['person-1'] })).toBe(true);
+      expect(hasHiddenContentFilter({ ...emptyHiddenContentFilter(user.id), petIds: ['pet-1'] })).toBe(true);
     });
 
     it('returns false for missing or empty filters', () => {
@@ -59,11 +63,12 @@ describe('hidden content utils', () => {
   });
 
   describe('hasSuppressionPreferences', () => {
-    it('ignores NSFW and only reflects tag or person preferences', () => {
+    it('ignores NSFW and only reflects tag, person or pet preferences', () => {
       expect(hasSuppressionPreferences()).toBe(false);
       expect(hasSuppressionPreferences(emptySuppressionPreferences())).toBe(false);
       expect(hasSuppressionPreferences({ ...emptySuppressionPreferences(), tagIds: ['tag-1'] })).toBe(true);
       expect(hasSuppressionPreferences({ ...emptySuppressionPreferences(), personIds: ['person-1'] })).toBe(true);
+      expect(hasSuppressionPreferences({ ...emptySuppressionPreferences(), petIds: ['pet-1'] })).toBe(true);
     });
   });
 

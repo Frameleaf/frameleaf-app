@@ -118,6 +118,29 @@ describe(PetService.name, () => {
     });
   });
 
+  describe('getAll', () => {
+    it('lists without a privacy filter in an unlocked session', async () => {
+      await sut.getAll(authStub.user1, {});
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: false });
+    });
+
+    it('hands the session hidden-content filter to the listing so suppressed pets stay out', async () => {
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: false,
+        tagIds: [],
+        personIds: [],
+        petIds: [petId],
+        scope: 'owned' as const,
+      };
+
+      await sut.getAll({ ...authStub.user1, hiddenContent, hideNsfwAssets: true }, { withHidden: true });
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: true, hiddenContent });
+    });
+  });
+
   describe('get', () => {
     it('does not reveal another account’s pet', async () => {
       (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);

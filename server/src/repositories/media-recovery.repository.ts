@@ -135,7 +135,7 @@ export class MediaRecoveryRepository {
       .forShare()
       .executeTakeFirst();
     const preferences = preference?.value as
-      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[] } } } | undefined;
+      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[]; petIds?: string[] } } } | undefined;
     const suppression = preferences?.privacy?.suppression;
     const hidden = hiddenContentAssetIdExists(sql`a.id`, {
       userId: ownerId,
@@ -143,6 +143,7 @@ export class MediaRecoveryRepository {
       includeNsfw: true,
       tagIds: suppression?.tagIds ?? [],
       personIds: suppression?.personIds ?? [],
+      petIds: suppression?.petIds ?? [],
     });
     const rows = await sql<RecoveryCandidate>`
       SELECT a.id, a."ownerId", a."updateId", a."originalPath", a.checksum, a."checksumAlgorithm",
