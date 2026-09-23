@@ -45,6 +45,23 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
+import {
+  EditedMasterColorDecision,
+  EditedMasterColorPolicy,
+  MediaPolicyError,
+  applyEditedMasterAudioPolicy,
+  applyEditedMasterPixelFormatPolicy,
+  assertOriginalPreserved,
+  assertRenderSourceIsOriginal,
+  buildEditedMasterLineage,
+  getEditedMasterColorArgs,
+  getEditedMasterFfmpegConfig,
+  getEditedMasterLineagePath,
+  getEditedMasterTimingArgs,
+  qualifyMetadataOnlyRotation,
+  resolveEditedMasterColorPolicy,
+  serializeEditedMasterLineage,
+} from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
@@ -484,6 +501,11 @@ export class MediaService extends BaseService {
       isProgressive: !!image.thumbnail.progressive && thumbnailFormat !== ImageFormat.Webp,
       isTransparent,
     });
+    // FL-39: a still develop recipe produces a new preview and a new edited master; it never writes
+    // back over the original. Checked before any of these paths is opened for writing.
+    assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: previewFile.path });
+    assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: thumbnailFile.path });
+
     this.storageCore.ensureFolders(previewFile.path);
 
     // generate final images
@@ -514,6 +536,7 @@ export class MediaService extends BaseService {
         quality: image.fullsize.quality,
         progressive: image.fullsize.progressive,
       };
+      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: fullsizeFile.path });
       promises.push(this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path));
     } else if (generateFullsize && extracted && extracted.format === RawExtractedFormat.Jpeg) {
       fullsizeFile = this.getImageFile(asset, {
@@ -978,9 +1001,31 @@ export class MediaService extends BaseService {
     }
 
     const output = this.getEditedEncodedVideoPath(thumbnailAsset);
+
+    // FL-39: an edit never overwrites the original, and a new master is always rendered from the
+    // original plus its recipe — never from a playback proxy or from an earlier, already lossy,
+    // edited master. Both are checked before the encoder is started, so a failure here leaves any
+    // existing valid edited master in place.
+    let colorDecision: EditedMasterColorDecision;
+    try {
+      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: output });
+      assertRenderSourceIsOriginal({
+        originalPath: asset.originalPath,
+        sourcePath: asset.originalPath,
+        derivedPaths: asset.files.map((file) => file.path),
+      });
+      colorDecision = resolveEditedMasterColorPolicy(videoStream, config.ffmpeg);
+    } catch (error) {
+      if (error instanceof MediaPolicyError) {
+        this.logger.error(`Refusing to render an edited master for asset ${asset.id}: ${error.message}`);
+        return JobStatus.Failed;
+      }
+      throw error;
+    }
+
     this.storageCore.ensureFolders(output);
 
-    const plan = this.getVideoEditCommandPlan(config.ffmpeg, edits, videoStream, audioStream, format);
+    const plan = this.getVideoEditCommandPlan(config.ffmpeg, edits, videoStream, audioStream, format, colorDecision);
     this.logVideoEditCommandPlan(asset.id, plan);
 
     try {
@@ -1000,6 +1045,7 @@ export class MediaService extends BaseService {
         audioStream,
         format,
         String(message),
+        colorDecision,
       );
       this.logVideoEditCommandPlan(asset.id, fallbackPlan);
 
@@ -1010,6 +1056,18 @@ export class MediaService extends BaseService {
         return JobStatus.Failed;
       }
     }
+
+    // FL-39: an edited master is a new file that records where it came from — the source asset and
+    // its original, the exact recipe revision, the renderer identity and the colour decision — so a
+    // stale or unreproducible master can always be recognised and re-rendered from the original.
+    await this.writeEditedMasterLineage({
+      masterPath: output,
+      assetId: asset.id,
+      originalPath: asset.originalPath,
+      checksum: asset.checksum,
+      edits,
+      colorDecision,
+    });
 
     await this.assetRepository.upsertFile({
       assetId: asset.id,
@@ -1066,12 +1124,53 @@ export class MediaService extends BaseService {
     return path.join(dir, `${name}_edited${ext}`);
   }
 
+  /**
+   * Writes the lineage sidecar that identifies an edited master (FL-39). A failure to write it is
+   * logged and does not fail the job: the master itself is already on disk and the original is
+   * untouched either way.
+   */
+  private async writeEditedMasterLineage({
+    masterPath,
+    assetId,
+    originalPath,
+    checksum,
+    edits,
+    colorDecision,
+  }: {
+    masterPath: string;
+    assetId: string;
+    originalPath: string;
+    checksum?: Buffer | null;
+    edits: AssetEditActionItem[];
+    colorDecision: EditedMasterColorDecision;
+  }) {
+    const lineage = buildEditedMasterLineage({
+      sourceAssetId: assetId,
+      sourceOriginalPath: originalPath,
+      sourceChecksum: checksum ? checksum.toString('base64') : null,
+      edits,
+      color: colorDecision,
+    });
+
+    try {
+      await this.storageRepository.createOrOverwriteFile(
+        getEditedMasterLineagePath(masterPath),
+        serializeEditedMasterLineage(lineage),
+      );
+    } catch (error: any) {
+      this.logger.warn(`Failed to record edited-master lineage for asset ${assetId}: ${error?.message ?? error}`);
+    }
+
+    return lineage;
+  }
+
   private getVideoEditCommandPlan(
     config: ConfigFFmpegDto,
     edits: AssetEditActionItem[],
     videoStream: VideoStreamInfo,
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
+    colorDecision: EditedMasterColorDecision,
   ): VideoEditCommandPlan {
     const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits) || videoStream.rotation !== 0;
     const planConfig =
@@ -1086,7 +1185,7 @@ export class MediaService extends BaseService {
           : VideoEditAccelerationMode.HardwareNative;
 
     return {
-      command: this.getVideoEditCommand(planConfig, edits, videoStream, audioStream, format),
+      command: this.getVideoEditCommand(planConfig, edits, videoStream, audioStream, format, colorDecision),
       config: planConfig,
       hasCpuVideoFilters,
       mode,
@@ -1100,6 +1199,7 @@ export class MediaService extends BaseService {
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
     fallbackReason: string,
+    colorDecision: EditedMasterColorDecision,
   ): VideoEditCommandPlan {
     const fallbackConfig = {
       ...config,
@@ -1108,7 +1208,7 @@ export class MediaService extends BaseService {
     };
 
     return {
-      command: this.getVideoEditCommand(fallbackConfig, edits, videoStream, audioStream, format),
+      command: this.getVideoEditCommand(fallbackConfig, edits, videoStream, audioStream, format, colorDecision),
       config: fallbackConfig,
       hasCpuVideoFilters: this.hasCpuVideoEditFilters(edits),
       mode: VideoEditAccelerationMode.SoftwareFallback,
@@ -1176,19 +1276,33 @@ export class MediaService extends BaseService {
     videoStream: VideoStreamInfo,
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
+    colorDecision: EditedMasterColorDecision,
   ): TranscodeCommand {
     const videoFilters: string[] = [];
     const audioFilters: string[] = [];
-    const transcodeConfig = BaseConfig.create(
-      { ...config, targetResolution: 'original' },
-      this.videoInterfaces,
-    ) as BaseConfig;
+    // FL-39: the general playback transcode settings describe a proxy. They must not cap the
+    // edited master's resolution, quality target, bitrate or bit depth.
+    const masterConfig = getEditedMasterFfmpegConfig(config, videoStream);
+    const transcodeConfig = BaseConfig.create(masterConfig, this.videoInterfaces) as BaseConfig;
+
+    // FL-39: a recipe that only turns the picture by a right angle needs no re-encode at all. When
+    // it qualifies, every packet is preserved and the rotation lives in the container's display
+    // matrix instead. This is a fidelity choice, never a change of what the edit means.
+    const metadataRotation = qualifyMetadataOnlyRotation({ edits, videoStream, audioStream, format });
+    if (metadataRotation) {
+      return this.getMetadataOnlyRotationCommand(metadataRotation, videoStream, audioStream);
+    }
+
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
-    const transcodeFilters = transcodeConfig.getFilterOptions({
-      ...videoStream,
-      ...this.getVideoEditDimensions(edits, videoStream),
-      rotation: 0,
-    });
+    const transcodeFilters = applyEditedMasterPixelFormatPolicy(
+      transcodeConfig.getFilterOptions({
+        ...videoStream,
+        ...this.getVideoEditDimensions(edits, videoStream),
+        rotation: 0,
+      }),
+      videoStream,
+      colorDecision,
+    );
 
     const trim = edits.find((edit) => edit.action === AssetEditAction.Trim);
     const speedEdits = edits.filter(isEditAction(AssetEditAction.Speed));
@@ -1283,6 +1397,15 @@ export class MediaService extends BaseService {
       ...transcodeConfig.getBaseOutputOptions(TranscodeTarget.All, videoStream, muted ? undefined : audioStream),
     ];
 
+    // FL-16: the shared playback output options force a stereo downmix, which is acceptable for a
+    // proxy and never for a master. Strip it, and stream-copy the source track when the recipe
+    // leaves audio alone so the channel layout and sample rate survive exactly.
+    const audioPolicy = applyEditedMasterAudioPolicy(outputOptions, {
+      audioStream,
+      hasAudioFilters: audioFilters.length > 0 || speedSegments.length > 0,
+      muted,
+    });
+
     if (speedSegments.length > 0) {
       const { filters, maps } = this.getSegmentedSpeedFilterGraph(
         timeline.intervals,
@@ -1312,10 +1435,41 @@ export class MediaService extends BaseService {
       ...transcodeConfig.getPresetOptions(),
       ...transcodeConfig.getOutputThreadOptions(),
       ...transcodeConfig.getBitrateOptions(),
+      ...audioPolicy.args,
+      // FL-16: rational timing and any variable-frame-rate mapping survive the render.
+      ...getEditedMasterTimingArgs(videoStream),
+      // FL-16: the master's colour intent is tagged explicitly, never inferred.
+      ...getEditedMasterColorArgs(videoStream, colorDecision),
     );
 
     return {
       inputOptions,
+      outputOptions,
+      twoPass: false,
+      progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
+    };
+  }
+
+  /**
+   * The packet-preserving master for a qualified right-angle rotation (FL-39): the picture is not
+   * decoded at all, so quality, timing, variable frame rate and audio are preserved exactly, and
+   * the rotation is written into the container's display matrix.
+   */
+  private getMetadataOnlyRotationCommand(
+    rotation: { angle: number; displayRotation: number },
+    videoStream: VideoStreamInfo,
+    audioStream: AudioStreamInfo | undefined,
+  ): TranscodeCommand {
+    const outputOptions = ['-c', 'copy', '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
+    if (audioStream) {
+      outputOptions.push('-map', `0:${audioStream.index}`);
+    }
+    outputOptions.push('-movflags', 'faststart');
+
+    return {
+      // `-display_rotation` is an input option: it replaces the stream's display matrix and turns
+      // off the decoder's auto-rotation, so the packets are copied through untouched.
+      inputOptions: ['-display_rotation', String(rotation.displayRotation)],
       outputOptions,
       twoPass: false,
       progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
@@ -1834,6 +1988,25 @@ export class MediaService extends BaseService {
     }
 
     const generated = asset.edits.length > 0 ? await this.generateImageThumbnails(asset, config, true) : undefined;
+
+    // FL-39: a still edited master records the same lineage as a video one. The highest-fidelity
+    // edited output is the master; the smaller renditions beside it are replaceable previews.
+    const editedMaster =
+      generated?.files.find((file) => file.isEdited && file.type === AssetFileType.FullSize) ??
+      generated?.files.find((file) => file.isEdited && file.type === AssetFileType.Preview);
+    if (editedMaster) {
+      await this.writeEditedMasterLineage({
+        masterPath: editedMaster.path,
+        assetId: asset.id,
+        originalPath: asset.originalPath,
+        checksum: asset.checksum,
+        edits: asset.edits,
+        colorDecision: {
+          policy: EditedMasterColorPolicy.Preserve,
+          reason: `Still develop recipe rendered from the original into ${config.image.fullsize.format}.`,
+        },
+      });
+    }
 
     const crop = asset.edits.find((e) => e.action === AssetEditAction.Crop);
     const cropBox = crop
