@@ -6,6 +6,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import readLine from 'node:readline';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
@@ -15,7 +16,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
-import { withHiddenContentFilter } from 'src/utils/database.js';
+import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isArchived?: boolean;
@@ -72,11 +73,13 @@ export class MapRepository {
     this.logger.log('Geodata import completed');
   }
 
+  /** Markers for an album: the same media the album itself shows this viewer (see `withAlbumVisibility`). */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAlbumMapMarkers(albumId: string, options: HiddenContentQueryOptions = {}) {
+  getAlbumMapMarkers(albumId: string, options: HiddenContentQueryOptions & LockedVisibilityOptions = {}) {
     return this.mapMarkersQuery()
       .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
       .where('album_asset.albumId', '=', albumId)
+      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
