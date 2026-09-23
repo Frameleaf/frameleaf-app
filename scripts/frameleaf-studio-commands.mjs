@@ -45,6 +45,12 @@ export const PROTOTYPE_PATH = 'design/frameleaf/template/src/studio-project.mjs'
 export const WEB_VOCABULARY_PATH = 'web/src/lib/frameleaf/studio/commands.ts';
 
 /** Scopes a command may act on. Ordered for the generated enums. */
+/**
+ * The only commands allowed to carry no payload: signals that change nothing in the project.
+ * Listed by name so a new command cannot become payload-less by accident.
+ */
+export const EMPTY_PAYLOAD_COMMANDS = ['preview.release'];
+
 export const SCOPES = [
   'clip',
   'composition',
@@ -2081,7 +2087,7 @@ export function validate({ document, manifest, issueMap, prototypeSource, webSou
     // A graph change always carries intent. Only a lease-free signal (`preview.release`) may
     // have nothing to say beyond its id; the server mirror then admits no fields at all.
     assert.ok(
-      Object.keys(command.payload).length > 0 || !command.mutatesGraph,
+      Object.keys(command.payload).length > 0 || (!command.mutatesGraph && EMPTY_PAYLOAD_COMMANDS.includes(command.id)),
       `${command.id}: payload must declare a field`,
     );
     for (const [name, declared] of Object.entries(command.payload)) {
