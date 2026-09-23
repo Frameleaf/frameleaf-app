@@ -26,16 +26,17 @@
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
 
   const toggleLock = async () => {
+    const target = asset;
     const locked = isLocked;
     const type = locked ? AssetAction.SET_VISIBILITY_TIMELINE : AssetAction.SET_VISIBILITY_LOCKED;
     try {
-      preAction({ type, asset });
-      await (locked ? unlockAssets : lockAssets)({ bulkIdsDto: { ids: [asset.id] } });
+      await preAction({ type, asset: target });
+      await (locked ? unlockAssets : lockAssets)({ bulkIdsDto: { ids: [target.id] } });
       if (!locked) {
         // open timelines drop it and keep it out, as they do for any newly locked item
-        eventManager.emit('AssetsMarkNsfw', [asset.id]);
+        eventManager.emit('AssetsMarkNsfw', [target.id]);
       }
-      onAction({ type, asset });
+      onAction({ type, asset: target });
     } catch (error) {
       handleError(error, locked ? $t('frameleaf_lock_unlock_failed') : $t('frameleaf_lock_lock_failed'));
     }
