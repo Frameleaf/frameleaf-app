@@ -25,6 +25,7 @@ export const serverEvents = [
   'HlsSessionRequest',
   'HlsSessionResult',
   'HlsSessionEnd',
+  'LibraryWatchUpdate',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 

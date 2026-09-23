@@ -45,6 +45,7 @@
     mdiBellOutline,
     mdiChartTimelineVariant,
     mdiDesktopTowerMonitor,
+    mdiFolderOutline,
     mdiHarddisk,
     mdiHistory,
     mdiImageSearchOutline,
@@ -54,10 +55,26 @@
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
   } from '@mdi/js';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { sections, disabled = false }: { sections: SettingsHostSection[]; disabled?: boolean } = $props();
+  let {
+    sections,
+    disabled = false,
+    areaPanel,
+  }: {
+    sections: SettingsHostSection[];
+    disabled?: boolean;
+    /**
+     * An area's own tool above its settings sections, as the template mounts managers inside the
+     * command center: the Libraries manager on the Libraries area (FL-78). Areas with a panel carry
+     * their own heading, so the host's is left out for them.
+     */
+    areaPanel?: Snippet<[SettingsAreaId]>;
+  } = $props();
+
+  /** Areas whose panel draws its own heading, as the template's managers do. */
+  const PANEL_AREAS: ReadonlySet<SettingsAreaId> = new Set(['libraries']);
 
   const settingsDraft = getSystemConfigDraft();
 
@@ -88,6 +105,11 @@
       title: $t('frameleaf_settings_area_editing'),
       description: $t('frameleaf_settings_area_editing_description'),
       icon: mdiMovieOpenOutline,
+    },
+    libraries: {
+      title: $t('frameleaf_settings_area_libraries'),
+      description: $t('frameleaf_settings_area_libraries_description'),
+      icon: mdiFolderOutline,
     },
     care: {
       title: $t('frameleaf_settings_area_care'),
@@ -301,21 +323,24 @@
         <AnalyticsArea />
       {/if}
     {:else}
-      <header class="heading">
-        <p class="overline">{groupCopy[SETTINGS_AREAS.find((item) => item.id === area)?.group ?? 'library']}</p>
-        <h2>{areaCopy[area].title}</h2>
-        <p class="description">{areaCopy[area].description}</p>
-        {#if area === 'care'}
-          <!-- The prototype's health and duplicate sections open the Library Care tools (FL-69). -->
-          <div class="area-actions">
-            {#if authManager.user.isAdmin}
-              <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
-              <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
-            {/if}
-            <a href={Route.duplicatesUtility()}>{$t('library_care_open_duplicates')}</a>
-          </div>
-        {/if}
-      </header>
+      {#if !(areaPanel && PANEL_AREAS.has(area))}
+        <header class="heading">
+          <p class="overline">{groupCopy[SETTINGS_AREAS.find((item) => item.id === area)?.group ?? 'library']}</p>
+          <h2>{areaCopy[area].title}</h2>
+          <p class="description">{areaCopy[area].description}</p>
+          {#if area === 'care'}
+            <!-- The prototype's health and duplicate sections open the Library Care tools (FL-69). -->
+            <div class="area-actions">
+              {#if authManager.user.isAdmin}
+                <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
+                <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
+              {/if}
+              <a href={Route.duplicatesUtility()}>{$t('library_care_open_duplicates')}</a>
+            </div>
+          {/if}
+        </header>
+      {/if}
+      {@render areaPanel?.(area)}
       {#if area === 'history'}
         <SettingsChangeHistory
           entries={history}
