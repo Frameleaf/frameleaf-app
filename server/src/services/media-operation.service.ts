@@ -537,6 +537,16 @@ export class MediaOperationService {
       return this.retryICloudSync(auth, operation);
     }
 
+    // FL-106: a Studio export is a version of its project. Its render and its publication each had
+    // their automatic retry; exporting again makes a new version against the project as it is now,
+    // with its sources re-checked, rather than a copy of a job whose version already ended.
+    if (
+      operation.kind === MediaOperationKind.StudioExport ||
+      operation.kind === MediaOperationKind.StudioExportPublish
+    ) {
+      throw new BadRequestException('Export the project again from Studio');
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
