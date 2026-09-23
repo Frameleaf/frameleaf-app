@@ -416,8 +416,8 @@ export const BULK_ASSET_JOBS: Readonly<Partial<Record<MediaOperationBulkAction, 
 /**
  * The fields of the bulk asset update an action writes, or null when it is not that kind of action.
  *
- * Deliberately no Locked visibility anywhere in here: moving into or out of the Locked folder needs
- * an elevated session, and a background worker neither has one nor may be given one.
+ * Deliberately no Locked visibility anywhere in here: moving into or out of the Locked folder is
+ * confirmed by the person in their unlocked session, never queued for later.
  */
 export const bulkAssetUpdate = (
   action: MediaOperationBulkAction,

@@ -41,9 +41,6 @@ import {
   parseBulkResult,
   parseBulkSnapshot,
 } from 'src/utils/bulk-operation.js';
-import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { isNsfwHidingEnabled } from 'src/utils/misc.js';
-import { getPreferences } from 'src/utils/preferences.js';
 
 /** How often the worker looks for queued bulk jobs. */
 export const BULK_TICK_MS = 5000;
@@ -105,9 +102,12 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  * - **The set is frozen.** It works through `snapshot.assetIds` in order and never re-resolves a
  *   filter. The count of answered items is the resume cursor.
  * - **Access is checked per item, at the moment of change**, as the owner and never as anybody
- *   else. The worker holds no session, so it can never be elevated: Locked items and content the
- *   owner has hidden are refused exactly as they would be for an ordinary request, and reported as
- *   skipped rather than touched.
+ *   else. The worker is a system actor for the owner's own library (owner decision, September 22,
+ *   2026): it acts with an elevated session and without the hidden-content filter, so Locked and
+ *   sensitive items the owner submitted are changed, not skipped. Ownership, album and tag access
+ *   are still checked for every item and every batch. The Locked folder's PIN is enforced where it
+ *   belongs, at submit: a job that includes Locked items can only be queued from an unlocked
+ *   session (see `MediaOperationService.createBulk`).
  * - **Sensitive marking is metadata.** It goes through the enrichment review action, which writes
  *   the manual mark and its tags; no visibility change, no album write, no move to Locked.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
@@ -124,6 +124,8 @@ export class BulkOperationService {
   private stopping = false;
   private lastRecoveryAt = 0;
   private readonly workerId = `bulk-${randomUUID()}`;
+  /** Stands in for a session on the worker's auth; nothing on these paths reads it back. */
+  private readonly sessionId = randomUUID();
 
   constructor(
     private logger: LoggingRepository,
@@ -379,11 +381,14 @@ export class BulkOperationService {
   }
 
   /**
-   * The owner, as an ordinary signed-in request would see them — minus any session.
+   * The owner, acting through the system worker.
    *
-   * Hidden content is resolved the same way authentication resolves it for a session that has not
-   * been elevated, from the owner's current preferences and the server's current settings, so a
-   * change to either takes effect on the next job without anybody having to remember to update it.
+   * Elevated and unfiltered on purpose: a background job must be able to reach the owner's Locked
+   * and sensitive items, because the person who submitted it could (owner decision, September 22,
+   * 2026). What stays in force is everything that is not about elevation — each item must still be
+   * the owner's to change, and the album or tag it is written to must still be the owner's to write.
+   * Exposure is unchanged: this auth never leaves the worker, and nothing it reads is shown to
+   * anybody.
    */
   async authFor(ownerId: string): Promise<AuthDto | null> {
     const user = await this.users.get(ownerId, { withDeleted: false });
@@ -391,7 +396,7 @@ export class BulkOperationService {
       return null;
     }
 
-    const auth: AuthDto = {
+    return {
       user: {
         id: user.id,
         isAdmin: user.isAdmin,
@@ -400,25 +405,8 @@ export class BulkOperationService {
         quotaUsageInBytes: user.quotaUsageInBytes,
         quotaSizeInBytes: user.quotaSizeInBytes,
       },
+      session: { id: this.sessionId, hasElevatedPermission: true },
     };
-
-    const { machineLearning } = await this.assets.getConfig({ withCache: true });
-    const suppression = getPreferences((await this.users.getMetadata(ownerId)) ?? []).privacy.suppression;
-    const hiddenContent: HiddenContentFilter = {
-      userId: ownerId,
-      includeNsfw: isNsfwHidingEnabled(machineLearning),
-      tagIds: suppression.tagIds,
-      personIds: suppression.personIds,
-      scope: suppression.scope,
-    };
-
-    if (hasHiddenContentFilter(hiddenContent)) {
-      auth.suppressedContent = hiddenContent;
-      auth.hiddenContent = hiddenContent;
-      auth.hideNsfwAssets = true;
-    }
-
-    return auth;
   }
 
   /** A job submitted with an API key stops if that key is revoked or narrowed. */
