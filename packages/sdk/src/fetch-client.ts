@@ -2847,6 +2847,60 @@ export type MediaOperationDetailDto = (MediaOperationDto) & {
         [key: string]: any;
     };
 };
+export type StudioPreviewTimeDto = {
+    /** Time denominator; must be positive */
+    denominator: string;
+    /** Time numerator, in seconds over the denominator */
+    numerator: string;
+};
+export type StudioPreviewDto = {
+    contentType: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    /** Revision-bound entity tag for the frame endpoint */
+    etag: string;
+    expiresAt: string | null;
+    framePts: string | null;
+    framePtsTimebase: string | null;
+    /** Preview frame ID */
+    id: string;
+    /** The durable job rendering this frame, when one has been created */
+    operationId: string | null;
+    projectId: string;
+    quality: StudioPreviewQuality;
+    readyAt: string | null;
+    requestedAt: string;
+    /** The exact revision this frame is bound to */
+    revisionDigest: string;
+    /** The seek this frame answers */
+    seekGeneration: string;
+    sizeInBytes: string | null;
+    status: StudioPreviewStatus;
+    time: StudioPreviewTimeDto;
+    /** The frame is an explicitly tone-mapped SDR rendering; never the colour authority */
+    toneMapped: boolean;
+    viewportHeight: number;
+    viewportWidth: number;
+};
+export type StudioPreviewResponseDto = {
+    /** The revision the project is on now */
+    currentRevisionDigest: string;
+    preview: StudioPreviewDto;
+    /** Previews cancelled because the revision advanced */
+    supersededPreviewIds: string[];
+};
+export type StudioPreviewRequestDto = {
+    /** Studio project the frame belongs to */
+    projectId: string;
+    quality: StudioPreviewQuality;
+    /** Exact graph revision digest the frame is bound to; a superseded revision is refused */
+    revisionDigest: string;
+    /** The client's monotonic seek counter, echoed back on the result */
+    seekGeneration?: number;
+    time: StudioPreviewTimeDto;
+    viewportHeight: number;
+    viewportWidth: number;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
@@ -7618,6 +7672,61 @@ export function dismissMediaOperation({ id }: {
     }));
 }
 /**
+ * Request a Studio preview frame
+ */
+export function requestStudioPreview({ studioPreviewRequestDto }: {
+    studioPreviewRequestDto: StudioPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewResponseDto;
+    }>("/studio/previews", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioPreviewRequestDto
+    })));
+}
+/**
+ * Get a Studio preview
+ */
+export function getStudioPreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewDto;
+    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * View a Studio preview frame
+ */
+export function viewStudioPreviewFrame({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/previews/${encodeURIComponent(id)}/frame`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel a Studio preview
+ */
+export function cancelStudioPreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewDto;
+    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Cancel a media operation
  */
 export function cancelMediaOperation({ id }: {
@@ -11013,6 +11122,19 @@ export enum MediaOperationCheckpointState {
     Pending = "pending",
     Complete = "complete",
     Invalid = "invalid"
+}
+export enum StudioPreviewQuality {
+    Draft = "draft",
+    Standard = "standard",
+    Full = "full"
+}
+export enum StudioPreviewStatus {
+    Pending = "pending",
+    Rendering = "rendering",
+    Ready = "ready",
+    Superseded = "superseded",
+    Failed = "failed",
+    Evicted = "evicted"
 }
 export enum MemorySearchOrder {
     Asc = "asc",

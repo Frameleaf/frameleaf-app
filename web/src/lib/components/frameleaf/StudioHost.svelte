@@ -46,6 +46,7 @@
     type StudioHostEvent,
   } from '$lib/frameleaf/studio/host-state';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
 
   let {
     project,
@@ -60,6 +61,11 @@
     dirty = false,
     queuedJobs = 0,
     droppedAssetCount = 0,
+    /**
+     * The remote preview the host owns (FL-96). It arrives here as data and leaves for the
+     * engine as data; neither this component nor the engine ever fetches a frame itself.
+     */
+    preview = idleStudioPreviewView(),
     /** Injected in tests; production always resolves the registered engine. */
     loadEngine = defaultLoadStudioEngine,
   }: {
@@ -83,6 +89,7 @@
     queuedJobs?: number;
     /** Handoff items this session could not read, reported rather than silently missing. */
     droppedAssetCount?: number;
+    preview?: StudioPreviewView;
     loadEngine?: () => Promise<StudioEngineResolution>;
   } = $props();
 
@@ -112,6 +119,7 @@
     auth,
     theme: readStudioThemeTokens(appTheme, root ?? null),
     capabilities,
+    preview,
     online,
   });
 
@@ -248,6 +256,25 @@
   });
 
   const headingKey = $derived(studioHostHeadingKey(state));
+
+  /**
+   * What, if anything, the preview area has to say.
+   *
+   * `null` means the picture on screen is the current one and needs no explanation. A frame
+   * that is genuinely current but tone-mapped still gets a notice, because an 8-bit preview of
+   * HDR material is not the colour authority and must never be mistaken for one.
+   */
+  const previewNoticePhase = $derived(
+    preview.phase === 'rendering' || preview.phase === 'stale' || preview.phase === 'unavailable'
+      ? preview.phase
+      : preview.phase === 'ready' && preview.frame?.toneMapped
+        ? ('tone-mapped' as const)
+        : null,
+  );
+
+  const previewNoticeKey = $derived(
+    previewNoticePhase === 'tone-mapped' ? 'frameleaf_studio_preview_tone_mapped' : preview.messageKey,
+  );
 </script>
 
 <section class="frameleaf fl-studio" data-theme={appTheme} bind:this={root} aria-label={$t('frameleaf_studio_title')}>
@@ -302,6 +329,29 @@
       data-testid="studio-stage"
       aria-hidden={state.phase === 'ready' ? undefined : 'true'}
     ></div>
+
+    <!--
+      The preview area (FL-96). It says what is true and nothing more: while a frame is being
+      rendered it says so; once the project revision moves past the frame on screen it says the
+      picture is out of date instead of leaving it looking current; and when the frame cannot be
+      produced it says that, with the stable code kept for diagnostics rather than shown as the
+      message. There is deliberately no state here that presents an old frame as the live one.
+    -->
+    {#if state.phase === 'ready' && previewNoticePhase}
+      <div
+        class="fl-studio-preview"
+        data-testid="studio-preview-state"
+        data-preview-phase={previewNoticePhase}
+        role="status"
+        aria-live="polite"
+      >
+        <Icon icon={previewNoticePhase === 'rendering' ? mdiProgressClock : mdiAlertCircleOutline} size="16" />
+        <span>{previewNoticeKey ? $t(previewNoticeKey) : ''}</span>
+        {#if previewNoticePhase === 'stale' && preview.staleFrame}
+          <span class="fl-studio-preview-note">{$t('frameleaf_studio_preview_showing_previous')}</span>
+        {/if}
+      </div>
+    {/if}
 
     {#if headingKey}
       <div class="fl-studio-state" data-testid="studio-state" data-phase={state.phase}>
@@ -395,6 +445,29 @@
     inset: 0;
     /* The engine lays itself out inside this box and never escapes it. */
     overflow: hidden;
+  }
+  .fl-studio-preview {
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    max-width: calc(100% - 1rem);
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .fl-studio-preview[data-preview-phase='stale'],
+  .fl-studio-preview[data-preview-phase='unavailable'] {
+    color: var(--fl-warning);
+  }
+  .fl-studio-preview-note {
+    color: var(--fl-muted);
   }
   .fl-studio-state {
     position: absolute;

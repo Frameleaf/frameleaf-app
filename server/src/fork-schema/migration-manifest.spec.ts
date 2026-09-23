@@ -28,6 +28,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000130-AddAssetAudioChannelLayout')).toBe('legacy-fork');
     expect(classifyMigration('2100000000150-AddPetIdentities')).toBe('legacy-fork');
     expect(classifyMigration('2100000000160-AddMediaOperationTables')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000180-AddStudioPreviewFrames')).toBe('legacy-fork');
     expect(classifyMigration('2100000000190-AddSharedSpaceInvite')).toBe('legacy-fork');
   });
 

@@ -172,6 +172,8 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Map]:
     'Map endpoints include supplemental functionality related to geolocation, such as reverse geocoding and retrieving map markers for assets with geolocation data.',
   [ApiTag.MediaHealth]: 'Media health utilities identify missing and corrupt source files.',
+  [ApiTag.MediaOperations]:
+    'A media operation is a durable record of long-running media work, such as a render or a bulk change, with its progress, checkpoints and outcome. Operations can be cancelled or retried by the account that started them.',
   [ApiTag.Memories]:
     'A memory is a specialized collection of assets with dedicated viewing implementations in the web and mobile clients. A memory includes fields related to visibility and are automatically generated per user via a background job.',
   [ApiTag.Notifications]:
@@ -180,6 +182,8 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.Partners]: 'A partner is a link with another user that allows sharing of assets between two users.',
   [ApiTag.People]:
     'A person is a collection of faces, which can be favorited and named. A person can also be merged into another person. People are automatically created via the face recognition job.',
+  [ApiTag.Pets]:
+    "A pet is a durable named animal identity. Pets carry a species, an optional birthday and a featured photo, and collect observations: the owner's own record of which photos the animal appears in. Recognition proposals are reviewed against those identities and never overwrite them.",
   [ApiTag.Plugins]:
     'A plugin is an installed module that makes filters and actions available for the workflow feature.',
   [ApiTag.Queues]:
@@ -192,10 +196,14 @@ export const endpointTags: Record<ApiTag, string> = {
     'Information about the current server deployment, including version and build information, available features, supported media types, and more.',
   [ApiTag.Sessions]:
     'A session represents an authenticated login session for a user. Sessions also appear in the web application as "Authorized devices".',
+  [ApiTag.SharedSpaces]:
+    'A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first.',
   [ApiTag.SharedLinks]:
     'A shared link is a public url that provides access to a specific album, asset, or collection of assets. A shared link can be protected with a password, include a specific slug, allow or disallow downloads, and optionally include an expiration date.',
   [ApiTag.Stacks]:
     'A stack is a group of related assets. One asset is the "primary" asset, and the rest are "child" assets. On the main timeline, stack parents are included by default, while child assets are hidden.',
+  [ApiTag.StudioPreviews]:
+    'Revision-bound Studio preview frames. A frame is delivered only to the account that requested it, and only while the project revision it was rendered for is still current.',
   [ApiTag.Sync]: 'A collection of endpoints for the new mobile synchronization implementation.',
   [ApiTag.SystemConfig]: 'Endpoints to view, modify, and validate the system configuration settings.',
   [ApiTag.SystemMetadata]:
