@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   /**
    * Library Care: Missing media and Damaged media (FL-69).
    *
@@ -40,6 +41,7 @@
     toRows,
     trashable,
     type LibraryCareRow,
+    libraryCareActivityKey,
   } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -138,7 +140,7 @@
   /** Durable bulk jobs this page started: operation id → asset ids, in the job's order. */
   let jobs = $state(new Map<string, string[]>());
   /** Per-asset state from those jobs: pending loaders and refusals. */
-  let itemStates = $state(new Map<string, { state: 'pending' } | { state: 'failed'; reasonKey: string }>());
+  let itemStates = $state(new Map<string, { state: 'pending' } | { state: 'failed'; reasonKey: Translations }>());
 
   const rows = $derived(toRows(list));
   const nameOf = (ownerId: string) =>
@@ -491,7 +493,7 @@
     !!at &&
     Math.abs(Date.parse(operation.finishedAt) - Date.parse(at)) < 60_000;
 
-  const activityLabel = (action: string) => $t(`library_care_activity_${action.replaceAll('-', '_')}`);
+  const activityLabel = (action: string) => $t(libraryCareActivityKey(action));
 
   const reviewTitle = (action: ReviewAction) =>
     action === 'relink'

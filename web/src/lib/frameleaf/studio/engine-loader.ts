@@ -1,3 +1,4 @@
+import type { Translations } from 'svelte-i18n';
 /**
  * Resolving the vendored React editor (FL-88).
  *
@@ -55,7 +56,7 @@ export type StudioEngineResolution =
       status: 'absent';
       reason: StudioEngineAbsenceReason;
       /** i18n key for the detail line under the unavailable heading. */
-      messageKey: string;
+      messageKey: Translations;
       /** Present for `revision-mismatch` and `load-failed`, for the report and the log. */
       detail?: string;
     };

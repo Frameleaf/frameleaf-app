@@ -130,7 +130,7 @@
 </script>
 
 <Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
-  <div class="ss-options" role="radiogroup" aria-label={$t('share')} onkeydown={modeKeys}>
+  <div class="ss-options" role="radiogroup" tabindex="-1" aria-label={$t('share')} onkeydown={modeKeys}>
     <button
       type="button"
       role="radio"

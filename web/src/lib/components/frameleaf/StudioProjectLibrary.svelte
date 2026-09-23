@@ -51,7 +51,7 @@
   import { Icon, toastManager } from '@immich/ui';
   import { mdiFilmstrip, mdiImport, mdiPlus } from '@mdi/js';
   import { onDestroy } from 'svelte';
-  import { locale, t } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   /**
    * The Studio project library (FL-91, `STU-204`).
@@ -162,7 +162,7 @@
     void goto(Route.studioProjects({ shelf: next }), { replaceState: true, keepFocus: true, noScroll: true });
   };
 
-  const run = async (project: StudioProjectDto, action: () => Promise<unknown>, doneKey: string) => {
+  const run = async (project: StudioProjectDto, action: () => Promise<unknown>, doneKey: Translations) => {
     busyId = project.id;
     try {
       await action();
@@ -247,7 +247,7 @@
     }
   };
 
-  const actionLabelKey: Record<StudioProjectAction, string> = {
+  const actionLabelKey: Record<StudioProjectAction, Translations> = {
     open: 'frameleaf_studio_library_open',
     rename: 'rename',
     duplicate: 'frameleaf_studio_library_duplicate',

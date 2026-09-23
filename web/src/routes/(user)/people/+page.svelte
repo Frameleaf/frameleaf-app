@@ -385,7 +385,10 @@
             onToggleFavorite={() => handleToggleFavorite(person)}
             onToggleHide={() => handleToggleHidden(person)}
             onMerge={() => handleMergePeople(person)}
-            onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
+            onSetBirthday={() => {
+              const { SetDateOfBirth } = getPersonActions($t, person);
+              void SetDateOfBirth.onAction(SetDateOfBirth);
+            }}
           />
         {/snippet}
       </PeopleInfiniteScroll>

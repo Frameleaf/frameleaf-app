@@ -22,7 +22,7 @@
   import { AssetMediaSize, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
   import { Button, Icon, Text } from '@immich/ui';
   import { mdiInformationOutline, mdiMotionPlayOutline, mdiPlayCircleOutline } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   import type { PageData } from './$types';
 
   interface Props {
@@ -33,7 +33,7 @@
 
   let candidates = $state<LivePhotoCandidateDto[]>(data.candidates.candidates);
   /** Photo ids reported by the server for the last completed attempt on each pair, if it failed. */
-  let failureReasons = $state(new Map<string, string>());
+  let failureReasons = $state(new Map<string, Translations>());
   /** Photo ids of a durable job this tab is following, so tiles keep their loader across polls. */
   let pendingPhotoIds = $state(new Set<string>());
 
