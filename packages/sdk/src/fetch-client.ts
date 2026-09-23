@@ -5186,7 +5186,7 @@ export type PreservationRestoreItemDto = {
     id: string;
     /** Locked in the package or in your library; listed only to an unlocked session */
     locked: boolean;
-    match: PreservationRestoreMatch | null;
+    match: (PreservationRestoreMatch) | null;
     name: string | null;
     reasonKey: string | null;
     sourceAssetId: string | null;
@@ -5355,9 +5355,23 @@ export type RenderWorkerCheckpointCompleteDto = {
     outputPath: string;
     sizeInBytes: string;
 };
+export type RenderWorkerOutputDto = {
+    /** SHA-256 of the whole file */
+    checksum: string;
+    /** `video/mp4`, `video/webm` or `video/quicktime` */
+    contentType: string;
+    /** Absolute path inside the render directory the claim named */
+    path: string;
+    /** What the worker calls a copy it kept; it is asked to delete it until it acknowledges */
+    remoteRef?: string | null;
+    sizeInBytes: string;
+};
 export type RenderWorkerCompleteDto = {
     /** The claim token this operation was handed out with */
     claimToken: string;
+    /** Required for a Studio export */
+    output?: RenderWorkerOutputDto;
+    /** Must be null for a Studio export: its result is adopted by publication, never named by a worker */
     resultAssetId: string | null;
 };
 export type RenderWorkerFailDto = {
@@ -5389,6 +5403,15 @@ export type RenderWorkerProgressDto = {
     processedUnits: number;
     status: Status3;
     totalUnits: number | null;
+};
+export type RenderWorkerRemoteReferenceDto = {
+    id: string;
+    /** The render job */
+    operationId: string;
+    reason: StudioExportRemoteReason;
+    /** The copy to delete, for a `delete` reference */
+    remoteRef: string | null;
+    requestedAt: string;
 };
 export type RunPodBackfillResultDto = {
     enqueued: string[];
@@ -6545,6 +6568,45 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioExportSettingsDto = {
+    color: StudioExportColor;
+    format: StudioExportFormat;
+    resolution: StudioExportResolution;
+};
+export type StudioExportVersionDto = {
+    cancelledAt: string | null;
+    contentType: string | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    error: string | null;
+    errorCode: string | null;
+    /** Export version ID */
+    id: string;
+    /** At least one source is shared with you rather than yours */
+    includesSharedSources: boolean;
+    /** The result inherited a lock from a Locked or sensitive source */
+    locked: boolean;
+    /** Null once the project was deleted for good */
+    projectId: string | null;
+    publishOperationId: string | null;
+    publishedAt: string | null;
+    renderOperationId: string | null;
+    /** The asset a `library` result became */
+    resultAssetId: string | null;
+    /** The project revision that was rendered */
+    revision: number;
+    /** Where the published result lives */
+    scope: (StudioExportScope) | null;
+    /** The result inherited sensitive evidence from a source */
+    sensitive: boolean;
+    settings: StudioExportSettingsDto;
+    sizeInBytes: string | null;
+    /** Library sources the result was made from */
+    sourceCount: number;
+    state: StudioExportVersionState;
+    /** The version number, once published */
+    version: number | null;
+};
 export type StudioPreviewTimeDto = {
     /** Time denominator; must be positive */
     denominator: string;
@@ -6774,6 +6836,29 @@ export type StudioCommentUpdateDto = {
 export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
+};
+export type StudioExportListResponseDto = {
+    items: StudioExportVersionDto[];
+    /** Matching versions, before paging */
+    total: number;
+};
+export type StudioExportCreateDto = {
+    /** You agree to the media leaving your network for this export */
+    cloudConsent?: boolean;
+    color: StudioExportColor;
+    /** Where it renders. A cloud destination needs `cloudConsent` */
+    destination: MediaOperationDestination;
+    /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
+    expectedRevision?: number;
+    format: StudioExportFormat;
+    /** Idempotency key; a repeated submit answers with the first export */
+    requestKey?: string;
+    resolution: StudioExportResolution;
+};
+export type StudioExportCreateResponseDto = {
+    /** The render job; follow it in Activity */
+    operation: MediaOperationDto;
+    version: StudioExportVersionDto;
 };
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
@@ -12945,6 +13030,40 @@ export function validateRenderOperation({ id, xFrameleafWorkerSession, renderWor
     })));
 }
 /**
+ * List what this worker must stop or delete
+ */
+export function getRenderRemoteReferences({ xFrameleafWorkerSession }: {
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerRemoteReferenceDto[];
+    }>("/render-workers/remote-references", {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Acknowledge a remote reference
+ */
+export function acknowledgeRenderRemoteReference({ id, xFrameleafWorkerSession }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/remote-references/${encodeURIComponent(id)}/acknowledge`, {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
  * Enqueue all ML backfill jobs
  */
 export function backfill(opts?: Oazapfts.RequestOpts) {
@@ -14119,6 +14238,32 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Get a Studio export
+ */
+export function getStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportVersionDto;
+    }>(`/studio/exports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a Studio export kept with its project
+ */
+export function downloadStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
  * Request a Studio preview frame
  */
 export function requestStudioPreview({ studioPreviewRequestDto }: {
@@ -14359,6 +14504,40 @@ export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
         ...opts,
         method: "POST",
         body: studioProjectDuplicateDto
+    })));
+}
+/**
+ * List a Studio project’s exports
+ */
+export function getStudioExports({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportListResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Export a Studio project
+ */
+export function createStudioExport({ id, studioExportCreateDto }: {
+    id: string;
+    studioExportCreateDto: StudioExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioExportCreateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioExportCreateDto
     })));
 }
 /**
@@ -15848,7 +16027,8 @@ export enum MediaOperationKind {
     PreservationExport = "preservation_export",
     PreservationVerify = "preservation_verify",
     PreservationReview = "preservation_review",
-    PreservationRestore = "preservation_restore"
+    PreservationRestore = "preservation_restore",
+    StudioExportPublish = "studio_export_publish"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -16741,8 +16921,7 @@ export enum PreservationConflictField {
 export enum PreservationRestoreMatch {
     New = "new",
     Existing = "existing",
-    Trashed = "trashed",
-    Null
+    Trashed = "trashed"
 }
 export enum PreservationRestoreItemState {
     Pending = "pending",
@@ -16853,6 +17032,10 @@ export enum Status3 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
+export enum StudioExportRemoteReason {
+    Cancel = "cancel",
+    Delete = "delete"
+}
 export enum Status4 {
     Idle = "idle",
     Provisioning = "provisioning",
@@ -16924,6 +17107,34 @@ export enum StudioBundleSourceResolution {
     Kept = "kept",
     Suggested = "suggested",
     Missing = "missing"
+}
+export enum StudioExportScope {
+    Library = "library",
+    Project = "project"
+}
+export enum StudioExportColor {
+    Preserve = "preserve",
+    Hdr10 = "hdr10",
+    DolbyVision = "dolby-vision"
+}
+export enum StudioExportFormat {
+    Mp4HevcMain10 = "mp4-hevc-main10",
+    Mp4H264 = "mp4-h264",
+    WebmAv1 = "webm-av1",
+    Prores422Hq = "prores-422-hq"
+}
+export enum StudioExportResolution {
+    $720P = "720p",
+    $1080P = "1080p",
+    $1440P = "1440p",
+    $2160P = "2160p"
+}
+export enum StudioExportVersionState {
+    Rendering = "rendering",
+    Staged = "staged",
+    Published = "published",
+    Failed = "failed",
+    Cancelled = "cancelled"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",

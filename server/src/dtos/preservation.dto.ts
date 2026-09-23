@@ -347,7 +347,7 @@ const PreservationRestoreItemSchema = z
     assetId: z.uuid().nullable(),
     name: z.string().nullable(),
     state: PreservationRestoreItemStateSchema,
-    match: z.enum(['new', 'existing', 'trashed']).nullable().meta({ id: 'PreservationRestoreMatch' }),
+    match: z.enum(['new', 'existing', 'trashed']).meta({ id: 'PreservationRestoreMatch' }).nullable(),
     locked: z.boolean().describe('Locked in the package or in your library; listed only to an unlocked session'),
     applied: z.boolean(),
     conflicts: z.array(PreservationConflictSchema),
