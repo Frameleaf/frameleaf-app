@@ -8,7 +8,7 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
-import { analyticsAreaUrl } from '$lib/frameleaf/settings-areas';
+import { analyticsAreaUrl, areaForSection, commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
@@ -78,12 +78,13 @@ export const Route = {
   folders: (params?: { path?: string }) => '/folders' + asQueryString(params),
 
   // libraries
-  // FL-78: Libraries is an area of the settings command center, as in the design template; the
+  // FL-78: Libraries is an area of the Command Center, as in the design template; the
   // `/admin/library-management` addresses redirect here.
-  libraries: () => '/admin/system-settings?area=libraries',
-  newLibrary: () => '/admin/system-settings?area=libraries&new=1',
-  viewLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}`,
-  editLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}&edit=1`,
+  libraries: () => commandCenterUrl('libraries'),
+  newLibrary: () => commandCenterUrl('libraries', undefined, { new: 1 }),
+  viewLibrary: ({ id }: { id: string }) => commandCenterUrl('libraries', undefined, { selected: `library:${id}` }),
+  editLibrary: ({ id }: { id: string }) =>
+    commandCenterUrl('libraries', undefined, { selected: `library:${id}`, edit: 1 }),
 
   // maintenance
   maintenanceMode: (params?: { continue?: string }) => '/maintenance' + asQueryString(params),
@@ -157,20 +158,29 @@ export const Route = {
   takeout: (params?: { import?: string }) => '/takeout' + asQueryString(params),
 
   // settings
+  /**
+   * The Command Center (FL-71), one address for every account. A bare `isOpen` key names one of the
+   * account's own sections, as it did on the old personal settings page.
+   */
   userSettings: (params?: { isOpen?: OpenQueryParam }) => '/user-settings' + asQueryString(params),
 
   // system
   /**
-   * `openSetting` drills past the section a plain `isOpen` scrolls to, into a control within it
-   * (e.g. the enrichment workbench trigger inside the machine-learning section) that reads the
-   * same-named query param on mount. See the Jobs manager's "Enrichment tasks" entry (FL-59).
+   * A server settings section of the Command Center, with its area named so the key cannot be read
+   * as an account section. `openSetting` drills past the section into a control within it (e.g. the
+   * enrichment workbench trigger inside the machine-learning section) that reads the same-named
+   * query param on mount. See the Jobs manager's "Enrichment tasks" entry (FL-59).
    */
   systemSettings: (params?: { isOpen?: OpenQueryParam; openSetting?: string }) =>
-    '/admin/system-settings' +
-    asQueryString(
-      params && {
-        isOpen: params.isOpen,
-        [QueryParameter.OPEN_SETTING]: params.openSetting,
+    // The OAuth group is part of the sign-in methods form (Access & security).
+    commandCenterUrl(
+      params?.isOpen
+        ? areaForSection(params.isOpen === OpenQueryParam.OAUTH ? 'authentication' : params.isOpen)
+        : undefined,
+      undefined,
+      {
+        isOpen: params?.isOpen,
+        [QueryParameter.OPEN_SETTING]: params?.openSetting,
       },
     ),
   /** Library analytics in the command center (FL-79); `/admin/server-status` redirects here. */

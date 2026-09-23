@@ -1,14 +1,22 @@
 <script lang="ts">
-  import { page } from '$app/state';
-  import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
+  /**
+   * The Command Center (FL-71): the template's `screen === "admin"` in App.jsx, one full-screen
+   * settings screen for every account under the top bar. An administrator also gets the server
+   * settings (`SystemSettings.svelte`); `?screen=care` is the template's separate Library Care screen.
+   */
   import LibraryCareScreen from '$lib/components/frameleaf/LibraryCareScreen.svelte';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import UserSettingsList from './UserSettingsList.svelte';
-  import { getKeyboardActions } from '$lib/services/keyboard.service';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
+  import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
+  import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import { personalSections } from './personal-sections';
+  import SystemSettings from './SystemSettings.svelte';
+  import UserSettingsList from './UserSettingsList.svelte';
 
   type Props = {
     data: PageData;
@@ -16,20 +24,47 @@
 
   let { data }: Props = $props();
 
-  const { KeyboardShortcuts } = $derived(getKeyboardActions($t));
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  const personal = $derived(personalSections($t, { oauth: featureFlagsManager.value.oauth }));
 </script>
 
-<UserPageLayout title={data.meta.title} actions={[KeyboardShortcuts]}>
-  <Container size={data.commandCenter ? 'large' : 'medium'} center>
-    <Theme theme={appTheme}>
-      {#if page.url.searchParams.get('screen') === 'care'}
+{#snippet sectionBody(section: SettingsHostSection)}
+  <UserSettingsList section={section.key} />
+{/snippet}
+
+{#if data.screen === 'care'}
+  <UserPageLayout title={data.meta.title}>
+    <Container size="large" center>
+      <Theme theme={appTheme}>
         <LibraryCareScreen />
-      {:else if data.commandCenter}
-        <SettingsHost sections={[]} utilityOnly />
+      </Theme>
+    </Container>
+  </UserPageLayout>
+{:else}
+  <NavigationBar noBorder />
+  <Theme theme={appTheme}>
+    <div class="command-page">
+      {#if data.system}
+        <SystemSettings
+          current={data.system.current}
+          defaultConfig={data.system.defaultConfig}
+          {personal}
+          {sectionBody}
+        />
       {:else}
-        <UserSettingsList keys={data.keys} sessions={data.sessions} />
+        <SettingsHost sections={personal} {sectionBody} />
       {/if}
-    </Theme>
-  </Container>
-</UserPageLayout>
+    </div>
+  </Theme>
+{/if}
+
+<style>
+  .command-page {
+    height: calc(100dvh - var(--fl-topbar-height));
+  }
+  @media (max-width: 767px) {
+    .command-page {
+      height: calc(100dvh - var(--fl-topbar-height-phone));
+    }
+  }
+</style>

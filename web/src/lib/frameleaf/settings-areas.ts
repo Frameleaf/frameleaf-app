@@ -1,68 +1,104 @@
 /**
- * The settings information architecture for the Frameleaf admin settings page (FL-71), ported
- * from the design template's `settings-catalog.mjs` areas. Sections are the existing
- * system-config forms; this module only decides where each one lives, which area a legacy
- * `?isOpen=<key>` deep link opens, and what a search over the page returns.
+ * The Command Center's information architecture (FL-71), ported from the design template's
+ * `settings-catalog.mjs` areas. One Command Center serves every account (`/user-settings`); an
+ * area or section an account may not use is simply not offered to it. This module decides where
+ * each existing settings form lives, which area an older `?isOpen=<key>` link opens, the address of
+ * an area or section, and what a search over the Command Center returns.
  */
 import type { Component } from 'svelte';
 
 export type SettingsGroupId = 'command' | 'library' | 'server' | 'personal';
 
-/** One settings form as the host renders it: an existing system-config section with its copy. */
+/** One settings page as the Command Center renders it: an existing form with its copy. */
 export type SettingsHostSection = {
   key: string;
   title: string;
   subtitle: string;
   icon: string;
-  component: Component;
+  /** The form. Account sections without one are drawn by the host's `sectionBody` snippet. */
+  component?: Component;
+  /** True for server settings, which only administrators see. */
+  admin?: boolean;
 };
 
 export type SettingsAreaId =
-  | 'utilities'
   | 'analytics'
   | 'storage'
   | 'backup'
   | 'intelligence'
   | 'editing'
   | 'care'
-  | 'libraries'
   | 'processing'
   | 'security'
   | 'notifications'
   | 'server'
+  | 'preferences'
+  | 'libraries'
+  | 'utilities'
   | 'history';
 
 export type SettingsAreaDefinition = {
   id: SettingsAreaId;
   group: SettingsGroupId;
-  /** Section keys, in display order. These are the legacy accordion keys, kept for deep links. */
+  /** Server settings sections (system-config forms), in display order. Legacy accordion keys, kept for deep links. */
   sections: string[];
+  /** Account sections every signed-in account has, in display order after the server sections. */
+  personal?: string[];
+  /** Areas only an administrator opens (screens of their own, or areas holding only server settings). */
+  adminOnly?: boolean;
 };
 
+/** The template's area order (`settingsAreas` in settings-catalog.mjs); the rail groups them by `group`. */
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   // FL-79: the template's Command center group. Library analytics is a screen, not a set of
-  // config forms, so it owns no sections; the host renders it in place of the section list.
-  { id: 'analytics', group: 'command', sections: [] },
+  // config forms, so it owns no sections; the host renders it in place of the directory.
+  { id: 'analytics', group: 'command', sections: [], adminOnly: true },
   // FL-75: `migration` is the template's "Move or export your library", last in this area.
   { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings', 'migration'] },
-  // FL-74: "Originals & preservation" sits with imports and database backups, as in the design.
-  { id: 'backup', group: 'library', sections: ['takeout', 'backup', 'preservation'] },
+  // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
+  // are the server's. One mount of each, in the template's order.
+  { id: 'backup', group: 'library', sections: ['backup'], personal: ['takeout', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },
-  // FL-78: the template moves external library settings out of "Import & protection" into their own
-  // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
-  { id: 'libraries', group: 'library', sections: ['external-library'] },
-  // FL-69: the utilities area has one address for every account (`utilitiesUrl`), so the
-  // administrator's command center links there instead of hosting the tools a second time.
-  { id: 'utilities', group: 'library', sections: [] },
   { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
   { id: 'security', group: 'server', sections: ['authentication'] },
   { id: 'notifications', group: 'server', sections: ['notifications'] },
-  { id: 'server', group: 'server', sections: ['server', 'version-check', 'logging', 'location', 'theme'] },
+  {
+    id: 'server',
+    group: 'server',
+    sections: ['server', 'version-check', 'logging', 'location', 'theme', 'configuration'],
+  },
+  // The signed-in account's own settings (the template's "Your preferences").
+  {
+    id: 'preferences',
+    group: 'personal',
+    sections: [],
+    personal: [
+      'account',
+      'app-settings',
+      'user-usage-info',
+      'download-settings',
+      'feature',
+      'notifications',
+      'sharing',
+      'suppressed-content',
+      'user-purchase-settings',
+      'password',
+      'user-pin-code-settings',
+      'oauth',
+      'api-keys',
+      'authorized-devices',
+    ],
+  },
+  // FL-78: the template moves external library settings out of "Import & protection" into their own
+  // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
+  { id: 'libraries', group: 'library', sections: ['external-library'], adminOnly: true },
+  // FL-69: utilities belong to every account; the area draws its own tool directory.
+  { id: 'utilities', group: 'library', sections: [] },
   // FL-66: the template's "Change history" area. It holds no settings form; the host shows the
   // saved settings changes there.
-  { id: 'history', group: 'personal', sections: [] },
+  { id: 'history', group: 'personal', sections: [], adminOnly: true },
 ]);
 
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
@@ -72,47 +108,97 @@ export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
   'personal',
 ]);
 
-export const DEFAULT_SETTINGS_AREA: SettingsAreaId = 'storage';
+/** Where the Command Center opens without an area: the first area the account can use. */
+export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'storage' : 'preferences');
 
 export const isSettingsAreaId = (value: string | null | undefined): value is SettingsAreaId =>
   SETTINGS_AREAS.some((area) => area.id === value);
 
-/** Areas that are screens of their own rather than lists of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'utilities']);
+/** Areas that are screens of their own rather than directories of settings sections (FL-79). */
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'utilities', 'history']);
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
-/** The address of Library analytics in the command center, optionally for one scope and range. */
-export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) => {
-  const search = new URLSearchParams({ area: 'analytics' });
-  if (params.scope) {
-    search.set('scope', params.scope);
+/** Whether an account may open an area at all. Section-level gating is the caller's section list. */
+export const isAreaAvailable = (area: SettingsAreaDefinition, isAdmin: boolean) =>
+  isAdmin ||
+  (!area.adminOnly && ((area.personal?.length ?? 0) > 0 || (isScreenArea(area.id) && area.sections.length === 0)));
+
+/** The one address of the Command Center (FL-71), for an area and optionally one of its sections. */
+export const COMMAND_CENTER_PATH = '/user-settings';
+
+export const commandCenterUrl = (
+  area?: SettingsAreaId,
+  section?: string,
+  params: Record<string, string | number | undefined> = {},
+) => {
+  const search = new URLSearchParams();
+  if (area) {
+    search.set('area', area);
   }
-  if (params.range) {
-    search.set('range', params.range);
+  if (section) {
+    search.set('section', section);
   }
-  return `/admin/system-settings?${search.toString()}`;
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      search.set(key, String(value));
+    }
+  }
+  const query = search.toString();
+  return query ? `${COMMAND_CENTER_PATH}?${query}` : COMMAND_CENTER_PATH;
 };
 
-/** The area that owns a section key, for `?isOpen=` links written before the areas existed. */
+/** The address of Library analytics in the command center, optionally for one scope and range. */
+export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) =>
+  commandCenterUrl('analytics', undefined, { scope: params.scope, range: params.range });
+
+/** The area that owns a server settings section key, for `?isOpen=` links written before the areas existed. */
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>
   SETTINGS_AREAS.find((area) => area.sections.includes(sectionKey))?.id;
 
+/** The area that owns an account section key. */
+export const areaForPersonalSection = (sectionKey: string): SettingsAreaId | undefined =>
+  SETTINGS_AREAS.find((area) => area.personal?.includes(sectionKey))?.id;
+
+/** Every section key of an area, server sections first, in display order. */
+export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
+  const area = SETTINGS_AREAS.find((item) => item.id === areaId);
+  return area ? [...area.sections, ...(area.personal ?? [])] : [];
+};
+
 /**
- * Which area to show for a URL. An explicit `area` wins; otherwise the first `isOpen` key that
- * names a known section picks its area; otherwise the default.
+ * Which area and section a Command Center address shows. An explicit `area` wins; otherwise the
+ * first `isOpen` key that names a known section picks its area (account sections first: the older
+ * personal settings page used the bare `/user-settings?isOpen=` form, the old administrator page's
+ * links are rewritten with an explicit area when they redirect); otherwise the account's default.
  */
-export const resolveSettingsArea = (params: { area?: string | null; isOpen?: string | null }): SettingsAreaId => {
+export const resolveSettingsArea = (params: {
+  area?: string | null;
+  isOpen?: string | null;
+  isAdmin?: boolean;
+}): SettingsAreaId => {
   if (isSettingsAreaId(params.area)) {
     return params.area;
   }
   for (const key of (params.isOpen ?? '').split(' ')) {
-    const area = areaForSection(key);
+    const area = areaForPersonalSection(key) ?? areaForSection(key);
     if (area) {
       return area;
     }
   }
-  return DEFAULT_SETTINGS_AREA;
+  return defaultSettingsArea(params.isAdmin ?? true);
+};
+
+/** The section a Command Center address opens inside `area`: `section`, else the first matching `isOpen` key. */
+export const resolveSettingsSection = (
+  area: SettingsAreaId,
+  params: { section?: string | null; isOpen?: string | null },
+): string | undefined => {
+  const keys = areaSectionKeys(area);
+  if (params.section && keys.includes(params.section)) {
+    return params.section;
+  }
+  return (params.isOpen ?? '').split(' ').find((key) => keys.includes(key));
 };
 
 export type SearchableSection = { key: string; title: string; subtitle?: string };
@@ -131,13 +217,18 @@ export const searchSettingsSections = <T extends SearchableSection>(sections: re
   );
 };
 
-/** Sections of one area, ordered as the area lists them; unknown keys are ignored. */
-export const sectionsForArea = <T extends { key: string }>(sections: readonly T[], areaId: SettingsAreaId): T[] => {
+/** Sections of one area that the caller offers, ordered as the area lists them; unknown keys are ignored. */
+export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
+  sections: readonly T[],
+  areaId: SettingsAreaId,
+): T[] => {
   const area = SETTINGS_AREAS.find((item) => item.id === areaId);
   if (!area) {
     return [];
   }
-  return area.sections
-    .map((key) => sections.find((section) => section.key === key))
-    .filter((section): section is T => section !== undefined);
+  const pick = (keys: readonly string[], admin: boolean) =>
+    keys
+      .map((key) => sections.find((section) => section.key === key && Boolean(section.admin) === admin))
+      .filter((section): section is T => section !== undefined);
+  return [...pick(area.sections, true), ...pick(area.personal ?? [], false)];
 };
