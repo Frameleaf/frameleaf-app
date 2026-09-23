@@ -27,10 +27,11 @@
 
   const assets = $derived(data.assets);
   const trashed = new SvelteSet<string>();
+  const removed = new SvelteSet<string>();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
-  /** What the viewer steps through: largest first, without what already went to the trash. */
-  const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id)));
+  /** What the viewer steps through: largest first, without what went to the trash or was deleted. */
+  const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id) && !removed.has(asset.id)));
 
   const onOpen = async (asset: AssetResponseDto) => {
     await navigate({ targetRoute: 'current', assetId: asset.id });
@@ -64,7 +65,7 @@
 <UserPageLayout title={data.meta.title} scrollbar={true}>
   <Container size="large" center class="my-4">
     <Theme theme={appTheme}>
-      <LargeFilesReview {assets} {trashed} onOpen={(asset) => void onOpen(asset)} />
+      <LargeFilesReview {assets} {trashed} {removed} onOpen={(asset) => void onOpen(asset)} />
     </Theme>
   </Container>
 </UserPageLayout>
