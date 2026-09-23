@@ -2,7 +2,7 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetVisibility, JobName } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -12,6 +12,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -36,7 +37,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetEditRepository,
       SystemMetadataRepository,
     ],
-    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository],
+    mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
   });
 };
 
@@ -355,6 +356,7 @@ describe(PersonService.name, () => {
       await sut.handleDetectFaces({ id: asset.id });
 
       expect(ctx.getMock(MachineLearningRepository).detectFaces).toHaveBeenCalledWith(
+        expect.objectContaining({ workload: MlWorkload.Face }),
         'edited_file.jpg',
         config.machineLearning.facialRecognition,
       );
@@ -385,8 +387,9 @@ describe(PersonService.name, () => {
       await sut.handleQueueRecognizeFaces({ force: true });
 
       await expect(ctx.database.selectFrom('person').selectAll().execute()).resolves.toHaveLength(0);
+      // the database is shared with earlier tests, whose faces are queued too
       expect(jobRepo.queueAll).toHaveBeenCalledWith(
-        expect.objectContaining([
+        expect.arrayContaining([
           { name: JobName.FacialRecognition, data: { id: assetFace.id, deferred: false } },
           { name: JobName.FacialRecognition, data: { id: assetFaceUser1.id, deferred: false } },
         ]),
