@@ -678,7 +678,12 @@ class PersonAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkFaceOwnerAccess(userId: string, assetFaceIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+  async checkFaceOwnerAccess(
+    userId: string,
+    assetFaceIds: Set<string>,
+    hideNsfwAssets?: AccessPrivacy,
+    hasElevatedPermission?: boolean,
+  ) {
     if (assetFaceIds.size === 0) {
       return new Set<string>();
     }
@@ -689,6 +694,9 @@ class PersonAccess {
       .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.deletedAt', 'is', null))
       .where('asset_face.id', 'in', [...assetFaceIds])
       .where('asset.ownerId', '=', userId)
+      // a face on Locked media is reachable only from its owner's elevated session (FL-34); left out,
+      // the session counts as ordinary
+      .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((faces) => new Set(faces.map((face) => face.id)));

@@ -142,7 +142,44 @@ describe(PersonService.name, () => {
       await expect(sut.getCorrectionHistory(auth, person.personGroupId)).resolves.toEqual({
         corrections: [{ faceId: face.id, assetId: face.assetId, correctedAt: correctedAt.toISOString() }],
       });
-      expect(mocks.person.getCorrections).toHaveBeenCalledWith(person.personGroupId);
+      expect(mocks.person.getCorrections).toHaveBeenCalledWith(person.personGroupId, {});
+    });
+
+    it("should scope Locked faces to the caller's own elevated session", async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const person = PersonFactory.create();
+
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getCorrections.mockResolvedValue([]);
+
+      await sut.getCorrectionHistory(auth, person.personGroupId);
+      expect(mocks.person.getCorrections).toHaveBeenCalledWith(person.personGroupId, { lockedOwnerId: auth.user.id });
+    });
+  });
+
+  describe('deleteFace', () => {
+    it("should check the caller's own face access with the session's elevation", async () => {
+      const face = AssetFaceFactory.create();
+      const ordinary = AuthFactory.create();
+      const elevated = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+
+      await expect(sut.deleteFace(ordinary, face.id, { force: false })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.access.person.checkFaceOwnerAccess).toHaveBeenLastCalledWith(
+        ordinary.user.id,
+        new Set([face.id]),
+        undefined,
+        false,
+      );
+
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+      await expect(sut.deleteFace(elevated, face.id, { force: false })).resolves.toBeUndefined();
+      expect(mocks.access.person.checkFaceOwnerAccess).toHaveBeenLastCalledWith(
+        elevated.user.id,
+        new Set([face.id]),
+        undefined,
+        true,
+      );
+      expect(mocks.person.softDeleteAssetFaces).toHaveBeenCalledWith(face.id);
     });
   });
 
