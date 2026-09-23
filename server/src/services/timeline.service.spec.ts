@@ -325,4 +325,71 @@ describe(TimelineService.name, () => {
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('Locked media in album timelines (FL-32)', () => {
+    const elevated = authStub.adminWithElevatedPermission;
+
+    it('reads an album timeline with the elevated viewer as the Locked owner', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { albumId: 'album-id' });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { albumId: 'album-id', lockedOwnerId: elevated.user.id },
+        elevated,
+      );
+    });
+
+    it('reads an album timeline without a Locked owner for an ordinary session', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(authStub.admin, { albumId: 'album-id' });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({ albumId: 'album-id' }, authStub.admin);
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].lockedOwnerId).toBeUndefined();
+    });
+
+    it('never names a Locked owner for a shared link viewing an album', async () => {
+      const auth = { ...authStub.adminSharedLink, session: elevated.session };
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(auth, { albumId: 'album-id' });
+
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].lockedOwnerId).toBeUndefined();
+    });
+
+    it('keeps the main timeline free of Locked media even when elevated', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, {});
+
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].lockedOwnerId).toBeUndefined();
+    });
+
+    it('scopes an explicit Locked request on an album to the caller, so other members stay private', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { albumId: 'album-id', visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        {
+          albumId: 'album-id',
+          visibility: AssetVisibility.Locked,
+          userIds: [elevated.user.id],
+          lockedOwnerId: elevated.user.id,
+        },
+        elevated,
+      );
+    });
+
+    it('still refuses an explicit Locked request for another user', async () => {
+      await expect(
+        sut.getTimeBuckets(elevated, { userId: 'someone-else', visibility: AssetVisibility.Locked }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 });

@@ -14,6 +14,7 @@ import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
 @Injectable()
@@ -31,9 +32,12 @@ export class DownloadService extends BaseService {
     } else if (dto.albumId) {
       const albumId = dto.albumId;
       await this.requireAccess({ auth, permission: Permission.AlbumDownload, ids: [albumId] });
-      assets = nsfwOptions
-        ? this.downloadRepository.downloadAlbumId(albumId, nsfwOptions)
-        : this.downloadRepository.downloadAlbumId(albumId);
+      // The archive holds what the album shows this viewer: their own Locked members only when elevated.
+      const albumOptions = { ...nsfwOptions, ...getLockedVisibilityOptions(auth) };
+      assets =
+        Object.keys(albumOptions).length > 0
+          ? this.downloadRepository.downloadAlbumId(albumId, albumOptions)
+          : this.downloadRepository.downloadAlbumId(albumId);
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });
