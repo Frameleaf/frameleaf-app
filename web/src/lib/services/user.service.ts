@@ -1,13 +1,8 @@
-import {
-  changePassword,
-  lockAuthSession,
-  resetPinCode,
-  type ChangePasswordDto,
-  type PinCodeResetDto,
-} from '@immich/sdk';
+import { changePassword, resetPinCode, type ChangePasswordDto, type PinCodeResetDto } from '@immich/sdk';
 import { toastManager, type ActionItem } from '@immich/ui';
 import { mdiLockOutline } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
+import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
@@ -24,14 +19,7 @@ export const getUserActions = ($t: MessageFormatter) => {
 };
 
 const handleLockSession = async () => {
-  const $t = await getFormatter();
-
-  try {
-    await lockAuthSession();
-    eventManager.emit('SessionLocked');
-  } catch (error) {
-    handleError(error, $t('errors.something_went_wrong'));
-  }
+  await sessionAccess.retryLock?.();
 };
 
 export const handleResetPinCode = async (dto: PinCodeResetDto) => {

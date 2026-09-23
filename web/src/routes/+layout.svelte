@@ -1,6 +1,8 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
@@ -250,19 +252,21 @@
 </svelte:head>
 
 <TooltipProvider>
-  {#if page.data.error}
-    <ErrorLayout error={page.data.error}></ErrorLayout>
-  {:else}
-    {@render children?.()}
-  {/if}
+  <SessionLockShield active={sessionAccess.lockPending && authManager.authenticated}>
+    {#if page.data.error}
+      <ErrorLayout error={page.data.error}></ErrorLayout>
+    {:else}
+      {@render children?.()}
+    {/if}
 
-  {#if showNavigationLoadingBar}
-    <NavigationLoadingBar />
-  {/if}
+    {#if showNavigationLoadingBar}
+      <NavigationLoadingBar />
+    {/if}
 
-  <PanelDock>
-    <DownloadPanel />
-    <UploadPanel />
-  </PanelDock>
-  <ScreencastOverlay />
+    <PanelDock>
+      <DownloadPanel />
+      <UploadPanel />
+    </PanelDock>
+    <ScreencastOverlay />
+  </SessionLockShield>
 </TooltipProvider>

@@ -256,7 +256,7 @@ class MemoryManager {
     const { nextHref, previousHref } = current;
     const asset = memory.assets[assetIndex];
     const removed = await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
-    if (!removed.some((result) => result.id === asset.id && result.success)) {
+    if (removed.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to remove the item from this memory');
     }
     memory.assets.splice(assetIndex, 1);
@@ -298,7 +298,7 @@ class MemoryManager {
     emptied: boolean,
   ) {
     const restored = await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
-    if (!restored.some((result) => result.id === asset.id && result.success)) {
+    if (restored.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to restore the item to this memory');
     }
     memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
