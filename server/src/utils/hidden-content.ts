@@ -53,7 +53,22 @@ export const getHiddenContentQueryOptions = (auth: AuthDto): HiddenContentQueryO
   return auth.hideNsfwAssets ? { excludeNsfw: true } : {};
 };
 
-export const getSuppressedOnlyQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
+export type SuppressibleEntity = 'person' | 'pet' | 'tag';
+
+const suppressedIdsFor = (filter: HiddenContentFilter, entity: SuppressibleEntity) =>
+  entity === 'person' ? filter.personIds : entity === 'pet' ? filter.petIds : filter.tagIds;
+
+/**
+ * Owner decision (September 22, 2026): while the session is not unlocked, a person, pet or tag the
+ * owner suppressed answers exactly like one that does not exist. `auth.hiddenContent` is only set
+ * for such a session, so an unlocked one always sees its suppressed entities. This checks the id
+ * itself; a tag nested under a suppressed tag is caught in SQL (`tagIsSuppressed`).
+ */
+export const isSuppressedWhileLocked = (auth: AuthDto, entity: SuppressibleEntity, id: string): boolean => {
+  return !!auth.hiddenContent && suppressedIdsFor(auth.hiddenContent, entity).includes(id);
+};
+
+export const getSuppressedOnlyQueryOptions =(auth: AuthDto): HiddenContentQueryOptions => {
   return { onlyHiddenContent: auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id) };
 };
 
