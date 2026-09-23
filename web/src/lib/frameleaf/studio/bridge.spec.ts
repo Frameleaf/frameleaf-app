@@ -13,6 +13,42 @@ const context = (overrides: Partial<StudioBridgeContext> = {}): StudioBridgeCont
 });
 
 describe('studio command bridge', () => {
+  it('lets a review-only session ask for a preview, because reviewing needs a picture (FL-96)', async () => {
+    const request = vi.fn().mockResolvedValue(4);
+    const bridge = createStudioBridge({
+      context: () => context({ hasLease: false }),
+      handlers: { 'preview.request': request },
+    });
+
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope(
+        'preview.request',
+        { time: { numerator: '1001', denominator: '30000' }, quality: 'standard', viewportWidth: 960, viewportHeight: 540 },
+        4,
+      ),
+    ]);
+
+    expect(result.status).toBe('accepted');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a preview on a deployment with no GPU worker rather than showing nothing', async () => {
+    const bridge = createStudioBridge({
+      context: () => context({ capabilities: { ...emptyStudioCapabilities(), renderWorker: true } }),
+      handlers: { 'preview.request': vi.fn().mockResolvedValue(4) },
+    });
+
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope(
+        'preview.request',
+        { time: { numerator: '0', denominator: '1' }, quality: 'draft', viewportWidth: 960, viewportHeight: 540 },
+        4,
+      ),
+    ]);
+
+    expect(result).toMatchObject({ status: 'rejected', reason: 'capability-missing' });
+  });
+
   it('rejects a command nobody implements yet instead of pretending it worked', async () => {
     const bridge = createStudioBridge({ context: () => context() });
 

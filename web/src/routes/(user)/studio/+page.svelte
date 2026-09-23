@@ -9,6 +9,7 @@
    * callbacks only — never the SDK, never a token, never the API base URL.
    */
   import { beforeNavigate, goto } from '$app/navigation';
+  import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -25,6 +26,12 @@
     type StudioHostServices,
     type StudioProjectHandle,
   } from '$lib/frameleaf/studio/host-contract';
+  import {
+    createStudioPreviewClient,
+    idleStudioPreviewView,
+    type StudioPreviewView,
+  } from '$lib/frameleaf/studio/preview';
+  import { createStudioPreviewTransport } from '$lib/frameleaf/studio/preview-transport';
   import { getProfileImageUrl } from '$lib/utils';
   import type { PageData } from './$types';
 
@@ -34,6 +41,7 @@
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
+  let preview = $state<StudioPreviewView>(idleStudioPreviewView());
 
   const assets = $derived(toStudioAssets(data.assets));
   const handoffAssetIds = $derived(assets.map((asset) => asset.id));
@@ -64,6 +72,24 @@
     hasLease: true,
   });
 
+  /**
+   * The remote preview (FL-96). The host owns it: it holds the transport, the frame cache and
+   * the revision binding, and hands the engine only the resulting view. The engine asks for a
+   * frame with a `preview.request` envelope and never touches the API.
+   *
+   * The revision digest is the *graph* revision, which FL-89/FL-91 own. Until durable project
+   * storage lands, the draft's numeric revision stands in for it, which keeps the binding real:
+   * a request naming an older one is still refused and its frames are still dropped.
+   */
+  const revisionDigest = $derived(`draft-${project.id}-${project.revision}`);
+
+  const previewClient = createStudioPreviewClient({
+    transport: createStudioPreviewTransport(),
+    onChange: (next) => {
+      preview = next;
+    },
+  });
+
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -72,8 +98,35 @@
       online,
       capabilities,
     }),
-    // No handlers yet: every editing command is a typed extension point owned by a later
-    // story, and the bridge rejects each one as `not-implemented` rather than no-op.
+    // The only implemented handlers in this slice are the preview pair. Every editing command
+    // stays a typed extension point owned by a later story and is rejected as
+    // `not-implemented` rather than silently no-oped.
+    handlers: {
+      'preview.request': async (envelope) => {
+        const payload = envelope.payload as {
+          time: { numerator: string; denominator: string };
+          quality: 'draft' | 'standard' | 'full';
+          viewportWidth: number;
+          viewportHeight: number;
+        };
+        previewClient.request({
+          projectId: project.id,
+          revisionDigest,
+          time: payload.time,
+          quality: payload.quality,
+          viewportWidth: payload.viewportWidth,
+          viewportHeight: payload.viewportHeight,
+        });
+        // Preview changes nothing about the project, so the revision the bridge reports back is
+        // the one the editor already holds.
+        return project.revision;
+      },
+      'preview.release': async () => {
+        await previewClient.dispose();
+        preview = idleStudioPreviewView();
+        return project.revision;
+      },
+    },
   });
 
   const services: StudioHostServices = {
@@ -127,6 +180,9 @@
     const lost = () => {
       accessLost = true;
       dirty = false;
+      // Private frames leave the page with the session, not on the next navigation.
+      void previewClient.dispose();
+      preview = idleStudioPreviewView();
     };
     const unsubscribe = eventManager.on({
       AuthLogout: lost,
@@ -135,6 +191,12 @@
     });
 
     return () => unsubscribe();
+  });
+
+  // Every cached frame is an object URL this page created. Leaving the route releases them and
+  // stops any preview still rendering, so nothing is left running for a page nobody is on.
+  onDestroy(() => {
+    void previewClient.dispose();
   });
 
   beforeNavigate((navigation) => {
@@ -164,5 +226,6 @@
   {onBack}
   {dirty}
   {accessLost}
+  {preview}
   droppedAssetCount={data.unavailableAssetCount}
 />

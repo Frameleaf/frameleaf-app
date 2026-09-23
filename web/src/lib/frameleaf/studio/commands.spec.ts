@@ -51,6 +51,18 @@ describe('studio command vocabulary', () => {
     expect(studioCommandIds.filter((id) => isStudioCommandImplemented(id))).toEqual([]);
   });
 
+  it('keeps preview off the graph and off the undo stack, but behind a worker (FL-96)', () => {
+    const request = studioCommandDefinition('preview.request');
+
+    // Looking at a frame changes nothing about the project, so it is neither a graph change
+    // nor an undo step — but it does need a GPU worker, so it is never offered without one.
+    expect(request.scope).toBe('preview');
+    expect(request.mutatesGraph).toBe(false);
+    expect(request.undoable).toBe(false);
+    expect(request.requiresCapability).toBe('gpuWorker');
+    expect(studioCommandDefinition('preview.release').mutatesGraph).toBe(false);
+  });
+
   it('recognises only published ids', () => {
     expect(isStudioCommandId('clip.split')).toBe(true);
     expect(isStudioCommandId('clip.explode')).toBe(false);
