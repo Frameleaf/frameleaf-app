@@ -59,8 +59,9 @@ export class UserRepository {
       .executeTakeFirst();
   }
 
-  getMetadata(userId: string) {
-    return this.db
+  /** `db` is a transaction when the read must be consistent with a write that follows (FL-67). */
+  getMetadata(userId: string, db: Kysely<DB> = this.db) {
+    return db
       .selectFrom('user_metadata')
       .select(['key', 'value'])
       .where('user_metadata.userId', '=', userId)
@@ -287,8 +288,12 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
-  async upsertMetadata<T extends keyof UserMetadata>(id: string, { key, value }: { key: T; value: UserMetadata[T] }) {
-    await this.db
+  async upsertMetadata<T extends keyof UserMetadata>(
+    id: string,
+    { key, value }: { key: T; value: UserMetadata[T] },
+    db: Kysely<DB> = this.db,
+  ) {
+    await db
       .insertInto('user_metadata')
       .values({ userId: id, key, value })
       .onConflict((oc) =>

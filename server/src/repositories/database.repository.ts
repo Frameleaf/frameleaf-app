@@ -1300,6 +1300,20 @@ export class DatabaseRepository extends ForkHandoffRepository {
     });
   }
 
+  /**
+   * FL-67: per-account lock around a read-check-write of the stored preferences, so a revision
+   * check and the write it guards are atomic. Two saves from different tabs can no longer both pass
+   * the check against the same revision and overwrite each other. Same shape as
+   * `withAssetMetadataLock`, in its own lock class (-2); callers read and write through the
+   * transaction passed to the callback.
+   */
+  async withUserPreferencesLock<R>(userId: string, callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(-2, hashtext(${userId})::int)`.execute(trx);
+      return callback(trx);
+    });
+  }
+
   private async acquireLock(lock: DatabaseLock, connection: Kysely<DB>): Promise<void> {
     await sql`SELECT pg_advisory_lock(${lock})`.execute(connection);
   }
