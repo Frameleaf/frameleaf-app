@@ -98,5 +98,10 @@ describe('settings change history (FL-66)', () => {
   it('reads anything unexpected as an empty history', () => {
     expect(readConfigHistory({ entries: 'nope' })).toEqual({ entries: [] });
     expect(readConfigHistory({ trash: { days: 3 } })).toEqual({ entries: [] });
+    expect(
+      readConfigHistory({ entries: [{ id: 'x' }, 'text', { ...entry('ok'), changes: [], omittedChanges: 0 }] }),
+    ).toEqual({
+      entries: [{ ...entry('ok'), changes: [], omittedChanges: 0 }],
+    });
   });
 });
