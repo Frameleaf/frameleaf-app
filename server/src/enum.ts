@@ -813,8 +813,8 @@ export const MediaOperationKindSchema = z
  *
  * Deliberately not the whole selection bar. Anything that only makes sense in the browser tab that
  * asked for it — a download, a shared link the user is about to copy — stays in the browser, and
- * so does the Locked folder, whose writes need an elevated session that a background worker does
- * not have and must not be given.
+ * so do moves into and out of the Locked folder, which the person confirms in the unlocked session
+ * they are looking at. The worker itself may act on Locked items the owner submitted.
  */
 export enum MediaOperationBulkAction {
   Favorite = 'favorite',

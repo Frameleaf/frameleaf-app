@@ -44,7 +44,7 @@ describe(BulkOperationService.name, () => {
   let sut: BulkOperationService;
   let mocks: ServiceMocks;
   let operations: MediaOperationRepository;
-  let assets: { updateAll: any; run: any; deleteAll: any; getConfig: any };
+  let assets: { updateAll: any; run: any; deleteAll: any };
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
@@ -71,7 +71,6 @@ describe(BulkOperationService.name, () => {
       updateAll: vi.fn().mockResolvedValue(undefined),
       run: vi.fn().mockResolvedValue(undefined),
       deleteAll: vi.fn().mockResolvedValue(undefined),
-      getConfig: vi.fn().mockResolvedValue({ machineLearning: { nsfwDetection: { hideFromLibrary: false } } }),
     };
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
@@ -97,22 +96,20 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('authFor', () => {
-    it('acts as the owner with no session, so it can never be elevated', async () => {
+    it('acts as the owner through an elevated system session, so Locked items are reachable', async () => {
       const auth = await sut.authFor(ownerId);
 
       expect(auth?.user.id).toBe(ownerId);
-      expect(auth?.session).toBeUndefined();
+      expect(auth?.session?.hasElevatedPermission).toBe(true);
       expect(auth?.apiKey).toBeUndefined();
       expect(auth?.sharedLink).toBeUndefined();
     });
 
-    it('applies the same hidden content filter a non-elevated session gets', async () => {
-      assets.getConfig.mockResolvedValue({ machineLearning: { nsfwDetection: { hideFromLibrary: true } } });
-
+    it('does not filter out the owner’s sensitive or hidden items', async () => {
       const auth = await sut.authFor(ownerId);
 
-      expect(auth?.hideNsfwAssets).toBe(true);
-      expect(auth?.hiddenContent).toEqual(expect.objectContaining({ userId: ownerId, includeNsfw: true }));
+      expect(auth?.hiddenContent).toBeUndefined();
+      expect(auth?.hideNsfwAssets).toBeUndefined();
     });
 
     it('answers null for an account that no longer exists', async () => {
@@ -125,7 +122,7 @@ describe(BulkOperationService.name, () => {
   describe('applyBatch', () => {
     it('skips items the owner may not change and sends only the rest', async () => {
       const snapshot = snapshotOf();
-      const [mine, locked, theirs] = snapshot.assetIds;
+      const [mine, theirs, gone] = snapshot.assetIds;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine]));
 
       const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
@@ -135,13 +132,24 @@ describe(BulkOperationService.name, () => {
         expect.arrayContaining([
           { id: mine, status: MediaOperationItemStatus.Ok },
           expect.objectContaining({
-            id: locked,
+            id: theirs,
             status: MediaOperationItemStatus.Skipped,
             reasonKey: 'frameleaf_bulk_reason_no_permission',
           }),
-          expect.objectContaining({ id: theirs, status: MediaOperationItemStatus.Skipped }),
+          expect.objectContaining({ id: gone, status: MediaOperationItemStatus.Skipped }),
         ]),
       );
+    });
+
+    it('checks ownership with the elevated flag, so Locked items are not skipped', async () => {
+      const auth = (await sut.authFor(ownerId))!;
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.applyBatch(auth, snapshot, snapshot.assetIds);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(ownerId, new Set(snapshot.assetIds), true);
+      expect(assets.updateAll).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds, isFavorite: true });
     });
 
     it('names the items a rejected batch actually failed on', async () => {
