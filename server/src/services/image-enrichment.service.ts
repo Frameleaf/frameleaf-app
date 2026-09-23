@@ -42,6 +42,7 @@ import { VideoMomentRepository } from 'src/repositories/video-moment.repository.
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { ClassificationService } from 'src/services/classification.service.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
@@ -255,6 +256,13 @@ export class ImageEnrichmentService extends BaseService {
 
   private readonly promptAssembler = new ImageDescriptionPromptAssembler();
   private readonly identityPostValidator = new IdentityPostValidator();
+  private _classificationService: ClassificationService | undefined;
+
+  private get classificationService(): ClassificationService {
+    this._classificationService ??= BaseService.create(ClassificationService, this);
+    return this._classificationService;
+  }
+
   private _smartAlbumService: SmartAlbumService | undefined;
 
   /** Lazy accessor — avoids referencing `this` before super() returns. */
@@ -939,6 +947,8 @@ export class ImageEnrichmentService extends BaseService {
     } catch (error) {
       this.logger.warn(`Smart-album evaluation failed for asset ${asset.id}: ${getErrorMessage(error)}`);
     }
+    // The owner's own classification rules (FL-60) see the new description tags. Never throws.
+    await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
 
     return { status: JobStatus.Success };
   }

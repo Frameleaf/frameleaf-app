@@ -5,6 +5,7 @@ import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
   AudioCodec,
   CQMode,
+  ClassificationRuleAction,
   Colorspace,
   ConfigCredential,
   DatabaseLock,
@@ -388,6 +389,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   smartAlbums: {
     enabled: false,
+    rules: { visualCategories: true, defaultAction: ClassificationRuleAction.Review },
     builtIn: {
       travel: {
         enabled: true,

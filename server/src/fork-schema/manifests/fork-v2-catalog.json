@@ -2601,6 +2601,110 @@
       "identity": "public.asset.width"
     },
     {
+      "definition": "boolean|not null|false||",
+      "identity": "public.classification_match.archiveContributed"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.classification_match.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.classification_match.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.classification_match.decision"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.classification_match.ruleId"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "public.classification_match.score"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.classification_match.tagContributed"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.classification_match.updatedAt"
+    },
+    {
+      "definition": "character varying|not null|'review'::character varying||",
+      "identity": "public.classification_rule.action"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.classification_rule.albumId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.classification_rule.archive"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.classification_rule.archiveConsentAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.classification_rule.createdAt"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "public.classification_rule.enabled"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.classification_rule.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.classification_rule.lastAppliedAt"
+    },
+    {
+      "definition": "character varying|not null|'any'::character varying||",
+      "identity": "public.classification_rule.mediaType"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.classification_rule.ownerId"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "public.classification_rule.personIds"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.classification_rule.tagId"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "public.classification_rule.tagIds"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.classification_rule.takenAfter"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.classification_rule.takenBefore"
+    },
+    {
+      "definition": "double precision|not null|0.25||",
+      "identity": "public.classification_rule.threshold"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.classification_rule.updatedAt"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "public.classification_rule.visualQueries"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.cluster_group_request.clusterGroupId"
     },
@@ -6931,6 +7035,42 @@
       "identity": "public.asset.asset_stackId_fkey"
     },
     {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.classification_match.classification_match_assetId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ruleId\", \"assetId\")",
+      "identity": "public.classification_match.classification_match_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ruleId\") REFERENCES classification_rule(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.classification_match.classification_match_ruleId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.classification_rule.classification_rule_albumId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"albumId\")",
+      "identity": "public.classification_rule.classification_rule_albumId_uq"
+    },
+    {
+      "definition": "CHECK (NOT archive OR \"archiveConsentAt\" IS NOT NULL)",
+      "identity": "public.classification_rule.classification_rule_archive_consent_chk"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.classification_rule.classification_rule_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.classification_rule.classification_rule_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"tagId\") REFERENCES tag(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.classification_rule.classification_rule_tagId_fkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.cluster_group_request.cluster_group_request_clusterGroupId_fkey"
     },
@@ -10187,6 +10327,42 @@
       "identity": "public.asset.UQ_assets_owner_checksum"
     },
     {
+      "definition": "CREATE INDEX \"classification_match_assetId_idx\" ON public.classification_match USING btree (\"assetId\")",
+      "identity": "public.classification_match.classification_match_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX classification_match_pkey ON public.classification_match USING btree (\"ruleId\", \"assetId\")",
+      "identity": "public.classification_match.classification_match_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"classification_match_ruleId_decision_idx\" ON public.classification_match USING btree (\"ruleId\", decision)",
+      "identity": "public.classification_match.classification_match_ruleId_decision_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"classification_match_ruleId_idx\" ON public.classification_match USING btree (\"ruleId\")",
+      "identity": "public.classification_match.classification_match_ruleId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"classification_rule_albumId_idx\" ON public.classification_rule USING btree (\"albumId\")",
+      "identity": "public.classification_rule.classification_rule_albumId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"classification_rule_albumId_uq\" ON public.classification_rule USING btree (\"albumId\")",
+      "identity": "public.classification_rule.classification_rule_albumId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"classification_rule_ownerId_idx\" ON public.classification_rule USING btree (\"ownerId\")",
+      "identity": "public.classification_rule.classification_rule_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX classification_rule_pkey ON public.classification_rule USING btree (id)",
+      "identity": "public.classification_rule.classification_rule_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"classification_rule_tagId_idx\" ON public.classification_rule USING btree (\"tagId\")",
+      "identity": "public.classification_rule.classification_rule_tagId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"cluster_group_request_clusterGroupId_idx\" ON public.cluster_group_request USING btree (\"clusterGroupId\")",
       "identity": "public.cluster_group_request.cluster_group_request_clusterGroupId_idx"
     },
@@ -12036,6 +12212,14 @@
     {
       "definition": "table",
       "identity": "public.asset_video_duplicate_frame"
+    },
+    {
+      "definition": "table",
+      "identity": "public.classification_match"
+    },
+    {
+      "definition": "table",
+      "identity": "public.classification_rule"
     },
     {
       "definition": "table",

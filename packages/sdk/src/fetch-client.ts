@@ -570,10 +570,17 @@ export type AdminConfigSmartAlbumBuiltInDto = {
     screenshots: AdminConfigSmartAlbumKindDto;
     travel: AdminConfigSmartAlbumKindDto;
 };
+export type AdminConfigSmartAlbumRulesDto = {
+    /** The action a new rule starts with */
+    defaultAction: ClassificationRuleAction;
+    /** Whether rules may match visual category phrases */
+    visualCategories: boolean;
+};
 export type AdminConfigSmartAlbumsDto = {
     builtIn: AdminConfigSmartAlbumBuiltInDto;
     /** Master smart-album enabled toggle */
     enabled: boolean;
+    rules?: AdminConfigSmartAlbumRulesDto;
 };
 export type AdminConfigStorageTemplateDto = {
     /** Enabled */
@@ -1604,7 +1611,7 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
-    /** True when the album is filled by the smart album rules. Only populated by GET /albums/tree. */
+    /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
     isSmart?: boolean;
     kind: AlbumKind;
     /** Last modified asset timestamp */
@@ -1614,6 +1621,8 @@ export type AlbumResponseDto = {
     parentId: string | null;
     /** Is shared album */
     shared: boolean;
+    /** Your classification rule behind this smart album, when it is one of yours */
+    smartRuleId?: string | null;
     /** Sibling display position. Lower values appear first. */
     sortOrder: number | null;
     /** Start date (earliest asset) */
@@ -3018,6 +3027,201 @@ export type BestPhotosResponseDto = {
     nextPage: string | null;
     total: number;
 };
+export type ClassificationTagDto = {
+    id: string;
+    name: string;
+};
+export type ClassificationContributionDto = {
+    albumId: string;
+    albumName: string;
+    /** True when this rule archived the item */
+    archived: boolean;
+    decision: ClassificationMatchDecision;
+    ruleId: string;
+    score: number | null;
+    /** The tag this rule added, when it added one */
+    tag: (ClassificationTagDto) | null;
+};
+export type ClassificationPreviewDto = {
+    mediaType?: ClassificationMediaType;
+    /** Match any of these people */
+    personIds?: string[];
+    /** How many of the newest items a visual preview reads */
+    sampleSize?: number;
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationScoredAssetDto = {
+    assetId: string;
+    score: number | null;
+};
+export type ClassificationPreviewResponseDto = {
+    /** True when `matched` counts the whole library, false for a bounded sample */
+    exact: boolean;
+    /** The first matches, best first */
+    items: ClassificationScoredAssetDto[];
+    /** Items that match among those read */
+    matched: number;
+    /** Items read: the whole library when exact, otherwise the newest items */
+    sampled: number;
+    /** False when visual phrases cannot be compared right now */
+    visualSearchAvailable: boolean;
+};
+export type ClassificationRuleCountsDto = {
+    accepted: number;
+    matched: number;
+    rejected: number;
+    suggested: number;
+};
+export type ClassificationRuleResponseDto = {
+    action: ClassificationRuleAction;
+    albumId: string;
+    albumName: string;
+    archive: boolean;
+    archiveConsentAt: string | null;
+    counts: ClassificationRuleCountsDto;
+    createdAt: string;
+    enabled: boolean;
+    id: string;
+    lastAppliedAt: string | null;
+    mediaType: ClassificationMediaType;
+    /** Match any of these people */
+    personIds: string[];
+    tag: (ClassificationTagDto) | null;
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds: string[];
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold: number;
+    updatedAt: string;
+    /** Visual category phrases compared with each item */
+    visualQueries: string[];
+};
+export type ClassificationRuleCreateDto = {
+    /** Defaults to the server default rule action */
+    action?: ClassificationRuleAction;
+    /** Name of the smart album */
+    albumName: string;
+    /** Archive matches; requires archiveConsent */
+    archive?: boolean;
+    /** The owner explicitly agrees that matches are archived */
+    archiveConsent?: boolean;
+    /** Description of the smart album */
+    description?: string | null;
+    enabled?: boolean;
+    /** Icon of the smart album */
+    icon?: string;
+    mediaType?: ClassificationMediaType;
+    /** Collection to create the smart album inside */
+    parentId?: string;
+    /** Match any of these people */
+    personIds?: string[];
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** The rule-owned tag a match receives; null tags nothing */
+    tagName?: string | null;
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationRuleUpdateDto = {
+    action?: ClassificationRuleAction;
+    /** Archive matches; turning it on requires archiveConsent */
+    archive?: boolean;
+    /** The owner explicitly agrees that matches are archived */
+    archiveConsent?: boolean;
+    /** A disabled rule keeps what it applied and stops changing anything */
+    enabled?: boolean;
+    mediaType?: ClassificationMediaType;
+    /** Match any of these people */
+    personIds?: string[];
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** The rule-owned tag a match receives; null tags nothing */
+    tagName?: string | null;
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationApplyDto = {
+    /** Items from the plan; empty records the check when nothing changed */
+    assetIds: string[];
+};
+export type ClassificationApplyResponseDto = {
+    added: number;
+    lastAppliedAt: string;
+    removed: number;
+    suggested: number;
+    unchanged: number;
+};
+export type ClassificationDecisionDto = {
+    assetIds: string[];
+    decision: ClassificationReviewDecision;
+};
+export type ClassificationDecisionResponseDto = {
+    skipped: number;
+    updated: number;
+};
+export type ClassificationMatchDto = {
+    archiveContributed: boolean;
+    assetId: string;
+    decision: ClassificationMatchDecision;
+    score: number | null;
+    tagContributed: boolean;
+    updatedAt: string;
+};
+export type ClassificationMatchPageDto = {
+    items: ClassificationMatchDto[];
+    nextPage: number | null;
+    total: number;
+};
+export type ClassificationPlanResponseDto = {
+    /** Items that would be added or suggested */
+    added: number;
+    /** Every item applying would change, for the apply call or a bulk job */
+    assetIds: string[];
+    /** True when applying must run as a durable bulk job */
+    durable: boolean;
+    /** The first items that would be added */
+    items: ClassificationScoredAssetDto[];
+    /** Items the rule matches now */
+    matched: number;
+    /** Items the rule applied that no longer match */
+    removed: number;
+    /** True when there were more changes than one apply can carry */
+    truncated: boolean;
+    visualSearchAvailable: boolean;
+};
+export type ClassificationSettingsDto = {
+    defaultAction: ClassificationRuleAction;
+    /** Changes above this many run as a durable bulk job */
+    inlineLimit: number;
+    /** Whether rules may use visual category phrases */
+    visualCategories: boolean;
+    /** Whether visual phrases can be compared right now */
+    visualSearchAvailable: boolean;
+};
 export type ClusterGroupRequestResponseDto = {
     /** Cluster group the user is invited to join */
     clusterGroupId: string;
@@ -4220,6 +4424,8 @@ export type MediaOperationLivePhotoPairDto = {
 };
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
+    /** For `apply-classification-rule`: the rule to apply to the items (FL-60) */
+    classificationRuleId?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
@@ -7190,7 +7396,7 @@ export type MachineLearningHardwareResponseDto = {
 };
 export type SmartAlbumReevaluateRequestDto = {
     /** Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind. */
-    kind?: Kind3;
+    kind?: SmartAlbumBuiltInKind;
 };
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
@@ -10377,6 +10583,181 @@ export function getBestPhotos({ includeArchived, limit, minScore, page }: {
         minScore,
         page
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve classification contributions for an asset
+ */
+export function getAssetClassifications({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationContributionDto[];
+    }>(`/classification/assets/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Preview a classification rule
+ */
+export function previewClassificationRule({ classificationPreviewDto }: {
+    classificationPreviewDto: ClassificationPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationPreviewResponseDto;
+    }>("/classification/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationPreviewDto
+    })));
+}
+/**
+ * List classification rules
+ */
+export function getClassificationRules({ albumId }: {
+    albumId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto[];
+    }>(`/classification/rules${QS.query(QS.explode({
+        albumId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a classification rule
+ */
+export function createClassificationRule({ classificationRuleCreateDto }: {
+    classificationRuleCreateDto: ClassificationRuleCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ClassificationRuleResponseDto;
+    }>("/classification/rules", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationRuleCreateDto
+    })));
+}
+/**
+ * Delete a classification rule
+ */
+export function deleteClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/classification/rules/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve a classification rule
+ */
+export function getClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a classification rule
+ */
+export function updateClassificationRule({ id, classificationRuleUpdateDto }: {
+    id: string;
+    classificationRuleUpdateDto: ClassificationRuleUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: classificationRuleUpdateDto
+    })));
+}
+/**
+ * Apply a classification rule
+ */
+export function applyClassificationRule({ id, classificationApplyDto }: {
+    id: string;
+    classificationApplyDto: ClassificationApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationApplyResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationApplyDto
+    })));
+}
+/**
+ * Review classification rule matches
+ */
+export function decideClassificationRuleMatches({ id, classificationDecisionDto }: {
+    id: string;
+    classificationDecisionDto: ClassificationDecisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationDecisionResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/decisions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationDecisionDto
+    })));
+}
+/**
+ * List classification rule matches
+ */
+export function getClassificationRuleMatches({ decision, id, page, size }: {
+    decision?: ClassificationMatchDecision;
+    id: string;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationMatchPageDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/matches${QS.query(QS.explode({
+        decision,
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Plan a classification rule re-evaluation
+ */
+export function planClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationPlanResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/plan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retrieve classification rule settings
+ */
+export function getClassificationSettings(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationSettingsDto;
+    }>("/classification/settings", {
         ...opts
     }));
 }
@@ -16137,6 +16518,10 @@ export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
     ClientSecretBasic = "client_secret_basic"
 }
+export enum ClassificationRuleAction {
+    Review = "review",
+    Tag = "tag"
+}
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
     OauthClientSecret = "oauth-client-secret",
@@ -16212,7 +16597,8 @@ export enum MediaOperationBulkAction {
     UndoDuplicates = "undo-duplicates",
     RelinkMissingMedia = "relink-missing-media",
     RecoverDamagedMedia = "recover-damaged-media",
-    TrashDamagedMedia = "trash-damaged-media"
+    TrashDamagedMedia = "trash-damaged-media",
+    ApplyClassificationRule = "apply-classification-rule"
 }
 export enum MediaOperationDestination {
     Local = "local",
@@ -16832,6 +17218,21 @@ export enum AssetMediaSize {
     Fullsize = "fullsize",
     Preview = "preview",
     Thumbnail = "thumbnail"
+}
+export enum ClassificationMatchDecision {
+    Matched = "matched",
+    Suggested = "suggested",
+    Accepted = "accepted",
+    Rejected = "rejected"
+}
+export enum ClassificationMediaType {
+    Any = "any",
+    Photo = "photo",
+    Video = "video"
+}
+export enum ClassificationReviewDecision {
+    Accepted = "accepted",
+    Rejected = "rejected"
 }
 export enum DocumentField {
     Date = "date",
@@ -17533,7 +17934,7 @@ export enum SyncRequestType {
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
 }
-export enum Kind3 {
+export enum SmartAlbumBuiltInKind {
     Travel = "travel",
     Documents = "documents",
     Screenshots = "screenshots",

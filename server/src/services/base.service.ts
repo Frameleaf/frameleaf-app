@@ -21,6 +21,7 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -91,6 +92,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  ClassificationRepository,
   ClusterGroupRepository,
   ConfigRepository,
   CronRepository,
@@ -158,6 +160,7 @@ export class BaseService {
     protected assetEditRepository: AssetEditRepository,
     protected assetFileRepository: AssetFileRepository,
     protected assetJobRepository: AssetJobRepository,
+    protected classificationRepository: ClassificationRepository,
     protected clusterGroupRepository: ClusterGroupRepository,
     protected configRepository: ConfigRepository,
     protected cronRepository: CronRepository,
@@ -234,6 +237,7 @@ export class BaseService {
       ctx.assetEditRepository,
       ctx.assetFileRepository,
       ctx.assetJobRepository,
+      ctx.classificationRepository,
       ctx.clusterGroupRepository,
       ctx.configRepository,
       ctx.cronRepository,
