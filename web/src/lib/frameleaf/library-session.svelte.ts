@@ -64,7 +64,12 @@ const safeStorage = (storage?: Pick<Storage, 'getItem' | 'setItem'> | null) => {
 };
 
 export class LibrarySessionStore {
-  #session: LibrarySession = $state(createLibrarySession());
+  /**
+   * Raw, not deeply proxied: the reducer never mutates a session in place, it returns a new one, so
+   * reassignment is the only change to track. A deep `$state` proxy would also reach the pure
+   * helpers, whose `structuredClone` cannot clone a proxy (persisting and removing a filter threw).
+   */
+  #session: LibrarySession = $state.raw(createLibrarySession());
   #pageSize: number | undefined;
   #destination: DiscoveryDestination | undefined = $state();
   #userId: string | undefined;
@@ -193,7 +198,9 @@ export class LibrarySessionStore {
   /* ---------------------------------------------------------------------- */
 
   dispatch(action: LibrarySessionAction) {
-    const next = reduceLibrarySession(this.#session, action);
+    // Callers may hand over their own `$state` (a query being edited, a list of ids); the session
+    // keeps a plain copy so nothing reactive from a component is shared with it.
+    const next = reduceLibrarySession(this.#session, $state.snapshot(action) as LibrarySessionAction);
     if (next === this.#session) {
       return this.#session;
     }
