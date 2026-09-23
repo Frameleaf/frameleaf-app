@@ -39,6 +39,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000260-AddSharedSpaceCollaboration')).toBe('legacy-fork');
     expect(classifyMigration('2100000000270-AddMediaOperationAutoRetry')).toBe('legacy-fork');
     expect(classifyMigration('2100000000290-ClearLockedAlbumCovers')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000300-ClearLockedCoverReferences')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
