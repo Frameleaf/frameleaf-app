@@ -3108,6 +3108,12 @@ export type StudioPreviewRequestDto = {
     viewportHeight: number;
     viewportWidth: number;
 };
+export type MediaOperationLivePhotoPairDto = {
+    /** Still image asset ID */
+    photoId: string;
+    /** Motion video asset ID */
+    videoId: string;
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
@@ -3117,6 +3123,7 @@ export type MediaOperationBulkPayloadDto = {
     longitude?: number;
     /** Relative shift in minutes, for `dateMode: shift` */
     minutes?: number;
+    pairs?: MediaOperationLivePhotoPairDto[];
     primaryId?: string;
     stackIds?: string[];
     tagIds?: string[];
@@ -13655,7 +13662,8 @@ export enum MediaOperationBulkAction {
     RefreshThumbnails = "refresh-thumbnails",
     RefreshMetadata = "refresh-metadata",
     RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces"
+    RefreshFaces = "refresh-faces",
+    RelinkLivePhoto = "relink-live-photo"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
