@@ -90,7 +90,9 @@ describe('assertApprovedSample', () => {
   it('accepts approved samples', () => {
     expect(() => assertApprovedSample(sample())).not.toThrow();
     expect(() =>
-      assertApprovedSample(sample({ scopeKey: `account:${userId}`, userId, series: AnalyticsSeriesId.LibraryPhysicalBytes })),
+      assertApprovedSample(
+        sample({ scopeKey: `account:${userId}`, userId, series: AnalyticsSeriesId.LibraryPhysicalBytes }),
+      ),
     ).not.toThrow();
     expect(() => assertApprovedSample(sample({ scopeKey: `library:${libraryId}`, libraryId }))).not.toThrow();
   });
@@ -116,7 +118,7 @@ describe('assertApprovedSample', () => {
     expect(() => assertApprovedSample(sample({ userId }))).toThrow();
     expect(() => assertApprovedSample(sample({ value: -1 }))).toThrow();
     expect(() => assertApprovedSample(sample({ value: 1.5 }))).toThrow();
-    expect(() => assertApprovedSample(sample({ value: Number.NaN }))).toThrow();
+    expect(() => assertApprovedSample(sample({ value: NaN }))).toThrow();
   });
 });
 

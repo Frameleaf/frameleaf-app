@@ -1,8 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AnalyticsQueryDto, AnalyticsReportResponseDto, AnalyticsScopesResponseDto } from 'src/dtos/analytics.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';

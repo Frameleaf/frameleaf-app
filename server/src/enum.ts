@@ -2233,7 +2233,10 @@ export enum AnalyticsRange {
   Year = 'year',
 }
 
-export const AnalyticsRangeSchema = z.enum(AnalyticsRange).describe('Analytics date range').meta({ id: 'AnalyticsRange' });
+export const AnalyticsRangeSchema = z
+  .enum(AnalyticsRange)
+  .describe('Analytics date range')
+  .meta({ id: 'AnalyticsRange' });
 
 /** What an analytics selection covers: the whole server, one account, or one external library. */
 export enum AnalyticsScopeKind {
@@ -2285,7 +2288,10 @@ export enum AnalyticsState {
   Unknown = 'unknown',
 }
 
-export const AnalyticsStateSchema = z.enum(AnalyticsState).describe('Analytics reading state').meta({ id: 'AnalyticsState' });
+export const AnalyticsStateSchema = z
+  .enum(AnalyticsState)
+  .describe('Analytics reading state')
+  .meta({ id: 'AnalyticsState' });
 
 /**
  * What an administrator did to an account or to one of its libraries (FL-76). Recorded in

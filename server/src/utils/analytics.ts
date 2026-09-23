@@ -130,7 +130,12 @@ export const ANALYTICS_SERIES: readonly AnalyticsSeriesDefinition[] = Object.fre
     'machine-learning request accounting',
     'processing',
   ),
-  liveSeries(AnalyticsSeriesId.ProcessingFailed, AnalyticsUnit.Attempts, 'machine-learning request accounting', 'processing'),
+  liveSeries(
+    AnalyticsSeriesId.ProcessingFailed,
+    AnalyticsUnit.Attempts,
+    'machine-learning request accounting',
+    'processing',
+  ),
   liveSeries(
     AnalyticsSeriesId.ProcessingEstimatedCost,
     AnalyticsUnit.Usd,
@@ -186,7 +191,7 @@ export const parseAnalyticsScope = (value: string): AnalyticsScope | null => {
   if (normalized === 'all') {
     return { kind: AnalyticsScopeKind.Host };
   }
-  const [kind, id] = normalized.split(':');
+  const [kind, id] = normalized.split(':', 2);
   return kind === 'account'
     ? { kind: AnalyticsScopeKind.Account, userId: id }
     : { kind: AnalyticsScopeKind.Library, libraryId: id };
@@ -230,12 +235,12 @@ export type AnalyticsSampleInsert = {
 export const assertApprovedSample = (sample: AnalyticsSampleInsert) => {
   const definition = ANALYTICS_SERIES.find((series) => series.id === sample.series);
   if (!definition?.collected) {
-    throw new Error(`Analytics series ${String(sample.series)} is not collected`);
+    throw new Error(`Analytics series ${sample.series} is not collected`);
   }
   if (!SCOPE_KEY.test(sample.scopeKey)) {
     throw new Error('Analytics scope keys are host, account:<uuid> or library:<uuid>');
   }
-  const [prefix, id = null] = sample.scopeKey.split(':');
+  const [prefix, id = null] = sample.scopeKey.split(':', 2);
   const kind = prefix === 'host' ? AnalyticsScopeKind.Host : (prefix as AnalyticsScopeKind);
   if (!definition.scopes.includes(kind)) {
     throw new Error(`Analytics series ${sample.series} is not defined for the ${kind} scope`);
@@ -264,6 +269,12 @@ export const isoDay = (value: Date | number) => new Date(value).toISOString().sl
 export const parseIsoDay = (day: string) => new Date(`${day}T00:00:00.000Z`);
 
 export const addDays = (day: string, days: number) => isoDay(parseIsoDay(day).getTime() + days * DAY_MS);
+
+/** The later of two `YYYY-MM-DD` days (they compare as strings, not numbers). */
+const laterDay = (a: string, b: string) => [a, b].toSorted().at(-1)!;
+
+/** The earlier of two `YYYY-MM-DD` days. */
+const earlierDay = (a: string, b: string) => [a, b].toSorted()[0];
 
 /** The Monday that starts the ISO week holding `day`. */
 export const weekStartOf = (day: string) => addDays(day, -((parseIsoDay(day).getUTCDay() + 6) % 7));
@@ -315,14 +326,14 @@ export const analyticsWindow = (range: AnalyticsRange, now: Date): AnalyticsWind
   const from = addDays(through, -89);
   const buckets: AnalyticsBucketWindow[] = [];
   for (let week = weekStartOf(from); week <= through; week = addDays(week, 7)) {
-    const weekEnd = addDays(week, 6);
-    const bucketFrom = week < from ? from : week;
-    const bucketThrough = weekEnd > through ? through : weekEnd;
+    const lastDay = addDays(week, 6);
+    const bucketFrom = laterDay(week, from);
+    const bucketThrough = earlierDay(lastDay, through);
     buckets.push({
       key: week,
       from: bucketFrom,
       through: bucketThrough,
-      partial: bucketFrom !== week || bucketThrough !== weekEnd,
+      partial: bucketFrom !== week || bucketThrough !== lastDay,
     });
   }
   return { range, from, through, buckets };
@@ -425,7 +436,7 @@ export const groupCameras = (rows: CameraRow[], limit = ANALYTICS_CAMERA_LIMIT):
       unknown += row.count;
     }
   }
-  const known = [...merged.entries()].toSorted(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b));
+  const known = [...merged].toSorted(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b));
   const groups: CameraGroup[] = known.slice(0, limit).map(([name, count]) => ({ name, count, kind: 'model' }));
   const rest = known.slice(limit).reduce((sum, [, count]) => sum + count, 0);
   if (rest > 0) {

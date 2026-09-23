@@ -1,5 +1,8 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { vitest } from 'vitest';
+import type { AnalyticsInventory, AnalyticsScopeTargets } from 'src/repositories/analytics.repository.js';
+import type { AnalyticsSampleInsert } from 'src/utils/analytics.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AnalyticsRange,
   AnalyticsSampleGrain,
@@ -9,10 +12,7 @@ import {
   JobName,
   JobStatus,
 } from 'src/enum.js';
-import type { AnalyticsInventory, AnalyticsScopeTargets } from 'src/repositories/analytics.repository.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
-import type { AnalyticsSampleInsert } from 'src/utils/analytics.js';
 import { factory } from 'test/small.factory.js';
 
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
@@ -138,9 +138,9 @@ describe(AnalyticsService.name, () => {
         `library:${USER_LIBRARY}`,
         `library:${OTHER_LIBRARY}`,
       ]);
-      expect(scopes.find((scope) => scope.userId === OTHER_ID && scope.kind === AnalyticsScopeKind.Account)?.removed).toBe(
-        true,
-      );
+      expect(
+        scopes.find((scope) => scope.userId === OTHER_ID && scope.kind === AnalyticsScopeKind.Account)?.removed,
+      ).toBe(true);
     });
 
     it('offers anybody else only their own account and libraries', async () => {
@@ -313,7 +313,14 @@ describe(AnalyticsService.name, () => {
       analyticsRepository.getAlbums.mockResolvedValue([
         { id: 'a1', name: 'Rockies', ownerId: USER_ID, ownerName: 'Taylor', members: 2, viewerHasAccess: true },
         { id: 'a2', name: 'Winter', ownerId: USER_ID, ownerName: 'Taylor', members: 0, viewerHasAccess: true },
-        { id: 'a3', name: 'Private to Jamie', ownerId: OTHER_ID, ownerName: 'Jamie', members: 1, viewerHasAccess: false },
+        {
+          id: 'a3',
+          name: 'Private to Jamie',
+          ownerId: OTHER_ID,
+          ownerName: 'Jamie',
+          members: 1,
+          viewerHasAccess: false,
+        },
       ]);
       const result = await sut.getReport(user(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
       expect(result.albums).toEqual({
@@ -337,18 +344,37 @@ describe(AnalyticsService.name, () => {
 
     it('records every scope with id-only keys, zero for empty accounts and libraries', async () => {
       analyticsRepository.getCollectorSnapshot.mockResolvedValue([
-        { kind: AnalyticsScopeKind.Host, id: null, items: 5, photos: 4, videos: 1, logicalBytes: 50, physicalBytes: 40 },
-        { kind: AnalyticsScopeKind.Account, id: USER_ID, items: 5, photos: 4, videos: 1, logicalBytes: 50, physicalBytes: 40 },
+        {
+          kind: AnalyticsScopeKind.Host,
+          id: null,
+          items: 5,
+          photos: 4,
+          videos: 1,
+          logicalBytes: 50,
+          physicalBytes: 40,
+        },
+        {
+          kind: AnalyticsScopeKind.Account,
+          id: USER_ID,
+          items: 5,
+          photos: 4,
+          videos: 1,
+          logicalBytes: 50,
+          physicalBytes: 40,
+        },
       ]);
       await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
       const samples = written();
       // host 5 library series + 2 volume series; 3 accounts and 2 libraries × 5 series
       expect(samples).toHaveLength(7 + 5 * 5);
-      expect(samples.every((row) => /^(host|account:[0-9a-f-]{36}|library:[0-9a-f-]{36})$/.test(row.scopeKey))).toBe(true);
+      expect(samples.every((row) => /^(host|account:[0-9a-f-]{36}|library:[0-9a-f-]{36})$/.test(row.scopeKey))).toBe(
+        true,
+      );
       expect(JSON.stringify(samples)).not.toMatch(/Taylor|Jamie|Family archive|Trail camera/);
       expect(samples.every((row) => row.grain === AnalyticsSampleGrain.Day)).toBe(true);
-      expect(samples.find((row) => row.scopeKey === `account:${OTHER_ID}` && row.series === AnalyticsSeriesId.LibraryItems))
-        .toMatchObject({ value: 0, userId: OTHER_ID, libraryId: null });
+      expect(
+        samples.find((row) => row.scopeKey === `account:${OTHER_ID}` && row.series === AnalyticsSeriesId.LibraryItems),
+      ).toMatchObject({ value: 0, userId: OTHER_ID, libraryId: null });
       expect(samples.find((row) => row.series === AnalyticsSeriesId.HostVolumeUsedBytes)?.value).toBe(600_000);
       expect(samples.some((row) => row.scopeKey !== 'host' && row.series.startsWith('host.'))).toBe(false);
       expect(analyticsRepository.applyRetention).toHaveBeenCalledWith(
