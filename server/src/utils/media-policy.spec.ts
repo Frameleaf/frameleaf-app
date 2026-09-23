@@ -11,6 +11,7 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 import {
+  AudioChannelPolicy,
   EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT,
   EDITED_MASTER_MAX_CRF,
   EditedMasterColorPolicy,
@@ -26,7 +27,9 @@ import {
   getEditedMasterColorArgs,
   getEditedMasterFfmpegConfig,
   getEditedMasterLineagePath,
+  getDeliveryAudioChannelArgs,
   getEditedMasterTimingArgs,
+  getFfmpegColorMatrixName,
   isHighBitDepth,
   isPlaybackProxyFileType,
   qualifyMetadataOnlyRotation,
@@ -525,5 +528,76 @@ describe('buildEditedMasterLineage', () => {
 describe('getEditedMasterLineagePath', () => {
   it('sits beside the master it describes', () => {
     expect(getEditedMasterLineagePath('/encoded/a_edited.mp4')).toBe('/encoded/a_edited.mp4.lineage.json');
+  });
+});
+
+describe('getDeliveryAudioChannelArgs', () => {
+  const surround = { channels: 6, channelLayout: '5.1', sampleRate: 48_000 };
+
+  it('emits exactly one stereo downmix when the target asks for one', () => {
+    expect(getDeliveryAudioChannelArgs(surround, AudioChannelPolicy.DownmixStereo)).toEqual(['-ac', '2']);
+  });
+
+  it('downmixes on request even when nothing is known about the source', () => {
+    expect(getDeliveryAudioChannelArgs(undefined, AudioChannelPolicy.DownmixStereo)).toEqual(['-ac', '2']);
+  });
+
+  it('pins the probed channel count, layout and sample rate when preserving', () => {
+    expect(getDeliveryAudioChannelArgs(surround, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '6',
+      '-channel_layout',
+      '5.1',
+      '-ar',
+      '48000',
+    ]);
+  });
+
+  it('preserves a 7.1 layout', () => {
+    const track = { channels: 8, channelLayout: '7.1', sampleRate: 96_000 };
+    expect(getDeliveryAudioChannelArgs(track, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '8',
+      '-channel_layout',
+      '7.1',
+      '-ar',
+      '96000',
+    ]);
+  });
+
+  it('preserves a mono track', () => {
+    const track = { channels: 1, channelLayout: 'mono', sampleRate: 44_100 };
+    expect(getDeliveryAudioChannelArgs(track, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '1',
+      '-channel_layout',
+      'mono',
+      '-ar',
+      '44100',
+    ]);
+  });
+
+  it('emits nothing at all for facts it does not know, rather than a silent downmix', () => {
+    const unknown = { channels: null, channelLayout: null, sampleRate: null };
+    expect(getDeliveryAudioChannelArgs(unknown, AudioChannelPolicy.Preserve)).toEqual([]);
+    expect(getDeliveryAudioChannelArgs({}, AudioChannelPolicy.Preserve)).toEqual([]);
+    expect(getDeliveryAudioChannelArgs(undefined, AudioChannelPolicy.Preserve)).toEqual([]);
+  });
+
+  it('skips a zero channel count or sample rate', () => {
+    const zeroed = { channels: 0, channelLayout: '5.1', sampleRate: 0 };
+    expect(getDeliveryAudioChannelArgs(zeroed, AudioChannelPolicy.Preserve)).toEqual(['-channel_layout', '5.1']);
+  });
+});
+
+describe('getFfmpegColorMatrixName', () => {
+  it('names the matrices ffmpeg accepts', () => {
+    expect(getFfmpegColorMatrixName(ColorMatrix.Bt709)).toBe('bt709');
+    expect(getFfmpegColorMatrixName(ColorMatrix.Bt2020Nc)).toBe('bt2020nc');
+  });
+
+  it('returns null rather than a guess for a code point with no name', () => {
+    expect(getFfmpegColorMatrixName(ColorMatrix.Unknown)).toBeNull();
+    expect(getFfmpegColorMatrixName(ColorMatrix.Reserved)).toBeNull();
   });
 });

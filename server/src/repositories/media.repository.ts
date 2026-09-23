@@ -327,6 +327,11 @@ export class MediaRepository {
           profile:
             stream.codec_name === 'aac' ? this.parseEnum(AacProfile, stream.profile as string | undefined) : null,
           bitrate: this.parseInt(stream.bit_rate),
+          // FL-102: the channel layout and sample rate are facts about the source, kept so a
+          // render can preserve them instead of falling back to a stereo downmix.
+          channels: this.parseOptionalInt(stream.channels),
+          channelLayout: stream.channel_layout ?? null,
+          sampleRate: this.parseOptionalInt(stream.sample_rate),
         })),
     };
   }
