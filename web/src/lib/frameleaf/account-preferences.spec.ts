@@ -1,3 +1,4 @@
+import { AssetOrder, SuppressionScope } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   archiveSizeToGib,
@@ -16,7 +17,6 @@ import {
   validateDraft,
   withEmailNotifications,
 } from '$lib/frameleaf/account-preferences';
-import { AssetOrder, SuppressionScope } from '@immich/sdk';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 
 const loaded = (overrides: Parameters<typeof preferencesFactory.build>[0] = {}) =>
@@ -42,7 +42,10 @@ describe('account preferences (FL-77)', () => {
       const baseline = draftFromPreferences(loaded());
       const draft = { ...baseline, 'tags.enabled': true, 'memories.duration': 9 };
 
-      expect(preferencesPatch(baseline, draft, 'admin')).toEqual({ tags: { enabled: true }, memories: { duration: 9 } });
+      expect(preferencesPatch(baseline, draft, 'admin')).toEqual({
+        tags: { enabled: true },
+        memories: { duration: 9 },
+      });
     });
 
     it('sends nothing for an unchanged draft, so private Locked choices are never part of a save', () => {
@@ -83,7 +86,9 @@ describe('account preferences (FL-77)', () => {
       const baseline = draftFromPreferences(loaded({ cast: { adminDisabled: true, gCastEnabled: false } }));
       const draft = { ...baseline, 'cast.adminDisabled': false, 'cast.gCastEnabled': true };
 
-      expect(preferencesPatch(baseline, draft, 'admin')).toEqual({ cast: { adminDisabled: false, gCastEnabled: true } });
+      expect(preferencesPatch(baseline, draft, 'admin')).toEqual({
+        cast: { adminDisabled: false, gCastEnabled: true },
+      });
     });
 
     it('only covers the keys of the group being edited', () => {
@@ -208,7 +213,10 @@ describe('account preferences (FL-77)', () => {
     });
 
     it('takes newer preferences when there are no unsaved changes', () => {
-      const next = followLatestPreferences(createDraftState(loaded()), newer({ tags: { enabled: true, sidebarWeb: false } }));
+      const next = followLatestPreferences(
+        createDraftState(loaded()),
+        newer({ tags: { enabled: true, sidebarWeb: false } }),
+      );
 
       expect(next.revision).toBe('revision-2');
       expect(next.draft['tags.enabled']).toBe(true);
