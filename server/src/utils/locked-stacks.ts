@@ -26,8 +26,13 @@ import {
  * ones in `locked-state.ts`.
  */
 
-/** The ids of the other photos of the stacks `assetIds` belong to. */
-const otherStackMembers = (db: Kysely<DB>, assetIds: string[]) =>
+/**
+ * The ids of the other photos of the stacks `assetIds` belong to. Exported so a caller can, after one
+ * of these cascades commits, find who else to tell about it — `AssetRepository.getStackSiblingIds`
+ * uses it to give every stack sibling of a Locked or unlocked asset the same real-time update the
+ * asset itself gets (FL-53), so an open web client reflects a whole-stack move at once.
+ */
+export const otherStackMembers = (db: Kysely<DB>, assetIds: string[]) =>
   db
     .selectFrom('asset as member')
     .select('member.id')

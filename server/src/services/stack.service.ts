@@ -32,6 +32,9 @@ export class StackService extends BaseService {
     // a stack that holds a Locked photo became Locked as a whole (FL-53)
     if (stack.lockedAssetIds.length > 0) {
       await this.afterAssetsLocked(stack.lockedAssetIds);
+      // push a real-time update for every asset the new stack carried into the Locked folder, so an
+      // open web client reflects the whole stack at once, not only the photo that was already Locked
+      await this.notifyAssetsUpdated(stack.lockedAssetIds, auth.user.id);
     }
 
     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });

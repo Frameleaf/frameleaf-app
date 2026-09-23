@@ -194,6 +194,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    // A visibility change that moves a whole stack into or out of Locked also changes the siblings
+    // `id` never mentions (FL-53, `locked-stacks.ts`); push the same real-time update to `id` and to
+    // every one of them, so every open session reflects the move at once.
+    if (rest.visibility !== undefined) {
+      const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
+      await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+
     return this.get(auth, id) as Promise<AssetResponseDto>;
   }
 
@@ -251,6 +259,14 @@ export class AssetService extends BaseService {
 
     if (visibility === AssetVisibility.Locked) {
       await this.queueReleasedFaceThumbnails(ids);
+    }
+
+    // A visibility change that moves whole stacks into or out of Locked also changes siblings `ids`
+    // never names (FL-53, `locked-stacks.ts`); push the same real-time update to `ids` and to every
+    // one of them, so every open session reflects the move at once.
+    if (visibility !== undefined) {
+      const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
+      await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
     }
 
     // Moving into the Locked folder keeps album membership (owner decision, September 22, 2026): the
