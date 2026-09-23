@@ -32,7 +32,8 @@ export const memoryGalleryUtils = {
   },
 
   thumbnailWithAssetId(page: Page, assetId: string) {
-    return page.locator(`#gallery-memory [data-thumbnail-focus-container][data-asset="${assetId}"]`);
+    // The gallery is the Frameleaf results grid: each tile names its item and opens it from its button.
+    return page.locator(`#gallery-memory [data-asset-id="${assetId}"]`).getByRole('button').first();
   },
 
   async scrollToGallery(page: Page) {
@@ -50,7 +51,7 @@ export const memoryGalleryUtils = {
 
   async getAllThumbnails(page: Page) {
     await this.scrollToGallery(page);
-    return page.locator('#gallery-memory [data-thumbnail-focus-container]');
+    return page.locator('#gallery-memory [data-asset-id]');
   },
 };
 

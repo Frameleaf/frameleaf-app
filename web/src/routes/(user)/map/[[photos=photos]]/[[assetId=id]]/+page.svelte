@@ -71,7 +71,10 @@
           {/await}
         {:then { default: Map }}
           <Map
-            hash
+            hash={!data.albumMarkers}
+            mapMarkers={data.albumMarkers}
+            showSettings={!data.albumMarkers}
+            autoFitBounds={!!data.albumMarkers}
             onSelect={onViewAssets}
             {onClusterSelect}
             onViewportClose={closeTimelinePanel}

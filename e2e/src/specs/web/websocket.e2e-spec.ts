@@ -1,6 +1,21 @@
 import { LoginResponseDto } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { utils } from 'src/utils.js';
+
+/**
+ * The library no longer carries a server status line in its rail (the prototype moved system status
+ * to Settings), so the connection is observed directly: the socket.io upgrade must open and receive
+ * the server's handshake frame.
+ */
+const expectSocketConnects = async (page: Page, url: string) => {
+  const socketPromise = page.waitForEvent('websocket', (socket) => socket.url().includes('/api/socket.io'));
+  await page.goto(url);
+  const socket = await socketPromise;
+  // engine.io's open packet ("0{…sid…}") arrives first on a successful connection.
+  const frame = await socket.waitForEvent('framereceived', (event) => String(event.payload).startsWith('0'));
+  expect(String(frame.payload)).toContain('"sid"');
+  expect(socket.isClosed()).toBe(false);
+};
 
 test.describe('Websocket', () => {
   let admin: LoginResponseDto;
@@ -13,13 +28,11 @@ test.describe('Websocket', () => {
 
   test('connects using ipv4', async ({ page, context }) => {
     await utils.setAuthCookies(context, admin.accessToken);
-    await page.goto('http://127.0.0.1:2285/');
-    await expect(page.locator('#sidebar')).toContainText('Server Online');
+    await expectSocketConnects(page, 'http://127.0.0.1:2285/');
   });
 
   test('connects using ipv6', async ({ page, context }) => {
     await utils.setAuthCookies(context, admin.accessToken, '[::1]');
-    await page.goto('http://[::1]:2285/');
-    await expect(page.locator('#sidebar')).toContainText('Server Online');
+    await expectSocketConnects(page, 'http://[::1]:2285/');
   });
 });
