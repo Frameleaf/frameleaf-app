@@ -25,6 +25,7 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  EnrichmentStaleReason,
   ImmichWorker,
   JobName,
   JobStatus,
@@ -46,7 +47,7 @@ import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { EnrichmentStaleReason, enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
+import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   isImageDescriptionEnabled,
@@ -603,7 +604,10 @@ export class ImageEnrichmentService extends BaseService {
 
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleImage(asset)) {
-      return { status: JobStatus.Skipped, reasonKey: asset?.type === AssetType.Video ? 'not-an-image' : 'not-eligible' };
+      return {
+        status: JobStatus.Skipped,
+        reasonKey: asset?.type === AssetType.Video ? 'not-an-image' : 'not-eligible',
+      };
     }
 
     if (!asset.previewFile) {
@@ -616,7 +620,12 @@ export class ImageEnrichmentService extends BaseService {
     let result: NsfwDetectionResult;
     let destinationId: string;
     try {
-      const selection = await this.selectEnrichmentDestination(MlWorkload.Enrichment, JobName.NsfwDetection, id, options);
+      const selection = await this.selectEnrichmentDestination(
+        MlWorkload.Enrichment,
+        JobName.NsfwDetection,
+        id,
+        options,
+      );
       destinationId = selection.destinationId;
       result = await this.machineLearningRepository.detectNsfw(
         selection,
@@ -1004,7 +1013,9 @@ export class ImageEnrichmentService extends BaseService {
       const [index, frames] = await Promise.all([moments.getIndex(id), moments.getFrames(id)]);
       if (index && frames.length >= 2 && index.sourceFingerprint === fingerprint) {
         const grid = await this.composeGrid(frames, gridPath, id);
-        return grid ? describe(grid.path, grid.videoContext) : { status: 'skipped', reasonKey: 'video-frames-unavailable' };
+        return grid
+          ? describe(grid.path, grid.videoContext)
+          : { status: 'skipped', reasonKey: 'video-frames-unavailable' };
       }
 
       const described = await withTemporaryFrames(

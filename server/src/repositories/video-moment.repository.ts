@@ -100,6 +100,19 @@ export class VideoMomentRepository {
     return new Map(rows.map((row) => [row.id, sourceFingerprint(row as Parameters<typeof sourceFingerprint>[0])]));
   }
 
+  /** Kind and owner of each asset, for a plan deciding which stages apply. Missing assets are left out. */
+  async getAssetKinds(assetIds: string[]): Promise<Map<string, { type: AssetType; ownerId: string }>> {
+    if (assetIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.type', 'asset.ownerId'])
+      .where('asset.id', '=', anyUuid(assetIds))
+      .execute();
+    return new Map(rows.map((row) => [row.id, { type: row.type as AssetType, ownerId: row.ownerId }]));
+  }
+
   getIndex(assetId: string): Promise<VideoMomentIndex | undefined> {
     return this.db
       .selectFrom('video_moment_index')
@@ -344,7 +357,12 @@ export class VideoMomentRepository {
     assetId: string,
     captions: { frameId: string; caption: string }[],
     provenance: Record<string, unknown>,
-    patch: { captionModel: string; captionConfigHash: string; captionIdentityHash: string; captionDestinationId: string | null },
+    patch: {
+      captionModel: string;
+      captionConfigHash: string;
+      captionIdentityHash: string;
+      captionDestinationId: string | null;
+    },
   ): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
       const frames = await trx
@@ -514,7 +532,9 @@ export class VideoMomentRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
       .where(notLockedOrOwnedBy(scope.lockedOwnerId))
-      .where((eb) => eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]))
+      .where((eb) =>
+        eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
+      )
       .orderBy('video_moment.source', 'desc')
       .orderBy('video_moment.updatedAt', 'desc')
       .limit(scope.limit)

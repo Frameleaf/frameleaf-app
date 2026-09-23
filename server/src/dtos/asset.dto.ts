@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetType, AssetVisibilitySchema } from 'src/enum.js';
+import { AssetType, AssetVisibilitySchema, EnrichmentStaleReasonSchema } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
@@ -132,12 +132,9 @@ const ImageDescriptionEnrichmentResponseSchema = z
     appliedDescription: z.boolean(),
     appliedTags: z.boolean(),
     destinationId: z.string().optional().describe('The processing destination that generated the description'),
-    staleReason: z
-      .enum(['source-changed', 'identity-changed', 'config-changed'])
-      .optional()
-      .describe(
-        'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
-      ),
+    staleReason: EnrichmentStaleReasonSchema.optional().describe(
+      'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
+    ),
   })
   .meta({ id: 'ImageDescriptionEnrichmentResponseDto' });
 

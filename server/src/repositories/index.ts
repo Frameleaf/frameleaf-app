@@ -75,6 +75,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -159,6 +160,7 @@ export const repositories = [
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,
+  VideoMomentRepository,
   VideoStreamRepository,
   WebsocketRepository,
   WorkflowRepository,

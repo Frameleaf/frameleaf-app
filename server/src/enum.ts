@@ -1011,6 +1011,54 @@ export const VideoMomentSourceSchema = z
   .describe('Video moment source')
   .meta({ id: 'VideoMomentSource' });
 
+/** Why a generated enrichment result no longer describes what it claims to (FL-59). */
+export enum EnrichmentStaleReason {
+  SourceChanged = 'source-changed',
+  IdentityChanged = 'identity-changed',
+  ConfigChanged = 'config-changed',
+}
+
+export const EnrichmentStaleReasonSchema = z
+  .enum(EnrichmentStaleReason)
+  .describe('Why a generated result is out of date')
+  .meta({ id: 'EnrichmentStaleReason' });
+
+/** How one preview sample went (FL-59). */
+export enum EnrichmentPreviewStatus {
+  Success = 'success',
+  Failed = 'failed',
+  Skipped = 'skipped',
+}
+
+export const EnrichmentPreviewStatusSchema = z
+  .enum(EnrichmentPreviewStatus)
+  .describe('Enrichment preview sample status')
+  .meta({ id: 'EnrichmentPreviewStatus' });
+
+/** Whether a video has current reusable frames (FL-59). */
+export enum VideoMomentIndexState {
+  None = 'none',
+  Ready = 'ready',
+  Stale = 'stale',
+}
+
+export const VideoMomentIndexStateSchema = z
+  .enum(VideoMomentIndexState)
+  .describe('Whether the video has current reusable frames')
+  .meta({ id: 'VideoMomentIndexState' });
+
+/** What a moment search hit matched on (FL-59). */
+export enum VideoMomentMatch {
+  Visual = 'visual',
+  Caption = 'caption',
+  Transcript = 'transcript',
+}
+
+export const VideoMomentMatchSchema = z
+  .enum(VideoMomentMatch)
+  .describe('What a moment search hit matched on')
+  .meta({ id: 'VideoMomentMatch' });
+
 /**
  * The durable state machine. `cancelling` is a real persisted state: the request is recorded
  * before the worker answers, so a cancel survives a restart and the remote acknowledgement is

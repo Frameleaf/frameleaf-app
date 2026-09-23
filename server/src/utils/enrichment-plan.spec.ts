@@ -84,7 +84,7 @@ describe('parseEnrichmentPlanSnapshot', () => {
       destinations: { enrichment: null, search: 'dest' },
       config: pinnedConfig,
       configHash: 'hash',
-      requestId: null,
+      requestKey: null,
       elevated: true,
     });
     expect(snapshot.stages).toEqual([EnrichmentStage.Frames, EnrichmentStage.MomentIndex]);
