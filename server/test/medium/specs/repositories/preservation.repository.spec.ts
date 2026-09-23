@@ -133,7 +133,13 @@ describe(PreservationRepository.name, () => {
         await ctx.newAsset({ ownerId: owner.id });
       }
 
-      const created = await sut.createExport(packageInput(owner.id), (id) => `/exports/${id}`, { filter: {} }, false, 2);
+      const created = await sut.createExport(
+        packageInput(owner.id),
+        (id) => `/exports/${id}`,
+        { filter: {} },
+        false,
+        2,
+      );
 
       expect(created).toBeNull();
       expect(await sut.listPackages(owner.id)).toEqual([]);

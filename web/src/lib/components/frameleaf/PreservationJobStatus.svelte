@@ -37,9 +37,9 @@
     operation.status === MediaOperationStatus.Failed || operation.status === MediaOperationStatus.Cancelled,
   );
   const working = $derived(
-    operation.status === MediaOperationStatus.Preparing ||
-      operation.status === MediaOperationStatus.Rendering ||
-      operation.status === MediaOperationStatus.Validating,
+    [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering, MediaOperationStatus.Validating].includes(
+      operation.status,
+    ),
   );
 
   const control = async (action: 'pause' | 'resume' | 'cancel' | 'retry') => {

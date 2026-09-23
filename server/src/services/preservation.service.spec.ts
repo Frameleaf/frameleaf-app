@@ -362,7 +362,9 @@ describe(PreservationService.name, () => {
       const added: string[] = [];
       storage.createZipStream.mockReturnValue({
         stream: { destroy: vi.fn() },
-        addFile: (_path: string, name: string) => added.push(name),
+        addFile: (_path: string, name: string) => {
+          added.push(name);
+        },
         finalize: () => Promise.resolve(),
       });
       const sourceAssetId = newUuid();

@@ -49858,7 +49858,6 @@
             "type": "boolean"
           },
           "name": {
-            "description": "Withheld for a Locked item until the session is unlocked",
             "nullable": true,
             "type": "string"
           },
@@ -49875,7 +49874,6 @@
             "type": "string"
           },
           "sourceAssetId": {
-            "description": "Withheld for a Locked item until the session is unlocked",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -50509,16 +50507,13 @@
             },
             "type": "array"
           },
-          "hidden": {
-            "description": "A Locked item this session may not see; unlock to review it",
-            "type": "boolean"
-          },
           "id": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
           "locked": {
+            "description": "Locked in the package or in your library; listed only to an unlocked session",
             "type": "boolean"
           },
           "match": {
@@ -50548,7 +50543,6 @@
           "conflicts",
           "error",
           "findings",
-          "hidden",
           "id",
           "locked",
           "match",

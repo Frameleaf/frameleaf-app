@@ -99,12 +99,18 @@ export const PRESERVATION_DESTINATION = MediaOperationDestination.Local;
 export const isPreservationKind = (kind: string): kind is MediaOperationKind =>
   (PRESERVATION_KINDS as readonly string[]).includes(kind);
 
+const COLLECTION_DOCUMENTS: ReadonlySet<string> = new Set([
+  PRESERVATION_ALBUMS_ENTRY,
+  PRESERVATION_PEOPLE_ENTRY,
+  PRESERVATION_TAGS_ENTRY,
+]);
+
 /** How large a document entry may be, or null for entries that are only streamed. */
 export const preservationDocumentLimit = (name: string): number | null => {
   if (name === PRESERVATION_MANIFEST_ENTRY) {
     return PRESERVATION_MAX_MANIFEST_BYTES;
   }
-  if (name === PRESERVATION_ALBUMS_ENTRY || name === PRESERVATION_PEOPLE_ENTRY || name === PRESERVATION_TAGS_ENTRY) {
+  if (COLLECTION_DOCUMENTS.has(name)) {
     return PRESERVATION_MAX_COLLECTION_BYTES;
   }
   if (name === PRESERVATION_INDEX_ENTRY) {
@@ -822,7 +828,7 @@ export const fieldsToRestore = (options: {
     return all;
   }
 
-  const fields = new Set<PreservationConflictField>(options.comparison?.fills ?? []);
+  const fields = new Set<PreservationConflictField>(options.comparison?.fills);
   for (const conflict of options.comparison?.conflicts ?? []) {
     if ((options.decisions[conflict.field] ?? options.conflictDefault) === 'replace') {
       fields.add(conflict.field);
@@ -871,9 +877,7 @@ export type PreservationRestoreSnapshot = {
 };
 
 export type PreservationSnapshot =
-  | PreservationExportSnapshot
-  | PreservationVerifySnapshot
-  | PreservationRestoreSnapshot;
+  PreservationExportSnapshot | PreservationVerifySnapshot | PreservationRestoreSnapshot;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
