@@ -24,6 +24,17 @@ describe(SharedSpaceService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(SharedSpaceService));
+
+    // The album-user repository mock is strict. These are the plain writes and lookups every
+    // comment path makes; a test that cares about one sets or asserts it itself.
+    mocks.albumUser.createMentions.mockResolvedValue();
+    mocks.albumUser.deleteMentions.mockResolvedValue();
+    mocks.albumUser.getMentions.mockResolvedValue([]);
+    mocks.albumUser.createSpaceEvent.mockResolvedValue();
+    mocks.albumUser.createCommentThread.mockResolvedValue();
+    mocks.albumUser.getCommentParents.mockResolvedValue([]);
+    mocks.albumUser.getCommentReplies.mockResolvedValue([]);
+    mocks.albumUser.deleteCommentWithReplies.mockResolvedValue();
   });
 
   it('should work', () => {
@@ -1019,6 +1030,7 @@ describe(SharedSpaceService.name, () => {
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
       mocks.activity.create.mockResolvedValue(created);
       mocks.albumUser.createCommentThread.mockRejectedValue(new Error('boom'));
+      mocks.activity.delete.mockResolvedValue();
 
       await expect(
         sut.createComment(AuthFactory.create(editor), space.id, { comment: 'x', parentId: root.id }),
