@@ -20,8 +20,8 @@
     "byStatus": {
       "match": 63,
       "partial": 123,
-      "missing": 7,
-      "fixed": 14,
+      "missing": 8,
+      "fixed": 13,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1709,9 +1709,9 @@
         "web/src/lib/components/frameleaf/ShareSheet.svelte",
         "web/src/lib/components/frameleaf/SharedLinkForm.svelte"
       ],
-      "status": "fixed",
-      "gaps": ["AL-30", "AL-32", "AL-33"],
-      "followUp": "Selection Share link opens the form; ShareSheet offers the link only; the viewer's Share still opens the legacy create modal (AL-33)"
+      "status": "partial",
+      "gaps": ["AL-30", "AL-30b", "AL-32", "AL-33"],
+      "followUp": "Selection Share link opens the form and ShareSheet offers the link only (fixed); per-item person sharing has no server contract (AL-30b, owner); the viewer's Share still opens the legacy create modal (AL-33)"
     },
     {
       "requirementId": "action:viewer:shared-link-download-with-link-restrictions",
@@ -2529,9 +2529,9 @@
         "web/src/routes/(user)/utilities/+page.svelte",
         "web/src/lib/components/frameleaf/LibraryCareDirectory.svelte"
       ],
-      "status": "partial",
-      "gaps": ["UT-1", "UT-1a", "UT-12"],
-      "followUp": "Application setup utility; hub scope line"
+      "status": "missing",
+      "gaps": ["PL-0", "UT-1", "UT-1a", "UT-12"],
+      "followUp": "Standalone utilities directory must become the Command Center utilities area (PL-0, owner cc-utilities on codex/FL-69-command-center-utilities); application setup utility; hub scope line"
     },
     {
       "route": "/utilities/corrupt-media",
