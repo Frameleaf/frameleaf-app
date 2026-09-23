@@ -46,6 +46,18 @@ import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
 import {
+  DecodeSupport,
+  assertDecodeQualified,
+  qualifySourceDecode,
+  selectDecodeAcceleration,
+} from 'src/utils/media-decode.js';
+import {
+  EncoderPixelFormatPlan,
+  applyFloatEncodePixelFormat,
+  requiresFloatIntermediate,
+  selectEncoderPixelFormat,
+} from 'src/utils/media-encode.js';
+import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,
   MediaPolicyError,
@@ -803,12 +815,16 @@ export class MediaService extends BaseService {
       isProgressive: false,
       isTransparent: false,
     });
-    this.storageCore.ensureFolders(previewFile.path);
-
     const { videoStream, format } = asset;
     if (!videoStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
     }
+
+    // FL-101: qualify the source before anything is created on disk. A refused source must not
+    // reach the point where an existing, valid preview has already been cleared out of the way.
+    assertDecodeQualified(qualifySourceDecode(videoStream, ffmpeg));
+
+    this.storageCore.ensureFolders(previewFile.path);
 
     const previewConfig = { ...ffmpeg, targetResolution: image.preview.size.toString() };
     const thumbConfig = { ...ffmpeg, targetResolution: image.thumbnail.size.toString() };
@@ -875,7 +891,6 @@ export class MediaService extends BaseService {
 
     const input = asset.originalPath;
     const output = StorageCore.getEncodedVideoPath(asset);
-    this.storageCore.ensureFolders(output);
 
     const { videoStream, format } = asset;
     const audioStream = asset.audioStream ?? undefined;
@@ -889,6 +904,24 @@ export class MediaService extends BaseService {
     }
 
     let { ffmpeg } = await this.getConfig({ withCache: true });
+
+    // FL-101: classify the source before the output directory exists, so a refusal leaves any
+    // existing proxy untouched and the original is never the thing that changes.
+    const qualification = qualifySourceDecode(videoStream, ffmpeg);
+    if (qualification.support === DecodeSupport.Refused) {
+      this.logger.warn(`Skipped transcoding for asset ${asset.id}: ${qualification.reason}`);
+      return JobStatus.Skipped;
+    }
+
+    // FL-101: hardware decoding is used only where the fixed-function path can hand back the
+    // source's own planes. This narrows `accelDecode`; it never changes `accel`, so hardware
+    // encoding is unaffected.
+    const decodeAcceleration = selectDecodeAcceleration(ffmpeg, qualification);
+    if (ffmpeg.accelDecode && !decodeAcceleration.accelDecode) {
+      this.logger.debug(`Asset ${asset.id}: ${decodeAcceleration.reason}`);
+    }
+    ffmpeg = decodeAcceleration.config;
+
     const target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
@@ -902,6 +935,8 @@ export class MediaService extends BaseService {
 
       return JobStatus.Skipped;
     }
+
+    this.storageCore.ensureFolders(output);
 
     const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
     if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
@@ -1014,7 +1049,27 @@ export class MediaService extends BaseService {
         sourcePath: asset.originalPath,
         derivedPaths: asset.files.map((file) => file.path),
       });
+      // FL-101: the source has to be one this renderer can decode honestly before anything
+      // else is decided. Dolby Vision profile 5, an undescribable pixel format or a bit depth
+      // beyond what can be delivered all stop here — before ensureFolders, so an existing valid
+      // edited master survives the refusal untouched.
+      const qualification = qualifySourceDecode(videoStream, config.ffmpeg);
+      assertDecodeQualified(qualification);
       colorDecision = resolveEditedMasterColorPolicy(videoStream, config.ffmpeg);
+      // FL-102: reject an incompatible output option here too — a 10-bit source aimed at an
+      // encoder with no qualified 10-bit path is refused rather than quietly flattened. This is
+      // the same call, under the same condition, that `getVideoEditCommand` makes; doing it here
+      // as well keeps the refusal ahead of ensureFolders, where nothing has been disturbed yet.
+      if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
+        const masterConfig = getEditedMasterFfmpegConfig(config.ffmpeg, videoStream);
+        selectEncoderPixelFormat({
+          codec: masterConfig.targetVideoCodec,
+          accel: masterConfig.accel,
+          layout: qualification.layout,
+          policy: colorDecision.policy,
+          colorMatrix: videoStream.colorMatrix,
+        });
+      }
     } catch (error) {
       if (error instanceof MediaPolicyError) {
         this.logger.error(`Refusing to render an edited master for asset ${asset.id}: ${error.message}`);
@@ -1173,9 +1228,13 @@ export class MediaService extends BaseService {
     colorDecision: EditedMasterColorDecision,
   ): VideoEditCommandPlan {
     const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits) || videoStream.rotation !== 0;
+    // FL-101: a CPU filter graph forces software decoding, and so does a source the
+    // fixed-function decoder cannot hand back faithfully. The qualification is recomputed from
+    // the stream rather than passed in, so no caller of this helper can skip it.
+    const decodeAcceleration = selectDecodeAcceleration(config, qualifySourceDecode(videoStream, config));
     const planConfig =
       config.accel === TranscodeHardwareAcceleration.Disabled || !hasCpuVideoFilters
-        ? config
+        ? decodeAcceleration.config
         : { ...config, accelDecode: false };
     const mode =
       config.accel === TranscodeHardwareAcceleration.Disabled
@@ -1294,7 +1353,7 @@ export class MediaService extends BaseService {
     }
 
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
-    const transcodeFilters = applyEditedMasterPixelFormatPolicy(
+    let transcodeFilters = applyEditedMasterPixelFormatPolicy(
       transcodeConfig.getFilterOptions({
         ...videoStream,
         ...this.getVideoEditDimensions(edits, videoStream),
@@ -1303,6 +1362,31 @@ export class MediaService extends BaseService {
       videoStream,
       colorDecision,
     );
+
+    // FL-102: the render graph works in floating point, and the step back to integer planes is
+    // stated rather than left to swscale's defaults — a named intermediate, an explicit colour
+    // matrix and range, an explicit dither, and a pixel format chosen for *this* encoder.
+    //
+    // The conversion is inserted only for a preserving render on a software encoder. A
+    // tone-mapped render already ends in `tonemapx=…:format=yuv420p`, which is the deliberate
+    // reduction FL-39 chose; re-expanding that to float and quantising again would add dither
+    // noise to a picture that is already 8-bit. A hardware render's own filter chain owns the
+    // conversion and the device upload, so the plan there only names the surface format and
+    // supplies the refusal. `-pix_fmt` is still stated on every software command.
+    const qualification = qualifySourceDecode(videoStream, config);
+    let encodePlan: EncoderPixelFormatPlan | null = null;
+    if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
+      encodePlan = selectEncoderPixelFormat({
+        codec: masterConfig.targetVideoCodec,
+        accel: masterConfig.accel,
+        layout: qualification.layout,
+        policy: colorDecision.policy,
+        colorMatrix: videoStream.colorMatrix,
+      });
+      if (colorDecision.policy === EditedMasterColorPolicy.Preserve) {
+        transcodeFilters = applyFloatEncodePixelFormat(transcodeFilters, encodePlan);
+      }
+    }
 
     const trim = edits.find((edit) => edit.action === AssetEditAction.Trim);
     const speedEdits = edits.filter(isEditAction(AssetEditAction.Speed));
@@ -1436,6 +1520,8 @@ export class MediaService extends BaseService {
       ...transcodeConfig.getOutputThreadOptions(),
       ...transcodeConfig.getBitrateOptions(),
       ...audioPolicy.args,
+      // FL-102: the encoder's input pixel format, stated on the command for a software encoder.
+      ...(encodePlan?.args ?? []),
       // FL-16: rational timing and any variable-frame-rate mapping survive the render.
       ...getEditedMasterTimingArgs(videoStream),
       // FL-16: the master's colour intent is tagged explicitly, never inferred.
