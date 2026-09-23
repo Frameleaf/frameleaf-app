@@ -163,6 +163,9 @@ export class TakeoutStagingRepository {
     size: number;
     modifiedAt: Date;
     link: boolean;
+    /** Device and inode the walk saw, so the read can prove it opened the same file. */
+    dev: number;
+    ino: number;
   }> {
     if ((await realpath(directory)) !== directory) {
       throw new TakeoutStagingError('The selected folder changed on the server; select it again');
@@ -177,7 +180,7 @@ export class TakeoutStagingRepository {
         const filePath = path.join(next.directory, entry.name);
         const entryName = next.prefix + entry.name;
         if (entry.isSymbolicLink()) {
-          yield { entryName, filePath, size: 0, modifiedAt: new Date(0), link: true };
+          yield { entryName, filePath, size: 0, modifiedAt: new Date(0), link: true, dev: 0, ino: 0 };
           continue;
         }
         if (entry.isDirectory()) {
@@ -188,7 +191,15 @@ export class TakeoutStagingRepository {
           continue;
         }
         const info = await lstat(filePath);
-        yield { entryName, filePath, size: info.size, modifiedAt: info.mtime, link: false };
+        yield {
+          entryName,
+          filePath,
+          size: info.size,
+          modifiedAt: info.mtime,
+          link: false,
+          dev: info.dev,
+          ino: info.ino,
+        };
       }
     }
   }
@@ -199,11 +210,11 @@ export class TakeoutStagingRepository {
    */
   async stageFile(
     directory: string,
-    filePath: string,
-    declared: number,
+    file: { filePath: string; size: number; dev: number; ino: number },
     destination: string,
     signal: AbortSignal,
   ): Promise<StagedDigest> {
+    const { filePath, size: declared } = file;
     const actual = await realpath(filePath);
     if (actual !== filePath || !actual.startsWith(directory + path.sep)) {
       throw new TakeoutStagingError('A file changed into a link while it was being read');
@@ -217,6 +228,10 @@ export class TakeoutStagingRepository {
       const info = await handle.stat();
       if (!info.isFile()) {
         throw new TakeoutStagingError('Only plain files can be imported from a server folder');
+      }
+      // The same file the walk found: a parent folder swapped for a link since then leads elsewhere.
+      if (info.dev !== file.dev || info.ino !== file.ino) {
+        throw new TakeoutStagingError('A file changed while it was being read');
       }
     } catch (error) {
       await handle.close();
