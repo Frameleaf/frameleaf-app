@@ -28,15 +28,21 @@
  *
  * The prototype is design evidence: the production graph stays Freecut's, so `payload`
  * shapes describe *intent* (which clip, which track, which time), never a serialized
- * graph. Where a payload carries graph-shaped data it is typed `StudioOpaqueValue` and
- * travels unread, so an unknown Freecut field, a null, an array or a rational timing
- * extension survives the round trip through web, server and native.
+ * graph. Every instant, length and cadence is an exact rational from FL-93's
+ * `rational-time.ts` (`StudioTime`, `StudioDuration`, `StudioRate`), never a float: the
+ * catalogue types those fields `time`, `duration` and `rate`, and they travel as a reduced
+ * `{ num, den }` pair through the server mirror and the native contract. Where a payload
+ * carries graph-shaped data it is typed `StudioOpaqueValue` and travels unread, so an
+ * unknown Freecut field, a null, an array or a rational timing extension survives the
+ * round trip through web, server and native.
  *
  * FL-88 defines and validates the vocabulary and routes it; it does not implement the
  * editing semantics. Every row whose `owner` is not FL-88 is a typed extension point: the
  * bridge accepts the envelope, validates it and returns a `not-implemented` rejection
  * until that story lands. Nothing here silently no-ops.
  */
+
+import type { Rational } from './rational-time';
 
 /* ------------------------------------------------------------------ */
 /* Identifiers                                                          */
@@ -148,8 +154,31 @@ export const isStudioCommandId = (value: unknown): value is StudioCommandId =>
 /* Payloads                                                             */
 /* ------------------------------------------------------------------ */
 
-/** Seconds on the sequence timeline. Rational timing extensions stay in the graph. */
-export type StudioTime = number;
+/**
+ * An instant on the sequence timeline, in seconds, as an exact rational (FL-93).
+ *
+ * It was a float. A float cannot hold 1001/30000, so an in point typed on an NTSC clip, a
+ * split, a transition boundary and the frame the encoder is asked for all drifted apart by a
+ * little, and the preview, the audio and the encoder each rounded that drift differently. A
+ * rational is the same number everywhere, so a boundary the person set is the boundary that
+ * gets rendered.
+ *
+ * Zero is the start of the sequence. A *source* in or out point is expressed the same way and
+ * is relative to the source's own origin, which the server's timing map resolves — a container
+ * whose first frame is not at timestamp zero is not the editor's problem.
+ */
+export type StudioTime = Rational;
+
+/** A length on the timeline, in seconds, as an exact rational. Same reasoning as StudioTime. */
+export type StudioDuration = Rational;
+
+/**
+ * A cadence or a speed multiplier, as an exact rational (FL-93): 30000/1001 for NTSC, 1/3 for
+ * a third-speed clip. The same reasoning as StudioTime — a frame rate that is not exactly the
+ * one the source has makes every later boundary wrong — and the published catalogue types
+ * these fields `rate`.
+ */
+export type StudioRate = Rational;
 
 /**
  * Graph-shaped data the host and the server carry without reading it: effect parameters,
@@ -172,7 +201,7 @@ export interface StudioRect {
 
 export interface StudioTransitionIntent {
   type: string;
-  durationSeconds: number;
+  duration: StudioDuration;
 }
 
 export interface StudioColorWheel {
@@ -216,7 +245,7 @@ export interface StudioSourceEdit {
 
 export interface StudioCommandPayloads {
   'captions.set': { captions: StudioCaptionLine[] };
-  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; durationSeconds?: number };
+  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; duration?: StudioDuration };
   'clip.delete': { clipId?: string; clipIds?: string[] } & StudioRippleOption;
   'clip.group': { clipIds: string[]; name?: string };
   'clip.insert': StudioSourceEdit;
@@ -228,8 +257,8 @@ export interface StudioCommandPayloads {
     clipId: string;
     volume?: number;
     muted?: boolean;
-    fadeInSeconds?: number;
-    fadeOutSeconds?: number;
+    fadeIn?: StudioDuration;
+    fadeOut?: StudioDuration;
     pitchSemitones?: number;
     pitchCents?: number;
     eq?: StudioOpaqueValue | null;
@@ -240,12 +269,12 @@ export interface StudioCommandPayloads {
   'clip.setKenBurns': { clipId: string; kenBurns: { from: StudioRect; to: StudioRect } | null };
   'clip.setLink': { clipIds: string[]; linked: boolean };
   'clip.setMask': { clipId: string; mask: StudioOpaqueValue | null };
-  'clip.setSpeed': { clipId: string; speed: number };
+  'clip.setSpeed': { clipId: string; speed: StudioRate };
   'clip.setTransform': { clipId: string; transform: StudioTransformIntent };
   'clip.setTransformParent': { clipId: string; parentId: string | null };
   'clip.setTransition': { clipId: string; transition: StudioTransitionIntent | null };
-  'clip.slide': { clipId: string; delta: StudioTime };
-  'clip.slip': { clipId: string; delta: StudioTime };
+  'clip.slide': { clipId: string; delta: StudioDuration };
+  'clip.slip': { clipId: string; delta: StudioDuration };
   'clip.split': { at: StudioTime; clipIds?: string[] };
   'clip.trimEnd': { clipId: string; end: StudioTime } & StudioRippleOption;
   'clip.trimStart': { clipId: string; start: StudioTime } & StudioRippleOption;
@@ -276,7 +305,7 @@ export interface StudioCommandPayloads {
   'job.enqueueCaptioning': {
     sequenceId: string;
     clipIds?: string[];
-    sampleCadenceSeconds?: number;
+    sampleCadence?: StudioDuration;
     destinationId: string;
   };
   'job.enqueueExport': {
@@ -292,10 +321,10 @@ export interface StudioCommandPayloads {
     quality?: string;
   };
   'job.enqueueFillerRemoval': { sequenceId: string; clipIds?: string[]; destinationId: string };
-  'job.enqueueInterpolation': { clipId: string; targetFps: number; destinationId: string };
+  'job.enqueueInterpolation': { clipId: string; targetFps: StudioRate; destinationId: string };
   'job.enqueueMusicGeneration': {
     prompt: string;
-    durationSeconds: number;
+    duration: StudioDuration;
     preset?: string;
     destinationId: string;
   };
@@ -316,7 +345,7 @@ export interface StudioCommandPayloads {
   'job.enqueueSilenceRemoval': {
     sequenceId: string;
     thresholdDb?: number;
-    minimumSilenceSeconds?: number;
+    minimumSilence?: StudioDuration;
     destinationId: string;
   };
   'job.enqueueTextToSpeech': { text: string; voice: string; engine?: string; destinationId: string };
@@ -356,7 +385,7 @@ export interface StudioCommandPayloads {
   'media.import': { assetIds: string[] };
   'media.relink': { mediaId: string; assetId: string };
   'media.remove': { mediaIds: string[] };
-  'music.add': { musicId: string; at: StudioTime; durationSeconds?: number; volume?: number };
+  'music.add': { musicId: string; at: StudioTime; duration?: StudioDuration; volume?: number };
   'project.applyTemplate': { templateId: string };
   'project.exportBundle': { sequenceIds?: string[] };
   'project.importBundle': { bundleUploadId: string };
@@ -371,17 +400,17 @@ export interface StudioCommandPayloads {
   'review.add': { time: StudioTime; text: string };
   'review.remove': { commentId: string };
   'review.update': { commentId: string; patch: { text?: string; resolved?: boolean } };
-  'sequence.add': { name: string; fps?: number; width?: number; height?: number };
+  'sequence.add': { name: string; fps?: StudioRate; width?: number; height?: number };
   'sequence.duplicate': { sequenceId: string; name?: string };
   'sequence.remove': { sequenceId: string };
   'sequence.setActive': { sequenceId: string };
   'sequence.setFields': { name?: string; captionLanguage?: string; captionsBurnIn?: boolean };
-  'sequence.setSettings': { sequenceId: string; fps?: number; width?: number; height?: number };
+  'sequence.setSettings': { sequenceId: string; fps?: StudioRate; width?: number; height?: number };
   'text.setMotion': { clipId: string; motion: StudioOpaqueValue | null };
   'title.add': {
     at: StudioTime;
     text: string;
-    durationSeconds?: number;
+    duration?: StudioDuration;
     style?: string;
     position?: string;
     animation?: string;
@@ -394,7 +423,7 @@ export interface StudioCommandPayloads {
     patch: { name?: string; muted?: boolean; locked?: boolean; solo?: boolean; gain?: number };
   };
   'track.setAudio': { trackId: string; gainDb?: number; pan?: number; eq?: StudioOpaqueValue | null };
-  'voiceover.add': { at: StudioTime; durationSeconds: number; uploadId: string };
+  'voiceover.add': { at: StudioTime; duration: StudioDuration; uploadId: string };
 }
 
 export type StudioCommand = {

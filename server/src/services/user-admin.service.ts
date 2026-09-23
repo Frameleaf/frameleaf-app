@@ -93,6 +93,18 @@ export class UserAdminService extends BaseService {
 
     const updatedUser = await this.userRepository.update(id, { ...dto, updatedAt: new Date() });
 
+    /*
+     * FL-76: setting, changing or clearing a PIN has to drop the elevated state of that
+     * account's existing sessions, the same way `AuthService.resetPinCode` does for the
+     * owner's own reset. Without this an administrator "reset PIN" would leave a session
+     * that had already unlocked with the old PIN holding `pinExpiresAt` in the future, and
+     * that session keeps reaching Locked content for the rest of its elevation window.
+     * `undefined` means the update never mentioned the PIN, so nothing is locked then.
+     */
+    if (dto.pinCode !== undefined) {
+      await this.sessionRepository.lockAll(id);
+    }
+
     return mapUserAdmin(updatedUser);
   }
 

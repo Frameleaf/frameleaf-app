@@ -47,6 +47,10 @@ const asQueryString = (
 };
 
 export const Route = {
+  // activity
+  /** The durable job feed (FL-104). Renders, restorations, transfers and bulk operations. */
+  activity: (params?: { filter?: 'all' | 'running' | 'done' | 'failed' }) => '/activity' + asQueryString(params),
+
   // auth
   login: (params?: { continue?: string; autoLaunch?: 0 | 1 }) => '/auth/login' + asQueryString(params),
   logout: (params?: { continue?: string }) => '/auth/logout' + asQueryString(params),
@@ -99,6 +103,9 @@ export const Route = {
   viewPerson: ({ id }: { id: string }, params?: { previousRoute?: string; action?: 'merge' }) =>
     `/people/${id}` + asQueryString(params),
 
+  // pets
+  pets: () => '/pets',
+
   // photos
   photos: (params?: { at?: string }) => '/photos' + asQueryString(params),
   viewAsset: ({ id }: { id: string }) => `/photos/${id}`,
@@ -123,6 +130,8 @@ export const Route = {
 
   // sharing
   sharing: () => '/sharing',
+  /** One shared space: its people, roles and invitations. Its photos are the album view. */
+  viewSharedSpace: ({ id }: { id: string }) => `/sharing/${id}`,
 
   // shared links
   sharedLinks: (params?: { filter?: SharedLinkTab }) => '/shared-links' + asQueryString(params),
@@ -136,6 +145,7 @@ export const Route = {
   // system
   systemSettings: (params?: { isOpen?: OpenQueryParam }) => '/admin/system-settings' + asQueryString(params),
   systemStatistics: () => '/admin/server-status',
+  physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,

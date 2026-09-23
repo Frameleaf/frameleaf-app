@@ -201,7 +201,10 @@ select
           "asset_audio"."index",
           "asset_audio"."codecName",
           "asset_audio"."profile",
-          "asset_audio"."bitrate"
+          "asset_audio"."bitrate",
+          "asset_audio"."channels",
+          "asset_audio"."channelLayout",
+          "asset_audio"."sampleRate"
         from
           (
             select

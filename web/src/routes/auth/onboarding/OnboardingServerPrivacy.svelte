@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { onDestroy } from 'svelte';
@@ -17,12 +17,12 @@
     {$t('onboarding_privacy_description')}
   </p>
 
-  <SettingSwitch
+  <SettingToggle
     title={$t('admin.map_settings')}
     subtitle={$t('admin.map_implications')}
     bind:checked={configToEdit.map.enabled}
   />
-  <SettingSwitch
+  <SettingToggle
     title={$t('admin.version_check_settings')}
     subtitle={$t('admin.version_check_disabled_by_privacy_policy')}
     checked={false}

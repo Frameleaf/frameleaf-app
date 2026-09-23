@@ -63,9 +63,14 @@ import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import {
+  MediaOperationCheckpointTable,
+  MediaOperationTable,
+} from 'src/schema/tables/media-operation.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
+import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
@@ -77,12 +82,19 @@ import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
+import {
+  PetCandidateTable,
+  PetDetectionTable,
+  PetObservationTable,
+  PetTable,
+} from 'src/schema/tables/pet.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SmartAlbumAssetTable } from 'src/schema/tables/smart-album-asset.table.js';
 import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusion.table.js';
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
@@ -146,8 +158,11 @@ export class ImmichDatabase {
     GeodataPlacesTable,
     IntegrityReportTable,
     LibraryTable,
+    MediaOperationTable,
+    MediaOperationCheckpointTable,
     MemoryTable,
     MemoryAuditTable,
+    MemoryExportTable,
     MemoryAssetTable,
     MemoryAssetAuditTable,
     MoveTable,
@@ -161,9 +176,14 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
+    PetTable,
+    PetObservationTable,
+    PetDetectionTable,
+    PetCandidateTable,
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
+    SharedSpaceInviteTable,
     SmartAlbumTable,
     SmartAlbumAssetTable,
     SmartAlbumExclusionTable,
@@ -272,6 +292,7 @@ export interface DB {
   memory_audit: MemoryAuditTable;
   memory_asset: MemoryAssetTable;
   memory_asset_audit: MemoryAssetAuditTable;
+  memory_export: MemoryExportTable;
 
   migrations: Migrations;
 
@@ -289,6 +310,11 @@ export interface DB {
   person_group: PersonGroupTable;
   person_group_audit: PersonGroupAuditTable;
 
+  pet: PetTable;
+  pet_observation: PetObservationTable;
+  pet_detection: PetDetectionTable;
+  pet_candidate: PetCandidateTable;
+
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
@@ -299,6 +325,7 @@ export interface DB {
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
+  shared_space_invite: SharedSpaceInviteTable;
 
   smart_album: SmartAlbumTable;
   smart_album_asset: SmartAlbumAssetTable;

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
   import { Button, IconButton } from '@immich/ui';
@@ -19,7 +19,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-  <SettingSwitch
+  <SettingToggle
     title={$t('admin.machine_learning_enabled')}
     subtitle={$t('admin.machine_learning_enabled_description')}
     {disabled}
@@ -37,7 +37,7 @@
 
   <div>
     {#each workingConfig.urls as _, i (i)}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={i === 0 ? $t('url') : undefined}
         description={i === 0 ? $t('admin.machine_learning_url_description') : undefined}
@@ -56,7 +56,7 @@
             />
           {/if}
         {/snippet}
-      </SettingInputField>
+      </SettingField>
     {/each}
   </div>
 

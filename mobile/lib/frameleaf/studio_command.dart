@@ -13,6 +13,12 @@
 /// revision rules, and none of these commands is implemented yet — the server answers
 /// `not-implemented` until the owning story lands.
 ///
+/// A payload field typed `time`, `duration` or `rate` is an exact rational (FL-93): an
+/// instant, a length, or a cadence or speed multiplier. It travels as the reduced integer
+/// pair `{"num": .., "den": ..}` and is modelled natively by [FrameleafStudioRational],
+/// never by a double — 1001/30000 has no double spelling, so a phone that rounded it would
+/// hand the encoder a boundary the person never set.
+///
 /// Payload values whose declared type is `object` or `object[]` are carried through
 /// unread, so unknown graph fields, nulls, arrays and rational timing extensions survive
 /// the round trip without a lossy native projection.
@@ -21,7 +27,13 @@ library;
 import 'studio_commands.g.dart';
 
 /// Why a locally built envelope was refused before it was sent.
-enum FrameleafStudioCommandProblem { unknownCommand, missingField, wrongFieldType, unknownField, invalidEnvelope }
+enum FrameleafStudioCommandProblem {
+  unknownCommand,
+  missingField,
+  wrongFieldType,
+  unknownField,
+  invalidEnvelope,
+}
 
 class FrameleafStudioCommandError implements Exception {
   const FrameleafStudioCommandError(this.problem, this.detail);
@@ -94,12 +106,35 @@ class FrameleafStudioCommandEnvelope {
   FrameleafStudioCommand? get definition => frameleafStudioCommandsById[id];
 }
 
+/// A reduced integer pair, the way the web host and the server spell a rational.
+bool _isRational(Object? value) {
+  if (value is! Map) {
+    return false;
+  }
+  final Object? numerator = value['num'];
+  final Object? denominator = value['den'];
+  if (numerator is! int || denominator is! int || denominator <= 0) {
+    return false;
+  }
+  int a = numerator.abs();
+  int b = denominator;
+  while (b != 0) {
+    final int next = a % b;
+    a = b;
+    b = next;
+  }
+  // Reduced, so equality is structural on both sides of the wire. Zero is 0/1.
+  return a == 1 || (numerator == 0 && denominator == 1);
+}
+
 bool _matchesFieldType(String type, Object? value) {
+  if (frameleafStudioRationalFieldTypes.contains(type)) {
+    return _isRational(value);
+  }
   switch (type) {
     case 'boolean':
       return value is bool;
     case 'number':
-    case 'time':
       return value is num && value.isFinite;
     case 'string':
       return value is String;
@@ -175,6 +210,26 @@ void validateFrameleafStudioCommand(FrameleafStudioCommandEnvelope envelope) {
 /// makes the batch need the write lease and the caller's revision.
 bool frameleafStudioBatchMutatesGraph(List<FrameleafStudioCommandEnvelope> envelopes) =>
     envelopes.any((FrameleafStudioCommandEnvelope envelope) => envelope.definition?.mutatesGraph ?? false);
+
+/// Read a rational payload field, or null when it is absent. Throws when the field is
+/// present but is not a reduced integer pair, because a native caller that wants the value
+/// must not silently receive a rounded one.
+FrameleafStudioRational? frameleafStudioRationalField(
+  FrameleafStudioCommandEnvelope envelope,
+  String name,
+) {
+  final Object? value = envelope.payload[name];
+  if (value == null) {
+    return null;
+  }
+  if (!_isRational(value)) {
+    throw FrameleafStudioCommandError(
+      FrameleafStudioCommandProblem.wrongFieldType,
+      '${envelope.id}: field $name is not an exact rational',
+    );
+  }
+  return FrameleafStudioRational.fromJson(Map<String, dynamic>.from(value as Map));
+}
 
 /// Worker capabilities an ordered batch needs, with no duplicates.
 Set<FrameleafStudioCapability> frameleafStudioBatchCapabilities(List<FrameleafStudioCommandEnvelope> envelopes) =>

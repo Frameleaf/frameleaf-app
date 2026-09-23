@@ -36,7 +36,16 @@ export type StudioCommandCapability =
   | 'restorationWorker'
   | 'transcriptionWorker';
 
-export type StudioPayloadFieldType = 'boolean' | 'number' | 'object' | 'object[]' | 'string' | 'string[]' | 'time';
+export type StudioPayloadFieldType =
+  | 'boolean'
+  | 'duration'
+  | 'number'
+  | 'object'
+  | 'object[]'
+  | 'rate'
+  | 'string'
+  | 'string[]'
+  | 'time';
 
 export type StudioPayloadField = StudioPayloadFieldType | `${StudioPayloadFieldType}?`;
 
@@ -69,7 +78,7 @@ export const studioCommandMirror = {
     payload: {
       assetId: 'string',
       at: 'time',
-      durationSeconds: 'number?',
+      duration: 'duration?',
       kind: 'string?',
       trackId: 'string',
     },
@@ -169,8 +178,8 @@ export const studioCommandMirror = {
     payload: {
       clipId: 'string',
       eq: 'object?',
-      fadeInSeconds: 'number?',
-      fadeOutSeconds: 'number?',
+      fadeIn: 'duration?',
+      fadeOut: 'duration?',
       muted: 'boolean?',
       pitchCents: 'number?',
       pitchSemitones: 'number?',
@@ -253,7 +262,7 @@ export const studioCommandMirror = {
     owner: 'FL-94',
     payload: {
       clipId: 'string',
-      speed: 'number',
+      speed: 'rate',
     },
   },
   'clip.setTransform': {
@@ -297,7 +306,7 @@ export const studioCommandMirror = {
     owner: 'FL-94',
     payload: {
       clipId: 'string',
-      delta: 'time',
+      delta: 'duration',
     },
   },
   'clip.slip': {
@@ -308,7 +317,7 @@ export const studioCommandMirror = {
     owner: 'FL-94',
     payload: {
       clipId: 'string',
-      delta: 'time',
+      delta: 'duration',
     },
   },
   'clip.split': {
@@ -489,7 +498,7 @@ export const studioCommandMirror = {
     payload: {
       clipIds: 'string[]?',
       destinationId: 'string',
-      sampleCadenceSeconds: 'number?',
+      sampleCadence: 'duration?',
       sequenceId: 'string',
     },
   },
@@ -533,7 +542,7 @@ export const studioCommandMirror = {
     payload: {
       clipId: 'string',
       destinationId: 'string',
-      targetFps: 'number',
+      targetFps: 'rate',
     },
   },
   'job.enqueueMusicGeneration': {
@@ -544,7 +553,7 @@ export const studioCommandMirror = {
     owner: 'FL-111',
     payload: {
       destinationId: 'string',
-      durationSeconds: 'number',
+      duration: 'duration',
       preset: 'string?',
       prompt: 'string',
     },
@@ -605,7 +614,7 @@ export const studioCommandMirror = {
     owner: 'FL-103',
     payload: {
       destinationId: 'string',
-      minimumSilenceSeconds: 'number?',
+      minimumSilence: 'duration?',
       sequenceId: 'string',
       thresholdDb: 'number?',
     },
@@ -786,7 +795,7 @@ export const studioCommandMirror = {
     owner: 'FL-94',
     payload: {
       at: 'time',
-      durationSeconds: 'number?',
+      duration: 'duration?',
       musicId: 'string',
       volume: 'number?',
     },
@@ -928,7 +937,7 @@ export const studioCommandMirror = {
     capability: null,
     owner: 'FL-94',
     payload: {
-      fps: 'number?',
+      fps: 'rate?',
       height: 'number?',
       name: 'string',
       width: 'number?',
@@ -984,7 +993,7 @@ export const studioCommandMirror = {
     capability: null,
     owner: 'FL-94',
     payload: {
-      fps: 'number?',
+      fps: 'rate?',
       height: 'number?',
       sequenceId: 'string',
       width: 'number?',
@@ -1010,7 +1019,7 @@ export const studioCommandMirror = {
     payload: {
       animation: 'string?',
       at: 'time',
-      durationSeconds: 'number?',
+      duration: 'duration?',
       position: 'string?',
       style: 'string?',
       text: 'string',
@@ -1081,7 +1090,7 @@ export const studioCommandMirror = {
     owner: 'FL-94',
     payload: {
       at: 'time',
-      durationSeconds: 'number',
+      duration: 'duration',
       uploadId: 'string',
     },
   },

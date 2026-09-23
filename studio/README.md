@@ -43,7 +43,16 @@ unavoidable patch is recorded as a versioned patch with its licensing note.
 each with its payload fields, scope, whether it changes the stored graph, whether it is
 undoable, the worker capability it needs, the story that owns its semantics, the prototype
 function or pinned Freecut feature that specifies it, and the manifest rows it is the way
-to reach. It is the single source for three checked-in contracts:
+to reach.
+
+Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats
+(FL-93 / `VID-102`): an instant on the timeline, a length, and a cadence or speed
+multiplier. They travel as a reduced `{ num, den }` pair of integers — `StudioTime`,
+`StudioDuration` and `StudioRate` on the web side, `isRational` on the server, and
+`FrameleafStudioRational` with named integer fields on native. `object` and `object[]`
+fields are opaque and travel unread.
+
+The catalogue is the single source for three checked-in contracts:
 
 - `web/src/lib/frameleaf/studio/commands.ts` — the typed web vocabulary FL-88's bridge routes.
 - `server/src/utils/studio-commands.generated.ts` — the server mirror used by

@@ -394,9 +394,15 @@ export class PersonRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async reassignFace(assetFaceId: string, newPersonGroupId: string): Promise<number> {
+    // FL-57: stamps `correctedAt` so a face a person explicitly moved between people
+    // (single reassign, or the split flow's per-face loop) shows up in that person's
+    // correction history and survives reprocessing. The bulk `reassignFaces` below is
+    // only used for a whole-person merge, which is already durable as a person-level
+    // event, so it intentionally leaves `correctedAt` alone to avoid flooding the
+    // history with every face a merge happened to move.
     const result = await this.db
       .updateTable('asset_face')
-      .set({ personGroupId: newPersonGroupId })
+      .set({ personGroupId: newPersonGroupId, correctedAt: sql`clock_timestamp()` })
       .where('asset_face.id', '=', assetFaceId)
       .executeTakeFirst();
 
@@ -824,6 +830,63 @@ export class PersonRepository {
       .selectAll('person')
       .where('person.personGroupId', 'in', personGroupIds)
       .orderBy('person.ownerId')
+      .execute();
+  }
+
+  /**
+   * FL-57: guided merge-suggestion candidates. Reuses the same face-embedding distance
+   * metric (`<=>`, cosine distance) the facial-recognition job already uses to cluster
+   * faces into people (see `searchFaces` in search.repository.ts and
+   * `handleRecognizeFaces` in person.service.ts) instead of inventing a second notion of
+   * "similar". Every visible person with a feature face is paired against every other
+   * once (`p2.personGroupId > p1.personGroupId` keeps each unordered pair a single row),
+   * and only pairs under `maxDistance` survive. The comparison happens inside a CTE so
+   * the computed `distance` can be filtered/ordered on the outer query — Postgres does
+   * not allow referencing a SELECT alias directly in the same query's WHERE clause.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { maxDistance: 0.5, limit: 20 }] })
+  getMergeSuggestions(ownerId: string, { maxDistance, limit = 20 }: { maxDistance: number; limit?: number }) {
+    return this.db
+      .with('candidates', (qb) =>
+        qb
+          .selectFrom('person as p1')
+          .innerJoin('face_search as fs1', 'fs1.faceId', 'p1.faceAssetId')
+          .innerJoin('person as p2', (join) =>
+            join.onRef('p2.ownerId', '=', 'p1.ownerId').onRef('p2.personGroupId', '>', 'p1.personGroupId'),
+          )
+          .innerJoin('face_search as fs2', 'fs2.faceId', 'p2.faceAssetId')
+          .select([
+            'p1.personGroupId as personId',
+            'p2.personGroupId as suggestionId',
+            sql<number>`fs1.embedding <=> fs2.embedding`.as('distance'),
+          ])
+          .where('p1.ownerId', '=', ownerId)
+          .where('p1.isHidden', '=', false)
+          .where('p2.isHidden', '=', false),
+      )
+      .selectFrom('candidates')
+      .selectAll()
+      .where('candidates.distance', '<', maxDistance)
+      .orderBy('candidates.distance', 'asc')
+      .limit(limit)
+      .execute();
+  }
+
+  /**
+   * FL-57: correction history for a person — faces explicitly moved onto them by a
+   * human (see `reassignFace` above), most recent first. Machine-learning-only
+   * assignments (never corrected) do not appear here.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getCorrections(personGroupId: string) {
+    return this.db
+      .selectFrom('asset_face')
+      .select(['asset_face.id', 'asset_face.assetId', 'asset_face.correctedAt'])
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.correctedAt', 'is not', null)
+      .orderBy('asset_face.correctedAt', 'desc')
+      .limit(200)
       .execute();
   }
 }

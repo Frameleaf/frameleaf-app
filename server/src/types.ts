@@ -2,6 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
+import type { Rational } from 'src/utils/rational-time.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -9,6 +10,10 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
+import {
+  PhysicalDeduplicationCopyState,
+  PhysicalDeduplicationRetainedState,
+} from 'src/dtos/physical-deduplication.dto.js';
 import {
   AacProfile,
   AssetOrder,
@@ -90,6 +95,18 @@ export interface VideoStreamInfo {
   frameCount: number;
   frameRate: number | null;
   timeBase: number | null;
+  /**
+   * FL-93: the exact source time base, in seconds per tick, as ffprobe reported it
+   * (`1/30000`). `timeBase` above keeps only the denominator, which is enough for the HLS
+   * playlist maths and loses a numerator when a container has one. Optional and additive: a
+   * stream that came from persisted metadata rather than a fresh probe does not carry it.
+   */
+  timeBaseRational?: Rational | null;
+  /**
+   * FL-93: the exact average cadence as a rational (`30000/1001`). `frameRate` above is that
+   * fraction already flattened into a float, which is not a cadence a timeline can be built on.
+   */
+  frameRateRational?: Rational | null;
   bitrate: number;
   pixelFormat: string;
   colorPrimaries: ColorPrimaries;
@@ -105,6 +122,16 @@ export interface AudioStreamInfo {
   codecName: string | null;
   profile: AacProfile | null;
   bitrate: number;
+  /**
+   * FL-102 (VID-104): channel-aware audio. Optional and additive so every existing construction
+   * site — probe stubs, fixtures, the upstream transcode paths — keeps compiling unchanged, and
+   * so an absent value stays distinguishable from a known one. A render never guesses these:
+   * when they are unknown it emits no channel argument at all rather than a silent downmix.
+   * Populated by `MediaRepository.probe` and persisted on `asset_audio`.
+   */
+  channels?: number | null;
+  channelLayout?: string | null;
+  sampleRate?: number | null;
 }
 
 /** Packet-derived video data needed for accurate HLS playlists. */
@@ -121,6 +148,19 @@ export interface VideoPacketInfo {
   keyframeAccDuration: number[];
   /** Each keyframe's own packet duration (needed for VFR). */
   keyframeOwnDuration: number[];
+  /**
+   * FL-93: the smallest presentation timestamp in the stream, in source ticks. A container
+   * whose first frame is not at zero (an edit list, a recording that starts mid-stream, a
+   * burst with a pre-roll) has a nonzero origin, and an export that assumes zero shifts every
+   * frame. Optional and additive; `keyframePts[0]` is the persisted fallback.
+   */
+  startPts?: number;
+  /**
+   * FL-93: true when the scanned packets do not all carry the same duration, i.e. the source
+   * is genuinely variable frame rate. Recorded rather than inferred, because coercing a VFR
+   * source to a nominal fps is exactly what this story forbids.
+   */
+  variableFrameRate?: boolean;
 }
 
 export interface VideoFormat {
@@ -209,6 +249,12 @@ export type JobOf<T extends JobName> = Jobs[T];
 
 export interface IBaseJob {
   force?: boolean;
+}
+
+/** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
+export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
+  masterUserId?: string;
+  scopeUserId?: string;
 }
 
 export interface IForkSchemaBackfillJob {
@@ -399,7 +445,7 @@ export type JobItem =
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
-  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IBaseJob }
+  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
 
   // Migration
@@ -440,6 +486,7 @@ export type JobItem =
   // Memories
   | { name: JobName.MemoryCleanup; data?: IBaseJob }
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
+  | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem
   | { name: JobName.FileDelete; data: IDeleteFilesJob }
@@ -509,7 +556,8 @@ export type JobItem =
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
 
   // Editor
-  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob };
+  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob }
+  | { name: JobName.AssetDevelopRender; data: IEntityJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 
@@ -603,12 +651,21 @@ export type PhysicalDeduplicationMigrationState = {
   reclaimableBytes: number;
   deletedBytes: number;
   samples: string[];
+  /** FL-71 preview evidence; absent on records written before the preview contract existed. */
+  scopeUserId?: string | null;
+  retained?: PhysicalDeduplicationRetainedState[];
+  copies?: PhysicalDeduplicationCopyState[];
+  copiesTruncated?: boolean;
 };
 export type MaintenanceModeState =
   { isMaintenanceMode: true; secret: string; action?: SetMaintenanceModeDto } | { isMaintenanceMode: false };
 export type MemoriesState = {
   /** memories have already been created through this date */
   lastOnThisDayDate: string;
+  /** event stories have already been generated for local days through this date (FL-62) */
+  lastEventStoryDate?: string;
+  /** the most recent calendar year a year-in-review recap was generated for (FL-62) */
+  lastYearInReviewYear?: number;
 };
 export type MediaLocation = { location: string };
 

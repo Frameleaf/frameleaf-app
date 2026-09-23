@@ -17,6 +17,11 @@
  * present field has the declared kind, and that no unknown top-level payload field is
  * smuggled in. A payload field is an *intent*, so its own set of names is closed.
  *
+ * A `time`, `duration` or `rate` field is an exact rational (FL-93), and it is checked with
+ * `isRational` from `rational-time.ts` rather than with `typeof value === 'number'`: an
+ * unreduced pair, a zero denominator or a float that a client rounded on the way out is
+ * refused here instead of becoming a boundary the encoder cannot reproduce.
+ *
  * What it deliberately does not check: the meaning of the payload — that a clip id exists,
  * that a time is inside the sequence, that the actor may edit the project, or whether the
  * command is implemented yet. Those belong to the story that owns the command, with the
@@ -25,6 +30,7 @@
  * Freecut fields, nulls, arrays and rational timing extensions lossless.
  */
 
+import { isRational } from 'src/utils/rational-time.js';
 import {
   studioCommandMirror,
   type StudioCommandCapability,
@@ -78,9 +84,13 @@ const matchesFieldType = (type: string, value: unknown): boolean => {
     case 'boolean': {
       return typeof value === 'boolean';
     }
-    case 'number':
-    case 'time': {
+    case 'number': {
       return typeof value === 'number' && Number.isFinite(value);
+    }
+    case 'duration':
+    case 'rate':
+    case 'time': {
+      return isRational(value);
     }
     case 'string': {
       return typeof value === 'string';

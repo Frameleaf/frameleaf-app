@@ -4,6 +4,7 @@ import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -38,6 +39,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -48,6 +50,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -87,6 +90,7 @@ export const repositories = [
   AppRepository,
   BestPhotosRepository,
   AssetRepository,
+  AssetDevelopRepository,
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
@@ -113,6 +117,7 @@ export const repositories = [
   MachineLearningRepository,
   MapRepository,
   MediaHealthRepository,
+  MediaOperationRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
@@ -123,6 +128,7 @@ export const repositories = [
   ClusterGroupRepository,
   PartnerRepository,
   PersonRepository,
+  PetRepository,
   PhysicalFileRepository,
   PluginRepository,
   ProcessRepository,

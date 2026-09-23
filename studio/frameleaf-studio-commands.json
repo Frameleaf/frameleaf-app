@@ -35,7 +35,7 @@
       "payload": {
         "assetId": "string",
         "at": "time",
-        "durationSeconds": "number?",
+        "duration": "duration?",
         "kind": "string?",
         "trackId": "string"
       },
@@ -183,8 +183,8 @@
       "payload": {
         "clipId": "string",
         "eq": "object?",
-        "fadeInSeconds": "number?",
-        "fadeOutSeconds": "number?",
+        "fadeIn": "duration?",
+        "fadeOut": "duration?",
         "muted": "boolean?",
         "pitchCents": "number?",
         "pitchSemitones": "number?",
@@ -336,7 +336,7 @@
       "owner": "FL-94",
       "payload": {
         "clipId": "string",
-        "speed": "number"
+        "speed": "rate"
       },
       "prototypeFunctions": ["setSpeed"],
       "prototypeSource": "setSpeed",
@@ -433,7 +433,7 @@
       "owner": "FL-94",
       "payload": {
         "clipId": "string",
-        "delta": "time"
+        "delta": "duration"
       },
       "prototypeFunctions": ["moveClip"],
       "prototypeSource": "moveClip (slide edit)",
@@ -450,7 +450,7 @@
       "owner": "FL-94",
       "payload": {
         "clipId": "string",
-        "delta": "time"
+        "delta": "duration"
       },
       "prototypeFunctions": ["updateClip"],
       "prototypeSource": "updateClip (slip edit on the source in and out points)",
@@ -794,7 +794,7 @@
       "payload": {
         "clipIds": "string[]?",
         "destinationId": "string",
-        "sampleCadenceSeconds": "number?",
+        "sampleCadence": "duration?",
         "sequenceId": "string"
       },
       "prototypeFunctions": [],
@@ -864,7 +864,7 @@
       "payload": {
         "clipId": "string",
         "destinationId": "string",
-        "targetFps": "number"
+        "targetFps": "rate"
       },
       "prototypeFunctions": [],
       "prototypeSource": "beyond the prototype: RIFE frame interpolation",
@@ -881,7 +881,7 @@
       "owner": "FL-111",
       "payload": {
         "destinationId": "string",
-        "durationSeconds": "number",
+        "duration": "duration",
         "preset": "string?",
         "prompt": "string"
       },
@@ -972,7 +972,7 @@
       "owner": "FL-103",
       "payload": {
         "destinationId": "string",
-        "minimumSilenceSeconds": "number?",
+        "minimumSilence": "duration?",
         "sequenceId": "string",
         "thresholdDb": "number?"
       },
@@ -1252,7 +1252,7 @@
       "owner": "FL-94",
       "payload": {
         "at": "time",
-        "durationSeconds": "number?",
+        "duration": "duration?",
         "musicId": "string",
         "volume": "number?"
       },
@@ -1472,7 +1472,7 @@
       "mutatesGraph": true,
       "owner": "FL-94",
       "payload": {
-        "fps": "number?",
+        "fps": "rate?",
         "height": "number?",
         "name": "string",
         "width": "number?"
@@ -1558,7 +1558,7 @@
       "mutatesGraph": true,
       "owner": "FL-94",
       "payload": {
-        "fps": "number?",
+        "fps": "rate?",
         "height": "number?",
         "sequenceId": "string",
         "width": "number?"
@@ -1596,7 +1596,7 @@
       "payload": {
         "animation": "string?",
         "at": "time",
-        "durationSeconds": "number?",
+        "duration": "duration?",
         "position": "string?",
         "style": "string?",
         "text": "string"
@@ -1703,7 +1703,7 @@
       "owner": "FL-94",
       "payload": {
         "at": "time",
-        "durationSeconds": "number",
+        "duration": "duration",
         "uploadId": "string"
       },
       "prototypeFunctions": ["addVoiceover"],
@@ -1724,9 +1724,11 @@
   "engineRevision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
   "fieldTypes": [
     "boolean",
+    "duration",
     "number",
     "object",
     "object[]",
+    "rate",
     "string",
     "string[]",
     "time"

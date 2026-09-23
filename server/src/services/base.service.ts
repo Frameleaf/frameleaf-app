@@ -331,6 +331,18 @@ export class BaseService {
     if (payload.password) {
       payload.password = await this.cryptoRepository.hashBcrypt(payload.password, SALT_ROUNDS);
     }
+    /*
+     * FL-76: `UserAdminCreateDto` accepts `pinCode`, so an administrator could supply one
+     * at creation, and before this it reached `user.pinCode` verbatim while
+     * `UserAdminService.update` hashed it. A clear-text PIN there never
+     * verifies against `validateSecret`, which compares with bcrypt, so the account's
+     * Locked content could not be unlocked with the PIN it was created with, and the
+     * secret sat in the database and in every backup in the clear. Hash it on the same
+     * path as the password so a stored PIN is always a bcrypt hash.
+     */
+    if (payload.pinCode) {
+      payload.pinCode = await this.cryptoRepository.hashBcrypt(payload.pinCode, SALT_ROUNDS);
+    }
     if (payload.storageLabel) {
       payload.storageLabel = sanitize(payload.storageLabel.replaceAll('.', ''));
     }
