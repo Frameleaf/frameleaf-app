@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { AssetVisibility, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
   MediaOperationCheckpointTable,
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
-import { anyUuid } from 'src/utils/database.js';
+import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -203,10 +203,29 @@ export class MediaOperationRepository {
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('ownerId', '=', ownerId)
       .where('id', '=', anyUuid(assetIds))
-      .where('visibility', '=', AssetVisibility.Locked)
+      .where((eb) => isLockedAsset(eb))
       .executeTakeFirst();
 
     return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Which of these ids are the owner's Locked media (FL-34). An operation keeps the ids it was given;
+   * a read from a session that has not been unlocked must not name the ones that are Locked now.
+   */
+  async getLockedAssetIds(ownerId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where((eb) => isLockedAsset(eb))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   /**
