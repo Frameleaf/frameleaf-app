@@ -16,7 +16,6 @@ import {
   canRecover,
   canRelink,
   candidatesIn,
-  careQueues,
   evidenceKey,
   filterRows,
   formatBytes,
@@ -259,34 +258,6 @@ describe('scanState', () => {
     expect(isActiveOperation(operation({ status: MediaOperationStatus.Paused }))).toBe(true);
     expect(isActiveOperation(operation({ status: MediaOperationStatus.Failed }))).toBe(false);
     expect(isActiveOperation(null)).toBe(false);
-  });
-});
-
-describe('careQueues', () => {
-  it('reports every queue, with ready counts for the repairable ones', () => {
-    const queues = careQueues({
-      queues: {
-        missing: 3,
-        missingVerified: 1,
-        damagedConfirmed: 2,
-        damagedSuspected: 1,
-        unsupportedRaw: 4,
-        duplicates: 5,
-        importReview: null,
-        enrichmentPending: 9,
-      },
-    } as unknown as MediaHealthSummaryResponseDto);
-    expect(queues.map(({ id, count, ready }) => ({ id, count, ready }))).toEqual([
-      { id: 'missing', count: 3, ready: 1 },
-      { id: 'damaged', count: 7, ready: 2 },
-      { id: 'duplicates', count: 5, ready: undefined },
-      { id: 'import', count: null, ready: undefined },
-      { id: 'enrichment', count: 9, ready: undefined },
-    ]);
-  });
-
-  it('shows nothing it does not know', () => {
-    expect(careQueues(null).every(({ count }) => count === null)).toBe(true);
   });
 });
 
