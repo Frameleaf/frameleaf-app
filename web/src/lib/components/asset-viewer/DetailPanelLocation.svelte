@@ -14,7 +14,6 @@
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { coordinateLabel, coordinatesOf, locationLabel, osmLink } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
-  import { trackSessionProtectedModal } from '$lib/frameleaf/session-access.svelte';
   import GeolocationPointPickerModal from '$lib/modals/GeolocationPointPickerModal.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -62,8 +61,7 @@
   };
 
   const onAction = async () => {
-    const modal = modalManager.open(GeolocationPointPickerModal, { asset });
-    const chosen = await trackSessionProtectedModal(modal.onClose, () => modal.close());
+    const chosen = await modalManager.show(GeolocationPointPickerModal, { asset });
     if (!chosen) {
       return;
     }
