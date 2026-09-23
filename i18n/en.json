@@ -4532,6 +4532,7 @@
   "frameleaf_transfer_dismiss_errors": "Dismiss errors",
   "frameleaf_transfer_downloads_hint": "Archives are built on the server, then saved to this device",
   "frameleaf_transfer_drop_hint": "They're added to your library as they arrive",
+  "frameleaf_transfer_drop_title": "Drop photos and videos to upload",
   "frameleaf_transfer_library_only": "Library only",
   "frameleaf_transfer_minimize_uploads": "Minimise uploads",
   "frameleaf_transfer_new_target_hint": "New uploads also join “{album}”.",
