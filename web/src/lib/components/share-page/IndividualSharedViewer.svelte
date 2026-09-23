@@ -3,26 +3,23 @@
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import RemoveFromSharedLink from '$lib/components/timeline/actions/RemoveFromSharedLinkAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
+  import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { AssetAction } from '$lib/constants';
   import '$lib/frameleaf/tokens.css';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import type { Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
-  import { downloadArchive } from '$lib/utils/asset-utils';
+  import { downloadArchive, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Icon, IconButton as ImmichIconButton, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
-  import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { mdiDownload, mdiFileImagePlusOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import GalleryViewer from '../shared-components/gallery-viewer/GalleryViewer.svelte';
 
   interface Props {
     sharedLink: SharedLinkResponseDto;
@@ -31,9 +28,15 @@
 
   let { sharedLink = $bindable(), isOwned }: Props = $props();
 
-  const viewport: Viewport = $state({ width: 0, height: 0 });
-
   let assets = $derived(sharedLink.assets);
+  const timelineAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
+
+  /**
+   * A shared link is read-only for the people it is shared with: the selection bar offers the
+   * download and nothing else. Its owner may additionally prune the link, which is why the link id
+   * only reaches the bulk context when they own it.
+   */
+  const bulkContext = $derived({ readOnly: true, sharedLinkId: isOwned ? sharedLink.id : null });
 
   // Local cursor `$state` for the single-asset shared-link path. AssetViewer's
   // `cursor` prop is non-bindable, so the owner of the cursor (this component)
@@ -75,8 +78,12 @@
     }
   };
 
-  const handleSelectAll = () => {
-    assetMultiSelectManager.selectAssets(assets.map((asset) => toTimelineAsset(asset)));
+  const handleSelectAll = () => librarySession.selectAll(assets.map((asset) => asset.id));
+
+  /** The link's own asset list is what the grid reads, so a prune drops the ids from it. */
+  const handleRemoved = (ids: string[]) => {
+    const removed = new Set(ids);
+    sharedLink = { ...sharedLink, assets: sharedLink.assets.filter((asset) => !removed.has(asset.id)) };
   };
 
   const handleAction = async (action: Action) => {
@@ -96,54 +103,39 @@
 </script>
 
 {#if sharedLink?.allowUpload || assets.length > 1}
-  <main
-    class="frameleaf isolate mx-4 mt-24 mb-40"
-    data-theme={appTheme}
-    bind:clientHeight={viewport.height}
-    bind:clientWidth={viewport.width}
-  >
-    <GalleryViewer {assets} assetInteraction={assetMultiSelectManager} {viewport} allowDeletion={false} />
+  <main class="frameleaf isolate mx-4 mt-24 mb-40" data-theme={appTheme}>
+    <ResultsView
+      assets={timelineAssets}
+      {bulkContext}
+      onSelectAll={handleSelectAll}
+      onRemoved={handleRemoved}
+      onOpen={(asset) => void navigateToAsset(asset)}
+    />
   </main>
 
   <header class="fixed inset-s-0 top-0 w-full">
-    {#if assetMultiSelectManager.selectionActive}
-      <AssetSelectControlBar>
-        <ImmichIconButton
-          shape="round"
-          color="secondary"
-          variant="ghost"
-          aria-label={$t('select_all')}
-          icon={mdiSelectAll}
-          onclick={handleSelectAll}
-        />
+    <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. The
+         Frameleaf selection bar floats over the grid rather than replacing this header. -->
+    <div class="frameleaf pv-header" data-theme={appTheme}>
+      <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
+        <Brand />
+      </a>
+      <div class="pv-actions">
+        {#if sharedLink?.allowUpload}
+          <IconButton label={$t('add_photos')} onclick={() => handleUploadAssets()}>
+            <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
+          </IconButton>
+        {/if}
         {#if sharedLink?.allowDownload}
-          <DownloadAction filename="immich-shared" />
+          <IconButton label={$t('download')} onclick={downloadAssets}>
+            <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
+          </IconButton>
         {/if}
-        {#if isOwned}
-          <RemoveFromSharedLink bind:sharedLink />
-        {/if}
-      </AssetSelectControlBar>
-    {:else}
-      <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. -->
-      <div class="frameleaf pv-header" data-theme={appTheme}>
-        <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-          <Brand />
-        </a>
-        <div class="pv-actions">
-          {#if sharedLink?.allowUpload}
-            <IconButton label={$t('add_photos')} onclick={() => handleUploadAssets()}>
-              <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
-            </IconButton>
-          {/if}
-          {#if sharedLink?.allowDownload}
-            <IconButton label={$t('download')} onclick={downloadAssets}>
-              <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
-            </IconButton>
-          {/if}
-        </div>
       </div>
-    {/if}
+    </div>
   </header>
+
+  <ResultsAssetViewer {assets} onRemove={(id) => handleRemoved([id])} emptyRoute={Route.photos()} />
 {:else if assets.length === 1}
   {#await loadSingleAsset(assets[0].id) then _}
     {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
