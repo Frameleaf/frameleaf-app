@@ -7217,6 +7217,221 @@ export type SyncUserV1 = {
     /** User profile changed at */
     profileChangedAt: string;
 };
+export type TakeoutAlbumDto = {
+    /** Items in the folder */
+    count: number;
+    /** The export folder */
+    folder: string;
+    /** The album name it becomes */
+    name: string;
+    /** Recreated by the next import */
+    selected: boolean;
+    /** One of Google’s automatic year folders */
+    year: boolean;
+};
+export type TakeoutCountsDto = {
+    failed: number;
+    /** Files found in the sources */
+    files: number;
+    /** Items going into Locked, not listed until Locked is unlocked */
+    hiddenLocked: number;
+    imported: number;
+    importing: number;
+    /** Photos and videos */
+    items: number;
+    matched: number;
+    /** Items already in the library, whose album memberships are restored */
+    matchedOriginals: number;
+    /** Items still to import that are not in the library yet */
+    newAssets: number;
+    ready: number;
+    /** Archive entries refused */
+    rejected: number;
+    review: number;
+    skipped: number;
+    /** Possible Live Photo pairs awaiting a decision */
+    suggestedPairs: number;
+    /** Live Photo pairs that could not be linked */
+    unresolvedPairs: number;
+};
+export type TakeoutOptionsResponseDto = {
+    albums: boolean;
+    archive: boolean;
+    dates: boolean;
+    descriptions: boolean;
+    favorites: boolean;
+    locations: boolean;
+    selectedAlbums?: string[];
+    sidecarReview: boolean;
+    updateMatchedMetadata: boolean;
+};
+export type TakeoutSourceResponseDto = {
+    id: string;
+    kind: TakeoutSourceKind;
+    /** The archive’s file name, or the directory’s name */
+    name: string;
+    /** Bytes staged so far; an upload resumes here */
+    received: number;
+    /** Entries refused: unsafe names, links or encryption */
+    rejected: number;
+    /** Every entry has been read */
+    scanned: boolean;
+    /** Declared archive size in bytes; zero for a directory */
+    size: number;
+};
+export type TakeoutResponseDto = {
+    /** What the latest job did or is doing */
+    action: (TakeoutAction) | null;
+    albums: TakeoutAlbumDto[];
+    counts: TakeoutCountsDto;
+    createdAt: string;
+    error: string | null;
+    errorCode: string | null;
+    id: string;
+    name: string;
+    /** The latest job, as Activity lists it */
+    operationId: string | null;
+    options: TakeoutOptionsResponseDto;
+    phase: TakeoutPhase;
+    /** Units the latest job has finished */
+    processed: number;
+    sources: TakeoutSourceResponseDto[];
+    state: TakeoutState;
+    /** Units the latest job knows of so far; grows while a scan reads its sources */
+    total: number | null;
+    updatedAt: string;
+};
+export type TakeoutCreateDto = {
+    /** Administrators only: the directory inside the root, relative to it; empty for the root itself */
+    directory?: string;
+    /** A name for this import */
+    name: string;
+    /** Administrators only: the permitted import root to read a server directory from */
+    rootId?: string;
+};
+export type TakeoutRootDto = {
+    id: string;
+    /** The directory the administrator permitted */
+    path: string;
+};
+export type TakeoutRootsResponseDto = {
+    roots: TakeoutRootDto[];
+};
+export type TakeoutArchiveCreateDto = {
+    /** The archive’s file name */
+    name: string;
+    /** The archive’s size in bytes */
+    size: number;
+};
+export type TakeoutVerifyChunkDto = {
+    /** Byte offset of the range */
+    offset: number;
+    /** SHA-256 of the range, hex */
+    sha256: string;
+    /** Length of the range */
+    size: number;
+};
+export type TakeoutControlDto = {
+    action: TakeoutControlAction;
+};
+export type TakeoutOptionsDto = {
+    /** Recreate album memberships, including for photos already in the library */
+    albums?: boolean;
+    /** Bring over archived photos as archived */
+    archive?: boolean;
+    /** Bring over the dates photos were taken */
+    dates?: boolean;
+    /** Bring over descriptions */
+    descriptions?: boolean;
+    /** Bring over favorites */
+    favorites?: boolean;
+    /** Bring over locations */
+    locations?: boolean;
+    /** Album folders to recreate; omitted means every folder that is not a year folder */
+    selectedAlbums?: string[];
+    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    sidecarReview?: boolean;
+    /** Fill metadata missing from photos already in the library; values already there are never replaced */
+    updateMatchedMetadata?: boolean;
+};
+export type TakeoutMetadataDto = {
+    /** Archived in Google Photos */
+    archived?: boolean;
+    /** When Google Photos received the photo (ISO 8601) */
+    createdAt?: string;
+    /** Description */
+    description?: string;
+    /** Favorite in Google Photos */
+    favorite?: boolean;
+    /** Latitude */
+    latitude?: number;
+    /** In the Google Photos Locked Folder; imported into Locked */
+    locked?: boolean;
+    /** Longitude */
+    longitude?: number;
+    /** When the photo was taken (ISO 8601) */
+    takenAt?: string;
+    /** File name Google Photos recorded */
+    title: string;
+    /** In the Google Photos trash; not imported */
+    trashed?: boolean;
+};
+export type TakeoutSidecarCandidateDto = {
+    id: string;
+    metadata: TakeoutMetadataDto;
+    path: string;
+};
+export type TakeoutItemResponseDto = {
+    albums: string[];
+    /** The library item it became or matched, when this session may open it */
+    assetId: string | null;
+    candidates: TakeoutSidecarCandidateDto[];
+    error: string | null;
+    folder: string;
+    id: string;
+    kind: TakeoutItemKind;
+    locked: boolean;
+    metadata: TakeoutMetadataDto;
+    /** Path inside the export */
+    path: string;
+    sidecarId: string | null;
+    size: number;
+    /** The archive or directory the file came from */
+    source: string;
+    state: TakeoutItemState;
+    warnings: TakeoutWarning[];
+};
+export type TakeoutItemsResponseDto = {
+    hiddenLocked: number;
+    items: TakeoutItemResponseDto[];
+    total: number;
+};
+export type TakeoutResolveDto = {
+    /** The sidecar to use; null imports without one */
+    sidecarId?: string | null;
+    /** True leaves the item out of the import; false brings it back */
+    skip?: boolean;
+};
+export type TakeoutPairResponseDto = {
+    error: string | null;
+    photoItemId: string;
+    photoPath: string;
+    state: TakeoutPairState;
+    videoItemId: string;
+    videoPath: string;
+};
+export type TakeoutPairsResponseDto = {
+    pairs: TakeoutPairResponseDto[];
+    total: number;
+};
+export type TakeoutPairDecisionDto = {
+    /** True links them as one Live Photo; false keeps them separate */
+    approve: boolean;
+    /** The still photo */
+    photoItemId: string;
+    /** The motion video */
+    videoItemId: string;
+};
 /**
  * List all activities
  */
@@ -13648,6 +13863,248 @@ export function tagAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * List Google Photos imports
+ */
+export function listTakeoutImports(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto[];
+    }>("/takeout", {
+        ...opts
+    }));
+}
+/**
+ * Start a Google Photos import
+ */
+export function createTakeoutImport({ takeoutCreateDto }: {
+    takeoutCreateDto: TakeoutCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TakeoutResponseDto;
+    }>("/takeout", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutCreateDto
+    })));
+}
+/**
+ * List the permitted import locations
+ */
+export function getTakeoutRoots(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutRootsResponseDto;
+    }>("/takeout/roots", {
+        ...opts
+    }));
+}
+/**
+ * Delete a Google Photos import
+ */
+export function deleteTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a Google Photos import
+ */
+export function getTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Stage a Takeout archive
+ */
+export function createTakeoutArchive({ id, takeoutArchiveCreateDto }: {
+    id: string;
+    takeoutArchiveCreateDto: TakeoutArchiveCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TakeoutSourceResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/archives`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutArchiveCreateDto
+    })));
+}
+/**
+ * Remove a staged Takeout archive
+ */
+export function deleteTakeoutArchive({ archiveId, id }: {
+    archiveId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Upload part of a Takeout archive
+ */
+export function uploadTakeoutArchiveChunk({ archiveId, id, offset, body }: {
+    archiveId: string;
+    id: string;
+    offset: number;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutSourceResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}/chunks${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts,
+        method: "PUT",
+        body
+    }));
+}
+/**
+ * Check a staged part of a Takeout archive
+ */
+export function verifyTakeoutArchiveChunk({ archiveId, id, takeoutVerifyChunkDto }: {
+    archiveId: string;
+    id: string;
+    takeoutVerifyChunkDto: TakeoutVerifyChunkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}/verify`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutVerifyChunkDto
+    })));
+}
+/**
+ * Pause, resume or cancel a Google Photos import
+ */
+export function controlTakeoutImport({ id, takeoutControlDto }: {
+    id: string;
+    takeoutControlDto: TakeoutControlDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/control`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutControlDto
+    })));
+}
+/**
+ * Import the reviewed items
+ */
+export function startTakeoutImport({ id, takeoutOptionsDto }: {
+    id: string;
+    takeoutOptionsDto: TakeoutOptionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutOptionsDto
+    })));
+}
+/**
+ * List the items of a Google Photos import
+ */
+export function getTakeoutItems({ id, limit, offset, state }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+    state?: TakeoutItemState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutItemsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        limit,
+        offset,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Choose metadata for an item, or leave it out
+ */
+export function resolveTakeoutItem({ id, itemId, takeoutResolveDto }: {
+    id: string;
+    itemId: string;
+    takeoutResolveDto: TakeoutResolveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: takeoutResolveDto
+    })));
+}
+/**
+ * List possible Live Photos in a Google Photos import
+ */
+export function getTakeoutPairs({ id, limit, offset, state }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+    state?: TakeoutPairState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutPairsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/live-photos${QS.query(QS.explode({
+        limit,
+        offset,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Link or separate a possible Live Photo
+ */
+export function decideTakeoutPair({ id, takeoutPairDecisionDto }: {
+    id: string;
+    takeoutPairDecisionDto: TakeoutPairDecisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutPairsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/live-photos`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: takeoutPairDecisionDto
+    })));
+}
+/**
+ * Scan a Google Photos import
+ */
+export function scanTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get time bucket
  */
 export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
@@ -14950,7 +15407,8 @@ export enum MediaOperationKind {
     StudioBundleImport = "studio_bundle_import",
     EnrichmentPlan = "enrichment_plan",
     MediaHealth = "media_health",
-    IcloudSync = "icloud_sync"
+    IcloudSync = "icloud_sync",
+    TakeoutImport = "takeout_import"
 }
 export enum MediaOperationBulkAction {
     Favorite = "favorite",
@@ -15535,4 +15993,63 @@ export enum VideoMomentIndexState {
     None = "none",
     Ready = "ready",
     Stale = "stale"
+}
+export enum TakeoutAction {
+    Scan = "scan",
+    Import = "import"
+}
+export enum TakeoutSourceKind {
+    Zip = "zip",
+    Directory = "directory"
+}
+export enum TakeoutPhase {
+    Sources = "sources",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Completed = "completed"
+}
+export enum TakeoutState {
+    Sources = "sources",
+    Queued = "queued",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Paused = "paused",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Completed = "completed"
+}
+export enum TakeoutControlAction {
+    Pause = "pause",
+    Resume = "resume",
+    Cancel = "cancel"
+}
+export enum TakeoutItemKind {
+    Image = "image",
+    Video = "video"
+}
+export enum TakeoutItemState {
+    Ready = "ready",
+    Review = "review",
+    Importing = "importing",
+    Imported = "imported",
+    Matched = "matched",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum TakeoutWarning {
+    AmbiguousSidecar = "ambiguous_sidecar",
+    NoSidecar = "no_sidecar",
+    InvalidSidecar = "invalid_sidecar",
+    Trashed = "trashed",
+    Locked = "locked"
+}
+export enum TakeoutPairState {
+    Suggested = "suggested",
+    Approved = "approved",
+    Skipped = "skipped",
+    Linked = "linked",
+    Failed = "failed"
 }

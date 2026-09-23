@@ -1079,6 +1079,12 @@ export enum MediaOperationKind {
    * connection's own tables are its checkpoints, so a claim resumes wherever the last one stopped.
    */
   ICloudSync = 'icloud_sync',
+  /**
+   * A Google Photos import step (FL-65): scanning staged Takeout sources, or importing the reviewed
+   * items into the owner's library. The import it works on is named in the snapshot; every step
+   * records what it has done per file, so a resumed or retried run carries on without repeating it.
+   */
+  TakeoutImport = 'takeout_import',
 }
 
 export const MediaOperationKindSchema = z
