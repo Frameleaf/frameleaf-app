@@ -37,10 +37,7 @@
     type ReviewFilter,
     type ReviewGroup,
   } from '$lib/frameleaf/duplicate-review';
-  import {
-    DuplicateReviewSession,
-    type DuplicateReviewGateway,
-  } from '$lib/frameleaf/duplicate-review-session.svelte';
+  import { DuplicateReviewSession, type DuplicateReviewGateway } from '$lib/frameleaf/duplicate-review-session.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
