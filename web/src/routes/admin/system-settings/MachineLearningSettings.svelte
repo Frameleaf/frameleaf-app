@@ -1,7 +1,7 @@
 <script lang="ts">
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
   import { isEqual } from 'lodash-es';
   import { onDestroy, onMount } from 'svelte';
@@ -22,8 +22,9 @@
   import SmartSearchSection from './machine-learning/SmartSearchSection.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
   // Optional-with-default zod fields land in the generated DTO as
   // `string | undefined`. The server always materialises them, but the
   // password bindings below need a plain string. Backfill on load so the
@@ -48,20 +49,6 @@
   const savedRunpod = $derived(config.machineLearning.runpod!);
   const runpodServerless = $derived(runpod.serverless!);
   const savedRunpodServerless = $derived(savedRunpod.serverless!);
-
-  // Clamp minMatchingFrames to frameCount at save time, NOT in a $effect.
-  // The previous `$effect` reactively clamped on every keystroke, so typing
-  // a two-digit number in `frameCount` clobbered `minMatchingFrames` between
-  // digits. The SettingField `max={frameCount}` already gives a visible
-  // UI bound; this `onBeforeSave` hook just enforces it once at submit.
-  // Marked async to satisfy SettingActions' onBeforeSave: () => Promise<boolean>.
-  const validateBeforeSave = (): Promise<boolean> => {
-    const enhancedVideo = configToEdit.machineLearning.duplicateDetection.enhancedVideo;
-    if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
-      enhancedVideo.minMatchingFrames = enhancedVideo.frameCount;
-    }
-    return Promise.resolve(true);
-  };
 
   // Managed RunPod URL polling. Surfaces "Pod state: <URL>" chip when the
   // admin has launched a pod via the Quick Actions panel.
@@ -195,7 +182,7 @@
         {disabled}
       />
 
-      <SettingActions bind:configToEdit keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
+      <SettingActions keys={['machineLearning']} {disabled} />
     </form>
   </div>
 </div>

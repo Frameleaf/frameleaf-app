@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { cloneDeep, get } from 'lodash-es';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
@@ -6,6 +7,7 @@ import {
   CQMode,
   Colorspace,
   ConfigCredential,
+  DatabaseLock,
   HlsVideoResolution,
   ImageFormat,
   LogLevel,
@@ -21,6 +23,7 @@ import {
 } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
+import { getConfigRevision } from 'src/utils/config.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -1121,7 +1124,9 @@ describe(SystemConfigService.name, () => {
     });
 
     it('should replace one credential through the validation and update events', async () => {
+      // read to validate, read again under the settings lock, read back after the write
       mocks.systemMetadata.get
+        .mockResolvedValueOnce({})
         .mockResolvedValueOnce({})
         .mockResolvedValueOnce({ oauth: { clientSecret: 'replacement' } });
 
@@ -1135,9 +1140,10 @@ describe(SystemConfigService.name, () => {
     });
 
     it('should clear one credential and report it as no longer stored', async () => {
-      mocks.systemMetadata.get.mockResolvedValueOnce(storedSecrets).mockResolvedValueOnce({
-        oauth: { clientSecret: 'oauth-secret' },
-      });
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(storedSecrets)
+        .mockResolvedValueOnce(storedSecrets)
+        .mockResolvedValueOnce({ oauth: { clientSecret: 'oauth-secret' } });
 
       await expect(sut.clearCredential(authStub.admin, ConfigCredential.SmtpPassword)).resolves.toEqual({
         name: ConfigCredential.SmtpPassword,
@@ -1200,6 +1206,267 @@ describe(SystemConfigService.name, () => {
           expect(JSON.stringify(call)).not.toContain('do-not-log-me');
         }
       }
+    });
+  });
+
+  describe('settings revision (FL-66)', () => {
+    it('should return the saved config with the revision of the saved settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      const current = await sut.getAdminConfigWithRevision();
+
+      expect(current.config.trash.days).toBe(10);
+      expect(current.revision).toBe(getConfigRevision(await sut.getConfig({ withCache: false })));
+    });
+
+    it('should report a different revision once a saved setting changes', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const before = await sut.getAdminConfigWithRevision();
+
+      mocks.systemMetadata.get.mockResolvedValue({ ...partialConfig, trash: { days: 11 } });
+      const after = await sut.getAdminConfigWithRevision();
+
+      expect(after.revision).not.toBe(before.revision);
+    });
+
+    it('should save a draft made against the current revision and return the new revision', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      const saved = await sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision });
+
+      expect(saved.revision).toBe(getConfigRevision(await sut.getConfig({ withCache: false })));
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+      expect(mocks.forkSchema.persistConfig).toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'ConfigUpdate',
+        expect.objectContaining({ newConfig: expect.any(Object) }),
+      );
+    });
+
+    it('should refuse a draft made against settings that changed since, and change nothing', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      // Another administrator saves in between.
+      mocks.systemMetadata.get.mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+    });
+
+    it('should check the revision before validating, so a stale draft never reaches the validators', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: 'stale' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigValidate', expect.anything());
+    });
+
+    it('should refuse a draft when another save lands between validation and the write', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      // Validation still sees the loaded settings; under the lock the settings have moved on.
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(partialConfig)
+        .mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigValidate', expect.anything());
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+    });
+
+    it('should prepare and validate a save without a revision again when the settings moved on', async () => {
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(partialConfig)
+        .mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await sut.updateAdminConfig(updatedConfig);
+
+      const validations = mocks.event.emit.mock.calls.filter(([name]) => name === 'ConfigValidate');
+      expect(validations).toHaveLength(2);
+      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep the re-queue reminder saved in between rather than the one seen at validation', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce(partialConfig).mockResolvedValue({
+        ...partialConfig,
+        machineLearning: { imageDescription: { pendingRequeueAt: '2026-09-23T10:00:00.000Z' } },
+      });
+
+      await sut.updateAdminConfig(cloneDeep(updatedConfig));
+
+      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)![1] as SystemConfig;
+      expect(persisted.machineLearning.imageDescription.pendingRequeueAt).toBe('2026-09-23T10:00:00.000Z');
+    });
+
+    it('should serialize saves without a revision through the same lock', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      await sut.updateAdminConfig(updatedConfig);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+    });
+
+    it('should write the re-queue reminder under the settings lock from the saved settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ...partialConfig,
+        machineLearning: { imageDescription: { enabled: true } },
+      });
+
+      await sut.deferDescriptionRequeue();
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+    });
+
+    it('should refuse a revisioned save while a config file is in use', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({}));
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: defaults, expectedRevision: 'any' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.database.withLock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('concurrent saves and write-only credentials (FL-66)', () => {
+    /**
+     * A settings store the service really reads and writes, and a settings lock that really
+     * serializes: what one save writes is what the next read under the lock sees.
+     */
+    const useStatefulStore = (initial: DeepPartial<SystemConfig>) => {
+      let stored = cloneDeep(initial);
+      let queue: Promise<unknown> = Promise.resolve();
+      mocks.systemMetadata.get.mockImplementation(() => Promise.resolve(cloneDeep(stored)));
+      mocks.forkSchema.persistConfig.mockImplementation((partial: DeepPartial<SystemConfig>) => {
+        stored = cloneDeep(partial);
+        return Promise.resolve();
+      });
+      mocks.database.withLock.mockImplementation((_lock, fn) => {
+        const run = queue.then(() => fn());
+        queue = run.catch(() => {});
+        return run;
+      });
+      return { stored: () => stored };
+    };
+
+    /** Holds the first validation of the draft save until `release()`, like a slow SMTP check. */
+    const holdFirstValidation = () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let reached!: () => void;
+      const waiting = new Promise<void>((resolve) => (reached = resolve));
+      let held = false;
+      mocks.event.emit.mockImplementation(async (...[name]) => {
+        if (name === 'ConfigValidate' && !held) {
+          held = true;
+          reached();
+          await gate;
+        }
+      });
+      return { release, waiting };
+    };
+
+    const savedSecrets = {
+      notifications: { smtp: { transport: { host: 'mail.example', username: 'frameleaf', password: 'smtp-old' } } },
+      oauth: { issuerUrl: 'https://id.example', clientSecret: 'oauth-old' },
+      machineLearning: { runpod: { apiKey: 'rp_old', hfToken: 'hf_old' } },
+    };
+
+    it.each([
+      [ConfigCredential.RunPodApiKey, 'machineLearning.runpod.apiKey', 'rp_new'],
+      [ConfigCredential.HuggingFaceToken, 'machineLearning.runpod.hfToken', 'hf_new'],
+      [ConfigCredential.SmtpPassword, 'notifications.smtp.transport.password', 'smtp-new'],
+      [ConfigCredential.OAuthClientSecret, 'oauth.clientSecret', 'oauth-new'],
+    ])('should keep a %s replaced while a draft save was validating', async (name, path, replacement) => {
+      const store = useStatefulStore(savedSecrets);
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+      const hold = holdFirstValidation();
+
+      // Administrator A saves a draft that changes the trash setting and sends every
+      // credential back empty ("keep the stored one").
+      const draftSave = sut.updateAdminConfigWithRevision(
+        { config: { ...config, trash: { ...config.trash, days: 12 } }, expectedRevision: revision },
+        authStub.admin,
+      );
+      await hold.waiting;
+
+      // Administrator B replaces the credential meanwhile. It stays configured, so the settings
+      // revision (which never digests a secret) does not change and A's draft is not stale.
+      await sut.setCredential(authStub.admin, name, { value: replacement });
+      expect(get(store.stored(), path)).toBe(replacement);
+
+      hold.release();
+      await draftSave;
+
+      expect(store.stored().trash?.days).toBe(12);
+      expect(get(store.stored(), path)).toBe(replacement);
+    });
+
+    it('should keep a credential replaced while a save without a revision was validating', async () => {
+      const store = useStatefulStore(savedSecrets);
+      const config = await sut.getAdminConfig();
+      const hold = holdFirstValidation();
+
+      const save = sut.updateAdminConfig({ ...config, trash: { ...config.trash, days: 12 } }, authStub.admin);
+      await hold.waiting;
+      await sut.setCredential(authStub.admin, ConfigCredential.RunPodApiKey, { value: 'rp_new' });
+      hold.release();
+      await save;
+
+      expect(store.stored().trash?.days).toBe(12);
+      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_new');
+    });
+
+    it('should refuse a draft save when a credential was cleared while it was validating', async () => {
+      const store = useStatefulStore(savedSecrets);
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+      const hold = holdFirstValidation();
+
+      const draftSave = sut.updateAdminConfigWithRevision(
+        { config: { ...config, trash: { ...config.trash, days: 12 } }, expectedRevision: revision },
+        authStub.admin,
+      );
+      await hold.waiting;
+      await sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken);
+      hold.release();
+
+      // Clearing changes whether the token is set, which is part of the revision: the draft
+      // is refused and nothing it carried brings the token back.
+      await expect(draftSave).rejects.toBeInstanceOf(ConflictException);
+      expect(store.stored().machineLearning?.runpod?.hfToken).toBeUndefined();
+      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_old');
+    });
+
+    it('should not undo a draft save that landed while a credential change was validating', async () => {
+      const store = useStatefulStore(savedSecrets);
+      const hold = holdFirstValidation();
+
+      const credentialSave = sut.setCredential(authStub.admin, ConfigCredential.RunPodApiKey, { value: 'rp_new' });
+      await hold.waiting;
+
+      // Meanwhile another administrator saves settings.
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+      await sut.updateAdminConfigWithRevision(
+        { config: { ...config, trash: { ...config.trash, days: 12 } }, expectedRevision: revision },
+        authStub.admin,
+      );
+
+      hold.release();
+      await credentialSave;
+
+      expect(store.stored().trash?.days).toBe(12);
+      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_new');
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
     });
   });
 

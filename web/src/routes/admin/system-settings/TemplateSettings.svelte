@@ -2,20 +2,18 @@
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import EmailTemplatePreviewModal from '$lib/modals/EmailTemplatePreviewModal.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { type AdminConfigDto, type AdminConfigTemplateEmailsDto, getNotificationTemplateAdmin } from '@immich/sdk';
+  import { type AdminConfigTemplateEmailsDto, getNotificationTemplateAdmin } from '@immich/sdk';
   import { Button, Icon, LoadingSpinner, modalManager } from '@immich/ui';
   import { mdiEyeOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
-  interface Props {
-    config: AdminConfigDto;
-  }
-
-  let { config = $bindable() }: Props = $props();
+  // FL-66: the templates are part of the one settings draft.
+  const settingsDraft = requireSystemConfigDraft();
+  const config = $derived(settingsDraft.draft);
 
   let loadingPreview = $state(false);
 
@@ -53,7 +51,7 @@
   ];
 
   const isEdited = (templateKey: keyof AdminConfigTemplateEmailsDto) =>
-    config.templates.email[templateKey] !== systemConfigManager.value.templates.email[templateKey];
+    config.templates.email[templateKey] !== settingsDraft.baseline.templates.email[templateKey];
 
   const onsubmit = (event: Event) => {
     event.preventDefault();

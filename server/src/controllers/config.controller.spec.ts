@@ -133,6 +133,58 @@ describe('config controllers', () => {
     });
   });
 
+  describe('GET /admin/config/revision (FL-66)', () => {
+    it('should return the saved config with its revision', async () => {
+      service.getAdminConfigWithRevision.mockResolvedValue({ config: validConfig(), revision: 'abc123' });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/revision');
+
+      expect(status).toBe(200);
+      expect(body.revision).toBe('abc123');
+      expect(body.config.trash).toEqual(defaults.trash);
+    });
+  });
+
+  describe('PUT /admin/config/revision (FL-66)', () => {
+    it('should pass the config and the expected revision to the service', async () => {
+      service.updateAdminConfigWithRevision.mockImplementation(({ config }) =>
+        Promise.resolve({ config, revision: 'next' }),
+      );
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config: validConfig(), expectedRevision: 'abc123' });
+
+      expect(status).toBe(200);
+      expect(body.revision).toBe('next');
+      expect(service.updateAdminConfigWithRevision).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedRevision: 'abc123' }),
+        undefined,
+      );
+    });
+
+    it('should require the revision the changes were made against', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config: validConfig() });
+
+      expect(status).toBe(400);
+      expect(service.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    });
+
+    it('should validate the config the same way as PUT /admin/config', async () => {
+      const config = validConfig();
+      config.nightlyTasks.startTime = 'invalid';
+
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/revision')
+        .send({ config, expectedRevision: 'abc123' });
+
+      expect(status).toBe(400);
+      expect(service.updateAdminConfigWithRevision).not.toHaveBeenCalled();
+    });
+  });
+
   describe('GET /config', () => {
     it('should return the properties visible to logged in users', async () => {
       service.getUserConfig.mockResolvedValue(mapUserConfig(validConfig()));
