@@ -2,7 +2,11 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Insertable } from 'kysely';
+import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import type { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository.js';
@@ -21,6 +25,7 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  EnrichmentStaleReason,
   ImmichWorker,
   JobName,
   JobStatus,
@@ -33,6 +38,7 @@ import {
 import { ArgOf } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -41,6 +47,7 @@ import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { updateLockedColumns } from 'src/utils/database.js';
+import { enrichmentStaleReason, identityHash } from 'src/utils/enrichment-plan.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import {
   isImageDescriptionEnabled,
@@ -49,6 +56,7 @@ import {
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
 import { upsertTags } from 'src/utils/tag.js';
+import { ensureVideoFrames, withTemporaryFrames } from 'src/utils/video-moment-frames.js';
 
 type EnrichmentReview = {
   action: 'accepted' | 'marked-safe' | 'marked-nsfw';
@@ -70,6 +78,8 @@ type EnrichmentTask<T> =
       appliedTagValues?: string[];
       /** Identity validation flags recorded after post-processing the ML description. */
       identityFlags?: { hallucinatedNames?: string[]; ambiguousReferences?: string[] };
+      /** What the result was made from (FL-59); a change to any of it makes the result stale. */
+      provenance?: EnrichmentResultProvenance;
     }
   | {
       status: 'failed';
@@ -95,6 +105,72 @@ type EnrichmentMetadata = {
   description?: DescriptionEnrichmentTask;
   nsfwDetection?: NsfwEnrichmentTask;
 };
+
+/** Provenance pinned on a generated result (FL-59). */
+type EnrichmentResultProvenance = {
+  /** The ML destination that produced it (FL-110). */
+  destinationId?: string;
+  /** Digest of the confirmed names the prompt was given. */
+  identityHash?: string;
+  /** Fingerprint of the original it was made from. */
+  sourceFingerprint?: string;
+  /** The enrichment plan configuration digest, when a plan produced it. */
+  planConfigHash?: string;
+};
+
+/**
+ * How an enrichment plan (FL-59) runs a stage: the destinations and configuration it pinned at
+ * submit. A queue job passes nothing and gets the routed destinations and the saved configuration.
+ */
+export type EnrichmentRunOptions = {
+  enrichmentDestinationId?: string | null;
+  searchDestinationId?: string | null;
+  imageDescription?: Partial<Pick<
+    SystemConfig['machineLearning']['imageDescription'],
+    'modelName' | 'fallbackModelName' | 'device' | 'acceleration' | 'prompt'
+  >>;
+  nsfwDetection?: Partial<Pick<SystemConfig['machineLearning']['nsfwDetection'], 'modelName' | 'threshold' | 'device'>>;
+  clipModelName?: string;
+  configHash?: string;
+  /** The durable job the requests belong to, recorded with the destination's accounting. */
+  jobId?: string;
+  /**
+   * Set by an enrichment plan. A plan only ever uses the destinations it pinned: a workload it
+   * pinned none for is not sent anywhere, never to the routed destination instead.
+   */
+  planRun?: boolean;
+};
+
+/** What one stage did to one asset, for the plan's per-asset record. */
+export type EnrichmentStageResult = { status: JobStatus; reasonKey?: string; message?: string };
+
+/** A description made with a draft model and prompt, and written nowhere (FL-59). */
+export type DescriptionPreview =
+  | {
+      status: 'success';
+      current: string | null;
+      candidate: string;
+      tags: string[];
+      identityFlags?: { hallucinatedNames?: string[]; ambiguousReferences?: string[] };
+      warnings: string[];
+      modelName: string;
+      destinationId: string;
+      frameCount: number;
+      durationMs: number;
+    }
+  | { status: 'failed'; current: string | null; message: string; warnings: string[] }
+  | { status: 'skipped'; reasonKey: string };
+
+/** The saved configuration with a plan's pinned values laid over it. Enable switches stay the saved ones. */
+const withPinnedConfig = (
+  machineLearning: SystemConfig['machineLearning'],
+  options: EnrichmentRunOptions,
+): SystemConfig['machineLearning'] => ({
+  ...machineLearning,
+  imageDescription: { ...machineLearning.imageDescription, ...options.imageDescription },
+  nsfwDetection: { ...machineLearning.nsfwDetection, ...options.nsfwDetection },
+  clip: { ...machineLearning.clip, ...(options.clipModelName ? { modelName: options.clipModelName } : {}) },
+});
 
 const GENERATED_DESCRIPTION_PREFIX = 'AI description:';
 const HIGH_CONFIDENCE = 'high';
@@ -189,7 +265,38 @@ export class ImageEnrichmentService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id], ignorePrivacy: true });
 
     const metadata = await this.getEnrichmentMetadata(id);
-    return this.toResponse(id, metadata);
+    return this.toResponse(id, metadata, await this.getDescriptionStaleReason(id, metadata));
+  }
+
+  /**
+   * Whether the stored generated description no longer describes what it claims to (FL-59): the
+   * original was replaced, a face correction changed the confirmed names it was given, or the
+   * saved prompt changed. Manual text is never judged; only the generated result is.
+   */
+  private async getDescriptionStaleReason(
+    id: string,
+    metadata: EnrichmentMetadata,
+  ): Promise<EnrichmentStaleReason | null> {
+    const description = metadata.description;
+    if (description?.status !== 'success') {
+      return null;
+    }
+
+    const asset = await this.assetRepository.getById(id);
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const knownPersons = asset ? await this.getKnownPersonsForAsset(id, asset.ownerId) : [];
+    return enrichmentStaleReason(
+      {
+        sourceFingerprint: description.provenance?.sourceFingerprint,
+        identityHash: description.provenance?.identityHash,
+        configHash: description.configHash,
+      },
+      {
+        sourceFingerprint: await this.getSourceFingerprint(id),
+        identityHash: identityHash(knownPersons.map(({ name }) => name)),
+        configHash: promptConfigHash(machineLearning.imageDescription.prompt),
+      },
+    );
   }
 
   async updateAssetEnrichment(
@@ -486,30 +593,45 @@ export class ImageEnrichmentService extends BaseService {
 
   @OnJob({ name: JobName.NsfwDetection, queue: QueueName.NsfwDetection })
   async handleNsfwDetection({ id }: JobOf<JobName.NsfwDetection>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: true });
+    return (await this.detectLockedContent(id)).status;
+  }
+
+  /**
+   * The Locked-content check of one photo. The queue job runs it with the routed destination and the
+   * saved model; an enrichment plan (FL-59) runs it with the destination and model it pinned.
+   */
+  async detectLockedContent(id: string, options: EnrichmentRunOptions = {}): Promise<EnrichmentStageResult> {
+    const config = await this.getConfig({ withCache: true });
+    const machineLearning = withPinnedConfig(config.machineLearning, options);
     if (!isNsfwDetectionEnabled(machineLearning)) {
-      return JobStatus.Skipped;
+      return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
 
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleImage(asset)) {
-      return JobStatus.Skipped;
+      return {
+        status: JobStatus.Skipped,
+        reasonKey: asset?.type === AssetType.Video ? 'not-an-image' : 'not-eligible',
+      };
     }
 
     if (!asset.previewFile) {
-      return JobStatus.Skipped;
+      return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
 
     // ML inference runs outside the per-asset lock — it can take hundreds of
     // ms and would otherwise hold the transaction's connection long enough to
     // starve the pool under parallel jobs.
     let result: NsfwDetectionResult;
+    let destinationId: string;
     try {
-      const selection = await this.selectRoutedMlDestination({
-        workload: MlWorkload.Enrichment,
-        jobId: id,
-        jobName: JobName.NsfwDetection,
-      });
+      const selection = await this.selectEnrichmentDestination(
+        MlWorkload.Enrichment,
+        JobName.NsfwDetection,
+        id,
+        options,
+      );
+      destinationId = selection.destinationId;
       result = await this.machineLearningRepository.detectNsfw(
         selection,
         asset.previewFile!,
@@ -526,7 +648,7 @@ export class ImageEnrichmentService extends BaseService {
         };
         await this.saveEnrichmentMetadata(id, m, trx);
       });
-      return JobStatus.Failed;
+      return { status: JobStatus.Failed, reasonKey: 'model-error', message: getErrorMessage(error) };
     }
 
     // Serialize the RMW of the metadata blob against concurrent reviewer
@@ -543,6 +665,7 @@ export class ImageEnrichmentService extends BaseService {
         result,
         appliedTagHash,
         appliedTagValues,
+        provenance: { destinationId, ...(options.configHash ? { planConfigHash: options.configHash } : {}) },
       };
       await this.saveEnrichmentMetadata(id, m, trx);
       return m;
@@ -558,33 +681,50 @@ export class ImageEnrichmentService extends BaseService {
 
     await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
-    return JobStatus.Success;
+    return { status: JobStatus.Success };
   }
 
   @OnJob({ name: JobName.ImageDescription, queue: QueueName.ImageDescription })
   async handleImageDescription({ id }: JobOf<JobName.ImageDescription>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: true });
+    return (await this.describeAsset(id)).status;
+  }
+
+  /**
+   * Describe one photo or video. The queue job runs it with the routed destination and the saved
+   * model and prompt; an enrichment plan (FL-59) runs it with the destination and configuration it
+   * pinned, so a plan never changes model or destination partway through.
+   *
+   * A video is described from its reusable frames (FL-59), cut here when it has none yet. Duplicate
+   * detection is not a prerequisite any more.
+   *
+   * Every successful description records its provenance: the destination, the prompt digest, the
+   * digest of the confirmed names it was given and the fingerprint of the original. If the original
+   * is replaced while the model is working, the result is not published (`source-changed`).
+   */
+  async describeAsset(id: string, options: EnrichmentRunOptions = {}): Promise<EnrichmentStageResult> {
+    const config = await this.getConfig({ withCache: true });
+    const machineLearning = withPinnedConfig(config.machineLearning, options);
     if (!isImageDescriptionEnabled(machineLearning)) {
-      return JobStatus.Skipped;
+      return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
 
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleForDescription(asset)) {
-      return JobStatus.Skipped;
+      return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
     }
 
     if (!asset.previewFile) {
-      return JobStatus.Skipped;
+      return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
 
-    // For videos, build a composite grid from the per-video duplicate-detection
-    // frames. When none exist (enhanced video dedup off or not yet run for this
-    // asset), persist a `skipped` status with `video-frames-unavailable` so the
-    // admin badge can explain why and bail without invoking the model — a single
-    // video thumbnail is usually a poor input.
+    const fingerprintBefore = await this.getSourceFingerprint(id);
+
+    // A video is described as a grid of its reusable frames. When none can be cut (too short, too
+    // long, unreadable), persist a `skipped` status with `video-frames-unavailable` so the badge can
+    // explain why, and bail without invoking the model — a single thumbnail is a poor input.
     let videoGrid: { path: string; videoContext: VideoContext } | undefined;
     if (asset.type === AssetType.Video) {
-      videoGrid = await this.prepareVideoGrid(asset.id, asset.ownerId);
+      videoGrid = await this.prepareVideoGrid(asset.id, asset.ownerId, config);
       if (!videoGrid) {
         await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
           const m = await this.getEnrichmentMetadata(id, trx);
@@ -595,7 +735,7 @@ export class ImageEnrichmentService extends BaseService {
           };
           await this.saveEnrichmentMetadata(id, m, trx);
         });
-        return JobStatus.Skipped;
+        return { status: JobStatus.Skipped, reasonKey: 'video-frames-unavailable' };
       }
     }
 
@@ -611,11 +751,12 @@ export class ImageEnrichmentService extends BaseService {
       try {
         // NSFW always runs against the preview thumbnail, not the composite
         // grid — the classifier is calibrated for single-image input.
-        const selection = await this.selectRoutedMlDestination({
-          workload: MlWorkload.Enrichment,
-          jobId: id,
-          jobName: JobName.ImageDescription,
-        });
+        const selection = await this.selectEnrichmentDestination(
+          MlWorkload.Enrichment,
+          JobName.ImageDescription,
+          id,
+          options,
+        );
         nsfw = await this.machineLearningRepository.detectNsfw(
           selection,
           asset.previewFile!,
@@ -642,6 +783,7 @@ export class ImageEnrichmentService extends BaseService {
     const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
 
     let result: ImageDescriptionResult;
+    let destinationId: string;
     try {
       const { prompt } = this.promptAssembler.build({
         config: machineLearning.imageDescription.prompt,
@@ -649,11 +791,13 @@ export class ImageEnrichmentService extends BaseService {
         nsfw: nsfw ? { isNsfw: nsfw.isNsfw } : null,
         videoContext: videoGrid?.videoContext,
       });
-      const selection = await this.selectRoutedMlDestination({
-        workload: MlWorkload.Enrichment,
-        jobId: id,
-        jobName: JobName.ImageDescription,
-      });
+      const selection = await this.selectEnrichmentDestination(
+        MlWorkload.Enrichment,
+        JobName.ImageDescription,
+        id,
+        options,
+      );
+      destinationId = selection.destinationId;
       result = await this.machineLearningRepository.describeImage(
         selection,
         descriptionInputPath,
@@ -672,13 +816,18 @@ export class ImageEnrichmentService extends BaseService {
         };
         await this.saveEnrichmentMetadata(id, m, trx);
       });
-      return JobStatus.Failed;
+      return { status: JobStatus.Failed, reasonKey: 'model-error', message: getErrorMessage(error) };
     } finally {
-      // Composite grid is cheap to regenerate from the persisted
-      // duplicate-detection frames; clean up after every run.
+      // The composite grid is cheap to rebuild from the reusable frames; clean up after every run.
       if (videoGrid) {
         await this.storageRepository.unlink(videoGrid.path).catch(() => {});
       }
+    }
+
+    // The original was replaced while the model was working: this description is of a file the
+    // library no longer holds. Publish nothing; the next run describes the new original.
+    if (fingerprintBefore && (await this.getSourceFingerprint(id)) !== fingerprintBefore) {
+      return { status: JobStatus.Skipped, reasonKey: 'source-changed' };
     }
 
     // Post-validate the ML description against known persons: strip any
@@ -696,6 +845,13 @@ export class ImageEnrichmentService extends BaseService {
         identityFlags = flags;
       }
     }
+
+    const provenance: EnrichmentResultProvenance = {
+      destinationId,
+      identityHash: identityHash(knownPersons.map(({ name }) => name)),
+      ...(fingerprintBefore ? { sourceFingerprint: fingerprintBefore } : {}),
+      ...(options.configHash ? { planConfigHash: options.configHash } : {}),
+    };
 
     // Phase: serialize the RMW so reviewer / NSFW writes can't clobber the
     // description (and vice versa). ML inference is already done above.
@@ -728,6 +884,7 @@ export class ImageEnrichmentService extends BaseService {
           updatedAt: new Date().toISOString(),
           result,
           configHash: promptConfigHash(machineLearning.imageDescription.prompt),
+          provenance,
           ...(identityFlags && { identityFlags }),
         };
         await this.saveEnrichmentMetadata(id, m, trx);
@@ -738,8 +895,10 @@ export class ImageEnrichmentService extends BaseService {
     // a sensitive verdict from either the detector or the description locks it (FL-34)
     await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
-    if (isSmartSearchEnabled(machineLearning)) {
-      await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip);
+    // A plan that pinned no search destination (search was off when it was queued) leaves the
+    // description embedding alone rather than sending the text to an unpinned destination.
+    if (isSmartSearchEnabled(machineLearning) && !(options.planRun && !options.searchDestinationId)) {
+      await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip, options);
     }
 
     const changed = await this.applyVisibleMetadata({
@@ -773,10 +932,163 @@ export class ImageEnrichmentService extends BaseService {
       this.logger.warn(`Smart-album evaluation failed for asset ${asset.id}: ${getErrorMessage(error)}`);
     }
 
-    return JobStatus.Success;
+    return { status: JobStatus.Success };
   }
 
-  private toResponse(id: string, metadata: EnrichmentMetadata): AssetImageEnrichmentResponseDto {
+  /**
+   * Describe one asset with a draft model and prompt, and write nothing (FL-59, sample-first
+   * enrichment). The stored description, tags, Locked state, embeddings and frames are untouched:
+   * a video without reusable frames is cut into a temporary folder that is removed afterwards, and
+   * the Locked-content verdict is read, not recomputed. The only record is the destination's own
+   * request accounting (FL-110).
+   */
+  async previewDescription(
+    id: string,
+    options: { imageDescription: SystemConfig['machineLearning']['imageDescription']; destinationId: string },
+  ): Promise<DescriptionPreview> {
+    const config = await this.getConfig({ withCache: true });
+    const asset = await this.assetJobRepository.getForImageEnrichment(id);
+    if (!asset || !this.isEligibleForDescription(asset) || !asset.previewFile) {
+      return { status: 'skipped', reasonKey: 'not-eligible' };
+    }
+
+    const stored = await this.getEnrichmentMetadata(id);
+    const nsfw = this.getStoredNsfw(stored);
+    const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
+    const current = stored.description?.status === 'success' ? stored.description.result.description : null;
+    const startedAt = Date.now();
+
+    const describe = async (inputPath: string, videoContext?: VideoContext): Promise<DescriptionPreview> => {
+      const { prompt, warnings } = this.promptAssembler.build({
+        config: options.imageDescription.prompt,
+        knownPersons,
+        nsfw: nsfw ? { isNsfw: nsfw.isNsfw } : null,
+        videoContext,
+      });
+      try {
+        const selection = await this.selectMlDestination({
+          workload: MlWorkload.Enrichment,
+          destinationId: options.destinationId,
+          jobId: id,
+          jobName: 'enrichment-preview',
+        });
+        let result = await this.machineLearningRepository.describeImage(
+          selection,
+          inputPath,
+          options.imageDescription,
+          nsfw,
+          prompt,
+        );
+        let identityFlags: { hallucinatedNames?: string[]; ambiguousReferences?: string[] } | undefined;
+        if (result.description && knownPersons.length > 0) {
+          const { description, flags } = this.identityPostValidator.validate(result.description, knownPersons);
+          result = { ...result, description };
+          if (flags.hallucinatedNames || flags.ambiguousReferences) {
+            identityFlags = flags;
+          }
+        }
+        return {
+          status: 'success',
+          current,
+          candidate: result.description,
+          tags: result.tags ?? [],
+          identityFlags,
+          warnings,
+          modelName: options.imageDescription.modelName,
+          destinationId: selection.destinationId,
+          frameCount: videoContext?.timestampsMs.length ?? 0,
+          durationMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        return { status: 'failed', current, message: getErrorMessage(error), warnings };
+      }
+    };
+
+    if (asset.type !== AssetType.Video) {
+      return describe(asset.previewFile);
+    }
+
+    const moments = this.videoMoments;
+    if (!moments) {
+      return { status: 'skipped', reasonKey: 'video-frames-unavailable' };
+    }
+
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-description-preview-'));
+    try {
+      const gridPath = join(folder, 'grid.jpeg');
+      const fingerprint = await this.getSourceFingerprint(id);
+      const [index, frames] = await Promise.all([moments.getIndex(id), moments.getFrames(id)]);
+      if (index && frames.length >= 2 && index.sourceFingerprint === fingerprint) {
+        const grid = await this.composeGrid(frames, gridPath, id);
+        return grid
+          ? describe(grid.path, grid.videoContext)
+          : { status: 'skipped', reasonKey: 'video-frames-unavailable' };
+      }
+
+      const described = await withTemporaryFrames(
+        { media: this.mediaRepository, storage: this.storageRepository, moments, logger: this.logger },
+        id,
+        config,
+        async (cut) => {
+          const grid = await this.composeGrid(cut, gridPath, id);
+          return grid ? describe(grid.path, grid.videoContext) : undefined;
+        },
+      );
+      return described ?? { status: 'skipped', reasonKey: 'video-frames-unavailable' };
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Admit one request against the destination a plan pinned (FL-110) or, without one, the routed
+   * destination. Never a different one: a pinned destination that is gone or refuses fails the
+   * stage in place.
+   */
+  private selectEnrichmentDestination(
+    workload: MlWorkload,
+    jobName: JobName,
+    assetId: string,
+    options: EnrichmentRunOptions,
+  ) {
+    const destinationId = workload === MlWorkload.Clip ? options.searchDestinationId : options.enrichmentDestinationId;
+    const jobId = options.jobId ?? assetId;
+    if (options.planRun && !destinationId) {
+      throw new BadRequestException(`This plan has no processing destination for ${workload}`);
+    }
+    return destinationId
+      ? this.selectMlDestination({ workload, destinationId, jobId, jobName })
+      : this.selectRoutedMlDestination({ workload, jobId, jobName });
+  }
+
+  /** Reusable frames (FL-59), on the injected database. Tests hand one in with `useVideoMomentRepository`. */
+  private _videoMoments?: VideoMomentRepository;
+
+  private get videoMoments(): VideoMomentRepository | undefined {
+    if (!this._videoMoments && this.db) {
+      this._videoMoments = new VideoMomentRepository(this.db);
+    }
+    return this._videoMoments;
+  }
+
+  useVideoMomentRepository(repository: VideoMomentRepository) {
+    this._videoMoments = repository;
+  }
+
+  /** The fingerprint of the asset's original now, or undefined when it cannot be read. */
+  private async getSourceFingerprint(id: string): Promise<string | undefined> {
+    const moments = this.videoMoments;
+    if (!moments) {
+      return undefined;
+    }
+    return (await moments.getFingerprints([id])).get(id);
+  }
+
+  private toResponse(
+    id: string,
+    metadata: EnrichmentMetadata,
+    staleReason: EnrichmentStaleReason | null = null,
+  ): AssetImageEnrichmentResponseDto {
     const description = metadata.description;
     const nsfwDetection = metadata.nsfwDetection;
 
@@ -797,6 +1109,8 @@ export class ImageEnrichmentService extends BaseService {
               context: description.result.context,
               appliedDescription: !!description.appliedDescriptionHash,
               appliedTags: !!description.appliedTagHash,
+              destinationId: description.provenance?.destinationId,
+              staleReason: staleReason ?? undefined,
             }
           : {
               status: description?.status ?? 'missing',
@@ -996,6 +1310,7 @@ export class ImageEnrichmentService extends BaseService {
     assetId: string,
     description: string,
     clipConfig: { modelName: string },
+    options: EnrichmentRunOptions = {},
   ): Promise<void> {
     const text = description?.trim();
     if (!text) {
@@ -1005,11 +1320,12 @@ export class ImageEnrichmentService extends BaseService {
       return;
     }
     try {
-      const selection = await this.selectRoutedMlDestination({
-        workload: MlWorkload.Clip,
-        jobId: assetId,
-        jobName: JobName.ImageDescription,
-      });
+      const selection = await this.selectEnrichmentDestination(
+        MlWorkload.Clip,
+        JobName.ImageDescription,
+        assetId,
+        options,
+      );
       const embedding = await this.machineLearningRepository.encodeText(selection, text, {
         modelName: clipConfig.modelName,
       });
@@ -1445,29 +1761,51 @@ export class ImageEnrichmentService extends BaseService {
   }
 
   /**
-   * Build a composite frame-grid image for a video asset from the rows in
-   * `asset_video_duplicate_frame`. Returns null when no frames are persisted —
-   * the caller surfaces this as a `skipped` description with reason
-   * `video-frames-unavailable` so the admin badge can explain why.
-   *
-   * Grid layout escalates with frame count: 2 → 1×2, 3-4 → 2×2, 5-6 → 2×3,
-   * 7+ → 3×3 (subsampling evenly when >9 frames exist).
+   * Build a composite frame-grid image of a video from its reusable frames (FL-59), cutting them
+   * first when the video has none or its original changed. Duplicate detection plays no part.
+   * Returns undefined when no frames can be had — the caller surfaces this as a `skipped`
+   * description with reason `video-frames-unavailable`.
    */
   private async prepareVideoGrid(
     assetId: string,
     ownerId: string,
+    config: SystemConfig,
   ): Promise<{ path: string; videoContext: VideoContext } | undefined> {
-    const frames = await this.duplicateRepository.getVideoDuplicateFrames([assetId]);
+    const moments = this.videoMoments;
+    if (!moments) {
+      return undefined;
+    }
+
+    const outcome = await ensureVideoFrames(
+      { media: this.mediaRepository, storage: this.storageRepository, moments, logger: this.logger },
+      assetId,
+      config,
+    );
+    if (outcome.status !== 'cut' && outcome.status !== 'current') {
+      return undefined;
+    }
+
+    const outputPath = StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_description_grid.jpeg`);
+    this.storageCore.ensureFolders(outputPath);
+    return this.composeGrid(outcome.frames, outputPath, assetId);
+  }
+
+  /**
+   * Lay frames out in time order as one grid image. Layout escalates with frame count: 2 → 1×2,
+   * 3-4 → 2×2, 5-6 → 2×3, 7+ → 3×3 (subsampling evenly when more than nine exist).
+   */
+  private async composeGrid(
+    frames: readonly { path: string; timestampMs: number }[],
+    outputPath: string,
+    assetId: string,
+  ): Promise<{ path: string; videoContext: VideoContext } | undefined> {
     if (frames.length < 2) {
       return undefined;
     }
 
-    const layout = chooseGridLayout(frames.length);
-    const totalCells = layout.cols * layout.rows;
-    const selected = subsampleFrames(frames, totalCells);
-
-    const outputPath = StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_description_grid.jpeg`);
-    this.storageCore.ensureFolders(outputPath);
+    const ordered = [...frames].sort((a, b) => a.timestampMs - b.timestampMs);
+    const layout = chooseGridLayout(ordered.length);
+    const selected = subsampleFrames(ordered, layout.cols * layout.rows);
 
     try {
       await this.mediaRepository.composeImageGrid(

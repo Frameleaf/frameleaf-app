@@ -1,5 +1,12 @@
 import { AssetJobName } from 'src/dtos/asset.dto.js';
 import { AssetVisibility, MediaOperationBulkAction, MediaOperationItemStatus, Permission } from 'src/enum.js';
+import {
+  type DuplicateGroupDecision,
+  duplicateDecisionProblem,
+  duplicateGroupIndex,
+  groupAlignedBatchSize,
+  parseDuplicateGroups,
+} from 'src/utils/duplicate-review.js';
 
 /**
  * The durable rules for a bulk media operation (FL-32), kept free of the database and of NestJS so
@@ -49,6 +56,8 @@ export type BulkOperationPayload = {
   stackIds?: string[];
   /** Still + motion video pairs to relink (FL-70). Every id in this list is also in `assetIds`. */
   pairs?: { photoId: string; videoId: string }[];
+  /** Duplicate review decisions (FL-61): one complete group each, members in job order. */
+  duplicateGroups?: DuplicateGroupDecision[];
   /**
    * Library Care findings to act on (FL-69): one per asset in `assetIds`, naming the finding and,
    * for a relink or a recovery, the reviewed candidate. The worker re-reads and re-verifies all of
@@ -552,6 +561,19 @@ export const BULK_ACTION_PERMISSIONS: Readonly<Record<MediaOperationBulkAction, 
   [MediaOperationBulkAction.RefreshEncoded]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshFaces]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RelinkLivePhoto]: [Permission.AssetUpdate],
+  // A decision can trash, stack or merge metadata into the keeper; its undo restores and unstacks.
+  [MediaOperationBulkAction.ResolveDuplicates]: [
+    Permission.DuplicateDelete,
+    Permission.AssetDelete,
+    Permission.AssetUpdate,
+    Permission.StackCreate,
+  ],
+  [MediaOperationBulkAction.UndoDuplicates]: [
+    Permission.DuplicateDelete,
+    Permission.AssetDelete,
+    Permission.AssetUpdate,
+    Permission.StackDelete,
+  ],
   [MediaOperationBulkAction.RelinkMissingMedia]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RecoverDamagedMedia]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.TrashDamagedMedia]: [Permission.AssetDelete],
@@ -592,12 +614,42 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.RefreshFaces]: Permission.AssetUpdate,
   // The relink service re-validates ownership of both the still and the video itself (FL-70).
   [MediaOperationBulkAction.RelinkLivePhoto]: null,
+  // Duplicate decisions are checked a whole group at a time, as the owner of every photo in it.
+  [MediaOperationBulkAction.ResolveDuplicates]: null,
+  [MediaOperationBulkAction.UndoDuplicates]: null,
   // Library Care (FL-69) checks each finding's owner, Locked state and evidence itself, because an
   // administrator may repair another account's originals but never reach its Locked media.
   [MediaOperationBulkAction.RelinkMissingMedia]: null,
   [MediaOperationBulkAction.RecoverDamagedMedia]: null,
   [MediaOperationBulkAction.TrashDamagedMedia]: null,
 };
+
+/** True for the two actions that work a complete duplicate group at a time (FL-61). */
+export const isDuplicateDecisionAction = (action: MediaOperationBulkAction): boolean =>
+  action === MediaOperationBulkAction.ResolveDuplicates || action === MediaOperationBulkAction.UndoDuplicates;
+
+/**
+ * Which duplicate group each asset of a decision job belongs to, or null for any other action. Built
+ * once per claim: a batch must end on a group boundary (`bulkBatchLength`).
+ */
+export const bulkGroupIndex = (
+  snapshot: Pick<BulkOperationSnapshot, 'action' | 'payload'>,
+): ReadonlyMap<string, string> | null =>
+  isDuplicateDecisionAction(snapshot.action)
+    ? duplicateGroupIndex(parseDuplicateGroups(snapshot.payload.duplicateGroups))
+    : null;
+
+/**
+ * How many of `ids` from `start` the next batch takes. A duplicate decision job never splits a group
+ * across two batches, so its batches end on a group boundary; every other job takes `size`.
+ */
+export const bulkBatchLength = (
+  ids: readonly string[],
+  start: number,
+  size: number,
+  groupIndex: ReadonlyMap<string, string> | null,
+): number =>
+  groupIndex ? groupAlignedBatchSize(ids, start, size, groupIndex) : Math.max(0, Math.min(size, ids.length - start));
 
 export const BULK_ASSET_JOBS: Readonly<Partial<Record<MediaOperationBulkAction, AssetJobName>>> = {
   [MediaOperationBulkAction.RefreshThumbnails]: AssetJobName.REGENERATE_THUMBNAIL,
@@ -726,6 +778,16 @@ export const bulkPayloadProblem = (
       return photoIds.size === assetIdSet.size && [...photoIds].every((id) => assetIdSet.has(id))
         ? null
         : 'Every pair must name one of the selected still images';
+    }
+    case MediaOperationBulkAction.ResolveDuplicates:
+    case MediaOperationBulkAction.UndoDuplicates: {
+      const groups = parseDuplicateGroups(payload.duplicateGroups);
+      if (!Array.isArray(payload.duplicateGroups) || groups.length !== payload.duplicateGroups.length) {
+        return 'Every duplicate group needs a group, a decision and its photos';
+      }
+      return duplicateDecisionProblem(groups, assetIds, {
+        undo: action === MediaOperationBulkAction.UndoDuplicates,
+      });
     }
     case MediaOperationBulkAction.RelinkMissingMedia:
     case MediaOperationBulkAction.RecoverDamagedMedia:

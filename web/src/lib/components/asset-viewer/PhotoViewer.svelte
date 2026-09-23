@@ -87,6 +87,13 @@
 
   const ocrBoxes = $derived(ocrManager.showOverlay ? getOcrBoundingBoxes(ocrManager.data, overlaySize) : []);
 
+  // FL-63: the region of the line or value the information panel points at, on this photo only
+  const documentHighlight = $derived(
+    ocrManager.highlight?.assetId === asset.id
+      ? getOcrBoundingBoxes([ocrManager.highlight], overlaySize)[0]
+      : undefined,
+  );
+
   const onCopy = async () => {
     if (!canCopyImageToClipboard() || !assetViewerManager.imgRef) {
       return;
@@ -288,6 +295,24 @@
       {#each ocrBoxes as ocrBox (ocrBox.id)}
         <OcrBoundingBox {ocrBox} />
       {/each}
+
+      {#if documentHighlight}
+        <svg
+          class="pointer-events-none absolute top-0 left-0 overflow-visible"
+          width={overlaySize.width}
+          height={overlaySize.height}
+          aria-hidden="true"
+          data-testid="document-region-highlight"
+        >
+          <polygon
+            points={documentHighlight.points.map((point) => `${point.x},${point.y}`).join(' ')}
+            fill="rgb(14 165 160 / 18%)"
+            stroke="#0ea5a0"
+            stroke-width="2"
+            stroke-dasharray="6 4"
+          />
+        </svg>
+      {/if}
     {/snippet}
   </AdaptiveImage>
 

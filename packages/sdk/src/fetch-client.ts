@@ -341,6 +341,8 @@ export type AdminConfigNsfwDetectionDto = {
     threshold: number;
 };
 export type AdminConfigOcrDto = {
+    /** Suggest receipt and document fields (dates, totals, references) from recognized text */
+    documentFields?: boolean;
     /** Whether the task is enabled */
     enabled: boolean;
     /** Maximum resolution for OCR processing */
@@ -926,6 +928,29 @@ export type CalendarHeatmapResponseDto = {
     to: string;
     /** Total activity count over the period */
     totalCount: number;
+};
+export type UserAdminHistoryEventResponseDto = {
+    action: AdminAuditAction;
+    /** The administrator who did it; null once that account is gone */
+    actorId: string | null;
+    /** That administrator's name; null once that account is gone */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise */
+    detail: string | null;
+    /** Event ID */
+    id: string;
+    /** The library a library event is about; null for account events and once the library is gone */
+    libraryId: string | null;
+    /** The account's or library's name at the time */
+    subject: string;
+};
+export type UserAdminHistoryResponseDto = {
+    /** Newest first */
+    events: UserAdminHistoryEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
 };
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
@@ -2094,6 +2119,8 @@ export type ImageDescriptionEnrichmentResponseDto = {
     appliedTags: boolean;
     context?: string;
     description?: string;
+    /** The processing destination that generated the description */
+    destinationId?: string;
     environment?: string;
     error?: string;
     modelName?: string;
@@ -2106,6 +2133,8 @@ export type ImageDescriptionEnrichmentResponseDto = {
     }[];
     /** Machine-readable reason when status === "skipped" */
     skipReason?: string;
+    /** Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed */
+    staleReason?: EnrichmentStaleReason;
     status: Status;
     tags?: string[];
     updatedAt?: string;
@@ -2474,6 +2503,120 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DocumentSearchResponseDto = {
+    items: AssetResponseDto[];
+    nextPage: string | null;
+    total: number;
+};
+export type DocumentRegionDto = {
+    /** Normalized x coordinate of corner 1 (0-1) */
+    x1: number;
+    /** Normalized x coordinate of corner 2 (0-1) */
+    x2: number;
+    /** Normalized x coordinate of corner 3 (0-1) */
+    x3: number;
+    /** Normalized x coordinate of corner 4 (0-1) */
+    x4: number;
+    /** Normalized y coordinate of corner 1 (0-1) */
+    y1: number;
+    /** Normalized y coordinate of corner 2 (0-1) */
+    y2: number;
+    /** Normalized y coordinate of corner 3 (0-1) */
+    y3: number;
+    /** Normalized y coordinate of corner 4 (0-1) */
+    y4: number;
+};
+export type DocumentFieldCandidateDto = {
+    /** Recognition confidence of that line; null for a corrected line */
+    confidence: number | null;
+    /** Recognized line the value was read from */
+    lineId: string;
+    region: DocumentRegionDto;
+    /** The value as the text reads it */
+    value: string;
+};
+export type DocumentFieldResponseDto = {
+    /** Values the text suggests, most likely first */
+    candidates: DocumentFieldCandidateDto[];
+    /** Recognition confidence of the supporting line (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this field */
+    editId: string | null;
+    /** The supporting text has since been read differently or is gone */
+    evidenceChanged: boolean;
+    field: DocumentField;
+    /** Recognized line supporting the value */
+    lineId: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentFieldStatus;
+    /** When the owner last decided */
+    updatedAt: string | null;
+    /** The suggested, confirmed or corrected value; null when dismissed */
+    value: string | null;
+};
+export type DocumentLineDto = {
+    /** Recognition confidence (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this line */
+    editId: string | null;
+    /** The decision was made against text that has since been read differently */
+    evidenceChanged: boolean;
+    /** Recognized line ID, or the decision ID of a kept correction */
+    id: string;
+    /** Recognized line ID; null once the line is gone */
+    ocrId: string | null;
+    /** The recognized text, while the recognized line exists */
+    recognizedText: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentLineStatus;
+    /** What the line reads: the owner’s correction or the recognized text */
+    text: string;
+};
+export type DocumentRecognitionDto = {
+    /** Text recognition is switched on */
+    enabled: boolean;
+    /** A processing destination is chosen for text recognition */
+    routed: boolean;
+};
+export type DocumentResponseDto = {
+    assetId: string;
+    /** The caller owns the photo and may correct its text */
+    canEdit: boolean;
+    fields: DocumentFieldResponseDto[];
+    /** Field suggestions are switched on */
+    fieldsEnabled: boolean;
+    lines: DocumentLineDto[];
+    /** Whether the photo can be read again; owner only */
+    recognition: (DocumentRecognitionDto) | null;
+    /** When the text was last read */
+    recognizedAt: string | null;
+};
+export type DocumentFieldEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line supporting the value */
+    lineId?: string | null;
+    /** The recognized text of that line the caller read */
+    recognizedText?: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The value, for confirm and correct */
+    value?: string;
+};
+export type DocumentLineEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line the decision is about */
+    ocrId: string;
+    /** The recognized text the caller read; refused when it changed */
+    recognizedText: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The corrected text, for correct */
+    value?: string;
+};
 export type DownloadArchiveDto = {
     /** The name of the archive to download, without extension */
     archiveName?: string;
@@ -2522,6 +2665,264 @@ export type DuplicateResolveGroupDto = {
 export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
+};
+export type EnrichmentDestinationAdmissionDto = {
+    admitted: boolean;
+    /** Stable refusal code when it would not */
+    refusal: string | null;
+};
+export type EnrichmentDestinationOptionDto = {
+    /** Sends media off this network; needs recorded consent */
+    cloud: boolean;
+    enrichment: EnrichmentDestinationAdmissionDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    name: string;
+    search: EnrichmentDestinationAdmissionDto;
+};
+export type EnrichmentOptionsResponseDto = {
+    /** Stages a new plan starts with; never moment captions */
+    defaultStages: EnrichmentStage[];
+    descriptionEnabled: boolean;
+    destinations: EnrichmentDestinationOptionDto[];
+    framesPerVideo: number;
+    lockedCheckEnabled: boolean;
+    maxAssets: number;
+    maxSamples: number;
+    /** Saved description model */
+    modelName: string;
+    /** The destinations library work is routed to; a plan uses these unless another is chosen */
+    routes: {
+        enrichment: string | null;
+        search: string | null;
+    };
+    searchEnabled: boolean;
+    /** Saved search model */
+    searchModelName: string;
+};
+export type EnrichmentPlanCreateDto = {
+    /** The frozen set, in order; never re-resolved */
+    assetIds: string[];
+    /** Destination for descriptions, checks and captions */
+    destinationId?: string;
+    /** Client idempotency key; submitting the same key again returns the existing plan */
+    requestKey?: string;
+    /** Destination for search embeddings */
+    searchDestinationId?: string;
+    /** Chosen stages; the ones they need are added */
+    stages: EnrichmentStage[];
+};
+export type EnrichmentPlanCountsDto = {
+    cancelled: number;
+    completed: number;
+    failed: number;
+    queued: number;
+    running: number;
+    skipped: number;
+    total: number;
+};
+export type EnrichmentPlanDestinationDto = {
+    cloud: boolean;
+    id: string;
+    name: string;
+};
+export type EnrichmentPlanStageOutcomeDto = {
+    at: string | null;
+    message: string | null;
+    reasonKey: string | null;
+    stage: EnrichmentStage;
+    state: EnrichmentItemState;
+};
+export type EnrichmentPlanItemDto = {
+    assetId: string;
+    /** Waiting for its one automatic retry */
+    retryPending: boolean;
+    stages: EnrichmentPlanStageOutcomeDto[];
+    state: EnrichmentItemState;
+};
+export type EnrichmentPlanResponseDto = {
+    /** Stages run only because a chosen stage needs them */
+    addedStages: EnrichmentStage[];
+    configHash: string;
+    counts: EnrichmentPlanCountsDto;
+    enrichmentDestination: (EnrichmentPlanDestinationDto) | null;
+    /** Locked items not listed because this session is not unlocked */
+    hiddenCount: number;
+    items: EnrichmentPlanItemDto[];
+    modelName: string;
+    operation: MediaOperationDto;
+    requestedStages: EnrichmentStage[];
+    searchDestination: (EnrichmentPlanDestinationDto) | null;
+    searchModelName: string;
+    stages: EnrichmentStage[];
+};
+export type EnrichmentPreviewRequestDto = {
+    /** Samples to describe; run one at a time */
+    assetIds: string[];
+    /** Destination to run on; the routed one when omitted */
+    destinationId?: string;
+    fallbackModelName?: string;
+    /** Draft model; the saved one when omitted */
+    modelName?: string;
+    /** Draft prompt; the saved one when omitted */
+    prompt?: AdminConfigImageDescriptionPromptDto;
+};
+export type EnrichmentPreviewSampleDto = {
+    ambiguousReferences: string[];
+    assetId: string;
+    /** What the draft produced; stored nowhere */
+    candidate: string | null;
+    /** The stored generated description, unchanged */
+    current: string | null;
+    durationMs: number;
+    /** Video frames the draft saw; 0 for a photo */
+    frameCount: number;
+    hallucinatedNames: string[];
+    message: string | null;
+    reasonKey: string | null;
+    status: EnrichmentPreviewStatus;
+    tags: string[];
+    warnings: string[];
+};
+export type EnrichmentPreviewResponseDto = {
+    cloud: boolean;
+    destinationId: string;
+    destinationName: string;
+    modelName: string;
+    samples: EnrichmentPreviewSampleDto[];
+};
+export type VideoMomentSearchDto = {
+    limit?: number;
+    query: string;
+};
+export type VideoMomentSearchHitDto = {
+    assetId: string;
+    caption: string | null;
+    frameId: string | null;
+    match: VideoMomentMatch;
+    momentId: string | null;
+    /** Higher is closer */
+    score: number;
+    timestampMs: number;
+};
+export type VideoMomentSearchResponseDto = {
+    hits: VideoMomentSearchHitDto[];
+};
+export type VideoMomentCoverDto = {
+    /** Time of the chosen frame; null returns to the best frame */
+    timestampMs: number | null;
+};
+export type VideoMomentFrameDto = {
+    frameIndex: number;
+    height: number | null;
+    id: string;
+    /** Has a search embedding from the saved search model */
+    indexed: boolean;
+    isCover: boolean;
+    /** 1 is the best frame */
+    rank: number;
+    score: number;
+    timestampMs: number;
+    width: number | null;
+};
+export type VideoMomentDto = {
+    caption: string | null;
+    createdAt: string;
+    endMs: number | null;
+    frameId: string | null;
+    id: string;
+    source: VideoMomentSource;
+    staleReason: (EnrichmentStaleReason) | null;
+    timestampMs: number;
+    /** Typed by the owner; never generated */
+    transcript: string | null;
+    updatedAt: string;
+};
+export type VideoMomentsResponseDto = {
+    assetId: string;
+    captionModel: string | null;
+    captionedAt: string | null;
+    coverFrameId: string | null;
+    /** The owner's chosen cover time; null means the best frame */
+    coverTimestampMs: number | null;
+    embeddingModel: string | null;
+    extractorVersion: string | null;
+    frames: VideoMomentFrameDto[];
+    framesExtractedAt: string | null;
+    indexedAt: string | null;
+    moments: VideoMomentDto[];
+    staleReason: (EnrichmentStaleReason) | null;
+    state: VideoMomentIndexState;
+};
+export type VideoMomentCreateDto = {
+    caption?: string | null;
+    endMs?: number | null;
+    timestampMs: number;
+    transcript?: string | null;
+};
+export type VideoMomentUpdateDto = {
+    caption?: string | null;
+    endMs?: number | null;
+    timestampMs?: number;
+    transcript?: string | null;
+};
+export type DuplicateActiveGroupDto = {
+    duplicateId: string;
+    memberIds: string[];
+};
+export type DuplicateActiveOperationDto = {
+    action: MediaOperationBulkAction;
+    groups: DuplicateActiveGroupDto[];
+    operationId: string;
+};
+export type DuplicateDecisionGroupDto = {
+    applied: boolean;
+    decision: DuplicateDecisionKind;
+    decisionId: string;
+    duplicateId: string;
+    keepAssetIds: string[];
+    memberIds: string[];
+    trashAssetIds: string[];
+    /** An undo job has started on this decision */
+    undoing: boolean;
+    undone: boolean;
+};
+export type DuplicateDecisionBatchDto = {
+    createdAt: string;
+    groups: DuplicateDecisionGroupDto[];
+    /** The durable job that applied these decisions */
+    operationId: string;
+    /** Every decision of the job is applied and none has been undone */
+    undoable: boolean;
+};
+export type DuplicateDecisionHistoryDto = {
+    /** Decision and undo jobs still running */
+    active: DuplicateActiveOperationDto[];
+    /** The most recent decision jobs, newest first */
+    recent: DuplicateDecisionBatchDto[];
+};
+export type DuplicateReviewQualityDto = {
+    assetId: string;
+    /** Evidence for or against keeping this copy */
+    reasons: DuplicateQualityReason[];
+};
+export type DuplicateReviewGroupDto = {
+    /** The photos of the group this session may see */
+    assets: AssetResponseDto[];
+    blockedReason: (DuplicateGroupBlock) | null;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Whether this session may decide the group */
+    editable: boolean;
+    /** Photos of the group this session does not see */
+    hiddenMemberCount: number;
+    kind: DuplicateGroupKind;
+    qualities: DuplicateReviewQualityDto[];
+    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
+    suggestedKeepAssetIds: string[];
+    /** Size of the originals shown, in bytes */
+    totalBytes: number;
 };
 export type AssetFaceResponseDto = {
     /** Bounding box X1 coordinate */
@@ -3212,6 +3613,17 @@ export type MediaOperationLivePhotoPairDto = {
     /** Motion video asset ID */
     videoId: string;
 };
+export type MediaOperationDuplicateGroupDto = {
+    decision: DuplicateDecisionKind;
+    /** For `undo-duplicates`: the recorded decision to reverse */
+    decisionId?: string;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed */
+    keepAssetIds: string[];
+    /** Every photo of the group, as reviewed */
+    memberIds: string[];
+};
 export type MediaOperationMediaHealthEntryDto = {
     /** Asset ID */
     assetId: string;
@@ -3225,6 +3637,8 @@ export type MediaOperationBulkPayloadDto = {
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
+    /** Duplicate review decisions, one complete group each (FL-61) */
+    duplicateGroups?: MediaOperationDuplicateGroupDto[];
     latitude?: number;
     longitude?: number;
     mediaHealth?: MediaOperationMediaHealthEntryDto[];
@@ -5941,6 +6355,65 @@ export type TrashResponseDto = {
     /** Number of items in trash */
     count: number;
 };
+export type TrashApplyDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+    /** The token returned by the review */
+    token: string;
+};
+export type TrashItemResponseDto = {
+    /** Size of the original, in bytes, when known */
+    fileSizeInByte: number | null;
+    /** Asset ID */
+    id: string;
+    /** Locked media; only listed for its owner in an unlocked session */
+    isLocked: boolean;
+    /** The library scan found this external original missing and manages it; trash actions do not change it */
+    isOffline: boolean;
+    /** Original file name */
+    originalFileName: string;
+    /** When the item was moved to the trash */
+    trashedAt: string | null;
+    "type": AssetTypeEnum;
+};
+export type TrashItemsResponseDto = {
+    items: TrashItemResponseDto[];
+    /** The next page number, or null on the last page */
+    nextPage: string | null;
+    /** Items matching the filters */
+    total: number;
+};
+export type TrashReviewDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+};
+export type TrashReviewResponseDto = {
+    action: TrashReviewAction;
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items the action will change */
+    count: number;
+    /** The first file names, alphabetically */
+    names: string[];
+    /** Size of those shared originals, in bytes */
+    retainedBytes: number;
+    /** Items whose original another item still uses; deleting them does not free that file */
+    retainedOriginals: number;
+    /** Fingerprint of the reviewed set; apply refuses when the set has changed */
+    token: string;
+};
+export type TrashSummaryResponseDto = {
+    /** Combined size of their originals, in bytes. Not the space deleting them frees. */
+    bytes: number;
+    /** Items in your trash this session can see */
+    count: number;
+    /** Of those, external-library originals that went missing; the library scan manages them */
+    offline: number;
+    /** Items already permanently deleted whose files are still being removed from storage */
+    pendingDeletion: number;
+};
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
     /** User email */
@@ -7167,6 +7640,24 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
+ * Retrieve user history
+ */
+export function getUserHistoryAdmin({ before, id, take }: {
+    before?: string;
+    id: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminHistoryResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/history${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve user preferences
  */
 export function getUserPreferencesAdmin({ id }: {
@@ -7220,6 +7711,18 @@ export function getUserSessionsAdmin({ id }: {
         data: SessionResponseDto[];
     }>(`/admin/users/${encodeURIComponent(id)}/sessions`, {
         ...opts
+    }));
+}
+/**
+ * Delete a user session
+ */
+export function deleteUserSessionAdmin({ id, sessionId }: {
+    id: string;
+    sessionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**
@@ -8632,6 +9135,107 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Search documents
+ */
+export function searchDocuments({ page, query, size }: {
+    page?: number;
+    query?: string;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentSearchResponseDto;
+    }>(`/documents${QS.query(QS.explode({
+        page,
+        query,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve a document
+ */
+export function getDocument({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Clear a document field decision
+ */
+export function deleteDocumentField({ field, id, revision }: {
+    field: DocumentField;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Decide a document field
+ */
+export function updateDocumentField({ field, id, documentFieldEditDto }: {
+    field: DocumentField;
+    id: string;
+    documentFieldEditDto: DocumentFieldEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentFieldEditDto
+    })));
+}
+/**
+ * Correct or dismiss a line of text
+ */
+export function updateDocumentLine({ id, documentLineEditDto }: {
+    id: string;
+    documentLineEditDto: DocumentLineEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentLineEditDto
+    })));
+}
+/**
+ * Restore a line of text
+ */
+export function deleteDocumentLine({ editId, id, revision }: {
+    editId: string;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines/${encodeURIComponent(editId)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Download asset archive
  */
 export function downloadArchive({ key, slug, downloadArchiveDto }: {
@@ -8695,6 +9299,17 @@ export function getAssetDuplicates(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Retrieve recent duplicate decisions
+ */
+export function getDuplicateDecisions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateDecisionHistoryDto;
+    }>("/duplicates/decisions", {
+        ...opts
+    }));
+}
+/**
  * Resolve duplicate groups
  */
 export function resolveDuplicates({ duplicateResolveDto }: {
@@ -8710,6 +9325,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
     })));
 }
 /**
+ * Retrieve the duplicate review
+ */
+export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateReviewGroupDto[];
+    }>("/duplicates/review", {
+        ...opts
+    }));
+}
+/**
  * Dismiss a duplicate group
  */
 export function deleteDuplicate({ id }: {
@@ -8719,6 +9345,162 @@ export function deleteDuplicate({ id }: {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Get a video moment frame
+ */
+export function getVideoMomentFrame({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/enrichment/frames/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Search video moments
+ */
+export function searchVideoMoments({ videoMomentSearchDto }: {
+    videoMomentSearchDto: VideoMomentSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentSearchResponseDto;
+    }>("/enrichment/moments/search", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoMomentSearchDto
+    })));
+}
+/**
+ * Get enrichment options
+ */
+export function getEnrichmentOptions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentOptionsResponseDto;
+    }>("/enrichment/options", {
+        ...opts
+    }));
+}
+/**
+ * Queue an enrichment plan
+ */
+export function createEnrichmentPlan({ enrichmentPlanCreateDto }: {
+    enrichmentPlanCreateDto: EnrichmentPlanCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: EnrichmentPlanResponseDto;
+    }>("/enrichment/plans", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: enrichmentPlanCreateDto
+    })));
+}
+/**
+ * Get an enrichment plan
+ */
+export function getEnrichmentPlan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentPlanResponseDto;
+    }>(`/enrichment/plans/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Preview an enrichment change
+ */
+export function previewEnrichment({ enrichmentPreviewRequestDto }: {
+    enrichmentPreviewRequestDto: EnrichmentPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentPreviewResponseDto;
+    }>("/enrichment/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: enrichmentPreviewRequestDto
+    })));
+}
+/**
+ * Choose a video cover frame
+ */
+export function setVideoMomentCover({ id, videoMomentCoverDto }: {
+    id: string;
+    videoMomentCoverDto: VideoMomentCoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentsResponseDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/cover`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: videoMomentCoverDto
+    })));
+}
+/**
+ * Get video moments
+ */
+export function getVideoMoments({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentsResponseDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments`, {
+        ...opts
+    }));
+}
+/**
+ * Add a video moment
+ */
+export function createVideoMoment({ id, videoMomentCreateDto }: {
+    id: string;
+    videoMomentCreateDto: VideoMomentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: VideoMomentDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoMomentCreateDto
+    })));
+}
+/**
+ * Delete a video moment
+ */
+export function deleteVideoMoment({ id, momentId }: {
+    id: string;
+    momentId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/enrichment/videos/${encodeURIComponent(id)}/moments/${encodeURIComponent(momentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a video moment
+ */
+export function updateVideoMoment({ id, momentId, videoMomentUpdateDto }: {
+    id: string;
+    momentId: string;
+    videoMomentUpdateDto: VideoMomentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments/${encodeURIComponent(momentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: videoMomentUpdateDto
+    })));
 }
 /**
  * Retrieve faces for asset
@@ -12761,6 +13543,21 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     }));
 }
 /**
+ * Apply a reviewed trash change
+ */
+export function applyTrashReview({ trashApplyDto }: {
+    trashApplyDto: TrashApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashResponseDto;
+    }>("/trash/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashApplyDto
+    })));
+}
+/**
  * Empty trash
  */
 export function emptyTrash(opts?: Oazapfts.RequestOpts) {
@@ -12770,6 +13567,29 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
     }>("/trash/empty", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List trash items
+ */
+export function getTrashItems({ page, query, size, sort, $type }: {
+    page?: number;
+    query?: string;
+    size?: number;
+    sort?: TrashItemSort;
+    $type?: AssetTypeEnum;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashItemsResponseDto;
+    }>(`/trash/items${QS.query(QS.explode({
+        page,
+        query,
+        size,
+        sort,
+        "type": $type
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -12798,6 +13618,32 @@ export function restoreAssets({ bulkIdsDto }: {
         method: "POST",
         body: bulkIdsDto
     })));
+}
+/**
+ * Review a trash change
+ */
+export function reviewTrash({ trashReviewDto }: {
+    trashReviewDto: TrashReviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashReviewResponseDto;
+    }>("/trash/review", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashReviewDto
+    })));
+}
+/**
+ * Get trash summary
+ */
+export function getTrashSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashSummaryResponseDto;
+    }>("/trash/summary", {
+        ...opts
+    }));
 }
 /**
  * Get all users
@@ -13330,6 +14176,28 @@ export enum CalendarHeatmapType {
     Upload = "Upload",
     Taken = "Taken"
 }
+export enum AdminAuditAction {
+    AccountCreated = "account-created",
+    AccountUpdated = "account-updated",
+    AdminGranted = "admin-granted",
+    AdminRevoked = "admin-revoked",
+    QuotaChanged = "quota-changed",
+    StorageLabelChanged = "storage-label-changed",
+    PasswordReset = "password-reset",
+    PinSet = "pin-set",
+    PinReset = "pin-reset",
+    SessionRevoked = "session-revoked",
+    PreferencesUpdated = "preferences-updated",
+    CastingDisabled = "casting-disabled",
+    CastingAllowed = "casting-allowed",
+    AccountDeleted = "account-deleted",
+    AccountRemovalScheduled = "account-removal-scheduled",
+    AccountRestored = "account-restored",
+    LibraryCreated = "library-created",
+    LibraryUpdated = "library-updated",
+    LibraryScanQueued = "library-scan-queued",
+    LibraryDeleted = "library-deleted"
+}
 export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
@@ -13534,6 +14402,7 @@ export enum Permission {
     AdminUserUpdate = "adminUser.update",
     AdminUserDelete = "adminUser.delete",
     AdminSessionRead = "adminSession.read",
+    AdminSessionDelete = "adminSession.delete",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
 export enum AssetFileType {
@@ -13558,8 +14427,33 @@ export enum AssetRejectReason {
 export enum AssetJobName {
     RefreshFaces = "refresh-faces",
     RefreshMetadata = "refresh-metadata",
+    RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum DocumentLineStatus {
+    Recognized = "recognized",
+    Corrected = "corrected",
+    Dismissed = "dismissed",
+    Kept = "kept"
+}
+export enum DocumentField {
+    Date = "date",
+    Total = "total",
+    Reference = "reference",
+    Email = "email",
+    Phone = "phone"
+}
+export enum DocumentFieldStatus {
+    Suggested = "suggested",
+    Confirmed = "confirmed",
+    Corrected = "corrected",
+    Dismissed = "dismissed"
+}
+export enum DocumentEditAction {
+    Confirm = "confirm",
+    Correct = "correct",
+    Dismiss = "dismiss"
 }
 export enum AssetTypeEnum {
     Image = "IMAGE",
@@ -13828,6 +14722,7 @@ export enum MediaOperationKind {
     Bulk = "bulk",
     StudioBundleExport = "studio_bundle_export",
     StudioBundleImport = "studio_bundle_import",
+    EnrichmentPlan = "enrichment_plan",
     MediaHealth = "media_health"
 }
 export enum MediaOperationBulkAction {
@@ -13854,6 +14749,8 @@ export enum MediaOperationBulkAction {
     RefreshEncoded = "refresh-encoded",
     RefreshFaces = "refresh-faces",
     RelinkLivePhoto = "relink-live-photo",
+    ResolveDuplicates = "resolve-duplicates",
+    UndoDuplicates = "undo-duplicates",
     RelinkMissingMedia = "relink-missing-media",
     RecoverDamagedMedia = "recover-damaged-media",
     TrashDamagedMedia = "trash-damaged-media"
@@ -13940,6 +14837,27 @@ export enum RestorationModelState {
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
 }
+export enum DuplicateDecisionKind {
+    Keepers = "keepers",
+    KeepAll = "keep-all",
+    Stack = "stack"
+}
+export enum DuplicateGroupBlock {
+    HiddenMembers = "hidden-members",
+    OtherOwner = "other-owner"
+}
+export enum DuplicateGroupKind {
+    Duplicates = "duplicates",
+    Burst = "burst"
+}
+export enum DuplicateQualityReason {
+    OriginalFormat = "original-format",
+    LargestFile = "largest-file",
+    HighestResolution = "highest-resolution",
+    MostMetadata = "most-metadata",
+    CompressedCopy = "compressed-copy",
+    LowerResolution = "lower-resolution"
+}
 export enum MediaOperationItemStatus {
     Ok = "ok",
     Skipped = "skipped",
@@ -14001,6 +14919,18 @@ export enum MemoryExportStatus {
     Failed = "failed",
     Cancelling = "cancelling",
     Cancelled = "cancelled"
+}
+export enum TrashReviewAction {
+    Trash = "trash",
+    Restore = "restore",
+    RestoreAll = "restore-all",
+    Delete = "delete",
+    Empty = "empty"
+}
+export enum TrashItemSort {
+    Recent = "recent",
+    Size = "size",
+    Name = "name"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
@@ -14307,4 +15237,43 @@ export enum UserMetadataKey {
     Preferences = "preferences",
     License = "license",
     Onboarding = "onboarding"
+}
+export enum EnrichmentStage {
+    Frames = "frames",
+    LockedCheck = "locked-check",
+    Description = "description",
+    MomentIndex = "moment-index",
+    MomentCaptions = "moment-captions"
+}
+export enum EnrichmentItemState {
+    Queued = "queued",
+    Running = "running",
+    Skipped = "skipped",
+    Failed = "failed",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum EnrichmentPreviewStatus {
+    Success = "success",
+    Failed = "failed",
+    Skipped = "skipped"
+}
+export enum VideoMomentMatch {
+    Visual = "visual",
+    Caption = "caption",
+    Transcript = "transcript"
+}
+export enum VideoMomentSource {
+    Generated = "generated",
+    Manual = "manual"
+}
+export enum EnrichmentStaleReason {
+    SourceChanged = "source-changed",
+    IdentityChanged = "identity-changed",
+    ConfigChanged = "config-changed"
+}
+export enum VideoMomentIndexState {
+    None = "none",
+    Ready = "ready",
+    Stale = "stale"
 }

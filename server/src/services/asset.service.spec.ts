@@ -1026,6 +1026,14 @@ describe(AssetService.name, () => {
       ]);
     });
 
+    it('should run the text recognition job to read a photo again', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.run(authStub.admin, { assetIds: ['asset-1'], name: AssetJobName.REFRESH_OCR });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: 'asset-1' } }]);
+    });
+
     it('should run the refresh thumbnails job', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
 

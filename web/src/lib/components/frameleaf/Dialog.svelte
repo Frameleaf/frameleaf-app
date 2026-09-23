@@ -6,11 +6,14 @@
     title,
     closeLabel,
     open = $bindable(false),
+    wide = false,
     children,
   }: {
     title: string;
     closeLabel: string;
     open?: boolean;
+    /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. */
+    wide?: boolean;
     children: Snippet;
   } = $props();
   let dialog: HTMLDialogElement;
@@ -42,6 +45,7 @@
 <dialog
   bind:this={dialog}
   class="frameleaf"
+  class:wide
   data-theme={appTheme}
   aria-labelledby={titleId}
   onclose={() => (open = false)}
@@ -76,6 +80,10 @@
       opacity: 1;
       transform: none;
     }
+  }
+  dialog.wide {
+    width: min(56rem, calc(100vw - 2rem));
+    max-width: min(56rem, calc(100vw - 2rem));
   }
   dialog::backdrop {
     background: rgb(0 0 0 / 60%);

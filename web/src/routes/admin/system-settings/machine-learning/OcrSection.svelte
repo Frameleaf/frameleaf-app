@@ -83,5 +83,14 @@
       disabled={disabled || !workingConfig.enabled || !workingConfig.ocr.enabled}
       isEdited={workingConfig.ocr.maxResolution !== savedConfig.ocr.maxResolution}
     />
+
+    <!-- FL-63: off by default; suggestions stay editable and tied to the text they were read from -->
+    <SettingToggle
+      title={$t('admin.machine_learning_ocr_document_fields')}
+      subtitle={$t('admin.machine_learning_ocr_document_fields_description')}
+      bind:checked={workingConfig.ocr.documentFields}
+      disabled={disabled || !workingConfig.enabled || !workingConfig.ocr.enabled}
+      isEdited={!!workingConfig.ocr.documentFields !== !!savedConfig.ocr.documentFields}
+    />
   </div>
 </SettingGroup>

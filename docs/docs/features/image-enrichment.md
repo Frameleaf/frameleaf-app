@@ -4,6 +4,8 @@ Image enrichment adds optional machine learning jobs that can generate searchabl
 
 Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while `Hide detected NSFW assets` is enabled; see [Locked](./locked.md).
 
+To try a model or prompt on a few samples before it reaches the library, and to run chosen stages on chosen items as a background plan, see [Sample-first enrichment and plans](./descriptions-and-smart-albums.md#sample-first-enrichment-and-plans). Videos are described from their reusable moment frames; see [Video moments](./descriptions-and-smart-albums.md#video-moments).
+
 ## Recommended Rollout
 
 For an existing library, enable and backfill one task at a time:

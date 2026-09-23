@@ -35,6 +35,13 @@ import {
   type SearchFilter,
   type SmartSearchDto,
 } from '@immich/sdk';
+import {
+  discoveryTextField,
+  textFieldCondition,
+  toServerFilter,
+  withSearchDefaults,
+  withSpaceScope,
+} from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 
@@ -376,45 +383,74 @@ export type SnapshotSearch =
  * prevent.
  */
 export const snapshotSearch = (state: LibraryViewState): SnapshotSearch => {
-  const filter: SearchFilter = structuredClone(state.query.filter ?? {});
+  // FL-48: the same query-to-request translation the search page uses — calendar-day bounds become
+  // the datetimes the server accepts — so a matching set is exactly the set the view showed.
+  let filter: SearchFilter = toServerFilter(state.query.filter ?? {});
   if (state.scope.kind === 'album') {
     if (!state.scope.id) {
       return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
     }
-    filter.albumIds = { any: [state.scope.id] };
+    // The scope is required on top of any album condition the query already has, never instead of it.
+    const albums = filter.albumIds;
+    filter.albumIds = albums
+      ? { ...albums, all: [...new Set([...(albums.all ?? []), state.scope.id])] }
+      : { any: [state.scope.id] };
   }
-  if (state.scope.kind === 'space' || state.query.spaceId) {
-    // Shared spaces are not expressible in the search DTO; the caller must select explicitly.
+  if (state.scope.kind === 'space' && !state.scope.id) {
     return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
+  }
+  // FL-48 map/space follow-ups: a shared space is an album of kind `space` (`withSpaceScope`), so a
+  // matching set is resolved for it exactly as an album scope is, on top of any album condition the
+  // query already has. `resolveMatchingIds`/`countMatching` call the authenticated search endpoints,
+  // which apply the caller's own album access, so a viewer's matching set is never wider than what
+  // the space already shows them; the caller is the one that restricts which actions a viewer may
+  // run over it (`bulk-actions.ts`'s `spaceViewerMatching`).
+  const spaceId = state.scope.kind === 'space' ? state.scope.id : state.query.spaceId;
+  if (spaceId) {
+    filter = withSpaceScope(filter, spaceId);
   }
   // Locked browsing depends on an elevated session and its own visibility handling; a matching set
   // is never guessed for it.
-  const visibility = filter.visibility;
-  if (
-    visibility &&
+  const namesLocked = (visibility: SearchFilter['visibility']) =>
+    !!visibility &&
     [visibility.eq, visibility.ne, ...(visibility.in ?? []), ...(visibility.notIn ?? [])].includes(
       AssetVisibility.Locked,
-    )
-  ) {
+    );
+  if (namesLocked(filter.visibility) || filter.or?.some((branch) => namesLocked(branch.visibility))) {
     return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
-  }
-  if (!visibility) {
-    // The search API's own default is everything that is not locked, which is wider than a library
-    // view shows. A view that wants archived items says so in its filter; this one does not.
-    filter.visibility = { eq: AssetVisibility.Timeline };
   }
   const text = state.query.text?.trim() ?? '';
   if (text && state.query.mode !== 'smart') {
-    // Filename, description, OCR and path search are separate fields server side; collapsing them
-    // into one term here would change the matching set.
-    return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_text_query_unsupported' };
+    // FL-48: the query names the field its text searches, so the text becomes that field's condition,
+    // exactly as the search page sends it. A field the filter already constrains cannot take a second
+    // condition without changing the matching set, so that one case is still refused.
+    const field = discoveryTextField(state.query);
+    if (filter[field] !== undefined) {
+      return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_text_query_unsupported' };
+    }
+    filter = { ...filter, [field]: textFieldCondition(field, text) } as SearchFilter;
   }
-  // The trash destination filters on `trashedAt`, and trashed assets are excluded by default.
-  const withDeleted = filter.trashedAt ? { withDeleted: true } : {};
-  if (text) {
-    return { kind: 'smart', dto: { query: text, filter, size: SNAPSHOT_PAGE_SIZE, ...withDeleted } };
+  // A structured search's own default is everything that is not locked, the trash included, which is
+  // wider than a library view shows. A view that wants archived or trashed items says so in its
+  // filter (the trash destination filters on `trashedAt`); this adds the timeline and no-trash
+  // defaults only where it does not. The deprecated `withDeleted` cannot ride beside a filter.
+  filter = withSearchDefaults(filter);
+  const enrichment = state.query.imageEnrichment ? { imageEnrichment: state.query.imageEnrichment } : {};
+  const smartText = state.query.mode === 'smart' ? text : '';
+  // A similar-photo reference makes it a smart search whatever the mode, as it does on the search page.
+  if (smartText || state.query.queryAssetId) {
+    return {
+      kind: 'smart',
+      dto: {
+        ...(smartText ? { query: smartText } : {}),
+        ...(state.query.queryAssetId ? { queryAssetId: state.query.queryAssetId } : {}),
+        filter,
+        size: SNAPSHOT_PAGE_SIZE,
+        ...enrichment,
+      },
+    };
   }
-  return { kind: 'metadata', dto: { filter, size: SNAPSHOT_PAGE_SIZE, ...withDeleted } };
+  return { kind: 'metadata', dto: { filter, size: SNAPSHOT_PAGE_SIZE, ...enrichment } };
 };
 
 /** The count the "Select all n" control offers, taken from the same frozen state. */
@@ -429,7 +465,10 @@ export const countMatching = async (
     return null;
   }
   const { total } = await gateway.searchAssetStatistics({
-    statisticsSearchDto: { filter: search.dto.filter },
+    statisticsSearchDto: {
+      filter: search.dto.filter,
+      ...(search.dto.imageEnrichment ? { imageEnrichment: search.dto.imageEnrichment } : {}),
+    },
   });
   return total;
 };
@@ -468,15 +507,17 @@ export const resolveMatchingIds = async (
   }
   const found = new Set<string>();
   let total: number | null = null;
-  let page: number | null = 1;
-  while (page) {
+  // FL-48: a structured search pages by cursor. The server refuses the deprecated `page` next to a
+  // `filter`, and every snapshot search carries one.
+  let cursor: string | null = null;
+  do {
     if (signal?.aborted) {
       return { ids: [...found], total, truncated: false, cancelled: true };
     }
     const { assets } =
       search.kind === 'smart'
-        ? await gateway.searchSmart({ smartSearchDto: { ...search.dto, page } })
-        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, page } });
+        ? await gateway.searchSmart({ smartSearchDto: search.dto })
+        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor ? { cursor } : {}) } });
     total = typeof assets.total === 'number' ? assets.total : total;
     for (const asset of assets.items) {
       if (found.size >= limit) {
@@ -485,8 +526,18 @@ export const resolveMatchingIds = async (
       found.add(asset.id);
     }
     onProgress?.(found.size, total);
-    page = Number(assets.nextPage) || null;
-  }
+    if (search.kind === 'smart') {
+      // A ranked smart search answers one page and has no cursor yet; a full page may hold back
+      // more matches, which is said rather than hidden.
+      return {
+        ids: [...found],
+        total,
+        truncated: assets.items.length >= (search.dto.size ?? SNAPSHOT_PAGE_SIZE),
+        cancelled: false,
+      };
+    }
+    cursor = assets.nextCursor ?? null;
+  } while (cursor);
   return { ids: [...found], total, truncated: false, cancelled: false };
 };
 

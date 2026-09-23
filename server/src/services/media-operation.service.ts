@@ -39,6 +39,13 @@ import {
   type BulkOperationSnapshot,
 } from 'src/utils/bulk-operation.js';
 import {
+  enrichmentPlanLabel,
+  enrichmentResumeIds,
+  enrichmentRetryRecord,
+  parseEnrichmentPlanResult,
+  parseEnrichmentPlanSnapshot,
+} from 'src/utils/enrichment-plan.js';
+import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
   canDismissMediaOperation,
@@ -117,12 +124,37 @@ const mapBulkSummary = (operation: MediaOperation): MediaOperationDto['bulk'] =>
  */
 const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
   const snapshot = asObject(operation.snapshot);
+  if (operation.kind === MediaOperationKind.EnrichmentPlan) {
+    // FL-59: the per-asset view is the enrichment plan endpoint's, which withholds Locked ids.
+    const { assetIds, requestKey: _requestKey, ...rest } = snapshot;
+    return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+  }
+  if (operation.kind === MediaOperationKind.MediaHealth) {
+    // FL-69: a search names its findings; the detail view carries how many.
+    const { findingIds, ...rest } = snapshot;
+    return Array.isArray(findingIds) ? { ...rest, findingCount: findingIds.length } : rest;
+  }
   if (operation.kind !== MediaOperationKind.Bulk) {
     return snapshot;
   }
 
   const { assetIds, apiKeyId: _apiKeyId, ...rest } = snapshot;
-  return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+  const mapped: Record<string, unknown> = { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+
+  // FL-61: a duplicate decision job's groups name every photo of every group, Locked ones included
+  // once they are locked; the detail view carries only how many groups there are, like the ids above
+  const payload = asObject(rest.payload);
+  if ('duplicateGroups' in payload) {
+    const { duplicateGroups, ...payloadRest } = payload;
+    mapped.payload = { ...payloadRest, groupCount: Array.isArray(duplicateGroups) ? duplicateGroups.length : 0 };
+  }
+  // FL-69: a Library Care job's entries name items that may be locked since, or another account's;
+  // the detail view carries only how many findings it covers
+  if ('mediaHealth' in payload) {
+    const { mediaHealth, ...payloadRest } = payload;
+    mapped.payload = { ...payloadRest, findingCount: Array.isArray(mediaHealth) ? mediaHealth.length : 0 };
+  }
+  return mapped;
 };
 
 const bulkItems = (operation: MediaOperation) =>
@@ -458,6 +490,10 @@ export class MediaOperationService {
       return this.retryBulk(auth, operation);
     }
 
+    if (operation.kind === MediaOperationKind.EnrichmentPlan) {
+      return this.retryEnrichmentPlan(auth, operation);
+    }
+
     // FL-69: a scan or search is started again from Library Care, which admits one at a time and
     // opens fresh runs; copying the old row would reopen finished runs beside a running job.
     if (operation.kind === MediaOperationKind.MediaHealth) {
@@ -611,6 +647,58 @@ export class MediaOperationService {
     });
 
     this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
+    return this.present(auth, retried);
+  }
+
+  /**
+   * Retry an enrichment plan (FL-59): resume it, not repeat it. The new plan keeps the pinned
+   * stages, destinations and configuration and covers exactly the assets that did not finish —
+   * failed, never reached, or still waiting for their automatic retry. Each carries the stage
+   * outcomes it already has, so only the stages that failed run again. Like any resubmission, it
+   * needs the unlocked session if it reaches Locked items. Asking twice answers with the first retry.
+   */
+  private async retryEnrichmentPlan(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (isActiveMediaOperation(operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('This job is still running');
+    }
+
+    const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+    if (active) {
+      return this.present(auth, active);
+    }
+
+    const snapshot = parseEnrichmentPlanSnapshot(operation.snapshot);
+    const result = parseEnrichmentPlanResult(operation.result);
+    const remaining = enrichmentResumeIds(snapshot, result, Number(operation.processedUnits ?? 0));
+    if (remaining.length === 0) {
+      throw new BadRequestException('Nothing in this job is left to retry');
+    }
+
+    await this.requireUnlockedFor(auth, remaining);
+
+    const record = enrichmentRetryRecord(snapshot, result, remaining);
+    // The retry acts with the retrying session's PIN, which was just checked above.
+    const retrySnapshot = { ...record.snapshot, elevated: auth.session?.hasElevatedPermission === true };
+    const retried = await this.repository.create({
+      ownerId: operation.ownerId,
+      kind: MediaOperationKind.EnrichmentPlan,
+      destination: operation.destination,
+      destinationDetail: operation.destinationDetail,
+      label: enrichmentPlanLabel(remaining.length),
+      assetId: remaining.length === 1 ? remaining[0] : null,
+      resultAssetId: null,
+      retryOfId: operation.id,
+      projectId: null,
+      revisionId: null,
+      snapshot: retrySnapshot as unknown as Record<string, unknown>,
+      settings: operation.settings,
+      estimate: null,
+      result: record.result as unknown as Record<string, unknown>,
+      totalUnits: String(remaining.length),
+      maxAttempts: operation.maxAttempts,
+    });
+
+    this.logger.log(`Enrichment plan ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
     return this.present(auth, retried);
   }
 
