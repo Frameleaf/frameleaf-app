@@ -9,6 +9,7 @@ import {
   studioCommandRegistry,
   studioCommandRejection,
 } from './commands';
+import { rational } from './rational-time';
 
 describe('studio command vocabulary', () => {
   it('registers exactly the ids it publishes, with no extras', () => {
@@ -70,7 +71,7 @@ describe('studio command vocabulary', () => {
 
 describe('studio command envelopes', () => {
   it('accepts a well-formed envelope', () => {
-    const envelope = createStudioCommandEnvelope('clip.split', { at: 3.5 }, 7);
+    const envelope = createStudioCommandEnvelope('clip.split', { at: rational(7, 2) }, 7);
 
     expect(isStudioCommandEnvelope(envelope)).toBe(true);
     expect(envelope.revision).toBe(7);
@@ -78,7 +79,7 @@ describe('studio command envelopes', () => {
   });
 
   it('rejects envelopes that are malformed, unknown or missing a usable key', () => {
-    const base = createStudioCommandEnvelope('clip.split', { at: 1 }, 1);
+    const base = createStudioCommandEnvelope('clip.split', { at: rational(1) }, 1);
 
     expect(isStudioCommandEnvelope(null)).toBe(false);
     expect(isStudioCommandEnvelope({ ...base, id: 'clip.explode' })).toBe(false);
@@ -91,8 +92,8 @@ describe('studio command envelopes', () => {
   });
 
   it('keeps the supplied idempotency key so a retry is recognisable', () => {
-    const first = createStudioCommandEnvelope('clip.split', { at: 1 }, 1, { idempotencyKey: 'same' });
-    const retry = createStudioCommandEnvelope('clip.split', { at: 1 }, 1, { idempotencyKey: 'same' });
+    const first = createStudioCommandEnvelope('clip.split', { at: rational(1) }, 1, { idempotencyKey: 'same' });
+    const retry = createStudioCommandEnvelope('clip.split', { at: rational(1) }, 1, { idempotencyKey: 'same' });
 
     expect(retry.idempotencyKey).toBe(first.idempotencyKey);
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FRAME_RATE_NTSC_30, rational } from 'src/utils/rational-time.js';
 import {
   STUDIO_ENGINE_REVISION,
   studioBatchCapabilities,
@@ -12,7 +13,7 @@ import {
 
 const envelope = (overrides: Record<string, unknown> = {}): unknown => ({
   id: 'clip.split',
-  payload: { at: 3.5 },
+  payload: { at: rational(7, 2) },
   revision: 7,
   idempotencyKey: 'key-1',
   issuedAt: 1_758_499_200_000,
@@ -80,7 +81,7 @@ describe('validateStudioCommandEnvelope', () => {
       valid: false,
       reason: 'invalid-payload',
     });
-    expect(validateStudioCommandEnvelope(envelope({ payload: { at: 1, sneak: true } }))).toMatchObject({
+    expect(validateStudioCommandEnvelope(envelope({ payload: { at: rational(1), sneak: true } }))).toMatchObject({
       valid: false,
       reason: 'invalid-payload',
     });
@@ -88,15 +89,40 @@ describe('validateStudioCommandEnvelope', () => {
 
   it('checks the declared kind of every field it is given', () => {
     expect(validateStudioCommandPayload('clip.split', { at: 'soon' })).toMatchObject({ valid: false });
-    expect(validateStudioCommandPayload('clip.split', { at: 1, clipIds: ['a', 'b'] })).toEqual({ valid: true });
-    expect(validateStudioCommandPayload('clip.split', { at: 1, clipIds: [1] })).toMatchObject({ valid: false });
+    expect(validateStudioCommandPayload('clip.split', { at: rational(1), clipIds: ['a', 'b'] })).toEqual({
+      valid: true,
+    });
+    expect(validateStudioCommandPayload('clip.split', { at: rational(1), clipIds: [1] })).toMatchObject({
+      valid: false,
+    });
+  });
+
+  it('insists that an instant, a length and a cadence are exact rationals', () => {
+    // A float is what FL-93 removed from this contract: 1001/30000 has no float spelling,
+    // so a client that sends 0.03336666 is refused rather than quietly resampled.
+    expect(validateStudioCommandPayload('clip.split', { at: 3.5 })).toMatchObject({ valid: false });
+    expect(validateStudioCommandPayload('clip.split', { at: { num: 7, den: 2 } })).toEqual({ valid: true });
+    // Unreduced and zero-denominator pairs break the invariants the arithmetic relies on.
+    expect(validateStudioCommandPayload('clip.split', { at: { num: 14, den: 4 } })).toMatchObject({ valid: false });
+    expect(validateStudioCommandPayload('clip.split', { at: { num: 1, den: 0 } })).toMatchObject({ valid: false });
+    expect(
+      validateStudioCommandPayload('sequence.add', { name: 'Main film', fps: FRAME_RATE_NTSC_30 }),
+    ).toEqual({ valid: true });
+    expect(validateStudioCommandPayload('sequence.add', { name: 'Main film', fps: 29.97 })).toMatchObject({
+      valid: false,
+    });
+    expect(
+      validateStudioCommandPayload('voiceover.add', { at: rational(8), duration: rational(6), uploadId: 'u' }),
+    ).toEqual({ valid: true });
   });
 
   it('lets an optional field be absent but not malformed', () => {
-    expect(validateStudioCommandPayload('clip.trimStart', { clipId: 'c', start: 2 })).toEqual({ valid: true });
-    expect(validateStudioCommandPayload('clip.trimStart', { clipId: 'c', start: 2, ripple: 'yes' })).toMatchObject({
-      valid: false,
+    expect(validateStudioCommandPayload('clip.trimStart', { clipId: 'c', start: rational(2) })).toEqual({
+      valid: true,
     });
+    expect(
+      validateStudioCommandPayload('clip.trimStart', { clipId: 'c', start: rational(2), ripple: 'yes' }),
+    ).toMatchObject({ valid: false });
   });
 
   it('carries graph-shaped values through unread, including an explicit null', () => {

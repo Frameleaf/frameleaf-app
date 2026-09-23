@@ -68,6 +68,17 @@ describe('Frameleaf rail destinations', () => {
     expect(ids.has('allAlbums')).toBe(true);
   });
 
+  it('keeps Pets next to People and never hides it behind an account preference', () => {
+    const explore = buildRailSections(allCapabilities()).find((section) => section.id === 'explore');
+    const ids = explore?.destinations.map((destination) => destination.id) ?? [];
+
+    expect(ids.indexOf('pets')).toBe(ids.indexOf('people') + 1);
+    // Pets is a Frameleaf feature with no upstream feature preference behind it, so no
+    // capability can remove it.
+    expect(flatten(defaultRailCapabilities()).some((destination) => destination.id === 'pets')).toBe(true);
+    expect(find(allCapabilities(), 'pets')?.href).toBe(Route.pets());
+  });
+
   it('always keeps the destinations that do not depend on a capability', () => {
     const ids = new Set(flatten(defaultRailCapabilities()).map((destination) => destination.id));
 
@@ -80,6 +91,7 @@ describe('Frameleaf rail destinations', () => {
       'locked',
       'allAlbums',
       'sharing',
+      'pets',
       'places',
       'workflows',
       'libraryCare',

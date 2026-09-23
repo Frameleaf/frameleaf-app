@@ -1,8 +1,15 @@
 <script lang="ts">
+  /**
+   * Admin settings (FL-71) on the Frameleaf settings host. Each section below is an existing
+   * system-config form bound to the same endpoints as before; the host groups them into the
+   * template's areas and carries the search. The header actions and command palette entries
+   * are unchanged.
+   */
   import AuthSettings from './AuthSettings.svelte';
   import BackupSettings from './BackupSettings.svelte';
   import FFmpegSettings from './FFmpegSettings.svelte';
   import ImageSettings from './ImageSettings.svelte';
+  import IntegrityChecksSettings from './IntegrityChecksSettings.svelte';
   import JobSettings from './JobSettings.svelte';
   import LibrarySettings from './LibrarySettings.svelte';
   import LoggingSettings from './LoggingSettings.svelte';
@@ -18,13 +25,14 @@
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
+  import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
+  import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SearchBar from '$lib/elements/SearchBar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
-  import { Alert, CommandPaletteDefaultProvider, Container } from '@immich/ui';
+  import { Alert, CommandPaletteDefaultProvider, Container, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiAccountOutline,
     mdiBackupRestore,
@@ -35,6 +43,7 @@
     mdiFileCheckOutline,
     mdiFileDocumentOutline,
     mdiFolderOutline,
+    mdiImageMultipleOutline,
     mdiImageOutline,
     mdiLockOutline,
     mdiMapMarkerOutline,
@@ -45,26 +54,18 @@
     mdiTrashCanOutline,
     mdiUpdate,
     mdiVideoOutline,
-    mdiImageMultipleOutline,
   } from '@mdi/js';
-  import type { Component } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
-  import IntegrityChecksSettings from './IntegrityChecksSettings.svelte';
 
   type Props = {
     data: PageData;
   };
 
   const { data }: Props = $props();
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
-  const settings: Array<{
-    component: Component;
-    title: string;
-    subtitle: string;
-    key: string;
-    icon: string;
-  }> = [
+  const sections: SettingsHostSection[] = $derived([
     {
       component: AuthSettings,
       title: $t('admin.authentication_settings'),
@@ -205,16 +206,7 @@
       key: 'video-transcoding',
       icon: mdiVideoOutline,
     },
-  ];
-
-  let searchQuery = $state('');
-
-  let filteredSettings = $derived(
-    settings.filter(({ title, subtitle }) => {
-      const query = searchQuery.toLowerCase();
-      return title.toLowerCase().includes(query) || subtitle.toLowerCase().includes(query);
-    }),
-  );
+  ]);
 
   const { CopyToClipboard, Upload, Download } = $derived(
     getSystemConfigActions($t, featureFlagsManager.value, systemConfigManager.value),
@@ -224,17 +216,12 @@
 <CommandPaletteDefaultProvider name={$t('admin.system_settings')} actions={[CopyToClipboard, Upload, Download]} />
 
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[CopyToClipboard, Download, Upload]}>
-  <Container size="large" center>
-    {#if featureFlagsManager.value.configFile}
-      <Alert color="warning" class="my-4 text-dark" title={$t('admin.config_set_by_file')} />
-    {/if}
-    <div>
-      <SearchBar placeholder={$t('search_settings')} bind:name={searchQuery} showLoadingSpinner={false} />
-    </div>
-    {#each filteredSettings as { component: Component, title, subtitle, key, icon } (key)}
-      <SettingAccordion {title} {subtitle} {key} {icon}>
-        <Component />
-      </SettingAccordion>
-    {/each}
+  <Container size="large" center class="my-4">
+    <Theme theme={appTheme}>
+      {#if featureFlagsManager.value.configFile}
+        <Alert color="warning" class="mb-4 text-dark" title={$t('admin.config_set_by_file')} />
+      {/if}
+      <SettingsHost {sections} />
+    </Theme>
   </Container>
 </AdminPageLayout>

@@ -74,12 +74,30 @@ export const CAPABILITIES = [
 ];
 
 /**
- * Payload field types. `object` and `object[]` are deliberately opaque: a payload carries
- * *intent*, and any graph-shaped value inside it round-trips unread so an unknown Freecut
- * field, a null, an array or a rational timing extension survives web, server and native.
- * A `?` suffix on a field marks it optional.
+ * Payload field types. A `?` suffix on a field marks it optional.
+ *
+ * `time`, `duration` and `rate` are exact rationals, never floats (FL-93 / `VID-102`): an
+ * instant on the timeline, a length, and a cadence or speed multiplier. They travel as a
+ * reduced `{ num, den }` pair of integers, which is the only representation in which an
+ * NTSC boundary the person set is the boundary the encoder is asked for. The web side
+ * types them `StudioTime`, `StudioDuration` and `StudioRate` over `Rational`; the native
+ * contract spells the same pair with named integer fields.
+ *
+ * `object` and `object[]` are deliberately opaque: a payload carries *intent*, and any
+ * graph-shaped value inside it round-trips unread so an unknown Freecut field, a null, an
+ * array or a rational timing extension survives web, server and native.
  */
-export const FIELD_TYPES = ['boolean', 'number', 'object', 'object[]', 'string', 'string[]', 'time'];
+export const FIELD_TYPES = [
+  'boolean',
+  'duration',
+  'number',
+  'object',
+  'object[]',
+  'rate',
+  'string',
+  'string[]',
+  'time',
+];
 
 const manifestRange = (prefix, ids) => ids.map((id) => `${prefix}${id}`);
 
@@ -234,7 +252,7 @@ export const catalogue = [
       assetId: 'string',
       at: 'time',
       kind: 'string?',
-      durationSeconds: 'number?',
+      duration: 'duration?',
     },
     description: 'Place library media on a track at a time, linking its camera audio.',
   },
@@ -355,8 +373,8 @@ export const catalogue = [
       clipId: 'string',
       volume: 'number?',
       muted: 'boolean?',
-      fadeInSeconds: 'number?',
-      fadeOutSeconds: 'number?',
+      fadeIn: 'duration?',
+      fadeOut: 'duration?',
       pitchSemitones: 'number?',
       pitchCents: 'number?',
       eq: 'object?',
@@ -451,7 +469,7 @@ export const catalogue = [
     prototypeFunctions: ['setSpeed'],
     prototypeSource: 'setSpeed',
     manifestIds: ['readme.timeline-editing.3'],
-    payload: { clipId: 'string', speed: 'number' },
+    payload: { clipId: 'string', speed: 'rate' },
     description: 'Rate-stretch a bounded clip and its linked clips to a new speed.',
   },
   {
@@ -512,7 +530,7 @@ export const catalogue = [
     prototypeFunctions: ['moveClip'],
     prototypeSource: 'moveClip (slide edit)',
     manifestIds: ['readme.timeline-editing.3', 'readme.preview-playback.4'],
-    payload: { clipId: 'string', delta: 'time' },
+    payload: { clipId: 'string', delta: 'duration' },
     description: 'Slide a clip along the track, trimming its neighbours instead of rippling.',
   },
   {
@@ -525,7 +543,7 @@ export const catalogue = [
     prototypeFunctions: ['updateClip'],
     prototypeSource: 'updateClip (slip edit on the source in and out points)',
     manifestIds: ['readme.timeline-editing.3', 'readme.preview-playback.4'],
-    payload: { clipId: 'string', delta: 'time' },
+    payload: { clipId: 'string', delta: 'duration' },
     description: 'Slip the source range inside a clip without moving the clip.',
   },
   {
@@ -758,7 +776,7 @@ export const catalogue = [
     payload: {
       sequenceId: 'string',
       clipIds: 'string[]?',
-      sampleCadenceSeconds: 'number?',
+      sampleCadence: 'duration?',
       destinationId: 'string',
     },
     description: 'Queue AI captioning of media with an explicit destination.',
@@ -818,7 +836,7 @@ export const catalogue = [
     prototypeFunctions: [],
     prototypeSource: 'beyond the prototype: RIFE frame interpolation',
     manifestIds: ['extra.interpolation-rife'],
-    payload: { clipId: 'string', targetFps: 'number', destinationId: 'string' },
+    payload: { clipId: 'string', targetFps: 'rate', destinationId: 'string' },
     description: 'Queue frame interpolation for a clip to an explicit destination.',
   },
   {
@@ -833,7 +851,7 @@ export const catalogue = [
     manifestIds: ['readme.local-ai-analysis.6', 'extra.musicgen'],
     payload: {
       prompt: 'string',
-      durationSeconds: 'number',
+      duration: 'duration',
       preset: 'string?',
       destinationId: 'string',
     },
@@ -914,7 +932,7 @@ export const catalogue = [
     payload: {
       sequenceId: 'string',
       thresholdDb: 'number?',
-      minimumSilenceSeconds: 'number?',
+      minimumSilence: 'duration?',
       destinationId: 'string',
     },
     description: 'Queue silence detection; the edit itself is applied after review.',
@@ -1151,7 +1169,7 @@ export const catalogue = [
     payload: {
       musicId: 'string',
       at: 'time',
-      durationSeconds: 'number?',
+      duration: 'duration?',
       volume: 'number?',
     },
     description: 'Place a music bed on the music track.',
@@ -1324,7 +1342,7 @@ export const catalogue = [
     manifestIds: ['readme.timeline-editing.2'],
     payload: {
       name: 'string',
-      fps: 'number?',
+      fps: 'rate?',
       width: 'number?',
       height: 'number?',
     },
@@ -1398,7 +1416,7 @@ export const catalogue = [
     manifestIds: ['readme.timeline-editing.8'],
     payload: {
       sequenceId: 'string',
-      fps: 'number?',
+      fps: 'rate?',
       width: 'number?',
       height: 'number?',
     },
@@ -1430,7 +1448,7 @@ export const catalogue = [
     payload: {
       at: 'time',
       text: 'string',
-      durationSeconds: 'number?',
+      duration: 'duration?',
       style: 'string?',
       position: 'string?',
       animation: 'string?',
@@ -1517,7 +1535,7 @@ export const catalogue = [
     prototypeFunctions: ['addVoiceover'],
     prototypeSource: 'addVoiceover',
     manifestIds: ['extra.microphone'],
-    payload: { at: 'time', durationSeconds: 'number', uploadId: 'string' },
+    payload: { at: 'time', duration: 'duration', uploadId: 'string' },
     description: 'Place a recorded or generated voiceover on the voice track.',
   },
 ];
@@ -1764,7 +1782,10 @@ export function buildServerMirror(document) {
       index === document.capabilities.length - 1 ? `  | '${capability}';` : `  | '${capability}'`,
     ),
     '',
-    `export type StudioPayloadFieldType = ${document.fieldTypes.map((type) => `'${type}'`).join(' | ')};`,
+    `export type StudioPayloadFieldType =`,
+    ...document.fieldTypes.map((type, index) =>
+      index === document.fieldTypes.length - 1 ? `  | '${type}';` : `  | '${type}'`,
+    ),
     '',
     'export type StudioPayloadField = StudioPayloadFieldType | `${StudioPayloadFieldType}?`;',
     '',
@@ -1837,6 +1858,42 @@ export function buildNativeContract(document) {
     'enum FrameleafStudioCapability {',
     ...document.capabilities.map((capability) => `  ${capability},`),
     '}',
+    '',
+    '/// An exact rational: a reduced fraction of two integers, never a float.',
+    '///',
+    '/// A `time`, `duration` or `rate` field carries one of these (FL-93). On the wire it is',
+    '/// the pair the web host and the server use, `{"num": .., "den": ..}`; here the two',
+    '/// integers are named, so native code cannot mistake it for a double.',
+    'class FrameleafStudioRational {',
+    '  const FrameleafStudioRational(this.numerator, this.denominator);',
+    '',
+    '  factory FrameleafStudioRational.fromJson(Map<String, dynamic> json) {',
+    '    final Object? numerator = json[\'num\'];',
+    '    final Object? denominator = json[\'den\'];',
+    '    if (numerator is! int || denominator is! int || denominator <= 0) {',
+    '      throw const FormatException(\'a rational needs integer num and positive den\');',
+    '    }',
+    '    return FrameleafStudioRational(numerator, denominator);',
+    '  }',
+    '',
+    '  final int numerator;',
+    '  final int denominator;',
+    '',
+    '  Map<String, dynamic> toJson() => <String, dynamic>{',
+    '    \'num\': numerator,',
+    '    \'den\': denominator,',
+    '  };',
+    '',
+    '  @override',
+    '  String toString() => \'$numerator/$denominator\';',
+    '}',
+    '',
+    '/// The field types that carry a [FrameleafStudioRational].',
+    'const Set<String> frameleafStudioRationalFieldTypes = <String>{',
+    "  'time',",
+    "  'duration',",
+    "  'rate',",
+    '};',
     '',
     '/// One payload field: its name, its declared type and whether it must be present.',
     'class FrameleafStudioField {',
