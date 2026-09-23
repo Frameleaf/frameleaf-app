@@ -11,35 +11,33 @@
    * (FL-77); this bar drives which of its three sections is current and asks it not to draw its
    * own, now-redundant nav (`showTabs={false}`).
    *
-   * Two honest differences from the prototype's simulated store:
-   *
-   * - The prototype's Libraries tab lists a synthetic "managed uploads" library per account
-   *   alongside any external ones. Production libraries (`LibraryResponseDto`) are always
-   *   import-path (external) libraries; an account's own uploaded photos are never a `Library`
-   *   row, so only external libraries are listed here.
-   * - The prototype's Activity tab is a per-account admin audit log the server does not keep.
-   *   The account's real, already-authorized activity signal is its upload calendar
-   *   (`getUserCalendarHeatmapAdmin`), which used to sit outside every tab; it moves here
-   *   instead, fetched once the first time this tab is shown.
+   * Libraries lists the account's managed uploads first, as the template's per-account "uploads"
+   * library, then its external libraries, each with its item count from the existing statistics.
+   * Activity is the template's `resource-history` list over the server's administrator audit trail
+   * for this account (`getUserHistoryAdmin`), newest first, fetched afresh each time the tab opens
+   * so changes made from this page show up, and paged with "Show more".
    */
   import AccountLifecyclePanel from '$lib/components/frameleaf/AccountLifecyclePanel.svelte';
   import AccountPreferencesEditor from '$lib/components/frameleaf/AccountPreferencesEditor.svelte';
   import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import CalendarHeatmap from '$lib/components/CalendarHeatmap.svelte';
-  import Skeleton from '$lib/elements/Skeleton.svelte';
-  import { getHeatmapRange } from '$lib';
+  import {
+    HISTORY_PAGE_SIZE,
+    describeAdminEvent,
+    formatHistoryDate,
+    managedUploadCount,
+  } from '$lib/frameleaf/account-history';
   import type { AccountPreferencesSection } from '$lib/frameleaf/account-preferences';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import {
-    CalendarHeatmapType,
-    getUserCalendarHeatmapAdmin,
+    getUserHistoryAdmin,
     type AssetStatsResponseDto,
-    type CalendarHeatmapResponseDto,
     type LibraryResponseDto,
+    type LibraryStatsResponseDto,
     type SessionResponseDto,
+    type UserAdminHistoryEventResponseDto,
     type UserAdminResponseDto,
     type UserPreferencesResponseDto,
     type UserPreferencesUpdateDto,
@@ -57,8 +55,10 @@
     preferences: UserPreferencesResponseDto;
     statistics: AssetStatsResponseDto;
     sessions: SessionResponseDto[];
-    /** Every library in the system; filtered here to the ones this account owns. */
+    /** Libraries in the system; only the ones this account owns are listed. */
     libraries: LibraryResponseDto[];
+    /** Each listed library's statistics, by library id. */
+    libraryStatistics?: Record<string, LibraryStatsResponseDto>;
     /** False for a deleted account: the server only updates preferences of live accounts. */
     preferencesEditable: boolean;
     savePreferences: (update: UserPreferencesUpdateDto) => Promise<UserPreferencesResponseDto>;
@@ -74,6 +74,7 @@
     statistics,
     sessions,
     libraries,
+    libraryStatistics = {},
     preferencesEditable,
     savePreferences,
     loadPreferences,
@@ -84,20 +85,43 @@
   let tab = $state<Tab>('overview');
   let preferenceSection = $state<AccountPreferencesSection>('features');
 
-  // The Activity tab's upload calendar is fetched once, the first time it is shown.
-  let heatmapPromise = $state<Promise<CalendarHeatmapResponseDto> | null>(null);
+  // The Activity tab: the account's administrator history, one page at a time.
+  let history = $state<UserAdminHistoryEventResponseDto[]>([]);
+  let historyHasMore = $state(false);
+  let historyStatus = $state<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  let historyRequest = 0;
+
+  const loadHistory = async (more = false) => {
+    const request = ++historyRequest;
+    historyStatus = 'loading';
+    try {
+      const page = await getUserHistoryAdmin({
+        id: user.id,
+        before: more ? history.at(-1)?.id : undefined,
+        take: HISTORY_PAGE_SIZE,
+      });
+      if (request !== historyRequest) {
+        return;
+      }
+      history = more ? [...history, ...page.events] : page.events;
+      historyHasMore = page.hasMore;
+      historyStatus = 'loaded';
+    } catch {
+      if (request === historyRequest) {
+        historyStatus = 'error';
+      }
+    }
+  };
 
   const selectTab = (name: Tab) => {
     tab = name;
     if (PREFERENCE_TABS.has(name)) {
       preferenceSection = name as AccountPreferencesSection;
     }
-    if (name === 'activity' && !heatmapPromise) {
-      heatmapPromise = getUserCalendarHeatmapAdmin({
-        ...getHeatmapRange(),
-        id: user.id,
-        $type: CalendarHeatmapType.Upload,
-      });
+    if (name === 'activity') {
+      history = [];
+      historyHasMore = false;
+      void loadHistory();
     }
   };
 
@@ -119,6 +143,23 @@
   const createdAt = $derived(createDateFormatter(editedLocale).formatDateTime(new Date(user.createdAt)));
 
   const ownedLibraries = $derived(libraries.filter((library) => library.ownerId === user.id));
+  const libraryItems = (library: LibraryResponseDto) => {
+    const stats = libraryStatistics[library.id];
+    return stats ? stats.photos + stats.videos : library.assetCount;
+  };
+  const uploadItems = $derived(
+    managedUploadCount(
+      statistics,
+      ownedLibraries.map((library) => libraryStatistics[library.id] ?? { photos: library.assetCount, videos: 0 }),
+    ),
+  );
+
+  // the template's "<kind> · <status>" caption under each library's name
+  const activeLabel = $derived($t('frameleaf_account_detail_library_status_active'));
+  const uploadCaption = $derived(`${$t('frameleaf_account_detail_library_kind_upload')} · ${activeLabel}`);
+  const externalCaption = $derived(`${$t('frameleaf_account_detail_library_kind_external')} · ${activeLabel}`);
+
+  const formatBytes = (bytes: number) => getByteUnitString(bytes, $locale, 1);
 </script>
 
 <nav class="resource-tabs" aria-label={$t('frameleaf_account_detail_tabs_nav_label')}>
@@ -199,35 +240,55 @@
   />
 {:else if tab === 'libraries'}
   <div class="resource-list">
+    <div>
+      <div>
+        <strong>{$t('frameleaf_account_detail_uploads_name', { values: { name: user.name } })}</strong>
+        <small>{uploadCaption}</small>
+        <small>{$t('frameleaf_account_detail_uploads_note')}</small>
+      </div>
+      <span>{$t('frameleaf_account_detail_library_items', { values: { count: uploadItems } })}</span>
+      <Button onclick={() => selectTab('overview')}>{$t('frameleaf_account_detail_uploads_storage')}</Button>
+    </div>
     {#each ownedLibraries as library (library.id)}
       <div>
         <div>
           <strong>{library.name}</strong>
-          <small>
-            {$t('frameleaf_account_detail_library_folders', { values: { count: library.importPaths.length } })} ·
-            {$t('frameleaf_account_detail_library_items', { values: { count: library.assetCount } })}
-          </small>
+          <small>{externalCaption}</small>
         </div>
+        <span>{$t('frameleaf_account_detail_library_items', { values: { count: libraryItems(library) } })}</span>
         <Button onclick={() => goto(Route.viewLibrary(library))}>
           {$t('frameleaf_account_detail_library_open')}
         </Button>
       </div>
-    {:else}
-      <p class="resource-empty">{$t('frameleaf_account_detail_libraries_empty')}</p>
     {/each}
   </div>
 {:else if tab === 'security'}
   <AccountSecurityPanel {user} {sessions} />
-{:else if tab === 'activity' && heatmapPromise}
-  {#await heatmapPromise}
-    <Skeleton height={80} class="mt-2 rounded-lg" />
-  {:then data}
-    <CalendarHeatmap
-      {data}
-      itemLabel={(item) => $t('upload_day_count', { values: item })}
-      totalLabel={(count) => $t('uploads_count', { values: { count } })}
-    />
-  {/await}
+{:else if tab === 'activity'}
+  {#if history.length > 0}
+    <ol class="resource-history">
+      {#each history as event (event.id)}
+        <li>
+          <strong>{describeAdminEvent(event, $t, formatBytes)}</strong>
+          <span>{event.subject} · {formatHistoryDate(event.createdAt, editedLocale)}</span>
+        </li>
+      {/each}
+    </ol>
+  {/if}
+  {#if historyStatus === 'loading'}
+    <p class="resource-empty" role="status">{$t('loading')}</p>
+  {:else if historyStatus === 'error'}
+    <div class="resource-error" role="alert">
+      <span>{$t('frameleaf_account_history_error')}</span>
+      <Button onclick={() => loadHistory(history.length > 0)}>{$t('retry')}</Button>
+    </div>
+  {:else if historyStatus === 'loaded' && history.length === 0}
+    <p class="resource-empty">{$t('frameleaf_account_history_empty')}</p>
+  {:else if historyHasMore}
+    <div class="resource-actions resource-more">
+      <Button onclick={() => loadHistory(true)}>{$t('frameleaf_account_history_show_more')}</Button>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -371,12 +432,59 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  .resource-list > div > span {
+    color: var(--fl-muted);
+    white-space: nowrap;
+  }
   .resource-empty {
     margin: 0;
+    padding: 1.5rem;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+  .resource-history {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.75rem;
+  }
+  .resource-history li {
+    display: grid;
+    gap: 0.3125rem;
+    padding: 0.9375rem 0;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .resource-history strong {
+    font-weight: 500;
+  }
+  .resource-history span {
+    color: var(--fl-muted);
+    font-size: 0.6875rem;
+  }
+  .resource-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--fl-danger);
+    border-radius: 0.375rem;
+    color: var(--fl-danger-text);
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+  .resource-more {
+    justify-content: center;
+    margin-top: 1rem;
   }
   @media (max-width: 640px) {
+    .resource-list > div {
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
     .resource-stats {
       grid-template-columns: 1fr 1fr;
       row-gap: 1.5rem;

@@ -4,6 +4,7 @@ import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
 import path, { isAbsolute, parse } from 'node:path';
 import picomatch from 'picomatch';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
@@ -20,6 +21,7 @@ import {
   mapLibrary,
 } from 'src/dtos/library.dto.js';
 import {
+  AdminAuditAction,
   AssetStatus,
   AssetType,
   ChecksumAlgorithm,
@@ -35,6 +37,23 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, handlePromiseError } from 'src/utils/misc.js';
+
+/**
+ * One entry for the administrator audit trail about a library (FL-76), listed in its owner's
+ * account history. `auth` is absent when a library changes without an administrator's request.
+ */
+const libraryEvent = (
+  auth: AuthDto | undefined,
+  library: { id: string; name: string; ownerId: string },
+  action: AdminAuditAction,
+) => ({
+  userId: library.ownerId,
+  actorId: auth?.user.id ?? null,
+  libraryId: library.id,
+  action,
+  subject: library.name,
+  detail: null,
+});
 
 @Injectable()
 export class LibraryService extends BaseService {
@@ -230,7 +249,7 @@ export class LibraryService extends BaseService {
     return JobStatus.Success;
   }
 
-  async create(dto: CreateLibraryDto): Promise<LibraryResponseDto> {
+  async create(dto: CreateLibraryDto, auth?: AuthDto): Promise<LibraryResponseDto> {
     const library = await this.libraryRepository.create({
       ownerId: dto.ownerId,
       name: dto.name ?? 'New External Library',
@@ -244,6 +263,7 @@ export class LibraryService extends BaseService {
         '**/.stfolder/**',
       ],
     });
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
     return mapLibrary(library);
   }
 
@@ -340,7 +360,7 @@ export class LibraryService extends BaseService {
     return { importPaths };
   }
 
-  async update(id: string, dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
+  async update(id: string, dto: UpdateLibraryDto, auth?: AuthDto): Promise<LibraryResponseDto> {
     await this.findOrFail(id);
 
     if (dto.importPaths) {
@@ -355,11 +375,12 @@ export class LibraryService extends BaseService {
     }
 
     const library = await this.libraryRepository.update(id, dto);
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
     return mapLibrary(library);
   }
 
-  async delete(id: string) {
-    await this.findOrFail(id);
+  async delete(id: string, auth?: AuthDto) {
+    const library = await this.findOrFail(id);
 
     if (this.watchLibraries) {
       await this.unwatch(id);
@@ -367,6 +388,7 @@ export class LibraryService extends BaseService {
 
     await this.libraryRepository.softDelete(id);
     await this.jobRepository.queue({ name: JobName.LibraryDelete, data: { id } });
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryDeleted)]);
   }
 
   @OnJob({ name: JobName.LibraryDelete, queue: QueueName.Library })
@@ -429,8 +451,8 @@ export class LibraryService extends BaseService {
     );
   }
 
-  async queueScan(id: string) {
-    await this.findOrFail(id);
+  async queueScan(id: string, auth?: AuthDto) {
+    const library = await this.findOrFail(id);
 
     this.logger.log(`Starting to scan library ${id}`);
 
@@ -442,6 +464,7 @@ export class LibraryService extends BaseService {
     });
 
     await this.jobRepository.queue({ name: JobName.LibrarySyncAssetsQueueAll, data: { id } });
+    await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryScanQueued)]);
   }
 
   @OnJob({ name: JobName.LibraryScanQueueAll, queue: QueueName.Library })

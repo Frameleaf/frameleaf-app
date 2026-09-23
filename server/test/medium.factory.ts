@@ -22,6 +22,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -483,6 +484,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
 const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
+    case AdminAuditRepository:
     case AlbumRepository:
     case AlbumUserRepository:
     case ActivityRepository:
@@ -570,6 +572,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
 const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
+    case AdminAuditRepository:
     case AlbumRepository:
     case AssetRepository:
     case AssetJobRepository:

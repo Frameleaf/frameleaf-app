@@ -929,6 +929,29 @@ export type CalendarHeatmapResponseDto = {
     /** Total activity count over the period */
     totalCount: number;
 };
+export type UserAdminHistoryEventResponseDto = {
+    action: AdminAuditAction;
+    /** The administrator who did it; null once that account is gone */
+    actorId: string | null;
+    /** That administrator's name; null once that account is gone */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise */
+    detail: string | null;
+    /** Event ID */
+    id: string;
+    /** The library a library event is about; null for account events and once the library is gone */
+    libraryId: string | null;
+    /** The account's or library's name at the time */
+    subject: string;
+};
+export type UserAdminHistoryResponseDto = {
+    /** Newest first */
+    events: UserAdminHistoryEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+};
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
 };
@@ -2096,6 +2119,8 @@ export type ImageDescriptionEnrichmentResponseDto = {
     appliedTags: boolean;
     context?: string;
     description?: string;
+    /** The processing destination that generated the description */
+    destinationId?: string;
     environment?: string;
     error?: string;
     modelName?: string;
@@ -2108,6 +2133,8 @@ export type ImageDescriptionEnrichmentResponseDto = {
     }[];
     /** Machine-readable reason when status === "skipped" */
     skipReason?: string;
+    /** Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed */
+    staleReason?: EnrichmentStaleReason;
     status: Status;
     tags?: string[];
     updatedAt?: string;
@@ -2639,6 +2666,207 @@ export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
 };
+export type EnrichmentDestinationAdmissionDto = {
+    admitted: boolean;
+    /** Stable refusal code when it would not */
+    refusal: string | null;
+};
+export type EnrichmentDestinationOptionDto = {
+    /** Sends media off this network; needs recorded consent */
+    cloud: boolean;
+    enrichment: EnrichmentDestinationAdmissionDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    name: string;
+    search: EnrichmentDestinationAdmissionDto;
+};
+export type EnrichmentOptionsResponseDto = {
+    /** Stages a new plan starts with; never moment captions */
+    defaultStages: EnrichmentStage[];
+    descriptionEnabled: boolean;
+    destinations: EnrichmentDestinationOptionDto[];
+    framesPerVideo: number;
+    lockedCheckEnabled: boolean;
+    maxAssets: number;
+    maxSamples: number;
+    /** Saved description model */
+    modelName: string;
+    /** The destinations library work is routed to; a plan uses these unless another is chosen */
+    routes: {
+        enrichment: string | null;
+        search: string | null;
+    };
+    searchEnabled: boolean;
+    /** Saved search model */
+    searchModelName: string;
+};
+export type EnrichmentPlanCreateDto = {
+    /** The frozen set, in order; never re-resolved */
+    assetIds: string[];
+    /** Destination for descriptions, checks and captions */
+    destinationId?: string;
+    /** Client idempotency key; submitting the same key again returns the existing plan */
+    requestKey?: string;
+    /** Destination for search embeddings */
+    searchDestinationId?: string;
+    /** Chosen stages; the ones they need are added */
+    stages: EnrichmentStage[];
+};
+export type EnrichmentPlanCountsDto = {
+    cancelled: number;
+    completed: number;
+    failed: number;
+    queued: number;
+    running: number;
+    skipped: number;
+    total: number;
+};
+export type EnrichmentPlanDestinationDto = {
+    cloud: boolean;
+    id: string;
+    name: string;
+};
+export type EnrichmentPlanStageOutcomeDto = {
+    at: string | null;
+    message: string | null;
+    reasonKey: string | null;
+    stage: EnrichmentStage;
+    state: EnrichmentItemState;
+};
+export type EnrichmentPlanItemDto = {
+    assetId: string;
+    /** Waiting for its one automatic retry */
+    retryPending: boolean;
+    stages: EnrichmentPlanStageOutcomeDto[];
+    state: EnrichmentItemState;
+};
+export type EnrichmentPlanResponseDto = {
+    /** Stages run only because a chosen stage needs them */
+    addedStages: EnrichmentStage[];
+    configHash: string;
+    counts: EnrichmentPlanCountsDto;
+    enrichmentDestination: (EnrichmentPlanDestinationDto) | null;
+    /** Locked items not listed because this session is not unlocked */
+    hiddenCount: number;
+    items: EnrichmentPlanItemDto[];
+    modelName: string;
+    operation: MediaOperationDto;
+    requestedStages: EnrichmentStage[];
+    searchDestination: (EnrichmentPlanDestinationDto) | null;
+    searchModelName: string;
+    stages: EnrichmentStage[];
+};
+export type EnrichmentPreviewRequestDto = {
+    /** Samples to describe; run one at a time */
+    assetIds: string[];
+    /** Destination to run on; the routed one when omitted */
+    destinationId?: string;
+    fallbackModelName?: string;
+    /** Draft model; the saved one when omitted */
+    modelName?: string;
+    /** Draft prompt; the saved one when omitted */
+    prompt?: AdminConfigImageDescriptionPromptDto;
+};
+export type EnrichmentPreviewSampleDto = {
+    ambiguousReferences: string[];
+    assetId: string;
+    /** What the draft produced; stored nowhere */
+    candidate: string | null;
+    /** The stored generated description, unchanged */
+    current: string | null;
+    durationMs: number;
+    /** Video frames the draft saw; 0 for a photo */
+    frameCount: number;
+    hallucinatedNames: string[];
+    message: string | null;
+    reasonKey: string | null;
+    status: EnrichmentPreviewStatus;
+    tags: string[];
+    warnings: string[];
+};
+export type EnrichmentPreviewResponseDto = {
+    cloud: boolean;
+    destinationId: string;
+    destinationName: string;
+    modelName: string;
+    samples: EnrichmentPreviewSampleDto[];
+};
+export type VideoMomentSearchDto = {
+    limit?: number;
+    query: string;
+};
+export type VideoMomentSearchHitDto = {
+    assetId: string;
+    caption: string | null;
+    frameId: string | null;
+    match: VideoMomentMatch;
+    momentId: string | null;
+    /** Higher is closer */
+    score: number;
+    timestampMs: number;
+};
+export type VideoMomentSearchResponseDto = {
+    hits: VideoMomentSearchHitDto[];
+};
+export type VideoMomentCoverDto = {
+    /** Time of the chosen frame; null returns to the best frame */
+    timestampMs: number | null;
+};
+export type VideoMomentFrameDto = {
+    frameIndex: number;
+    height: number | null;
+    id: string;
+    /** Has a search embedding from the saved search model */
+    indexed: boolean;
+    isCover: boolean;
+    /** 1 is the best frame */
+    rank: number;
+    score: number;
+    timestampMs: number;
+    width: number | null;
+};
+export type VideoMomentDto = {
+    caption: string | null;
+    createdAt: string;
+    endMs: number | null;
+    frameId: string | null;
+    id: string;
+    source: VideoMomentSource;
+    staleReason: (EnrichmentStaleReason) | null;
+    timestampMs: number;
+    /** Typed by the owner; never generated */
+    transcript: string | null;
+    updatedAt: string;
+};
+export type VideoMomentsResponseDto = {
+    assetId: string;
+    captionModel: string | null;
+    captionedAt: string | null;
+    coverFrameId: string | null;
+    /** The owner's chosen cover time; null means the best frame */
+    coverTimestampMs: number | null;
+    embeddingModel: string | null;
+    extractorVersion: string | null;
+    frames: VideoMomentFrameDto[];
+    framesExtractedAt: string | null;
+    indexedAt: string | null;
+    moments: VideoMomentDto[];
+    staleReason: (EnrichmentStaleReason) | null;
+    state: VideoMomentIndexState;
+};
+export type VideoMomentCreateDto = {
+    caption?: string | null;
+    endMs?: number | null;
+    timestampMs: number;
+    transcript?: string | null;
+};
+export type VideoMomentUpdateDto = {
+    caption?: string | null;
+    endMs?: number | null;
+    timestampMs?: number;
+    transcript?: string | null;
+};
 export type DuplicateActiveGroupDto = {
     duplicateId: string;
     memberIds: string[];
@@ -3046,6 +3274,12 @@ export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
     checkedAt: string;
+    /** The candidate has exactly the checksum recorded for the original */
+    checksumMatch: boolean;
+    /** The reviewer chose this candidate for the finding */
+    chosen: boolean;
+    /** The candidate decoded successfully; null when not checked */
+    decodeValid: boolean | null;
     evidence: {
         [key: string]: any;
     };
@@ -3056,6 +3290,9 @@ export type MediaHealthCandidateDto = {
     resolution: {
         [key: string]: any;
     };
+    /** Search location the candidate was found in */
+    rootId: string | null;
+    rootKind: (MediaHealthRootKind) | null;
     status: MediaHealthStatus;
     /** Visual match score from 0 to 1 */
     visualMatchScore: number | null;
@@ -3122,14 +3359,103 @@ export type MediaHealthBulkResultDto = {
     success: boolean;
 };
 export type MediaHealthBulkResponseDto = {
+    /** The durable job applying the accepted findings, in Activity; null when none was accepted */
+    operationId?: string | null;
     results: MediaHealthBulkResultDto[];
 };
+export type MediaHealthCandidateChoiceDto = {
+    /** Candidate ID */
+    candidateId: string;
+    /** Media health finding ID */
+    findingId: string;
+};
+export type MediaHealthChooseCandidatesDto = {
+    choices: MediaHealthCandidateChoiceDto[];
+};
+export type MediaHealthRecoverDto = {
+    choices: MediaHealthCandidateChoiceDto[];
+    /** Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source */
+    confirmed: boolean;
+};
 export type MediaHealthScanResponseDto = {
+    /** The durable job doing the work, in Activity */
+    operationId?: string | null;
     runId: string;
 };
 export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
     ids: string[];
+};
+export type MediaHealthLocateDto = {
+    /** Media health finding IDs */
+    ids: string[];
+    /** Search locations; library storage and external libraries when omitted */
+    rootIds?: string[];
+};
+export type MediaHealthRootDto = {
+    /** Search location ID */
+    id: string;
+    kind: MediaHealthRootKind;
+    label: string;
+    /** Folders searched, for review */
+    paths: string[];
+};
+export type MediaHealthRootsResponseDto = {
+    roots: MediaHealthRootDto[];
+};
+export type MediaHealthOperationDto = {
+    autoRetries: number;
+    cancelRequestedAt: string | null;
+    createdAt: string;
+    error: string | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    mode: MediaHealthOperationMode;
+    pauseRequestedAt: string | null;
+    processedUnits: number;
+    progress: number;
+    status: MediaOperationStatus;
+    totalUnits: number | null;
+    updatedAt: string;
+};
+export type MediaHealthQueuesDto = {
+    damagedConfirmed: number;
+    damagedSuspected: number;
+    /** Duplicate groups waiting for review */
+    duplicates: number;
+    /** Items whose metadata has not been read yet */
+    enrichmentPending: number;
+    /** Imported items that need review; null when unavailable */
+    importReview: number | null;
+    /** Missing originals that still need a decision */
+    missing: number;
+    /** Missing originals with a verified exact copy */
+    missingVerified: number;
+    /** Kept apart from damage: the decoder cannot read the format */
+    unsupportedRaw: number;
+};
+export type MediaHealthActivityDto = {
+    action: MediaHealthActivityAction;
+    createdAt: string;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    /** Items the job covered */
+    items: number;
+    status: MediaOperationStatus;
+};
+export type MediaHealthRunsDto = {
+    corrupt: (MediaHealthRunResponseDto) | null;
+    missing: (MediaHealthRunResponseDto) | null;
+};
+export type MediaHealthSummaryResponseDto = {
+    operation: (MediaHealthOperationDto) | null;
+    queues: MediaHealthQueuesDto;
+    recent: MediaHealthActivityDto[];
+    /** At least one recovery location is configured for this reader */
+    recoveryAvailable: boolean;
+    runs: MediaHealthRunsDto;
 };
 export type MediaOperationEstimateDto = {
     /** Configured cloud rate detail, when one applies */
@@ -3335,6 +3661,14 @@ export type MediaOperationDuplicateGroupDto = {
     /** Every photo of the group, as reviewed */
     memberIds: string[];
 };
+export type MediaOperationMediaHealthEntryDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Reviewed candidate ID, for a relink or a recovery */
+    candidateId?: string;
+    /** Media health finding ID */
+    findingId: string;
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
@@ -3344,6 +3678,7 @@ export type MediaOperationBulkPayloadDto = {
     duplicateGroups?: MediaOperationDuplicateGroupDto[];
     latitude?: number;
     longitude?: number;
+    mediaHealth?: MediaOperationMediaHealthEntryDto[];
     /** Relative shift in minutes, for `dateMode: shift` */
     minutes?: number;
     pairs?: MediaOperationLivePhotoPairDto[];
@@ -7342,6 +7677,24 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
+ * Retrieve user history
+ */
+export function getUserHistoryAdmin({ before, id, take }: {
+    before?: string;
+    id: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminHistoryResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/history${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve user preferences
  */
 export function getUserPreferencesAdmin({ id }: {
@@ -9031,6 +9384,162 @@ export function deleteDuplicate({ id }: {
     }));
 }
 /**
+ * Get a video moment frame
+ */
+export function getVideoMomentFrame({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/enrichment/frames/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Search video moments
+ */
+export function searchVideoMoments({ videoMomentSearchDto }: {
+    videoMomentSearchDto: VideoMomentSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentSearchResponseDto;
+    }>("/enrichment/moments/search", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoMomentSearchDto
+    })));
+}
+/**
+ * Get enrichment options
+ */
+export function getEnrichmentOptions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentOptionsResponseDto;
+    }>("/enrichment/options", {
+        ...opts
+    }));
+}
+/**
+ * Queue an enrichment plan
+ */
+export function createEnrichmentPlan({ enrichmentPlanCreateDto }: {
+    enrichmentPlanCreateDto: EnrichmentPlanCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: EnrichmentPlanResponseDto;
+    }>("/enrichment/plans", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: enrichmentPlanCreateDto
+    })));
+}
+/**
+ * Get an enrichment plan
+ */
+export function getEnrichmentPlan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentPlanResponseDto;
+    }>(`/enrichment/plans/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Preview an enrichment change
+ */
+export function previewEnrichment({ enrichmentPreviewRequestDto }: {
+    enrichmentPreviewRequestDto: EnrichmentPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: EnrichmentPreviewResponseDto;
+    }>("/enrichment/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: enrichmentPreviewRequestDto
+    })));
+}
+/**
+ * Choose a video cover frame
+ */
+export function setVideoMomentCover({ id, videoMomentCoverDto }: {
+    id: string;
+    videoMomentCoverDto: VideoMomentCoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentsResponseDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/cover`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: videoMomentCoverDto
+    })));
+}
+/**
+ * Get video moments
+ */
+export function getVideoMoments({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentsResponseDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments`, {
+        ...opts
+    }));
+}
+/**
+ * Add a video moment
+ */
+export function createVideoMoment({ id, videoMomentCreateDto }: {
+    id: string;
+    videoMomentCreateDto: VideoMomentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: VideoMomentDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoMomentCreateDto
+    })));
+}
+/**
+ * Delete a video moment
+ */
+export function deleteVideoMoment({ id, momentId }: {
+    id: string;
+    momentId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/enrichment/videos/${encodeURIComponent(id)}/moments/${encodeURIComponent(momentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a video moment
+ */
+export function updateVideoMoment({ id, momentId, videoMomentUpdateDto }: {
+    id: string;
+    momentId: string;
+    videoMomentUpdateDto: VideoMomentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentDto;
+    }>(`/enrichment/videos/${encodeURIComponent(id)}/moments/${encodeURIComponent(momentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: videoMomentUpdateDto
+    })));
+}
+/**
  * Retrieve faces for asset
  */
 export function getFaces({ id }: {
@@ -9398,8 +9907,12 @@ export function reverseGeocode({ lat, lon }: {
 /**
  * List media health findings
  */
-export function list({ category, size, status }: {
+export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
+    allAccounts?: boolean;
     category?: MediaHealthCategory;
+    needsAttention?: boolean;
+    ownerId?: string;
+    page?: number;
     size?: number;
     status?: MediaHealthStatus;
 }, opts?: Oazapfts.RequestOpts) {
@@ -9407,12 +9920,31 @@ export function list({ category, size, status }: {
         status: 200;
         data: MediaHealthListResponseDto;
     }>(`/media-health${QS.query(QS.explode({
+        allAccounts,
         category,
+        needsAttention,
+        ownerId,
+        page,
         size,
         status
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Choose media health candidates
+ */
+export function chooseCandidates({ mediaHealthChooseCandidatesDto }: {
+    mediaHealthChooseCandidatesDto: MediaHealthChooseCandidatesDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthBulkResponseDto;
+    }>("/media-health/candidates/choose", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthChooseCandidatesDto
+    })));
 }
 /**
  * Move confirmed corrupt media to trash
@@ -9442,6 +9974,21 @@ export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Recover damaged media from a verified copy
+ */
+export function recoverDamaged({ mediaHealthRecoverDto }: {
+    mediaHealthRecoverDto: MediaHealthRecoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthBulkResponseDto;
+    }>("/media-health/corrupt/recover", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthRecoverDto
+    })));
+}
+/**
  * Dismiss media health findings
  */
 export function dismiss({ mediaHealthBulkActionDto }: {
@@ -9456,8 +10003,8 @@ export function dismiss({ mediaHealthBulkActionDto }: {
 /**
  * Locate missing media
  */
-export function locateMissing({ mediaHealthBulkActionDto }: {
-    mediaHealthBulkActionDto: MediaHealthBulkActionDto;
+export function locateMissing({ mediaHealthLocateDto }: {
+    mediaHealthLocateDto: MediaHealthLocateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
@@ -9465,7 +10012,7 @@ export function locateMissing({ mediaHealthBulkActionDto }: {
     }>("/media-health/missing/locate", oazapfts.json({
         ...opts,
         method: "POST",
-        body: mediaHealthBulkActionDto
+        body: mediaHealthLocateDto
     })));
 }
 /**
@@ -9493,6 +10040,34 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }>("/media-health/missing/scan", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List Library Care search locations
+ */
+export function getRoots(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaHealthRootsResponseDto;
+    }>("/media-health/roots", {
+        ...opts
+    }));
+}
+/**
+ * Get Library Care summary
+ */
+export function getSummary({ allAccounts, ownerId }: {
+    allAccounts?: boolean;
+    ownerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaHealthSummaryResponseDto;
+    }>(`/media-health/summary${QS.query(QS.explode({
+        allAccounts,
+        ownerId
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -13646,6 +14221,28 @@ export enum CalendarHeatmapType {
     Upload = "Upload",
     Taken = "Taken"
 }
+export enum AdminAuditAction {
+    AccountCreated = "account-created",
+    AccountUpdated = "account-updated",
+    AdminGranted = "admin-granted",
+    AdminRevoked = "admin-revoked",
+    QuotaChanged = "quota-changed",
+    StorageLabelChanged = "storage-label-changed",
+    PasswordReset = "password-reset",
+    PinSet = "pin-set",
+    PinReset = "pin-reset",
+    SessionRevoked = "session-revoked",
+    PreferencesUpdated = "preferences-updated",
+    CastingDisabled = "casting-disabled",
+    CastingAllowed = "casting-allowed",
+    AccountDeleted = "account-deleted",
+    AccountRemovalScheduled = "account-removal-scheduled",
+    AccountRestored = "account-restored",
+    LibraryCreated = "library-created",
+    LibraryUpdated = "library-updated",
+    LibraryScanQueued = "library-scan-queued",
+    LibraryDeleted = "library-deleted"
+}
 export enum AssetOrder {
     Asc = "asc",
     Desc = "desc"
@@ -14156,6 +14753,22 @@ export enum MediaHealthSeverity {
     Warning = "warning",
     Critical = "critical"
 }
+export enum MediaHealthRootKind {
+    Managed = "managed",
+    Library = "library",
+    Recovery = "recovery"
+}
+export enum MediaHealthOperationMode {
+    Scan = "scan",
+    Locate = "locate"
+}
+export enum MediaHealthActivityAction {
+    Scan = "scan",
+    Locate = "locate",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media"
+}
 export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
@@ -14165,6 +14778,8 @@ export enum MediaOperationKind {
     Bulk = "bulk",
     StudioBundleExport = "studio_bundle_export",
     StudioBundleImport = "studio_bundle_import",
+    EnrichmentPlan = "enrichment_plan",
+    MediaHealth = "media_health",
     IcloudSync = "icloud_sync"
 }
 export enum MediaOperationBulkAction {
@@ -14192,7 +14807,10 @@ export enum MediaOperationBulkAction {
     RefreshFaces = "refresh-faces",
     RelinkLivePhoto = "relink-live-photo",
     ResolveDuplicates = "resolve-duplicates",
-    UndoDuplicates = "undo-duplicates"
+    UndoDuplicates = "undo-duplicates",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -14676,4 +15294,43 @@ export enum UserMetadataKey {
     Preferences = "preferences",
     License = "license",
     Onboarding = "onboarding"
+}
+export enum EnrichmentStage {
+    Frames = "frames",
+    LockedCheck = "locked-check",
+    Description = "description",
+    MomentIndex = "moment-index",
+    MomentCaptions = "moment-captions"
+}
+export enum EnrichmentItemState {
+    Queued = "queued",
+    Running = "running",
+    Skipped = "skipped",
+    Failed = "failed",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum EnrichmentPreviewStatus {
+    Success = "success",
+    Failed = "failed",
+    Skipped = "skipped"
+}
+export enum VideoMomentMatch {
+    Visual = "visual",
+    Caption = "caption",
+    Transcript = "transcript"
+}
+export enum VideoMomentSource {
+    Generated = "generated",
+    Manual = "manual"
+}
+export enum EnrichmentStaleReason {
+    SourceChanged = "source-changed",
+    IdentityChanged = "identity-changed",
+    ConfigChanged = "config-changed"
+}
+export enum VideoMomentIndexState {
+    None = "none",
+    Ready = "ready",
+    Stale = "stale"
 }
