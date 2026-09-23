@@ -31,6 +31,6 @@
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <AlbumDirectory tree={data.tree} onRefresh={refresh} />
+    <AlbumDirectory tree={data.tree} spaceInvitations={data.spaceInvitations} onRefresh={refresh} />
   </Theme>
 </UserPageLayout>
