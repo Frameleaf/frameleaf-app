@@ -5,6 +5,8 @@ import {
   MediaOperationStatus,
   type MediaOperationDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
+import { bulkActionTitleKey } from '$lib/frameleaf/bulk-actions';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import type { DownloadState } from '$lib/managers/download-manager.svelte';
 import { UploadState, type UploadAsset } from '$lib/types';
@@ -93,7 +95,7 @@ export type ActivityPauseState = {
   pausePending: boolean;
   canPause: boolean;
   canResume: boolean;
-  pauseBlockedKey?: string;
+  pauseBlockedKey?: Translations;
 };
 
 export const mediaOperationPauseState = (
@@ -105,7 +107,7 @@ export const mediaOperationPauseState = (
   const canResume = paused || pausePending;
   const canPause = !canResume && !!operation.pausable && PAUSABLE_STATUSES.has(status) && !operation.cancelRequestedAt;
 
-  let pauseBlockedKey: string | undefined;
+  let pauseBlockedKey: Translations | undefined;
   if (!canPause && !canResume && RUNNING_STATUSES.has(status)) {
     if (!operation.pausable) {
       pauseBlockedKey = 'frameleaf_running_pause_unavailable_kind';
@@ -121,7 +123,7 @@ export const mediaOperationPauseState = (
 
 /** A count the server sends as a string; null when absent or not a real number. */
 const asCount = (value: string | number | null | undefined): number | null => {
-  if (value === null || value === undefined || value === '') {
+  if ((value ?? '') === '') {
     return null;
   }
   const number = Number(value);
@@ -135,14 +137,14 @@ export type ActivityItem = {
   /** The server job id, when there is one. What cancel, retry and dismiss act on. */
   operationId?: string;
   /** i18n key for the kind of work, e.g. `frameleaf_activity_kind_studio_export`. */
-  kindKey: string;
+  kindKey: Translations;
   /** i18n key for the state, e.g. `frameleaf_activity_status_rendering`. */
-  statusKey: string;
+  statusKey: Translations;
   tone: ActivityTone;
   /** What the person recognises: a project name, a filename, an archive name. */
   title: string;
   /** Used instead of `title` when the name is a translated label rather than the user's own text. */
-  titleKey?: string;
+  titleKey?: Translations;
   /** Percent complete, or null when the total is not known and a bar would be a guess. */
   progress: number | null;
   /** Still working. Drives the indicator's count and the presence of Cancel. */
@@ -156,7 +158,7 @@ export type ActivityItem = {
   /** Paused, or pausing: the control resumes it. */
   canResume: boolean;
   /** i18n key for why pausing is not possible right now, when the job is unfinished. */
-  pauseBlockedKey?: string;
+  pauseBlockedKey?: Translations;
   /** Units of work done and in total, when the server counts them; null when it does not. */
   done: number | null;
   total: number | null;
@@ -165,7 +167,7 @@ export type ActivityItem = {
   /** Finished badly, or finished with failures inside it. */
   failed: boolean;
   /** i18n key for where the work runs; absent for browser-local transfers. */
-  destinationKey?: string;
+  destinationKey?: Translations;
   /** Already-translated settings fragments shown under the title, e.g. "3840×2160 · MP4". */
   details: string[];
   /** Operator detail from the server. Shown as given; never invented. */
@@ -192,7 +194,7 @@ export type ActivityItem = {
   studioBundle?: 'export' | 'import';
 };
 
-const DESTINATION_KEY: Record<MediaOperationDestination, string> = {
+const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
   [MediaOperationDestination.Local]: 'frameleaf_activity_destination_local',
   [MediaOperationDestination.Lan]: 'frameleaf_activity_destination_lan',
   [MediaOperationDestination.Runpod]: 'frameleaf_activity_destination_runpod',
@@ -288,6 +290,11 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   // every language (FL-73).
   const dedup = operation.kind === MediaOperationKind.PhysicalDeduplication;
   const dedupPlan = dedup ? asPlanName(operation.settings?.planId) : null;
+  // FL-74: a preservation job copies and checks files; "Rendering" would say something untrue.
+  const workingKey: Translations =
+    isPreservationKind(operation.kind) && BULK_WORKING.has(status)
+      ? 'frameleaf_activity_bulk_running'
+      : `frameleaf_activity_status_${status}`;
 
   return {
     id: `job:${operation.id}`,
@@ -302,10 +309,12 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
           ? 'frameleaf_activity_status_retrying'
           : icloud && ICLOUD_WORKING.has(status)
             ? 'frameleaf_activity_icloud_syncing'
-            : `frameleaf_activity_status_${status}`,
+            : workingKey,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
+    // A job about a Locked item a locked session may not see comes without its file name (FL-43).
+    ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item' }),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,
@@ -332,6 +341,16 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
   };
 };
+
+/** The four preservation kinds (FL-74), which Activity lists beside every other job. */
+const PRESERVATION_KINDS: ReadonlySet<MediaOperationKind> = new Set([
+  MediaOperationKind.PreservationExport,
+  MediaOperationKind.PreservationVerify,
+  MediaOperationKind.PreservationReview,
+  MediaOperationKind.PreservationRestore,
+]);
+
+const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.has(kind);
 
 /** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
 const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {
@@ -391,7 +410,7 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
           : `frameleaf_activity_status_${status}`,
     tone: failed ? 'danger' : retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
-    ...(bulk && { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` }),
+    ...(bulk && { titleKey: bulkActionTitleKey(bulk.action) }),
     progress:
       status === MediaOperationStatus.Completed
         ? 100
@@ -419,18 +438,16 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
-    ...(bulk
-      ? {
-          bulk: {
-            requested,
-            succeeded: bulk.succeeded,
-            failed: bulk.failed,
-            skipped: bulk.skipped,
-            // Failed items get one automatic retry before they count as failed (FL-104).
-            retried: bulk.retried ?? 0,
-          },
-        }
-      : {}),
+    ...(bulk && {
+      bulk: {
+        requested,
+        succeeded: bulk.succeeded,
+        failed: bulk.failed,
+        skipped: bulk.skipped,
+        // Failed items get one automatic retry before they count as failed (FL-104).
+        retried: bulk.retried ?? 0,
+      },
+    }),
   };
 };
 
@@ -443,7 +460,7 @@ const UPLOAD_TONE: Record<UploadState, ActivityTone> = {
 };
 
 /** `UploadState` is a numeric enum, so the i18n key comes from a name map, not the value. */
-const UPLOAD_STATUS_KEY: Record<UploadState, string> = {
+const UPLOAD_STATUS_KEY: Record<UploadState, Translations> = {
   [UploadState.PENDING]: 'frameleaf_activity_upload_pending',
   [UploadState.STARTED]: 'frameleaf_activity_upload_started',
   [UploadState.DONE]: 'frameleaf_activity_upload_done',
@@ -541,7 +558,7 @@ export const fromBulkOperation = (operation: BulkOperationRecord): ActivityItem 
     tone: BULK_TONE[operation.status],
     // A bulk operation has no name of its own; the action it performs is what identifies it.
     title: operation.requestId,
-    titleKey: `frameleaf_bulk_${operation.action.replaceAll('-', '_')}`,
+    titleKey: bulkActionTitleKey(operation.action),
     progress:
       operation.total && operation.total > 0 ? clampPercent((operation.processed / operation.total) * 100) : null,
     running,

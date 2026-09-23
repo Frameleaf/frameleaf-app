@@ -652,6 +652,158 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/config/history": {
+      "get": {
+        "description": "The newest saved settings changes, each with its time, the administrator who saved it and the changed settings before and after. Credentials are listed only as replaced or cleared.",
+        "operationId": "getAdminConfigHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the settings change history",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/revision": {
+      "get": {
+        "description": "Retrieve the admin configuration together with a revision that changes whenever a saved setting changes. Send the revision back when saving so a save made against older settings is refused.",
+        "operationId": "getAdminConfigWithRevision",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the admin configuration with its revision",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save a complete system configuration only when the saved settings still match the revision it was made against. Returns the saved configuration and its new revision.",
+        "operationId": "updateAdminConfigWithRevision",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminConfigRevisionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "The saved settings changed since the given revision; nothing was saved."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update the system configuration if it is unchanged",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups": {
       "delete": {
         "description": "Delete a backup by its filename",
@@ -6028,6 +6180,189 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/develop/exports": {
+      "get": {
+        "description": "Every recorded export of the original, newest first, and whether the original still matches it.",
+        "operationId": "getAssetDevelopExports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DevelopExportResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List exports of an original for editing elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Records the SHA-256 of the original now, so a file developed from it in another application can be brought back and checked. Download the original through the ordinary download route.",
+        "operationId": "createAssetDevelopExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export an original for editing elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/imports": {
+      "post": {
+        "description": "Checks that the file arrived intact and was developed from the original the photo has now, then keeps it as a new version and renders its preview. Nothing is kept when a check fails; the original is never changed.",
+        "operationId": "importAssetDevelopRendition",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopImportDto"
+              }
+            }
+          },
+          "description": "The developed file and the original it was made from",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Bring back a file developed elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/develop/preview": {
       "post": {
         "description": "Renders the recipe from the original at preview size and returns the image; nothing is stored.",
@@ -9302,6 +9637,220 @@
           }
         ],
         "x-immich-permission": "userConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-presets": {
+      "get": {
+        "description": "Your saved develop presets, by name.",
+        "operationId": "getDevelopPresets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List develop presets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Saves develop settings (sliders, look, strength and masks, never geometry) under a new name.",
+        "operationId": "createDevelopPreset",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopPresetCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-presets/{id}": {
+      "delete": {
+        "description": "Deletes the preset. Versions already saved with its settings are unchanged.",
+        "operationId": "deleteDevelopPreset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Renames a preset, replaces its settings, or both.",
+        "operationId": "updateDevelopPreset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopPresetUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
         "x-immich-state": "Alpha"
       }
     },
@@ -18300,6 +18849,1076 @@
         "x-immich-permission": "plugin.read"
       }
     },
+    "/preservation/packages": {
+      "get": {
+        "description": "Your packages, newest first, with their counts, last verification and newest job.",
+        "operationId": "getPreservationPackages",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PreservationPackageDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List preservation packages",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Freezes a selection of your own items and queues the job that copies their originals, with checksums, metadata sidecars, albums, people, tags and edit recipes. Locked items are included only from an unlocked session.",
+        "operationId": "createPreservationPackage",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationExportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationPackageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}": {
+      "delete": {
+        "description": "Deletes the package’s own copy on this server. Your library’s originals are never touched, and a package named on the server by an administrator is only forgotten.",
+        "operationId": "removePreservationPackage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "One of your packages.",
+        "operationId": "getPreservationPackage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationPackageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}/download": {
+      "get": {
+        "description": "The package this server wrote, as one ZIP. A package holding Locked items needs an unlocked session. Verify the downloaded copy before relying on it.",
+        "operationId": "downloadPreservationPackage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}/items": {
+      "get": {
+        "description": "Each item of the package with its state, last verification and checksum. Locked items are counted but not named until the session is unlocked.",
+        "operationId": "getPreservationPackageItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/PreservationItemState"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "verifyState",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/PreservationVerifyState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a preservation package item report",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}/manifest": {
+      "get": {
+        "description": "The manifest of a package this server wrote.",
+        "operationId": "downloadPreservationManifest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a preservation manifest",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}/retry": {
+      "post": {
+        "description": "Queues a job that copies the items the package could not; items already copied are kept.",
+        "operationId": "retryPreservationPackage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry a preservation export",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/packages/{id}/verify": {
+      "post": {
+        "description": "Queues a check of every file of the package against its manifest; missing and changed files are reported.",
+        "operationId": "verifyPreservationPackage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Verify a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/preview": {
+      "post": {
+        "description": "How many of your items a selection holds, how large they are, whether they fit in one package and what a restoration brings back. Writes nothing.",
+        "operationId": "previewPreservationExport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a preservation export",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.download",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/restores": {
+      "get": {
+        "description": "Your restorations, newest first.",
+        "operationId": "getPreservationRestores",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PreservationRestoreDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List restorations",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queues a review of the package: every file is verified and compared with your library. Nothing is written until you restore.",
+        "operationId": "createPreservationRestore",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationRestoreCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationRestoreDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a restoration",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/restores/{id}": {
+      "get": {
+        "description": "One of your restorations.",
+        "operationId": "getPreservationRestore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationRestoreDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a restoration",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/restores/{id}/apply": {
+      "post": {
+        "description": "Queues the restore: originals your library lacks are added, ones it has are matched and never replaced, and metadata is applied by your choices. Asking again carries on a restore that stopped.",
+        "operationId": "applyPreservationRestore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a reviewed package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/restores/{id}/decisions": {
+      "put": {
+        "description": "Your choices where the package and your library disagree. They apply to items not yet restored; a retry keeps them.",
+        "operationId": "updatePreservationRestoreDecisions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationDecisionsUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationRestoreDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record restoration choices",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/restores/{id}/items": {
+      "get": {
+        "description": "What the review found for each item — new, already in your library, or in the trash — the fields that disagree, your choices and what the restore left for you to look at.",
+        "operationId": "getPreservationRestoreItems",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/PreservationRestoreItemFilter"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationRestoreItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get restoration items",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/server-packages": {
+      "post": {
+        "description": "An administrator names a package directory or ZIP on this server, outside its media storage, to verify or restore into their own library. It is read in place and never modified.",
+        "operationId": "registerPreservationServerPackage",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationServerPackageCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationPackageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register a preservation package on the server",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/preservation/uploads": {
+      "post": {
+        "description": "Reads the package’s manifest before anything is kept. The upload is kept for three days for verification and restoration.",
+        "operationId": "uploadPreservationPackage",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PreservationUploadCreateDto"
+              }
+            }
+          },
+          "description": "A preservation package to verify or restore",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreservationPackageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a preservation package",
+        "tags": [
+          "Preservation"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/public/config": {
       "get": {
         "description": "Retrieve the system configuration properties that are visible to everyone.",
@@ -19335,6 +20954,107 @@
           }
         },
         "summary": "Begin validating a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/remote-references": {
+      "get": {
+        "description": "Studio export renders that were cancelled or abandoned and copies of outputs this worker kept. Each stays listed until the worker acknowledges it.",
+        "operationId": "getRenderRemoteReferences",
+        "parameters": [
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerRemoteReferenceDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "List what this worker must stop or delete",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/remote-references/{id}/acknowledge": {
+      "post": {
+        "description": "The worker confirms the render is stopped, or the copy deleted, and nothing of it remains.",
+        "operationId": "acknowledgeRenderRemoteReference",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Acknowledge a remote reference",
         "tags": [
           "Render workers"
         ],
@@ -24777,6 +26497,119 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/exports/{id}": {
+      "get": {
+        "description": "One export version, with where its result lives and what it inherited.",
+        "operationId": "getStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportVersionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio export",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/exports/{id}/download": {
+      "get": {
+        "description": "The file of a published export that uses media shared with you. Available only while every source is still available to you; a result in your library is downloaded like any other photo or video.",
+        "operationId": "downloadStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a Studio export kept with its project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/previews": {
       "post": {
         "description": "Asks for one frame of a project's current stored revision at an exact rational time, quality and viewport. The server reads the graph from project storage and resolves its sources for the caller; a request naming a superseded revision is refused with the current one. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
@@ -25759,6 +27592,148 @@
           }
         ],
         "summary": "Duplicate a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/exports": {
+      "get": {
+        "description": "Every export of the project, newest first: published versions and exports still on their way.",
+        "operationId": "getStudioExports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List a Studio project’s exports",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queues a render of the current version to a finished file. Every source is checked for you now, again when the render starts and again before the result is published; the result inherits every source’s Locked and sensitive status. A result that uses media shared with you stays with the project. Follow it in Activity. Owner only.",
+        "operationId": "createStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioExportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportCreateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export a Studio project",
         "tags": [
           "Studio projects"
         ],
@@ -31400,6 +33375,10 @@
       "description": "A plugin is an installed module that makes filters and actions available for the workflow feature."
     },
     {
+      "name": "Preservation",
+      "description": "A preservation package is an independent copy of selected originals with checksums, metadata sidecars, album structure, people, tags, Locked records and edit recipes. Packages are written, verified, reviewed and restored by durable media operations; a restoration never overwrites an existing original and never creates a duplicate."
+    },
+    {
       "name": "Queues",
       "description": "Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed."
     },
@@ -33342,6 +35321,39 @@
         },
         "required": [
           "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigRevisionResponseDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "revision": {
+            "description": "Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "AdminConfigRevisionUpdateDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "expectedRevision": {
+            "description": "The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "expectedRevision"
         ],
         "type": "object"
       },
@@ -36519,6 +38531,262 @@
         ],
         "type": "string"
       },
+      "AssetDevelopImportDto": {
+        "properties": {
+          "exportId": {
+            "description": "The export this file was developed from",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "file": {
+            "description": "The developed file: JPEG, PNG, TIFF, WebP or HEIF",
+            "format": "binary",
+            "type": "string"
+          },
+          "label": {
+            "description": "Optional name for the new version",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "renditionChecksum": {
+            "description": "SHA-256 (hex) of the file as the client sent it; a transfer that does not match is refused",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "software": {
+            "description": "Application the file was developed with",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original the file was developed from",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopMask": {
+        "properties": {
+          "adjustments": {
+            "$ref": "#/components/schemas/AssetDevelopMaskAdjustments",
+            "default": {
+              "blacks": 0,
+              "contrast": 0,
+              "dehaze": 0,
+              "exposure": 0,
+              "highlights": 0,
+              "saturation": 0,
+              "shadows": 0,
+              "temperature": 0,
+              "tint": 0,
+              "vibrance": 0,
+              "whites": 0
+            }
+          },
+          "amount": {
+            "default": 100,
+            "description": "How much of the adjustment is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "description": "A disabled mask is kept but not rendered",
+            "type": "boolean"
+          },
+          "endX": {
+            "default": 0.5,
+            "description": "Where a linear mask has faded out, across the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "endY": {
+            "default": 1,
+            "description": "Where a linear mask has faded out, down the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "feather": {
+            "default": 50,
+            "description": "Softness of a radial edge as a percentage of the radius",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Client-chosen identifier, unique within the recipe",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "invert": {
+            "default": false,
+            "description": "Apply the adjustment outside the shape instead of inside",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopMaskKind"
+          },
+          "name": {
+            "default": null,
+            "description": "Optional name shown in the editor",
+            "maxLength": 60,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "radiusX": {
+            "default": 0.25,
+            "description": "Horizontal radius of a radial mask as a fraction of the frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "radiusY": {
+            "default": 0.25,
+            "description": "Vertical radius of a radial mask as a fraction of the frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "x": {
+            "description": "Centre (radial) or start (linear) across the oriented frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Centre (radial) or start (linear) down the oriented frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopMaskAdjustments": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Dehaze inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV inside the mask",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlights inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Saturation inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadows inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "White balance shift inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Tint inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Vibrance inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "AssetDevelopMaskKind": {
+        "description": "Shape of a selective adjustment mask",
+        "enum": [
+          "radial",
+          "linear"
+        ],
+        "type": "string"
+      },
       "AssetDevelopPreset": {
         "description": "Named look applied on top of the develop sliders",
         "enum": [
@@ -36628,6 +38896,15 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
           },
           "noiseReduction": {
             "default": 0,
@@ -36782,6 +39059,14 @@
         },
         "type": "object"
       },
+      "AssetDevelopRevisionKind": {
+        "description": "How a develop version was produced",
+        "enum": [
+          "recipe",
+          "external"
+        ],
+        "type": "string"
+      },
       "AssetDevelopRevisionResponseDto": {
         "properties": {
           "assetId": {
@@ -36790,6 +39075,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "attempts": {
+            "description": "Render attempts so far; one automatic retry follows a first failure",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "createdAt": {
             "description": "When the version was saved",
             "format": "date-time",
@@ -36797,6 +39088,18 @@
           },
           "error": {
             "description": "Why the last render failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "exportId": {
+            "description": "The export of the original an imported version was developed from",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "Name of the imported file, for a version developed elsewhere",
             "nullable": true,
             "type": "string"
           },
@@ -36825,6 +39128,9 @@
             "description": "True for the version the asset currently shows",
             "type": "boolean"
           },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopRevisionKind"
+          },
           "label": {
             "description": "Name given when the version was saved",
             "nullable": true,
@@ -36850,11 +39156,26 @@
             "nullable": true,
             "type": "string"
           },
+          "renditionChecksum": {
+            "description": "SHA-256 (hex) of the edited master file, once it exists",
+            "nullable": true,
+            "type": "string"
+          },
           "revision": {
             "description": "Per-asset sequence number, 1 for the first saved version",
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "software": {
+            "description": "Application an imported version was developed with, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original this version was rendered or developed from",
+            "nullable": true,
+            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/AssetDevelopRevisionStatus"
@@ -36874,19 +39195,26 @@
         },
         "required": [
           "assetId",
+          "attempts",
           "createdAt",
           "error",
+          "exportId",
+          "fileName",
           "hasMaster",
           "hasPreview",
           "height",
           "id",
           "isCurrent",
+          "kind",
           "label",
           "progress",
           "recipe",
           "renderedAt",
           "rendererVersion",
+          "renditionChecksum",
           "revision",
+          "software",
+          "sourceChecksum",
           "status",
           "updatedAt",
           "width"
@@ -39772,6 +42100,269 @@
             "nullable": true,
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DevelopExportResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset whose original was exported",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the original was exported",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "File name of the exported original",
+            "type": "string"
+          },
+          "id": {
+            "description": "Export ID; quote it when bringing the developed file back",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isCurrentOriginal": {
+            "description": "False once the asset original no longer matches the exported bytes; a return is then refused",
+            "type": "boolean"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original when it was exported",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "fileName",
+          "id",
+          "isCurrentOriginal",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetCreateDto": {
+        "properties": {
+          "name": {
+            "description": "Name shown in the presets list; unique per account",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto"
+          }
+        },
+        "required": [
+          "name",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the preset was saved",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Preset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Preset name",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto"
+          },
+          "updatedAt": {
+            "description": "When the preset last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name",
+          "settings",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetSettingsDto": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AssetDevelopPreset",
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "DevelopPresetUpdateDto": {
+        "properties": {
+          "name": {
+            "description": "Name shown in the presets list; unique per account",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto",
+            "description": "Replaces every stored setting of the preset"
           }
         },
         "type": "object"
@@ -44598,7 +47189,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -44676,6 +47267,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -44713,7 +47308,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
@@ -44800,7 +47396,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -44874,6 +47470,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -44907,7 +47507,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
@@ -45008,7 +47609,12 @@
           "media_health",
           "icloud_sync",
           "takeout_import",
-          "physical_deduplication"
+          "physical_deduplication",
+          "preservation_export",
+          "preservation_verify",
+          "preservation_review",
+          "preservation_restore",
+          "studio_export_publish"
         ],
         "type": "string"
       },
@@ -49583,6 +52189,1092 @@
         ],
         "type": "object"
       },
+      "PreservationConflictDto": {
+        "properties": {
+          "archived": {
+            "description": "The package’s value",
+            "nullable": true,
+            "type": "string"
+          },
+          "current": {
+            "description": "The library’s value",
+            "nullable": true,
+            "type": "string"
+          },
+          "decision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationDecision"
+              }
+            ],
+            "description": "Your choice; the restoration default applies when null",
+            "nullable": true
+          },
+          "field": {
+            "$ref": "#/components/schemas/PreservationConflictField"
+          }
+        },
+        "required": [
+          "archived",
+          "current",
+          "decision",
+          "field"
+        ],
+        "type": "object"
+      },
+      "PreservationConflictField": {
+        "description": "A field the package and the library can disagree about",
+        "enum": [
+          "date",
+          "description",
+          "location",
+          "rating",
+          "favorite",
+          "archive",
+          "editRecipe"
+        ],
+        "type": "string"
+      },
+      "PreservationDecision": {
+        "description": "`keep` the library’s value, or `replace` it with the package’s",
+        "enum": [
+          "keep",
+          "replace"
+        ],
+        "type": "string"
+      },
+      "PreservationDecisionsUpdateDto": {
+        "properties": {
+          "conflictDefault": {
+            "$ref": "#/components/schemas/PreservationDecision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationItemDecisionsDto"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "restoreEditRecipes": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PreservationExportCreateDto": {
+        "properties": {
+          "includeLocked": {
+            "description": "Include your Locked items. Needs an unlocked session; they are restored Locked.",
+            "type": "boolean"
+          },
+          "includeMetadata": {
+            "description": "Include metadata sidecars, albums, people, tags and edit recipes. Checksums are always included.",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Idempotency key; a repeated submit answers with the first package",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PreservationScopeDto"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PreservationItemDecisionsDto": {
+        "properties": {
+          "decisions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PreservationDecision"
+            },
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decisions",
+          "id"
+        ],
+        "type": "object"
+      },
+      "PreservationItemDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sha256": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sizeBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PreservationItemState"
+          },
+          "verifyState": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationVerifyState"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "assetId",
+          "error",
+          "id",
+          "locked",
+          "name",
+          "reasonKey",
+          "sha256",
+          "sizeBytes",
+          "sourceAssetId",
+          "state",
+          "verifyState"
+        ],
+        "type": "object"
+      },
+      "PreservationItemState": {
+        "description": "`pending`, `copied`, `failed` or `skipped` for an export; `listed` for an item read from a package",
+        "enum": [
+          "pending",
+          "copied",
+          "failed",
+          "skipped",
+          "listed"
+        ],
+        "type": "string"
+      },
+      "PreservationItemsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationItemDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PreservationManifestSummaryDto": {
+        "properties": {
+          "complete": {
+            "description": "Every selected item was written; a complete package can still be damaged later",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "exported": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "includeLocked": {
+            "type": "boolean"
+          },
+          "includeMetadata": {
+            "type": "boolean"
+          },
+          "locked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "packageId": {
+            "description": "The package’s own identity, from its manifest",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "producerVersion": {
+            "type": "string"
+          },
+          "scopeDescription": {
+            "type": "string"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "complete",
+          "createdAt",
+          "exported",
+          "failed",
+          "includeLocked",
+          "includeMetadata",
+          "locked",
+          "packageId",
+          "producerVersion",
+          "scopeDescription",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "PreservationPackageCountsDto": {
+        "properties": {
+          "copied": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "listed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "locked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pending": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "copied",
+          "failed",
+          "listed",
+          "locked",
+          "pending",
+          "skipped",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PreservationPackageDto": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/PreservationPackageCountsDto"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "downloadable": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "description": "When an uploaded package is discarded",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/PreservationPackageFormat"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includeLocked": {
+            "type": "boolean"
+          },
+          "includeMetadata": {
+            "type": "boolean"
+          },
+          "lockedContent": {
+            "description": "It holds Locked items: downloading it needs an unlocked session",
+            "type": "boolean"
+          },
+          "manifest": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationManifestSummaryDto"
+              }
+            ],
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationDto"
+              }
+            ],
+            "description": "The newest job on this package",
+            "nullable": true
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PreservationPackageOrigin"
+          },
+          "restorable": {
+            "type": "boolean"
+          },
+          "scopeDescription": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sizeBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PreservationPackageStatus"
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationSupportDto"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "verification": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationVerificationDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "counts",
+          "createdAt",
+          "downloadable",
+          "expiresAt",
+          "format",
+          "id",
+          "includeLocked",
+          "includeMetadata",
+          "lockedContent",
+          "manifest",
+          "name",
+          "operation",
+          "origin",
+          "restorable",
+          "scopeDescription",
+          "sizeBytes",
+          "status",
+          "support",
+          "updatedAt",
+          "verification"
+        ],
+        "type": "object"
+      },
+      "PreservationPackageFormat": {
+        "description": "How the package is stored on this server",
+        "enum": [
+          "directory",
+          "zip"
+        ],
+        "type": "string"
+      },
+      "PreservationPackageOrigin": {
+        "description": "`export`: written by this server; `upload`: a package you uploaded; `server`: a package an administrator named on this server",
+        "enum": [
+          "export",
+          "upload",
+          "server"
+        ],
+        "type": "string"
+      },
+      "PreservationPackageStatus": {
+        "description": "`building`: being written or not yet read; `ready`: every selected item is in it; `incomplete`: some items could not be copied; `unreadable`: its manifest or index could not be believed; `removed`: its files were deleted",
+        "enum": [
+          "building",
+          "ready",
+          "incomplete",
+          "unreadable",
+          "removed"
+        ],
+        "type": "string"
+      },
+      "PreservationPreviewDto": {
+        "properties": {
+          "includeLocked": {
+            "description": "Count Locked items as included; needs an unlocked session",
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PreservationScopeDto"
+          }
+        },
+        "type": "object"
+      },
+      "PreservationPreviewResponseDto": {
+        "properties": {
+          "bytes": {
+            "type": "string"
+          },
+          "freeBytes": {
+            "description": "Free space where the package would be written",
+            "nullable": true,
+            "type": "string"
+          },
+          "includedBytes": {
+            "type": "string"
+          },
+          "includedItems": {
+            "description": "Items the export would include",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "items": {
+            "description": "Items matching, Locked ones not counted",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lockedAllowed": {
+            "description": "This session is unlocked, so Locked items may be included",
+            "type": "boolean"
+          },
+          "lockedBytes": {
+            "type": "string"
+          },
+          "lockedItems": {
+            "description": "Locked items matching",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxItems": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationSupportDto"
+            },
+            "type": "array"
+          },
+          "withinLimit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bytes",
+          "freeBytes",
+          "includedBytes",
+          "includedItems",
+          "items",
+          "lockedAllowed",
+          "lockedBytes",
+          "lockedItems",
+          "maxItems",
+          "support",
+          "withinLimit"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreCountsDto": {
+        "properties": {
+          "conflicts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "existing": {
+            "description": "Originals the library already holds; they are matched, never copied again",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "findings": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "locked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "new": {
+            "description": "Originals the library does not hold",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "pending": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "ready": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "restored": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "trashed": {
+            "description": "Originals the library holds in the trash; restore them from the trash first",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conflicts",
+          "existing",
+          "failed",
+          "findings",
+          "locked",
+          "matched",
+          "new",
+          "pending",
+          "ready",
+          "restored",
+          "skipped",
+          "total",
+          "trashed"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreCreateDto": {
+        "properties": {
+          "conflictDefault": {
+            "$ref": "#/components/schemas/PreservationDecision",
+            "description": "What to do where the package and the library disagree and you have not chosen; `keep` when omitted"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "packageId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "restoreEditRecipes": {
+            "description": "Restore edit recipes; edited versions are rendered again",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "packageId"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums and collections in the package",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "conflictDefault": {
+            "$ref": "#/components/schemas/PreservationDecision"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/PreservationRestoreCountsDto"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationDto"
+              }
+            ],
+            "description": "The newest job on this restoration",
+            "nullable": true
+          },
+          "packageId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "people": {
+            "description": "Named people in the package",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "restoreEditRecipes": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PreservationRestoreStatus"
+          },
+          "support": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationSupportDto"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "conflictDefault",
+          "counts",
+          "createdAt",
+          "id",
+          "name",
+          "operation",
+          "packageId",
+          "people",
+          "reasonKey",
+          "restoreEditRecipes",
+          "status",
+          "support",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreItemDto": {
+        "properties": {
+          "applied": {
+            "type": "boolean"
+          },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationConflictDto"
+            },
+            "type": "array"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "findings": {
+            "description": "Translation keys for what the restore left for you to look at",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "locked": {
+            "description": "Locked in the package or in your library; listed only to an unlocked session",
+            "type": "boolean"
+          },
+          "match": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationRestoreMatch"
+              }
+            ],
+            "nullable": true
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PreservationRestoreItemState"
+          }
+        },
+        "required": [
+          "applied",
+          "assetId",
+          "conflicts",
+          "error",
+          "findings",
+          "id",
+          "locked",
+          "match",
+          "name",
+          "reasonKey",
+          "sourceAssetId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreItemFilter": {
+        "enum": [
+          "conflicts",
+          "failed",
+          "findings"
+        ],
+        "type": "string"
+      },
+      "PreservationRestoreItemState": {
+        "enum": [
+          "pending",
+          "ready",
+          "failed",
+          "creating",
+          "restored",
+          "matched",
+          "skipped"
+        ],
+        "type": "string"
+      },
+      "PreservationRestoreItemsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PreservationRestoreItemDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PreservationRestoreMatch": {
+        "enum": [
+          "new",
+          "existing",
+          "trashed"
+        ],
+        "type": "string"
+      },
+      "PreservationRestoreStatus": {
+        "description": "`reviewing`: the package is being checked; `ready`: review the findings, then restore; `restoring`; `completed`; `unreadable`: the package cannot be believed",
+        "enum": [
+          "reviewing",
+          "ready",
+          "restoring",
+          "completed",
+          "unreadable"
+        ],
+        "type": "string"
+      },
+      "PreservationScopeDto": {
+        "description": "What to preserve. Only your own items are ever included: never a partner’s or a shared album’s.",
+        "properties": {
+          "assetIds": {
+            "description": "Exactly these items of yours, instead of a filter",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter",
+            "description": "Your items matching these conditions; the whole library when empty"
+          }
+        },
+        "type": "object"
+      },
+      "PreservationServerPackageCreateDto": {
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "A package directory or ZIP file on this server, outside its media storage",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "PreservationSupportCategory": {
+        "description": "A kind of information a package may carry",
+        "enum": [
+          "originals",
+          "dates",
+          "places",
+          "descriptions",
+          "ratings",
+          "favorites",
+          "archive",
+          "locked",
+          "albums",
+          "tags",
+          "people",
+          "editRecipes",
+          "livePhotos",
+          "stacks",
+          "documentCorrections",
+          "momentNotes",
+          "generatedDescriptions",
+          "generatedMoments",
+          "cameraDetails",
+          "sharing",
+          "pets",
+          "studioProjects",
+          "memories"
+        ],
+        "type": "string"
+      },
+      "PreservationSupportDto": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/PreservationSupportCategory"
+          },
+          "level": {
+            "$ref": "#/components/schemas/PreservationSupportLevel"
+          }
+        },
+        "required": [
+          "category",
+          "level"
+        ],
+        "type": "object"
+      },
+      "PreservationSupportLevel": {
+        "description": "`restored`: comes back as it was; `restored-when-empty`: only where the library has none; `provenance-only`: kept as a record, never applied; `not-included`: not in a package",
+        "enum": [
+          "restored",
+          "restored-when-empty",
+          "provenance-only",
+          "not-included"
+        ],
+        "type": "string"
+      },
+      "PreservationUploadCreateDto": {
+        "properties": {
+          "file": {
+            "description": "A `.frameleaf-preservation.zip` package",
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "PreservationVerificationDto": {
+        "properties": {
+          "changed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "checked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "documentsChanged": {
+            "description": "Index documents whose digest no longer matches",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "missing": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "ok": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PreservationVerificationStatus"
+          },
+          "unexpected": {
+            "description": "Files in the package its manifest does not account for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "checked",
+          "documentsChanged",
+          "finishedAt",
+          "missing",
+          "ok",
+          "reasonKey",
+          "status",
+          "unexpected"
+        ],
+        "type": "object"
+      },
+      "PreservationVerificationStatus": {
+        "description": "`verified`: every file matches; `problems`: some are missing or changed; `unreadable`: the manifest or index cannot be believed",
+        "enum": [
+          "verified",
+          "problems",
+          "unreadable"
+        ],
+        "type": "string"
+      },
+      "PreservationVerifyState": {
+        "description": "The latest verification of this item",
+        "enum": [
+          "ok",
+          "missing",
+          "changed"
+        ],
+        "type": "string"
+      },
       "PrivacyResponse": {
         "description": "Privacy preferences",
         "properties": {
@@ -51248,7 +54940,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "output": {
+            "$ref": "#/components/schemas/RenderWorkerOutputDto",
+            "description": "Required for a Studio export"
+          },
           "resultAssetId": {
+            "description": "Must be null for a Studio export: its result is adopted by publication, never named by a worker",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -51652,6 +55349,45 @@
         ],
         "type": "object"
       },
+      "RenderWorkerOutputDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA-256 of the whole file",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "contentType": {
+            "description": "`video/mp4`, `video/webm` or `video/quicktime`",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute path inside the render directory the claim named",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "remoteRef": {
+            "description": "What the worker calls a copy it kept; it is asked to delete it until it acknowledges",
+            "maxLength": 512,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "contentType",
+          "path",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
       "RenderWorkerProgressDto": {
         "properties": {
           "claimToken": {
@@ -51713,6 +55449,41 @@
           "manifest_incomplete"
         ],
         "type": "string"
+      },
+      "RenderWorkerRemoteReferenceDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "operationId": {
+            "description": "The render job",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/StudioExportRemoteReason"
+          },
+          "remoteRef": {
+            "description": "The copy to delete, for a `delete` reference",
+            "nullable": true,
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operationId",
+          "reason",
+          "remoteRef",
+          "requestedAt"
+        ],
+        "type": "object"
       },
       "RenderWorkerSessionDto": {
         "properties": {
@@ -56548,6 +60319,297 @@
         },
         "type": "object"
       },
+      "StudioExportColor": {
+        "description": "Colour handling; Dolby Vision needs a qualified worker",
+        "enum": [
+          "preserve",
+          "hdr10",
+          "dolby-vision"
+        ],
+        "type": "string"
+      },
+      "StudioExportCreateDto": {
+        "properties": {
+          "cloudConsent": {
+            "description": "You agree to the media leaving your network for this export",
+            "type": "boolean"
+          },
+          "color": {
+            "$ref": "#/components/schemas/StudioExportColor"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination",
+            "description": "Where it renders. A cloud destination needs `cloudConsent`"
+          },
+          "expectedRevision": {
+            "description": "The revision you are looking at; a newer head refuses the export with `409` instead of rendering it",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "requestKey": {
+            "description": "Idempotency key; a repeated submit answers with the first export",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          }
+        },
+        "required": [
+          "color",
+          "destination",
+          "format",
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "StudioExportCreateResponseDto": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/MediaOperationDto",
+            "description": "The render job; follow it in Activity"
+          },
+          "version": {
+            "$ref": "#/components/schemas/StudioExportVersionDto"
+          }
+        },
+        "required": [
+          "operation",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioExportFormat": {
+        "description": "Container and codec",
+        "enum": [
+          "mp4-hevc-main10",
+          "mp4-h264",
+          "webm-av1",
+          "prores-422-hq"
+        ],
+        "type": "string"
+      },
+      "StudioExportListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioExportVersionDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Matching versions, before paging",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioExportRemoteReason": {
+        "description": "Why a remote destination is asked to drop Studio export data",
+        "enum": [
+          "cancel",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "StudioExportResolution": {
+        "description": "Output resolution",
+        "enum": [
+          "720p",
+          "1080p",
+          "1440p",
+          "2160p"
+        ],
+        "type": "string"
+      },
+      "StudioExportScope": {
+        "description": "Where a published Studio export lives",
+        "enum": [
+          "library",
+          "project"
+        ],
+        "type": "string"
+      },
+      "StudioExportSettingsDto": {
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/StudioExportColor"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          }
+        },
+        "required": [
+          "color",
+          "format",
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "StudioExportVersionDto": {
+        "properties": {
+          "cancelledAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "contentType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Export version ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includesSharedSources": {
+            "description": "At least one source is shared with you rather than yours",
+            "type": "boolean"
+          },
+          "locked": {
+            "description": "The result inherited a lock from a Locked or sensitive source",
+            "type": "boolean"
+          },
+          "projectId": {
+            "description": "Null once the project was deleted for good",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "publishOperationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "renderOperationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resultAssetId": {
+            "description": "The asset a `library` result became",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The project revision that was rendered",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioExportScope"
+              }
+            ],
+            "description": "Where the published result lives",
+            "nullable": true
+          },
+          "sensitive": {
+            "description": "The result inherited sensitive evidence from a source",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/StudioExportSettingsDto"
+          },
+          "sizeInBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceCount": {
+            "description": "Library sources the result was made from",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudioExportVersionState"
+          },
+          "version": {
+            "description": "The version number, once published",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cancelledAt",
+          "contentType",
+          "createdAt",
+          "destination",
+          "error",
+          "errorCode",
+          "id",
+          "includesSharedSources",
+          "locked",
+          "projectId",
+          "publishOperationId",
+          "publishedAt",
+          "renderOperationId",
+          "resultAssetId",
+          "revision",
+          "scope",
+          "sensitive",
+          "settings",
+          "sizeInBytes",
+          "sourceCount",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioExportVersionState": {
+        "description": "Studio export version state",
+        "enum": [
+          "rendering",
+          "staged",
+          "published",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "StudioPreviewDto": {
         "properties": {
           "contentType": {
@@ -59612,6 +63674,100 @@
           "id",
           "name",
           "profileChangedAt"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryChangeDto": {
+        "properties": {
+          "after": {
+            "description": "The value after the change, JSON encoded; null for a credential",
+            "nullable": true,
+            "type": "string"
+          },
+          "before": {
+            "description": "The value before the change, JSON encoded; null for a credential",
+            "nullable": true,
+            "type": "string"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/SystemConfigHistoryCredentialChange"
+          },
+          "path": {
+            "description": "The changed setting, as a dotted path such as trash.days",
+            "type": "string"
+          }
+        },
+        "required": [
+          "after",
+          "before",
+          "path"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryCredentialChange": {
+        "description": "Set for a write-only credential: whether it was replaced or cleared. Its value is never recorded",
+        "enum": [
+          "replaced",
+          "cleared"
+        ],
+        "type": "string"
+      },
+      "SystemConfigHistoryEntryDto": {
+        "properties": {
+          "actorId": {
+            "description": "The administrator who saved the change",
+            "nullable": true,
+            "type": "string"
+          },
+          "actorName": {
+            "description": "The administrator's name when the change was saved",
+            "nullable": true,
+            "type": "string"
+          },
+          "changes": {
+            "description": "Every changed setting",
+            "items": {
+              "$ref": "#/components/schemas/SystemConfigHistoryChangeDto"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "description": "When the change was saved (ISO 8601)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Entry ID",
+            "type": "string"
+          },
+          "omittedChanges": {
+            "description": "Changed settings left out because the entry reached its limit",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "actorId",
+          "actorName",
+          "changes",
+          "createdAt",
+          "id",
+          "omittedChanges"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "The newest settings changes first",
+            "items": {
+              "$ref": "#/components/schemas/SystemConfigHistoryEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
         ],
         "type": "object"
       },

@@ -103,7 +103,7 @@
     };
 
     const onClick = (event: MouseEvent) => {
-      const item = (event.target as HTMLElement | null)?.closest('[role^="menuitem"]');
+      const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role^="menuitem"]');
       if (!item || item.getAttribute('aria-disabled') === 'true' || item.dataset.keepOpen === 'true') {
         return;
       }

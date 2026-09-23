@@ -112,13 +112,17 @@
       void load(asset.id);
       return;
     }
-    pollTimer = setTimeout(async () => {
-      try {
-        follow(await getEnrichmentPlan({ id: next.operation.id }));
-      } catch (error) {
-        handleError(error, $t('frameleaf_enrichment_plan_error'));
-      }
-    }, delay);
+    pollTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            follow(await getEnrichmentPlan({ id: next.operation.id }));
+          } catch (error) {
+            handleError(error, $t('frameleaf_enrichment_plan_error'));
+          }
+        })(),
+      delay,
+    );
   };
 
   const queue = async (stages: EnrichmentStage[], key: string) => {

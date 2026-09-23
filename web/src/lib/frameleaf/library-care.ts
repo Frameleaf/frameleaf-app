@@ -10,6 +10,7 @@ import {
   type MediaHealthRunResponseDto,
   type MediaHealthSummaryResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * Library Care (FL-69): the view model behind Settings → Utilities → Missing media and Damaged
@@ -52,7 +53,7 @@ export const needsAttention = (status: MediaHealthStatus) => !SETTLED_STATUSES.i
  * Customer words for a status. Unsupported RAW, suspected damage and confirmed damage are kept
  * visibly distinct: only confirmed damage is ever offered for replacement or the trash.
  */
-export const STATUS_LABEL_KEY: Readonly<Record<MediaHealthStatus, string>> = {
+export const STATUS_LABEL_KEY: Readonly<Record<MediaHealthStatus, Translations>> = {
   [MediaHealthStatus.Missing]: 'library_care_status_missing',
   [MediaHealthStatus.Candidate]: 'library_care_status_candidate',
   [MediaHealthStatus.Found]: 'library_care_status_found',
@@ -102,7 +103,7 @@ const text = (value: unknown) => (typeof value === 'string' && value.trim() !== 
  * The server's evidence as a sentence a person can read. Reasons are stable codes; anything the
  * server did not explain stays unexplained rather than being dumped as JSON.
  */
-export const EVIDENCE_REASON_KEY: Readonly<Record<string, string>> = {
+export const EVIDENCE_REASON_KEY: Readonly<Record<string, Translations>> = {
   source_file_missing_or_unreadable: 'library_care_evidence_missing',
   file_missing: 'library_care_evidence_missing',
   access_denied: 'library_care_evidence_unreadable',
@@ -122,7 +123,7 @@ export const EVIDENCE_REASON_KEY: Readonly<Record<string, string>> = {
   trash_revalidation_passed: 'library_care_evidence_revalidated',
 };
 
-export const evidenceKey = (item: Pick<MediaHealthItemDto, 'evidence'>): string | null => {
+export const evidenceKey = (item: Pick<MediaHealthItemDto, 'evidence'>): Translations | null => {
   const reason = text(item.evidence?.reason);
   return reason ? (EVIDENCE_REASON_KEY[reason] ?? null) : null;
 };
@@ -317,8 +318,8 @@ export const CARE_TOOL_GROUPS: readonly CareToolGroup[] = ['organize', 'repair',
 
 export type CareQueue = {
   id: 'missing' | 'damaged' | 'duplicates' | 'import' | 'enrichment';
-  labelKey: string;
-  descriptionKey: string;
+  labelKey: Translations;
+  descriptionKey: Translations;
   count: number | null;
   /** Items in the queue that already have what they need to be repaired. */
   ready?: number;
@@ -386,3 +387,7 @@ export const formatBytes = (bytes: number | null | undefined): string => {
 
 /** How long a finished job may be followed before the page stops asking about it. */
 export const LIBRARY_CARE_POLL_MS = 3000;
+
+/** The label of one Library Care activity action the server reports. */
+export const libraryCareActivityKey = (action: string): Translations =>
+  `library_care_activity_${action.replaceAll('-', '_')}` as Translations;

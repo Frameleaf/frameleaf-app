@@ -8,10 +8,19 @@
    * URL contract: `?area=<id>` selects an area. The older `?isOpen=<key>` links from the queue
    * and storage pages still work: the first known key selects its area and the page scrolls to
    * that section; nested groups keep reading `isOpen` through the accordion manager.
+   *
+   * FL-66: every section edits one settings draft (`system-config-draft.svelte.ts`), so changes
+   * made in one area are kept while another is open. Areas with unsaved changes are marked in the
+   * rail, the draft's messages sit under the heading, and the settings bar at the bottom saves
+   * every page together. The "Change history" area lists the saved settings changes the server
+   * recorded; it reloads after every save.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
+  import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
+  import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
+  import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import SettingsSection from '$lib/components/frameleaf/settings/SettingsSection.svelte';
   import {
     isScreenArea,
@@ -24,9 +33,12 @@
     type SettingsGroupId,
     type SettingsHostSection,
   } from '$lib/frameleaf/settings-areas';
+  import { sectionForConfigPath } from '$lib/frameleaf/system-config-draft';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { QueryParameter } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { getAdminConfigHistory, type SystemConfigHistoryEntryDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiBackupRestore,
@@ -34,6 +46,7 @@
     mdiChartTimelineVariant,
     mdiDesktopTowerMonitor,
     mdiHarddisk,
+    mdiHistory,
     mdiImageSearchOutline,
     mdiMagnify,
     mdiMovieOpenOutline,
@@ -41,10 +54,12 @@
     mdiShieldCheckOutline,
     mdiShieldLockOutline,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { sections }: { sections: SettingsHostSection[] } = $props();
+  let { sections, disabled = false }: { sections: SettingsHostSection[]; disabled?: boolean } = $props();
+
+  const settingsDraft = getSystemConfigDraft();
 
   const AREA_PARAM = 'area';
 
@@ -99,12 +114,18 @@
       description: $t('frameleaf_settings_area_server_description'),
       icon: mdiServerOutline,
     },
+    history: {
+      title: $t('frameleaf_settings_area_history'),
+      description: $t('frameleaf_settings_area_history_description'),
+      icon: mdiHistory,
+    },
   });
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
     command: $t('frameleaf_settings_group_command'),
     library: $t('frameleaf_settings_group_library'),
     server: $t('frameleaf_settings_group_server'),
+    personal: $t('frameleaf_settings_group_personal'),
   });
 
   const area = $derived(
@@ -120,6 +141,57 @@
   const searching = $derived(query.trim().length > 0);
 
   const areaOf = (key: string) => SETTINGS_AREAS.find((item) => item.sections.includes(key))?.id;
+
+  /** Areas holding unsaved changes of the settings draft. */
+  const pendingAreas = $derived.by(() => {
+    const areas = new Set<SettingsAreaId>();
+    for (const change of settingsDraft?.changes ?? []) {
+      const section = sectionForConfigPath(change.path);
+      const area = section ? areaOf(section) : undefined;
+      if (area) {
+        areas.add(area);
+      }
+    }
+    return areas;
+  });
+
+  // The settings change history, loaded with the page, after every save and when its area opens.
+  let history = $state<SystemConfigHistoryEntryDto[] | null>(null);
+  let historyError = $state(false);
+  let historyRequest = 0;
+
+  const loadHistory = async () => {
+    const request = ++historyRequest;
+    try {
+      const { entries } = await getAdminConfigHistory();
+      if (request === historyRequest) {
+        history = entries;
+        historyError = false;
+      }
+    } catch {
+      if (request === historyRequest) {
+        historyError = true;
+      }
+    }
+  };
+
+  $effect(() => {
+    if (!settingsDraft) {
+      return;
+    }
+    void settingsDraft.revision;
+    untrack(() => void loadHistory());
+  });
+
+  $effect(() => {
+    if (settingsDraft && area === 'history') {
+      untrack(() => void loadHistory());
+    }
+  });
+
+  const areaTitles = $derived(
+    Object.fromEntries(Object.entries(areaCopy).map(([id, copy]) => [id, copy.title])) as Record<string, string>,
+  );
 
   const selectArea = async (next: SettingsAreaId, sectionKey?: string) => {
     query = '';
@@ -163,6 +235,14 @@
           >
             <Icon icon={areaCopy[item.id].icon} size="1.125rem" aria-hidden={true} />
             <span>{areaCopy[item.id].title}</span>
+            {#if item.id === 'history' && history && history.length > 0}
+              <small class="count">{history.length}</small>
+            {/if}
+            {#if pendingAreas.has(item.id)}
+              <span class="pending" title={$t('unsaved_change')}>
+                <span class="sr-only">{$t('unsaved_change')}</span>
+              </span>
+            {/if}
           </button>
           {#if !searching && item.id === area && areaSections.length > 1}
             <div
@@ -190,6 +270,10 @@
         bind:value={query}
       />
     </label>
+
+    {#if settingsDraft}
+      <SettingsDraftNotices store={settingsDraft} />
+    {/if}
 
     {#if searching}
       <p class="results" role="status">
@@ -232,13 +316,26 @@
           </div>
         {/if}
       </header>
-      <div class="sections">
-        {#each areaSections as section (section.key)}
-          <SettingsSection key={section.key} title={section.title} subtitle={section.subtitle} icon={section.icon}>
-            <section.component />
-          </SettingsSection>
-        {/each}
-      </div>
+      {#if area === 'history'}
+        <SettingsChangeHistory
+          entries={history}
+          error={historyError}
+          onRetry={() => void loadHistory()}
+          onConfigure={() => selectArea('processing')}
+        />
+      {:else}
+        <div class="sections">
+          {#each areaSections as section (section.key)}
+            <SettingsSection key={section.key} title={section.title} subtitle={section.subtitle} icon={section.icon}>
+              <section.component />
+            </SettingsSection>
+          {/each}
+        </div>
+      {/if}
+    {/if}
+
+    {#if settingsDraft}
+      <SettingsSaveBar store={settingsDraft} {sections} {areaTitles} {disabled} />
     {/if}
   </div>
 </div>
@@ -296,6 +393,30 @@
   }
   .area.selected :global(svg) {
     color: var(--fl-accent);
+  }
+  .count {
+    margin-inline-start: auto;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+  }
+  .count + .pending {
+    margin-inline-start: 0.375rem;
+  }
+  .pending {
+    width: 0.375rem;
+    height: 0.375rem;
+    margin-inline-start: auto;
+    flex-shrink: 0;
+    background: var(--fl-warning);
+    border-radius: 50%;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .children {
     display: flex;

@@ -21,18 +21,19 @@ import {
   type StudioBundleUploadDto,
   type StudioProjectDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { isRetryingMediaOperation } from '$lib/frameleaf/activity';
 
 export type StudioLibraryShelf = 'active' | 'archived' | 'trashed';
 export type StudioLibrarySort = 'updated' | 'recent' | 'name';
 
-export const STUDIO_LIBRARY_SHELVES: ReadonlyArray<{ id: StudioLibraryShelf; labelKey: string }> = [
+export const STUDIO_LIBRARY_SHELVES: ReadonlyArray<{ id: StudioLibraryShelf; labelKey: Translations }> = [
   { id: 'active', labelKey: 'frameleaf_studio_library_shelf_active' },
   { id: 'archived', labelKey: 'frameleaf_studio_library_shelf_archived' },
   { id: 'trashed', labelKey: 'frameleaf_studio_library_shelf_trashed' },
 ];
 
-export const STUDIO_LIBRARY_SORTS: ReadonlyArray<{ id: StudioLibrarySort; labelKey: string }> = [
+export const STUDIO_LIBRARY_SORTS: ReadonlyArray<{ id: StudioLibrarySort; labelKey: Translations }> = [
   { id: 'updated', labelKey: 'frameleaf_studio_library_sort_updated' },
   { id: 'recent', labelKey: 'frameleaf_studio_library_sort_recent' },
   { id: 'name', labelKey: 'frameleaf_studio_library_sort_name' },
@@ -155,7 +156,7 @@ export const studioBundleMapping = (
 };
 
 /** Server error codes a person can act on, as i18n keys. Anything else reads as a generic failure. */
-const BUNDLE_ERROR_KEYS: Record<string, string> = {
+const BUNDLE_ERROR_KEYS: Record<string, Translations> = {
   bundle_not_zip: 'frameleaf_studio_bundle_error_not_bundle',
   bundle_manifest_missing: 'frameleaf_studio_bundle_error_not_bundle',
   bundle_manifest_invalid: 'frameleaf_studio_bundle_error_damaged',
@@ -178,7 +179,7 @@ const BUNDLE_ERROR_KEYS: Record<string, string> = {
   bundle_revision_unavailable: 'frameleaf_studio_bundle_error_project_gone',
 };
 
-export const studioBundleErrorKey = (code: string | null | undefined): string =>
+export const studioBundleErrorKey = (code: string | null | undefined): Translations =>
   (code && BUNDLE_ERROR_KEYS[code]) || 'frameleaf_studio_bundle_error_generic';
 
 /** The code in a refused upload's response body, read structurally from the SDK's error. */
@@ -207,7 +208,7 @@ export const isStudioBundleSettled = (operation: Pick<StudioBundleOperationDto, 
  */
 export const studioBundleJobStatusKey = (
   operation: Pick<StudioBundleOperationDto, 'status' | 'autoRetries' | 'retryAt'>,
-): string =>
+): Translations =>
   isRetryingMediaOperation(operation)
     ? 'frameleaf_activity_status_retrying'
     : `frameleaf_activity_status_${operation.status}`;

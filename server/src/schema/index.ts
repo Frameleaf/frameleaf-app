@@ -91,9 +91,16 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
+import {
+  PreservationItemTable,
+  PreservationPackageTable,
+  PreservationRestoreItemTable,
+  PreservationRestoreTable,
+} from 'src/schema/tables/preservation.table.js';
 import {
   RenderWorkerAuditTable,
   RenderWorkerLimitTable,
@@ -117,6 +124,11 @@ import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-desc
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
+import {
+  StudioExportRemoteReferenceTable,
+  StudioExportVersionSourceTable,
+  StudioExportVersionTable,
+} from 'src/schema/tables/studio-export.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
   StudioBundleUploadTable,
@@ -229,6 +241,10 @@ export class ImmichDatabase {
     PetObservationTable,
     PetDetectionTable,
     PetCandidateTable,
+    PreservationPackageTable,
+    PreservationItemTable,
+    PreservationRestoreTable,
+    PreservationRestoreItemTable,
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
@@ -251,12 +267,17 @@ export class ImmichDatabase {
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
     StudioBundleUploadTable,
+    StudioExportVersionTable,
+    StudioExportVersionSourceTable,
+    StudioExportRemoteReferenceTable,
     TakeoutImportTable,
     TakeoutSourceTable,
     TakeoutFileTable,
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    DevelopPresetTable,
+    DevelopExportTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -403,6 +424,11 @@ export interface DB {
 
   physical_file: PhysicalFileTable;
 
+  preservation_package: PreservationPackageTable;
+  preservation_item: PreservationItemTable;
+  preservation_restore: PreservationRestoreTable;
+  preservation_restore_item: PreservationRestoreItemTable;
+
   render_worker: RenderWorkerTable;
   render_worker_session: RenderWorkerSessionTable;
   render_worker_limit: RenderWorkerLimitTable;
@@ -436,6 +462,9 @@ export interface DB {
   studio_project_revision: StudioProjectRevisionTable;
   studio_project_comment: StudioProjectCommentTable;
   studio_bundle_upload: StudioBundleUploadTable;
+  studio_export_version: StudioExportVersionTable;
+  studio_export_version_source: StudioExportVersionSourceTable;
+  studio_export_remote_reference: StudioExportRemoteReferenceTable;
 
   system_metadata: SystemMetadataTable;
 
@@ -445,6 +474,9 @@ export interface DB {
   takeout_item: TakeoutItemTable;
   takeout_pair: TakeoutPairTable;
   takeout_source: TakeoutSourceTable;
+
+  develop_export: DevelopExportTable;
+  develop_preset: DevelopPresetTable;
 
   tag: TagTable;
   tag_asset: TagAssetTable;

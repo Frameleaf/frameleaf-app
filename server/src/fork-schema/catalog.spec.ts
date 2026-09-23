@@ -89,11 +89,9 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 124 public (v3.1.0, the post-certified residue cluster_group, cluster_group_request, person_group,
-    // person_group_audit, workflow_log, and the legacy fork tables of the 2100000000NNN migrations, the latest
-    // being FL-79's operational_metric_sample) + 33 fork tables, including seven iCloud tables and
-    // asset_develop_revision
-    expect(getCatalogTableLocks(fork)).toHaveLength(157);
+    // 133 public tables, including FL-64 photo tools, FL-74 preservation, FL-79 metrics and FL-106 Studio exports,
+    // plus 33 fork tables, including seven iCloud tables and asset_develop_revision.
+    expect(getCatalogTableLocks(fork)).toHaveLength(166);
     // 66 v3.1.0 public + the 33 fork tables
     expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
   });

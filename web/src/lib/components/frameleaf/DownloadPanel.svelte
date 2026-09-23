@@ -36,14 +36,9 @@
 
 {#if downloadManager.isDownloading}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
-    <section
-      class="fl-panel"
-      role="region"
-      aria-label={$t('prepared_archives')}
-      transition:fly={{ x: -100, duration: 350 }}
-    >
+    <section class="fl-panel" aria-label={$t('prepared_archives')} transition:fly={{ x: -100, duration: 350 }}>
       <header class="fl-panel-head">
-        <Icon icon={mdiDownloadOutline} size={20} aria-hidden="true" />
+        <Icon icon={mdiDownloadOutline} size="20" aria-hidden="true" />
         <div class="fl-panel-head-text">
           <strong aria-live="polite">{$t('prepared_archives')}</strong>
           <span>{$t('frameleaf_transfer_downloads_hint')}</span>
@@ -54,7 +49,7 @@
           aria-label={$t('frameleaf_transfer_close_downloads')}
           onclick={() => downloadManager.clearAll()}
         >
-          <Icon icon={mdiClose} size={18} aria-hidden="true" />
+          <Icon icon={mdiClose} size="18" aria-hidden="true" />
         </button>
       </header>
 
@@ -63,7 +58,7 @@
           <li class="fl-row" data-downloaded={download.downloaded}>
             <Icon
               icon={download.downloaded ? mdiCheckCircle : mdiFileDownloadOutline}
-              size={20}
+              size="20"
               class={download.downloaded ? 'fl-success' : 'fl-muted-icon'}
               aria-hidden="true"
             />
@@ -79,10 +74,10 @@
                 aria-label={$t(download.downloaded ? 'retry' : 'download')}
                 onclick={() => save(key, download)}
               >
-                <Icon icon={download.downloaded ? mdiReload : mdiDownload} size={18} aria-hidden="true" />
+                <Icon icon={download.downloaded ? mdiReload : mdiDownload} size="18" aria-hidden="true" />
               </button>
               <button type="button" aria-label={$t('frameleaf_transfer_remove_download')} onclick={() => remove(key)}>
-                <Icon icon={mdiClose} size={16} aria-hidden="true" />
+                <Icon icon={mdiClose} size="16" aria-hidden="true" />
               </button>
             </span>
           </li>

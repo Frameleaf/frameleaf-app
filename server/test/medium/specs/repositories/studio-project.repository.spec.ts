@@ -279,7 +279,7 @@ describe(StudioProjectRepository.name, () => {
       };
 
       const created = await sut.createComment(input);
-      expect(created).toMatchObject({ timeNum: '1001', timeDen: '30000' });
+      expect(created).toMatchObject({ timeNum: 1001, timeDen: 30_000 });
       expect(await sut.createComment(input)).toBeUndefined();
       expect((await sut.getCommentByRequestKey(project.id, 'c-1'))?.id).toBe(created!.id);
 

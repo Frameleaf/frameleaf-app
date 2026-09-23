@@ -275,7 +275,16 @@ WHERE
   asset."ownerId" = $1::uuid
 FOR UPDATE OF
   asset
-rollback
+delete from "stack"
+where
+  (
+    "ownerId" = $1::uuid
+    or "primaryAssetId" = any ($2::uuid[])
+  )
+delete from "asset"
+where
+  "ownerId" = $1
+commit
 
 -- AssetRepository.getByLibraryIdAndOriginalPath
 select
