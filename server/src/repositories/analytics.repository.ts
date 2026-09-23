@@ -342,7 +342,7 @@ export class AnalyticsRepository {
         : scope.kind === AnalyticsScopeKind.Library
           ? sql`exists (
               select 1 from album_asset aa join asset a on a.id = aa."assetId"
-              where aa."albumId" = al.id and a."libraryId" = ${scope.libraryId}
+              where aa."albumId" = al.id and a."libraryId" = ${scope.libraryId} and ${isNotLocked('a')}
             )`
           : sql`true`;
     const { rows } = await sql<{

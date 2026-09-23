@@ -29,6 +29,8 @@
   $effect(() => {
     const wanted = { scope: requested, range };
     let cancelled = false;
+    report = undefined;
+    error = undefined;
     void (async () => {
       try {
         scopes ??= (await getAnalyticsScopes()).scopes;

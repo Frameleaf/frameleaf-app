@@ -148,6 +148,22 @@ describe('analytics tables, charts and CSV', () => {
     expect(volume.every((row) => row.value === '' && row.state === 'missing')).toBe(true);
   });
 
+  it.each(['=', '+', '-', '@', '\t', '\r', '\n'])(
+    'neutralizes text cells starting with %j without changing numbers',
+    (prefix) => {
+      for (const scopeKind of [AnalyticsScopeKind.Account, AnalyticsScopeKind.Library]) {
+        const label = `${prefix}SUM(1,2)`;
+        const report = analyticsReportFixture({ scopeKind, scopeLabel: label });
+        report.cameras[0].name = label;
+        report.series[1].photos = -3;
+        const { rows } = csvRecords(analyticsCsv(report, 'items', t));
+        expect(rows.every((row) => row.selection_scope === `'${label}`)).toBe(true);
+        expect(rows.find((row) => row.section === 'frameleaf_analytics_cameras')?.row).toBe(`'${label}`);
+        expect(rows.some((row) => row.value === '-3')).toBe(true);
+      }
+    },
+  );
+
   it('escapes quotes and commas in names', () => {
     const report = analyticsReportFixture();
     report.albums.albums[0].name = 'Jamie’s "best", ever';
