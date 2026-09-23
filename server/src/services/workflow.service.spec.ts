@@ -277,6 +277,30 @@ describe(WorkflowService.name, () => {
         expect(replacement.extra).toEqual(withExtraSecrets.extra);
       });
 
+      it('keeps the stored step extra, credentials included, when a step is saved without extra', async () => {
+        await sut.update(auth, workflowId, {
+          steps: [
+            {
+              id: stepId,
+              method: 'immich-plugin-core#webhook',
+              config: { url: 'https://hooks.example.test', headerName: 'Authorization' },
+            },
+          ],
+        });
+
+        expect(mocks.workflow.update.mock.calls[0]![2]!.definition.steps[0]!.extra).toEqual({
+          remote: { token: 'step-token-1', label: 'hook' },
+        });
+      });
+
+      it('does not carry a step extra over to a different method', async () => {
+        await sut.update(auth, workflowId, {
+          steps: [{ id: stepId, method: 'immich-plugin-core#assetTypeFilter', config: { allowedTypes: ['IMAGE'] } }],
+        });
+
+        expect(mocks.workflow.update.mock.calls[0]![2]!.definition.steps[0]!.extra).toEqual({});
+      });
+
       it('replaces an extra credential that is sent', async () => {
         await sut.update(auth, workflowId, { extra: { integration: { apiKey: 'workflow-key-2', region: 'eu' } } });
 
