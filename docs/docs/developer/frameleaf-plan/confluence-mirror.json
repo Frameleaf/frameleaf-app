@@ -98,17 +98,17 @@
       "version": 2
     },
     {
-      "bytes": 8273,
+      "bytes": 8756,
       "category": "reference",
       "id": "61407369",
       "source": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sourceSha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f",
+      "sourceSha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
       "title": "Frameleaf library action parity audit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
-      "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verification": "Version 4 records FL-44 commit 80899dd02c49ed0cbf63bb02eec2fb5c092f16ee on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): the two retired citations now name QuickEditor.svelte and SearchDialog.svelte, the committed-routes note is added, the source hash marker is updated and all other content is unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:17:48.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-23T10:32:28.347Z",
+      "version": 4
     },
     {
       "bytes": 9805,
@@ -537,17 +537,17 @@
       "version": 7
     },
     {
-      "bytes": 6137,
+      "bytes": 6223,
       "category": "plan",
       "id": "61375040",
       "source": "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
-      "sourceSha256": "f011e579f8a32baac94e85af675fcf9f646644fe958e4c0662ffd0e0c772fabb",
+      "sourceSha256": "01b658e8ff820e0bc15d37bc577a8a3de481afb070f92a60eadd5fbf34dabde3",
       "title": "Library and Administration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375040/Library+and+Administration+Implementation",
-      "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verification": "Version 4 records FL-44 commit c7b109192f065423fa7ce77db4b4c84092e98084 on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): the route inventory sentence now states 80 committed routes (70 reviewed plus 10 added by FL stories, implemented in code and not qualified) and 12 dirty-only routes; source hash marker updated, all other content unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:17:48.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-23T10:33:11.586Z",
+      "version": 4
     },
     {
       "bytes": 83723,
@@ -603,13 +603,13 @@
       "category": "plan",
       "id": "61538800",
       "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
-      "sourceSha256": "2f83175407bd4d08bc1d1af811f8dea87df4ef6afa5beafab0b46f474cd59a9f",
+      "sourceSha256": "2b8b9d497e0e3676167b4f7f2ee7908cbbe02697bd55513aa44cf005897d574b",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "verification": "Source path, FL-27 candidate SHA-256 and unmerged-branch status; 1209 source rows and 1189 canonical requirements unchanged; bounded design/test evidence links added without qualification inflation; terminal content read back after update",
+      "verification": "Version 7 records FL-44 commit c7b109192f065423fa7ce77db4b4c84092e98084 on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): coverage follows the regenerated ledger with 92 route rows (80 committed plus 12 dirty-only), 1217 source rows and 1197 canonical requirements; the FL-27 candidate banner and all other content are preserved; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:04:46.650Z",
-      "version": 6
+      "verifiedAt": "2026-09-23T10:33:31.652Z",
+      "version": 7
     },
     {
       "bytes": 11211,
