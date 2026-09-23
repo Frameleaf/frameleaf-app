@@ -822,8 +822,13 @@ const routeId = (pathname: string, prefix: string) =>
 
 /**
  * The query a search opened on this page starts from: the search it already shows, or the scope the
- * page stands for — an album, a pet, a shared space, the map. Searching again never resets a scope
- * the person did not ask to leave.
+ * page stands for — an album, a pet, a shared space. Searching again never resets a scope the person
+ * did not ask to leave.
+ *
+ * The map page contributes no scope (FL-48 map/space follow-ups): the prototype (`App.jsx`
+ * `exploreQuery`/`MapView`'s "Search this area") always lands a submitted search on the plain grid
+ * results, never on a persisted map view, so a search opened from `/map` is treated like any other
+ * unscoped page instead of tagging the query `view: 'map'` for a results page that would ignore it.
  */
 export const contextDiscoveryState = (url: URL): DiscoveryContext => {
   if (url.pathname === '/discover') {
@@ -853,9 +858,6 @@ export const contextDiscoveryState = (url: URL): DiscoveryContext => {
   }
   if (spaceId) {
     result.spaceId = spaceId;
-  }
-  if (url.pathname.startsWith('/map')) {
-    result.view = 'map';
   }
   return { query: result, unsupported: [] };
 };
@@ -1166,8 +1168,12 @@ export const toServerFilter = (filter: SearchFilter): SearchFilter => {
  * A shared space is an album of kind `space`, and its photos are what an album-confined search
  * returns for it (`space-photos.svelte.ts`). Searching in a space therefore also requires the space
  * among the item's albums, on top of any album condition the filter already has.
+ *
+ * Exported so `bulk-operations.ts` can resolve a "select all matching" snapshot for a space the same
+ * way (FL-48 map/space follow-ups): the space is an album condition there too, not a scope the search
+ * DTO cannot express.
  */
-const withSpaceScope = (filter: SearchFilter, spaceId: string): SearchFilter => {
+export const withSpaceScope = (filter: SearchFilter, spaceId: string): SearchFilter => {
   const albums = filter.albumIds;
   return {
     ...filter,
