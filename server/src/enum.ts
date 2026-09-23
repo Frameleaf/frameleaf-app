@@ -1100,6 +1100,13 @@ export enum MediaOperationKind {
    */
   PhysicalDeduplication = 'physical_deduplication',
   /**
+   * An external library scan (FL-78): checks the library's import folders are reachable, imports new
+   * files, then checks every indexed item against its folder. It records its phase and cursor after
+   * every batch, so it can pause, survive a restart and carry on; an unreachable or emptied folder
+   * fails the scan instead of marking the library's items missing.
+   */
+  LibraryScan = 'library_scan',
+  /**
    * A preservation package written from a frozen selection of the owner's originals (FL-74):
    * independent copies with checksums, metadata sidecars, albums, people, tags and edit recipes.
    */
@@ -1910,6 +1917,8 @@ export enum JobName {
   LibrarySyncFilesQueueAll = 'LibrarySyncFilesQueueAll',
   LibrarySyncFiles = 'LibrarySyncFiles',
   LibraryScanQueueAll = 'LibraryScanQueueAll',
+  /** Drains queued external library scans (FL-78); the scan itself is a durable media operation. */
+  LibraryScanRun = 'LibraryScanRun',
 
   HlsSessionCleanup = 'HlsSessionCleanup',
 
@@ -2406,6 +2415,9 @@ export enum AdminAuditAction {
   LibraryCreated = 'library-created',
   LibraryUpdated = 'library-updated',
   LibraryScanQueued = 'library-scan-queued',
+  /** FL-78: an administrator stopped a running scan. */
+  LibraryScanCancelled = 'library-scan-cancelled',
+  /** `detail` is the number of indexed items the removal covers (FL-78). */
   LibraryDeleted = 'library-deleted',
 }
 
@@ -2413,6 +2425,31 @@ export const AdminAuditActionSchema = z
   .enum(AdminAuditAction)
   .describe('What an administrator did to an account or one of its libraries')
   .meta({ id: 'AdminAuditAction' });
+
+/**
+ * Why an external library import folder was accepted or refused (FL-78). The web client turns these
+ * into sentences; `message` on the same result stays operator detail.
+ */
+export enum LibraryImportPathReason {
+  Valid = 'valid',
+  NotAbsolute = 'not_absolute',
+  InvalidCharacters = 'invalid_characters',
+  ParentTraversal = 'parent_traversal',
+  UploadFolder = 'upload_folder',
+  ContainsUploadFolder = 'contains_upload_folder',
+  NotFound = 'not_found',
+  NotDirectory = 'not_directory',
+  NotReadable = 'not_readable',
+  Unavailable = 'unavailable',
+  Duplicate = 'duplicate',
+  Nested = 'nested',
+  OtherLibrary = 'other_library',
+}
+
+export const LibraryImportPathReasonSchema = z
+  .enum(LibraryImportPathReason)
+  .describe('Why an import folder was accepted or refused')
+  .meta({ id: 'LibraryImportPathReason' });
 
 export enum OAuthTokenEndpointAuthMethod {
   ClientSecretPost = 'client_secret_post',

@@ -77,10 +77,12 @@ export const Route = {
   folders: (params?: { path?: string }) => '/folders' + asQueryString(params),
 
   // libraries
-  libraries: () => '/admin/library-management',
-  newLibrary: () => '/admin/library-management/new',
-  viewLibrary: ({ id }: { id: string }) => `/admin/library-management/${id}`,
-  editLibrary: ({ id }: { id: string }) => `/admin/library-management/${id}/edit`,
+  // FL-78: Libraries is an area of the settings command center, as in the design template; the
+  // `/admin/library-management` addresses redirect here.
+  libraries: () => '/admin/system-settings?area=libraries',
+  newLibrary: () => '/admin/system-settings?area=libraries&new=1',
+  viewLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}`,
+  editLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}&edit=1`,
 
   // maintenance
   maintenanceMode: (params?: { continue?: string }) => '/maintenance' + asQueryString(params),
