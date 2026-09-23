@@ -63,7 +63,7 @@ test.describe('Album', () => {
     await mapButton.click();
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
-    const mapMarker = page.getByRole('img', { name: /Map marker/i }).first();
+    const mapMarker = page.getByRole('img', { name: /^Open item/ }).first();
     await expect(mapMarker).toBeVisible();
     await mapMarker.click();
 
