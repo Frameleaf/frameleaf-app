@@ -125,7 +125,27 @@ describe(ActivityService.name, () => {
       await expect(sut.getAll(ownerAuth, { albumId: album.id })).resolves.toEqual([onAlbum]);
 
       const unlocked = factory.auth({ user: owner, session: { hasElevatedPermission: true } });
-      await expect(sut.getAll(unlocked, { albumId: album.id })).resolves.toEqual([onAlbum, onItem]);
+      const everything = await sut.getAll(unlocked, { albumId: album.id });
+      expect(everything).toHaveLength(2);
+      expect(everything).toEqual(expect.arrayContaining([onAlbum, onItem]));
+      await expect(sut.getStatistics(unlocked, { albumId: album.id })).resolves.toEqual({ comments: 2, likes: 0 });
+      await expect(sut.getStatistics(member, { albumId: album.id })).resolves.toEqual({ comments: 1, likes: 0 });
+    });
+
+    it('still reports a like as a duplicate after the item moved into the Locked folder', async () => {
+      const { sut, ctx } = setup();
+      const { album, asset, owner } = await ctx.newSharedAlbum();
+      const auth = factory.auth({ user: owner });
+      await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
+
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('id', '=', asset.id)
+        .execute();
+
+      const again = await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
+      expect(again.duplicate).toBe(true);
     });
   });
 

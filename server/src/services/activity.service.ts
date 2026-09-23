@@ -40,6 +40,7 @@ export class ActivityService extends BaseService {
       albumId: dto.albumId,
       assetId: dto.assetId,
       ...this.nsfwOptions(auth),
+      ...getLockedVisibilityOptions(auth),
     });
   }
 
@@ -54,7 +55,9 @@ export class ActivityService extends BaseService {
       assetId: dto.assetId,
       albumId: dto.albumId,
     };
-    const searchCommon = { ...common, ...this.nsfwOptions(auth), ...getLockedVisibilityOptions(auth) };
+    // the duplicate-like check reads only the caller's own reactions, so it keeps Locked items in view:
+    // a like the caller already left on an item that has since been locked is still a duplicate
+    const searchCommon = { ...common, ...this.nsfwOptions(auth), includeLocked: true };
 
     let activity: Activity | undefined;
     let isDuplicate = false;
