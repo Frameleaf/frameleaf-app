@@ -8,6 +8,10 @@
    * consent is shown as blocked and is absent from the route pickers) and never picks a
    * destination on the administrator's behalf: an unrouted workload is labelled as refused,
    * not quietly sent to whatever is available.
+   *
+   * FL-72: library analysis and restoration never share a worker. The form closes restoration
+   * once library work is ticked (and the reverse), the managed RunPod pod offers library work
+   * only, and a RunPod video worker (its own URL and token) offers restoration only.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -21,6 +25,7 @@
     canRouteTo,
     isConsentBlocking,
     isOverBudget,
+    isRestorationWorkload,
     ML_WORKLOAD_ORDER,
     mlDestinationKindLabelKey,
     mlHealthLabelKey,
@@ -28,8 +33,11 @@
     mlWorkloadLabelKey,
     parseOptionalNumber,
     routableDestinations,
+    workloadBlockedInDraft,
+    workloadsForKind,
   } from '$lib/frameleaf/ml-destinations';
   import { allowsRestoration } from '$lib/frameleaf/restoration-models';
+  import { roleLabelKey } from '$lib/frameleaf/worker-inventory';
   import { handleError } from '$lib/utils/handle-error';
   import {
     createMlDestination,
@@ -51,9 +59,11 @@
   type Props = {
     destinations: MlDestinationResponseDto[];
     routes: MlWorkloadRouteDto[];
+    /** Called after any change is saved and the list reloaded, so a neighbouring view can refresh. */
+    onChanged?: () => void;
   };
 
-  let { destinations: initialDestinations, routes: initialRoutes }: Props = $props();
+  let { destinations: initialDestinations, routes: initialRoutes, onChanged }: Props = $props();
 
   let destinations = $state<MlDestinationResponseDto[]>(initialDestinations);
   let routes = $state<MlWorkloadRouteDto[]>(initialRoutes);
@@ -70,6 +80,7 @@
     const [nextDestinations, nextRoutes] = await Promise.all([listMlDestinations(), getMlWorkloadRoutes()]);
     destinations = nextDestinations;
     routes = nextRoutes.routes;
+    onChanged?.();
   };
 
   const run = async (key: string, action: () => Promise<unknown>, failure: string) => {
@@ -172,6 +183,7 @@
     budgetLimitUsd: string;
     maxRuntimeMinutes: string;
     maxUploadMb: string;
+    sharesLibraryHardware: boolean;
   };
 
   let draft = $state<Draft | null>(null);
@@ -182,13 +194,19 @@
     draft = {
       id: null,
       kind,
-      name: kind === MlDestinationKind.RunPod ? 'RunPod' : '',
+      name:
+        kind === MlDestinationKind.RunPod
+          ? 'RunPod'
+          : kind === MlDestinationKind.RunPodVideo
+            ? $t('admin.frameleaf_ml_destinations_runpod_video_default_name')
+            : '',
       url: '',
       authToken: '',
-      workloads: [],
+      workloads: kind === MlDestinationKind.RunPodVideo ? workloadsForKind(kind) : [],
       budgetLimitUsd: '',
       maxRuntimeMinutes: '',
       maxUploadMb: '',
+      sharesLibraryHardware: false,
     };
     draftError = null;
     draftOpen = true;
@@ -208,6 +226,7 @@
         destination.costControls.maxUploadBytes === null
           ? ''
           : Math.round(destination.costControls.maxUploadBytes / 1_000_000).toString(),
+      sharesLibraryHardware: destination.sharesLibraryHardware,
     };
     draftError = null;
     draftOpen = true;
@@ -220,7 +239,15 @@
     draft.workloads = checked
       ? [...new Set([...draft.workloads, workload])]
       : draft.workloads.filter((entry) => entry !== workload);
+    if (!draft.workloads.some((entry) => isRestorationWorkload(entry))) {
+      draft.sharesLibraryHardware = false;
+    }
   };
+
+  /** Only a restoration worker on this network can share a GPU with library analysis. */
+  const canShareHardware = (current: Draft) =>
+    (current.kind === MlDestinationKind.Local || current.kind === MlDestinationKind.Lan) &&
+    current.workloads.some((workload) => isRestorationWorkload(workload));
 
   const saveDraft = async () => {
     const current = draft;
@@ -234,7 +261,10 @@
       draftError = $t('admin.frameleaf_ml_destinations_error_limits');
       return;
     }
-    if (current.kind === MlDestinationKind.Lan && current.url.trim() === '') {
+    if (
+      (current.kind === MlDestinationKind.Lan || current.kind === MlDestinationKind.RunPodVideo) &&
+      current.url.trim() === ''
+    ) {
       draftError = $t('admin.frameleaf_ml_destinations_error_url');
       return;
     }
@@ -249,6 +279,7 @@
       maxUploadBytes: maxUploadMb === null ? null : Math.round(maxUploadMb * 1_000_000),
     };
     const isRunPod = current.kind === MlDestinationKind.RunPod;
+    const sharesLibraryHardware = canShareHardware(current) && current.sharesLibraryHardware;
 
     await run(
       current.id ? `edit-${current.id}` : 'create',
@@ -261,6 +292,7 @@
                 workloads: current.workloads,
                 ...(isRunPod ? {} : { url: current.url.trim() || null }),
                 ...(current.authToken ? { authToken: current.authToken } : {}),
+                sharesLibraryHardware,
                 ...costControls,
               },
             })
@@ -271,6 +303,7 @@
                 workloads: current.workloads,
                 ...(isRunPod ? {} : { url: current.url.trim() }),
                 ...(current.authToken ? { authToken: current.authToken } : {}),
+                sharesLibraryHardware,
                 ...costControls,
               },
             }),
@@ -309,6 +342,9 @@
           {$t('admin.frameleaf_ml_destinations_add_runpod')}
         </Button>
       {/if}
+      <Button onclick={() => openCreate(MlDestinationKind.RunPodVideo)}>
+        {$t('admin.frameleaf_ml_destinations_add_runpod_video')}
+      </Button>
     </div>
   </div>
 
@@ -328,6 +364,7 @@
             <div class="identity">
               <strong>{destination.name}</strong>
               <Chip label={$t(mlDestinationKindLabelKey(destination.kind))} />
+              <Chip label={$t(roleLabelKey(destination.role))} />
               <Badge
                 value={$t(mlHealthLabelKey(destination.health.status))}
                 label={$t('admin.frameleaf_ml_destinations_health_label', {
@@ -440,6 +477,12 @@
                     })}
               </dd>
             </div>
+            {#if destination.sharesLibraryHardware}
+              <div>
+                <dt>{$t('admin.frameleaf_ml_destinations_shares_hardware')}</dt>
+                <dd>{$t('admin.frameleaf_ml_destinations_shares_hardware_on')}</dd>
+              </div>
+            {/if}
             <div>
               <dt>{$t('admin.frameleaf_ml_destinations_max_upload')}</dt>
               <dd>
@@ -593,29 +636,48 @@
       {#if draft.kind !== MlDestinationKind.RunPod}
         <label>
           {$t('url')}
-          <input type="url" bind:value={draft.url} placeholder="http://worker.lan:3003" required={draft.kind === MlDestinationKind.Lan} />
+          <input
+            type="url"
+            bind:value={draft.url}
+            placeholder={draft.kind === MlDestinationKind.RunPodVideo
+              ? 'https://pod-id-3004.proxy.runpod.net'
+              : 'http://worker.lan:3003'}
+            required={draft.kind === MlDestinationKind.Lan || draft.kind === MlDestinationKind.RunPodVideo}
+          />
         </label>
         <label>
           {$t('admin.frameleaf_ml_destinations_auth_token')}
           <input type="password" bind:value={draft.authToken} autocomplete="off" />
           <small class="muted">{$t('admin.frameleaf_ml_destinations_auth_token_hint')}</small>
         </label>
+        {#if draft.kind === MlDestinationKind.RunPodVideo}
+          <p class="muted">{$t('admin.frameleaf_ml_destinations_runpod_video_hint')}</p>
+        {/if}
       {:else}
         <p class="muted">{$t('admin.frameleaf_ml_destinations_runpod_hint')}</p>
       {/if}
       <fieldset>
         <legend>{$t('admin.frameleaf_ml_destinations_allowed_workloads')}</legend>
-        {#each ML_WORKLOAD_ORDER as workload (workload)}
+        {#each workloadsForKind(draft.kind) as workload (workload)}
           <label class="check">
             <input
               type="checkbox"
               checked={draft.workloads.includes(workload)}
+              disabled={workloadBlockedInDraft(draft.kind, draft.workloads, workload)}
               onchange={(event) => toggleWorkload(workload, (event.currentTarget as HTMLInputElement).checked)}
             />
             {$t(mlWorkloadLabelKey(workload))}
           </label>
         {/each}
+        <small class="muted">{$t('admin.frameleaf_ml_destinations_roles_hint')}</small>
       </fieldset>
+      {#if canShareHardware(draft)}
+        <label class="check">
+          <input type="checkbox" bind:checked={draft.sharesLibraryHardware} />
+          {$t('admin.frameleaf_ml_destinations_shares_hardware_label')}
+        </label>
+        <small class="muted">{$t('admin.frameleaf_ml_destinations_shares_hardware_hint')}</small>
+      {/if}
       <fieldset>
         <legend>{$t('admin.frameleaf_ml_destinations_cost_controls')}</legend>
         <label>
