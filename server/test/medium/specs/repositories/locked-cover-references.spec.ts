@@ -5,6 +5,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
+import { up as clearLockedCoverReferences } from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -279,6 +280,54 @@ describe('Locked cover references (FL-53)', () => {
       await expect(ctx.get(AlbumUserRepository).getLinkedPeople(seeded.space.id)).resolves.toEqual([
         expect.objectContaining({ id: seeded.link.id, coverAssetId: seeded.cover.id }),
       ]);
+    });
+  });
+
+  describe('migration 2100000000300-ClearLockedCoverReferences', () => {
+    it('repairs every reference to a photo that was Locked before the fix and leaves the others alone', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      const untouched = await seed(context);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ personFace: seeded.lockedFace.id, petFeatured: seeded.cover.id }),
+      );
+
+      await clearLockedCoverReferences(ctx.database);
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual({
+        collectionCover: null,
+        spaceCover: seeded.fallback.id,
+        personFace: seeded.nextFace.id,
+        personThumbnailPath: '',
+        // a migration clears a space's picture for a person rather than guess which photo is sensitive
+        spacePersonCover: null,
+        petFeatured: null,
+      });
+      await expect(membershipOf(ctx.database, seeded.cover.id)).resolves.toHaveLength(2);
+      await expect(referencesOf(ctx.database, untouched)).resolves.toEqual({
+        collectionCover: untouched.cover.id,
+        spaceCover: untouched.cover.id,
+        personFace: untouched.lockedFace.id,
+        personThumbnailPath: '/thumbs/person.jpeg',
+        spacePersonCover: untouched.cover.id,
+        petFeatured: untouched.cover.id,
+      });
+    });
+
+    it('leaves a person without a face when every face of theirs is on a Locked photo', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockBehindTheRelease(ctx.database, seeded.fallback.id);
+
+      await clearLockedCoverReferences(ctx.database);
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: null, personFace: null, personThumbnailPath: '' }),
+      );
     });
   });
 });
