@@ -1,7 +1,9 @@
 import { Kysely } from 'kysely';
 import { AlbumKind, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -125,6 +127,10 @@ const referencesOf = async (db: Kysely<DB>, seeded: Seeded) => {
   };
 };
 
+/** Data written before FL-53, or by a writer that bypassed the release: Locked, covers kept. */
+const lockBehindTheRelease = (db: Kysely<DB>, assetId: string) =>
+  db.updateTable('asset').set({ visibility: AssetVisibility.Locked }).where('id', '=', assetId).execute();
+
 const membershipOf = (db: Kysely<DB>, assetId: string) =>
   db.selectFrom('album_asset').select('albumId').where('assetId', '=', assetId).execute();
 
@@ -236,6 +242,43 @@ describe('Locked cover references (FL-53)', () => {
           petFeatured: seeded.cover.id,
         }),
       );
+    });
+  });
+
+  describe('reads that choose or show a cover', () => {
+    it('never picks a face on a Locked photo as a person thumbnail, even for another cluster member', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+
+      await expect(ctx.get(PersonRepository).getRandomFace(seeded.person.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ id: seeded.nextFace.id }),
+      );
+
+      await lockBehindTheRelease(ctx.database, seeded.fallback.id);
+      await expect(ctx.get(PersonRepository).getRandomFace(seeded.person.personGroupId)).resolves.toBeUndefined();
+    });
+
+    it('never returns a Locked cover for a person linked into a shared space', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+
+      await expect(ctx.get(AlbumUserRepository).getLinkedPeople(seeded.space.id)).resolves.toEqual([
+        expect.objectContaining({ id: seeded.link.id, coverAssetId: null }),
+      ]);
+    });
+
+    it('returns the cover of a linked person when it is not Locked', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+
+      await expect(ctx.get(AlbumUserRepository).getLinkedPeople(seeded.space.id)).resolves.toEqual([
+        expect.objectContaining({ id: seeded.link.id, coverAssetId: seeded.cover.id }),
+      ]);
     });
   });
 });

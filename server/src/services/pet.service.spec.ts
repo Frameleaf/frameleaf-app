@@ -78,6 +78,7 @@ describe(PetService.name, () => {
       update: vi.fn(),
       delete: vi.fn(),
       isOwnedAsset: vi.fn().mockResolvedValue(true),
+      isOwnLockedAsset: vi.fn().mockResolvedValue(false),
       getObservations: vi.fn().mockResolvedValue([]),
       getObservationById: vi.fn().mockResolvedValue(observation()),
       upsertObservation: vi.fn().mockImplementation((value) => Promise.resolve(observation(value))),
@@ -108,6 +109,15 @@ describe(PetService.name, () => {
       );
     });
 
+    it('refuses a Locked photo as the featured photo (FL-53)', async () => {
+      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await expect(
+        sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId }),
+      ).rejects.toThrow('A Locked photo cannot be a featured photo');
+      expect(petRepository.create).not.toHaveBeenCalled();
+    });
+
     it('refuses a featured photo the account does not own', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -115,6 +125,31 @@ describe(PetService.name, () => {
         sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(petRepository.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('update', () => {
+    it('refuses a Locked photo as the featured photo (FL-53)', async () => {
+      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await expect(sut.update(authStub.user1, petId, { featuredAssetId: assetId })).rejects.toThrow(
+        'A Locked photo cannot be a featured photo',
+      );
+      expect(petRepository.isOwnLockedAsset).toHaveBeenCalledWith(ownerId, assetId);
+      expect(petRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a featured photo that is not Locked', async () => {
+      await sut.update(authStub.user1, petId, { featuredAssetId: assetId });
+
+      expect(petRepository.update).toHaveBeenCalledWith(ownerId, petId, { featuredAssetId: assetId });
+    });
+
+    it('clears the featured photo without looking at any asset', async () => {
+      await sut.update(authStub.user1, petId, { featuredAssetId: null });
+
+      expect(petRepository.isOwnLockedAsset).not.toHaveBeenCalled();
+      expect(petRepository.update).toHaveBeenCalledWith(ownerId, petId, { featuredAssetId: null });
     });
   });
 

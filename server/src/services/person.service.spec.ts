@@ -1,7 +1,15 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
-import { AssetFileType, CacheControl, JobName, JobStatus, SourceType, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetVisibility,
+  CacheControl,
+  JobName,
+  JobStatus,
+  SourceType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { PersonService } from 'src/services/person.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -365,6 +373,47 @@ describe(PersonService.name, () => {
         data: { ownerId: person.ownerId, personGroupId: person.personGroupId },
       });
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
+    });
+
+    it("should refuse the caller's own Locked photo as a featured face (FL-53)", async () => {
+      const auth = AuthFactory.create();
+      const face = AssetFaceFactory.create();
+      const person = PersonFactory.create();
+
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getForFeatureFaceUpdate.mockResolvedValue({
+        id: face.id,
+        ownerId: auth.user.id,
+        visibility: AssetVisibility.Locked,
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([face.assetId]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      await expect(sut.update(auth, person.personGroupId, { featureFaceAssetId: face.assetId })).rejects.toThrow(
+        'A Locked photo cannot be a featured photo',
+      );
+      expect(mocks.person.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it("should refuse another person's Locked photo as a featured face without saying it is Locked", async () => {
+      const auth = AuthFactory.create();
+      const face = AssetFaceFactory.create();
+      const person = PersonFactory.create();
+
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getForFeatureFaceUpdate.mockResolvedValue({
+        id: face.id,
+        ownerId: newUuid(),
+        visibility: AssetVisibility.Locked,
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([face.assetId]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      await expect(sut.update(auth, person.personGroupId, { featureFaceAssetId: face.assetId })).rejects.toThrow(
+        'Invalid assetId for feature face or asset is offline',
+      );
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('should throw an error when the face feature assetId is invalid', async () => {
@@ -1283,6 +1332,45 @@ describe(PersonService.name, () => {
         faceIds: [noPerson.id],
         newPersonGroupId: otherOwnerFace.person!.personGroupId,
       });
+    });
+
+    it('should not make a face on a Locked photo the thumbnail of a person it creates (FL-53)', async () => {
+      const asset = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      const [lockedFace, otherOwnerFace] = [
+        AssetFaceFactory.create({ assetId: asset.id }),
+        AssetFaceFactory.from().person().build(),
+      ];
+      const personGroupId = otherOwnerFace.person!.personGroupId;
+      const nextFace = AssetFaceFactory.create({ personGroupId });
+
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      mocks.search.searchFaces.mockResolvedValue([
+        getForFaceSearch(lockedFace, 0),
+        getForFaceSearch(otherOwnerFace, 0.2),
+      ]);
+      mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(lockedFace, asset));
+      mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: asset.ownerId, personGroupId }));
+      mocks.person.getRandomFace.mockResolvedValue(nextFace);
+
+      await sut.handleRecognizeFaces({ id: lockedFace.id, deferred: true });
+
+      expect(mocks.person.create).toHaveBeenCalledWith({ ownerId: asset.ownerId, faceAssetId: null, personGroupId });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: JobName.PersonGenerateThumbnail }),
+      );
+      expect(mocks.person.reassignFaces).toHaveBeenCalledWith({
+        faceIds: [lockedFace.id],
+        newPersonGroupId: personGroupId,
+      });
+      expect(mocks.person.getRandomFace).toHaveBeenCalledWith(personGroupId);
+      expect(mocks.person.update).toHaveBeenCalledWith({
+        ownerId: asset.ownerId,
+        personGroupId,
+        faceAssetId: nextFace.id,
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: asset.ownerId, personGroupId } },
+      ]);
     });
 
     it('should not queue face with no matches', async () => {

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Insertable, Kysely, Selectable, Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { PetObservationState } from 'src/enum.js';
+import { AssetVisibility, PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -141,6 +141,18 @@ export class PetRepository {
       .where('asset.id', '=', assetId)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Whether an asset is this owner's own and Locked, which is never a featured photo (FL-53). */
+  async isOwnLockedAsset(ownerId: string, assetId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', assetId)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.visibility', '=', AssetVisibility.Locked)
       .executeTakeFirst();
     return !!row;
   }
