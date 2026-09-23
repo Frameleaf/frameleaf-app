@@ -86,4 +86,14 @@ export class ICloudSyncController {
   disconnectICloudConnection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.disconnect(auth, id);
   }
+
+  // Remove a disconnected connection and what it recorded about the source (FL-68). Photos it
+  // imported stay in the library.
+  @Post(':id/remove')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated()
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  removeICloudConnection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.remove(auth, id);
+  }
 }

@@ -539,7 +539,7 @@
         <Button onclick={() => document.getElementById('ml-destinations')?.scrollIntoView()}>
           {$t('admin.frameleaf_workers_open_video_profile')}
         </Button>
-        <a class="link" href={Route.systemSettings({ isOpen: OpenQueryParam.MACHINE_LEARNING })}>
+        <a class="link" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
           {$t('admin.frameleaf_workers_manage_library')}
         </a>
       </div>
