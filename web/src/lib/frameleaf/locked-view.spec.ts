@@ -1,13 +1,12 @@
 import {
   DEFAULT_LOCKED_FILTER,
   LOCKED_FILTERS,
-  lockReasonBadge,
+  lockBadgeLabelKey,
   lockedFilterLabelKey,
   lockedTimelineOptions,
   parseLockedFilter,
 } from '$lib/frameleaf/locked-view';
 import { AssetLockReason, AssetVisibility } from '@immich/sdk';
-import { mdiFolderLockOutline, mdiShieldAlertOutline, mdiShieldLockOutline } from '@mdi/js';
 
 describe('locked view', () => {
   it('defaults to All, so items from the old Locked folder show straight away', () => {
@@ -45,19 +44,10 @@ describe('locked view', () => {
     expect(parseLockedFilter(null)).toBe('all');
   });
 
-  it('gives each reason its own badge', () => {
-    expect(lockReasonBadge(AssetLockReason.ImmichLockedFolder)).toEqual({
-      icon: mdiFolderLockOutline,
-      labelKey: 'frameleaf_lock_reason_folder',
-    });
-    expect(lockReasonBadge(AssetLockReason.Marked)).toEqual({
-      icon: mdiShieldLockOutline,
-      labelKey: 'frameleaf_lock_reason_marked',
-    });
-    expect(lockReasonBadge(AssetLockReason.Detected)).toEqual({
-      icon: mdiShieldAlertOutline,
-      labelKey: 'frameleaf_lock_reason_detected',
-    });
-    expect(lockReasonBadge(null).labelKey).toBe('frameleaf_library_badge_locked');
+  it('labels a tile Locked or Sensitive, as the prototype does', () => {
+    expect(lockBadgeLabelKey(AssetLockReason.ImmichLockedFolder)).toBe('frameleaf_library_badge_locked');
+    expect(lockBadgeLabelKey(AssetLockReason.Marked)).toBe('frameleaf_library_badge_sensitive');
+    expect(lockBadgeLabelKey(AssetLockReason.Detected)).toBe('frameleaf_library_badge_sensitive');
+    expect(lockBadgeLabelKey(null)).toBe('frameleaf_library_badge_locked');
   });
 });

@@ -1,5 +1,4 @@
 import {
-  AssetImageEnrichmentAction,
   AssetJobName,
   AssetVisibility,
   MediaOperationBulkAction,
@@ -87,30 +86,22 @@ describe('bulk actions bind to existing endpoints', () => {
     });
   });
 
-  it('marks sensitive through the image enrichment action and leaves album membership alone', async () => {
-    const result = await runBulkAction('mark-sensitive', ['a', 'b'], { gateway: api });
-    expect(api.updateAssetImageEnrichment).toHaveBeenCalledTimes(2);
-    expect(api.updateAssetImageEnrichment).toHaveBeenCalledWith({
-      id: 'a',
-      assetImageEnrichmentActionRequestDto: { action: AssetImageEnrichmentAction.MarkNsfw },
-    });
-    // Nothing about visibility, albums or the Locked destination is touched.
-    expect(api.updateAssets).not.toHaveBeenCalled();
-    expect(api.addAssetsToAlbum).not.toHaveBeenCalled();
-    expect(result.undo?.action).toBe('unmark-sensitive');
-  });
 
-  it('locks through the lock record and never writes a visibility (FL-34)', async () => {
-    await runBulkAction('move-to-locked', ['a', 'b'], { gateway: api });
+  it('marks sensitive as the lock record, never a visibility, album or enrichment change (FL-34)', async () => {
+    const result = await runBulkAction('mark-sensitive', ['a', 'b'], { gateway: api });
     expect(api.lockAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['a', 'b'] } });
     expect(api.updateAssets).not.toHaveBeenCalled();
+    expect(api.addAssetsToAlbum).not.toHaveBeenCalled();
     expect(api.removeAssetFromAlbum).not.toHaveBeenCalled();
+    // undoing a mark would take the PIN, so it is not offered from here
+    expect(result.undo).toBeUndefined();
   });
 
-  it('unlocks through the unlock action, which returns each item where it was (FL-34)', async () => {
-    await runBulkAction('remove-from-locked', ['a'], { gateway: api });
+  it('unmarks sensitive by unlocking, and undoes it by marking again (FL-34)', async () => {
+    const result = await runBulkAction('unmark-sensitive', ['a'], { gateway: api });
     expect(api.unlockAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['a'] } });
     expect(api.updateAssets).not.toHaveBeenCalled();
+    expect(result.undo).toEqual({ action: 'mark-sensitive', ids: ['a'] });
   });
 
   it('trashes through delete and undoes through restore', async () => {
@@ -426,8 +417,6 @@ describe('durable bulk operations', () => {
     expect(shouldRunDurably('favorite', DURABLE_BULK_THRESHOLD + 1)).toBe(true);
     expect(durableBulkAction('download')).toBeNull();
     expect(durableBulkAction('create-shared-link')).toBeNull();
-    expect(durableBulkAction('move-to-locked')).toBeNull();
-    expect(durableBulkAction('remove-from-locked')).toBeNull();
     expect(durableBulkAction('mark-sensitive')).toBe(MediaOperationBulkAction.MarkSensitive);
   });
 

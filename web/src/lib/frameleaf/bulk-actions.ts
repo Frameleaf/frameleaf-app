@@ -60,8 +60,6 @@ export type BulkActionId =
   | 'unarchive'
   | 'mark-sensitive'
   | 'unmark-sensitive'
-  | 'move-to-locked'
-  | 'remove-from-locked'
   | 'remove-from-album'
   | 'set-album-cover'
   | 'remove-from-shared-link'
@@ -347,23 +345,24 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
-      // Lock (FL-34): one lock, metadata on the asset. Album membership and organization are
-      // untouched; the items leave every view but the owner's Locked view after the PIN, and the way
-      // back is Unlock there. It replaces both Mark Sensitive and the upstream Locked folder move.
-      id: 'move-to-locked',
-      labelKey: 'frameleaf_bulk_move_to_locked',
-      icon: 'mdiLockOutline',
+      // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata
+      // that never relocates it. Album membership and organization are untouched; the item is hidden
+      // everywhere until the session is unlocked, and the Locked view lists it.
+      id: 'mark-sensitive',
+      labelKey: 'frameleaf_bulk_mark_sensitive',
+      icon: 'mdiShieldLockOutline',
       group: 'visibility',
-      confirm: true,
-      available: live && has,
+      available: live && has && (unknown || any((asset) => !asset.isLocked)),
     },
     {
-      id: 'remove-from-locked',
-      labelKey: 'frameleaf_bulk_remove_from_locked',
-      icon: 'mdiLockOpenVariantOutline',
+      // Unmark Sensitive is Unlock: each item goes back exactly where it was. Offered in the Locked view
+      // and wherever an unlocked session shows a marked item.
+      id: 'unmark-sensitive',
+      labelKey: 'frameleaf_bulk_unmark_sensitive',
+      icon: 'mdiShieldOutline',
       group: 'visibility',
-      confirm: true,
-      available: !readOnly && locked && has,
+      undoable: true,
+      available: !readOnly && has && (locked || (live && (unknown || any((asset) => !!asset.isLocked)))),
     },
     {
       id: 'remove-from-album',
@@ -445,7 +444,7 @@ export const PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
 ];
 export const TRASH_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = ['restore', 'download', 'delete-permanently'];
 export const LOCKED_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
-  'remove-from-locked',
+  'unmark-sensitive',
   'add-to-album',
   'download',
   'delete-permanently',

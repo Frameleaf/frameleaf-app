@@ -1,6 +1,5 @@
 import {
   addAssetsToAlbum,
-  AssetImageEnrichmentAction,
   AssetJobName,
   AssetVisibility,
   bulkTagAssets,
@@ -25,7 +24,6 @@ import {
   untagAssets,
   updateAlbumInfo,
   updateAsset,
-  updateAssetImageEnrichment,
   updateAssets,
   upsertTags,
   type BulkIdResponseDto,
@@ -149,7 +147,6 @@ export type BulkRunOptions = {
 export type BulkGateway = {
   updateAssets: typeof updateAssets;
   updateAsset: typeof updateAsset;
-  updateAssetImageEnrichment: typeof updateAssetImageEnrichment;
   /** Lock and Unlock (FL-34). */
   lockAssets: typeof lockAssets;
   unlockAssets: typeof unlockAssets;
@@ -181,7 +178,6 @@ export const createBulkGateway = (
 ): BulkGateway => ({
   updateAssets,
   updateAsset,
-  updateAssetImageEnrichment,
   lockAssets,
   unlockAssets,
   addAssetsToAlbum,
@@ -664,13 +660,6 @@ export const runBulkAction = async (
       }
     }
 
-    /* POST /assets/lock and /assets/unlock — Locked is a lock record (FL-34), never a visibility. */
-    case 'move-to-locked':
-    case 'remove-from-locked': {
-      const write = action === 'move-to-locked' ? gateway.lockAssets : gateway.unlockAssets;
-      return finish(await runInChunks(runner, (batch) => write({ bulkIdsDto: { ids: batch } })));
-    }
-
     /* PUT /assets/:id — the Live Photo link lives on the still, one asset at a time. */
     case 'link-live-photo': {
       const photoId = String(requirePayload(payload, 'photoId'));
@@ -694,22 +683,17 @@ export const runBulkAction = async (
       );
     }
 
-    /* PUT /assets/:id/image-enrichment — metadata only; album membership is untouched. */
-    case 'mark-sensitive':
+    /*
+     * POST /assets/lock and /assets/unlock — Mark Sensitive is the lock (FL-34): a lock record, never a
+     * visibility or an album change. Only Unmark is undone here: undoing a mark would need the PIN.
+     */
+    case 'mark-sensitive': {
+      return finish(await runInChunks(runner, (batch) => gateway.lockAssets({ bulkIdsDto: { ids: batch } })));
+    }
     case 'unmark-sensitive': {
-      const enrichment =
-        action === 'mark-sensitive' ? AssetImageEnrichmentAction.MarkNsfw : AssetImageEnrichmentAction.MarkSafe;
       return finish(
-        await runPerItem(runner, async (id) => {
-          await gateway.updateAssetImageEnrichment({
-            id,
-            assetImageEnrichmentActionRequestDto: { action: enrichment },
-          });
-        }),
-        (succeeded) => ({
-          action: action === 'mark-sensitive' ? 'unmark-sensitive' : 'mark-sensitive',
-          ids: succeeded,
-        }),
+        await runInChunks(runner, (batch) => gateway.unlockAssets({ bulkIdsDto: { ids: batch } })),
+        (succeeded) => ({ action: 'mark-sensitive', ids: succeeded }),
       );
     }
 
@@ -1057,9 +1041,9 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
   'delete-permanently',
   'restore',
   'remove-from-album',
-  // Both directions of the Locked folder move the asset out of the destination it was run from.
-  'move-to-locked',
-  'remove-from-locked',
+  // Marking hides an item from the view it was run from; unmarking takes it out of the Locked view.
+  'mark-sensitive',
+  'unmark-sensitive',
 ]);
 
 export const removesFromView = (action: BulkActionId): boolean => REMOVES_FROM_VIEW.has(action);

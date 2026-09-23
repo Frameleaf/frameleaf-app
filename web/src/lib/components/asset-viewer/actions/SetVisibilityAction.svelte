@@ -5,16 +5,16 @@
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetVisibility, lockAssets, unlockAssets } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
-  import { mdiLockOpenVariantOutline, mdiLockOutline } from '@mdi/js';
+  import { mdiShieldLockOutline, mdiShieldOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction, PreAction } from './action';
 
   /**
-   * Lock and Unlock for one item in the viewer (FL-34). A lock is metadata: the item keeps its albums
-   * and organisation and is hidden everywhere except its owner's Locked view after the PIN. Unlock
-   * returns it exactly where it was. The server needs the unlocked session for Unlock; the viewer only
-   * shows a locked item in that session.
+   * The viewer's Mark Sensitive and Unmark Sensitive (FL-34; the prototype's `lock` and `unlock`).
+   * Marking is the lock: metadata that keeps the item's albums and organisation and hides it everywhere
+   * until the session is unlocked, where the Locked view lists it. Unmarking unlocks it and returns it
+   * exactly where it was; the viewer only shows a locked item in an unlocked session, which the server
+   * requires for it.
    */
   interface Props {
     asset: TimelineAsset;
@@ -27,20 +27,6 @@
 
   const toggleLock = async () => {
     const locked = isLocked;
-    const isConfirmed = await modalManager.showDialog({
-      title: locked ? $t('frameleaf_bulk_remove_from_locked') : $t('frameleaf_bulk_move_to_locked'),
-      prompt: locked
-        ? $t('frameleaf_bulk_remove_from_locked_confirm', { values: { count: 1 } })
-        : $t('frameleaf_bulk_move_to_locked_confirm', { values: { count: 1 } }),
-      confirmText: locked ? $t('frameleaf_bulk_remove_from_locked') : $t('frameleaf_bulk_move_to_locked'),
-      confirmColor: 'primary',
-      icon: locked ? mdiLockOpenVariantOutline : mdiLockOutline,
-    });
-
-    if (!isConfirmed) {
-      return;
-    }
-
     const type = locked ? AssetAction.SET_VISIBILITY_TIMELINE : AssetAction.SET_VISIBILITY_LOCKED;
     try {
       preAction({ type, asset });
@@ -58,6 +44,6 @@
 
 <MenuOption
   onClick={() => toggleLock()}
-  text={isLocked ? $t('frameleaf_bulk_remove_from_locked') : $t('frameleaf_bulk_move_to_locked')}
-  icon={isLocked ? mdiLockOpenVariantOutline : mdiLockOutline}
+  text={isLocked ? $t('frameleaf_bulk_unmark_sensitive') : $t('frameleaf_bulk_mark_sensitive')}
+  icon={isLocked ? mdiShieldOutline : mdiShieldLockOutline}
 />
