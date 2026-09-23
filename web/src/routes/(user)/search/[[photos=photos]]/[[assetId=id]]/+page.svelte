@@ -7,6 +7,7 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import { QueryParameter } from '$lib/constants';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -137,6 +138,36 @@
   const handleSelectAll = () => librarySession.selectAll(searchResultAssets.map((asset) => asset.id));
 
   const timelineAssets = $derived(searchResultAssets.map((asset) => toTimelineAsset(asset)));
+
+  /**
+   * FL-45: a short, sanitized summary of what was searched for, so a search download is not just
+   * another generic "frameleaf" zip. Prefers the free-text query (typed search or Ask) over a
+   * structured term, since it is what the person actually typed; falls back to the first
+   * human-readable structured term when the search was built entirely from filters (e.g. from a
+   * Places card, which searches by `city` with no free text).
+   */
+  const searchDownloadText = $derived.by(() => {
+    const asked = askResponse ? askQuery.trim() : '';
+    if (asked) {
+      return asked;
+    }
+    const typed = typeof terms.query === 'string' ? terms.query.trim() : '';
+    if (typed) {
+      return typed;
+    }
+    const textLikeKeys: (keyof SearchTerms)[] = ['originalFileName', 'city', 'country', 'state', 'make', 'model'];
+    for (const key of textLikeKeys) {
+      const value = terms[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  });
+
+  const searchDownloadFileName = $derived(
+    brandedArchiveName($t('frameleaf_archive_name_search'), [searchDownloadText], { withDate: true }),
+  );
 
   const updateAsset = (updated: AssetResponseDto) => {
     const index = searchResultAssets.findIndex((asset) => asset.id === updated.id);
@@ -514,6 +545,7 @@
         {#if askResponse && searchResultAssets.length > 0}
           <ResultsView
             assets={timelineAssets}
+            downloadFileName={searchDownloadFileName}
             onEndReached={() => void loadNextAskPage()}
             onRemoved={onAssetDelete}
             onSelectAll={handleSelectAll}
@@ -532,6 +564,7 @@
     {:else if hasSearchQuery && searchResultAssets.length > 0}
       <ResultsView
         assets={timelineAssets}
+        downloadFileName={searchDownloadFileName}
         onEndReached={() => void loadNextPage()}
         onRemoved={onAssetDelete}
         onSelectAll={handleSelectAll}
