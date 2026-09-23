@@ -2523,6 +2523,63 @@ export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
 };
+export type DuplicateActiveGroupDto = {
+    duplicateId: string;
+    memberIds: string[];
+};
+export type DuplicateActiveOperationDto = {
+    action: MediaOperationBulkAction;
+    groups: DuplicateActiveGroupDto[];
+    operationId: string;
+};
+export type DuplicateDecisionGroupDto = {
+    applied: boolean;
+    decision: DuplicateDecisionKind;
+    decisionId: string;
+    duplicateId: string;
+    keepAssetIds: string[];
+    memberIds: string[];
+    trashAssetIds: string[];
+    /** An undo job has started on this decision */
+    undoing: boolean;
+    undone: boolean;
+};
+export type DuplicateDecisionBatchDto = {
+    createdAt: string;
+    groups: DuplicateDecisionGroupDto[];
+    /** The durable job that applied these decisions */
+    operationId: string;
+    /** Every decision of the job is applied and none has been undone */
+    undoable: boolean;
+};
+export type DuplicateDecisionHistoryDto = {
+    /** Decision and undo jobs still running */
+    active: DuplicateActiveOperationDto[];
+    /** The most recent decision jobs, newest first */
+    recent: DuplicateDecisionBatchDto[];
+};
+export type DuplicateReviewQualityDto = {
+    assetId: string;
+    /** Evidence for or against keeping this copy */
+    reasons: DuplicateQualityReason[];
+};
+export type DuplicateReviewGroupDto = {
+    /** The photos of the group this session may see */
+    assets: AssetResponseDto[];
+    blockedReason: (DuplicateGroupBlock) | null;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Whether this session may decide the group */
+    editable: boolean;
+    /** Photos of the group this session does not see */
+    hiddenMemberCount: number;
+    kind: DuplicateGroupKind;
+    qualities: DuplicateReviewQualityDto[];
+    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
+    suggestedKeepAssetIds: string[];
+    /** Size of the originals shown, in bytes */
+    totalBytes: number;
+};
 export type AssetFaceResponseDto = {
     /** Bounding box X1 coordinate */
     boundingBoxX1: number;
@@ -3108,11 +3165,24 @@ export type StudioPreviewRequestDto = {
     viewportHeight: number;
     viewportWidth: number;
 };
+export type MediaOperationDuplicateGroupDto = {
+    decision: DuplicateDecisionKind;
+    /** For `undo-duplicates`: the recorded decision to reverse */
+    decisionId?: string;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed */
+    keepAssetIds: string[];
+    /** Every photo of the group, as reviewed */
+    memberIds: string[];
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
+    /** Duplicate review decisions, one complete group each (FL-61) */
+    duplicateGroups?: MediaOperationDuplicateGroupDto[];
     latitude?: number;
     longitude?: number;
     /** Relative shift in minutes, for `dateMode: shift` */
@@ -8581,6 +8651,17 @@ export function getAssetDuplicates(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Retrieve recent duplicate decisions
+ */
+export function getDuplicateDecisions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateDecisionHistoryDto;
+    }>("/duplicates/decisions", {
+        ...opts
+    }));
+}
+/**
  * Resolve duplicate groups
  */
 export function resolveDuplicates({ duplicateResolveDto }: {
@@ -8594,6 +8675,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
         method: "POST",
         body: duplicateResolveDto
     })));
+}
+/**
+ * Retrieve the duplicate review
+ */
+export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateReviewGroupDto[];
+    }>("/duplicates/review", {
+        ...opts
+    }));
 }
 /**
  * Dismiss a duplicate group
@@ -13655,7 +13747,9 @@ export enum MediaOperationBulkAction {
     RefreshThumbnails = "refresh-thumbnails",
     RefreshMetadata = "refresh-metadata",
     RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces"
+    RefreshFaces = "refresh-faces",
+    ResolveDuplicates = "resolve-duplicates",
+    UndoDuplicates = "undo-duplicates"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -13738,6 +13832,27 @@ export enum RestorationModelState {
     NoGpu = "no-gpu",
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
+}
+export enum DuplicateDecisionKind {
+    Keepers = "keepers",
+    KeepAll = "keep-all",
+    Stack = "stack"
+}
+export enum DuplicateGroupBlock {
+    HiddenMembers = "hidden-members",
+    OtherOwner = "other-owner"
+}
+export enum DuplicateGroupKind {
+    Duplicates = "duplicates",
+    Burst = "burst"
+}
+export enum DuplicateQualityReason {
+    OriginalFormat = "original-format",
+    LargestFile = "largest-file",
+    HighestResolution = "highest-resolution",
+    MostMetadata = "most-metadata",
+    CompressedCopy = "compressed-copy",
+    LowerResolution = "lower-resolution"
 }
 export enum MediaOperationItemStatus {
     Ok = "ok",
