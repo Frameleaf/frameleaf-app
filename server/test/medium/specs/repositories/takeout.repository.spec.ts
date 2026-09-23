@@ -35,8 +35,9 @@ const seedItem = async (
   sut: TakeoutRepository,
   importId: string,
   sourceId: string,
-  options: { name: string; folder?: string; locked?: boolean; checksum?: Buffer } = { name: 'IMG_1.jpg' },
+  { name = 'IMG_1.jpg', ...rest }: { name?: string; folder?: string; locked?: boolean; checksum?: Buffer } = {},
 ) => {
+  const options = { name, ...rest };
   const folder = options.folder ?? 'Trip';
   const id = takeoutStableId(`${sourceId}:${folder}/${options.name}`);
   await sut.recordFile({

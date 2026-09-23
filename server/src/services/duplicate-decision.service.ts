@@ -249,7 +249,7 @@ export class DuplicateDecisionService {
       batch.groups.push(group);
       // with the trash off the removed copies were deleted for good: nothing to bring back
       const permanent = readState(decision).permanent === true;
-      batch.undoable = batch.undoable && group.applied && !group.undone && !group.undoing && !permanent;
+      batch.undoable &&= group.applied && !group.undone && !group.undoing && !permanent;
       if (createdAt > batch.createdAt) {
         batch.createdAt = createdAt;
       }
@@ -265,7 +265,10 @@ export class DuplicateDecisionService {
     }));
 
     return {
-      recent: [...batches.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      recent: batches
+        .values()
+        .toArray()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       active: active.filter(({ groups }) => groups.length > 0),
     };
   }
@@ -710,13 +713,13 @@ export class DuplicateDecisionService {
         await this.assets.updateAll(auth, { ids: [id], ...update } as AssetBulkUpdateDto);
       }
 
-      for (const albumId of left.albumIds.filter((albumId) => !was.albumIds.includes(albumId))) {
-        if (now.albumIds.includes(albumId)) {
+      for (const albumId of left.albumIds) {
+        if (!was.albumIds.includes(albumId) && now.albumIds.includes(albumId)) {
           await this.albums.removeAssets(auth, albumId, { ids: [id] });
         }
       }
-      for (const tagId of left.tagIds.filter((tagId) => !was.tagIds.includes(tagId))) {
-        if (now.tagIds.includes(tagId)) {
+      for (const tagId of left.tagIds) {
+        if (!was.tagIds.includes(tagId) && now.tagIds.includes(tagId)) {
           await this.tags.removeAssets(auth, tagId, { ids: [id] });
         }
       }

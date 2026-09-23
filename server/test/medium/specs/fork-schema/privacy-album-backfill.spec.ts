@@ -194,7 +194,7 @@ describe('privacy and album fork sidecars', () => {
     const albums = new ForkAlbumMetadataRepository(db);
     const privacy = new ForkPrivacyRepository(db);
     await albums.backfillAlbums([album.id!]);
-    const legacyRow = { id: album.id!, parentId: null, icon: 'changed-legacy', sortOrder: 9 };
+    const legacyRow = { id: album.id!, parentId: null, icon: 'changed-legacy', sortOrder: 9, kind: 'album' };
 
     await sql`UPDATE immich_fork.state SET phase = 'dual-write' WHERE id = 1`.execute(db);
     await expect(albums.applyReadMetadata([legacyRow])).resolves.toEqual([legacyRow]);
