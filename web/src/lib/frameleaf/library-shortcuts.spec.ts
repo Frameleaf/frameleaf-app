@@ -48,13 +48,13 @@ describe('matchLibraryShortcut', () => {
 
   it('refuses to fire while the user is typing', () => {
     const target = { tagName: 'INPUT', type: 'text' };
-    expect(matchLibraryShortcut(press('f', { target } as Partial<KeyboardEvent>))).toBeNull();
+    expect(matchLibraryShortcut(press('f', { target } as unknown as Partial<KeyboardEvent>))).toBeNull();
     expect(matchLibraryShortcut(press('f'), { typing: true })).toBeNull();
   });
 
   it('still fires over checkboxes and other non-text inputs', () => {
     const target = { tagName: 'INPUT', type: 'checkbox' };
-    expect(matchLibraryShortcut(press('f', { target } as Partial<KeyboardEvent>))?.id).toBe('favorite');
+    expect(matchLibraryShortcut(press('f', { target } as unknown as Partial<KeyboardEvent>))?.id).toBe('favorite');
   });
 
   it('ignores composition and auto-repeat unless repeat is allowed', () => {
