@@ -1,5 +1,6 @@
 import { WorkflowTrigger } from '@immich/plugin-sdk';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type {
   WorkflowDefinitionDocument,
   WorkflowDefinitionStep,
@@ -50,6 +51,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
 
 const isContainer = (value: unknown): value is JsonContainer => isPlainObject(value) || Array.isArray(value);
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 /** Refuses values that are not ordinary JSON, or that are too large or deep to store and edit. */
 export const assertWorkflowJson = (value: unknown): void => {
@@ -71,7 +73,10 @@ export const assertWorkflowJson = (value: unknown): void => {
       return;
     }
     if (isPlainObject(item)) {
-      for (const child of Object.values(item)) {
+      for (const [key, child] of Object.entries(item)) {
+        if (UNSAFE_KEYS.has(key)) {
+          throw new Error('Workflow definitions cannot contain prototype keys.');
+        }
         check(child, depth + 1);
       }
       return;
@@ -226,7 +231,7 @@ export function credentialPaths(value: unknown, path: string[] = []): string[][]
 const readPath = (value: unknown, path: string[]): unknown => {
   let cursor = value;
   for (const key of path) {
-    if (!isContainer(cursor)) {
+    if (!isContainer(cursor) || !Object.hasOwn(cursor, key) || UNSAFE_KEYS.has(key)) {
       return undefined;
     }
     cursor = (cursor as Record<string, unknown>)[key];
@@ -246,9 +251,12 @@ const hasPath = (value: unknown, path: string[]): boolean => {
 };
 
 const writePath = (value: Record<string, unknown>, path: string[], next: unknown) => {
+  if (path.some((key) => UNSAFE_KEYS.has(key))) {
+    throw new Error('Workflow definitions cannot contain prototype keys.');
+  }
   let cursor: Record<string, unknown> = value;
   for (const key of path.slice(0, -1)) {
-    if (!isContainer(cursor[key])) {
+    if (!Object.hasOwn(cursor, key) || !isContainer(cursor[key])) {
       cursor[key] = {};
     }
     cursor = cursor[key] as Record<string, unknown>;
@@ -288,9 +296,17 @@ export function restoreCredentials(
   config: Record<string, unknown> | null,
   stored: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
+  assertWorkflowJson(config);
+  assertWorkflowJson(stored);
   const paths = credentialPaths(stored);
   if (paths.length === 0) {
     return config;
+  }
+  if (
+    paths.some((path) => !hasPath(config, path)) &&
+    !isDeepStrictEqual(redactCredentials(config).config, redactCredentials(stored).config)
+  ) {
+    throw new Error('Re-enter stored credentials when changing other step parameters.');
   }
   const next = structuredClone(config ?? {});
   for (const path of paths) {

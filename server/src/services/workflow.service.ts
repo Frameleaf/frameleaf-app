@@ -191,11 +191,19 @@ export class WorkflowService extends BaseService {
   /** An edited step without a credential keeps the stored one, when it is the same step and method. */
   private withStoredCredentials(steps: WorkflowDefinitionInput['steps'], stored: WorkflowDefinitionDocument) {
     const byId = new Map(stored.steps.map((step) => [step.id, step]));
+    const seen = new Set<string>();
     return steps.map((step) => {
-      const previous = step.id ? byId.get(step.id) : undefined;
-      return previous && previous.method === step.method
-        ? { ...step, config: restoreCredentials(step.config, previous.config) }
-        : step;
+      const previous = step.id && !seen.has(step.id) ? byId.get(step.id) : undefined;
+      if (step.id) {
+        seen.add(step.id);
+      }
+      try {
+        return previous && previous.method === step.method
+          ? { ...step, config: restoreCredentials(step.config, previous.config) }
+          : step;
+      } catch (error) {
+        throw new BadRequestException((error as Error).message);
+      }
     });
   }
 

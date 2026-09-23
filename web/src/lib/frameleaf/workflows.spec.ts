@@ -81,6 +81,11 @@ describe('parseWorkflowDefinition', () => {
     );
     expect(() => parseWorkflowDefinition('x'.repeat(300_000))).toThrow(/256 KB/);
     expect(() => importWorkflowFile(JSON.stringify(imported), 200_000)).toThrow(/100 KB/);
+    expect(() =>
+      parseWorkflowDefinition(
+        '{"trigger":"AssetCreate","steps":[{"method":"a#b","config":{"nested":{"__proto__":{"token":"probe"}}}}]}',
+      ),
+    ).toThrow(/prototype keys/);
   });
 });
 
@@ -107,21 +112,54 @@ describe('import and export', () => {
     });
   });
 
-  it('keeps a step identity through JSON edits while its method is unchanged', () => {
+  it('keeps credentials with explicit step ids when same-method webhooks are reordered in JSON', () => {
     const draft: WorkflowDraft = {
-      ...draftFromDocument(imported),
-      steps: draftFromDocument(imported).steps.map((step, index) => ({
-        ...step,
-        id: `id-${index}`,
-        storedSecrets: ['x'],
-      })),
+      ...draftFromDocument({ trigger: 'AssetCreate', steps: [] }),
+      steps: [
+        {
+          id: 'id-a',
+          method: 'immich-plugin-core#webhook',
+          config: { url: 'https://a.test' },
+          enabled: true,
+          extra: {},
+          storedSecrets: ['headerValue'],
+        },
+        {
+          id: 'id-b',
+          method: 'immich-plugin-core#webhook',
+          config: { url: 'https://b.test' },
+          enabled: true,
+          extra: {},
+          storedSecrets: ['headerValue'],
+        },
+      ],
     };
-    const edited = draftFromDocument(
-      { ...imported, steps: [imported.steps[0], { method: 'other#method', config: null }] },
-      draft,
+    const document = draftToDocument(draft);
+    document.steps = [...(document.steps as unknown[])].reverse();
+    const edited = draftFromDocument(document, draft);
+
+    expect(edited.steps.map((step) => ({ id: step.id, url: step.config?.url, secrets: step.storedSecrets }))).toEqual([
+      { id: 'id-b', url: 'https://b.test', secrets: ['headerValue'] },
+      { id: 'id-a', url: 'https://a.test', secrets: ['headerValue'] },
+    ]);
+    expect(draftToCreateDto(edited).steps?.map((step) => step.id)).toEqual(['id-b', 'id-a']);
+    expect((exportDraft(edited).steps as Record<string, unknown>[]).every((step) => !('id' in step))).toBe(true);
+
+    const withoutId = {
+      ...document,
+      steps: (document.steps as Record<string, unknown>[]).map(({ id: _, ...step }) => step),
+    };
+    expect(draftFromDocument(withoutId, draft).steps.every((step) => !step.id && step.storedSecrets.length === 0)).toBe(
+      true,
     );
-    expect(edited.steps.map((step) => step.id)).toEqual(['id-0', undefined]);
-    expect(edited.steps[1].storedSecrets).toEqual([]);
+    const changedDestination = {
+      ...document,
+      steps: [
+        { ...(document.steps as Record<string, unknown>[])[0], config: { url: 'https://other.test' } },
+        (document.steps as Record<string, unknown>[])[1],
+      ],
+    };
+    expect(draftFromDocument(changedDestination, draft).steps[0]).toMatchObject({ id: undefined, storedSecrets: [] });
   });
 
   it('never exports a credential typed into the draft', () => {
