@@ -126,7 +126,7 @@ describe('studio project session', () => {
       projectId,
       name: 'Untitled project',
       engineRevision: 'rev',
-      onChange: (state) => states.push(state),
+      onChange: (state) => void states.push(state),
       now: () => 1000,
       setTimer: timers.setTimer,
       isOnline: () => online,
