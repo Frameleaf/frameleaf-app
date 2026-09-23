@@ -533,6 +533,12 @@ export class MediaOperationService {
       throw new BadRequestException('Apply a new reviewed plan from the Physical deduplication page');
     }
 
+    // FL-78: a library scan reads the library's folders afresh and admits one scan per library; it is
+    // started again from Libraries, where the folders and the owner are checked first.
+    if (operation.kind === MediaOperationKind.LibraryScan) {
+      throw new BadRequestException('Scan the library again from Libraries');
+    }
+
     if (operation.kind === MediaOperationKind.ICloudSync) {
       return this.retryICloudSync(auth, operation);
     }
