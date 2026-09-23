@@ -421,6 +421,7 @@
             <ResultsView
               assets={collectionTimelineAssets}
               {bulkContext}
+              downloadFileName={album.albumName}
               {tagOptions}
               {albumOptions}
               onEndReached={loadMoreCollectionAssets}
@@ -451,6 +452,7 @@
           {options}
           destination={{ kind: 'album', id: albumId }}
           {bulkContext}
+          downloadFileName={album.albumName}
           {tagOptions}
           {albumOptions}
           onMutated={handleMutated}
