@@ -32,6 +32,8 @@ import {
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
 } from 'src/utils/media-policy.js';
+import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
+import { OutputCadenceMode } from 'src/utils/video-timing.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 
 const ffmpeg = defaults.ffmpeg;
@@ -240,8 +242,57 @@ describe('getEditedMasterTimingArgs', () => {
     expect(getEditedMasterTimingArgs({ timeBase: null })).toEqual(['-fps_mode', 'passthrough']);
   });
 
-  it('never emits a constant-frame-rate mode', () => {
+  it('never emits a constant-frame-rate mode on its own', () => {
     expect(getEditedMasterTimingArgs(sdrStream)).not.toContain('cfr');
+  });
+
+  // FL-93
+  it('takes the timescale from the exact time base rather than the persisted denominator', () => {
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1, den: 30_000 } })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '30000',
+    ]);
+    // A time base that carries a numerator still gets a grid every tick lands on exactly.
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1001, den: 30_000 } })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '30000',
+    ]);
+  });
+
+  it('passes the source timing through when a declared cadence is the one it already has', () => {
+    const decision = {
+      mode: OutputCadenceMode.Passthrough,
+      cadence: null,
+      reason: 'test',
+    };
+
+    expect(getEditedMasterTimingArgs({ timeBase: 600 }, decision)).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '600',
+    ]);
+  });
+
+  it('writes a requested cadence conversion as an exact rational, never as 29.97', () => {
+    const decision = {
+      mode: OutputCadenceMode.Convert,
+      cadence: FRAME_RATE_NTSC_30,
+      reason: 'test',
+    };
+
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000 }, decision)).toEqual([
+      '-fps_mode',
+      'cfr',
+      '-r',
+      '30000/1001',
+      '-video_track_timescale',
+      '30000',
+    ]);
   });
 });
 
