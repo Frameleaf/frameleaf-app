@@ -9,7 +9,6 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
@@ -70,7 +69,7 @@
     action === 'add-to-album' ? await ensureElevatedSession() : true;
 </script>
 
-<UserPageLayout title={data.meta.title} hideNavbar={librarySession.selection.length > 0} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   {#snippet buttons()}
     <div class="inline-flex rounded-full border border-gray-300 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
       <button
