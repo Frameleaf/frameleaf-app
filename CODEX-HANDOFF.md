@@ -6,9 +6,8 @@ For the Codex agent picking up this work. You will not have the original machine
 
 - **This branch:** `claude/frameleaf-implementation`. It is the integration branch for the September 22, 2026 design revision. It contains about 125 story merges on top of the design revision below. **Nothing on it has been built or tested.** The owner's 7 GB Mac cannot run builds or test suites, so every spec was written but not run. Your first job is to make hosted CI green (section 6).
 - **Design revision:** PR #135 (`claude/frameleaf-ui-review-157143`) lands the September 22 prototype in `design/frameleaf/`. It is green on CI apart from flaky web e2e. PR #136 (`claude/frameleaf-design-rules-sep23`) is stacked on #135 and adds the September 23 rule updates (see section 3) plus Confluence receipts. It gets CI only once retargeted to `fork/main` after #135 merges. This integration branch already contains everything from both.
-- **Three story branches were still in progress** when usage ran out. They are pushed to the `frameleaf` remote but **not merged here**. Each was finishing a review round:
+- **Two story branches were still in progress** when usage ran out. They are pushed to the `frameleaf` remote but **not merged here**. Each was finishing a review round:
   - `codex/FL-66-settings-draft-transactions` (admin settings: one draft, stale-save rejection, transaction boundaries). Last known open item: a concurrent RunPod key / HF token save can be silently overwritten; inside the settings lock, redo the "empty means keep" step from the freshly read config.
-  - `codex/FL-73-physical-dedup-plans` (reviewed physical-deduplication plans). Review asked for: refuse Activity "Retry" for `physical_deduplication` (apply a new reviewed plan instead) and re-check `physicalDeduplication.enabled` + saved `masterUserId` on every worker claim; make one-active-plan atomic; don't disable group checkboxes when nothing is selected; HMAC the review token; plus P3s. The same branch restricts remote render workers to renderable job kinds (server-side, at enrolment, session, claim and admission) and gives every `MediaOperationKind` a label in `web/src/lib/frameleaf/render-workers.ts` (takeout_import, media_health, icloud_sync were missing on this branch).
   - `codex/FL-74-preservation-packages` (preservation package export/verify/restore). No review had come back yet; run one.
   Review each, finish it, merge it into this branch.
 
@@ -66,6 +65,7 @@ For the Codex agent picking up this work. You will not have the original machine
 - Moment search: include partners' videos? Should a chosen moment cover replace the video thumbnail?
 - Library Care: recovered copies and kept damaged files aren't quota-counted or auto-cleaned; schedule toggles lack config keys; no un-dismiss endpoint.
 - FL-67: credential changes are server-wide and only logged (no per-account audit); prototype wording "Immich server support" and a purchase sentence should probably change; changing SMTP host/user clears the stored password.
+- FL-73: admins can't leave out only the Locked copies they can't see; plans cap at the 500 previewed copies (paging?); the review-token secret is in memory, so a restart means reviewing again.
 - FL-65: Locked Folder imports use lock reason `marked`; per-import switches live in the wizard, not settings.
 - Studio preview: Locked-between-request-and-render window up to the 10-minute manifest cache; reviewers' previews are per account; preview saves pending edits first.
 - Restoration: should an accepted restoration drive the viewer's playback source? Result retention beyond explicit discard?
@@ -75,7 +75,7 @@ For the Codex agent picking up this work. You will not have the original machine
 ## 5. Fork migrations
 
 Fork migrations live in `server/src/schema/migrations/2100000000NNN-Name.ts`, listed in `server/src/schema/migrations/ORDER` (keep the fork block sorted numerically, no duplicates) and registered in `server/src/fork-schema/migration-manifest.ts` `LEGACY_FORK_MIGRATIONS` plus an assertion in `migration-manifest.spec.ts`.
-Used on this branch: 010–110, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 240, 250, 260, 270, 280, 290, 300, 310, 320, 340, 380, 390, 400, 450, 460, 490, 500. In flight: 410 (FL-66, if used), 510 (FL-74), 520 (FL-73). **Next free: 530.** None of these has run on a shared database yet, so in-place edits are still allowed until the first deployment.
+Used on this branch: 010–110, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 240, 250, 260, 270, 280, 290, 300, 310, 320, 340, 380, 390, 400, 450, 460, 490, 500. FL-73 used no migration. In flight: 410 (FL-66, if used), 510 (FL-74). **Next free: 530.** None of these has run on a shared database yet, so in-place edits are still allowed until the first deployment.
 
 ## 6. Getting CI green (do this first)
 
