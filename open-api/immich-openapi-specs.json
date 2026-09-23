@@ -1369,6 +1369,99 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/physical-deduplication/preview": {
+      "get": {
+        "description": "Return the latest physical deduplication plan with per-copy evidence. Thumbnail visibility is the asset access of the requesting administrator, evaluated on every read.",
+        "operationId": "getPhysicalDeduplicationPreview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get physical deduplication preview",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queue a dry run that may retain originals in an account chosen for the preview and may review the copies of one account. Applying a plan still requires the saved master account and is queued through the jobs endpoint.",
+        "operationId": "requestPhysicalDeduplicationPreview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalDeduplicationPreviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Request physical deduplication preview",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -30788,6 +30881,317 @@
           }
         },
         "type": "object"
+      },
+      "PhysicalDeduplicationCopyDto": {
+        "properties": {
+          "assetId": {
+            "description": "Duplicate asset owned by a non-retained account",
+            "type": "string"
+          },
+          "canView": {
+            "description": "Whether the requesting administrator may view this asset and its thumbnail",
+            "type": "boolean"
+          },
+          "checksum": {
+            "description": "Hex-encoded SHA-1 checksum of the original file",
+            "type": "string"
+          },
+          "checksumMatch": {
+            "description": "Whether checksum and byte size match a retained original",
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationDecision"
+          },
+          "originalFileName": {
+            "type": "string"
+          },
+          "originalPath": {
+            "description": "Path of the duplicate copy on disk",
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Display name of the copy owner",
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PhysicalDeduplicationSkipReason"
+              }
+            ],
+            "description": "Present when the decision is skip",
+            "nullable": true
+          },
+          "retainedAssetId": {
+            "description": "Retained original this copy matches, if any",
+            "nullable": true,
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "required": [
+          "assetId",
+          "canView",
+          "checksum",
+          "checksumMatch",
+          "decision",
+          "originalFileName",
+          "originalPath",
+          "ownerId",
+          "ownerName",
+          "reason",
+          "retainedAssetId",
+          "sizeInBytes",
+          "type"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationDecision": {
+        "description": "Physical deduplication plan decision for a duplicate copy",
+        "enum": [
+          "share",
+          "skip"
+        ],
+        "type": "string"
+      },
+      "PhysicalDeduplicationPlanDto": {
+        "properties": {
+          "copies": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalDeduplicationCopyDto"
+            },
+            "type": "array"
+          },
+          "copiesTruncated": {
+            "description": "True when more copies were reviewed than the stored preview keeps; totals still cover all of them",
+            "type": "boolean"
+          },
+          "deletedBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "eligibleAssets": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "linkedAssets": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "masterUserId": {
+            "description": "Account whose originals are retained by this plan",
+            "type": "string"
+          },
+          "masterUserName": {
+            "description": "Display name of the retained account",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PhysicalDeduplicationPlanMode"
+          },
+          "ranAt": {
+            "description": "When the plan was produced",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "reclaimableBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retained": {
+            "items": {
+              "$ref": "#/components/schemas/PhysicalDeduplicationRetainedDto"
+            },
+            "type": "array"
+          },
+          "scopeUserId": {
+            "description": "When set, only copies owned by this account were reviewed; null means every account",
+            "nullable": true,
+            "type": "string"
+          },
+          "scopeUserName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "skippedExternal": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skippedMissingMaster": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "copies",
+          "copiesTruncated",
+          "deletedBytes",
+          "eligibleAssets",
+          "linkedAssets",
+          "masterUserId",
+          "masterUserName",
+          "mode",
+          "ranAt",
+          "reclaimableBytes",
+          "retained",
+          "scopeUserId",
+          "scopeUserName",
+          "skippedExternal",
+          "skippedMissingMaster"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationPlanMode": {
+        "description": "Whether the physical deduplication plan was a preview or an applied run",
+        "enum": [
+          "dry-run",
+          "apply"
+        ],
+        "type": "string"
+      },
+      "PhysicalDeduplicationPreviewRequestDto": {
+        "properties": {
+          "masterUserId": {
+            "description": "Account to retain originals in for this preview; defaults to the saved master account",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scopeUserId": {
+            "description": "Limit the review to copies owned by this account",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PhysicalDeduplicationPreviewResponseDto": {
+        "properties": {
+          "enabled": {
+            "description": "The saved `physicalDeduplication.enabled`",
+            "type": "boolean"
+          },
+          "plan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PhysicalDeduplicationPlanDto"
+              }
+            ],
+            "description": "The latest plan, or null when none has run",
+            "nullable": true
+          },
+          "running": {
+            "description": "Whether a deduplication preview or apply job is queued or active",
+            "type": "boolean"
+          },
+          "savedMasterUserId": {
+            "description": "The saved `physicalDeduplication.masterUserId`",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "plan",
+          "running",
+          "savedMasterUserId"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationRetainedDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset that keeps the original file",
+            "type": "string"
+          },
+          "canView": {
+            "description": "Whether the requesting administrator may view this asset and its thumbnail",
+            "type": "boolean"
+          },
+          "checksum": {
+            "description": "Hex-encoded SHA-1 checksum of the original file",
+            "type": "string"
+          },
+          "originalFileName": {
+            "type": "string"
+          },
+          "originalPath": {
+            "description": "Path of the retained original file",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Owner of the retained asset (the retained account)",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Display name of the retained account",
+            "type": "string"
+          },
+          "referencesAfter": {
+            "description": "Assets that would reference this original after the plan is applied",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "referencesBefore": {
+            "description": "Assets that reference this original before the plan is applied (including the retained asset)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "required": [
+          "assetId",
+          "canView",
+          "checksum",
+          "originalFileName",
+          "originalPath",
+          "ownerId",
+          "ownerName",
+          "referencesAfter",
+          "referencesBefore",
+          "sizeInBytes",
+          "type"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationSkipReason": {
+        "description": "Why a duplicate copy is skipped by the physical deduplication plan",
+        "enum": [
+          "external-library",
+          "missing-size",
+          "no-retained-match",
+          "already-shared",
+          "retained-file-missing"
+        ],
+        "type": "string"
       },
       "PinCodeChangeDto": {
         "properties": {

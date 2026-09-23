@@ -744,6 +744,88 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type PhysicalDeduplicationRetainedDto = {
+    /** Asset that keeps the original file */
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    /** Hex-encoded SHA-1 checksum of the original file */
+    checksum: string;
+    originalFileName: string;
+    /** Path of the retained original file */
+    originalPath: string;
+    /** Owner of the retained asset (the retained account) */
+    ownerId: string;
+    /** Display name of the retained account */
+    ownerName: string;
+    /** Assets that would reference this original after the plan is applied */
+    referencesAfter: number;
+    /** Assets that reference this original before the plan is applied (including the retained asset) */
+    referencesBefore: number;
+    sizeInBytes: number;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationCopyDto = {
+    /** Duplicate asset owned by a non-retained account */
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    /** Hex-encoded SHA-1 checksum of the original file */
+    checksum: string;
+    /** Whether checksum and byte size match a retained original */
+    checksumMatch: boolean;
+    decision: PhysicalDeduplicationDecision;
+    originalFileName: string;
+    /** Path of the duplicate copy on disk */
+    originalPath: string;
+    ownerId: string;
+    /** Display name of the copy owner */
+    ownerName: string;
+    /** Present when the decision is skip */
+    reason: (PhysicalDeduplicationSkipReason) | null;
+    /** Retained original this copy matches, if any */
+    retainedAssetId: string | null;
+    sizeInBytes: number;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationPlanDto = {
+    copies: PhysicalDeduplicationCopyDto[];
+    /** True when more copies were reviewed than the stored preview keeps; totals still cover all of them */
+    copiesTruncated: boolean;
+    deletedBytes: number;
+    eligibleAssets: number;
+    linkedAssets: number;
+    /** Account whose originals are retained by this plan */
+    masterUserId: string;
+    /** Display name of the retained account */
+    masterUserName: string;
+    mode: PhysicalDeduplicationPlanMode;
+    /** When the plan was produced */
+    ranAt: string;
+    reclaimableBytes: number;
+    retained: PhysicalDeduplicationRetainedDto[];
+    /** When set, only copies owned by this account were reviewed; null means every account */
+    scopeUserId: string | null;
+    scopeUserName: string | null;
+    skippedExternal: number;
+    skippedMissingMaster: number;
+};
+export type PhysicalDeduplicationPreviewResponseDto = {
+    /** The saved `physicalDeduplication.enabled` */
+    enabled: boolean;
+    /** The latest plan, or null when none has run */
+    plan: (PhysicalDeduplicationPlanDto) | null;
+    /** Whether a deduplication preview or apply job is queued or active */
+    running: boolean;
+    /** The saved `physicalDeduplication.masterUserId` */
+    savedMasterUserId: string | null;
+};
+export type PhysicalDeduplicationPreviewRequestDto = {
+    /** Account to retain originals in for this preview; defaults to the saved master account */
+    masterUserId?: string;
+    /** Limit the review to copies owned by this account */
+    scopeUserId?: string;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -4973,6 +5055,29 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
         ...opts,
         method: "POST",
         body: adminConfigSmtpDto
+    })));
+}
+/**
+ * Get physical deduplication preview
+ */
+export function getPhysicalDeduplicationPreview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationPreviewResponseDto;
+    }>("/admin/physical-deduplication/preview", {
+        ...opts
+    }));
+}
+/**
+ * Request physical deduplication preview
+ */
+export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPreviewRequestDto }: {
+    physicalDeduplicationPreviewRequestDto: PhysicalDeduplicationPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/physical-deduplication/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationPreviewRequestDto
     })));
 }
 /**
@@ -9646,6 +9751,21 @@ export enum ManualJobName {
     IntegrityMissingFilesDeleteAll = "integrity-missing-files-delete-all",
     IntegrityUntrackedFilesDeleteAll = "integrity-untracked-files-delete-all",
     IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all"
+}
+export enum PhysicalDeduplicationDecision {
+    Share = "share",
+    Skip = "skip"
+}
+export enum PhysicalDeduplicationSkipReason {
+    ExternalLibrary = "external-library",
+    MissingSize = "missing-size",
+    NoRetainedMatch = "no-retained-match",
+    AlreadyShared = "already-shared",
+    RetainedFileMissing = "retained-file-missing"
+}
+export enum PhysicalDeduplicationPlanMode {
+    DryRun = "dry-run",
+    Apply = "apply"
 }
 export enum QueueName {
     ThumbnailGeneration = "thumbnailGeneration",
