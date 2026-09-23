@@ -104,6 +104,15 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "stack"."ownerId" = $1
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and "lockedPrimary"."visibility" = 'locked'
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
     case
@@ -275,6 +284,15 @@ from
   inner join "asset" as "primaryAsset" on "primaryAsset"."id" = "stack"."primaryAssetId"
 where
   "id" = $1::uuid
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset" as "lockedPrimary"
+    where
+      "lockedPrimary"."id" = "stack"."primaryAssetId"
+      and "lockedPrimary"."visibility" = 'locked'
+  )
   and "primaryAsset"."deletedAt" is null
   and not (
     case

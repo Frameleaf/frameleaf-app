@@ -1,4 +1,5 @@
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetVisibility } from 'src/enum.js';
 
 /**
  * Repository option for album reads: the one owner whose Locked media the read may include.
@@ -24,6 +25,13 @@ export const getLockedOwnerId = (auth: AuthDto): string | undefined => {
 
   return auth.session?.hasElevatedPermission ? auth.user.id : undefined;
 };
+
+/**
+ * FL-34: the single in-memory test for "this asset row is Locked", the counterpart of `isLockedAsset`
+ * in `src/utils/database.ts`. Code that already holds an asset row decides Locked through this.
+ */
+export const isLockedAssetRow = (asset: { visibility: AssetVisibility }): boolean =>
+  asset.visibility === AssetVisibility.Locked;
 
 export const getLockedVisibilityOptions = (auth: AuthDto): LockedVisibilityOptions => {
   const lockedOwnerId = getLockedOwnerId(auth);

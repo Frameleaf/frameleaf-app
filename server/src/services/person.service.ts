@@ -50,6 +50,7 @@ import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { Point, transformPoints } from 'src/utils/transform.js';
@@ -140,7 +141,8 @@ export class PersonService extends BaseService {
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
   async getCorrectionHistory(auth: AuthDto, personGroupId: string): Promise<PersonCorrectionsResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    const corrections = await this.personRepository.getCorrections(personGroupId);
+    // a face on Locked media names that media's id: only its owner's elevated session sees it
+    const corrections = await this.personRepository.getCorrections(personGroupId, getLockedVisibilityOptions(auth));
     return { corrections: corrections.map((face) => mapCorrection(face)) };
   }
 
@@ -285,7 +287,7 @@ export class PersonService extends BaseService {
 
       // A Locked photo is never a featured face (FL-53). The caller's own is refused plainly; anyone
       // else's gets the generic answer, so it never reveals that another person's photo is Locked.
-      if (face.visibility === AssetVisibility.Locked) {
+      if (isLockedAssetRow(face)) {
         if (face.ownerId === auth.user.id) {
           throw new BadRequestException('A Locked photo cannot be a featured photo');
         }
@@ -637,7 +639,7 @@ export class PersonService extends BaseService {
     if (personGroupId) {
       // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
       // face of theirs once this one is assigned, or none.
-      const isLocked = face.asset.visibility === AssetVisibility.Locked;
+      const isLocked = isLockedAssetRow(face.asset);
       const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
       if (person) {
         this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
