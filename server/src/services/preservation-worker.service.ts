@@ -323,7 +323,7 @@ export class PreservationWorkerService {
       if (await this.repository.otherClaimedOperation(operation.ownerId, key, subject, operation.id)) {
         if (!(await this.operations.requeue(operation.id, claimToken, { delayMs: PRESERVATION_TICK_MS * 6 }))) {
           // Refused only for a cancel the owner asked for meanwhile: settle it rather than leave it.
-          await this.operations.acknowledgeCancel(operation.id, { released: false });
+          await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
         }
         return;
       }
@@ -1387,7 +1387,7 @@ export class PreservationWorkerService {
           return;
         }
         if (written && (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt)) {
-          await this.operations.acknowledgeCancel(operation.id, { released: false });
+          await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
         }
         return;
       }
@@ -1982,7 +1982,7 @@ export class PreservationWorkerService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       this.logger.log(`Preservation job ${id} cancelled by its owner`);
       return false;
     }
@@ -2017,7 +2017,7 @@ export class PreservationWorkerService {
       await this.operations.complete(id, claimToken, { resultAssetId: null });
       return true;
     }
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
     return false;
   }
 
