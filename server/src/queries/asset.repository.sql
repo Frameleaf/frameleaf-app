@@ -914,7 +914,6 @@ from
 where
   "asset"."type" = 'IMAGE'
   and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'hidden'
   and "asset"."visibility" in ('archive', 'timeline')
   and exists (
     select
