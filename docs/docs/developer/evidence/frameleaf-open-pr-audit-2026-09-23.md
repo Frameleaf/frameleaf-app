@@ -92,3 +92,19 @@ PR133's `SettingsOverview.svelte` already supplied filesystem usage, installed v
 - Isolated engine: `6542d481f4`, followed by reproducibility `a7882dcf7d`, teardown `48d5fc71a8`, and PR133's resource-admission/attribution additions.
 
 The prior actual browser receipts remain in local worktrees: `frameleaf-fl32-combined-browser-evidence-20260921`, `frameleaf-fl33-browser-evidence-20260921`, `frameleaf-fl29-webkit-evidence`, `frameleaf-fl30-overview-evidence`, and `frameleaf-fl39-browser-evidence`. Their old runtime identities are evidence to preserve and repeat after reconciliation, not current integration acceptance.
+
+## Historical receipt recovery — September 23
+
+The seven remaining missing source documents and receipt identities are restored byte-for-byte from PR133. The previously recovered FL29 and FL86 identities complete all nine missing records. All seven live pages were read; six contain the exact normalized source in an HTML code block and the matching-archive page contains the complete Markdown source. The reviewed-integration page is now version 17 and preserves the version-16 source as history. No external page was changed during this restoration.
+
+| Page     | Live version | Recovered repository source                                       | Readback proof           |
+| -------- | ------------ | ----------------------------------------------------------------- | ------------------------ |
+| 61408340 | 9            | docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md   | complete source block    |
+| 61964350 | 5            | docs/docs/developer/frameleaf-plan/FL-30-navigation.md            | complete source block    |
+| 61997109 | 12           | docs/docs/developer/frameleaf-plan/FL-31-search-session.md        | complete source block    |
+| 61441023 | 17           | docs/docs/developer/evidence/fl41-reviewed-integration.md         | historical source block  |
+| 61800603 | 5            | docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md      | complete source block    |
+| 62423078 | 5            | docs/docs/developer/frameleaf-plan/FL-32-matching-archive.md      | complete Markdown source |
+| 62390309 | 1            | docs/docs/developer/frameleaf-plan/FL-33-photos-albums-layouts.md | complete source block    |
+
+These documents retain their original checkpoint SHAs and old implementation details, including migration numbers and earlier UI contracts. They are recovery evidence, not instructions to restore obsolete UI or proof that the current integration passed the old runtime checks. The September 22 prototype remains the UI authority. Current recovery evidence lives in the separately dated evidence files.
