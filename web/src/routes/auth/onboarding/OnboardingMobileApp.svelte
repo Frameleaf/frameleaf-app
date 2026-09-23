@@ -1,15 +1,19 @@
 <script lang="ts">
-  /** Onboarding → mobile app (FL-82): the same application setup as Library Care, from this server's signed releases. */
+  /**
+   * Onboarding → mobile app (FL-82): the Utilities application setup, from this server's signed
+   * releases, shown in a dialog so onboarding can continue afterwards.
+   */
   import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { Button, HStack } from '@immich/ui';
   import { mdiCellphoneArrowDownVariant, mdiLinkEdit } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let setup = $state<'downloads' | 'obtainium' | null>(null);
-  let setupOpen = $state(false);
+  let open = $state(false);
   const show = (tool: 'downloads' | 'obtainium') => {
     setup = tool;
-    setupOpen = true;
+    open = true;
   };
 </script>
 
@@ -32,7 +36,14 @@
 </HStack>
 
 {#if setup}
-  {#key setup}
-    <ApplicationSetup tool={setup} bind:open={setupOpen} />
-  {/key}
+  <Dialog
+    title={setup === 'obtainium' ? $t('library_care_tool_obtainium') : $t('library_care_tool_downloads')}
+    closeLabel={$t('close')}
+    wide
+    bind:open
+  >
+    {#key setup}
+      <ApplicationSetup tool={setup} onLeave={() => (open = false)} />
+    {/key}
+  </Dialog>
 {/if}

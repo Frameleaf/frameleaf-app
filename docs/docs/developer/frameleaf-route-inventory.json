@@ -87,6 +87,7 @@
     "/user-settings",
     "/utilities",
     "/utilities/corrupt-media",
+    "/utilities/downloads",
     "/utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
     "/utilities/geolocation",
     "/utilities/geolocation/photos/[photoId]",
@@ -94,6 +95,7 @@
     "/utilities/large-files/[[photos=photos]]/[[assetId=id]]",
     "/utilities/live-photos",
     "/utilities/missing-media",
+    "/utilities/obtainium",
     "/workflows",
     "/workflows/[workflowId]"
   ],
