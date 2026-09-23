@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { AssetStatsDto, AssetStatsResponseDto, mapStats } from 'src/dtos/asset.dto.js';
@@ -147,7 +147,25 @@ export class UserAdminService extends BaseService {
 
   async getSessions(auth: AuthDto, id: string): Promise<SessionResponseDto[]> {
     const sessions = await this.sessionRepository.getByUserId(id);
-    return sessions.map((session) => mapSession(session));
+    // `auth.session` is always the administrator's own current session. It only ever matches one
+    // of `id`'s sessions when the administrator is looking at their own account, so this is safe
+    // to pass unconditionally rather than branching on `id === auth.user.id` (FL-76).
+    return sessions.map((session) => mapSession(session, auth.session?.id));
+  }
+
+  /**
+   * FL-76: the admin revoke endpoint `SessionService.delete` cannot offer, because that one is
+   * scoped to the caller's own sessions (`Permission.AuthDeviceDelete`). Confirming the session
+   * belongs to `id` first keeps this from becoming a delete-any-session-by-id endpoint.
+   */
+  async deleteSession(auth: AuthDto, id: string, sessionId: string): Promise<void> {
+    const sessions = await this.sessionRepository.getByUserId(id);
+    const session = sessions.find((session) => session.id === sessionId);
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    await this.sessionRepository.delete(sessionId);
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {
