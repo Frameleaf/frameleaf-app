@@ -87,7 +87,12 @@
   const threads = $derived(groupCommentThreads(comments));
   const listId = `frameleaf-comments-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Only the latest request may fill the list, so paging quickly through the viewer never shows
+  // one item's comments on another.
+  let latestLoad = 0;
+
   const load = async (space: string, asset: string | undefined) => {
+    const request = ++latestLoad;
     loading = true;
     failed = false;
     try {
@@ -95,13 +100,21 @@
         getSharedSpaceComments({ id: space, assetId: asset }),
         getSharedSpaceMembers({ id: space }),
       ]);
+      if (request !== latestLoad) {
+        return;
+      }
       comments = loaded;
       members = roster;
     } catch (error) {
+      if (request !== latestLoad) {
+        return;
+      }
       failed = true;
       handleError(error, $t('frameleaf_spaces_comments_error'));
     } finally {
-      loading = false;
+      if (request === latestLoad) {
+        loading = false;
+      }
     }
   };
 
@@ -109,6 +122,7 @@
   $effect(() => {
     const space = spaceId;
     const asset = assetId;
+    comments = [];
     editingId = null;
     replyingTo = null;
     replyDraft = '';
@@ -419,17 +433,20 @@
               <p class="replying">
                 {$t('frameleaf_spaces_comments_replying_to', { values: { name: replyingTo.user.name } })}
               </p>
-              <SpaceCommentComposer
-                {members}
-                {currentUserId}
-                bind:value={replyDraft}
-                {busy}
-                placeholder={$t('frameleaf_spaces_comments_reply_placeholder')}
-                submitLabel={$t('frameleaf_spaces_comments_reply_send')}
-                autofocus
-                onSubmit={postReply}
-                onCancel={cancelReply}
-              />
+              <!-- Re-created for each comment answered, so focus and the caret follow a new @mention. -->
+              {#key replyingTo.id}
+                <SpaceCommentComposer
+                  {members}
+                  {currentUserId}
+                  bind:value={replyDraft}
+                  {busy}
+                  placeholder={$t('frameleaf_spaces_comments_reply_placeholder')}
+                  submitLabel={$t('frameleaf_spaces_comments_reply_send')}
+                  autofocus
+                  onSubmit={postReply}
+                  onCancel={cancelReply}
+                />
+              {/key}
             </div>
           {/if}
         </li>

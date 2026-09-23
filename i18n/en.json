@@ -2863,6 +2863,8 @@
   "frameleaf_spaces_activity_person_linked": "{name} named {subject} in the photos",
   "frameleaf_spaces_activity_person_unlinked": "{name} removed the name {subject}",
   "frameleaf_spaces_activity_reply_item": "{name} replied to {target}’s comment on an item",
+  "frameleaf_spaces_activity_reply_own_item": "{name} added a reply to their own comment on an item",
+  "frameleaf_spaces_activity_reply_own_space": "{name} added a reply to their own comment",
   "frameleaf_spaces_activity_reply_space": "{name} replied to {target}’s comment",
   "frameleaf_spaces_activity_someone": "Someone",
   "frameleaf_spaces_activity_title": "Activity",

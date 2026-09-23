@@ -358,7 +358,10 @@ export const isNewSpaceEvent = (
   (!lastVisitedAt || new Date(event.createdAt).getTime() > new Date(lastVisitedAt).getTime());
 
 /** The sentence an event is told with. A comment or like on an item reads differently from one on the space. */
-export const spaceEventMessageKey = (event: Pick<SharedSpaceEventResponseDto, 'type' | 'assetCount'>): string => {
+export const spaceEventMessageKey = (
+  event: Pick<SharedSpaceEventResponseDto, 'type' | 'assetCount'> &
+    Partial<Pick<SharedSpaceEventResponseDto, 'actor' | 'targetUser'>>,
+): string => {
   switch (event.type) {
     case SharedSpaceEventType.AssetsAdded: {
       return 'frameleaf_spaces_activity_assets_added';
@@ -394,6 +397,12 @@ export const spaceEventMessageKey = (event: Pick<SharedSpaceEventResponseDto, 't
       return event.assetCount > 0 ? 'frameleaf_spaces_activity_comment_item' : 'frameleaf_spaces_activity_comment_space';
     }
     case SharedSpaceEventType.Reply: {
+      // Answering in one's own thread reads as that, not as "Bo replied to Bo's comment".
+      if (event.actor && event.actor.id === event.targetUser?.id) {
+        return event.assetCount > 0
+          ? 'frameleaf_spaces_activity_reply_own_item'
+          : 'frameleaf_spaces_activity_reply_own_space';
+      }
       return event.assetCount > 0 ? 'frameleaf_spaces_activity_reply_item' : 'frameleaf_spaces_activity_reply_space';
     }
     case SharedSpaceEventType.Like: {
