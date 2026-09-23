@@ -114,6 +114,8 @@ describe(ICloudSyncService.name, () => {
       return result.value;
     });
     repository.checkpoint.mockResolvedValue({ complete: true });
+    // a run that ends closes its run record
+    repository.endRun.mockResolvedValue(undefined);
     repository.inventory.mockResolvedValue({ libraries: [], albums: [] });
     repository.claim.mockReset();
     repository.claim.mockResolvedValueOnce(resource).mockResolvedValue(undefined);

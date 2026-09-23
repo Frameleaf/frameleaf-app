@@ -31,6 +31,8 @@ const ADMIN_ROUTES = new Set([
   'DELETE ml-destinations/:id/consent',
   'GET ml-destinations',
   'GET ml-destinations/:id',
+  // Asks a worker which restoration models it holds; admin like the other destination reads (FL-114).
+  'GET ml-destinations/:id/restoration-models',
   'GET ml-destinations/routes',
   'POST ml-destinations',
   'POST ml-destinations/:id/probe',
@@ -71,6 +73,8 @@ const ADMIN_ROUTES = new Set([
   'GET system-metadata/admin-onboarding',
   'GET system-metadata/reverse-geocoding-state',
   'GET system-metadata/version-check-state',
+  // Lists the server's permitted import folders; only an administrator may point an import at one.
+  'GET takeout/roots',
   'PATCH libraries/:id',
   'POST jobs',
   'POST libraries',

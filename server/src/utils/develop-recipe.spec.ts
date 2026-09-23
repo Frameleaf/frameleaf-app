@@ -104,7 +104,8 @@ describe('develop recipe', () => {
   describe('geometry', () => {
     it('matches the prototype cover scale for a straightened frame', () => {
       expect(straightenScale(1600, 1200, 0)).toBe(1);
-      expect(straightenScale(1600, 1200, 10)).toBeCloseTo(1.1147, 3);
+      // the prototype's develop.mjs formula: max((w·cos + h·sin) / w, (w·sin + h·cos) / h)
+      expect(straightenScale(1600, 1200, 10)).toBeCloseTo(1.2163, 4);
       expect(straightenScale(0, 0, 10)).toBe(1);
     });
 

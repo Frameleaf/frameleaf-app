@@ -3,6 +3,7 @@ import { PhysicalDeduplicationController } from 'src/controllers/physical-dedupl
 import { Permission } from 'src/enum.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -94,12 +95,15 @@ describe(PhysicalDeduplicationController.name, () => {
     });
 
     it('answers 200 with the review', async () => {
+      // The harness authenticates nobody unless told to, so hand it an administrator to pass through.
+      const auth = AuthFactory.create({ isAdmin: true });
+      ctx.authenticate.mockResolvedValue(auth);
       const { status } = await request(ctx.getHttpServer())
         .post('/admin/physical-deduplication/plan/review')
         .send({ fingerprint });
 
       expect(status).toBe(200);
-      expect(plans.review).toHaveBeenCalledWith(expect.anything(), { fingerprint });
+      expect(plans.review).toHaveBeenCalledWith(auth, { fingerprint });
     });
   });
 
@@ -136,10 +140,13 @@ describe(PhysicalDeduplicationController.name, () => {
 
     it('answers 201 with the queued job', async () => {
       const dto = { fingerprint, reviewToken, confirmation: 'APPLY PD-ABABABAB' };
+      // The harness authenticates nobody unless told to, so hand it an administrator to pass through.
+      const auth = AuthFactory.create({ isAdmin: true });
+      ctx.authenticate.mockResolvedValue(auth);
       const { status } = await request(ctx.getHttpServer()).post('/admin/physical-deduplication/plan/apply').send(dto);
 
       expect(status).toBe(201);
-      expect(plans.apply).toHaveBeenCalledWith(expect.anything(), dto);
+      expect(plans.apply).toHaveBeenCalledWith(auth, dto);
     });
   });
 });
