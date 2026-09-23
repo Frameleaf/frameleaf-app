@@ -67,6 +67,14 @@ const readCredential = (config: SystemConfig, name: ConfigCredential): string =>
   return typeof value === 'string' ? value : '';
 };
 
+/** Drops the read-only `...Configured` indicators from a configuration sent by a client. */
+const stripCredentialFlags = (config: AdminConfigDto) => {
+  delete config.notifications?.smtp?.transport?.passwordConfigured;
+  delete config.oauth?.clientSecretConfigured;
+  delete config.machineLearning?.runpod?.apiKeyConfigured;
+  delete config.machineLearning?.runpod?.hfTokenConfigured;
+};
+
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
 const changedCredentials = (oldConfig: SystemConfig, newConfig: SystemConfig) =>
   Object.values(ConfigCredential).filter((name) => readCredential(oldConfig, name) !== readCredential(newConfig, name));
@@ -206,14 +214,23 @@ export class SystemConfigService extends BaseService {
 
     const oldConfig = await this.getConfig({ withCache: false });
 
+    // FL-67: the `...Configured` flags a read returns are indicators only. They are dropped here so
+    // they are never stored and never make an unchanged section look changed (an SMTP section that
+    // looked changed would be verified against the mail server on every save).
+    stripCredentialFlags(dto);
+
     // FL-67: the SMTP password and the OAuth client secret are redacted on read like the RunPod
-    // key below, so an empty value coming back means "keep the stored secret". Clearing one is an
-    // explicit action: DELETE /admin/config/credentials/:name.
-    if (dto.notifications?.smtp?.transport?.password === '') {
-      dto.notifications.smtp.transport.password = oldConfig.notifications.smtp.transport.password;
+    // key below, so an empty value coming back means "keep the stored secret", but only for the
+    // server it belongs to: a new mail host or a new identity provider never receives the stored
+    // secret, which is cleared instead and has to be replaced for the new server. Clearing one
+    // explicitly is DELETE /admin/config/credentials/:name.
+    const smtpTransport = dto.notifications?.smtp?.transport;
+    const storedTransport = oldConfig.notifications.smtp.transport;
+    if (smtpTransport?.password === '') {
+      smtpTransport.password = smtpTransport.host === storedTransport.host ? storedTransport.password : '';
     }
     if (dto.oauth?.clientSecret === '') {
-      dto.oauth.clientSecret = oldConfig.oauth.clientSecret;
+      dto.oauth.clientSecret = dto.oauth.issuerUrl === oldConfig.oauth.issuerUrl ? oldConfig.oauth.clientSecret : '';
     }
 
     // mapConfig redacts machineLearning.runpod.apiKey to '' on read. Mirror

@@ -14,6 +14,7 @@ The OAuth client secret, the SMTP password, the RunPod API key and the Hugging F
 - **Clear** removes the stored value after a confirmation. The RunPod API key can only be cleared while RunPod is turned off, so a running pod or endpoint can always be stopped.
 - Saving any other setting, **Copy to clipboard**, **Export as JSON** and **Import from JSON** never carry a credential. A configuration file that contains credentials is imported without them, and the page says so.
 - **Send test email** uses the stored SMTP password as long as the server, port, username and security settings on the page match the saved ones.
+- A stored secret never follows a server change: saving a different mail server host clears the SMTP password, and saving a different OAuth issuer URL clears the client secret. Replace the credential for the new server. If sending email is on and the new server needs a password, turn email off, save the new server, replace the password, then turn email on again.
 - Every replacement or removal is written to the server log by credential name and administrator, never by value.
 
 Scripts can use `GET /api/admin/config/credentials` to see which credentials are stored, and `PUT` or `DELETE /api/admin/config/credentials/{name}` to replace or clear one. For compatibility, a full configuration sent with a non-empty credential still sets it; an empty value keeps the stored one. While a configuration file manages the settings, credentials come from that file and cannot be changed here.

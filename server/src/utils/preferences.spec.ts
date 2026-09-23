@@ -11,6 +11,7 @@ import {
   getPreferencesRevision,
   mergePreferences,
   restrictPreferencesUpdate,
+  withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
 
 const stored = (value: Record<string, unknown>) =>
@@ -229,6 +230,16 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(changesLockedRules({ privacy: { suppression: { tagIds: [] } } })).toBe(true);
       expect(changesLockedRules({ privacy: { suppression: { scope: 'owned' } } })).toBe(true);
       expect(changesLockedRules({ privacy: { suppression: { petIds: [personId] } } })).toBe(true);
+    });
+
+    it('leaves Locked ids out of a stored preferences value and keeps the rest', () => {
+      const value = { tags: { enabled: true }, privacy: { suppression: { personIds: [personId], scope: 'visible' } } };
+      expect(withoutStoredLockedRuleIds(value)).toEqual({
+        tags: { enabled: true },
+        privacy: { suppression: { scope: 'visible' } },
+      });
+      expect(withoutStoredLockedRuleIds({ tags: { enabled: true } })).toEqual({ tags: { enabled: true } });
+      expect(withoutStoredLockedRuleIds(null)).toBeNull();
     });
 
     it('does not treat an empty or absent privacy group as a Locked rules change', () => {
