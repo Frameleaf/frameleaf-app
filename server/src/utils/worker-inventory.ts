@@ -44,5 +44,12 @@ export const readQueueBacklogs = async (
 };
 
 /** Jobs library analysis still has to run, not counting paused queues. */
-export const libraryAnalysisBacklog = (backlogs: readonly QueueBacklog[]): number =>
-  backlogs.reduce((total, entry) => (entry.paused ? total : total + entry.active + entry.waiting), 0);
+export const libraryAnalysisBacklog = (backlogs: readonly QueueBacklog[]): number => {
+  let total = 0;
+  for (const entry of backlogs) {
+    if (!entry.paused) {
+      total += entry.active + entry.waiting;
+    }
+  }
+  return total;
+};
