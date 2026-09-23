@@ -1,4 +1,10 @@
-import { PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
+import {
+  AssetVisibility,
+  PetSpecies,
+  type PetCandidateResponseDto,
+  type PetResponseDto,
+  type SearchFilter,
+} from '@immich/sdk';
 
 /**
  * Frameleaf Pets page (FL-58): small pure helpers shared by the grid and the recognition
@@ -121,3 +127,16 @@ export const reviewEmptyState = ({
   }
   return recognitionAvailable ? 'reviewed' : 'unavailable';
 };
+
+/**
+ * The search filter behind a pet's own page (FL-58): the photos the owner confirmed this pet in, as
+ * the library shows them. The server matches `petIds` on confirmed observations of the caller's own
+ * pets only; the rest keeps the page to what the timeline would show — timeline and archive, never a
+ * hidden live-photo part or Locked media, and nothing from the trash, which a structured search
+ * otherwise includes.
+ */
+export const petPhotosFilter = (petId: string): SearchFilter => ({
+  petIds: { any: [petId] },
+  visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
+  trashedAt: { eq: null },
+});
