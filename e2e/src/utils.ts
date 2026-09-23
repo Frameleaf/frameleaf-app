@@ -226,6 +226,7 @@ export const utils = {
   resetDatabase: async (tables?: string[]) => {
     client = await utils.connectDatabase();
 
+    const partial = tables !== undefined;
     tables ||= [
       // TODO e2e test for deleting a stack, since it is quite complex
       'stack',
@@ -250,7 +251,14 @@ export const utils = {
     const sql: string[] = [];
 
     if (truncateTables.length > 0) {
-      sql.push(`TRUNCATE "${truncateTables.join('", "')}" CASCADE;`);
+      // A partial reset must not TRUNCATE ... CASCADE: "user" references "asset"
+      // (profileImageAssetId), so truncating "asset" would also empty "user" and,
+      // through it, every session and API key. DELETE follows the ON DELETE rules.
+      sql.push(
+        partial
+          ? truncateTables.map((table) => `DELETE FROM "${table}";`).join('\n')
+          : `TRUNCATE "${truncateTables.join('", "')}" CASCADE;`,
+      );
     }
 
     if (tables.includes('system_metadata')) {
