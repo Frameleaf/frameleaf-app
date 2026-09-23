@@ -325,7 +325,7 @@
       </div>
     </div>
   {:else}
-    <div class="flex max-w-4xl flex-col gap-6 sm:ms-4 md:ms-8">
+    <div class="flex max-w-4xl flex-col gap-6">
       {#if pendingExternalPrefs}
         <div
           class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/30"

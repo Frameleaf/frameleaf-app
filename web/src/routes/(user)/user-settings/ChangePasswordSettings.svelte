@@ -23,7 +23,7 @@
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" {onsubmit}>
-      <div class="flex flex-col gap-4 sm:ms-8">
+      <div class="flex flex-col gap-4">
         <Field label={$t('password')} required>
           <PasswordInput bind:value={password} autocomplete="current-password" />
         </Field>
