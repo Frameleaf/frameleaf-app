@@ -6,7 +6,7 @@ import {
   RestorationModelState,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
-import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
+import type { RestorationSelection } from 'src/repositories/machine-learning.repository.js';
 import {
   MlDestinationRefusedError,
   MlSelectionDeps,
@@ -47,7 +47,7 @@ export type RestorationSelectionRequest = {
 export const selectRestorationDestination = async (
   deps: MlSelectionDeps,
   request: RestorationSelectionRequest,
-): Promise<MlSelection> => {
+): Promise<RestorationSelection> => {
   const workload = restorationWorkload(request.mode);
   const destinationId = request.destinationId ?? (await routedMlDestinationId(deps.mlDestinationRepository, workload));
 
@@ -61,12 +61,15 @@ export const selectRestorationDestination = async (
     );
   }
 
-  return selectMlDestination(deps, {
+  const selection = await selectMlDestination(deps, {
     workload,
     destinationId,
     jobId: request.jobId ?? null,
     jobName: request.jobName ?? null,
   });
+  // Carried with the selection so `MachineLearningRepository.restore` can refuse a cloud
+  // destination that was not confirmed for this request, whoever admitted it.
+  return { ...selection, cloudUploadAcknowledged: request.acknowledgeCloudUpload };
 };
 
 const evenFloor = (value: number) => {
