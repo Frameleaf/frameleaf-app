@@ -2,6 +2,7 @@ import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import type { DownloadState } from '$lib/managers/download-manager.svelte';
 import { UploadState, type UploadAsset } from '$lib/types';
 import {
+  MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -290,7 +291,10 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     assetId: operation.resultAssetId ?? operation.assetId ?? undefined,
     // The server decides; these only mirror its rules so the buttons are not offered pointlessly.
     canCancel: running || pause.paused,
-    canRetry: status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled,
+    // A Library Care scan or search is started again from Library Care, not copied (FL-69).
+    canRetry:
+      operation.kind !== MediaOperationKind.MediaHealth &&
+      (status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled),
     canDismiss: finished,
     browserLocal: false,
     ...(status === MediaOperationStatus.Completed ? studioBundleOf(operation.kind) : {}),
@@ -323,6 +327,13 @@ const BULK_WORKING: readonly MediaOperationStatus[] = [
  * failures inside it needs attention and offers Retry, which the server turns into a new job over
  * exactly the items that did not go through; so does one that stopped before reaching the end.
  */
+/** Bulk actions only Library Care queues, with gates a copied retry would skip (FL-69). */
+const LIBRARY_CARE_BULK_ACTIONS: readonly MediaOperationBulkAction[] = [
+  MediaOperationBulkAction.RelinkMissingMedia,
+  MediaOperationBulkAction.RecoverDamagedMedia,
+  MediaOperationBulkAction.TrashDamagedMedia,
+];
+
 export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityItem => {
   const status = operation.status;
   const running = RUNNING_STATUSES.includes(status);
@@ -368,7 +379,12 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
     errorCode: operation.errorCode ?? undefined,
     startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
     canCancel: (running && status !== MediaOperationStatus.Cancelling) || pause.paused,
-    canRetry: !running && !pause.paused && (failed || unfinished || status === MediaOperationStatus.Cancelled),
+    // Library Care relinks, recoveries and trash are reviewed again in Library Care (FL-69).
+    canRetry:
+      !LIBRARY_CARE_BULK_ACTIONS.includes(bulk?.action as MediaOperationBulkAction) &&
+      !running &&
+      !pause.paused &&
+      (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
     ...(bulk
