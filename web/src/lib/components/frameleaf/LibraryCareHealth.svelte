@@ -450,9 +450,15 @@
         return $t('library_care_scan_waiting');
       }
       case 'running': {
+        if (scan.operation.mode === MediaHealthOperationMode.Locate) {
+          return $t('library_care_search_running');
+        }
         return scan.total
           ? $t('library_care_scan_running_count', { values: { done: scan.done, total: scan.total } })
           : $t('library_care_scan_running');
+      }
+      case 'interrupted': {
+        return $t('library_care_scan_interrupted', { values: { time: time(scan.at) } });
       }
       case 'pausing': {
         return $t('library_care_scan_pausing');
@@ -470,10 +476,20 @@
         return $t('library_care_scan_cancelled_line', { values: { time: time(scan.at) } });
       }
       default: {
-        return $t('library_care_scan_last', { values: { time: time(scan.at) } });
+        // The latest job was a search for originals: its run is the one this bar reports.
+        return lastWasSearch(scan.at)
+          ? $t('library_care_search_last', { values: { time: time(scan.at) } })
+          : $t('library_care_scan_last', { values: { time: time(scan.at) } });
       }
     }
   });
+
+  /** The run the bar reports ended with the latest job, and that job was a search for originals. */
+  const lastWasSearch = (at: string | null) =>
+    operation?.mode === MediaHealthOperationMode.Locate &&
+    !!operation.finishedAt &&
+    !!at &&
+    Math.abs(Date.parse(operation.finishedAt) - Date.parse(at)) < 60_000;
 
   const activityLabel = (action: string) => $t(`library_care_activity_${action.replaceAll('-', '_')}`);
 

@@ -28,7 +28,7 @@ Missing media and Damaged media are administrator tools.
 
 Unsupported RAW and suspected damage are kept until validation confirms a problem. Only **Confirmed damaged** findings can be replaced or moved to the trash.
 
-- **Recover from a verified copy** replaces confirmed damage with a copy whose checksum matches the original exactly and that decodes. You confirm that you reviewed the evidence. The copy is published into library storage without replacing any file, and the damaged file is kept where it was, recorded on the finding.
+- **Recover from a verified copy** replaces confirmed damage with a copy whose checksum matches the original exactly and that decodes. You confirm that you reviewed the evidence. The copy is published into a hidden Library Care folder in library storage without replacing any file, and the damaged file is moved beside it (never over anything) and recorded on the finding, so it is kept for recovery but never imported again as a new item. A damaged file that another item still uses stays where it is.
 - **Trash confirmed damage** needs you to type `MOVE CORRUPT MEDIA TO TRASH`, your PIN when your account has one, and evidence from the last day. Each item is checked again when it is moved; an item that no longer fails is kept.
 
 Relinks, recoveries and moves to the trash run as background jobs with the same pause, cancel and automatic retry, and each affected row shows a small loader until the job has answered for it. Every file is read and verified again at the moment of change; a finding that changed since you reviewed it is reported instead of applied.
@@ -36,6 +36,12 @@ Relinks, recoveries and moves to the trash run as background jobs with the same 
 ## Accounts and privacy
 
 Everyone reviews their own findings. An administrator can also choose one other account, or all accounts. Another account's Locked media is never listed, counted or changed, and its thumbnails are not shown. Background work can always reach Locked media, as for every server job.
+
+## Storage used by recovery
+
+Kept damaged files and recovered copies take disk space. They are not counted toward an account's storage quota: the item's size is unchanged by a recovery. A copy published by a recovery that could not be committed (because the item changed at the same moment) is left in the hidden Library Care folder and reused if the recovery is tried again. Neither is removed automatically; an operator can review the `.library-care` folders in library storage.
+
+A relink, recovery or move to the trash is tried again from Library Care rather than from Activity, so its review, confirmation and PIN are checked again. A scan or search is started again with **Scan again** or **Search selected locations**.
 
 ## Recovery locations
 
