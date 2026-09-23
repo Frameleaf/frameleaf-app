@@ -722,7 +722,32 @@ export class RenderWorkerService {
 
     const refusal = await this.enforceRunningLimits(worker.id, operation, dto.outputBytes);
     if (refusal) {
-      return { leaseExtended: false, leaseMs: RENDER_WORKER_LEASE_MS, cancelRequested: false, refusal };
+      return {
+        leaseExtended: false,
+        leaseMs: RENDER_WORKER_LEASE_MS,
+        cancelRequested: false,
+        pauseRequested: false,
+        refusal,
+      };
+    }
+
+    // The owner paused the job (FL-104). The heartbeat is the worker's checkpoint with the server,
+    // so the claim is handed back here: the lease is not extended, every later write under this
+    // token is refused, and the completed chunks stay for the claim that resumes it. A job already
+    // validating its output is let finish.
+    if (
+      operation.pauseRequestedAt &&
+      operation.status !== MediaOperationStatus.Validating &&
+      (await this.operations.settlePause(operation.id, dto.claimToken))
+    ) {
+      this.logger.log(`Render worker ${worker.id} released paused media operation ${operation.id}`);
+      return {
+        leaseExtended: false,
+        leaseMs: RENDER_WORKER_LEASE_MS,
+        cancelRequested: false,
+        pauseRequested: true,
+        refusal: null,
+      };
     }
 
     const leaseExtended = await this.operations.heartbeat(operation.id, dto.claimToken, RENDER_WORKER_LEASE_MS);
@@ -730,6 +755,7 @@ export class RenderWorkerService {
       leaseExtended,
       leaseMs: RENDER_WORKER_LEASE_MS,
       cancelRequested: operation.cancelRequestedAt !== null || operation.status === MediaOperationStatus.Cancelling,
+      pauseRequested: false,
       refusal: null,
     };
   }

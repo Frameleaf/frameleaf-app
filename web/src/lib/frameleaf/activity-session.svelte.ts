@@ -1,4 +1,11 @@
-import { cancelMediaOperation, dismissMediaOperation, retryMediaOperation, searchMediaOperations } from '@immich/sdk';
+import {
+  cancelMediaOperation,
+  dismissMediaOperation,
+  pauseMediaOperation,
+  resumeMediaOperation,
+  retryMediaOperation,
+  searchMediaOperations,
+} from '@immich/sdk';
 import type { MediaOperationDto } from '@immich/sdk';
 
 /**
@@ -22,6 +29,9 @@ const PAGE_SIZE = 100;
 
 const isRunning = (operation: MediaOperationDto) =>
   ['queued', 'preparing', 'rendering', 'validating', 'cancelling'].includes(operation.status);
+
+/** Not finished: running, or held by its owner (FL-104). A paused job cannot be cleared. */
+const isUnfinished = (operation: MediaOperationDto) => isRunning(operation) || operation.status === 'paused';
 
 export class ActivitySession {
   operations = $state<MediaOperationDto[]>([]);
@@ -121,6 +131,25 @@ export class ActivitySession {
     this.#schedule();
   }
 
+  /**
+   * Ask the server to pause a job (FL-104). A running one answers with its current status and
+   * `pauseRequestedAt` set until its worker reaches a checkpoint; the row says "Pausing" meanwhile.
+   */
+  async pause(id: string): Promise<MediaOperationDto> {
+    const updated = await pauseMediaOperation({ id });
+    this.#apply(updated);
+    this.#schedule();
+    return updated;
+  }
+
+  /** Resume a paused job, or withdraw a pause its worker has not reached yet (FL-104). */
+  async resume(id: string): Promise<MediaOperationDto> {
+    const updated = await resumeMediaOperation({ id });
+    this.#apply(updated);
+    this.#schedule();
+    return updated;
+  }
+
   /** Queue a fresh job from a failed or cancelled one. The server owns the lineage. */
   async retry(id: string): Promise<MediaOperationDto> {
     const created = await retryMediaOperation({ id });
@@ -137,9 +166,9 @@ export class ActivitySession {
 
   /** Clear every finished job that is on screen. */
   async dismissFinished(): Promise<void> {
-    const finished = this.operations.filter((operation) => !isRunning(operation));
+    const finished = this.operations.filter((operation) => !isUnfinished(operation));
     await Promise.all(finished.map((operation) => dismissMediaOperation({ id: operation.id })));
-    this.operations = this.operations.filter((operation) => isRunning(operation));
+    this.operations = this.operations.filter((operation) => isUnfinished(operation));
   }
 }
 

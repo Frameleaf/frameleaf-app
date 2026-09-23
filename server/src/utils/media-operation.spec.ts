@@ -1,7 +1,11 @@
-import { MediaOperationCheckpointState, MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import {
   canDismissMediaOperation,
+  canPauseMediaOperation,
+  canResumeMediaOperation,
   canRetryMediaOperation,
+  isActiveMediaOperation,
+  isPausableMediaOperationKind,
   canReuseChunk,
   canTransitionMediaOperation,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -71,6 +75,60 @@ describe('media operation state machine', () => {
     expect(canDismissMediaOperation(MediaOperationStatus.Completed)).toBe(true);
     expect(canDismissMediaOperation(MediaOperationStatus.Queued)).toBe(false);
     expect(canDismissMediaOperation(MediaOperationStatus.Cancelling)).toBe(false);
+  });
+});
+
+describe('pause and resume (FL-104)', () => {
+  it('pauses only the kinds that can carry on from where they stopped', () => {
+    expect(isPausableMediaOperationKind(MediaOperationKind.Bulk)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.StudioExport)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.Restoration)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.StudioPreview)).toBe(false);
+    expect(isPausableMediaOperationKind(MediaOperationKind.RestorationPreview)).toBe(false);
+    expect(isPausableMediaOperationKind(MediaOperationKind.QuickEdit)).toBe(false);
+    expect(isPausableMediaOperationKind(MediaOperationKind.StudioBundleExport)).toBe(false);
+    expect(isPausableMediaOperationKind(MediaOperationKind.StudioBundleImport)).toBe(false);
+  });
+
+  it('pauses a queued or running job, but not one validating, stopping or finished', () => {
+    const bulk = (status: MediaOperationStatus, cancelRequestedAt: Date | null = null) =>
+      canPauseMediaOperation({ kind: MediaOperationKind.Bulk, status, cancelRequestedAt });
+
+    expect(bulk(MediaOperationStatus.Queued)).toBe(true);
+    expect(bulk(MediaOperationStatus.Preparing)).toBe(true);
+    expect(bulk(MediaOperationStatus.Rendering)).toBe(true);
+    expect(bulk(MediaOperationStatus.Validating)).toBe(false);
+    expect(bulk(MediaOperationStatus.Cancelling)).toBe(false);
+    expect(bulk(MediaOperationStatus.Completed)).toBe(false);
+    expect(bulk(MediaOperationStatus.Paused)).toBe(false);
+    expect(bulk(MediaOperationStatus.Rendering, new Date())).toBe(false);
+    const preview = { kind: MediaOperationKind.StudioPreview, status: MediaOperationStatus.Queued };
+    expect(canPauseMediaOperation(preview)).toBe(false);
+  });
+
+  it('resumes a paused job, and withdraws a pause its worker has not reached', () => {
+    const requested = new Date();
+    expect(canResumeMediaOperation({ status: MediaOperationStatus.Paused, pauseRequestedAt: requested })).toBe(true);
+    expect(canResumeMediaOperation({ status: MediaOperationStatus.Rendering, pauseRequestedAt: requested })).toBe(true);
+    expect(canResumeMediaOperation({ status: MediaOperationStatus.Rendering, pauseRequestedAt: null })).toBe(false);
+    const finished = { status: MediaOperationStatus.Completed, pauseRequestedAt: requested };
+    expect(canResumeMediaOperation(finished)).toBe(false);
+  });
+
+  it('keeps a paused job unfinished: it can be cancelled, not retried or cleared', () => {
+    expect(isActiveMediaOperation(MediaOperationStatus.Paused)).toBe(true);
+    expect(canRetryMediaOperation(MediaOperationStatus.Paused)).toBe(false);
+    expect(canDismissMediaOperation(MediaOperationStatus.Paused)).toBe(false);
+  });
+
+  it('only leaves paused for the queue or a cancel', () => {
+    expect(canTransitionMediaOperation(MediaOperationStatus.Queued, MediaOperationStatus.Paused)).toBe(true);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Rendering, MediaOperationStatus.Paused)).toBe(true);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Paused, MediaOperationStatus.Queued)).toBe(true);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Paused, MediaOperationStatus.Cancelled)).toBe(true);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Paused, MediaOperationStatus.Preparing)).toBe(false);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Paused, MediaOperationStatus.Completed)).toBe(false);
+    expect(canTransitionMediaOperation(MediaOperationStatus.Cancelling, MediaOperationStatus.Paused)).toBe(false);
   });
 });
 

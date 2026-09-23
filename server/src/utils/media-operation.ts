@@ -1,4 +1,4 @@
-import { MediaOperationCheckpointState, MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 
 /**
  * The durable rules for media operations (FL-43, FL-104), kept free of the database so they can
@@ -11,13 +11,17 @@ import { MediaOperationCheckpointState, MediaOperationStatus } from 'src/enum.js
  *    where a resumed render is allowed to start.
  */
 
-/** Statuses where the job is still the server's problem. */
+/**
+ * Statuses where the job is still the server's problem. A paused job is one of them: it has not
+ * finished, it can still be cancelled, and it cannot be retried or cleared until it has.
+ */
 export const ACTIVE_MEDIA_OPERATION_STATUSES: readonly MediaOperationStatus[] = [
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
   MediaOperationStatus.Cancelling,
+  MediaOperationStatus.Paused,
 ];
 
 /** Statuses where a worker is expected to be holding a claim. */
@@ -49,6 +53,8 @@ export const MEDIA_OPERATION_TRANSITIONS: Readonly<Record<MediaOperationStatus, 
     MediaOperationStatus.Cancelling,
     MediaOperationStatus.Cancelled,
     MediaOperationStatus.Failed,
+    // A queued job has no worker to wait for, so a pause holds it at once.
+    MediaOperationStatus.Paused,
   ],
   [MediaOperationStatus.Preparing]: [
     MediaOperationStatus.Rendering,
@@ -56,20 +62,27 @@ export const MEDIA_OPERATION_TRANSITIONS: Readonly<Record<MediaOperationStatus, 
     MediaOperationStatus.Queued,
     MediaOperationStatus.Cancelling,
     MediaOperationStatus.Failed,
+    // A requested pause lands at the worker's next checkpoint, when it hands the claim back.
+    MediaOperationStatus.Paused,
   ],
   [MediaOperationStatus.Rendering]: [
     MediaOperationStatus.Validating,
     MediaOperationStatus.Queued,
     MediaOperationStatus.Cancelling,
     MediaOperationStatus.Failed,
+    MediaOperationStatus.Paused,
   ],
   [MediaOperationStatus.Validating]: [
     MediaOperationStatus.Completed,
     MediaOperationStatus.Queued,
     MediaOperationStatus.Cancelling,
     MediaOperationStatus.Failed,
+    // Only through recovery: a worker that vanished while validating with a pause requested.
+    MediaOperationStatus.Paused,
   ],
   [MediaOperationStatus.Cancelling]: [MediaOperationStatus.Cancelled, MediaOperationStatus.Failed],
+  // Resume puts it back in the queue; a cancel ends it outright, since no worker holds it.
+  [MediaOperationStatus.Paused]: [MediaOperationStatus.Queued, MediaOperationStatus.Cancelled],
   [MediaOperationStatus.Completed]: [],
   [MediaOperationStatus.Cancelled]: [],
   [MediaOperationStatus.Failed]: [],
@@ -94,6 +107,57 @@ export const MEDIA_OPERATION_AUTO_RETRIES = 1;
 
 /** How long a job that failed waits before its automatic retry is claimed. */
 export const MEDIA_OPERATION_AUTO_RETRY_DELAY_MS = 30_000;
+
+/**
+ * The kinds that can stop partway and carry on later (FL-104, owner request September 23, 2026).
+ *
+ * Each one records where it has got to in a way the next claim resumes from: a bulk job its cursor
+ * and per-item result, a Studio export and a restoration their checkpointed chunks. The rest are
+ * one-shot — a preview, a still edit — or rebuild their output from the start (a portable project
+ * bundle), so pausing one would only throw its work away; they are offered no pause at all.
+ */
+export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.Bulk,
+  MediaOperationKind.StudioExport,
+  MediaOperationKind.Restoration,
+];
+
+export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
+
+/**
+ * Statuses a pause may be asked for from. `validating` is left out: the output is already written
+ * and about to be adopted, and stopping there would only discard it.
+ */
+export const PAUSABLE_MEDIA_OPERATION_STATUSES: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Queued,
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+];
+
+export const canPauseMediaOperation = (operation: {
+  kind: MediaOperationKind;
+  status: MediaOperationStatus;
+  cancelRequestedAt?: unknown;
+}) =>
+  isPausableMediaOperationKind(operation.kind) &&
+  PAUSABLE_MEDIA_OPERATION_STATUSES.includes(operation.status) &&
+  !operation.cancelRequestedAt;
+
+/** Statuses a job can be in while a pause it was asked for has not been reached yet. */
+const PAUSE_PENDING_STATUSES: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Queued,
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+];
+
+/**
+ * A paused job can be resumed, and so can one whose pause was asked for but not yet reached: the
+ * worker is still on it, so resuming simply withdraws the request.
+ */
+export const canResumeMediaOperation = (operation: { status: MediaOperationStatus; pauseRequestedAt?: unknown }) =>
+  operation.status === MediaOperationStatus.Paused ||
+  (!!operation.pauseRequestedAt && PAUSE_PENDING_STATUSES.includes(operation.status));
 
 /** Only a failed or cancelled job may be retried; retry copies the snapshot into a new row. */
 export const canRetryMediaOperation = (status: MediaOperationStatus) =>

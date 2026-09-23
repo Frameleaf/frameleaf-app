@@ -964,6 +964,11 @@ export enum MediaOperationStatus {
   Cancelling = 'cancelling',
   Cancelled = 'cancelled',
   Failed = 'failed',
+  /**
+   * Held by its owner (FL-104, owner request September 23, 2026). No worker claims a paused job;
+   * resuming puts it back in the queue and the next claim carries on from its checkpoints.
+   */
+  Paused = 'paused',
 }
 
 export const MediaOperationStatusSchema = z

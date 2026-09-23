@@ -231,6 +231,9 @@ const RenderWorkerHeartbeatResponseSchema = z
     leaseExtended: z.boolean(),
     leaseMs: z.int(),
     cancelRequested: z.boolean().describe('The owner asked to stop; acknowledge with cancel-ack'),
+    pauseRequested: z
+      .boolean()
+      .describe('The owner paused the job and its claim has been handed back; stop without reporting a failure'),
     refusal: RenderWorkerRefusalReasonSchema.nullable().describe('Set when a limit stopped the operation'),
   })
   .meta({ id: 'RenderWorkerHeartbeatResponseDto' });

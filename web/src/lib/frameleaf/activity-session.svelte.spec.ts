@@ -29,6 +29,8 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     errorCode: null,
     cancelRequestedAt: null,
     cancelAcknowledgedAt: null,
+    pausable: true,
+    pauseRequestedAt: null,
     startedAt: '2026-09-22T09:50:00.000Z',
     finishedAt: null,
     createdAt: '2026-09-22T09:49:00.000Z',
@@ -115,5 +117,54 @@ describe('ActivitySession', () => {
 
     expect(sdkMock.dismissMediaOperation).toHaveBeenCalledTimes(2);
     expect(session.operations.map((item) => item.id)).toEqual(['0195e2a0-0000-7000-8000-000000000001']);
+  });
+
+  it('never tries to clear a paused job, which has not finished (FL-104)', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValue({
+      items: [
+        operation({ status: MediaOperationStatus.Paused }),
+        operation({ id: '0195e2a0-0000-7000-8000-000000000002', status: MediaOperationStatus.Completed }),
+      ],
+      total: 2,
+    });
+    sdkMock.dismissMediaOperation.mockResolvedValue(undefined as never);
+    const session = new ActivitySession();
+    await session.refresh();
+
+    await session.dismissFinished();
+
+    expect(sdkMock.dismissMediaOperation).toHaveBeenCalledOnce();
+    expect(sdkMock.dismissMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000002' });
+    expect(session.operations.map((item) => item.status)).toEqual([MediaOperationStatus.Paused]);
+  });
+
+  it('takes the server’s answer to a pause: pausing until the worker stops (FL-104)', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });
+    sdkMock.pauseMediaOperation.mockResolvedValue(operation({ pauseRequestedAt: '2026-09-23T10:00:00.000Z' }));
+    const session = new ActivitySession();
+    await session.refresh();
+
+    await session.pause(operation().id);
+
+    expect(sdkMock.pauseMediaOperation).toHaveBeenCalledWith({ id: operation().id });
+    expect(session.operations[0]).toMatchObject({
+      status: MediaOperationStatus.Rendering,
+      pauseRequestedAt: '2026-09-23T10:00:00.000Z',
+    });
+  });
+
+  it('puts a resumed job back as the server answered (FL-104)', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValue({
+      items: [operation({ status: MediaOperationStatus.Paused })],
+      total: 1,
+    });
+    sdkMock.resumeMediaOperation.mockResolvedValue(operation({ status: MediaOperationStatus.Queued }));
+    const session = new ActivitySession();
+    await session.refresh();
+
+    await session.resume(operation().id);
+
+    expect(sdkMock.resumeMediaOperation).toHaveBeenCalledWith({ id: operation().id });
+    expect(session.operations[0].status).toBe(MediaOperationStatus.Queued);
   });
 });
