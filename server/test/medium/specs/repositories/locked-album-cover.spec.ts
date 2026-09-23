@@ -54,7 +54,7 @@ const seed = async ({ ctx }: ReturnType<typeof setup>) => {
   const { album: otherAlbum } = await ctx.newAlbum({ ownerId: other.id, albumThumbnailAssetId: cover.id }, [
     cover.id,
   ]);
-  return { owner, cover, fallback, ownAlbum, otherAlbum };
+  return { owner, cover, fallback, alreadyLocked, ownAlbum, otherAlbum };
 };
 
 const coverOf = (db: Kysely<DB>, albumId: string) =>
@@ -72,8 +72,9 @@ describe('Locked album covers (FL-53)', () => {
       const { ctx, sut } = context;
       const { cover, fallback, ownAlbum, otherAlbum } = await seed(context);
 
+      // `locked` is a lock record (FL-34): the stored visibility stays as it was
       await expect(sut.update({ id: cover.id, visibility: AssetVisibility.Locked })).resolves.toEqual(
-        expect.objectContaining({ id: cover.id, visibility: AssetVisibility.Locked }),
+        expect.objectContaining({ id: cover.id, visibility: AssetVisibility.Timeline }),
       );
 
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(fallback.id);
@@ -150,16 +151,17 @@ describe('Locked album covers (FL-53)', () => {
     it('repairs albums whose saved cover is already Locked and leaves the others alone', async () => {
       const context = setup();
       const { ctx } = context;
-      const { cover, fallback, ownAlbum, otherAlbum } = await seed(context);
+      const { cover, fallback, alreadyLocked, ownAlbum, otherAlbum } = await seed(context);
       const { asset: plain } = await ctx.newAsset({ ownerId: cover.ownerId });
       const { album: untouched } = await ctx.newAlbum({ ownerId: cover.ownerId, albumThumbnailAssetId: plain.id }, [
         plain.id,
       ]);
-      // data written before FL-53: the cover moved into the Locked folder and kept its albums' covers
+      // data written before FL-53 and FL-34: the cover moved into the upstream Locked folder, kept its
+      // albums' covers, and the newer photo was in the folder too
       await ctx.database
         .updateTable('asset')
         .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', cover.id)
+        .where('id', 'in', [cover.id, alreadyLocked.id])
         .execute();
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(cover.id);
 

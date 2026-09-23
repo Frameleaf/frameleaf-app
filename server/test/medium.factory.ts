@@ -11,6 +11,7 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem, AssetEditsCreateDto } from 'src/dtos/editing.dto.js';
 import {
   AlbumUserRole,
+  AssetLockReason,
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
@@ -197,6 +198,15 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
   }
 
   async newAsset(dto: Partial<Insertable<AssetTable>> = {}) {
+    // FL-34: `locked` is a lock record, never a stored visibility. A test that seeds a Locked asset
+    // gets one on the timeline with a lock, and sees `locked` as every response reports it.
+    if (dto.visibility === AssetVisibility.Locked) {
+      const asset = mediumFactory.assetInsert({ ...dto, visibility: AssetVisibility.Timeline });
+      const result = await this.get(AssetRepository).create(asset);
+      await this.get(AssetRepository).lock([result.id], AssetLockReason.Marked, null);
+      return { asset: { ...asset, visibility: AssetVisibility.Locked }, result };
+    }
+
     const asset = mediumFactory.assetInsert(dto);
     const result = await this.get(AssetRepository).create(asset);
     return { asset, result };
