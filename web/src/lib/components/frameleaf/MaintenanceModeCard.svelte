@@ -70,7 +70,7 @@
     flex-wrap: wrap;
   }
   .mode-copy h2 {
-    font-size: var(--fl-font-body);
+    font-size: var(--fl-font-size);
     margin: 0 0 0.25rem;
   }
   .mode-copy p {

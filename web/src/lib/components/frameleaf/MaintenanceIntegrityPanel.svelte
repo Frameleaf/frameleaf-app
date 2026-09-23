@@ -92,7 +92,7 @@
     margin-bottom: 1rem;
   }
   .head h2 {
-    font-size: var(--fl-font-body);
+    font-size: var(--fl-font-size);
     margin: 0;
   }
   .head-actions {
