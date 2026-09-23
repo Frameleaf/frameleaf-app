@@ -934,6 +934,8 @@ export enum MediaOperationBulkAction {
   RefreshMetadata = 'refresh-metadata',
   RefreshEncoded = 'refresh-encoded',
   RefreshFaces = 'refresh-faces',
+  /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
+  RelinkLivePhoto = 'relink-live-photo',
 }
 
 export const MediaOperationBulkActionSchema = z
