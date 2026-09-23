@@ -1,10 +1,14 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import { AuthSession } from 'src/database.js';
 import { PetObservationSource, PetObservationState, PetSpecies } from 'src/enum.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PET_RECOGNITION_UNAVAILABLE_REASON, PetService } from 'src/services/pet.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
+
+// eslint-friendly alias: a mock whose implementation may return anything, promises included.
+type AnyMock = Mock<(...args: any[]) => any>;
 
 const ownerId = authStub.user1.user.id;
 const petId = '11111111-1111-4111-8111-111111111111';
@@ -121,7 +125,7 @@ describe(PetService.name, () => {
 
   describe('create', () => {
     it('stores a trimmed name and the owner-declared species', async () => {
-      (petRepository.create as ReturnType<typeof vi.fn>).mockResolvedValue(pet({ name: 'Biscuit' }));
+      (petRepository.create as AnyMock).mockResolvedValue(pet({ name: 'Biscuit' }));
 
       await sut.create(authStub.user1, { name: '  Biscuit  ', species: PetSpecies.Cat });
 
@@ -131,7 +135,7 @@ describe(PetService.name, () => {
     });
 
     it('refuses a Locked photo as the featured photo (FL-53)', async () => {
-      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (petRepository.isOwnLockedAsset as AnyMock).mockResolvedValue(true);
 
       await expect(sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId })).rejects.toThrow(
         'A Locked photo cannot be a featured photo',
@@ -174,7 +178,7 @@ describe(PetService.name, () => {
 
   describe('update', () => {
     it('refuses a Locked photo as the featured photo (FL-53)', async () => {
-      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (petRepository.isOwnLockedAsset as AnyMock).mockResolvedValue(true);
 
       await expect(sut.update(authStub.user1, petId, { featuredAssetId: assetId })).rejects.toThrow(
         'A Locked photo cannot be a featured photo',
@@ -199,7 +203,7 @@ describe(PetService.name, () => {
 
   describe('get', () => {
     it('does not reveal another account’s pet', async () => {
-      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (petRepository.getById as AnyMock).mockResolvedValue(undefined);
 
       await expect(sut.get(authStub.user1, petId)).rejects.toBeInstanceOf(NotFoundException);
       expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, {});
@@ -230,7 +234,7 @@ describe(PetService.name, () => {
     });
 
     it('merges every observation, Locked ones included', async () => {
-      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([pet({ id: otherPetId })]);
+      (petRepository.getByIds as AnyMock).mockResolvedValue([pet({ id: otherPetId })]);
 
       await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
 
@@ -240,7 +244,7 @@ describe(PetService.name, () => {
 
     it('answers a pet suppressed while the session is locked exactly like a missing one', async () => {
       const suppressed = await sut.get(lockedAuth(), petId).catch((error: unknown) => error);
-      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (petRepository.getById as AnyMock).mockResolvedValue(undefined);
       const missing = await sut.get(authStub.user1, otherPetId).catch((error: unknown) => error);
 
       expect(suppressed).toBeInstanceOf(NotFoundException);
@@ -253,7 +257,7 @@ describe(PetService.name, () => {
     });
 
     it('still shows a pet that is not suppressed in a locked session', async () => {
-      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(pet({ id: otherPetId }));
+      (petRepository.getById as AnyMock).mockResolvedValue(pet({ id: otherPetId }));
 
       await expect(sut.get(lockedAuth(), otherPetId)).resolves.toEqual(expect.objectContaining({ id: otherPetId }));
     });
@@ -291,8 +295,8 @@ describe(PetService.name, () => {
     });
 
     it('refuses to merge it into another pet the same way as a missing source', async () => {
-      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(pet({ id: otherPetId }));
-      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([pet()]);
+      (petRepository.getById as AnyMock).mockResolvedValue(pet({ id: otherPetId }));
+      (petRepository.getByIds as AnyMock).mockResolvedValue([pet()]);
 
       await expect(sut.merge(lockedAuth(), otherPetId, { ids: [petId] })).rejects.toThrow('Pet not found');
       expect(petRepository.mergeInto).not.toHaveBeenCalled();
@@ -373,7 +377,7 @@ describe(PetService.name, () => {
 
   describe('getCandidates', () => {
     it('leaves out proposals about a pet suppressed while the session is locked', async () => {
-      (petRepository.getCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([
+      (petRepository.getCandidates as AnyMock).mockResolvedValue([
         reviewCandidate(),
         reviewCandidate({ id: 'other-candidate', petId: otherPetId }),
       ]);
@@ -394,10 +398,10 @@ describe(PetService.name, () => {
     });
 
     it('hides a proposal the owner already rejected, so a model rerun cannot resurrect it', async () => {
-      (petRepository.getCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([
+      (petRepository.getCandidates as AnyMock).mockResolvedValue([
         reviewCandidate({ modelName: 'pet-v2', modelRevision: 'r9' }),
       ]);
-      (petRepository.getDecisions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      (petRepository.getDecisions as AnyMock).mockResolvedValue([
         { id: observationId, assetId, petId, state: PetObservationState.Rejected },
       ]);
 
@@ -407,10 +411,8 @@ describe(PetService.name, () => {
     });
 
     it('keeps a proposal about a pet the owner has not answered for that asset', async () => {
-      (petRepository.getCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([
-        reviewCandidate({ petId: otherPetId }),
-      ]);
-      (petRepository.getDecisions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      (petRepository.getCandidates as AnyMock).mockResolvedValue([reviewCandidate({ petId: otherPetId })]);
+      (petRepository.getDecisions as AnyMock).mockResolvedValue([
         { id: observationId, assetId, petId, state: PetObservationState.Rejected },
       ]);
 
@@ -441,7 +443,7 @@ describe(PetService.name, () => {
     });
 
     it('checks the reassignment target is the caller’s own pet', async () => {
-      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (petRepository.getById as AnyMock).mockResolvedValue(undefined);
 
       await expect(sut.acceptCandidate(authStub.user1, candidateId, { petId: otherPetId })).rejects.toBeInstanceOf(
         NotFoundException,
@@ -458,7 +460,7 @@ describe(PetService.name, () => {
     });
 
     it('does not reveal a candidate over another account’s asset', async () => {
-      (petRepository.getCandidateById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (petRepository.getCandidateById as AnyMock).mockResolvedValue(undefined);
 
       await expect(sut.acceptCandidate(authStub.user1, candidateId, {})).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -486,15 +488,15 @@ describe(PetService.name, () => {
     });
 
     it('refuses when a source pet is not the caller’s', async () => {
-      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      (petRepository.getByIds as AnyMock).mockResolvedValue([]);
 
       await expect(sut.merge(authStub.user1, petId, { ids: [otherPetId] })).rejects.toBeInstanceOf(BadRequestException);
       expect(petRepository.mergeInto).not.toHaveBeenCalled();
     });
 
     it('promotes a rejection when the merged-in pet was confirmed on the same asset', async () => {
-      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([pet({ id: otherPetId })]);
-      (petRepository.getObservations as ReturnType<typeof vi.fn>).mockImplementation((_owner, id) =>
+      (petRepository.getByIds as AnyMock).mockResolvedValue([pet({ id: otherPetId })]);
+      (petRepository.getObservations as AnyMock).mockImplementation((_owner, id) =>
         Promise.resolve(
           id === otherPetId
             ? [observation({ id: 'source-1', petId: otherPetId, state: PetObservationState.Confirmed })]
@@ -516,7 +518,7 @@ describe(PetService.name, () => {
 
   describe('removeObservation', () => {
     it('does not remove an observation belonging to another account', async () => {
-      (petRepository.getObservationById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (petRepository.getObservationById as AnyMock).mockResolvedValue(undefined);
 
       await expect(sut.removeObservation(authStub.user1, observationId)).rejects.toBeInstanceOf(NotFoundException);
       expect(petRepository.deleteObservation).not.toHaveBeenCalled();

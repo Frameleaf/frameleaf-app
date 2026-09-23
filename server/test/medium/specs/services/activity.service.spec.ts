@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { ReactionType } from 'src/dtos/activity.dto.js';
-import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AssetLockReason } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
