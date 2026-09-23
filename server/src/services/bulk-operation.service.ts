@@ -24,6 +24,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -41,6 +42,7 @@ import {
   bulkProgress,
   classifyBulkError,
   fromBulkIdResponse,
+  isMediaHealthBulkAction,
   isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
@@ -57,6 +59,8 @@ export const BULK_TICK_MS = 5000;
 export const BULK_LEASE_MS = 2 * 60_000;
 /** Parallel calls for the actions the server only accepts one item at a time. */
 export const BULK_ITEM_CONCURRENCY = 5;
+/** Items per batch for Library Care relinks, recoveries and trash (FL-69). */
+export const MEDIA_HEALTH_BULK_BATCH_SIZE = 5;
 
 /** A failure of the whole job rather than of an item: the job stops and a retry resumes it. */
 class BulkJobError extends Error {
@@ -170,6 +174,7 @@ export class BulkOperationService {
     private stacks: StackService,
     private enrichment: ImageEnrichmentService,
     private livePhoto: LivePhotoService,
+    private mediaHealth: MediaHealthService,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -297,6 +302,9 @@ export class BulkOperationService {
     // A stack is one call over every member, and unstacking works on stack ids: neither is batched.
     const whole =
       snapshot.action === MediaOperationBulkAction.Stack || snapshot.action === MediaOperationBulkAction.Unstack;
+    // Library Care reads, hashes and may copy whole originals per item (FL-69): small batches keep the
+    // lease, renewed after every batch, well ahead of the work.
+    const batchSize = isMediaHealthBulkAction(snapshot.action) ? MEDIA_HEALTH_BULK_BATCH_SIZE : BULK_BATCH_SIZE;
 
     // The first pass: the frozen set, in order. The count of answered items is the cursor.
     while (processed < total) {
@@ -305,7 +313,7 @@ export class BulkOperationService {
         return;
       }
 
-      const batch = snapshot.assetIds.slice(processed, processed + (whole ? total : BULK_BATCH_SIZE));
+      const batch = snapshot.assetIds.slice(processed, processed + (whole ? total : batchSize));
       result = await this.withShiftOrigins(job, result, batch);
       const marked = { ...result, inFlight: { start: processed, size: batch.length } };
       const outcomes = await this.step(job, marked, processed, batch);
@@ -350,7 +358,7 @@ export class BulkOperationService {
       }
 
       const pass = result.retry;
-      const batch = pass.ids.slice(pass.processed, pass.processed + (whole ? pass.ids.length : BULK_BATCH_SIZE));
+      const batch = pass.ids.slice(pass.processed, pass.processed + (whole ? pass.ids.length : batchSize));
       result = await this.withShiftOrigins(job, result, batch);
       const outcomes = await this.step(
         job,
@@ -730,6 +738,23 @@ export class BulkOperationService {
         // Submit validated this pairing, so a still with no partner here means a corrupt snapshot.
         const videoIdByPhotoId = new Map((payload.pairs ?? []).map((pair) => [pair.photoId, pair.videoId]));
         outcomes.push(...(await this.relinkLivePhotos(auth, allowed, videoIdByPhotoId)));
+        break;
+      }
+
+      case MediaOperationBulkAction.RelinkMissingMedia:
+      case MediaOperationBulkAction.RecoverDamagedMedia:
+      case MediaOperationBulkAction.TrashDamagedMedia: {
+        // Library Care (FL-69): one reviewed finding per item, re-read and re-verified now. The
+        // service holds each item to its owner and Locked rules itself (`BULK_ITEM_PERMISSION` is null).
+        const entries = new Map((payload.mediaHealth ?? []).map((entry) => [entry.assetId, entry]));
+        for (const assetId of allowed) {
+          const entry = entries.get(assetId);
+          outcomes.push(
+            entry
+              ? await this.mediaHealth.applyBulkEntry(auth, action, entry)
+              : { id: assetId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+          );
+        }
         break;
       }
 
