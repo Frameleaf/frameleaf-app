@@ -5,6 +5,7 @@ import {
   currentPrimaryDestination,
   defaultRailCapabilities,
   isDestinationCurrent,
+  isSettingsRoute,
   type RailCapabilities,
   type RailDestination,
 } from '$lib/frameleaf/navigation';
@@ -166,30 +167,66 @@ describe('Frameleaf primary destinations', () => {
 
   it('keeps Activity current on its page only', () => {
     expect(currentPrimaryDestination('/activity')).toBe('activity');
-    expect(currentPrimaryDestination('/activity-log')).toBe('library');
+    // A path that merely starts with "activity" is not the Activity screen, and is not one of
+    // the prototype's library/people/explore screens either.
+    expect(currentPrimaryDestination('/activity-log')).toBeNull();
   });
 
-  it('keeps Library current across the library workspace the rail navigates', () => {
+  it('keeps Library current on the screens the prototype maps to "library", "people" and "explore"', () => {
     for (const pathname of [
       Route.photos(),
       '/photos/asset-id',
-      Route.albums(),
+      Route.favorites(),
+      Route.recentlyAdded(),
+      Route.bestPhotos(),
+      Route.archive(),
+      Route.suppressed(),
+      Route.pets(),
+      Route.viewAlbum({ id: 'album-id' }),
+      Route.viewSharedSpace({ id: 'space-id' }),
       Route.people(),
       Route.explore(),
-      Route.sharing(),
-      Route.utilities(),
-      Route.trash(),
-      Route.workflows(),
+      Route.search(),
     ]) {
       expect(currentPrimaryDestination(pathname)).toBe('library');
     }
-    // A path that merely starts with "studio" is not Studio.
+    // A path that merely starts with "studio" is not Studio, but is still a library screen.
     expect(currentPrimaryDestination('/studios')).toBe('library');
+  });
+
+  it('leaves the switcher without a current item on the prototype screens that are not library/people/explore', () => {
+    for (const pathname of [
+      // The all-albums and all-spaces indexes are the prototype's own "collections" screen.
+      Route.albums(),
+      Route.sharing(),
+      // A person's own page is the prototype's "person" screen, distinct from "people".
+      Route.viewPerson({ id: 'person-id' }),
+      Route.places(),
+      Route.map(),
+      Route.memories(),
+      Route.tags(),
+      Route.folders(),
+      Route.sharedLinks(),
+      Route.viewPartner({ id: 'partner-id' }),
+      Route.buy(),
+      Route.workflows(),
+      Route.trash(),
+      Route.utilities(),
+    ]) {
+      expect(currentPrimaryDestination(pathname)).toBeNull();
+    }
   });
 
   it('leaves the switcher without a current item in settings and administration', () => {
     expect(currentPrimaryDestination(Route.userSettings())).toBeNull();
     expect(currentPrimaryDestination(Route.systemSettings())).toBeNull();
     expect(currentPrimaryDestination(Route.users())).toBeNull();
+  });
+
+  it('treats /admin and /user-settings as the prototype\'s one settings screen', () => {
+    expect(isSettingsRoute(Route.systemSettings())).toBe(true);
+    expect(isSettingsRoute(Route.users())).toBe(true);
+    expect(isSettingsRoute(Route.userSettings())).toBe(true);
+    expect(isSettingsRoute(Route.photos())).toBe(false);
   });
 });
