@@ -269,7 +269,7 @@ export const searchCommands = (index: CommandItem[], query: string, limit = 12):
   if (words(text).length === 0) {
     return [];
   }
-  const max = Number.isInteger(limit) && limit > 0 ? limit : 12;
+  const max = Number.isSafeInteger(limit) && limit > 0 ? limit : 12;
   return items
     .map((item) => ({ ...item, score: scoreCommand(item, text) }))
     .filter((item) => item.score > 0)

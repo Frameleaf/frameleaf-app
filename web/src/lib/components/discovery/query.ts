@@ -374,7 +374,9 @@ export const parseDiscoveryQuery = (value: unknown): DiscoveryQueryParse => {
   }
   if (value.version !== DISCOVERY_QUERY_VERSION) {
     const newer =
-      typeof value.version === 'number' && Number.isInteger(value.version) && value.version > DISCOVERY_QUERY_VERSION;
+      typeof value.version === 'number' &&
+      Number.isSafeInteger(value.version) &&
+      value.version > DISCOVERY_QUERY_VERSION;
     return refuse(newer ? 'unsupported-version' : 'malformed');
   }
   const text = value.text ?? '';
@@ -1312,9 +1314,9 @@ export const discoveryPaging = (
   total: number | null,
   pageSize: number = DEFAULT_DISCOVERY_PAGE_SIZE,
 ): DiscoveryPaging => {
-  const size = Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 1000) : DEFAULT_DISCOVERY_PAGE_SIZE;
-  const current = Math.max(1, Number.isInteger(page) ? page : 1);
-  const count = Number.isInteger(total) && (total as number) >= 0 ? (total as number) : null;
+  const size = Number.isSafeInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 1000) : DEFAULT_DISCOVERY_PAGE_SIZE;
+  const current = Math.max(1, Number.isSafeInteger(page) ? page : 1);
+  const count = Number.isSafeInteger(total) && (total as number) >= 0 ? (total as number) : null;
   const requested = current * size;
   const shown = count === null ? requested : Math.min(requested, count);
   return {

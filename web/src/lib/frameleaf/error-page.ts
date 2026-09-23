@@ -20,7 +20,9 @@ export type ErrorPageAction = {
 
 const toStatus = (value: unknown): number | undefined => {
   const status = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
-  return typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599 ? status : undefined;
+  return typeof status === 'number' && Number.isSafeInteger(status) && status >= 400 && status <= 599
+    ? status
+    : undefined;
 };
 
 /**

@@ -230,7 +230,7 @@ export const createBulkGateway = (downloadArchive: BulkGateway['downloadArchive'
 const distinct = (ids: readonly string[]): string[] => [...new Set(ids.filter((id) => typeof id === 'string' && id))];
 
 export const chunk = <T>(items: readonly T[], size = BULK_CHUNK_SIZE): T[][] => {
-  const width = Number.isInteger(size) && size > 0 ? size : BULK_CHUNK_SIZE;
+  const width = Number.isSafeInteger(size) && size > 0 ? size : BULK_CHUNK_SIZE;
   const result: T[][] = [];
   for (let index = 0; index < items.length; index += width) {
     result.push(items.slice(index, index + width));

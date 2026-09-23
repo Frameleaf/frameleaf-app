@@ -98,13 +98,13 @@ export const ratingControlValue = (condition: Condition): string => {
     if (value.eq === null) {
       return 'null';
     }
-    if (Number.isInteger(value.eq) && (value.eq as number) >= -1 && (value.eq as number) <= 5) {
+    if (Number.isSafeInteger(value.eq) && (value.eq as number) >= -1 && (value.eq as number) <= 5) {
       return String(value.eq);
     }
   }
   if (
     isOnly(condition, 'gte') &&
-    Number.isInteger(value.gte) &&
+    Number.isSafeInteger(value.gte) &&
     (value.gte as number) >= 0 &&
     (value.gte as number) <= 5
   ) {
