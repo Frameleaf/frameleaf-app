@@ -458,6 +458,12 @@ export class MediaOperationService {
       return this.retryBulk(auth, operation);
     }
 
+    // FL-69: a scan or search is started again from Library Care, which admits one at a time and
+    // opens fresh runs; copying the old row would reopen finished runs beside a running job.
+    if (operation.kind === MediaOperationKind.MediaHealth) {
+      throw new BadRequestException('Start the scan or search again from Library Care');
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
@@ -550,6 +556,11 @@ export class MediaOperationService {
     }
 
     const snapshot = parseBulkSnapshot(operation.snapshot);
+    // FL-69: a relink, recovery or trash is reviewed again in Library Care, where its consent, typed
+    // confirmation, PIN and evidence freshness are checked; a copied retry would skip them.
+    if (isMediaHealthBulkAction(snapshot.action)) {
+      throw new BadRequestException('Review these items again in Library Care');
+    }
     const result = parseBulkResult(operation.result, snapshot.assetIds.length);
     const remaining = bulkResumeIds(snapshot, result, Number(operation.processedUnits ?? 0));
     if (remaining.length === 0) {

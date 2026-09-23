@@ -674,6 +674,26 @@ describe(MediaOperationService.name, () => {
       ]);
     });
 
+    it('sends a Library Care relink, recovery or trash back to Library Care instead of copying it (FL-69)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          snapshot: { action: MediaOperationBulkAction.TrashDamagedMedia, assetIds, payload: { mediaHealth: [] } },
+        }),
+      );
+
+      await expect(sut.retry(authStub.user1, bulkStub().id)).rejects.toThrow('Library Care');
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('starts a Library Care scan or search again from Library Care only (FL-69)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({ kind: MediaOperationKind.MediaHealth, status: MediaOperationStatus.Failed }),
+      );
+
+      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Library Care');
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('retries only the failed and unreached items, with lineage', async () => {
       const cancelled = bulkStub();
       vi.mocked(repository.getForOwner).mockResolvedValue(cancelled);
