@@ -171,10 +171,23 @@ export const describeConfigChanges = (oldConfig: SystemConfig, newConfig: System
   return changes;
 };
 
+const isHistoryEntry = (value: unknown): value is ConfigHistoryEntry => {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.id === 'string' &&
+    typeof entry.createdAt === 'string' &&
+    Array.isArray(entry.changes) &&
+    entry.changes.every((change) => isPlainObject(change) && typeof (change as { path?: unknown }).path === 'string')
+  );
+};
+
 /** The stored history, or an empty one when nothing (or something unreadable) is stored. */
 export const readConfigHistory = (stored: unknown): ConfigHistory => {
   const entries = (stored as Partial<ConfigHistory> | null | undefined)?.entries;
-  return { entries: Array.isArray(entries) ? entries.filter((entry) => isPlainObject(entry)) : [] };
+  return { entries: Array.isArray(entries) ? entries.filter((entry) => isHistoryEntry(entry)) : [] };
 };
 
 /** The history with a new entry first, keeping the newest entries within the limit. */

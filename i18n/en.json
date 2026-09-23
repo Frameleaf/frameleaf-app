@@ -3959,7 +3959,7 @@
   "frameleaf_settings_area_editing": "Editing & playback",
   "frameleaf_settings_area_editing_description": "Image output, video playback and editing masters.",
   "frameleaf_settings_area_history": "Change history",
-  "frameleaf_settings_area_history_description": "Every saved settings change, with who saved it, when and the values.",
+  "frameleaf_settings_area_history_description": "Every change saved from these settings pages, with who saved it, when and the values.",
   "frameleaf_settings_area_intelligence": "Search & intelligence",
   "frameleaf_settings_area_intelligence_description": "Search, descriptions, recognition, smart albums and metadata.",
   "frameleaf_settings_area_notifications": "Notifications",
