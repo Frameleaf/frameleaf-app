@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import {
   AssetDevelopFileKind,
   AssetDevelopMaskKind,
@@ -66,10 +67,10 @@ describe(AssetDevelopService.name, () => {
   let sut: AssetDevelopService;
   let mocks: ServiceMocks;
   let developRepository: {
-    [K in keyof AssetDevelopRepository]: ReturnType<typeof vi.fn>;
+    [K in keyof AssetDevelopRepository]: Mock<(...args: any[]) => any>;
   };
   let photoTools: {
-    [K in keyof PhotoToolsRepository]: ReturnType<typeof vi.fn>;
+    [K in keyof PhotoToolsRepository]: Mock<(...args: any[]) => any>;
   };
   /** SHA-256 of the stub original as the service computes it. */
   const originalSha = Buffer.alloc(32, 7);
@@ -97,15 +98,13 @@ describe(AssetDevelopService.name, () => {
       getFilePaths: vi.fn().mockResolvedValue([]),
       deleteByAsset: vi.fn().mockResolvedValue(void 0),
       listUnfinished: vi.fn().mockResolvedValue([]),
-      beginAttempt: vi
-        .fn()
-        .mockImplementation((id: string) =>
-          developRepository.get(id).then((row: AssetDevelopRevision) => ({
-            ...row,
-            status: AssetDevelopRevisionStatus.Rendering,
-            attempts: (row?.attempts ?? 0) + 1,
-          })),
-        ),
+      beginAttempt: vi.fn().mockImplementation((id: string) =>
+        developRepository.get(id).then((row: AssetDevelopRevision) => ({
+          ...row,
+          status: AssetDevelopRevisionStatus.Rendering,
+          attempts: (row?.attempts ?? 0) + 1,
+        })),
+      ),
     };
     photoTools = {
       listPresets: vi.fn(),
@@ -120,7 +119,9 @@ describe(AssetDevelopService.name, () => {
       getExport: vi.fn(),
     };
     mocks.crypto.hashFile.mockImplementation((file: string | Buffer) =>
-      Promise.resolve(String(file).includes('develop-imports') || String(file).includes('_import_') ? renditionSha : originalSha),
+      Promise.resolve(
+        String(file).includes('develop-imports') || String(file).includes('_import_') ? renditionSha : originalSha,
+      ),
     );
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
     mocks.asset.getById.mockResolvedValue(asset as never);
@@ -563,7 +564,7 @@ describe(AssetDevelopService.name, () => {
 
       const kept = mocks.storage.rename.mock.calls[0][1] as string;
       expect(mocks.storage.rename).toHaveBeenCalledWith(staged.path, kept);
-      expect(kept).toMatch(new RegExp(`${asset.id}_develop_import_.+\\.tif$`));
+      expect(kept).toMatch(new RegExp(String.raw`${asset.id}_develop_import_.+\.tif$`));
       expect(developRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: AssetDevelopRevisionKind.External,
@@ -601,9 +602,9 @@ describe(AssetDevelopService.name, () => {
         sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),
       ).rejects.toBeInstanceOf(BadRequestException);
       photoTools.getExport.mockResolvedValue(undefined);
-      await expect(
-        sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),
-      ).rejects.toThrow('That export was not made from this photo');
+      await expect(sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged)).rejects.toThrow(
+        'That export was not made from this photo',
+      );
       expect(developRepository.create).not.toHaveBeenCalled();
     });
 
@@ -651,9 +652,9 @@ describe(AssetDevelopService.name, () => {
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue({ ...asset, deletedAt: new Date() } as never);
-      await expect(
-        sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),
-      ).rejects.toThrow('Restore the photo from the trash');
+      await expect(sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged)).rejects.toThrow(
+        'Restore the photo from the trash',
+      );
       mocks.asset.getById.mockResolvedValue({ ...asset, visibility: AssetVisibility.Hidden } as never);
       await expect(
         sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged),

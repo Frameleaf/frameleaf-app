@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import { AssetDevelopMaskKind, AssetDevelopPreset } from 'src/dtos/asset-develop.dto.js';
 import { DEVELOP_PRESET_MAX } from 'src/dtos/photo-tools.dto.js';
 import { type DevelopPreset, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
@@ -18,7 +19,7 @@ const presetRow = (overrides: Partial<DevelopPreset> = {}): DevelopPreset => ({
 
 describe(PhotoToolsService.name, () => {
   let sut: PhotoToolsService;
-  let repository: { [K in keyof PhotoToolsRepository]: ReturnType<typeof vi.fn> };
+  let repository: { [K in keyof PhotoToolsRepository]: Mock<(...args: any[]) => any> };
 
   beforeEach(() => {
     const mocks = getMocks();
@@ -77,14 +78,14 @@ describe(PhotoToolsService.name, () => {
 
   it('refuses a duplicate name, including a race on the unique key', async () => {
     repository.getPresetByName.mockResolvedValue(presetRow());
-    await expect(sut.createPreset(authStub.user1, { name: 'Golden hour', settings: {} as never })).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      sut.createPreset(authStub.user1, { name: 'Golden hour', settings: {} as never }),
+    ).rejects.toBeInstanceOf(ConflictException);
     repository.getPresetByName.mockResolvedValue(undefined);
     repository.createPreset.mockRejectedValue(Object.assign(new Error('duplicate key'), { code: '23505' }));
-    await expect(sut.createPreset(authStub.user1, { name: 'Golden hour', settings: {} as never })).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(
+      sut.createPreset(authStub.user1, { name: 'Golden hour', settings: {} as never }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('caps how many presets one account keeps', async () => {

@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import multer from 'multer';
+import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -43,7 +43,7 @@ const history = () => new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
  * folder under a random name. Never a path the client chose, never memory, never a folder a
  * library scan reads; the service moves it into place or deletes it.
  */
-const importStorage = multer.diskStorage({
+const importStorage = diskStorage({
   destination: (request, _file, callback) => {
     const ownerId = (request as unknown as AuthRequest).user?.user.id;
     if (!ownerId) {

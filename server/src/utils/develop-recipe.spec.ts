@@ -338,7 +338,11 @@ describe('develop recipe', () => {
         expect(at(2, 50)).toBe(128);
         expect(at(25, 5)).toBe(128);
       }
-      expect(identityMaskMapping(10, 20)).toEqual({ oriented: { width: 10, height: 20 }, extract: { left: 0, top: 0 }, straighten: 0 });
+      expect(identityMaskMapping(10, 20)).toEqual({
+        oriented: { width: 10, height: 20 },
+        extract: { left: 0, top: 0 },
+        straighten: 0,
+      });
     });
   });
 });

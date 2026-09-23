@@ -90,6 +90,7 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -136,7 +137,6 @@ import {
   TakeoutPairTable,
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
-import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
