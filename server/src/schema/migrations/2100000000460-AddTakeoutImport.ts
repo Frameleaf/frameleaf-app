@@ -89,6 +89,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "locked" boolean NOT NULL DEFAULT false,
   "assetId" uuid,
   "resultKind" character varying,
+  "createPath" character varying,
   "error" text,
   "updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "takeout_item_id_fkey" FOREIGN KEY ("id") REFERENCES "takeout_file" ("id") ON UPDATE CASCADE ON DELETE CASCADE,

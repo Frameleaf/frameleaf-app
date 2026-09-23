@@ -57,6 +57,7 @@ const itemOf = (overrides: Partial<TakeoutItem> = {}): TakeoutItem => ({
   locked: false,
   assetId: null,
   resultKind: null,
+  createPath: null,
   error: null,
   relativePath: 'Trip/IMG_1.jpg',
   folder: 'Trip',
@@ -81,6 +82,8 @@ const assetState = (overrides: Record<string, unknown> = {}) => ({
   isFavorite: false,
   visibility: AssetVisibility.Timeline,
   livePhotoVideoId: null,
+  originalPath: '/data/upload/user-id/6f/1c/6f1c1a0e.jpg',
+  locked: false,
   ...overrides,
 });
 
@@ -94,6 +97,7 @@ describe(TakeoutWorkerService.name, () => {
   let albums: Record<string, any>;
   let livePhoto: Record<string, any>;
   let users: Record<string, any>;
+  let importRoots: string[];
   let pending: TakeoutItem[][];
 
   const working = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
@@ -101,6 +105,7 @@ describe(TakeoutWorkerService.name, () => {
   beforeEach(() => {
     StorageCore.setMediaLocation('/data');
     pending = [];
+    importRoots = ['/imports'];
     operations = {
       claimNext: vi.fn().mockResolvedValue(undefined),
       reportProgress: vi.fn().mockResolvedValue(true),
@@ -119,6 +124,7 @@ describe(TakeoutWorkerService.name, () => {
       advancePhase: vi.fn().mockResolvedValue(true),
       sources: vi.fn().mockResolvedValue([]),
       counts: vi.fn().mockResolvedValue({ files: 0 }),
+      stagedFileBytes: vi.fn().mockResolvedValue(0),
       hasFile: vi.fn().mockResolvedValue(false),
       recordFile: vi.fn(),
       markSourceScanned: vi.fn(),
@@ -149,6 +155,11 @@ describe(TakeoutWorkerService.name, () => {
       stageArchiveEntry: vi.fn(),
       readSidecar: vi.fn(),
       remove: vi.fn(),
+      walk: vi.fn(),
+      stageFile: vi.fn(),
+      isInsideRoots: vi.fn((folder: string, roots: string[]) =>
+        Promise.resolve(roots.some((root) => folder.startsWith(root))),
+      ),
       copyToLibrary: vi.fn().mockResolvedValue({
         size: 10,
         checksum: Buffer.alloc(32, 1),
@@ -179,6 +190,7 @@ describe(TakeoutWorkerService.name, () => {
       assets as never,
       albums as never,
       livePhoto as never,
+      { getEnv: () => ({ storage: { importRoots } }) } as never,
     );
   });
 
@@ -312,7 +324,7 @@ describe(TakeoutWorkerService.name, () => {
     });
 
     it('finishes an interrupted creation as the import’s own, without a second copy', async () => {
-      pending = [[itemOf({ state: 'importing', resultKind: 'created' })]];
+      pending = [[itemOf({ state: 'importing', createPath: assetState().originalPath })]];
       assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
 
       await sut.run(operationOf('import'), claimToken);
@@ -320,6 +332,58 @@ describe(TakeoutWorkerService.name, () => {
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'created');
       expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'imported');
+    });
+
+    it('treats a photo the owner uploaded meanwhile as matched, never as its own creation', async () => {
+      pending = [[itemOf({ state: 'importing', createPath: '/data/upload/user-id/aa/bb/abandoned.jpg' })]];
+      assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
+      repository.getAssetState.mockResolvedValue(assetState({ description: 'Mine' }));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'matched');
+      expect(assets.update).not.toHaveBeenCalled();
+    });
+
+    it('removes an earlier run’s abandoned copy before copying again', async () => {
+      pending = [[itemOf({ state: 'importing', createPath: '/data/upload/user-id/aa/bb/abandoned.jpg' })]];
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(staging.remove).toHaveBeenCalledWith('/data/upload/user-id/aa/bb/abandoned.jpg');
+      expect(repository.itemCreating).toHaveBeenCalledWith(itemOf().id, expect.stringMatching(/^\/data\/upload\//));
+    });
+
+    it('counts a photo that arrived between the check and the upload as matched', async () => {
+      pending = [[itemOf()]];
+      assetMedia.uploadAsset.mockResolvedValue({ id: assetId, status: AssetMediaStatus.DUPLICATE });
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'matched');
+      expect(assets.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps a Locked Folder photo out of every album, whatever folder it sits in', async () => {
+      pending = [[itemOf({ locked: true, albums: ['Trip'] })]];
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(assets.lock).toHaveBeenCalledWith(expect.anything(), { ids: [assetId] });
+      expect(albums.addAssets).not.toHaveBeenCalled();
+    });
+
+    it('leaves a photo that is Locked in the library alone when it is matched', async () => {
+      repository.getById.mockResolvedValue(rowOf('importing', { updateMatchedMetadata: true }));
+      pending = [[itemOf()]];
+      assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
+      repository.getAssetState.mockResolvedValue(assetState({ locked: true }));
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(assets.update).not.toHaveBeenCalled();
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'matched');
     });
 
     it('reports a photo that is in the library’s trash instead of importing it again', async () => {
@@ -473,6 +537,21 @@ describe(TakeoutWorkerService.name, () => {
       await sut.run(operationOf('scan'), claimToken);
 
       expect(staging.stageArchiveEntry).not.toHaveBeenCalled();
+    });
+
+    it('refuses a server folder that is no longer inside a permitted location', async () => {
+      repository.sources.mockResolvedValue([
+        { ...source, kind: 'directory', path: '/elsewhere/Takeout', size: 0, received: 0 },
+      ]);
+
+      await sut.run(operationOf('scan'), claimToken);
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        operationId,
+        claimToken,
+        expect.objectContaining({ errorCode: 'takeout_folder_not_permitted' }),
+      );
+      expect(staging.walk).not.toHaveBeenCalled();
     });
 
     it('fails the job when the staging volume is full, so the retry resumes once there is space', async () => {

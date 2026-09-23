@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { TakeoutConflict, TakeoutRepository } from 'src/repositories/takeout.repository.js';
@@ -196,6 +196,23 @@ describe(TakeoutRepository.name, () => {
     expect(hidden.total).toBe(1);
     expect(shown.total).toBe(2);
     expect((await sut.counts(row.id)).hiddenLocked).toBe(1);
+  });
+
+  it('also withholds an item that matched a photo already Locked in the library', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+    const matched = await seedItem(sut, row.id, source.id, { name: 'IMG_1.jpg' });
+    await seedItem(sut, row.id, source.id, { name: 'IMG_2.jpg' });
+    await sut.itemAsset(matched, asset.id, 'matched');
+
+    const hidden = await sut.items(row.id, { offset: 0, limit: 50, includeLocked: false });
+
+    expect(hidden.items.map((item) => item.name)).toEqual(['IMG_2.jpg']);
+    expect((await sut.counts(row.id)).hiddenLocked).toBe(1);
+    expect(await sut.albums(row.id, false)).toEqual([{ folder: 'Trip', count: 1 }]);
+    expect(await sut.albums(row.id, true)).toEqual([{ folder: 'Trip', count: 2 }]);
   });
 
   it('counts what is already in the owner’s library by checksum', async () => {

@@ -24,7 +24,6 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
   TAKEOUT_STAGING_RESERVE_BYTES,
   TakeoutStagingError,
@@ -102,7 +101,6 @@ export class TakeoutService {
     private logger: LoggingRepository,
     private repository: TakeoutRepository,
     private staging: TakeoutStagingRepository,
-    private operations: MediaOperationRepository,
     private mediaOperations: MediaOperationService,
     private access: AccessRepository,
     private config: ConfigRepository,
@@ -147,7 +145,9 @@ export class TakeoutService {
     const wantsDirectory = dto.rootId !== undefined || dto.directory !== undefined;
     let directory: string | undefined;
     if (wantsDirectory) {
-      if (!auth.user.isAdmin) {
+      // A server folder is an administrator's choice made in a signed-in session; an API key, even an
+      // administrator's, may upload archives but never point the server at its own filesystem.
+      if (!auth.user.isAdmin || auth.apiKey) {
         throw new ForbiddenException('Only an administrator can import from a server folder');
       }
       const roots = this.config.getEnv().storage.importRoots;
@@ -158,20 +158,13 @@ export class TakeoutService {
       directory = await this.mapErrors(() => this.staging.resolveDirectory(root, dto.directory ?? ''));
     }
 
-    const row = await this.repository.create(auth.user.id, dto.name, { ...TAKEOUT_DEFAULT_OPTIONS });
+    const row = await this.repository.create(
+      auth.user.id,
+      dto.name,
+      { ...TAKEOUT_DEFAULT_OPTIONS },
+      directory ? { name: path.basename(directory) || directory, path: directory } : undefined,
+    );
     await this.staging.prepare(auth.user.id, row.id);
-    if (directory) {
-      const folder = directory;
-      await this.repository.withImport(auth.user.id, row.id, (tx) =>
-        this.repository.addSource(tx, {
-          importId: row.id,
-          name: path.basename(folder) || folder,
-          kind: 'directory',
-          path: folder,
-          size: 0,
-        }),
-      );
-    }
 
     this.logger.log(`Google Photos import ${row.id} created${directory ? ' from a server folder' : ''}`);
     return this.get(auth, row.id);
@@ -199,7 +192,8 @@ export class TakeoutService {
         const outstanding = sources.reduce((total, item) => total + (item.size - item.received), 0) + dto.size;
         const quota = auth.user.quotaSizeInBytes;
         if (quota !== null && quota !== undefined) {
-          const staged = sources.reduce((total, item) => total + item.size, 0) + dto.size;
+          // Every unfinished import of the account counts, not only this one.
+          const staged = (await this.repository.stagedArchiveBytes(tx, auth.user.id)) + dto.size;
           if (auth.user.quotaUsageInBytes + staged > quota) {
             throw new TakeoutConflict('These archives are larger than the storage left on your account');
           }
@@ -234,12 +228,17 @@ export class TakeoutService {
         if (!source) {
           throw new TakeoutNotFound('Archive not found');
         }
+        const staged = await this.repository.sourceFilePaths(tx, archiveId);
         await this.repository.removeSource(tx, archiveId);
-        return source;
+        return { source, staged };
       }),
     );
-    if (removed.kind === 'zip' && removed.path) {
-      await this.staging.remove(removed.path);
+    // Whatever an earlier scan extracted from the archive goes with it.
+    for (const stagedPath of removed.staged) {
+      await this.staging.remove(stagedPath);
+    }
+    if (removed.source.kind === 'zip' && removed.source.path) {
+      await this.staging.remove(removed.source.path);
     }
   }
 
@@ -289,8 +288,8 @@ export class TakeoutService {
         if (sources.some((source) => source.kind === 'zip' && source.received !== source.size)) {
           throw new TakeoutConflict('Finish uploading every archive before scanning');
         }
-        await this.startOperation(auth, row, 'scan', retrying ? operation : undefined);
         await this.repository.setPhase(tx, id, 'scanning');
+        await this.startOperation(tx, auth, row, 'scan', retrying ? operation : undefined);
       }),
     );
     return this.get(auth, id);
@@ -311,7 +310,11 @@ export class TakeoutService {
         }
         await this.repository.setOptions(tx, id, options);
         if (options.sidecarReview) {
-          if ((await this.repository.countReview(tx, id)) > 0) {
+          const review = await this.repository.countReview(tx, id);
+          if (review.total > 0 && review.total === review.locked && !getLockedOwnerId(auth)) {
+            throw new TakeoutConflict('Unlock Locked to resolve the flagged items before importing.');
+          }
+          if (review.total > 0) {
             throw new TakeoutConflict('Review complete. Resolve the flagged items before importing.');
           }
         } else {
@@ -319,8 +322,8 @@ export class TakeoutService {
         }
         const stopped = state === 'failed' || state === 'cancelled';
         const previous = row.phase === 'importing' && stopped ? operation : undefined;
-        await this.startOperation(auth, row, 'import', previous);
         await this.repository.setPhase(tx, id, 'importing');
+        await this.startOperation(tx, auth, row, 'import', previous);
       }),
     );
     return this.get(auth, id);
@@ -502,13 +505,18 @@ export class TakeoutService {
     await this.staging.removeOwner(id);
   }
 
+  /**
+   * Queue the job for a step in the same transaction that moves the import to it, so a worker can
+   * never claim the job and read the phase it is leaving.
+   */
   private async startOperation(
+    tx: Transaction<DB>,
     auth: AuthDto,
     row: TakeoutImport,
     action: TakeoutAction,
     previous: TakeoutOperation | undefined,
   ) {
-    const created = await this.operations.create({
+    const created = await this.repository.insertOperation(tx, {
       ownerId: auth.user.id,
       kind: MediaOperationKind.TakeoutImport,
       // Imports run on this server's own workers; there is no remote to choose.
@@ -560,7 +568,7 @@ export class TakeoutService {
   private requireReviewable(row: TakeoutImport, operation: TakeoutOperation | undefined) {
     const state = takeoutState(row.phase, operation);
     if (row.phase === 'sources' || row.phase === 'scanning' || !TAKEOUT_REVIEWABLE_STATES.includes(state)) {
-      throw new TakeoutConflict('Pause or finish the running job before changing review decisions');
+      throw new TakeoutConflict('Wait for the running job to finish, or stop it, before changing review decisions');
     }
   }
 
@@ -576,7 +584,7 @@ export class TakeoutService {
     const [sources, counts, albums, summary] = await Promise.all([
       this.repository.sources(row.id),
       this.repository.counts(row.id),
-      detail ? this.repository.albums(row.id) : Promise.resolve([]),
+      detail ? this.repository.albums(row.id, !!getLockedOwnerId(auth)) : Promise.resolve([]),
       detail && !busy && row.phase !== 'sources' && row.phase !== 'scanning'
         ? this.repository.matchSummary(auth.user.id, row.id)
         : Promise.resolve({ newAssets: 0, matchedOriginals: 0 }),

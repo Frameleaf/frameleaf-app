@@ -3546,7 +3546,7 @@
   "frameleaf_takeout_scan_summary": "{files} files read · {items} photos and videos",
   "frameleaf_takeout_settings_action": "Preview import workflow",
   "frameleaf_takeout_settings_roots": "Permitted import locations",
-  "frameleaf_takeout_settings_roots_none": "None. Set IMMICH_IMPORT_ROOTS on the server to let administrators import from server folders.",
+  "frameleaf_takeout_settings_roots_none": "None yet. The server operator decides which server folders can be imported from.",
   "frameleaf_takeout_settings_subtitle": "Stage → scan → review → import → reconcile. Existing assets retain recovered album membership.",
   "frameleaf_takeout_settings_title": "Google Photos & server imports",
   "frameleaf_takeout_sidecar_label": "Metadata sidecar",

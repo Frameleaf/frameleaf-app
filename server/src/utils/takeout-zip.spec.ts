@@ -209,6 +209,20 @@ describe('takeoutZipDataOffset', () => {
   });
 });
 
+describe('entry bounds', () => {
+  it('refuses an entry whose local header pushes its data into the next entry', async () => {
+    const zip = buildZip([
+      { name: 'a.jpg', data: Buffer.alloc(16, 1), method: 0 },
+      { name: 'b.jpg', data: Buffer.alloc(16, 2), method: 0 },
+    ]);
+    // Claim a 40-byte extra field in the first local header, so its data would start in b.jpg.
+    zip.writeUInt16LE(40, 28);
+    const entries = await readTakeoutZipDirectory(sourceOf(zip));
+
+    await expect(takeoutZipDataOffset(sourceOf(zip), entries[0])).rejects.toThrow(/runs into the entry after it/);
+  });
+});
+
 describe('zipDosDate', () => {
   it('reads an invalid date as the epoch rather than guessing', () => {
     expect(zipDosDate(0, 0)).toEqual(new Date(0));
