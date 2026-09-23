@@ -32,8 +32,9 @@ describe('studio command mirror', () => {
       expect(definition.owner).toMatch(/^FL-\d+$/);
       // Only a command that changes nothing about the project may carry no arguments
       // (`preview.release`, FL-96); every graph change names what it changes.
-      if (definition.mutatesGraph) {
-        expect(Object.keys(definition.payload).length).toBeGreaterThan(0);
+      if (Object.keys(definition.payload).length === 0) {
+        expect(definition.mutatesGraph).toBe(false);
+        expect(['preview.release']).toContain(id);
       }
       if (definition.undoable) {
         expect(definition.mutatesGraph).toBe(true);
