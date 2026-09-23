@@ -1,7 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -318,6 +319,95 @@ describe(AlbumService.name, () => {
       await expect(
         ctx.database.selectFrom('album_user').selectAll().where('albumId', '=', album.id).execute(),
       ).resolves.toEqual([]);
+    });
+  });
+
+  describe('Locked media in albums (FL-32)', () => {
+    const elevated = (userId: string) =>
+      factory.auth({ user: { id: userId }, session: { id: factory.uuid(), hasElevatedPermission: true } });
+    const ordinary = (userId: string) => factory.auth({ user: { id: userId } });
+
+    it('lets only an elevated owner add Locked media, then shows it only to that owner while unlocked', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      await expect(sut.addAssets(ordinary(owner.id), album.id, { ids: [locked.id] })).resolves.toEqual([
+        { id: locked.id, success: false, error: BulkIdErrorReason.NO_PERMISSION },
+      ]);
+      await expect(sut.addAssets(elevated(owner.id), album.id, { ids: [locked.id] })).resolves.toEqual([
+        { id: locked.id, success: true },
+      ]);
+
+      await expect(sut.get(elevated(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 2, albumThumbnailAssetId: plain.id }),
+      );
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+      // another member never sees it, whatever their own session
+      await expect(sut.get(elevated(member.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+
+      // album membership grants no access to the Locked item either
+      const access = ctx.get(AccessRepository);
+      await expect(access.asset.checkAlbumAccess(member.id, new Set([plain.id, locked.id]))).resolves.toEqual(
+        new Set([plain.id]),
+      );
+    });
+
+    it('never uses Locked media as the album cover and repairs a Locked cover on read', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [locked.id]);
+
+      await expect(sut.get(elevated(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: null }),
+      );
+
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      await sut.addAssets(elevated(owner.id), album.id, { ids: [plain.id] });
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ assetCount: 1, albumThumbnailAssetId: plain.id }),
+      );
+
+      await expect(
+        sut.update(elevated(owner.id), album.id, { albumThumbnailAssetId: locked.id }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await ctx.database
+        .updateTable('album')
+        .set({ albumThumbnailAssetId: locked.id })
+        .where('id', '=', album.id)
+        .execute();
+      await expect(sut.get(ordinary(owner.id), album.id)).resolves.toEqual(
+        expect.objectContaining({ albumThumbnailAssetId: plain.id }),
+      );
+    });
+
+    it('shows Locked map markers only to the elevated owner', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      await ctx.newExif({ assetId: plain.id, latitude: 1, longitude: 1 });
+      await ctx.newExif({ assetId: locked.id, latitude: 2, longitude: 2 });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id, locked.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      await expect(sut.getMapMarkers(elevated(owner.id), album.id).then(ids)).resolves.toEqual(
+        [plain.id, locked.id].sort(),
+      );
+      await expect(sut.getMapMarkers(ordinary(owner.id), album.id).then(ids)).resolves.toEqual([plain.id]);
+      await expect(sut.getMapMarkers(elevated(member.id), album.id).then(ids)).resolves.toEqual([plain.id]);
     });
   });
 });
