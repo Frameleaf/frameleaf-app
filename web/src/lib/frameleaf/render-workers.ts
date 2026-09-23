@@ -195,9 +195,9 @@ export const auditEventKey: Readonly<Record<RenderWorkerAuditEvent, Translations
 
 /** Events that mean something was turned away or stopped; the audit list marks them. */
 export const auditEventIsRefusal = (event: RenderWorkerAuditEvent): boolean =>
-  event === RenderWorkerAuditEvent.Refused ||
-  event === RenderWorkerAuditEvent.ClaimRefused ||
-  event === RenderWorkerAuditEvent.LimitExceeded;
+  [RenderWorkerAuditEvent.Refused, RenderWorkerAuditEvent.ClaimRefused, RenderWorkerAuditEvent.LimitExceeded].includes(
+    event,
+  );
 
 /**
  * Every stable refusal code the server writes, as a sentence an administrator can act on. The

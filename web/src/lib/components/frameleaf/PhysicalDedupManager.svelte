@@ -144,9 +144,7 @@
    * Decisions stay open while no copy is selected, so leaving every group out can be undone; they
    * only lock while a preview is prepared or a plan is being or has been applied.
    */
-  const decisionsLocked = $derived(
-    applyBlocked === 'running' || applyBlocked === 'applying' || applyBlocked === 'applied',
-  );
+  const decisionsLocked = $derived(['running', 'applying', 'applied'].includes(applyBlocked ?? ''));
   const reviewed = $derived(reviewMatches(review, plan, excluded));
   const canConfirm = $derived(
     !!plan && reviewed && !stale && !applyBlocked && !busy && matchesConfirmation(plan, confirmation),

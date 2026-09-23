@@ -203,7 +203,7 @@ export const studioHostHeadingKey = (state: StudioHostState): string | null => {
 
 /** Retrying is only useful where the condition can change without a reload. */
 export const studioHostCanRetry = (state: StudioHostState): boolean =>
-  state.phase === 'offline' || state.phase === 'error' || state.phase === 'unavailable';
+  ['offline', 'error', 'unavailable'].includes(state.phase);
 
 /** The navigation guard blocks only while a running engine holds unsaved work. */
 export const studioHostBlocksNavigation = (state: StudioHostState): boolean => state.dirty && state.mounted;

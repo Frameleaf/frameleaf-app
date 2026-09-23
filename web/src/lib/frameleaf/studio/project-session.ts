@@ -547,7 +547,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     if (!draft || disposed) {
       return;
     }
-    if (state.status === 'conflict' || state.status === 'lease-lost' || state.status === 'forbidden') {
+    if (['conflict', 'lease-lost', 'forbidden'].includes(state.status)) {
       // These are the person's to resolve; autosave must not keep knocking.
       return;
     }

@@ -284,7 +284,7 @@ export const applyBlockedReason = ({
  * settings, so a preview prepared against an account chosen on the page can still be reviewed.
  */
 export const blocksReview = (reason: DedupApplyBlockedReason | null) =>
-  reason === 'running' || reason === 'applying' || reason === 'applied' || reason === 'no-shares';
+  ['running', 'applying', 'applied', 'no-shares'].includes(reason ?? '');
 
 export const formatBytes = (value: number, locale?: string) => {
   const format = (amount: number, digits: number) =>

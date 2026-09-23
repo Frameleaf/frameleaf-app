@@ -149,9 +149,7 @@
   let historyOpen = $state(false);
 
   const hasSavedProject = $derived(session !== null && project.id !== STUDIO_DRAFT_PROJECT_ID);
-  const showBanner = $derived(
-    saveStatus === 'conflict' || saveStatus === 'lease-lost' || saveStatus === 'offline' || saveStatus === 'error',
-  );
+  const showBanner = $derived(['conflict', 'lease-lost', 'offline', 'error'].includes(saveStatus));
 
   /**
    * Held outside `$state`: the engine instance is not reactive data and must never be
@@ -320,7 +318,7 @@
    * HDR material is not the colour authority and must never be mistaken for one.
    */
   const previewNoticePhase = $derived(
-    preview.phase === 'rendering' || preview.phase === 'stale' || preview.phase === 'unavailable'
+    ['rendering', 'stale', 'unavailable'].includes(preview.phase)
       ? preview.phase
       : preview.phase === 'ready' && preview.frame?.toneMapped
         ? ('tone-mapped' as const)
