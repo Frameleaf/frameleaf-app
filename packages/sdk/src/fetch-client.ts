@@ -2687,6 +2687,31 @@ export type QueuesResponseLegacyDto = {
     videoDuplicateDetection: QueueResponseLegacyDto;
     workflow: QueueResponseLegacyDto;
 };
+export type QueueRunDto = {
+    /** Jobs running now */
+    active: number;
+    /** Whether this queue can be paused; background tasks cannot */
+    canPause: boolean;
+    /** Whether the queue is paused */
+    isPaused: boolean;
+    name: QueueName;
+    /** Jobs finished, completed or failed, since this run started */
+    processed: number;
+    /** When this run was first seen with work */
+    startedAt: string | null;
+    /** processed + active + waiting */
+    total: number;
+    /** Jobs waiting to start, including those held by a paused queue */
+    waiting: number;
+};
+export type RunningJobsResponseDto = {
+    /** Whether the viewer may see and pause the server job queues */
+    canManageQueues: boolean;
+    memoryExports: MemoryExportResponseDto[];
+    operations: MediaOperationDto[];
+    /** Server job queues with work; always empty for non-administrators */
+    queues: QueueRunDto[];
+};
 export type JobCreateDto = {
     name: ManualJobName;
 };
@@ -2937,6 +2962,10 @@ export type MediaOperationDto = {
     /** What the person sees in Activity */
     label: string;
     maxAttempts: number;
+    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
+    pausable: boolean;
+    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
+    pauseRequestedAt: string | null;
     processedUnits: string;
     /** Percent complete, from counted work */
     progress: number;
@@ -3307,6 +3336,8 @@ export type RenderWorkerHeartbeatResponseDto = {
     cancelRequested: boolean;
     leaseExtended: boolean;
     leaseMs: number;
+    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
+    pauseRequested: boolean;
     /** Set when a limit stopped the operation */
     refusal: (RenderWorkerRefusalReason) | null;
 };
@@ -8680,6 +8711,17 @@ export function getQueuesLegacy(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get running jobs
+ */
+export function getRunningJobs(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RunningJobsResponseDto;
+    }>("/jobs/running", {
+        ...opts
+    }));
+}
+/**
  * Create a manual job
  */
 export function createJob({ jobCreateDto }: {
@@ -9332,6 +9374,34 @@ export function cancelMediaOperation({ id }: {
         status: 200;
         data: MediaOperationDto;
     }>(`/media-operations/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Pause a media operation
+ */
+export function pauseMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationDto;
+    }>(`/media-operations/${encodeURIComponent(id)}/pause`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Resume a media operation
+ */
+export function resumeMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationDto;
+    }>(`/media-operations/${encodeURIComponent(id)}/resume`, {
         ...opts,
         method: "POST"
     }));
@@ -13546,7 +13616,8 @@ export enum MediaOperationStatus {
     Completed = "completed",
     Cancelling = "cancelling",
     Cancelled = "cancelled",
-    Failed = "failed"
+    Failed = "failed",
+    Paused = "paused"
 }
 export enum MediaOperationDestination {
     Local = "local",
