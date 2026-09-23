@@ -693,6 +693,22 @@ describe(LibraryService.name, () => {
     });
   });
 
+  it.each(['create', 'update'] as const)('rejects traversal before normalizing %s import paths', async (method) => {
+    const library = factory.library();
+    mocks.library.get.mockResolvedValue(library);
+    mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+    mocks.storage.checkFileExists.mockResolvedValue(true);
+    const importPaths = ['/mnt/archive/../private'];
+    const request =
+      method === 'create'
+        ? sut.create({ ownerId: library.ownerId, importPaths })
+        : sut.update(library.id, { importPaths });
+    await expect(request).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.library.create).not.toHaveBeenCalled();
+    expect(mocks.library.update).not.toHaveBeenCalled();
+    expect(mocks.storage.stat).not.toHaveBeenCalled();
+  });
+
   describe('two-stage removal (FL-78)', () => {
     it('reviews the consequences without changing anything', async () => {
       const library = factory.library({ name: 'Archive' });
@@ -726,7 +742,7 @@ describe(LibraryService.name, () => {
     it('removes the library when the name and review still match', async () => {
       const library = factory.library({ name: 'Archive' });
       mocks.library.get.mockResolvedValue(library);
-      mocks.library.getRemovalCounts.mockResolvedValue(removalCounts({ photos: 2, all: 2 }));
+      mocks.library.getRemovalCounts.mockResolvedValue(removalCounts({ photos: 2, all: 9 }));
       const { reviewToken } = await sut.getRemovalReview(library.id);
 
       await sut.remove(authStub.admin, library.id, { reviewToken, confirmName: 'Archive' });

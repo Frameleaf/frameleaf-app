@@ -264,8 +264,8 @@ export class LibraryService extends BaseService {
       throw new BadRequestException('Choose an active account to own the library');
     }
 
+    await this.requireValidImportPaths(dto.importPaths ?? []);
     const importPaths = (dto.importPaths ?? []).map((importPath) => normalizeImportPath(importPath));
-    await this.requireValidImportPaths(importPaths);
 
     const exclusionPatterns = dto.exclusionPatterns ?? [
       '**/@eaDir/**',
@@ -370,15 +370,15 @@ export class LibraryService extends BaseService {
   async update(id: string, dto: UpdateLibraryDto, auth?: AuthDto): Promise<LibraryResponseDto> {
     const existing = await this.findOrFail(id);
     // The owner is fixed once a library exists: the update DTO has no owner, and none is ever read.
+    if (dto.importPaths) {
+      await this.requireValidImportPaths(dto.importPaths, id);
+    }
     const update: UpdateLibraryDto = {
       name: dto.name,
       importPaths: dto.importPaths?.map((importPath) => normalizeImportPath(importPath)),
       exclusionPatterns: dto.exclusionPatterns,
     };
 
-    if (update.importPaths) {
-      await this.requireValidImportPaths(update.importPaths, id);
-    }
     if (update.exclusionPatterns) {
       this.requireValidExclusionPatterns(update.exclusionPatterns);
     }
@@ -439,7 +439,7 @@ export class LibraryService extends BaseService {
       throw new ConflictException('The library changed after it was reviewed. Review the removal again.');
     }
 
-    await this.delete(id, auth, counts.all);
+    await this.delete(id, auth, counts.photos + counts.videos);
   }
 
   private removalToken(
@@ -517,7 +517,8 @@ export class LibraryService extends BaseService {
     await this.notifyWatchers(id);
     await this.jobRepository.queue({ name: JobName.LibraryDelete, data: { id } });
 
-    const count = itemCount ?? (await this.libraryRepository.getRemovalCounts(id)).all;
+    const counts = itemCount === undefined ? await this.libraryRepository.getRemovalCounts(id) : undefined;
+    const count = itemCount ?? counts!.photos + counts!.videos;
     await this.recordAdminEvents([
       { ...libraryEvent(auth, library, AdminAuditAction.LibraryDeleted), detail: String(count) },
     ]);

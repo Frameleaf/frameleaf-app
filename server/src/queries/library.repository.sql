@@ -68,6 +68,14 @@ from
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "library"."id" = $6
 group by
   "library"."id"
@@ -128,6 +136,14 @@ select
           LEFT JOIN "asset_exif" AS "scoped_exif" ON "scoped_exif"."assetId" = "scoped"."id"
         WHERE
           "scoped"."deletedAt" IS NULL
+          AND not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "scoped"."id"
+          )
           AND "scoped"."libraryId" IS NULL
           AND "scoped"."ownerId" = "user"."id"
       ) AS "distinct_originals"
@@ -137,6 +153,14 @@ from
   left join "asset" on "asset"."ownerId" = "user"."id"
   and "asset"."libraryId" is null
   and "asset"."deletedAt" is null
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   left join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
 where
   "user"."deletedAt" is null
