@@ -456,8 +456,10 @@ export type AdminConfigSmtpTransportDto = {
     host: string;
     /** Whether to ignore SSL certificate errors */
     ignoreCert: boolean;
-    /** SMTP password */
+    /** SMTP password (write-only; empty preserves the existing password) */
     password: string;
+    /** Read-only indicator that an SMTP password is stored. Set by the server; ignored on write. */
+    passwordConfigured?: boolean;
     /** SMTP server port */
     port: number;
     /** Whether to use secure connection (TLS/SSL) */
@@ -490,8 +492,10 @@ export type AdminConfigOAuthDto = {
     buttonText: string;
     /** Client ID */
     clientId: string;
-    /** Client secret */
+    /** Client secret (write-only; empty preserves the existing secret) */
     clientSecret: string;
+    /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
+    clientSecretConfigured?: boolean;
     /** Default storage quota */
     defaultStorageQuota: number | null;
     /** Enabled */
@@ -1164,6 +1168,15 @@ export type AssetStatsResponseDto = {
 export type AlbumUserResponseDto = {
     role: AlbumUserRole;
     user: UserResponseDto;
+};
+export type ConfigCredentialResponseDto = {
+    /** Whether a value is stored. The value itself is never returned */
+    configured: boolean;
+    name: ConfigCredential;
+};
+export type ConfigCredentialUpdateDto = {
+    /** The new secret. Stored as sent and never returned */
+    value: string;
 };
 export type ContributorCountResponseDto = {
     /** Number of assets contributed */
@@ -6646,6 +6659,47 @@ export function updateAdminConfig({ adminConfigDto }: {
         ...opts,
         method: "PUT",
         body: adminConfigDto
+    })));
+}
+/**
+ * List the server credentials
+ */
+export function getConfigCredentials(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto[];
+    }>("/admin/config/credentials", {
+        ...opts
+    }));
+}
+/**
+ * Clear a server credential
+ */
+export function deleteConfigCredential({ name }: {
+    name: ConfigCredential;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto;
+    }>(`/admin/config/credentials/${encodeURIComponent(name)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Replace a server credential
+ */
+export function updateConfigCredential({ name, configCredentialUpdateDto }: {
+    name: ConfigCredential;
+    configCredentialUpdateDto: ConfigCredentialUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto;
+    }>(`/admin/config/credentials/${encodeURIComponent(name)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: configCredentialUpdateDto
     })));
 }
 /**
@@ -13202,6 +13256,12 @@ export enum TranscodePolicy {
 export enum Colorspace {
     Srgb = "srgb",
     P3 = "p3"
+}
+export enum ConfigCredential {
+    SmtpPassword = "smtp-password",
+    OauthClientSecret = "oauth-client-secret",
+    RunpodApiKey = "runpod-api-key",
+    HuggingfaceToken = "huggingface-token"
 }
 export enum ImageFormat {
     Jpeg = "jpeg",
