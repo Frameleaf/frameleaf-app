@@ -1,4 +1,4 @@
-import { LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { LoginResponseDto, getAlbumInfo, getAssetInfo, getAssetStatistics } from '@immich/sdk';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { app, asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
@@ -234,6 +234,168 @@ describe('/trash', () => {
       expect(after.isTrashed).toBe(true);
 
       utils.removeImageFile(`${testAssetDir}/temp/offline/offline.png`);
+    });
+  });
+
+  describe('reviewed trash (FL-47)', () => {
+    const bearer = () => `Bearer ${admin.accessToken}`;
+
+    const review = (body: object) => request(app).post('/trash/review').set('Authorization', bearer()).send(body);
+    const apply = (body: object) => request(app).post('/trash/apply').set('Authorization', bearer()).send(body);
+    const lock = (ids: string[]) =>
+      request(app).post('/assets/lock').set('Authorization', bearer()).send({ ids }).expect(204);
+
+    /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
+    const emptyVisibleTrash = () => request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
+
+    const trashed = async () => {
+      const { id } = await utils.createAsset(admin.accessToken);
+      await utils.deleteAssets(admin.accessToken, [id]);
+      return id;
+    };
+
+    it('should permanently delete exactly the reviewed items', async () => {
+      await emptyVisibleTrash();
+      const first = await trashed();
+      const second = await trashed();
+
+      const reviewed = await review({ action: 'empty' });
+      expect(reviewed.status).toBe(200);
+      expect(reviewed.body).toMatchObject({ action: 'empty', count: 2, retainedOriginals: 0 });
+
+      const { status, body } = await apply({ action: 'empty', token: reviewed.body.token });
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: 2 });
+
+      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: first });
+      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: second });
+    });
+
+    it('should refuse to empty the trash when an item arrived after the review', async () => {
+      await emptyVisibleTrash();
+      const reviewedId = await trashed();
+
+      const reviewed = await review({ action: 'empty' });
+      const lateId = await trashed();
+
+      const { status } = await apply({ action: 'empty', token: reviewed.body.token });
+      expect(status).toBe(409);
+
+      await expect(utils.getAssetInfo(admin.accessToken, reviewedId)).resolves.toMatchObject({ isTrashed: true });
+      await expect(utils.getAssetInfo(admin.accessToken, lateId)).resolves.toMatchObject({ isTrashed: true });
+    });
+
+    it('should refuse when an item was locked between review and apply', async () => {
+      await emptyVisibleTrash();
+      const open = await trashed();
+      const laterLocked = await trashed();
+
+      const reviewed = await review({ action: 'delete', ids: [open, laterLocked] });
+      expect(reviewed.body.count).toBe(2);
+
+      await lock([laterLocked]);
+
+      // the Locked item is no longer this session's to change, so nothing is deleted
+      const { status } = await apply({ action: 'delete', ids: [open, laterLocked], token: reviewed.body.token });
+      expect(status).toBe(400);
+      await expect(utils.getAssetInfo(admin.accessToken, open)).resolves.toMatchObject({ isTrashed: true });
+    });
+
+    it('should keep Locked items out of an ordinary session and out of empty', async () => {
+      await emptyVisibleTrash();
+      const open = await trashed();
+      const hidden = await trashed();
+      await lock([hidden]);
+
+      // missing external-library originals from the tests above stay listed; nothing here changes them
+      const summary = await request(app).get('/trash/summary').set('Authorization', bearer());
+      expect(summary.status).toBe(200);
+      expect(summary.body.count - summary.body.offline).toBe(1);
+
+      const items = await request(app).get('/trash/items').set('Authorization', bearer());
+      expect(items.status).toBe(200);
+      const listed = items.body.items.filter((item: { isOffline: boolean }) => !item.isOffline);
+      expect(listed.map(({ id }: { id: string }) => id)).toEqual([open]);
+
+      const reviewed = await review({ action: 'empty' });
+      expect(reviewed.body.count).toBe(1);
+      const emptied = await apply({ action: 'empty', token: reviewed.body.token });
+      expect(emptied.status).toBe(200);
+
+      const restored = await request(app)
+        .post('/trash/restore/assets')
+        .set('Authorization', bearer())
+        .send({ ids: [hidden] });
+      expect(restored.status).toBe(400);
+    });
+
+    it('should not report a stale restore', async () => {
+      const { id } = await utils.createAsset(admin.accessToken);
+
+      const { status, body } = await request(app)
+        .post('/trash/restore/assets')
+        .set('Authorization', bearer())
+        .send({ ids: [id] });
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: 0 });
+    });
+
+    it('should refuse to delete an item restored after the review', async () => {
+      const id = await trashed();
+      const reviewed = await review({ action: 'delete', ids: [id] });
+
+      await request(app).post('/trash/restore/assets').set('Authorization', bearer()).send({ ids: [id] }).expect(200);
+
+      const { status } = await apply({ action: 'delete', ids: [id], token: reviewed.body.token });
+      expect(status).toBe(409);
+      await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: false });
+    });
+
+    it('should keep albums and favourites when restoring', async () => {
+      const { id } = await utils.createAsset(admin.accessToken, { isFavorite: true });
+      const album = await utils.createAlbum(admin.accessToken, { albumName: 'Kept', assetIds: [id] });
+      await utils.deleteAssets(admin.accessToken, [id]);
+
+      const reviewed = await review({ action: 'restore', ids: [id] });
+      const { status, body } = await apply({ action: 'restore', ids: [id], token: reviewed.body.token });
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: 1 });
+
+      await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({
+        isTrashed: false,
+        isFavorite: true,
+      });
+      const { assets } = await getAlbumInfo({ id: album.id }, { headers: asBearerAuth(admin.accessToken) });
+      expect(assets.map((asset) => asset.id)).toContain(id);
+    });
+
+    it('should move reviewed library items to the trash once', async () => {
+      const { id } = await utils.createAsset(admin.accessToken);
+
+      const reviewed = await review({ action: 'trash', ids: [id] });
+      expect(reviewed.status).toBe(200);
+      const moved = await apply({ action: 'trash', ids: [id], token: reviewed.body.token });
+      expect(moved.status).toBe(200);
+      await expect(utils.getAssetInfo(admin.accessToken, id)).resolves.toMatchObject({ isTrashed: true });
+
+      const again = await apply({ action: 'trash', ids: [id], token: reviewed.body.token });
+      expect(again.status).toBe(409);
+    });
+
+    it("should not review another account's items", async () => {
+      const other = await utils.userSetup(admin.accessToken, {
+        email: 'trash-other@immich.cloud',
+        name: 'Other',
+        password: 'password',
+      });
+      const { id } = await utils.createAsset(other.accessToken);
+      await utils.deleteAssets(other.accessToken, [id]);
+
+      const { status } = await review({ action: 'delete', ids: [id] });
+      expect(status).toBe(400);
+
+      const items = await request(app).get('/trash/items').set('Authorization', bearer());
+      expect(items.body.items.map((item: { id: string }) => item.id)).not.toContain(id);
     });
   });
 });

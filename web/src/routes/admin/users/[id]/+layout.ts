@@ -1,4 +1,10 @@
-import { getUserPreferencesAdmin, getUserSessionsAdmin, getUserStatisticsAdmin, searchUsersAdmin } from '@immich/sdk';
+import {
+  getAllLibraries,
+  getUserPreferencesAdmin,
+  getUserSessionsAdmin,
+  getUserStatisticsAdmin,
+  searchUsersAdmin,
+} from '@immich/sdk';
 import { redirect } from '@sveltejs/kit';
 import { UUID_REGEX } from '$lib/constants';
 import { Route } from '$lib/route';
@@ -19,10 +25,13 @@ export const load = (async ({ params, url }) => {
     redirect(307, Route.users());
   }
 
-  const [userPreferences, userStatistics, userSessions] = await Promise.all([
+  // `libraries` is every library in the system, the same call the library-management list page
+  // makes; the account detail's Libraries tab (FL-76) filters it to this account's own.
+  const [userPreferences, userStatistics, userSessions, libraries] = await Promise.all([
     getUserPreferencesAdmin({ id: user.id }),
     getUserStatisticsAdmin({ id: user.id }),
     getUserSessionsAdmin({ id: user.id }),
+    getAllLibraries(),
   ]);
 
   const $t = await getFormatter();
@@ -32,6 +41,7 @@ export const load = (async ({ params, url }) => {
     userPreferences,
     userStatistics,
     userSessions,
+    libraries,
     meta: {
       title: $t('admin.user_details'),
     },

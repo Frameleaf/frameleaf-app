@@ -24,6 +24,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -175,6 +176,7 @@ export class BulkOperationService {
     private trash: TrashService,
     private stacks: StackService,
     private enrichment: ImageEnrichmentService,
+    private livePhoto: LivePhotoService,
     private duplicateDecisions: DuplicateDecisionService,
   ) {
     this.logger.setContext(BulkOperationService.name);
@@ -623,7 +625,7 @@ export class BulkOperationService {
     // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
     // locked stack or live photo) is only changed by a job submitted from an unlocked session.
     if (!snapshot.elevated && allowed.length > 0) {
-      const locked = await this.operations.getLockedAssetIds(allowed);
+      const locked = await this.operations.getLockedIds(allowed);
       if (locked.size > 0) {
         for (const id of allowed) {
           if (locked.has(id)) {
@@ -738,6 +740,14 @@ export class BulkOperationService {
         } catch (error) {
           outcomes.push(...allowed.map((id) => refused(id, error)));
         }
+        break;
+      }
+
+      case MediaOperationBulkAction.RelinkLivePhoto: {
+        // `allowed` is the frozen set of still ids; the payload carries each still's video partner.
+        // Submit validated this pairing, so a still with no partner here means a corrupt snapshot.
+        const videoIdByPhotoId = new Map((payload.pairs ?? []).map((pair) => [pair.photoId, pair.videoId]));
+        outcomes.push(...(await this.relinkLivePhotos(auth, allowed, videoIdByPhotoId)));
         break;
       }
 
@@ -880,6 +890,49 @@ export class BulkOperationService {
       );
     }
 
+    return outcomes;
+  }
+
+  /**
+   * Relink one still + video pair at a time (FL-70). `LivePhotoService.relinkOne` re-validates
+   * ownership, type and current link state itself, the same as the direct `POST /live-photo/relink`
+   * endpoint, so a pair that changed between candidate review and this batch (already linked,
+   * deleted, or claimed by another pair earlier in the same job) is refused here rather than
+   * silently reapplied. A refusal is business rule, not a transient error, so it is reported
+   * skipped: the automatic retry pass would only reach the same answer.
+   */
+  private async relinkLivePhotos(
+    auth: AuthDto,
+    photoIds: readonly string[],
+    videoIdByPhotoId: ReadonlyMap<string, string>,
+  ): Promise<Outcome[]> {
+    const outcomes: Outcome[] = [];
+    for (const photoId of photoIds) {
+      const videoId = videoIdByPhotoId.get(photoId);
+      if (!videoId) {
+        outcomes.push({
+          id: photoId,
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_not_found',
+        });
+        continue;
+      }
+      try {
+        const result = await this.livePhoto.relinkOne(auth, photoId, videoId);
+        outcomes.push(
+          result.success
+            ? ok(photoId)
+            : {
+                id: photoId,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: 'frameleaf_bulk_reason_live_photo_relink_rejected',
+                message: result.error,
+              },
+        );
+      } catch (error) {
+        outcomes.push(refused(photoId, error));
+      }
+    }
     return outcomes;
   }
 
