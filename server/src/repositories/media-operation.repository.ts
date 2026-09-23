@@ -278,7 +278,7 @@ export class MediaOperationRepository {
    * Which of these assets are locked right now (FL-34). The bulk worker skips them for a job that
    * was submitted without the PIN: something may have locked them after the job was queued.
    */
-  async getLockedAssetIds(assetIds: string[]): Promise<Set<string>> {
+  async getLockedIds(assetIds: string[]): Promise<Set<string>> {
     if (assetIds.length === 0) {
       return new Set();
     }

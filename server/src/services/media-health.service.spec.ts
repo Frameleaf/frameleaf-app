@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto.js';
 import {
   AssetType,
+  AssetVisibility,
   ChecksumAlgorithm,
   JobName,
   JobStatus,
@@ -135,6 +136,46 @@ describe(MediaHealthService.name, () => {
     expect(mediaHealthRepository.count).toHaveBeenCalledWith(expect.objectContaining({ privacy }));
     expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith([], auth.user.id, privacy);
     expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1'], auth.user.id, privacy);
+  });
+
+  it("reports the owner's Locked media as locked in an elevated list (FL-34)", async () => {
+    // the stored visibility stays `timeline`; the lock record the repository selects makes it Locked
+    const asset = {
+      ...AssetFactory.create({
+        id: 'asset-1',
+        ownerId: authStub.adminWithElevatedPermission.user.id,
+        originalPath: '/data/upload/admin/locked.jpg',
+        originalFileName: 'locked.jpg',
+        visibility: AssetVisibility.Timeline,
+      }),
+      isLocked: true,
+    };
+    vi.mocked(mediaHealthRepository.list).mockResolvedValue([
+      {
+        id: 'health-1',
+        assetId: asset.id,
+        category: MediaHealthCategory.Missing,
+        status: MediaHealthStatus.Missing,
+        severity: MediaHealthSeverity.Warning,
+        originalPath: asset.originalPath,
+        originalFileName: asset.originalFileName,
+        evidence: {},
+        resolution: {},
+        checkedAt: new Date('2026-09-04T00:00:00Z'),
+        dismissedAt: null,
+        resolvedAt: null,
+      },
+    ] as never);
+    vi.mocked(mediaHealthRepository.getLatestRun).mockResolvedValue(undefined);
+    vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+    vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
+    vi.mocked(mocks.user.get).mockResolvedValue({ id: asset.ownerId, storageLabel: null } as never);
+
+    const result = await sut.list(authStub.adminWithElevatedPermission, { size: 10 });
+
+    expect(result.buckets[0].items[0].asset).toEqual(
+      expect.objectContaining({ id: asset.id, visibility: AssetVisibility.Locked }),
+    );
   });
 
   it('queues candidate lookup only for the authenticated user', async () => {

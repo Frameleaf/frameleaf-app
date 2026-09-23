@@ -3224,6 +3224,12 @@ export type StudioPreviewRequestDto = {
     viewportHeight: number;
     viewportWidth: number;
 };
+export type MediaOperationLivePhotoPairDto = {
+    /** Still image asset ID */
+    photoId: string;
+    /** Motion video asset ID */
+    videoId: string;
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
@@ -3233,6 +3239,7 @@ export type MediaOperationBulkPayloadDto = {
     longitude?: number;
     /** Relative shift in minutes, for `dateMode: shift` */
     minutes?: number;
+    pairs?: MediaOperationLivePhotoPairDto[];
     primaryId?: string;
     stackIds?: string[];
     tagIds?: string[];
@@ -5943,6 +5950,65 @@ export type TrashResponseDto = {
     /** Number of items in trash */
     count: number;
 };
+export type TrashApplyDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+    /** The token returned by the review */
+    token: string;
+};
+export type TrashItemResponseDto = {
+    /** Size of the original, in bytes, when known */
+    fileSizeInByte: number | null;
+    /** Asset ID */
+    id: string;
+    /** Locked media; only listed for its owner in an unlocked session */
+    isLocked: boolean;
+    /** The library scan found this external original missing and manages it; trash actions do not change it */
+    isOffline: boolean;
+    /** Original file name */
+    originalFileName: string;
+    /** When the item was moved to the trash */
+    trashedAt: string | null;
+    "type": AssetTypeEnum;
+};
+export type TrashItemsResponseDto = {
+    items: TrashItemResponseDto[];
+    /** The next page number, or null on the last page */
+    nextPage: string | null;
+    /** Items matching the filters */
+    total: number;
+};
+export type TrashReviewDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+};
+export type TrashReviewResponseDto = {
+    action: TrashReviewAction;
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items the action will change */
+    count: number;
+    /** The first file names, alphabetically */
+    names: string[];
+    /** Size of those shared originals, in bytes */
+    retainedBytes: number;
+    /** Items whose original another item still uses; deleting them does not free that file */
+    retainedOriginals: number;
+    /** Fingerprint of the reviewed set; apply refuses when the set has changed */
+    token: string;
+};
+export type TrashSummaryResponseDto = {
+    /** Combined size of their originals, in bytes. Not the space deleting them frees. */
+    bytes: number;
+    /** Items in your trash this session can see */
+    count: number;
+    /** Of those, external-library originals that went missing; the library scan manages them */
+    offline: number;
+    /** Items already permanently deleted whose files are still being removed from storage */
+    pendingDeletion: number;
+};
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
     /** User email */
@@ -7222,6 +7288,18 @@ export function getUserSessionsAdmin({ id }: {
         data: SessionResponseDto[];
     }>(`/admin/users/${encodeURIComponent(id)}/sessions`, {
         ...opts
+    }));
+}
+/**
+ * Delete a user session
+ */
+export function deleteUserSessionAdmin({ id, sessionId }: {
+    id: string;
+    sessionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**
@@ -12798,6 +12876,21 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     }));
 }
 /**
+ * Apply a reviewed trash change
+ */
+export function applyTrashReview({ trashApplyDto }: {
+    trashApplyDto: TrashApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashResponseDto;
+    }>("/trash/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashApplyDto
+    })));
+}
+/**
  * Empty trash
  */
 export function emptyTrash(opts?: Oazapfts.RequestOpts) {
@@ -12807,6 +12900,29 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
     }>("/trash/empty", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List trash items
+ */
+export function getTrashItems({ page, query, size, sort, $type }: {
+    page?: number;
+    query?: string;
+    size?: number;
+    sort?: TrashItemSort;
+    $type?: AssetTypeEnum;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashItemsResponseDto;
+    }>(`/trash/items${QS.query(QS.explode({
+        page,
+        query,
+        size,
+        sort,
+        "type": $type
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -12835,6 +12951,32 @@ export function restoreAssets({ bulkIdsDto }: {
         method: "POST",
         body: bulkIdsDto
     })));
+}
+/**
+ * Review a trash change
+ */
+export function reviewTrash({ trashReviewDto }: {
+    trashReviewDto: TrashReviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashReviewResponseDto;
+    }>("/trash/review", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashReviewDto
+    })));
+}
+/**
+ * Get trash summary
+ */
+export function getTrashSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashSummaryResponseDto;
+    }>("/trash/summary", {
+        ...opts
+    }));
 }
 /**
  * Get all users
@@ -13571,6 +13713,7 @@ export enum Permission {
     AdminUserUpdate = "adminUser.update",
     AdminUserDelete = "adminUser.delete",
     AdminSessionRead = "adminSession.read",
+    AdminSessionDelete = "adminSession.delete",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
 export enum AssetFileType {
@@ -13897,7 +14040,8 @@ export enum MediaOperationBulkAction {
     RefreshThumbnails = "refresh-thumbnails",
     RefreshMetadata = "refresh-metadata",
     RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces"
+    RefreshFaces = "refresh-faces",
+    RelinkLivePhoto = "relink-live-photo"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -14042,6 +14186,18 @@ export enum MemoryExportStatus {
     Failed = "failed",
     Cancelling = "cancelling",
     Cancelled = "cancelled"
+}
+export enum TrashReviewAction {
+    Trash = "trash",
+    Restore = "restore",
+    RestoreAll = "restore-all",
+    Delete = "delete",
+    Empty = "empty"
+}
+export enum TrashItemSort {
+    Recent = "recent",
+    Size = "size",
+    Name = "name"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
