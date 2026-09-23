@@ -716,22 +716,4 @@ export class AlbumUserRepository {
       )
       .execute();
   }
-
-  /**
-   * Delete only the replies under a comment. For the upstream activity
-   * endpoint, which deletes the comment itself through its own repository.
-   */
-  async deleteCommentReplies(activityId: string): Promise<void> {
-    await this.db
-      .deleteFrom('activity')
-      .where(
-        'activity.id',
-        'in',
-        this.db
-          .selectFrom('shared_space_comment_thread')
-          .select('shared_space_comment_thread.activityId')
-          .where('shared_space_comment_thread.parentActivityId', '=', activityId),
-      )
-      .execute();
-  }
 }

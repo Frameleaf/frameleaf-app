@@ -1,9 +1,11 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ReactionType } from 'src/dtos/activity.dto.js';
+import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
+import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
-import { getForActivity } from 'test/mappers.js';
+import { getForActivity, getForAlbum } from 'test/mappers.js';
 import { newUuid, newUuids } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -211,13 +213,11 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
-      mocks.albumUser.deleteCommentReplies.mockResolvedValue();
+      mocks.activity.getById.mockResolvedValue(activity);
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
 
-      // FL-55: a shared space comment's replies go with it.
-      expect(mocks.albumUser.deleteCommentReplies).toHaveBeenCalledWith(activity.id);
       expect(mocks.activity.delete).toHaveBeenCalledWith(activity.id);
     });
 
@@ -225,12 +225,46 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkAlbumOwnerAccess.mockResolvedValue(new Set([activity.id]));
-      mocks.albumUser.deleteCommentReplies.mockResolvedValue();
+      mocks.activity.getById.mockResolvedValue(activity);
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
 
       expect(mocks.activity.delete).toHaveBeenCalledWith(activity.id);
+    });
+
+    describe('in a shared space (FL-55)', () => {
+      it('removes a comment together with its replies', async () => {
+        const auth = AuthFactory.create();
+        const space = AlbumFactory.from({ kind: AlbumKind.Space })
+          .albumUser({ userId: auth.user.id, role: AlbumUserRole.Editor })
+          .build();
+        const activity = ActivityFactory.create({ albumId: space.id, userId: auth.user.id, comment: 'x' });
+
+        mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
+        mocks.activity.getById.mockResolvedValue(activity);
+        mocks.album.getById.mockResolvedValue(getForAlbum(space));
+        mocks.albumUser.deleteCommentWithReplies.mockResolvedValue();
+
+        await sut.delete(auth, activity.id);
+
+        expect(mocks.albumUser.deleteCommentWithReplies).toHaveBeenCalledWith(activity.id);
+        expect(mocks.activity.delete).not.toHaveBeenCalled();
+      });
+
+      it('refuses somebody who has left the space, even for their own old comment', async () => {
+        const auth = AuthFactory.create();
+        const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+        const activity = ActivityFactory.create({ albumId: space.id, userId: auth.user.id, comment: 'x' });
+
+        mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
+        mocks.activity.getById.mockResolvedValue(activity);
+        mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+        await expect(sut.delete(auth, activity.id)).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mocks.albumUser.deleteCommentWithReplies).not.toHaveBeenCalled();
+        expect(mocks.activity.delete).not.toHaveBeenCalled();
+      });
     });
   });
 });
