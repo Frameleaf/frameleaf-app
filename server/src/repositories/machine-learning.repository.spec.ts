@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -281,6 +283,126 @@ describe(MachineLearningRepository.name, () => {
       expect(probe.workloads).toEqual([MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment]);
       expect(probe.workloads).not.toContain(MlWorkload.RestorationFaithful);
       expect(probe.workloads).not.toContain(MlWorkload.StudioAi);
+    });
+
+    it('never reuses an authenticated probe for different credentials at the same URL', async () => {
+      const fetch = vi.fn().mockImplementation((url: URL, options: RequestInit) => {
+        if ((options.headers as Record<string, string>).Authorization !== 'Bearer accepted') {
+          return Promise.resolve(new Response('', { status: 401 }));
+        }
+        return Promise.resolve(url.pathname === '/ping' ? new Response('pong') : new Response('', { status: 404 }));
+      });
+      vi.stubGlobal('fetch', fetch);
+      await sut.probe({ url: lanUrl, authToken: 'accepted' }, { maxAgeMs: 10_000 });
+      const rejected = await sut.probe({ url: lanUrl, authToken: 'rejected' }, { maxAgeMs: 10_000 });
+      expect(rejected.reachable).toBe(false);
+      expect(rejected.workloads).toEqual([]);
+    });
+
+    it('does not publish an in-flight probe after configuration changes', async () => {
+      const deferred = Promise.withResolvers<Response>();
+      const fetch = vi
+        .fn()
+        .mockImplementation((url: URL) =>
+          url.pathname === '/ping' ? deferred.promise : Promise.resolve(new Response('', { status: 404 })),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const pending = sut.probe({ url: localUrl });
+      sut.setup({ ...defaults.machineLearning });
+      deferred.resolve(new Response('pong'));
+      const result = await pending;
+      expect(result.reachable).toBe(false);
+      expect(result.workloads).toEqual([]);
+    });
+
+    it('rejects oversized capability reports before admitting any workloads', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation((url: URL) =>
+            Promise.resolve(
+              url.pathname === '/ping'
+                ? new Response('pong')
+                : jsonResponse({ workloads: ['face'], padding: 'x'.repeat(33_000) }),
+            ),
+          ),
+      );
+      const result = await sut.probe({ url: localUrl });
+      expect(result.workloads).toEqual([]);
+      expect(result.error).not.toBeNull();
+    });
+
+    it('treats malformed hardware as unknown and strips injected qualification fields', async () => {
+      const hardware = {
+        providers: [],
+        openvinoDeviceIds: [],
+        torchCudaAvailable: false,
+        cudaDeviceCount: 0,
+        preferredAcceleration: MachineLearningHardwareAcceleration.Auto,
+        authenticatedRenderProof: true,
+      };
+      let invalid = true;
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation((url: URL) =>
+            Promise.resolve(
+              url.pathname === '/ping'
+                ? new Response('pong')
+                : jsonResponse(
+                    url.pathname === '/capabilities'
+                      ? { workloads: ['face'] }
+                      : { ...hardware, cudaDeviceCount: invalid ? -1 : 0 },
+                  ),
+            ),
+          ),
+      );
+      expect((await sut.probe({ url: localUrl })).hardware).toBeNull();
+      expect((await sut.getHardware({ url: localUrl })).cudaDeviceCount).toBe(0);
+      invalid = false;
+      expect((await sut.probe({ url: localUrl })).hardware).not.toHaveProperty('authenticatedRenderProof');
+    });
+
+    it('rejects real HTTP redirects and times out a stalled capability body', async () => {
+      let mode: 'redirect' | 'stalled' = 'redirect';
+      let escaped = false;
+      const server = createServer((request, response) => {
+        if (request.url === '/escape') {
+          escaped = true;
+          response.end('pong');
+        } else if (mode === 'redirect') {
+          response.writeHead(302, { location: '/escape' });
+          response.end();
+        } else if (request.url === '/ping') {
+          response.end('pong');
+        } else {
+          response.writeHead(200);
+          response.write('{');
+        }
+      }).listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Missing fixture port');
+      }
+      const endpoint = { url: `http://127.0.0.1:${address.port}` };
+      sut.setup({
+        ...defaults.machineLearning,
+        availabilityChecks: { enabled: false, timeout: 250, interval: 30_000 },
+      });
+      try {
+        expect((await sut.probe(endpoint)).reachable).toBe(false);
+        expect(escaped).toBe(false);
+        mode = 'stalled';
+        const result = await sut.probe(endpoint);
+        expect(result.workloads).toEqual([]);
+        expect(result.error).not.toBeNull();
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
     });
 
     it('reuses a fresh probe and re-probes once it is stale', async () => {

@@ -5,6 +5,7 @@ import { open, readFile, rm, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
@@ -20,6 +21,7 @@ import {
   RestorationWorkerResult,
   RestorationWorkerResultSchema,
 } from 'src/dtos/restoration-inference.dto.js';
+import { MachineLearningHardwareResponseDto } from 'src/dtos/system-config.dto.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
   LIBRARY_ML_WORKLOADS,
@@ -278,6 +280,12 @@ export type MlEndpointProbe = {
 
 type CapabilitiesResponse = { workloads?: unknown };
 
+const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.extend({
+  providers: z.array(z.string().max(100)).max(32),
+  openvinoDeviceIds: z.array(z.string().max(100)).max(32),
+  cudaDeviceCount: z.int().min(0).max(1024),
+});
+
 const isMlWorkload = (value: unknown): value is MlWorkload =>
   typeof value === 'string' && (Object.values(MlWorkload) as string[]).includes(value);
 
@@ -314,7 +322,7 @@ export class MachineLearningRepository implements RestorationInference {
    * does not wipe it.
    */
   private runPodEndpoint: MlEndpoint | null = null;
-  private probeCache = new Map<string, MlEndpointProbe>();
+  private probeCache = new Map<string, { authToken?: string; probe: MlEndpointProbe }>();
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -373,15 +381,26 @@ export class MachineLearningRepository implements RestorationInference {
    */
   async probe(endpoint: MlEndpoint, { maxAgeMs = 0 }: { maxAgeMs?: number } = {}): Promise<MlEndpointProbe> {
     const cached = this.probeCache.get(endpoint.url);
-    if (cached && maxAgeMs > 0 && Date.now() - cached.probedAt.getTime() < maxAgeMs) {
-      return cached;
+    if (
+      cached &&
+      cached.authToken === endpoint.authToken &&
+      maxAgeMs > 0 &&
+      Date.now() - cached.probe.probedAt.getTime() < maxAgeMs
+    ) {
+      return cached.probe;
     }
 
+    const config = this.config;
+    const runPodEndpoint = this.runPodEndpoint;
+    const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): MlEndpointProbe => {
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      this.probeCache.set(endpoint.url, result);
+      if (this._config !== config || this.runPodEndpoint !== runPodEndpoint) {
+        return { ...result, reachable: false, workloads: [], hardware: null, error: 'Endpoint configuration changed' };
+      }
+      this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, probe: result });
       return result;
     };
     const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -389,8 +408,10 @@ export class MachineLearningRepository implements RestorationInference {
     try {
       const ping = await fetch(new URL('ping', endpoint.url), {
         headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(this.timeout()),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
       });
+      await ping.body?.cancel();
       if (!ping.ok) {
         return finish({ reachable: false, workloads: [], hardware: null, error: `ping returned ${ping.status}` });
       }
@@ -402,14 +423,17 @@ export class MachineLearningRepository implements RestorationInference {
     try {
       const response = await fetch(new URL('capabilities', endpoint.url), {
         headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(this.timeout()),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
       });
       if (response.ok) {
-        const body = (await response.json()) as CapabilitiesResponse;
+        const body = (await this.readDiagnosticJson(response)) as CapabilitiesResponse;
         workloads = Array.isArray(body.workloads) ? body.workloads.filter(isMlWorkload) : [];
       } else if (response.status === 404) {
+        await response.body?.cancel();
         workloads = [...LIBRARY_ML_WORKLOADS];
       } else {
+        await response.body?.cancel();
         return finish({
           reachable: true,
           workloads: [],
@@ -425,16 +449,44 @@ export class MachineLearningRepository implements RestorationInference {
     try {
       const response = await fetch(new URL('hardware', endpoint.url), {
         headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(this.timeout()),
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'error',
       });
       if (response.ok) {
-        hardware = (await response.json()) as MachineLearningHardwareResponse;
+        hardware = diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
+      } else {
+        await response.body?.cancel();
       }
     } catch {
       // Hardware is informational; a worker without the route is still admissible.
     }
 
     return finish({ reachable: true, workloads, hardware, error: null });
+  }
+
+  private async readDiagnosticJson(response: Response): Promise<unknown> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Missing diagnostic response');
+    }
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        size += value.byteLength;
+        if (size > 32 * 1024) {
+          throw new Error('Diagnostic response exceeds 32 KiB');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
 
   private redact(config: MachineLearningRequest): string {
@@ -888,12 +940,14 @@ export class MachineLearningRepository implements RestorationInference {
     try {
       const response = await fetch(new URL('hardware', endpoint.url), {
         headers: this.authHeaders(endpoint),
-        signal: AbortSignal.timeout(this.timeout()),
+        signal: AbortSignal.timeout(Math.min(5000, Math.max(250, this.timeout()))),
+        redirect: 'error',
       });
       if (response.ok) {
-        return response.json();
+        return diagnosticHardwareSchema.parse(await this.readDiagnosticJson(response));
       }
 
+      await response.body?.cancel();
       this.logger.warn(
         `Machine learning hardware request to "${endpoint.url}" failed with status ${response.status}: ${response.statusText}`,
       );
