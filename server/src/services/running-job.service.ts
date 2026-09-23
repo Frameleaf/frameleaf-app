@@ -5,11 +5,9 @@ import { QueueRunDto, RunningJobsResponseDto } from 'src/dtos/running-job.dto.js
 import { MemoryExportStatus, Permission, QueueName } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
-import { mapOperation } from 'src/services/media-operation.service.js';
+import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { isGranted } from 'src/utils/access.js';
-import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 /** The panel shows what is happening now; a longer backlog is on the Activity page. */
 export const RUNNING_OPERATIONS_LIMIT = 50;
@@ -32,7 +30,8 @@ const UNPAUSABLE_QUEUES: readonly QueueName[] = [QueueName.BackgroundTask];
  * server job queue that has work, with its run's progress.
  *
  * Privacy is decided here, not in the client. Operations and exports are read for the signed-in
- * account only. Queue counts are server-wide, so they are read only for an administrator whose
+ * account only, operations through the media operation service so a Locked asset id is withheld
+ * from a session that has not unlocked it exactly as on Activity (FL-34). Queue counts are server-wide, so they are read only for an administrator whose
  * credentials may read queues; anybody else gets an empty list without the queues even being
  * looked at. None of it names an asset.
  */
@@ -41,7 +40,7 @@ export class RunningJobService {
   constructor(
     private logger: LoggingRepository,
     private jobRepository: JobRepository,
-    private mediaOperationRepository: MediaOperationRepository,
+    private mediaOperationService: MediaOperationService,
     private memoryRepository: MemoryRepository,
   ) {
     this.logger.setContext(RunningJobService.name);
@@ -52,13 +51,7 @@ export class RunningJobService {
     const canReadMemoryExports = this.isGranted(auth, Permission.MemoryRead);
 
     const [operations, memoryExports, queues] = await Promise.all([
-      this.mediaOperationRepository.list({
-        ownerId: auth.user.id,
-        statuses: ACTIVE_MEDIA_OPERATION_STATUSES,
-        includeDismissed: false,
-        take: RUNNING_OPERATIONS_LIMIT,
-        skip: 0,
-      }),
+      this.mediaOperationService.listUnfinished(auth, RUNNING_OPERATIONS_LIMIT),
       canReadMemoryExports
         ? this.memoryRepository.searchExports(auth.user.id, { status: RUNNING_MEMORY_EXPORT_STATUSES })
         : Promise.resolve([]),
@@ -66,7 +59,7 @@ export class RunningJobService {
     ]);
 
     return {
-      operations: operations.items.map((operation) => mapOperation(operation)),
+      operations,
       memoryExports: memoryExports.map((run) => mapMemoryExport(run)),
       queues,
       canManageQueues,

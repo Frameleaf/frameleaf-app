@@ -321,6 +321,23 @@ describe(DownloadService.name, () => {
       expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(auth.user.id, { excludeNsfw: true });
     });
 
+    it('should include Locked media in a timeline download only for an elevated session (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.downloadRepository.downloadUserId.mockReturnValue(
+        makeStream([
+          { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
+          { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(auth, { userId: auth.user.id })).resolves.toEqual(downloadResponse);
+
+      expect(mocks.downloadRepository.downloadUserId).toHaveBeenCalledWith(auth.user.id, {
+        lockedOwnerId: auth.user.id,
+      });
+    });
+
     it('should split archives by size', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(

@@ -6,10 +6,12 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
-import { asUuid } from 'src/utils/database.js';
+import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
+import { asUuid, isNotLockedAsset, nsfwAssetIdExists } from 'src/utils/database.js';
+import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
 
 export interface UserListFilter {
   id?: string;
@@ -191,6 +193,86 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /**
+   * Whether the user's profile picture was copied from a photo that is Locked now (FL-53). Such a
+   * picture is never served; `replaceLockedProfileImages` gives the user another one.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async hasLockedProfileImageSource(id: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('user')
+      .select('user.id')
+      .where('user.id', '=', asUuid(id))
+      .where(isLockedAssetId(sql.ref('user.profileImageAssetId')))
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Users whose profile picture was copied from a photo that is Locked now (FL-53). */
+  @GenerateSql()
+  getLockedProfileImageSources() {
+    return this.db
+      .selectFrom('user')
+      .select(['user.id', 'user.profileImagePath', 'user.profileImageAssetId'])
+      .where('user.profileImageAssetId', 'is not', null)
+      .where(isLockedAssetId(sql.ref('user.profileImageAssetId')))
+      .where('user.deletedAt', 'is', null)
+      .execute();
+  }
+
+  /**
+   * The photo a profile picture is copied from in place of one that became Locked (owner decisions 2
+   * and 4, FL-53). A profile picture is seen by everyone on the server, so only a photo of the user's
+   * own that anyone may see: an image on the Timeline, not Locked, trashed or sensitive. Photos marked
+   * as Best Photos first, the highest score first, then the newest. Undefined when there is none.
+   *
+   * The owner's first choice, a face crop of the person the user is, does not apply yet: no account is
+   * linked to a person.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getProfileImageReplacement(userId: string): Promise<{ id: string; path: string } | undefined> {
+    const scores = await getBestPhotoScoreTable(this.db);
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_file', (join) =>
+        join.onRef('asset_file.assetId', '=', 'asset.id').on('asset_file.type', '=', sql.lit(AssetFileType.Preview)),
+      )
+      .select(['asset.id', 'asset_file.path'])
+      .where('asset.ownerId', '=', asUuid(userId))
+      .where('asset.type', '=', sql.lit(AssetType.Image))
+      .where('asset.status', '=', sql.lit(AssetStatus.Active))
+      .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+      .where(isUnlockedAsset())
+      .where('asset.deletedAt', 'is', null)
+      .where(sql<boolean>`not ${nsfwAssetIdExists(sql.ref('asset.id'))}`)
+      .orderBy(bestPhotoRank(scores, sql.ref('asset.id')), 'desc')
+      .orderBy('asset.fileCreatedAt', 'desc')
+      .orderBy('asset_file.isEdited', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Replaces a profile picture copied from the Locked photo `lockedAssetId`, unless the user set
+   * another picture in the meantime. Whether it replaced it.
+   */
+  @GenerateSql({
+    params: [DummyValue.UUID, DummyValue.UUID, { profileImagePath: DummyValue.STRING, profileImageAssetId: null }],
+  })
+  async replaceLockedProfileImage(
+    id: string,
+    lockedAssetId: string,
+    value: { profileImagePath: string; profileImageAssetId: string | null },
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('user')
+      .set({ ...value, profileChangedAt: new Date() })
+      .where('user.id', '=', asUuid(id))
+      .where('user.profileImageAssetId', '=', asUuid(lockedAssetId))
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
   async updateAll(dto: Updateable<UserTable>) {
     await this.db.updateTable('user').set(dto).execute();
   }
@@ -242,6 +324,8 @@ export class UserRepository {
             eb.and([
               eb('asset.type', '=', sql.lit(AssetType.Image)),
               eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+              // an administrator's per-user counts never include Locked media (FL-34)
+              isNotLockedAsset(eb),
             ]),
           )
           .as('photos'),
@@ -251,6 +335,8 @@ export class UserRepository {
             eb.and([
               eb('asset.type', '=', sql.lit(AssetType.Video)),
               eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+              // an administrator's per-user counts never include Locked media (FL-34)
+              isNotLockedAsset(eb),
             ]),
           )
           .as('videos'),

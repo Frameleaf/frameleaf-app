@@ -114,6 +114,26 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('should name the viewer as the Locked owner of the stack read only when elevated (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const ordinary = AuthFactory.create({ id: asset.ownerId });
+      const elevated = AuthFactory.from({ id: asset.ownerId }).session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.get(ordinary, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true } }),
+      );
+
+      await sut.get(elevated, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true, lockedOwnerId: asset.ownerId } }),
+      );
+    });
+
     it("should hide location on a partner's asset when the partner turned location sharing off", async () => {
       const auth = AuthFactory.create();
       const sharer = UserFactory.create();
@@ -310,6 +330,31 @@ describe(AssetService.name, () => {
       await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Archive });
 
       expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.user.getLockedProfileImageSources).not.toHaveBeenCalled();
+    });
+
+    it('should replace a profile picture copied from a photo that became Locked (FL-53)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([
+        { id: 'user-1', profileImagePath: '/profile/user-1/old.webp', profileImageAssetId: asset.id },
+      ]);
+      mocks.user.getProfileImageReplacement.mockResolvedValue(undefined);
+      mocks.user.replaceLockedProfileImage.mockResolvedValue(true);
+
+      await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
+
+      // no other photo may stand in, so the user is back to the default avatar
+      expect(mocks.user.replaceLockedProfileImage).toHaveBeenCalledWith('user-1', asset.id, {
+        profileImagePath: '',
+        profileImageAssetId: null,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/profile/user-1/old.webp'] },
+      });
     });
 
     it('should update the exif description', async () => {

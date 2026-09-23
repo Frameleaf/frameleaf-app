@@ -81,6 +81,20 @@ describe(TrashService.name, () => {
     });
   });
 
+  describe('Locked media (FL-34)', () => {
+    it('should restore and empty Locked media in the trash only from an elevated session', async () => {
+      const elevated = authStub.adminWithElevatedPermission;
+      mocks.trash.restore.mockResolvedValue(0);
+      mocks.trash.empty.mockResolvedValue(0);
+
+      await sut.restore(elevated);
+      await sut.empty(elevated);
+
+      expect(mocks.trash.restore).toHaveBeenCalledWith(elevated.user.id, { lockedOwnerId: elevated.user.id });
+      expect(mocks.trash.empty).toHaveBeenCalledWith(elevated.user.id, { lockedOwnerId: elevated.user.id });
+    });
+  });
+
   describe('onAssetsDelete', () => {
     it('should queue the empty trash job', async () => {
       await expect(sut.onAssetsDelete()).resolves.toBeUndefined();

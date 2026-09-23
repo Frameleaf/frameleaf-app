@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPrimaryDestinations,
   buildRailSections,
+  currentPrimaryDestination,
   defaultRailCapabilities,
   isDestinationCurrent,
+  isSettingsRoute,
   type RailCapabilities,
   type RailDestination,
 } from '$lib/frameleaf/navigation';
@@ -93,7 +96,6 @@ describe('Frameleaf rail destinations', () => {
       'sharing',
       'pets',
       'places',
-      'studio',
       'workflows',
       'libraryCare',
       'settings',
@@ -130,5 +132,101 @@ describe('Frameleaf rail destinations', () => {
 
     expect(isDestinationCurrent(Route.albums(), allAlbums)).toBe(true);
     expect(isDestinationCurrent(Route.viewAlbum({ id: 'album-id' }), allAlbums)).toBe(false);
+  });
+
+  it('keeps Studio and Activity out of the rail; Tools holds only Workflows and Trash', () => {
+    const tools = buildRailSections(allCapabilities()).find((section) => section.id === 'tools');
+    const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
+
+    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['workflows', 'trash']);
+    expect(hrefs).not.toContain(Route.studioProjects());
+    expect(hrefs).not.toContain(Route.studio());
+    expect(hrefs).not.toContain(Route.activity());
+  });
+});
+
+describe('Frameleaf primary destinations', () => {
+  it('offers Library, Studio and Activity in the prototype order', () => {
+    expect(buildPrimaryDestinations().map((destination) => destination.id)).toEqual(['library', 'studio', 'activity']);
+  });
+
+  it('sends Library home, Studio to the project library and Activity to its page', () => {
+    const hrefs = Object.fromEntries(buildPrimaryDestinations().map(({ id, href }) => [id, href]));
+
+    expect(hrefs).toEqual({
+      library: Route.photos(),
+      studio: Route.studioProjects(),
+      activity: Route.activity(),
+    });
+  });
+
+  it('keeps Studio current in the project library and the editor', () => {
+    expect(currentPrimaryDestination('/studio/projects')).toBe('studio');
+    expect(currentPrimaryDestination('/studio')).toBe('studio');
+  });
+
+  it('keeps Activity current on its page only', () => {
+    expect(currentPrimaryDestination('/activity')).toBe('activity');
+    // A path that merely starts with "activity" is not the Activity screen, and is not one of
+    // the prototype's library/people/explore screens either.
+    expect(currentPrimaryDestination('/activity-log')).toBeNull();
+  });
+
+  it('keeps Library current on the screens the prototype maps to "library", "people" and "explore"', () => {
+    for (const pathname of [
+      Route.photos(),
+      '/photos/asset-id',
+      Route.favorites(),
+      Route.recentlyAdded(),
+      Route.bestPhotos(),
+      Route.archive(),
+      Route.suppressed(),
+      Route.pets(),
+      Route.viewAlbum({ id: 'album-id' }),
+      Route.viewSharedSpace({ id: 'space-id' }),
+      Route.people(),
+      Route.explore(),
+      Route.search(),
+    ]) {
+      expect(currentPrimaryDestination(pathname)).toBe('library');
+    }
+    // A path that merely starts with "studio" is not Studio, but is still a library screen.
+    expect(currentPrimaryDestination('/studios')).toBe('library');
+  });
+
+  it('leaves the switcher without a current item on the prototype screens that are not library/people/explore', () => {
+    for (const pathname of [
+      // The all-albums and all-spaces indexes are the prototype's own "collections" screen.
+      Route.albums(),
+      Route.sharing(),
+      // A person's own page is the prototype's "person" screen, distinct from "people".
+      Route.viewPerson({ id: 'person-id' }),
+      Route.places(),
+      Route.map(),
+      Route.memories(),
+      Route.tags(),
+      Route.folders(),
+      Route.sharedLinks(),
+      Route.viewPartner({ id: 'partner-id' }),
+      Route.buy(),
+      Route.workflows(),
+      Route.trash(),
+      Route.utilities(),
+    ]) {
+      expect(currentPrimaryDestination(pathname)).toBeNull();
+    }
+  });
+
+  it('leaves the switcher without a current item in settings and administration', () => {
+    expect(currentPrimaryDestination(Route.userSettings())).toBeNull();
+    expect(currentPrimaryDestination(Route.systemSettings())).toBeNull();
+    expect(currentPrimaryDestination(Route.users())).toBeNull();
+  });
+
+  it('treats /admin and /user-settings as the prototype\'s one settings screen', () => {
+    expect(isSettingsRoute(Route.systemSettings())).toBe(true);
+    expect(isSettingsRoute(Route.users())).toBe(true);
+    expect(isSettingsRoute(Route.userSettings())).toBe(true);
+    expect(isSettingsRoute(Route.photos())).toBe(false);
   });
 });

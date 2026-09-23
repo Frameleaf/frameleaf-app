@@ -49,10 +49,10 @@ import {
   onBeforeLink,
   onBeforeUnlink,
 } from 'src/utils/asset.util.js';
-import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
@@ -118,7 +118,8 @@ export class AssetService extends BaseService {
       exifInfo: true,
       owner: true,
       faces: { person: true, viewingUserId: auth.user.id },
-      stack: { assets: true },
+      // a stack led by Locked media stays off the asset unless it is the viewer's own and unlocked
+      stack: { assets: true, ...getLockedVisibilityOptions(auth) },
       edits: true,
       tags: true,
     });
@@ -193,6 +194,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    // A visibility change that moves a whole stack into or out of Locked also changes the siblings
+    // `id` never mentions (FL-53, `locked-stacks.ts`); push the same real-time update to `id` and to
+    // every one of them, so every open session reflects the move at once.
+    if (rest.visibility !== undefined) {
+      const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
+      await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+
     return this.get(auth, id) as Promise<AssetResponseDto>;
   }
 
@@ -252,6 +261,14 @@ export class AssetService extends BaseService {
       await this.queueReleasedFaceThumbnails(ids);
     }
 
+    // A visibility change that moves whole stacks into or out of Locked also changes siblings `ids`
+    // never names (FL-53, `locked-stacks.ts`); push the same real-time update to `ids` and to every
+    // one of them, so every open session reflects the move at once.
+    if (visibility !== undefined) {
+      const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
+      await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
+    }
+
     // Moving into the Locked folder keeps album membership (owner decision, September 22, 2026): the
     // asset stays in its albums and every album read hides it from everyone but its owner's elevated
     // session, so it is back in place when it leaves the folder. Upstream removed it from all albums here.
@@ -260,12 +277,13 @@ export class AssetService extends BaseService {
   }
 
   /**
-   * Moving into the Locked folder released every cover, featured photo and face thumbnail the assets
-   * were (FL-53, `releaseLockedCoverReferences`); the people whose featured face moved get a new
-   * thumbnail from the face that replaced it.
+   * Moving into the Locked folder moved the rest of each stack along and released every cover,
+   * featured photo and face thumbnail the assets were (FL-53, `onAssetsLocked`); the people whose
+   * featured face moved get a new thumbnail from the face that replaced it, and a profile picture
+   * copied from one of the photos is replaced.
    */
   private queueReleasedFaceThumbnails(ids: string[]) {
-    return queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, ids);
+    return this.afterAssetsLocked(ids);
   }
 
   /**

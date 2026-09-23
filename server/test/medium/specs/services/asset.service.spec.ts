@@ -17,6 +17,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -26,7 +27,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(AssetService, {
+  const { sut, ctx } = newMediumService(AssetService, {
     database: db || defaultDatabase,
     real: [
       AssetRepository,
@@ -40,8 +41,12 @@ const setup = (db?: Kysely<DB>) => {
       StackRepository,
       UserRepository,
     ],
-    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository],
+    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository, WebsocketRepository],
   });
+
+  ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+
+  return { sut, ctx };
 };
 
 beforeAll(async () => {
@@ -1019,6 +1024,66 @@ describe(AssetService.name, () => {
           data: { ownerId: auth.user.id, personGroupId: person.personGroupId },
         },
       ]);
+    });
+  });
+
+  describe('notifying stack siblings when Locked state changes (FL-53)', () => {
+    it('pushes a real-time update for a stack sibling when the other member is locked', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { id: factory.uuid(), hasElevatedPermission: true } });
+      const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [primary.id, sibling.id]);
+
+      await sut.update(auth, primary.id, { visibility: AssetVisibility.Locked });
+
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        user.id,
+        expect.objectContaining({ id: primary.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        user.id,
+        expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+    });
+
+    it('pushes a real-time update for every sibling in a bulk move', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { id: factory.uuid(), hasElevatedPermission: true } });
+      const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [primary.id, sibling.id]);
+
+      await sut.updateAll(auth, { ids: [primary.id], visibility: AssetVisibility.Locked });
+
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        user.id,
+        expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+    });
+
+    it('pushes only its own update for an asset that is not in a stack', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { id: factory.uuid(), hasElevatedPermission: true } });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.update(auth, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledTimes(1);
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        user.id,
+        expect.objectContaining({ id: asset.id }),
+      );
     });
   });
 });

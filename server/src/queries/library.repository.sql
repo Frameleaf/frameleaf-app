@@ -36,6 +36,7 @@ select
       (
         "asset"."type" = $1
         and "asset"."visibility" != $2
+        and "asset"."visibility" != 'locked'
       )
   ) as "photos",
   count(*) filter (
@@ -43,6 +44,7 @@ select
       (
         "asset"."type" = $3
         and "asset"."visibility" != $4
+        and "asset"."visibility" != 'locked'
       )
   ) as "videos",
   coalesce(sum("asset_exif"."fileSizeInByte"), $5) as "usage"

@@ -4,6 +4,7 @@ import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
@@ -33,6 +34,15 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       `CREATE TABLE person("ownerId" uuid,"personGroupId" uuid,"faceAssetId" uuid REFERENCES asset_face,"thumbnailPath" text DEFAULT '',PRIMARY KEY("ownerId","personGroupId"))`,
       'CREATE TABLE shared_space_person(id uuid PRIMARY KEY,"albumId" uuid REFERENCES album,"personGroupId" uuid,"coverAssetId" uuid REFERENCES asset)',
       'CREATE TABLE pet(id uuid PRIMARY KEY,"featuredAssetId" uuid REFERENCES asset,"updatedAt" timestamptz)',
+      // whole stacks move into the Locked folder, and what choosing a replacement reads besides (FL-53)
+      'ALTER TABLE asset ADD COLUMN "stackId" uuid',
+      `ALTER TABLE album ADD COLUMN kind text NOT NULL DEFAULT 'album'`,
+      'CREATE TABLE album_user("albumId" uuid REFERENCES album,"userId" uuid,role text)',
+      'CREATE TABLE shared_space_album("albumId" uuid REFERENCES album,"linkedAlbumId" uuid REFERENCES album)',
+      'CREATE TABLE shared_link(id uuid PRIMARY KEY,"albumId" uuid REFERENCES album)',
+      'CREATE TABLE immich_fork.asset_best_photo_score("assetId" uuid PRIMARY KEY REFERENCES asset,score double precision)',
+      'ALTER TABLE pet ADD COLUMN "ownerId" uuid',
+      `CREATE TABLE pet_observation(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"petId" uuid REFERENCES pet,"assetId" uuid REFERENCES asset,state text NOT NULL DEFAULT 'confirmed')`,
     ]) {
       await sql.raw(statement).execute(db);
     }
@@ -171,6 +181,64 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     });
     expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
       featuredAssetId: null,
+    });
+  });
+
+  it('locks the rest of the stack of a photo it locks and releases their covers too (FL-53)', async () => {
+    const ctx = await setup();
+    const [siblingId, otherAssetId, stackId, albumId] = Array.from({ length: 4 }, () => randomUUID());
+    await sql`INSERT INTO asset(id,"ownerId","stackId") VALUES(${siblingId}::uuid,${ctx.ownerId}::uuid,${stackId}::uuid),(${otherAssetId}::uuid,${ctx.ownerId}::uuid,NULL)`.execute(
+      db,
+    );
+    await sql`UPDATE asset SET "stackId"=${stackId}::uuid WHERE id=${ctx.assetId}::uuid`.execute(db);
+    await sql`INSERT INTO album VALUES(${albumId}::uuid,${siblingId}::uuid)`.execute(db);
+    await sql`INSERT INTO album_asset VALUES(${albumId}::uuid,${siblingId}::uuid),(${albumId}::uuid,${otherAssetId}::uuid)`.execute(
+      db,
+    );
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    expect(await target(siblingId)).toMatchObject({ visibility: 'locked' });
+    expect(await target(otherAssetId)).toMatchObject({ visibility: 'timeline' });
+    expect(await first(sql`SELECT "albumThumbnailAssetId" FROM album WHERE id=${albumId}::uuid`)).toEqual({
+      albumThumbnailAssetId: otherAssetId,
+    });
+  });
+
+  it('gives a pet the photo of another confirmed observation, a Best Photo first (FL-53)', async () => {
+    const ctx = await setup();
+    const [newerId, bestId, rejectedId, petId] = Array.from({ length: 4 }, () => randomUUID());
+    await sql`INSERT INTO asset(id,"ownerId","fileCreatedAt") VALUES
+      (${newerId}::uuid,${ctx.ownerId}::uuid,'2024-06-01Z'),
+      (${bestId}::uuid,${ctx.ownerId}::uuid,'2020-01-01Z'),
+      (${rejectedId}::uuid,${ctx.ownerId}::uuid,'2025-01-01Z')`.execute(db);
+    // active phase: a photo counts as not sensitive only with a privacy row saying so
+    await sql`INSERT INTO immich_fork.asset_privacy VALUES(${newerId}::uuid,false),(${bestId}::uuid,false),(${rejectedId}::uuid,false)`.execute(
+      db,
+    );
+    await sql`INSERT INTO immich_fork.asset_best_photo_score VALUES(${bestId}::uuid,0.95)`.execute(db);
+    await sql`INSERT INTO pet(id,"featuredAssetId","updatedAt","ownerId") VALUES(${petId}::uuid,${ctx.assetId}::uuid,now(),${ctx.ownerId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO pet_observation("petId","assetId",state) VALUES
+      (${petId}::uuid,${ctx.assetId}::uuid,'confirmed'),
+      (${petId}::uuid,${newerId}::uuid,'confirmed'),
+      (${petId}::uuid,${bestId}::uuid,'confirmed'),
+      (${petId}::uuid,${rejectedId}::uuid,'rejected')`.execute(db);
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: bestId,
+    });
+
+    // without a Best Photo, the newest confirmed photo
+    await sql`DELETE FROM immich_fork.asset_best_photo_score WHERE "assetId"=${bestId}::uuid`.execute(db);
+    await sql`UPDATE pet SET "featuredAssetId"=${ctx.assetId}::uuid WHERE id=${petId}::uuid`.execute(db);
+    await releaseLockedCoverReferences(db, [ctx.assetId]);
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: newerId,
     });
   });
 

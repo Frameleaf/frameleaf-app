@@ -931,7 +931,9 @@ export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
 };
 export type CastResponse = {
-    /** Whether Google Cast is enabled */
+    /** Whether an administrator has turned casting off for this user */
+    adminDisabled: boolean;
+    /** Whether Google Cast is enabled (always false while an administrator has turned casting off) */
     gCastEnabled: boolean;
 };
 export type DownloadResponse = {
@@ -1031,6 +1033,8 @@ export type AvatarUpdate = {
     color?: UserAvatarColor;
 };
 export type CastUpdate = {
+    /** Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences */
+    adminDisabled?: boolean;
     /** Whether Google Cast is enabled */
     gCastEnabled?: boolean;
 };
@@ -5499,6 +5503,8 @@ export type StudioBundleImportResultDto = {
 };
 export type StudioBundleOperationDto = {
     attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
     error: string | null;
     errorCode: string | null;
     "export": (StudioBundleExportResultDto) | null;
@@ -5509,6 +5515,8 @@ export type StudioBundleOperationDto = {
     progress: number;
     /** The exported project, or the project an import created */
     projectId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
     status: MediaOperationStatus;
 };
 export type StudioProjectLeaseRequestDto = {
@@ -5831,6 +5839,8 @@ export type OnboardingDto = {
     isOnboarded: boolean;
 };
 export type CreateProfileImageDto = {
+    /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
+    assetId?: string;
     /** Profile image file */
     file: Blob;
 };
