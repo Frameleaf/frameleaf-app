@@ -96,7 +96,7 @@ describe('Frameleaf account filtering', () => {
   });
 
   it('ignores an empty or whitespace-only search', () => {
-    expect(filterAccounts(rows, { filter: 'all', query: '   ' })).toEqual(rows);
+    expect(filterAccounts(rows, { filter: 'all', query: ' '.repeat(3) })).toEqual(rows);
     expect(filterAccounts(rows, { filter: 'all', query: null })).toEqual(rows);
   });
 

@@ -261,7 +261,7 @@ const fromBulkIdResponses = (responses: readonly BulkIdResponseDto[]): BulkOutco
       : {
           id: response.id,
           status: 'failed' as const,
-          reasonKey: `frameleaf_bulk_reason_${String(response.error ?? 'failed').replaceAll('-', '_')}`,
+          reasonKey: `frameleaf_bulk_reason_${(response.error ?? 'failed').replaceAll('-', '_')}`,
           message: response.errorMessage,
         },
   );
@@ -440,8 +440,8 @@ export const snapshotSearch = (state: LibraryViewState): SnapshotSearch => {
     return {
       kind: 'smart',
       dto: {
-        ...(smartText ? { query: smartText } : {}),
-        ...(state.query.queryAssetId ? { queryAssetId: state.query.queryAssetId } : {}),
+        ...(smartText && { query: smartText }),
+        ...(state.query.queryAssetId && { queryAssetId: state.query.queryAssetId }),
         filter,
         size: SNAPSHOT_PAGE_SIZE,
         ...enrichment,
@@ -465,7 +465,7 @@ export const countMatching = async (
   const { total } = await gateway.searchAssetStatistics({
     statisticsSearchDto: {
       filter: search.dto.filter,
-      ...(search.dto.imageEnrichment ? { imageEnrichment: search.dto.imageEnrichment } : {}),
+      ...(search.dto.imageEnrichment && { imageEnrichment: search.dto.imageEnrichment }),
     },
   });
   return total;
@@ -515,7 +515,7 @@ export const resolveMatchingIds = async (
     const { assets } =
       search.kind === 'smart'
         ? await gateway.searchSmart({ smartSearchDto: search.dto })
-        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor ? { cursor } : {}) } });
+        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor && { cursor }) } });
     total = typeof assets.total === 'number' ? assets.total : total;
     for (const asset of assets.items) {
       if (found.size >= limit) {
@@ -549,7 +549,7 @@ const requirePayload = <K extends keyof BulkPayload>(
 ): NonNullable<BulkPayload[K]> => {
   const value = payload?.[key];
   if (value === undefined || value === null || value === '') {
-    throw new Error(`Missing ${String(key)} for this action`);
+    throw new Error(`Missing ${key} for this action`);
   }
   return value as NonNullable<BulkPayload[K]>;
 };
@@ -626,8 +626,8 @@ export const runBulkAction = async (
         mode === 'shift'
           ? { dateTimeRelative: Number(requirePayload(payload, 'minutes')) }
           : {
-              dateTimeOriginal: String(requirePayload(payload, 'dateTimeOriginal')),
-              ...(payload?.timeZone ? { timeZone: payload.timeZone } : {}),
+              dateTimeOriginal: requirePayload(payload, 'dateTimeOriginal'),
+              ...(payload?.timeZone && { timeZone: payload.timeZone }),
             };
       return finish(
         await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, ...dto } })),
@@ -651,7 +651,7 @@ export const runBulkAction = async (
 
     /* PUT /albums/:id/assets and DELETE /albums/:id/assets — both answer per id. */
     case 'add-to-album': {
-      const albumId = String(requirePayload(payload, 'albumId'));
+      const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
           fromBulkIdResponses(await gateway.addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: batch } })),
@@ -660,7 +660,7 @@ export const runBulkAction = async (
       );
     }
     case 'remove-from-album': {
-      const albumId = String(requirePayload(payload, 'albumId'));
+      const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
           fromBulkIdResponses(await gateway.removeAssetFromAlbum({ id: albumId, bulkIdsDto: { ids: batch } })),
@@ -669,7 +669,7 @@ export const runBulkAction = async (
       );
     }
     case 'set-album-cover': {
-      const albumId = String(requirePayload(payload, 'albumId'));
+      const albumId = requirePayload(payload, 'albumId');
       const [assetId] = ids;
       try {
         await gateway.updateAlbumInfo({ id: albumId, updateAlbumDto: { albumThumbnailAssetId: assetId } });
@@ -729,8 +729,8 @@ export const runBulkAction = async (
 
     /* PUT /assets/:id — the Live Photo link lives on the still, one asset at a time. */
     case 'link-live-photo': {
-      const photoId = String(requirePayload(payload, 'photoId'));
-      const videoId = String(requirePayload(payload, 'videoId'));
+      const photoId = requirePayload(payload, 'photoId');
+      const videoId = requirePayload(payload, 'videoId');
       try {
         await gateway.updateAsset({ id: photoId, updateAssetDto: { livePhotoVideoId: videoId } });
         report(1);
@@ -851,7 +851,7 @@ export const runBulkAction = async (
       }
     }
     case 'remove-from-shared-link': {
-      const sharedLinkId = String(requirePayload(payload, 'sharedLinkId'));
+      const sharedLinkId = requirePayload(payload, 'sharedLinkId');
       return finish(
         await runInChunks(runner, async (batch) => {
           const responses = await gateway.removeSharedLinkAssets({
@@ -864,7 +864,7 @@ export const runBulkAction = async (
               : {
                   id: response.assetId,
                   status: 'failed' as const,
-                  reasonKey: `frameleaf_bulk_reason_${String(response.error ?? 'failed').replaceAll('-', '_')}`,
+                  reasonKey: `frameleaf_bulk_reason_${(response.error ?? 'failed').replaceAll('-', '_')}`,
                 },
           );
         }),
@@ -1121,10 +1121,10 @@ export const submitDurableBulk = async (
           action: serverAction,
           assetIds: part,
           payload,
-          ...(index === 0 && requestId ? { requestId } : {}),
+          ...(index === 0 && requestId && { requestId }),
           submittedTotal: request.submittedTotal ?? null,
           truncated: request.truncated ?? false,
-          ...(request.scope ? { scope: structuredClone(request.scope) as unknown as Record<string, unknown> } : {}),
+          ...(request.scope && { scope: structuredClone(request.scope) as unknown as Record<string, unknown> }),
         },
       }),
     );
@@ -1179,11 +1179,11 @@ export const removesFromView = (
 export type DurableItemState =
   { state: 'pending' } | { state: 'done' } | { state: 'failed'; reasonKey: string } | { state: 'unchanged' };
 
-const FINISHED_JOB: readonly MediaOperationStatus[] = [
+const FINISHED_JOB: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Completed,
   MediaOperationStatus.Cancelled,
   MediaOperationStatus.Failed,
-];
+]);
 
 /**
  * Read every item's state out of a durable job's detail.
@@ -1204,10 +1204,10 @@ export const durableItemStates = (
   ids: readonly string[],
   detail: Pick<MediaOperationDetailDto, 'status' | 'processedUnits' | 'bulkItems' | 'bulkRetryPending' | 'bulk'>,
 ): Map<string, DurableItemState> => {
-  const finished = FINISHED_JOB.includes(detail.status);
+  const finished = FINISHED_JOB.has(detail.status);
   const cursor = Math.max(0, Number(detail.processedUnits ?? 0) || 0);
   const refusals = new Map((detail.bulkItems ?? []).map((item) => [item.id, item]));
-  const waiting = new Set(detail.bulkRetryPending ?? []);
+  const waiting = new Set(detail.bulkRetryPending);
   const retryPlanned = (detail.bulk?.retried ?? 0) > 0;
   const uncertain = detail.bulk?.itemsTruncated === true;
   // An item the job never got to: a cancel leaves it as it was; a failed job did not do it.

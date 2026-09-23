@@ -94,14 +94,14 @@ function alignmentPositions(version: number): number[] {
 export function gfMultiply(x: number, y: number): number {
   let z = 0;
   for (let i = 7; i >= 0; i--) {
-    z = (z << 1) ^ ((z >>> 7) * 0x11d);
+    z = (z << 1) ^ ((z >>> 7) * 0x1_1d);
     z ^= ((y >>> i) & 1) * x;
   }
   return z;
 }
 
 function reedSolomonDivisor(degree: number): number[] {
-  const result = new Array<number>(degree).fill(0);
+  const result = Array.from({ length: degree }).fill(0);
   result[degree - 1] = 1;
   let root = 1;
   for (let i = 0; i < degree; i++) {
@@ -123,9 +123,9 @@ export function reedSolomonRemainder(data: number[], degree: number): number[] {
   for (const byte of data) {
     const factor = byte ^ (result.shift() as number);
     result.push(0);
-    divisor.forEach((coefficient, i) => {
+    for (const [i, coefficient] of divisor.entries()) {
       result[i] ^= gfMultiply(coefficient, factor);
-    });
+    }
   }
   return result;
 }
@@ -179,11 +179,11 @@ function addEccAndInterleave(data: number[], version: number, ecc: EccLevel): nu
   }
   const result: number[] = [];
   for (let i = 0; i < blocks[0].length; i++) {
-    blocks.forEach((block, j) => {
+    for (const [j, block] of blocks.entries()) {
       if (i !== shortBlockLen - blockEccLen || j >= numShortBlocks) {
         result.push(block[i]);
       }
-    });
+    }
   }
   return result;
 }
@@ -197,8 +197,8 @@ class Matrix {
 
   constructor(size: number) {
     this.size = size;
-    this.modules = Array.from({ length: size }, () => new Array<boolean>(size).fill(false));
-    this.isFunction = Array.from({ length: size }, () => new Array<boolean>(size).fill(false));
+    this.modules = Array.from({ length: size }, () => Array.from({ length: size }).fill(false));
+    this.isFunction = Array.from({ length: size }, () => Array.from({ length: size }).fill(false));
   }
   setFunction(x: number, y: number, dark: boolean): void {
     this.modules[y][x] = dark;
@@ -227,9 +227,9 @@ class Matrix {
     const data = (FORMAT_BITS[ecc] << 3) | mask;
     let remainder = data;
     for (let i = 0; i < 10; i++) {
-      remainder = (remainder << 1) ^ ((remainder >>> 9) * 0x537);
+      remainder = (remainder << 1) ^ ((remainder >>> 9) * 0x5_37);
     }
-    const bits = ((data << 10) | remainder) ^ 0x5412;
+    const bits = ((data << 10) | remainder) ^ 0x54_12;
     for (let i = 0; i <= 5; i++) {
       this.setFunction(8, i, getBit(bits, i));
     }
@@ -253,7 +253,7 @@ class Matrix {
     }
     let remainder = version;
     for (let i = 0; i < 12; i++) {
-      remainder = (remainder << 1) ^ ((remainder >>> 11) * 0x1f25);
+      remainder = (remainder << 1) ^ ((remainder >>> 11) * 0x1f_25);
     }
     const bits = (version << 12) | remainder;
     for (let i = 0; i < 18; i++) {
@@ -474,7 +474,7 @@ export function encodeQr(text: string, options: { ecc?: EccLevel; minVersion?: n
   matrix.drawFunctionPatterns(version, ecc);
   matrix.drawCodewords(codewords);
   let mask = 0;
-  let best = Number.POSITIVE_INFINITY;
+  let best = Infinity;
   for (let candidate = 0; candidate < 8; candidate++) {
     matrix.applyMask(candidate);
     matrix.drawFormatBits(ecc, candidate);
@@ -499,12 +499,12 @@ export function encodeQr(text: string, options: { ecc?: EccLevel; minVersion?: n
 /** SVG path data for the dark modules, offset by a quiet zone in modules. */
 export function qrPath(modules: boolean[][], quiet: number = 4): string {
   const parts: string[] = [];
-  modules.forEach((row, y) =>
-    row.forEach((dark, x) => {
+  for (const [y, row] of modules.entries()) {
+    for (const [x, dark] of row.entries()) {
       if (dark) {
         parts.push(`M${x + quiet} ${y + quiet}h1v1h-1z`);
       }
-    }),
-  );
+    }
+  }
   return parts.join('');
 }

@@ -38,7 +38,7 @@ export const describeAdminEvent = (
       return $t('frameleaf_account_history_admin_revoked');
     }
     case AdminAuditAction.QuotaChanged: {
-      const bytes = detail === null ? Number.NaN : Number(detail);
+      const bytes = detail === null ? NaN : Number(detail);
       return Number.isFinite(bytes)
         ? $t('frameleaf_account_history_quota_changed', { values: { size: formatBytes(bytes) } })
         : $t('frameleaf_account_history_quota_unlimited');

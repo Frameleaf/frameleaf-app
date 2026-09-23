@@ -241,7 +241,7 @@
     draft.workloads = checked
       ? [...new Set([...draft.workloads, workload])]
       : draft.workloads.filter((entry) => entry !== workload);
-    if (!draft.workloads.some((entry) => isRestorationWorkload(entry))) {
+    if (draft.workloads.every((entry) => !isRestorationWorkload(entry))) {
       draft.sharesLibraryHardware = false;
     }
   };
@@ -292,8 +292,8 @@
               mlDestinationUpdateDto: {
                 name,
                 workloads: current.workloads,
-                ...(isRunPod ? {} : { url: current.url.trim() || null }),
-                ...(current.authToken ? { authToken: current.authToken } : {}),
+                ...(!isRunPod && { url: current.url.trim() || null }),
+                ...(current.authToken && { authToken: current.authToken }),
                 sharesLibraryHardware,
                 ...costControls,
               },
@@ -303,8 +303,8 @@
                 kind: current.kind,
                 name,
                 workloads: current.workloads,
-                ...(isRunPod ? {} : { url: current.url.trim() }),
-                ...(current.authToken ? { authToken: current.authToken } : {}),
+                ...(!isRunPod && { url: current.url.trim() }),
+                ...(current.authToken && { authToken: current.authToken }),
                 sharesLibraryHardware,
                 ...costControls,
               },
@@ -343,7 +343,7 @@
     </div>
     <div class="head-actions">
       <Button onclick={() => openCreate(MlDestinationKind.Lan)}>{$t('admin.frameleaf_ml_destinations_add_lan')}</Button>
-      {#if !destinations.some((destination) => destination.kind === MlDestinationKind.RunPod)}
+      {#if destinations.every((destination) => destination.kind !== MlDestinationKind.RunPod)}
         <Button onclick={() => openCreate(MlDestinationKind.RunPod)}>
           {$t('admin.frameleaf_ml_destinations_add_runpod')}
         </Button>
@@ -663,7 +663,7 @@
             bind:value={draft.url}
             placeholder={draft.kind === MlDestinationKind.RunPodVideo
               ? 'https://pod-id-3004.proxy.runpod.net'
-              : 'http://worker.lan:3003'}
+              : 'http://machine-learning:3003'}
             required={draft.kind === MlDestinationKind.Lan || draft.kind === MlDestinationKind.RunPodVideo}
           />
         </label>

@@ -130,8 +130,8 @@
       page,
       size,
       sort,
-      ...(appliedQuery.trim() ? { query: appliedQuery.trim() } : {}),
-      ...(trashTypeFilter(media) ? { $type: trashTypeFilter(media) } : {}),
+      ...(appliedQuery.trim() && { query: appliedQuery.trim() }),
+      ...(trashTypeFilter(media) && { $type: trashTypeFilter(media) }),
     });
 
   /**
@@ -232,10 +232,12 @@
   const onQueryInput = () => {
     clearTimeout(queryTimer);
     queryTimer = setTimeout(() => {
-      if (appliedQuery !== query) {
-        appliedQuery = query;
-        resetView();
+      if (appliedQuery === query) {
+        return;
       }
+
+      appliedQuery = query;
+      resetView();
     }, 300);
   };
 
@@ -274,8 +276,8 @@
       selected = targets === null ? [] : selected.filter((id) => !targets.includes(id));
       inspectOpen = false;
       notice = $t('frameleaf_trash_restored', { values: { count } });
-    } catch (cause) {
-      error = failureMessage(cause);
+    } catch (error_) {
+      error = failureMessage(error_);
     } finally {
       busy = false;
       void refresh();
@@ -301,8 +303,8 @@
       confirmation = '';
       reviewError = '';
       reviewOpen = true;
-    } catch (cause) {
-      error = failureMessage(cause);
+    } catch (error_) {
+      error = failureMessage(error_);
       void refresh();
     } finally {
       busy = false;
@@ -326,8 +328,8 @@
       reviewOpen = false;
       review = null;
       notice = $t('frameleaf_trash_deleted', { values: { count } });
-    } catch (cause) {
-      reviewError = failureMessage(cause);
+    } catch (error_) {
+      reviewError = failureMessage(error_);
     } finally {
       busy = false;
       void refresh();

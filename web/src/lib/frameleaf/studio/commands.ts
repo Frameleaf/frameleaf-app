@@ -1336,7 +1336,7 @@ export const studioCommandRejection = (
   idempotencyKey,
   reason,
   messageKey: rejectionMessageKeys[reason],
-  ...(revision === undefined ? {} : { revision }),
+  ...(revision !== undefined && { revision }),
 });
 
 /**

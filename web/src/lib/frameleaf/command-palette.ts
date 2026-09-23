@@ -86,7 +86,7 @@ const list = <T>(value: T[] | undefined | null): T[] => (Array.isArray(value) ? 
 export const foldText = (value: unknown): string =>
   String(value ?? '')
     .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
+    .replaceAll(/\p{M}/gu, '')
     .toLowerCase();
 
 const words = (value: unknown): string[] =>
@@ -198,7 +198,7 @@ const subsequenceScore = (haystack: string, needle: string): number => {
   let previous = -1;
   for (const character of needle) {
     const found = haystack.indexOf(character, index);
-    if (found < 0) {
+    if (found === -1) {
       return 0;
     }
     if (previous >= 0) {

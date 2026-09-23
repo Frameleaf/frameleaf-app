@@ -294,9 +294,9 @@ export const matchLibraryShortcut = (
   if (typing) {
     return null;
   }
-  const mod = Boolean(event.metaKey || event.ctrlKey);
-  const shift = Boolean(event.shiftKey);
-  const alt = Boolean(event.altKey);
+  const mod = event.metaKey || event.ctrlKey;
+  const shift = event.shiftKey;
+  const alt = event.altKey;
   for (const entry of options.table ?? libraryShortcuts) {
     if (entry.mouse || !entry.key) {
       continue;
@@ -319,9 +319,8 @@ export const matchLibraryShortcut = (
 };
 
 /** True on Apple platforms, where Mod renders as ⌘. */
-export const isMacPlatform = (
-  nav: { platform?: string; userAgent?: string } | null | undefined = globalThis.navigator,
-) => /Mac|iPhone|iPad|iPod/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`);
+export const isMacPlatform = (nav: { platform?: string; userAgent?: string } | null | undefined = navigator) =>
+  /Mac|iPhone|iPad|iPod/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`);
 
 /** Display keys for an entry, substituting the platform modifier. */
 export const formatShortcutKeys = (entry: LibraryShortcut, { mac = isMacPlatform() }: { mac?: boolean } = {}) =>
@@ -350,7 +349,7 @@ export const libraryShortcutGroups = (
     groups[entry.group].push({
       key: formatShortcutKeys(entry, { mac }),
       action: translate(entry.label),
-      ...(entry.info ? { info: translate(entry.info) } : {}),
+      ...(entry.info && { info: translate(entry.info) }),
     });
   }
   return groups;

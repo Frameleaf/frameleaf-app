@@ -374,7 +374,7 @@ describe('the search a page shows', () => {
 
   it('reopens the search dialog on exactly the search the results page shows, even with an item open', () => {
     const query = everything();
-    const [path, search] = discoveryUrl(query).split('?');
+    const [path, search] = discoveryUrl(query).split('?', 2);
     expect(contextDiscoveryState(urlOf(`${path}/photos/${assetId}?${search}`))).toEqual({ query, unsupported: [] });
   });
 

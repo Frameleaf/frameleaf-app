@@ -189,10 +189,12 @@
   };
 
   const stopPolling = () => {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = undefined;
+    if (!pollTimer) {
+      return;
     }
+
+    clearInterval(pollTimer);
+    pollTimer = undefined;
   };
 
   onDestroy(stopPolling);

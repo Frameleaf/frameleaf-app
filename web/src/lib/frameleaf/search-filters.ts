@@ -1,4 +1,4 @@
-import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, type SearchFilter } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@immich/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
 import { activeFilterFields, ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
 
@@ -41,7 +41,7 @@ export const updateSetGroup = (condition: SetCondition, group: string, values: s
   if (!isSetGroup(group)) {
     return condition ?? null;
   }
-  const next: Record<string, string[]> = { ...(condition ?? {}) } as Record<string, string[]>;
+  const next: Record<string, string[]> = { ...condition } as Record<string, string[]>;
   if (values.length > 0) {
     next[group] = [...new Set(values)];
   } else {
@@ -56,7 +56,7 @@ export const moveSetGroup = (condition: SetCondition, from: string, to: string):
     return condition ?? null;
   }
   const values = condition?.[from] ?? [];
-  const next: Record<string, string[]> = { ...(condition ?? {}) } as Record<string, string[]>;
+  const next: Record<string, string[]> = { ...condition } as Record<string, string[]>;
   delete next[from];
   if (values.length > 0) {
     next[to] = [...new Set([...(next[to] ?? []), ...values])];
@@ -168,7 +168,7 @@ export const updateCaptureDate = (condition: Condition, operator: 'gte' | 'lte',
   if (!['gte', 'lte'].includes(operator) || (value && calendarDay(value) !== value)) {
     return condition ?? null;
   }
-  const next: Record<string, unknown> = { ...(condition ?? {}) };
+  const next: Record<string, unknown> = { ...condition };
   delete next[operator];
   // An explicit edit replaces only this endpoint, including its strict variant, so changing
   // From retains an existing exclusive upper bound.
@@ -390,7 +390,7 @@ const operatorLabel = ($t: MessageFormatter, field: string, operator: string, fo
       return $t('frameleaf_search_op_ends_with', { values: { value: formatted } });
     }
     default: {
-      return formatted.replace(/^%|%$/g, '');
+      return formatted.replaceAll(/^%|%$/g, '');
     }
   }
 };
@@ -469,4 +469,4 @@ export const withFilterCondition = (query: DiscoveryQuery, field: string, condit
   return result;
 };
 
-export type { SearchFilter };
+export { type SearchFilter } from '@immich/sdk';

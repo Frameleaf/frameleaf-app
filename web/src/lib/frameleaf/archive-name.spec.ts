@@ -14,7 +14,7 @@ describe('sanitizeArchiveSegment', () => {
     expect(sanitizeArchiveSegment(undefined)).toBe('');
     expect(sanitizeArchiveSegment(null)).toBe('');
     expect(sanitizeArchiveSegment('')).toBe('');
-    expect(sanitizeArchiveSegment('   ')).toBe('');
+    expect(sanitizeArchiveSegment(' '.repeat(3))).toBe('');
   });
 
   it('folds diacritics instead of dropping the letters that carry them', () => {
@@ -28,7 +28,7 @@ describe('sanitizeArchiveSegment', () => {
 
   it('replaces filesystem-reserved and control characters with a separator', () => {
     expect(sanitizeArchiveSegment('Trips/Rockies: "2026"')).toBe('Trips-Rockies-2026');
-    expect(sanitizeArchiveSegment('a<b>c:d"e/f\\g|h?i*j')).toBe('a-b-c-d-e-f-g-h-i-j');
+    expect(sanitizeArchiveSegment(String.raw`a<b>c:d"e/f\g|h?i*j`)).toBe('a-b-c-d-e-f-g-h-i-j');
   });
 
   it('collapses whitespace and underscore runs to one hyphen and trims the edges', () => {

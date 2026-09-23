@@ -114,10 +114,10 @@ export const ALL_PREFERENCE_KEYS: readonly AccountPreferenceKey[] = ACCOUNT_PREF
 );
 
 /** Only the admin endpoint accepts these; the account's own editor never sends them. */
-const ADMIN_ONLY_KEYS: readonly AccountPreferenceKey[] = ['cast.adminDisabled'];
+const ADMIN_ONLY_KEYS: ReadonlySet<AccountPreferenceKey> = new Set(['cast.adminDisabled']);
 
 /** An administrator decision, not an account preference: "Reset this page" leaves it alone. */
-const RESET_EXCLUDED_KEYS: readonly AccountPreferenceKey[] = ['cast.adminDisabled'];
+const RESET_EXCLUDED_KEYS: ReadonlySet<AccountPreferenceKey> = new Set(['cast.adminDisabled']);
 
 /** The server's defaults (`server/src/utils/preferences.ts`), as the template's `createAccountPreferences`. */
 export const createDefaultDraft = (): AccountPreferencesDraft => ({
@@ -226,13 +226,13 @@ export const preferencesPatch = (
 ): UserPreferencesUpdateDto => {
   const patch: Record<string, Record<string, unknown>> = {};
   for (const key of changedPreferenceKeys(baseline, draft, keys)) {
-    if (role === 'self' && ADMIN_ONLY_KEYS.includes(key)) {
+    if (role === 'self' && ADMIN_ONLY_KEYS.has(key)) {
       continue;
     }
     if (key === 'cast.gCastEnabled' && draft['cast.adminDisabled']) {
       continue;
     }
-    const [group, field] = key.split('.');
+    const [group, field] = key.split('.', 2);
     patch[group] ??= {};
     patch[group][field] = draft[key];
   }
@@ -243,7 +243,7 @@ export const preferencesPatch = (
 export const withEmailNotifications = (draft: AccountPreferencesDraft, enabled: boolean): AccountPreferencesDraft => ({
   ...draft,
   'emailNotifications.enabled': enabled,
-  ...(enabled ? {} : { 'emailNotifications.albumInvite': false, 'emailNotifications.albumUpdate': false }),
+  ...(!enabled && { 'emailNotifications.albumInvite': false, 'emailNotifications.albumUpdate': false }),
 });
 
 /** "Reset this page": the page's defaults go into the draft; nothing is saved until Save. */
@@ -255,7 +255,7 @@ export const resetSection = (
   const defaults = createDefaultDraft();
   const next = { ...draft };
   for (const key of keys) {
-    if (RESET_EXCLUDED_KEYS.includes(key)) {
+    if (RESET_EXCLUDED_KEYS.has(key)) {
       continue;
     }
     (next as Record<AccountPreferenceKey, unknown>)[key] = defaults[key];

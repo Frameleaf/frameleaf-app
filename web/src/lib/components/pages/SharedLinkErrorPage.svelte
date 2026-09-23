@@ -24,7 +24,7 @@
   <div class="pv-error-card" role="status">
     <h1>{$t('frameleaf_public_unavailable_title')}</h1>
     <p>{page.error?.message || $t('frameleaf_public_unavailable_body')}</p>
-    <Button variant="primary" onclick={() => (globalThis.location.href = '/')}>
+    <Button variant="primary" onclick={() => (location.href = '/')}>
       {$t('frameleaf_public_go_home')}
     </Button>
   </div>

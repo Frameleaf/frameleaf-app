@@ -81,7 +81,7 @@ describe('toSearchDto', () => {
   });
 
   it('omits empty text and an empty filter rather than sending empty objects', () => {
-    expect(toSearchDto({ ...base(), text: '   ' })).toEqual({});
+    expect(toSearchDto({ ...base(), text: ' '.repeat(3) })).toEqual({});
   });
 
   it('does not alias the query it is given', () => {

@@ -83,13 +83,15 @@
   const pinHintId = $props.id();
 
   $effect(() => {
-    if (!open) {
-      // Secrets never outlive the dialog.
-      password = '';
-      passwordConfirm = '';
-      pinCode = '';
-      onClose(created);
+    if (open) {
+      return;
     }
+
+    // Secrets never outlive the dialog.
+    password = '';
+    passwordConfirm = '';
+    pinCode = '';
+    onClose(created);
   });
 
   const submit = async (event: SubmitEvent) => {
@@ -109,7 +111,7 @@
           quotaSizeInBytes,
           shouldChangePassword,
           // Only send the role when the server would accept it; it refuses a self change.
-          ...(canChangeRole(user, authManager.user.id) ? { isAdmin } : {}),
+          ...(canChangeRole(user, authManager.user.id) && { isAdmin }),
         });
         if (success) {
           open = false;
@@ -127,7 +129,7 @@
         shouldChangePassword: withPassword ? shouldChangePassword : false,
         notify: featureFlagsManager.value.email ? notify : false,
         isAdmin,
-        ...(pinCode.length === 6 ? { pinCode } : {}),
+        ...(pinCode.length === 6 && { pinCode }),
       });
 
       if (response) {

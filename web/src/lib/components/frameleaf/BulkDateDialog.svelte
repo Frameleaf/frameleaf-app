@@ -64,7 +64,7 @@
         ? {
             dateMode: 'set',
             dateTimeOriginal: `${date}T${time.length === 5 ? `${time}:00` : time}`,
-            ...(timeZone === 'keep' ? {} : { timeZone }),
+            ...(timeZone !== 'keep' && { timeZone }),
           }
         : { dateMode: 'shift', minutes },
     );

@@ -38,7 +38,7 @@ describe('develop', () => {
       expect(clampParam('exposure', 5)).toBe(2);
       expect(clampParam('exposure', 0.123)).toBe(0.1);
       expect(clampParam('grain', -5)).toBe(0);
-      expect(clampParam('contrast', Number.NaN)).toBe(0);
+      expect(clampParam('contrast', NaN)).toBe(0);
     });
 
     it('knows when a group is at its defaults and how to reset it', () => {

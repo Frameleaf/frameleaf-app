@@ -53,11 +53,11 @@ export const load = (async ({ params, url, depends }) => {
     getSharedSpacePeople({ id: params.spaceId }),
     getSharedSpaceNew({ id: params.spaceId }),
     getSharedSpaceActivity({ id: params.spaceId }),
-  ]).catch((failure: unknown) => {
-    if (isHttpError(failure) && isSpaceUnavailableStatus(failure.status)) {
+  ]).catch((error_: unknown) => {
+    if (isHttpError(error_) && isSpaceUnavailableStatus(error_.status)) {
       error(404, SPACE_UNAVAILABLE);
     }
-    throw failure;
+    throw error_;
   });
 
   if (space.kind !== AlbumKind.Space) {

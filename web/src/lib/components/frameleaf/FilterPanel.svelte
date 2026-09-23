@@ -93,7 +93,7 @@
    * fields no other section claims already are.
    */
   $effect(() => {
-    const target = section === 'all' ? undefined : panel?.querySelector(`[data-section="${section}"]`);
+    const target = section === 'all' ? undefined : panel?.querySelector(`[data-section="${CSS.escape(section)}"]`);
     target?.scrollIntoView({ block: 'nearest' });
     heading?.focus({ preventScroll: true });
   });

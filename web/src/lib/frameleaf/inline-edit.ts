@@ -38,7 +38,7 @@ const statusOf = (error: unknown): number | undefined => {
     return undefined;
   }
 
-  const candidate = error as { status?: unknown; data?: { statusCode?: unknown } | string };
+  const candidate = error as { status?: unknown; data?: string | { statusCode?: unknown } };
   const data = typeof candidate.data === 'object' ? candidate.data : undefined;
   for (const value of [candidate.status, data?.statusCode]) {
     if (typeof value === 'number' && Number.isFinite(value)) {

@@ -111,7 +111,7 @@ describe('studio command envelopes', () => {
     expect(isStudioCommandEnvelope({ ...base, revision: 1.5 })).toBe(false);
     expect(isStudioCommandEnvelope({ ...base, idempotencyKey: '' })).toBe(false);
     expect(isStudioCommandEnvelope({ ...base, idempotencyKey: 'k'.repeat(129) })).toBe(false);
-    expect(isStudioCommandEnvelope({ ...base, issuedAt: Number.NaN })).toBe(false);
+    expect(isStudioCommandEnvelope({ ...base, issuedAt: NaN })).toBe(false);
   });
 
   it('keeps the supplied idempotency key so a retry is recognisable', () => {

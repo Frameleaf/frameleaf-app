@@ -75,7 +75,7 @@ export const workerHealth = (
   if (!worker.lastAdmittedAt) {
     return 'never_admitted';
   }
-  const seen = worker.lastSeenAt ? Date.parse(worker.lastSeenAt) : Number.NaN;
+  const seen = worker.lastSeenAt ? Date.parse(worker.lastSeenAt) : NaN;
   if (Number.isNaN(seen) || now.getTime() - seen > RENDER_WORKER_UNREACHABLE_MS) {
     return 'unreachable';
   }

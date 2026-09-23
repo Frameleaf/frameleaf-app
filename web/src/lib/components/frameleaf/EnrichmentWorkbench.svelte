@@ -181,10 +181,12 @@
   };
 
   const stopPolling = () => {
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = undefined;
+    if (!pollTimer) {
+      return;
     }
+
+    clearTimeout(pollTimer);
+    pollTimer = undefined;
   };
 
   /** Show a plan and keep reading it while it runs. The row is the truth; this only mirrors it. */
@@ -262,7 +264,7 @@
       preview = await previewEnrichment({
         enrichmentPreviewRequestDto: {
           assetIds: selected,
-          ...(destinationId ? { destinationId } : {}),
+          ...(destinationId && { destinationId }),
           modelName: draft.modelName,
           fallbackModelName: draft.fallbackModelName,
           prompt: draft.prompt,
@@ -285,8 +287,8 @@
             assetIds: selected,
             stages,
             requestKey: newRequestKey(),
-            ...(destinationId && destinationId !== options?.routes.enrichment ? { destinationId } : {}),
-            ...(searchDestinationId && searchDestinationId !== options?.routes.search ? { searchDestinationId } : {}),
+            ...(destinationId && destinationId !== options?.routes.enrichment && { destinationId }),
+            ...(searchDestinationId && searchDestinationId !== options?.routes.search && { searchDestinationId }),
           },
         }),
       );

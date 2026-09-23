@@ -49,10 +49,12 @@
   };
 
   $effect(() => {
-    if (!open) {
-      clear();
-      onClose(result);
+    if (open) {
+      return;
     }
+
+    clear();
+    onClose(result);
   });
 
   const submit = async (event: SubmitEvent) => {
@@ -71,8 +73,8 @@
       result = { signedOutOthers: signOutOthers };
       toastManager.primary($t('frameleaf_access_password_changed'));
       open = false;
-    } catch (caught) {
-      error = getServerErrorMessage(caught) ?? $t('frameleaf_access_password_failed');
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('frameleaf_access_password_failed');
       clear();
     } finally {
       working = false;

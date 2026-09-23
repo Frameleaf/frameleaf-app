@@ -7,7 +7,7 @@ const css = readFileSync('src/lib/frameleaf/tokens.css', 'utf8');
 /** Reads one rule's custom properties. `selector` must be the literal text in the sheet. */
 const declarations = (selector: string) => {
   const start = css.indexOf(`${selector} {`);
-  if (start < 0) {
+  if (start === -1) {
     throw new Error(`tokens.css is missing the rule ${selector}`);
   }
   const body = css.slice(start + selector.length + 2, css.indexOf('}', start));

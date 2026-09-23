@@ -85,6 +85,6 @@ describe('runInlineEdit', () => {
     const outcome = await runInlineEdit(() => Promise.reject(error));
 
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok === false && outcome.error).toBe(error);
+    expect(!outcome.ok && outcome.error).toBe(error);
   });
 });

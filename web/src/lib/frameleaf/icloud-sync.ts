@@ -44,18 +44,18 @@ export type ICloudStatus =
 
 export type ICloudTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
-const ACTIVE_RUN_STATUSES: readonly MediaOperationStatus[] = [
+const ACTIVE_RUN_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
   MediaOperationStatus.Cancelling,
   MediaOperationStatus.Paused,
-];
+]);
 
 /** A run the server is still responsible for: queued, working, stopping or paused. */
 export const isActiveRun = (run: ICloudSyncRunDto | null | undefined): run is ICloudSyncRunDto =>
-  !!run && ACTIVE_RUN_STATUSES.includes(run.status);
+  !!run && ACTIVE_RUN_STATUSES.has(run.status);
 
 type Connection = Pick<ICloudConnectionResponseDto, 'state' | 'authenticated' | 'run'>;
 

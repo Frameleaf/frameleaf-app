@@ -191,14 +191,14 @@ export const studioBundleErrorCode = (error: unknown): string | null => {
   return message && typeof message.code === 'string' ? message.code : null;
 };
 
-const FINISHED: readonly MediaOperationStatus[] = [
+const FINISHED: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Completed,
   MediaOperationStatus.Failed,
   MediaOperationStatus.Cancelled,
-];
+]);
 
 export const isStudioBundleSettled = (operation: Pick<StudioBundleOperationDto, 'status'>): boolean =>
-  FINISHED.includes(operation.status);
+  FINISHED.has(operation.status);
 
 /**
  * The status line for a bundle job, in Activity's words (FL-104). A queued job that has already

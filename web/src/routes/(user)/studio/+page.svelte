@@ -80,7 +80,7 @@
    */
   const clientId =
     typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
+      ? crypto.randomUUID()
       : `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
   /**
@@ -366,7 +366,7 @@
   };
 
   onMount(() => {
-    online = globalThis.navigator?.onLine !== false;
+    online = globalThis.navigator?.onLine;
     void session.open();
 
     const goOnline = () => {

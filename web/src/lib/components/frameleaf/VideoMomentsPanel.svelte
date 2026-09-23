@@ -71,7 +71,7 @@
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(authManager.params)) {
       if (value) {
-        query.set(key, String(value));
+        query.set(key, value);
       }
     }
     const search = query.toString();
@@ -96,10 +96,12 @@
   };
 
   const stopPolling = () => {
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = undefined;
+    if (!pollTimer) {
+      return;
     }
+
+    clearTimeout(pollTimer);
+    pollTimer = undefined;
   };
 
   const follow = (next: EnrichmentPlanResponseDto) => {
@@ -317,11 +319,11 @@
                     {formatMomentTime(moment.timestampMs)}
                   </button>
                   <div class="min-w-0 flex-1">
-                    <p class="break-words">
+                    <p class="wrap-break-word">
                       {moment.caption ?? $t(untitledKey(moment))}
                     </p>
                     {#if moment.transcript}
-                      <p class="mt-1 text-xs break-words whitespace-pre-line text-gray-600 dark:text-gray-300">
+                      <p class="mt-1 text-xs wrap-break-word whitespace-pre-line text-gray-600 dark:text-gray-300">
                         {moment.transcript}
                       </p>
                     {/if}
@@ -375,7 +377,7 @@
             <label class="block text-xs">
               <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_time')}</span>
               <input
-                class="mt-1 w-full rounded border border-gray-300 bg-transparent px-2 py-1 font-mono dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 font-mono dark:border-gray-600"
                 bind:value={editing.time}
                 placeholder="0:42"
                 inputmode="numeric"
@@ -386,7 +388,7 @@
             <label class="block text-xs">
               <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_caption')}</span>
               <input
-                class="mt-1 w-full rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
                 bind:value={editing.caption}
                 maxlength="500"
               />
@@ -394,7 +396,7 @@
             <label class="block text-xs">
               <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_transcript')}</span>
               <textarea
-                class="mt-1 w-full rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
+                class="mt-1 w-full rounded-sm border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
                 rows="3"
                 bind:value={editing.transcript}
                 maxlength="20000"></textarea>

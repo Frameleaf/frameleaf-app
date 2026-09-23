@@ -15,7 +15,7 @@ const items = [
 describe('Frameleaf maintenance report filter', () => {
   it('returns every item for an empty or whitespace-only query', () => {
     expect(filterMaintenanceReportItems(items, '')).toEqual(items);
-    expect(filterMaintenanceReportItems(items, '   ')).toEqual(items);
+    expect(filterMaintenanceReportItems(items, ' '.repeat(3))).toEqual(items);
     expect(filterMaintenanceReportItems(items, undefined)).toEqual(items);
     expect(filterMaintenanceReportItems(items, null)).toEqual(items);
   });

@@ -39,21 +39,21 @@ export const RESTORATION_MODES: readonly AssetRestorationMode[] = [
   AssetRestorationMode.Creative,
 ];
 
-const BUSY: readonly AssetRestorationStatus[] = [
+const BUSY: ReadonlySet<AssetRestorationStatus> = new Set([
   AssetRestorationStatus.PreviewQueued,
   AssetRestorationStatus.PreviewRendering,
   AssetRestorationStatus.Accepted,
   AssetRestorationStatus.Restoring,
-];
+]);
 
-const RETRYABLE: readonly AssetRestorationStatus[] = [
+const RETRYABLE: ReadonlySet<AssetRestorationStatus> = new Set([
   AssetRestorationStatus.PreviewFailed,
   AssetRestorationStatus.PreviewCancelled,
   AssetRestorationStatus.RestoreFailed,
   AssetRestorationStatus.RestoreCancelled,
-];
+]);
 
-export const isRestorationBusy = (status: AssetRestorationStatus) => BUSY.includes(status);
+export const isRestorationBusy = (status: AssetRestorationStatus) => BUSY.has(status);
 
 export const anyRestorationBusy = (items: readonly Pick<AssetRestorationResponseDto, 'status'>[]) =>
   items.some((item) => isRestorationBusy(item.status));
@@ -76,7 +76,7 @@ export const canDiscardRestoration = (status: AssetRestorationStatus) =>
 export const retryOperationIdFor = (
   item: Pick<AssetRestorationResponseDto, 'status' | 'previewOperationId' | 'fullOperationId'>,
 ): string | null => {
-  if (!RETRYABLE.includes(item.status)) {
+  if (!RETRYABLE.has(item.status)) {
     return null;
   }
   return item.status === AssetRestorationStatus.RestoreFailed || item.status === AssetRestorationStatus.RestoreCancelled
@@ -241,7 +241,7 @@ export const restorationFileUrl = (
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries({ ...authManager.params, kind, c: cacheKey ?? undefined })) {
     if (value !== undefined && value !== null) {
-      search.set(key, String(value));
+      search.set(key, value);
     }
   }
   return `${getBaseUrl()}/assets/${encodeURIComponent(assetId)}/restorations/${encodeURIComponent(restorationId)}/file?${search.toString()}`;

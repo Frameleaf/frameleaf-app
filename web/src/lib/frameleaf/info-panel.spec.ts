@@ -48,7 +48,7 @@ describe('coordinates', () => {
   });
 
   it('rejects anything that is not a finite number', () => {
-    expect(validCoordinate(Number.NaN, 90)).toBeNull();
+    expect(validCoordinate(NaN, 90)).toBeNull();
     expect(validCoordinate(null, 90)).toBeNull();
     expect(validCoordinate('nowhere', 90)).toBeNull();
   });

@@ -147,7 +147,7 @@ describe('LibrarySessionStore', () => {
     expect(store.restorePlayback(120)).toBe(120);
     expect(store.playbackPosition).toBe(120);
 
-    store.open('asset-2', Number.NaN);
+    store.open('asset-2', NaN);
     expect(store.playbackPosition).toBe(0);
     expect(store.restorePlayback(60)).toBe(0);
 
@@ -156,7 +156,7 @@ describe('LibrarySessionStore', () => {
 
     store.open('asset-4', 30);
     expect(store.restorePlayback(null)).toBe(30);
-    expect(store.restorePlayback(Number.NaN)).toBe(30);
+    expect(store.restorePlayback(NaN)).toBe(30);
   });
 
   it('selects ranges and whole day groups from one ordered list', () => {

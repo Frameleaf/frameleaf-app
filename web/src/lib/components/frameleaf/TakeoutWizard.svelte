@@ -159,10 +159,12 @@
   );
 
   $effect(() => {
-    if (current && !options) {
-      options = { ...current.options };
-      selectedAlbums = Object.fromEntries(current.albums.map((album) => [album.folder, album.selected]));
+    if (!current || options) {
+      return;
     }
+
+    options = { ...current.options };
+    selectedAlbums = Object.fromEntries(current.albums.map((album) => [album.folder, album.selected]));
   });
 
   const say = (message: string) => {
@@ -182,9 +184,9 @@
     error = '';
     try {
       await action();
-    } catch (failure) {
-      if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
-        error = messageOf(failure);
+    } catch (error_) {
+      if (!(error_ instanceof DOMException && error_.name === 'AbortError')) {
+        error = messageOf(error_);
       }
     } finally {
       busy = false;

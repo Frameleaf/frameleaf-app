@@ -89,11 +89,13 @@
   };
 
   $effect(() => {
-    if (open) {
-      invitee = '';
-      inviteRole = AlbumUserRole.Editor;
-      void loadCandidates();
+    if (!open) {
+      return;
     }
+
+    invitee = '';
+    inviteRole = AlbumUserRole.Editor;
+    void loadCandidates();
   });
 
   const invite = async () => {

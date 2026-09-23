@@ -35,7 +35,7 @@
     bind:this={strip}
     aria-label={$t('frameleaf_viewer_filmstrip')}
     data-testid="viewer-filmstrip"
-    class="flex w-full gap-1 overflow-x-auto overflow-y-hidden bg-black/70 px-2 py-2"
+    class="flex w-full gap-1 overflow-x-auto overflow-y-hidden bg-black/70 p-2"
   >
     {#each assets as asset (asset.id)}
       {@const isCurrent = asset.id === currentAssetId}

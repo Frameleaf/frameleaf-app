@@ -86,7 +86,7 @@ describe('AssetTile', () => {
       await tick();
       const video = container.querySelector('video');
       expect(video?.getAttribute('src')).toBe('/api/assets/video-1/video/playback');
-      expect(container.innerHTML).not.toContain('size=original');
+      expect(container.getHTML()).not.toContain('size=original');
     } finally {
       vi.useRealTimers();
     }

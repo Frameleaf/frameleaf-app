@@ -35,8 +35,8 @@
     try {
       authManager.setUser(await oauth.link(location));
       toastManager.primary($t('frameleaf_access_provider_connected'));
-    } catch (caught) {
-      error = getServerErrorMessage(caught) ?? $t('frameleaf_access_provider_connect_failed');
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('frameleaf_access_provider_connect_failed');
     } finally {
       linking = false;
       await goto('?open=oauth', { replaceState: true });
@@ -71,8 +71,8 @@
     try {
       authManager.setUser(await oauth.unlink());
       toastManager.primary($t('frameleaf_access_provider_disconnected'));
-    } catch (caught) {
-      handleError(caught, $t('errors.unable_to_unlink_account'));
+    } catch (error_) {
+      handleError(error_, $t('errors.unable_to_unlink_account'));
     } finally {
       working = false;
     }

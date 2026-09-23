@@ -55,10 +55,12 @@
   };
 
   $effect(() => {
-    if (!open) {
-      clearFields();
-      onClose(changed);
+    if (open) {
+      return;
     }
+
+    clearFields();
+    onClose(changed);
   });
 
   const send = async () => {
@@ -98,8 +100,8 @@
       changed = true;
       toastManager.primary(message);
       open = false;
-    } catch (caught) {
-      error = getServerErrorMessage(caught) ?? $t('frameleaf_access_pin_failed');
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('frameleaf_access_pin_failed');
       // A rejected code never lingers.
       clearFields();
     } finally {

@@ -69,12 +69,14 @@
   };
 
   const activate = async (kind: 'personal' | 'server') => {
-    if (await modalManager.show(SupporterKeyDialog, { kind })) {
-      toastManager.primary(
-        kind === 'server' ? $t('frameleaf_access_server_key_registered') : $t('frameleaf_access_supporter_activated'),
-      );
-      await refresh();
+    if (!(await modalManager.show(SupporterKeyDialog, { kind }))) {
+      return;
     }
+
+    toastManager.primary(
+      kind === 'server' ? $t('frameleaf_access_server_key_registered') : $t('frameleaf_access_supporter_activated'),
+    );
+    await refresh();
   };
 
   const removePersonal = async () => {

@@ -40,10 +40,12 @@
   });
 
   $effect(() => {
-    if (editing) {
-      field?.focus();
-      field?.select();
+    if (!editing) {
+      return;
     }
+
+    field?.focus();
+    field?.select();
   });
 
   const start = () => {

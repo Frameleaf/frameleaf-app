@@ -157,7 +157,7 @@ export const buildDecisionGroups = (
       }
       case 'keepers': {
         const keep = [...new Set(keeperIds)];
-        if (keep.length === 0 || !keep.every((id) => inGroup(id))) {
+        if (keep.length === 0 || keep.some((id) => !inGroup(id))) {
           throw new DuplicateDecisionError('frameleaf_duplicates_error_keeper_outside');
         }
         return {
@@ -232,14 +232,14 @@ export const undoGroupsFor = (batch: DuplicateDecisionBatchDto): MediaOperationD
 export const undoableBatches = (recent: readonly DuplicateDecisionBatchDto[]): DuplicateDecisionBatchDto[] =>
   recent.filter((batch) => batch.undoable && undoGroupsFor(batch).length > 0).slice(0, DUPLICATE_UNDO_LIMIT);
 
-const FINISHED: readonly MediaOperationStatus[] = [
+const FINISHED: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Completed,
   MediaOperationStatus.Cancelled,
   MediaOperationStatus.Failed,
-];
+]);
 
 export const isFinishedOperation = (detail: Pick<MediaOperationDetailDto, 'status'>): boolean =>
-  FINISHED.includes(detail.status);
+  FINISHED.has(detail.status);
 
 /**
  * Where each group of a decision job stands, read from the job itself (`durableItemStates`, the same
@@ -364,7 +364,7 @@ export const matchReviewShortcut = (event: KeyLike): ReviewShortcut | null => {
 
 const captureTime = (asset: Asset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
-  const time = value ? Date.parse(value) : Number.NaN;
+  const time = value ? Date.parse(value) : NaN;
   return Number.isFinite(time) ? time : null;
 };
 

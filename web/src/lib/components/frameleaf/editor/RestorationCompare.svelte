@@ -59,18 +59,32 @@
   };
 
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      split = clamp(split - 0.02);
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      split = clamp(split + 0.02);
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      split = 0.04;
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      split = 0.96;
+    switch (event.key) {
+      case 'ArrowLeft': {
+        event.preventDefault();
+        split = clamp(split - 0.02);
+
+        break;
+      }
+      case 'ArrowRight': {
+        event.preventDefault();
+        split = clamp(split + 0.02);
+
+        break;
+      }
+      case 'Home': {
+        event.preventDefault();
+        split = 0.04;
+
+        break;
+      }
+      case 'End': {
+        event.preventDefault();
+        split = 0.96;
+
+        break;
+      }
+      // No default
     }
   };
 

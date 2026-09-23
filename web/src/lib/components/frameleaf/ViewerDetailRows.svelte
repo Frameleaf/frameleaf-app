@@ -76,7 +76,7 @@
             <Icon icon={ICONS[row.id]} size="16" aria-hidden />
             <span>{$t(LABEL_KEYS[row.id])}</span>
           </dt>
-          <dd class="min-w-0 flex-1 break-words">
+          <dd class="min-w-0 flex-1 wrap-break-word">
             {#if row.id === 'path'}
               <code class="block text-xs break-all">{row.value}</code>
               {#if isEnabled(ShowInFolder)}
