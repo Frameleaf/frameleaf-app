@@ -9,7 +9,8 @@
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import AuthDisableLoginConfirmModal from '$lib/modals/AuthDisableLoginConfirmModal.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
+  import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
+  import { ConfigCredential, OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
   import { Button, Link, modalManager, Text, toastManager } from '@immich/ui';
   import { mdiRestart } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -114,20 +115,18 @@
                 isEdited={configToEdit.oauth.clientId !== config.oauth.clientId}
               />
 
-              <SettingField
-                inputType={SettingInputFieldType.TEXT}
-                label="client_secret"
-                description={$t('admin.oauth_client_secret_description')}
-                bind:value={configToEdit.oauth.clientSecret}
-                disabled={disabled || !configToEdit.oauth.enabled}
-                isEdited={configToEdit.oauth.clientSecret !== config.oauth.clientSecret}
+              <!-- FL-67: the client secret is write-only and never part of this form's draft. -->
+              <CredentialRow
+                name={ConfigCredential.OauthClientSecret}
+                {disabled}
+                reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
               />
 
-              {#if configToEdit.oauth.clientSecret}
+              {#if config.oauth.clientSecretConfigured}
                 <SettingSelect
                   label="token_endpoint_auth_method"
                   bind:value={configToEdit.oauth.tokenEndpointAuthMethod}
-                  disabled={disabled || !configToEdit.oauth.enabled || !configToEdit.oauth.clientSecret}
+                  disabled={disabled || !configToEdit.oauth.enabled}
                   isEdited={configToEdit.oauth.tokenEndpointAuthMethod !== config.oauth.tokenEndpointAuthMethod}
                   options={[
                     { value: OAuthTokenEndpointAuthMethod.ClientSecretPost, text: 'client_secret_post' },

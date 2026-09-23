@@ -1,18 +1,20 @@
 <script lang="ts">
   import RunPodPanel from '$lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte';
   import RunPodReferralBanner from '$lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte';
+  import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import {
+    ConfigCredential,
     Mode as RunPodMode,
     type AdminConfigMachineLearningDto,
     type AdminConfigRunPodDto,
     type AdminConfigRunPodServerlessDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiCheck, mdiOpenInNew } from '@mdi/js';
+  import { mdiOpenInNew } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
@@ -80,44 +82,17 @@
 
     <hr />
 
-    <div class="flex flex-col gap-1">
-      <SettingField
-        inputType={SettingInputFieldType.PASSWORD}
-        label={$t('admin.machine_learning_runpod_api_key')}
-        bind:value={runpod.apiKey}
-        disabled={disabled || !workingConfig.enabled || runpodMode === 'disabled'}
-        isEdited={runpod.apiKey !== savedRunpod.apiKey}
-        placeholder={savedRunpod.apiKeyConfigured ? '••••••••••••' : ''}
-      />
-      {#if savedRunpod.apiKeyConfigured && !runpod.apiKey}
-        <span
-          class="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-        >
-          <Icon icon={mdiCheck} size="12" />
-          {$t('admin.machine_learning_runpod_key_saved')}
-        </span>
-      {/if}
-    </div>
-
-    <div class="flex flex-col gap-1">
-      <SettingField
-        inputType={SettingInputFieldType.PASSWORD}
-        label={$t('admin.machine_learning_runpod_hf_token')}
-        description={$t('admin.machine_learning_runpod_hf_token_description')}
-        bind:value={runpod.hfToken as string}
-        disabled={disabled || !workingConfig.enabled || runpodMode === 'disabled'}
-        isEdited={runpod.hfToken !== savedRunpod.hfToken}
-        placeholder={savedRunpod.hfTokenConfigured ? '••••••••••••' : ''}
-      />
-      {#if savedRunpod.hfTokenConfigured && !runpod.hfToken}
-        <span
-          class="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-        >
-          <Icon icon={mdiCheck} size="12" />
-          {$t('admin.machine_learning_runpod_token_saved')}
-        </span>
-      {/if}
-    </div>
+    <!-- FL-67: billing and model credentials are write-only and never part of this form's draft. -->
+    <CredentialRow
+      name={ConfigCredential.RunpodApiKey}
+      {disabled}
+      reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
+    />
+    <CredentialRow
+      name={ConfigCredential.HuggingfaceToken}
+      {disabled}
+      reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
+    />
 
     <SettingField
       inputType={SettingInputFieldType.TEXT}

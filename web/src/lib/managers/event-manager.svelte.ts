@@ -71,6 +71,8 @@ export type Events = {
   TagDelete: [TreeNode];
 
   UserPinCodeReset: [];
+  /** FL-67: the signed-in account created its first PIN. */
+  UserPinCodeCreated: [];
 
   UserAdminCreate: [UserAdminResponseDto];
   UserAdminUpdate: [UserAdminResponseDto];
