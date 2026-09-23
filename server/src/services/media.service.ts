@@ -207,6 +207,9 @@ export class MediaService extends BaseService {
       await this.jobRepository.queueAll(jobs);
     }
 
+    // profile pictures copied from a photo that became Locked where no replacement could run (FL-53)
+    await this.replaceLockedProfileImages();
+
     return JobStatus.Success;
   }
 
