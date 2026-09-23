@@ -440,6 +440,7 @@ export type JobItem =
   // Memories
   | { name: JobName.MemoryCleanup; data?: IBaseJob }
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
+  | { name: JobName.MemoryExport; data: IEntityJob }
 
   // Filesystem
   | { name: JobName.FileDelete; data: IDeleteFilesJob }
@@ -609,6 +610,10 @@ export type MaintenanceModeState =
 export type MemoriesState = {
   /** memories have already been created through this date */
   lastOnThisDayDate: string;
+  /** event stories have already been generated for local days through this date (FL-62) */
+  lastEventStoryDate?: string;
+  /** the most recent calendar year a year-in-review recap was generated for (FL-62) */
+  lastYearInReviewYear?: number;
 };
 export type MediaLocation = { location: string };
 

@@ -7,10 +7,11 @@ import type { IBulkAsset } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MemorySearchDto } from 'src/dtos/memory.dto.js';
-import { AssetOrderWithRandom, AssetVisibility } from 'src/enum.js';
+import { AssetOrderWithRandom, AssetVisibility, MemoryExportStatus, MemoryType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
-import { getHiddenContentFilter, withHiddenContentFilter } from 'src/utils/database.js';
+import { asUuid, getHiddenContentFilter, withHiddenContentFilter } from 'src/utils/database.js';
 
 type MemoryPrivacyOptions = HiddenContentQueryOptions;
 
@@ -209,6 +210,131 @@ export class MemoryRepository implements IBulkAsset {
     }
 
     await this.db.deleteFrom('memory_asset').where('memoriesId', '=', id).where('assetId', 'in', assetIds).execute();
+  }
+
+  /**
+   * The `memoryAt` instants of the owner's existing memories of one type in a window, used
+   * to avoid regenerating a story that already exists. Deleted memories count: a story the
+   * owner threw away must not come straight back on the next generation pass.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, MemoryType.EventStory, DummyValue.DATE, DummyValue.DATE] })
+  async getExistingMemoryDates(ownerId: string, type: MemoryType, from: Date, to: Date): Promise<Date[]> {
+    const rows = await this.db
+      .selectFrom('memory')
+      .select(['memoryAt'])
+      .where('ownerId', '=', ownerId)
+      .where('type', '=', type)
+      .where('memoryAt', '>=', from)
+      .where('memoryAt', '<=', to)
+      .execute();
+
+    return rows.map(({ memoryAt }) => memoryAt);
+  }
+
+  // Private highlight exports (FL-62). These live here rather than in their own repository
+  // so the memory service keeps a single collaborator and `BaseService`'s shared dependency
+  // list is untouched.
+
+  async createExport(entry: Insertable<MemoryExportTable>) {
+    return this.db.insertInto('memory_export').values(entry).returningAll().executeTakeFirstOrThrow();
+  }
+
+  /** Every export read is owner-scoped by construction; there is no unscoped getter. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getExport(id: string, ownerId: string) {
+    return this.db
+      .selectFrom('memory_export')
+      .selectAll()
+      .where('id', '=', asUuid(id))
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+  }
+
+  /** The worker's own read: it has no `AuthDto`, so it reads by id and reports the owner. */
+  getExportForJob(id: string) {
+    return this.db.selectFrom('memory_export').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, {}] })
+  searchExports(ownerId: string, { memoryId, status }: { memoryId?: string; status?: MemoryExportStatus[] } = {}) {
+    return this.db
+      .selectFrom('memory_export')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .$if(memoryId !== undefined, (qb) => qb.where('memoryId', '=', asUuid(memoryId!)))
+      .$if(status !== undefined && status.length > 0, (qb) => qb.where('status', 'in', status!))
+      .orderBy('createdAt', 'desc')
+      .execute();
+  }
+
+  async updateExport(id: string, update: Updateable<MemoryExportTable>) {
+    return this.db
+      .updateTable('memory_export')
+      .set({ ...update, updatedAt: new Date() })
+      .where('id', '=', asUuid(id))
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /**
+   * Moves a run from `pending` to `running` in one statement. A duplicate delivery of the
+   * same queue job, or a worker that restarts while the row still says `running`, therefore
+   * cannot produce two writers for one archive: only the update that matches `pending` wins.
+   */
+  async claimExport(id: string) {
+    return this.db
+      .updateTable('memory_export')
+      .set({
+        status: MemoryExportStatus.Running,
+        startedAt: new Date(),
+        processedAssets: 0,
+        updatedAt: new Date(),
+      })
+      .where('id', '=', asUuid(id))
+      .where('status', '=', MemoryExportStatus.Pending)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /**
+   * Records the owner's cancel request. It only applies to a run that has not reached a
+   * terminal state, and the worker is what actually finishes the run as cancelled.
+   */
+  async requestExportCancel(id: string, ownerId: string) {
+    return this.db
+      .updateTable('memory_export')
+      .set({ cancelRequestedAt: new Date(), updatedAt: new Date() })
+      .where('id', '=', asUuid(id))
+      .where('ownerId', '=', ownerId)
+      .where('status', 'in', [MemoryExportStatus.Pending, MemoryExportStatus.Running])
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  async deleteExport(id: string, ownerId: string) {
+    return this.db
+      .deleteFrom('memory_export')
+      .where('id', '=', asUuid(id))
+      .where('ownerId', '=', ownerId)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /** Runs whose archive has outlived its window, and runs abandoned by a lost worker. */
+  getReclaimableExports(now: Date, staleBefore: Date) {
+    return this.db
+      .selectFrom('memory_export')
+      .selectAll()
+      .where((eb) =>
+        eb.or([
+          eb.and([eb('status', '=', MemoryExportStatus.Ready), eb('expiresAt', '<=', now)]),
+          eb.and([
+            eb('status', 'in', [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling]),
+            eb('updatedAt', '<=', staleBefore),
+          ]),
+        ]),
+      )
+      .execute();
   }
 
   private getByIdBuilder(id: string, options: MemoryPrivacyOptions = {}) {
