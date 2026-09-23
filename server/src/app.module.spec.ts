@@ -34,7 +34,7 @@ it('initializes admin job routing before enqueueing a fork backfill without star
   const watchWorkers = vi.spyOn(jobs, 'watchWorkers');
   const { sut: storage, mocks } = newTestService(StorageService);
   mocks.config.getEnv.mockReturnValue(
-    mockEnvData({ storage: { mediaLocation: '/admin-media', ignoreMountCheckErrors: false } }),
+    mockEnvData({ storage: { mediaLocation: '/admin-media', ignoreMountCheckErrors: false, importRoots: [] } }),
   );
   const bootstrap = vi.spyOn(storage, 'onBootstrap');
   const admin = new ImmichAdminModule({} as CliService, jobs, storage);

@@ -677,10 +677,10 @@ export class SharedSpaceService extends BaseService {
           // Keep the original error below; it is the one that explains what happened.
         }
         // The comment being answered was removed meanwhile: that is "not found", as for any comment that is gone.
-        const parentStillThere = await this.activityRepository.getById(root.id).then(
-          (found) => !!found,
-          () => true,
-        );
+        const parentStillThere = await this.activityRepository
+          .getById(root.id)
+          .then((found) => !!found)
+          .catch(() => true);
         throw parentStillThere ? error : new NotFoundException('Comment not found');
       }
     }

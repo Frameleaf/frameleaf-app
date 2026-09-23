@@ -1,5 +1,6 @@
 import {
   addAssetsToAlbum,
+  AlbumKind,
   AlbumResponseDto,
   AlbumUserRole,
   AssetMediaResponseDto,
@@ -502,6 +503,7 @@ describe('/albums', () => {
         assetCount: 0,
         isActivityEnabled: true,
         order: AssetOrder.Desc,
+        kind: AlbumKind.Album,
         parentId: null,
         icon: null,
         sortOrder: null,
@@ -590,8 +592,8 @@ describe('/albums', () => {
     });
 
     describe('hierarchy', () => {
-      it('creates a child album under an existing parent', async () => {
-        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips' });
+      it('creates a child album under an existing collection', async () => {
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips', kind: AlbumKind.Collection });
 
         const { status, body } = await request(app)
           .post('/albums')
@@ -599,16 +601,33 @@ describe('/albums', () => {
           .send({ albumName: 'Disneyland 2024', parentId: parent.id });
 
         expect(status).toBe(201);
-        expect(body).toEqual(expect.objectContaining({ albumName: 'Disneyland 2024', parentId: parent.id }));
+        expect(body).toEqual(
+          expect.objectContaining({ albumName: 'Disneyland 2024', kind: AlbumKind.Album, parentId: parent.id }),
+        );
       });
 
-      it('reports descendant count after building a 3-level chain', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'Trips A' });
-        const b = await utils.createAlbum(user1.accessToken, { albumName: 'Trips B', parentId: a.id });
-        await utils.createAlbum(user1.accessToken, { albumName: 'Trips C', parentId: b.id });
+      it('rejects nesting an album under a plain album', async () => {
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Trips' });
 
         const { status, body } = await request(app)
-          .get(`/albums/${a.id}/descendant-count`)
+          .post('/albums')
+          .set('Authorization', `Bearer ${user1.accessToken}`)
+          .send({ albumName: 'Disneyland 2024', parentId: parent.id });
+
+        expect(status).toBe(400);
+        expect(body).toEqual(errorDto.badRequest('Albums nest only inside a collection'));
+      });
+
+      it('reports the descendant count of a collection', async () => {
+        const collection = await utils.createAlbum(user1.accessToken, {
+          albumName: 'Trips',
+          kind: AlbumKind.Collection,
+        });
+        await utils.createAlbum(user1.accessToken, { albumName: 'Trips B', parentId: collection.id });
+        await utils.createAlbum(user1.accessToken, { albumName: 'Trips C', parentId: collection.id });
+
+        const { status, body } = await request(app)
+          .get(`/albums/${collection.id}/descendant-count`)
           .set('Authorization', `Bearer ${user1.accessToken}`);
 
         expect(status).toBe(200);
@@ -616,7 +635,7 @@ describe('/albums', () => {
       });
 
       it('reparents an album to the root via PATCH parentId=null', async () => {
-        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Parent' });
+        const parent = await utils.createAlbum(user1.accessToken, { albumName: 'Parent', kind: AlbumKind.Collection });
         const child = await utils.createAlbum(user1.accessToken, { albumName: 'Child', parentId: parent.id });
 
         const { status, body } = await request(app)
@@ -628,9 +647,9 @@ describe('/albums', () => {
         expect(body.parentId).toBeNull();
       });
 
-      it('rejects making an album its own descendant (cycle prevention)', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CycleA' });
-        const b = await utils.createAlbum(user1.accessToken, { albumName: 'CycleB', parentId: a.id });
+      it('keeps collections at the top level', async () => {
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionA', kind: AlbumKind.Collection });
+        const b = await utils.createAlbum(user1.accessToken, { albumName: 'CollectionB', kind: AlbumKind.Collection });
 
         const { status, body } = await request(app)
           .patch(`/albums/${a.id}`)
@@ -638,7 +657,7 @@ describe('/albums', () => {
           .send({ parentId: b.id });
 
         expect(status).toBe(400);
-        expect(body.message).toContain('descendants');
+        expect(body.message).toContain('top level');
       });
 
       it('rejects an album becoming its own parent', async () => {
@@ -652,9 +671,9 @@ describe('/albums', () => {
         expect(status).toBe(400);
       });
 
-      it('rejects nesting under an album owned by another user', async () => {
+      it('rejects nesting under a collection owned by another user', async () => {
         const mine = await utils.createAlbum(user1.accessToken, { albumName: 'Mine' });
-        const theirs = await utils.createAlbum(user2.accessToken, { albumName: 'Theirs' });
+        const theirs = await utils.createAlbum(user2.accessToken, { albumName: 'Theirs', kind: AlbumKind.Collection });
 
         const { status } = await request(app)
           .patch(`/albums/${mine.id}`)
@@ -664,19 +683,23 @@ describe('/albums', () => {
         expect(status).toBe(400);
       });
 
-      it('cascades delete to descendants', async () => {
-        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeA' });
+      it('leaves albums standing when their collection is deleted', async () => {
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeA', kind: AlbumKind.Collection });
         const b = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeB', parentId: a.id });
-        const c = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeC', parentId: b.id });
+        const c = await utils.createAlbum(user1.accessToken, { albumName: 'CascadeC', parentId: a.id });
 
         const del = await request(app).delete(`/albums/${a.id}`).set('Authorization', `Bearer ${user1.accessToken}`);
         expect(del.status).toBe(204);
 
-        for (const id of [a.id, b.id, c.id]) {
-          const { status } = await request(app)
+        const gone = await request(app).get(`/albums/${a.id}`).set('Authorization', `Bearer ${user1.accessToken}`);
+        expect(gone.status).toBe(400);
+
+        for (const id of [b.id, c.id]) {
+          const { status, body } = await request(app)
             .get(`/albums/${id}`)
             .set('Authorization', `Bearer ${user1.accessToken}`);
-          expect(status).toBe(400);
+          expect(status).toBe(200);
+          expect(body.parentId).toBeNull();
         }
       });
     });

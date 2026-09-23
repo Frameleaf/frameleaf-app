@@ -178,7 +178,7 @@ const getRules = async (db: Kysely<any>): Promise<Rules> => {
   ), -1)`;
 
   // Mirrors `nsfwAssetIdExists` for the phases in which it reads a sensitive flag.
-  if (phase === 'legacy' || phase === 'dual-write' || phase === 'ready') {
+  if (['legacy', 'dual-write', 'ready'].includes(phase)) {
     const sensitive = sql<boolean>`"asset"."is_nsfw"`;
     return { rank, sensitive, visibleToEveryone: sql<boolean>`NOT ${sensitive}` };
   }

@@ -182,11 +182,11 @@ describe(WorkerInventoryService.name, () => {
   });
 
   it('reports the library backlog of the routed queues and ignores paused ones', async () => {
-    mocks.job.getJobCounts.mockImplementation((queue) =>
-      Promise.resolve(
-        queue === QueueName.FaceDetection ? counts(2, 30) : queue === QueueName.Ocr ? counts(0, 99) : counts(0, 0),
-      ),
-    );
+    const byQueue: Partial<Record<QueueName, [number, number]>> = {
+      [QueueName.FaceDetection]: [2, 30],
+      [QueueName.Ocr]: [0, 99],
+    };
+    mocks.job.getJobCounts.mockImplementation((queue) => Promise.resolve(counts(...(byQueue[queue] ?? [0, 0]))));
     mocks.job.isPaused.mockImplementation((queue) => Promise.resolve(queue === QueueName.Ocr));
 
     const inventory = await sut.getInventory();

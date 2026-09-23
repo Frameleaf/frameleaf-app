@@ -303,7 +303,7 @@ export function createTakeoutSidecarIndex(sidecars: TakeoutSidecar[]) {
     for (const candidate of matches ?? []) {
       distinct.set(JSON.stringify(candidate.metadata), candidate);
     }
-    return [...distinct.values()];
+    return distinct.values().toArray();
   };
 }
 

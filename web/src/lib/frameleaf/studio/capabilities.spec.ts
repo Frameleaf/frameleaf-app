@@ -18,6 +18,8 @@ describe('probeStudioCapabilities (FL-110)', () => {
     sdkMock.getMlCapabilities.mockResolvedValue(snapshot({ restorationWorker: true, transcriptionWorker: true }));
 
     await expect(probeStudioCapabilities()).resolves.toEqual({
+      analysisWorker: false,
+      generationWorker: false,
       gpuWorker: false,
       renderWorker: false,
       restorationWorker: true,
@@ -39,6 +41,13 @@ describe('probeStudioCapabilities (FL-110)', () => {
         restorationWorker: true,
         transcriptionWorker: false,
       }),
-    ).toEqual({ gpuWorker: false, renderWorker: false, restorationWorker: true, transcriptionWorker: false });
+    ).toEqual({
+      analysisWorker: false,
+      generationWorker: false,
+      gpuWorker: false,
+      renderWorker: false,
+      restorationWorker: true,
+      transcriptionWorker: false,
+    });
   });
 });
