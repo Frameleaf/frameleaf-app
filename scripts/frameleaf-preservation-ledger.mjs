@@ -217,6 +217,30 @@ const candidateOnlySettings = new Set([
   "roadmap:enrichment",
   "roadmap:care",
 ]);
+// Settings rows whose production home has shipped outside the design template's own area.
+// The row stays unqualified until acceptance; it no longer claims "not yet built".
+const shippedSettingHomes = {
+  // FL-75: the template places server migration under Settings > Storage ("Move or export
+  // your library"). Production has no Storage area yet, so the command-line guide and the
+  // read-only audit report live in Administration > Maintenance until that area lands.
+  "roadmap:migration": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte",
+      area: "maintenance",
+      section: "server-migration",
+      interimFor: "storage/migration",
+    },
+    evidence: [
+      "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.spec.ts",
+      "web/src/lib/frameleaf/migration-report.spec.ts",
+      "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
+      "docs/docs/administration/server-migration.md",
+    ],
+    notes:
+      "Server migration is the resumable command-line tool; the web home shows its exact commands and opens its audit report read-only. It never runs a migration or holds API keys.",
+  },
+};
 const sharedQueueConcurrency = new Set([
   "backgroundTask",
   "editor",
@@ -823,7 +847,16 @@ async function buildLedger() {
     });
   }
 
-  for (const row of evidence.settings) {
+  for (const sourceRow of evidence.settings) {
+    const shipped = shippedSettingHomes[sourceRow.id];
+    const row = shipped
+      ? {
+          ...sourceRow,
+          auditStatus: "mapped-unqualified",
+          target: shipped.target,
+          notes: shipped.notes,
+        }
+      : sourceRow;
     const area = row.target?.area;
     const [primary, secondary] = settingOwnership(row);
     requirements.push({
@@ -838,14 +871,21 @@ async function buildLedger() {
         `${row.target?.module ?? "unknown"}:${area ?? "unknown"}/${row.target?.section ?? "unknown"}`,
       ].filter(Boolean),
       owners: ownerSet(primary, secondary),
-      disposition:
-        row.auditStatus === "not-yet-built"
+      disposition: shipped
+        ? { kind: "legacy-fallback-until-qualified", legacyFallback: false }
+        : row.auditStatus === "not-yet-built"
           ? { kind: "not-yet-designed", legacyFallback: true }
           : { kind: "legacy-fallback-until-qualified", legacyFallback: true },
       qualification: "planned-not-qualified",
       mappings: mapping(
         { status: row.sourceAvailability, paths: [row.source] },
-        { status: row.auditStatus, target: row.target },
+        shipped
+          ? {
+              status: row.auditStatus,
+              target: row.target,
+              evidence: shipped.evidence,
+            }
+          : { status: row.auditStatus, target: row.target },
         {
           status: row.productionConnected
             ? "connected-unqualified"
@@ -1119,6 +1159,7 @@ async function validateLedger(ledger) {
     "resource-flow",
     "deployment-policy",
     "not-yet-built",
+    "mapped-unqualified",
     "pending",
     "review-only-preview",
     "Local",
