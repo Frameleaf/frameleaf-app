@@ -12,7 +12,12 @@
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
-  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import {
+    markSessionLockSucceeded,
+    sessionAccess,
+    setSessionLockPending,
+    waitForSessionLockRefreshes,
+  } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -79,6 +84,8 @@
   };
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
+  let sessionRevision = 0;
+  let lockFlight: Promise<void> | undefined;
   // FL-34: views that reveal the owner's marks to an unlocked session read it from here
   $effect(() => {
     sessionAccess.isElevated = isElevated;
@@ -114,28 +121,38 @@
 
   onMount(() => {
     void refreshNotifications();
-    void refreshAuthStatus();
+    sessionAccess.retryLock = lockSession;
+    if (sessionAccess.lockPending) {
+      void lockSession();
+    } else {
+      void refreshAuthStatus();
+    }
 
     // One poll for everything running; fast only while the panel is open or something runs.
     const stopRunningJobs = runningJobsSession.watch();
     const stopEvents = eventManager.on({
       SessionLocked: () => (isElevated = false),
-      SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated),
+      SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated && !sessionAccess.lockPending),
     });
 
     // The prototype hides Locked content as soon as the tab is left ("Content hides when you
     // leave this tab or after one hour"); the hour is the server's elevated-session lifetime.
     const onVisibilityChange = () => {
-      if (document.hidden && isElevated && !isSessionLoading) {
+      if ((document.hidden && (isElevated || isSessionLoading)) || sessionAccess.lockPending) {
         handlePromiseError(lockSession());
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
+    addEventListener('online', onVisibilityChange);
 
     return () => {
+      if (sessionAccess.retryLock === lockSession) {
+        sessionAccess.retryLock = undefined;
+      }
       stopRunningJobs();
       stopEvents();
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      removeEventListener('online', onVisibilityChange);
     };
   });
 
@@ -154,10 +171,16 @@
   };
 
   const refreshAuthStatus = async () => {
+    const revision = sessionRevision;
     isSessionLoading = true;
     try {
       const status = await getAuthStatus();
-      isElevated = status.isElevated;
+      if (revision === sessionRevision && !sessionAccess.lockPending) {
+        isElevated = status.isElevated;
+        if (document.hidden && isElevated) {
+          void lockSession();
+        }
+      }
     } catch (error) {
       console.error('Failed to load elevated session status', error);
     } finally {
@@ -177,35 +200,52 @@
   };
 
   const onUnlocked = async () => {
+    sessionRevision++;
+    if (document.hidden || sessionAccess.lockPending) {
+      await lockSession();
+      return;
+    }
     isElevated = true;
     eventManager.emit('SessionAccessChanged', { isElevated: true });
     await invalidateAll();
   };
 
-  const lockSession = async () => {
-    const pathname = page.url.pathname;
-    isSessionLoading = true;
-
-    try {
-      await lockAuthSession();
-      isElevated = false;
-
-      if (isSensitiveRoute(pathname)) {
-        // Never leave sensitive media on screen after locking.
-        await goto(Route.photos());
-      } else if (isAssetViewerRoute(page)) {
-        await navigate({ targetRoute: 'current', assetId: null }, { replaceState: true, invalidateAll: true });
-      } else {
-        await invalidateAll();
-      }
-
-      eventManager.emit('SessionAccessChanged', { isElevated: false });
-      eventManager.emit('SessionLocked');
-    } catch (error) {
-      handleError(error, $t('errors.something_went_wrong'));
-    } finally {
-      isSessionLoading = false;
+  const lockSession = (): Promise<void> => {
+    if (lockFlight) {
+      return lockFlight;
     }
+    sessionRevision++;
+    setSessionLockPending(true);
+    isElevated = false;
+    sessionAccess.isElevated = false;
+    isSessionLoading = true;
+    unlockDialogOpen = false;
+    // The root hides the existing page immediately, without unmounting its drafts. It stays
+    // hidden on failure and retries on return/online or through the root's Retry button.
+    const pathname = page.url.pathname;
+    lockFlight = (async () => {
+      try {
+        await lockAuthSession({ signal: AbortSignal.timeout(15_000) });
+        markSessionLockSucceeded();
+        if (isSensitiveRoute(pathname)) {
+          await goto(Route.photos(), { replaceState: true, invalidateAll: true });
+        } else if (isAssetViewerRoute(page)) {
+          await navigate({ targetRoute: 'current', assetId: null }, { replaceState: true, invalidateAll: true });
+        } else {
+          await invalidateAll();
+        }
+        eventManager.emit('SessionLocked');
+        eventManager.emit('SessionAccessChanged', { isElevated: false });
+        await waitForSessionLockRefreshes();
+        setSessionLockPending(false);
+      } catch (error) {
+        handleError(error, $t('errors.something_went_wrong'));
+      } finally {
+        isSessionLoading = false;
+        lockFlight = undefined;
+      }
+    })();
+    return lockFlight;
   };
 
   const toggleSession = () => {
@@ -314,7 +354,7 @@
           aria-expanded={showNotifications}
           onclick={() => (showNotifications = !showNotifications)}
         >
-          <Icon icon={mdiBellOutline} size={20} aria-hidden="true" />
+          <Icon icon={mdiBellOutline} size="20" aria-hidden="true" />
           {#if unreadCount > 0}
             <span class="fl-notif-count" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>
           {/if}

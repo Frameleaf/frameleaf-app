@@ -7,7 +7,12 @@ import {
 } from '@immich/sdk';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+import {
+  markSessionLockSucceeded,
+  sessionAccess,
+  setSessionLockPending,
+  waitForSessionLockRefreshes,
+} from '$lib/frameleaf/session-access.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getTimelineMonthByDate } from '$lib/managers/timeline-manager/internal/search-support.svelte';
 import { AbortError } from '$lib/utils';
@@ -35,9 +40,40 @@ function deriveLocalDateTimeFromFileCreatedAt(arg: TimelineAsset): TimelineAsset
   };
 }
 
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
+};
+
 describe('TimelineManager', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  it('discards an elevated bucket response that arrives after the session locks', async () => {
+    const oldBuckets = deferred<Array<{ count: number; timeBucket: string }>>();
+    sdkMock.getTimeBuckets
+      .mockReturnValueOnce(oldBuckets.promise)
+      .mockResolvedValueOnce([{ count: 1, timeBucket: '2024-02-01' }]);
+    const timelineManager = new TimelineManager();
+    const initial = timelineManager.updateOptions({ visibility: AssetVisibility.Locked });
+    await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce());
+
+    setSessionLockPending(true);
+    markSessionLockSucceeded();
+    eventManager.emit('SessionLocked');
+    eventManager.emit('SessionAccessChanged', { isElevated: false });
+    await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+    oldBuckets.resolve([{ count: 3, timeBucket: '2024-01-01' }]);
+    await initial;
+    await waitForSessionLockRefreshes();
+
+    expect(timelineManager.months.map((month) => month.yearMonth.month)).toEqual([2]);
+    timelineManager.destroy();
+    setSessionLockPending(false);
   });
 
   describe('init', () => {
