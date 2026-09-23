@@ -78,7 +78,7 @@
     createOnOpen={page.url.searchParams.get('new') === '1'}
     snapshotAt={data.snapshotAt}
     onSelect={select}
-    onAnalytics={() => goto(Route.systemStatistics())}
+    onAnalytics={() => goto(Route.libraryAnalytics())}
     {refresh}
   />
 {:else if failed}
