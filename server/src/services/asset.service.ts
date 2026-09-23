@@ -4,7 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { AssetFile } from 'src/database.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -41,6 +41,7 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
+import { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
@@ -284,6 +285,16 @@ export class AssetService extends BaseService {
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+  }
+
+  /**
+   * Assets locked outside this service (FL-34: the iCloud reconciler locking Apple Hidden photos) get
+   * the same follow-up as a lock made here, once that lock has committed.
+   */
+  @OnEvent({ name: 'AssetLockAll' })
+  async onAssetLockAll({ assetIds, userId }: ArgOf<'AssetLockAll'>): Promise<void> {
+    await this.afterAssetsLocked(assetIds);
+    await this.notifyAssetsUpdated(assetIds, userId);
   }
 
   /**

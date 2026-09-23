@@ -72,6 +72,8 @@ type EventMap = {
   AssetTrashAll: [{ assetIds: string[]; userId: string }];
   AssetDeleteAll: [{ assetIds: string[]; userId: string }];
   AssetRestoreAll: [{ assetIds: string[]; userId: string }];
+  /** FL-34: assets were locked outside a service's own lock path (the iCloud reconciler); run the follow-up */
+  AssetLockAll: [{ assetIds: string[]; userId: string }];
 
   /** a worker receives a job and emits this event to run it */
   JobRun: [QueueName, JobItem];
