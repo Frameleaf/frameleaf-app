@@ -158,7 +158,11 @@
     const projectId = project.id;
     const revision = storedRevision;
     untrack(() => {
-      if (previewProjectId !== null && previewProjectId !== projectId) {
+      // A draft's first save only gives it an id; nothing was ever previewed for the draft, and
+      // the request that triggered the save may already be in flight on this client.
+      const replaced =
+        previewProjectId !== null && previewProjectId !== STUDIO_DRAFT_PROJECT_ID && previewProjectId !== projectId;
+      if (replaced) {
         void resetPreview();
       }
       previewProjectId = projectId;
