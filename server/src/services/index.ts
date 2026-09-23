@@ -55,6 +55,7 @@ import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -131,6 +132,7 @@ export const services = [
   SmartInfoService,
   ZeroShotTaggingService,
   StackService,
+  StudioPreviewService,
   StorageService,
   StorageTemplateService,
   SyncService,

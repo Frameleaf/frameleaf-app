@@ -24,6 +24,7 @@
  */
 
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult } from './commands';
+import type { StudioPreviewView } from './preview';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -131,6 +132,16 @@ export interface StudioHostContext {
   auth: StudioAuthContext;
   theme: StudioThemeTokens;
   capabilities: StudioCapabilities;
+  /**
+   * The remote preview, as data (FL-96).
+   *
+   * This is the `preview-ready` direction of the preview contract. The engine asks for a frame
+   * by sending a `preview.request` command envelope and receives the answer here on the next
+   * `update`; it never fetches a frame itself, because it has nothing to fetch one with. The
+   * phase is honest — `rendering`, `stale` and `unavailable` mean what they say — so the engine
+   * and the host chrome can both show the truth rather than an old frame passed off as current.
+   */
+  preview: StudioPreviewView;
   /** False when the browser reports no network; the engine must go read-only. */
   online: boolean;
 }
