@@ -111,7 +111,14 @@ where
       "asset" as "lockedPrimary"
     where
       "lockedPrimary"."id" = "stack"."primaryAssetId"
-      and "lockedPrimary"."visibility" = 'locked'
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
   )
   and "primaryAsset"."deletedAt" is null
   and not (
@@ -291,7 +298,14 @@ where
       "asset" as "lockedPrimary"
     where
       "lockedPrimary"."id" = "stack"."primaryAssetId"
-      and "lockedPrimary"."visibility" = 'locked'
+      and exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "lockedPrimary"."id"
+      )
   )
   and "primaryAsset"."deletedAt" is null
   and not (
@@ -359,7 +373,14 @@ from
   "asset" as "member"
 where
   "member"."stackId" = any ($1::uuid[])
-  and "member"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "member"."id"
+  )
   and exists (
     select
       1 as "locked"
@@ -371,10 +392,9 @@ where
         select
           1
         from
-          asset as locked_asset
+          asset_lock
         where
-          locked_asset.id = "locked_member"."id"
-          and locked_asset.visibility = 'locked'
+          asset_lock."assetId" = "locked_member"."id"
       )
   )
 commit
