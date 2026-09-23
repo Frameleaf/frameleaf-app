@@ -101,8 +101,8 @@
     services: StudioHostServices;
     onBack: () => void;
     /**
-     * Omitted while no Activity route exists (FL-104 owns it). When it is absent the host
-     * renders no link to Activity rather than a control that goes nowhere.
+     * Opens Activity (FL-104), where queued jobs such as bundle exports (FL-91) are followed.
+     * When it is absent the host renders no link rather than a control that goes nowhere.
      */
     onOpenActivity?: () => void;
     /** The session lost the project: sign-out, session delete or relock. */

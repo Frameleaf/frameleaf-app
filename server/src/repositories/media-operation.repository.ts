@@ -188,6 +188,59 @@ export class MediaOperationRepository {
   }
 
   /**
+   * The owner's job of one kind submitted under a client idempotency key, if any (FL-91).
+   *
+   * The same rule as bulk submission, for kinds whose snapshot records `requestKey`: a repeated
+   * submit answers with the first job instead of queuing the same work twice.
+   */
+  async getByRequestKey(
+    ownerId: string,
+    kind: MediaOperationKind,
+    requestKey: string,
+  ): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('kind', '=', kind)
+      .where(sql<string>`"snapshot"->>'requestKey'`, '=', requestKey)
+      .orderBy('createdAt', 'asc')
+      .limit(1)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * Finished bundle exports whose file is past its expiry and has not been swept yet (FL-91).
+   * The row stays for lineage; the sweep removes the file and records `expiredAt` in the result.
+   */
+  async listExpiredBundleExports(
+    now: Date,
+    limit = 200,
+  ): Promise<Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .select(['id', 'ownerId', 'result'])
+      .where('kind', '=', MediaOperationKind.StudioBundleExport)
+      .where('status', '=', MediaOperationStatus.Completed)
+      .where(sql<boolean>`"result"->>'expiredAt' is null`)
+      .where(sql<boolean>`("result"->>'expiresAt')::timestamptz < ${now}`)
+      .orderBy('finishedAt', 'asc')
+      .limit(limit)
+      .execute()) as unknown as Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>;
+  }
+
+  /** Replace the result of a job no worker holds. Used by sweeps on finished jobs only. */
+  async setFinishedResult(id: string, result: Record<string, unknown>): Promise<boolean> {
+    const updated = await this.db
+      .updateTable('media_operation')
+      .set({ result })
+      .where('id', '=', id)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+    return Number(updated.numUpdatedRows) === 1;
+  }
+
+  /**
    * How many of these assets are the owner's and sit in the Locked folder (FL-32).
    *
    * The bulk worker acts on Locked items, so the Locked folder's PIN is enforced when the job is
@@ -553,6 +606,40 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', 'in', WORKING_STATUSES)
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /**
+   * Put a failed attempt back in the queue for its automatic retry (owner decision, September 22,
+   * 2026: every operation retries exactly once before it is reported failed).
+   *
+   * Guarded like `fail`, and additionally by `attempt < maxAttempts` and by the absence of a cancel,
+   * so the retry happens at most as often as the row allows and never resurrects a job the owner
+   * stopped. The error stays on the row so Activity can say the first attempt failed. Returns false
+   * when the job has no attempt left, in which case the caller fails it instead.
+   */
+  async requeueAfterFailure(
+    id: string,
+    claimToken: string,
+    failure: { error: string; errorCode: string },
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Queued,
+        error: failure.error,
+        errorCode: failure.errorCode,
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where(sql<boolean>`"attempt" < "maxAttempts"`)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 

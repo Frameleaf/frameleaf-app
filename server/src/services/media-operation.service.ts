@@ -133,7 +133,7 @@ const mapBulkRetryPending = (operation: MediaOperation): string[] =>
     ? bulkRetryPending(parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)))
     : [];
 
-const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
+export const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
   status: operation.status as MediaOperationStatus,

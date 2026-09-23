@@ -1,7 +1,8 @@
-import type {
-  StudioProjectDetailDto,
-  StudioProjectLeaseDto,
-  StudioProjectSaveResponseDto,
+import {
+  StudioProjectShelf,
+  type StudioProjectDetailDto,
+  type StudioProjectLeaseDto,
+  type StudioProjectSaveResponseDto,
 } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -44,6 +45,14 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
   digest: 'd3',
   withheld: false,
   resources: { complete: true, refusedCount: 0, checkedAt: '2026-09-22T10:05:00.000Z' },
+  shelf: StudioProjectShelf.Active,
+  archivedAt: null,
+  deletedAt: null,
+  purgeAfter: null,
+  lastOpenedAt: null,
+  thumbnailAssetId: null,
+  duplicatedFromId: null,
+  importedFromBundle: false,
   ...overrides,
 });
 
@@ -183,6 +192,19 @@ describe('studio project session', () => {
         conflict: { reason: 'lease-held' },
       });
       expect(api.acquireLease).toHaveBeenCalledWith('p-1', { clientId: 'tab-a' });
+    });
+
+    it('opens an archived or trashed project read-only for its owner, without taking the lease', async () => {
+      for (const shelf of [StudioProjectShelf.Archived, StudioProjectShelf.Trashed]) {
+        api.get.mockResolvedValue(detail({ shelf }));
+        api.acquireLease.mockClear();
+        const session = create();
+        await session.open();
+
+        expect(api.acquireLease).not.toHaveBeenCalled();
+        expect(last()).toMatchObject({ status: 'review', access: 'owner', project: { hasLease: false } });
+        await session.dispose();
+      }
     });
 
     it('reports a project this account cannot read as forbidden', async () => {
@@ -394,6 +416,23 @@ describe('studio project session', () => {
       api.acquireLease.mockRejectedValueOnce(httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }));
       await timers.fire((timer) => timer.ms === 30_000);
       expect(last()).toMatchObject({ status: 'lease-lost', project: { hasLease: false } });
+    });
+
+    it('turns read-only, keeping the draft, when the owner archives the project elsewhere', async () => {
+      const session = create();
+      await session.open();
+      session.stage({ tracks: ['t1', 't2'] }, ['clip.add']);
+
+      api.acquireLease.mockRejectedValueOnce(httpError(409, { reason: 'project-archived', currentRevision: 3 }));
+      await timers.fire((timer) => timer.ms === 30_000);
+
+      expect(last()).toMatchObject({
+        status: 'review',
+        project: { hasLease: false },
+        conflict: { reason: 'project-archived' },
+        hasDraft: true,
+      });
+      expect(timers.pending()).toEqual([]);
     });
   });
 
