@@ -125,4 +125,26 @@ describe(UserAdminController.name, () => {
       });
     }
   });
+
+  describe('DELETE /admin/users/:id/sessions/:sessionId (FL-76)', () => {
+    it('should call the service with both ids', async () => {
+      const id = factory.uuid();
+      const sessionId = factory.uuid();
+
+      const { status } = await request(ctx.getHttpServer()).delete(`/admin/users/${id}/sessions/${sessionId}`);
+
+      expect(status).toBe(204);
+      expect(service.deleteSession).toHaveBeenCalledWith(undefined, id, sessionId);
+    });
+
+    it('should reject a non-uuid session id', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .delete(`/admin/users/${factory.uuid()}/sessions/not-a-uuid`)
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['sessionId'], message: 'Invalid UUID' }]),
+      );
+    });
+  });
 });
