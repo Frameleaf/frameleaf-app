@@ -2,6 +2,7 @@
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import IndividualSharedViewer from '$lib/components/share-page/IndividualSharedViewer.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
@@ -13,7 +14,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { sharedLinkLogin, SharedLinkType, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Button as ImmichButton, Logo, PasswordInput, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Button as ImmichButton, PasswordInput, Theme as AppTheme, themeManager } from '@immich/ui';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -49,7 +50,7 @@
       sharedLink = await sharedLinkLogin({ key, slug, sharedLinkLoginDto: { password } });
       setSharedLink(sharedLink);
       passwordRequired = false;
-      title = (sharedLink.album ? sharedLink.album.albumName : $t('public_share')) + ' - Immich';
+      title = (sharedLink.album ? sharedLink.album.albumName : $t('public_share')) + ' - Frameleaf';
       description =
         sharedLink.description ||
         $t('shared_photos_and_videos_count', { values: { assetCount: sharedLink.assets.length } });
@@ -124,7 +125,7 @@
       <ControlAppBar>
         {#snippet leading()}
           <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-            <Logo variant="inline" />
+            <FrameleafLogo variant="inline" theme={appTheme} class="h-8" />
           </a>
         {/snippet}
 

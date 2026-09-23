@@ -6,14 +6,16 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AvatarEditModal from '$lib/modals/AvatarEditModal.svelte';
   import HelpAndFeedbackModal from '$lib/modals/HelpAndFeedbackModal.svelte';
+  import ServerAboutModal from '$lib/modals/ServerAboutModal.svelte';
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
-  import { getAboutInfo } from '@immich/sdk';
+  import { getAboutInfo, getVersionHistory } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
     mdiAccountEditOutline,
     mdiChevronDown,
     mdiCogOutline,
+    mdiInformationOutline,
     mdiLifebuoy,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
@@ -93,6 +95,17 @@
     close();
     const info = userInteraction.aboutInfo ?? (await getAboutInfo());
     await modalManager.show(HelpAndFeedbackModal, { info });
+  };
+
+  const openAbout = async () => {
+    close();
+    const [info, versions] = await Promise.all([
+      userInteraction.aboutInfo ?? getAboutInfo(),
+      userInteraction.versions ?? getVersionHistory(),
+    ]);
+    userInteraction.aboutInfo = info;
+    userInteraction.versions = versions;
+    await modalManager.show(ServerAboutModal, { info, versions });
   };
 </script>
 
@@ -187,6 +200,11 @@
       <button type="button" role="menuitem" class="fl-item" onclick={() => void openSupport()}>
         <Icon icon={mdiLifebuoy} size="1.125em" aria-hidden={true} />
         <span>{$t('support_and_feedback')}</span>
+      </button>
+
+      <button type="button" role="menuitem" class="fl-item" onclick={() => void openAbout()}>
+        <Icon icon={mdiInformationOutline} size="1.125em" aria-hidden={true} />
+        <span>{$t('frameleaf_about_menu_item')}</span>
       </button>
 
       <hr />
