@@ -4,6 +4,7 @@ import { Pool, createPool } from 'generic-pool';
 import { type Insertable, type Kysely, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { WorkflowParameterSchema } from 'src/utils/workflow-definition.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { PluginMethodSearchDto, PluginSearchDto } from 'src/dtos/plugin.dto.js';
@@ -27,6 +28,7 @@ export type PluginMethodSearchResponse = {
   name: string;
   pluginName: string;
   types: WorkflowType[];
+  schema: WorkflowParameterSchema | null;
 };
 
 const levels = {
@@ -104,6 +106,7 @@ export class PluginRepository {
     const query = await this.queryBuilder();
     return query
       .$if(!!dto.id, (qb) => qb.where('plugin.id', '=', dto.id!))
+      .$if(dto.enabled !== undefined, (qb) => qb.where('plugin.enabled', '=', dto.enabled!))
       .$if(!!dto.name, (qb) => qb.where('plugin.name', '=', dto.name!))
       .$if(!!dto.title, (qb) => qb.where('plugin.title', '=', dto.title!))
       .$if(!!dto.description, (qb) => qb.where('plugin.description', '=', dto.description!))
@@ -131,38 +134,51 @@ export class PluginRepository {
   }
 
   @GenerateSql()
+  /** Methods of enabled plugins only: a disabled plugin is never loaded, so its methods cannot run. */
   getForValidation(): Promise<PluginMethodSearchResponse[]> {
     return this.db
       .selectFrom('plugin_method')
       .innerJoin('plugin', 'plugin_method.pluginId', 'plugin.id')
-      .select(['plugin_method.id', 'plugin_method.name', 'plugin.name as pluginName', 'plugin_method.types'])
+      .select([
+        'plugin_method.id',
+        'plugin_method.name',
+        'plugin.name as pluginName',
+        'plugin_method.types',
+        'plugin_method.schema',
+      ])
+      .where('plugin.enabled', '=', true)
+      .$castTo<PluginMethodSearchResponse>()
       .execute();
   }
 
   @GenerateSql()
   async searchMethods(dto: PluginMethodSearchDto = {}) {
     const hasAllowedHosts = await this.hasAllowedHostsColumn();
-    return this.db
-      .selectFrom('plugin_method')
-      .innerJoin('plugin', 'plugin.id', 'plugin_method.pluginId')
-      .select((eb) => [
-        'plugin.name as pluginName',
-        'plugin_method.pluginId',
-        'plugin_method.id',
-        ...columns.pluginMethod,
-        hasAllowedHosts
-          ? eb.ref('plugin_method.allowedHosts').as('allowedHosts')
-          : sql<string[]>`ARRAY[]::character varying[]`.as('allowedHosts'),
-      ])
-      .$if(!!dto.id, (qb) => qb.where('plugin_method.id', '=', dto.id!))
-      .$if(!!dto.name, (qb) => qb.where('plugin_method.name', '=', dto.name!))
-      .$if(!!dto.title, (qb) => qb.where('plugin_method.title', '=', dto.title!))
-      .$if(!!dto.type, (qb) => qb.where('plugin_method.types', '@>', [dto.type!]))
-      .$if(!!dto.description, (qb) => qb.where('plugin_method.description', '=', dto.description!))
-      .$if(!!dto.pluginVersion, (qb) => qb.where('plugin.version', '=', dto.pluginVersion!))
-      .$if(!!dto.pluginName, (qb) => qb.where('plugin.name', '=', dto.pluginName!))
-      .orderBy('plugin_method.name')
-      .execute();
+    return (
+      this.db
+        .selectFrom('plugin_method')
+        .innerJoin('plugin', 'plugin.id', 'plugin_method.pluginId')
+        .select((eb) => [
+          'plugin.name as pluginName',
+          'plugin_method.pluginId',
+          'plugin_method.id',
+          ...columns.pluginMethod,
+          hasAllowedHosts
+            ? eb.ref('plugin_method.allowedHosts').as('allowedHosts')
+            : sql<string[]>`ARRAY[]::character varying[]`.as('allowedHosts'),
+        ])
+        .$if(!!dto.id, (qb) => qb.where('plugin_method.id', '=', dto.id!))
+        .$if(!!dto.name, (qb) => qb.where('plugin_method.name', '=', dto.name!))
+        .$if(!!dto.title, (qb) => qb.where('plugin_method.title', '=', dto.title!))
+        .$if(!!dto.type, (qb) => qb.where('plugin_method.types', '@>', [dto.type!]))
+        .$if(!!dto.description, (qb) => qb.where('plugin_method.description', '=', dto.description!))
+        .$if(!!dto.pluginVersion, (qb) => qb.where('plugin.version', '=', dto.pluginVersion!))
+        .$if(!!dto.pluginName, (qb) => qb.where('plugin.name', '=', dto.pluginName!))
+        // only methods that can run: a disabled plugin is never loaded
+        .where('plugin.enabled', '=', true)
+        .orderBy('plugin_method.name')
+        .execute()
+    );
   }
 
   async upsert(dto: Insertable<PluginTable>, initialMethods: Omit<Insertable<PluginMethodTable>, 'pluginId'>[]) {

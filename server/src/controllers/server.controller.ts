@@ -5,6 +5,7 @@ import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
   ServerAboutResponseDto,
   ServerApkLinksDto,
+  ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
   ServerMediaTypesResponseDto,
@@ -43,13 +44,27 @@ export class ServerController {
 
   @Get('apk-links')
   @Authenticated({ permission: Permission.ServerApkLinks })
+  @ApiNotFoundResponse({ description: 'No signed Android release is configured for this server' })
   @Endpoint({
     summary: 'Get APK links',
-    description: 'Retrieve links to the APKs for the current server version.',
+    description:
+      'Retrieve links to the signed APKs for the current server version, from the release destination configured for this server.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   getApkLinks(): ServerApkLinksDto {
     return this.service.getApkLinks();
+  }
+
+  @Get('app-releases')
+  @Authenticated({ permission: Permission.ServerAbout })
+  @Endpoint({
+    summary: 'Get app releases',
+    description:
+      'Retrieve the signed release destinations of the mobile apps for this server, or that none is configured.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAppReleases(): ServerAppReleasesResponseDto {
+    return this.service.getAppReleases();
   }
 
   @Get('storage')

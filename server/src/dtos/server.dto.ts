@@ -46,6 +46,28 @@ const ServerApkLinksSchema = z
   })
   .meta({ id: 'ServerApkLinksDto' });
 
+const ServerAppReleasesResponseSchema = z
+  .object({
+    android: z
+      .object({
+        available: z.boolean().describe('Whether a signed Android release is configured for this server'),
+        appId: z.string().optional().describe('Android package id of the signed release'),
+        signingCertificateSha256: z
+          .string()
+          .optional()
+          .describe('SHA-256 fingerprint of the release signing certificate, as AA:BB:...'),
+        links: ServerApkLinksSchema.optional().describe('Signed APK downloads for this server version'),
+      })
+      .describe('Android application'),
+    ios: z
+      .object({
+        available: z.boolean().describe('Whether an iOS release is configured for this server'),
+        url: z.string().optional().describe('App Store or TestFlight page'),
+      })
+      .describe('iOS application'),
+  })
+  .meta({ id: 'ServerAppReleasesResponseDto' });
+
 const ServerStorageResponseSchema = z
   .object({
     diskSize: z.string().describe('Total disk size (human-readable format)'),
@@ -181,6 +203,7 @@ const ReleaseEventV1Schema = z.object({
 export class ServerPingResponse extends createZodDto(ServerPingResponseSchema) {}
 export class ServerAboutResponseDto extends createZodDto(ServerAboutResponseSchema) {}
 export class ServerApkLinksDto extends createZodDto(ServerApkLinksSchema) {}
+export class ServerAppReleasesResponseDto extends createZodDto(ServerAppReleasesResponseSchema) {}
 export class ServerStorageResponseDto extends createZodDto(ServerStorageResponseSchema) {}
 
 export class ServerVersionResponseDto extends createZodDto(ServerVersionResponseSchema) {

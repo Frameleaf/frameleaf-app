@@ -77,6 +77,7 @@ const createWorkflow = async (ctx: WorkflowWriteTestContext, ownerId: string) =>
       ARRAY[${WorkflowType.AssetV1}]::varchar[], false, ARRAY[]::varchar[], NULL)
   `.execute(ctx.database);
 
+  const stepId = randomUUID();
   return ctx.get(WorkflowRepository).create(
     {
       enabled: true,
@@ -84,7 +85,15 @@ const createWorkflow = async (ctx: WorkflowWriteTestContext, ownerId: string) =>
       ownerId,
       trigger: WorkflowTrigger.AssetCreate,
     },
-    [{ enabled: true, pluginMethodId: methodId, config: {} }],
+    {
+      version: 1,
+      trigger: WorkflowTrigger.AssetCreate,
+      extra: {},
+      steps: [
+        { id: stepId, method: `write-restriction-${pluginId}#fakeAssetWriter`, config: {}, enabled: true, extra: {} },
+      ],
+    },
+    [{ id: stepId, order: 0, enabled: true, pluginMethodId: methodId, config: {} }],
   );
 };
 
