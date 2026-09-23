@@ -869,6 +869,10 @@ export class RestorationWorkerService {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
         // job, and the next claim carries on from the chunks already checkpointed.
         this.logger.log(`Restoration ${restoration.id} paused by its owner`);
+      } else if (await this.operationRepository.requeue(operation.id, claimToken, { delayMs: 0 })) {
+        // Stopped for a pause the owner withdrew before it landed: the claim is still ours, so the
+        // job goes straight back to the queue instead of waiting for its lease to lapse.
+        this.logger.log(`Restoration ${restoration.id} resumed before its pause landed; requeued`);
       } else {
         this.logger.warn(`Restoration ${restoration.id} lost its claim on job ${operation.id}; recovery will requeue it`);
       }
