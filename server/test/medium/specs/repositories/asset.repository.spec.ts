@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
+import { AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -510,6 +510,31 @@ describe(AssetRepository.name, () => {
     it('should return an empty array when given an empty input', async () => {
       const { sut } = setup();
       await expect(sut.createAll([])).resolves.toStrictEqual([]);
+    });
+  });
+
+  describe('getCalendarHeatmap', () => {
+    it("should count Locked media only for its owner's elevated session (FL-34)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const now = new Date();
+      await ctx.newAsset({ ownerId: user.id, createdAt: now });
+      await ctx.newAsset({ ownerId: user.id, createdAt: now, visibility: AssetVisibility.Archive });
+      await ctx.newAsset({ ownerId: user.id, createdAt: now, visibility: AssetVisibility.Locked });
+
+      const range = {
+        from: new Date(now.getTime() - 86_400_000),
+        to: new Date(now.getTime() + 86_400_000),
+        type: CalendarHeatmapType.Upload,
+      };
+      const total = async (lockedOwnerId?: string) => {
+        const days = await sut.getCalendarHeatmap(user.id, { ...range, lockedOwnerId });
+        return days.reduce((sum, day) => sum + Number(day.count), 0);
+      };
+
+      await expect(total()).resolves.toBe(2);
+      await expect(total(factory.uuid())).resolves.toBe(2);
+      await expect(total(user.id)).resolves.toBe(3);
     });
   });
 });

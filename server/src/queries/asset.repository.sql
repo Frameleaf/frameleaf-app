@@ -453,6 +453,7 @@ where
   and "createdAt" >= $2
   and "createdAt" < $3
   and "deletedAt" is null
+  and "asset"."visibility" != 'locked'
 group by
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 order by

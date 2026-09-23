@@ -139,6 +139,8 @@ export class UserAdminService extends BaseService {
 
   async getCalendarHeatmap(auth: AuthDto, id: string, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
     await this.findOrFail(id, { withDeleted: false });
+    // an administrator never counts anyone's Locked media, their own included: there is no elevated
+    // owner to name here (FL-34)
     return getCalendarHeatmap(id, dto, { asset: this.assetRepository });
   }
 
