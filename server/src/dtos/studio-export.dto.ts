@@ -1,11 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
-import {
-  MediaOperationDestinationSchema,
-  StudioExportScopeSchema,
-  StudioExportVersionStateSchema,
-} from 'src/enum.js';
+import { MediaOperationDestinationSchema, StudioExportScopeSchema, StudioExportVersionStateSchema } from 'src/enum.js';
 import { STUDIO_EXPORT_COLORS, STUDIO_EXPORT_FORMATS, STUDIO_EXPORT_RESOLUTIONS } from 'src/utils/studio-export.js';
 
 /**
@@ -48,7 +44,9 @@ const StudioExportCreateSchema = z
     format: StudioExportFormatSchema,
     color: StudioExportColorSchema,
     resolution: StudioExportResolutionSchema,
-    requestKey: IdentifierSchema.optional().describe('Idempotency key; a repeated submit answers with the first export'),
+    requestKey: IdentifierSchema.optional().describe(
+      'Idempotency key; a repeated submit answers with the first export',
+    ),
   })
   .meta({ id: 'StudioExportCreateDto' });
 

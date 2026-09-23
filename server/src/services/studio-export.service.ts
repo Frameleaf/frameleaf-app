@@ -5,10 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { OnEvent } from 'src/decorators.js';
+import { dirname } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   StudioExportCreateDto,
   StudioExportCreateResponseDto,
@@ -17,6 +17,8 @@ import {
   StudioExportVersionDto,
 } from 'src/dtos/studio-export.dto.js';
 import {
+  AssetType,
+  CacheControl,
   ImmichWorker,
   JobName,
   MediaOperationDestination,
@@ -54,7 +56,6 @@ import { getConfig } from 'src/utils/config.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
-import { CacheControl } from 'src/enum.js';
 import {
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,
@@ -194,7 +195,11 @@ export class StudioExportService {
     this.requireInteractive(auth);
 
     if (dto.requestKey) {
-      const existing = await this.operations.getByRequestKey(auth.user.id, MediaOperationKind.StudioExport, dto.requestKey);
+      const existing = await this.operations.getByRequestKey(
+        auth.user.id,
+        MediaOperationKind.StudioExport,
+        dto.requestKey,
+      );
       if (existing) {
         if (existing.projectId !== projectId) {
           throw new ConflictException('This request key was already used for another export');
@@ -325,7 +330,9 @@ export class StudioExportService {
 
     const sources = (await this.repository.getSources(version.id)).filter((source) => isLibrarySource(source));
     const owned = new Set(sources.filter((source) => source.ownerId === auth.user.id).map((source) => source.assetId!));
-    const shared = new Set(sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!));
+    const shared = new Set(
+      sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!),
+    );
     const [ownedOk, album, partner] = await Promise.all([
       this.access.asset.checkOwnerAccess(auth.user.id, owned, !!getLockedOwnerId(auth)),
       this.access.asset.checkAlbumAccess(auth.user.id, shared),
@@ -432,7 +439,7 @@ export class StudioExportService {
           kind: 'studio-export-publish',
           versionId: version.id,
           renderOperationId: operation.id,
-          projectId: version.projectId,
+          projectId: version.projectId as string,
           revision: version.revision,
         } satisfies StudioExportPublishSnapshot as unknown as Record<string, unknown>,
         settings: version.settings,
@@ -481,6 +488,14 @@ export class StudioExportService {
     if (released) {
       await this.repository.acknowledgeRemoteCancel(operation.id, workerId);
     }
+  }
+
+  listRemoteReferences(workerId: string) {
+    return this.repository.listRemoteReferences(workerId);
+  }
+
+  acknowledgeRemoteReference(id: string, workerId: string) {
+    return this.repository.acknowledgeRemoteReference(id, workerId);
   }
 
   /* ------------------------------------------------------------------ */
@@ -546,7 +561,11 @@ export class StudioExportService {
     const snapshot = parseStudioExportPublishSnapshot(operation.snapshot);
     const version = snapshot ? await this.repository.getById(snapshot.versionId) : undefined;
     if (!snapshot || !version || version.publishOperationId !== operation.id) {
-      await this.failJob(operation, claimToken, new PublishError('studio_export_version_missing', 'Nothing to publish'));
+      await this.failJob(
+        operation,
+        claimToken,
+        new PublishError('studio_export_version_missing', 'Nothing to publish'),
+      );
       return;
     }
 
@@ -562,9 +581,9 @@ export class StudioExportService {
 
     let prepared: PreparedPublication | undefined;
     try {
-      prepared = await this.prepare(version, operation);
+      prepared = await this.prepare(version);
       const published = await this.publishAcknowledged(version, operation, prepared);
-      await this.afterPublished(version, published, prepared);
+      await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
       this.logger.log(
         `Studio export ${version.id} published as version ${published.version.version} (${published.privacy.scope}${
@@ -594,7 +613,7 @@ export class StudioExportService {
    * hashed again and moved to where the result will live. Every refusal here happens before any
    * write; the transaction re-checks what matters under locks.
    */
-  private async prepare(version: StudioExportVersion, operation: MediaOperation): Promise<PreparedPublication> {
+  private async prepare(version: StudioExportVersion): Promise<PreparedPublication> {
     const owner = await this.ownerAuth(version.ownerId);
     if (!owner) {
       throw new StudioExportRefusal('owner-unavailable', 'The account this export belongs to is being deleted');
@@ -637,7 +656,10 @@ export class StudioExportService {
     if (!container || !version.outputPath || !version.outputChecksum || version.outputSizeInBytes === null) {
       throw new PublishError('studio_export_output_invalid', 'The render did not report a usable file');
     }
-    const staging = this.stagingFolder({ ownerId: version.ownerId, id: operation.snapshot.renderOperationId as string });
+    if (!version.renderOperationId) {
+      throw new PublishError('studio_export_output_invalid', 'The render this export came from is gone');
+    }
+    const staging = this.stagingFolder({ ownerId: version.ownerId, id: version.renderOperationId });
     const finalPath =
       expectedScope === StudioExportScope.Library
         ? studioExportLibraryPath(version.ownerId, version.id, container.extension)
@@ -659,6 +681,7 @@ export class StudioExportService {
     );
 
     return {
+      versionId: version.id,
       stagedPath,
       finalPath,
       stagingFolder: staging,
@@ -737,14 +760,10 @@ export class StudioExportService {
     );
   }
 
-  private async afterPublished(
-    version: StudioExportVersion,
-    published: StudioExportPublished,
-    prepared: PreparedPublication,
-  ): Promise<void> {
+  private async afterPublished(published: StudioExportPublished, prepared: PreparedPublication): Promise<void> {
     if (published.reusedAssetId) {
       // The owner already had these bytes; the moved copy is referenced by nothing.
-      await this.storage.unlink(prepared.finalPath).catch(() => undefined);
+      await this.storage.unlink(prepared.finalPath).catch(() => {});
     }
     if (published.createdAssetId) {
       await this.jobs.queue({
@@ -752,11 +771,7 @@ export class StudioExportService {
         data: { id: published.createdAssetId, source: 'upload' },
       });
     }
-    await this.storage.unlinkDir(prepared.stagingFolder, { recursive: true, force: true }).catch(() => undefined);
-    if (version.outputRemoteRef) {
-      // Already recorded when the render was staged; nothing more to ask of the remote here.
-      this.logger.debug(`Studio export ${version.id}: remote copy awaits the worker's deletion`);
-    }
+    await this.storage.unlinkDir(prepared.stagingFolder, { recursive: true, force: true }).catch(() => {});
   }
 
   /** Undo the move of an attempt that did not publish, so the retry and retention find the file. */
@@ -764,7 +779,7 @@ export class StudioExportService {
     if (prepared.finalPath === prepared.stagedPath) {
       return;
     }
-    const committed = await this.repository.getById(prepared.versionId ?? '').catch(() => undefined);
+    const committed = await this.repository.getById(prepared.versionId).catch(() => {});
     if (committed?.state === StudioExportVersionState.Published) {
       return;
     }
@@ -826,9 +841,19 @@ export class StudioExportService {
       await this.cancelVersion(version, version.orphanReason, 'The owner, project or a source went away');
     }
 
+    for (const version of await this.repository.listSettledWork()) {
+      const failure = {
+        errorCode: version.errorCode ?? 'studio_export_job_ended',
+        error: version.error ?? 'The job working on this export stopped',
+      };
+      await (version.jobStatus === MediaOperationStatus.Failed
+        ? this.repository.markFailed(version.id, failure)
+        : this.repository.cancel(version.id, failure));
+    }
+
     for (const version of await this.repository.listRemovableOutputs()) {
       if (version.outputPath) {
-        await this.storage.unlink(version.outputPath).catch(() => undefined);
+        await this.storage.unlink(version.outputPath).catch(() => {});
       }
       if (version.renderOperationId) {
         await this.storage
@@ -836,7 +861,7 @@ export class StudioExportService {
             recursive: true,
             force: true,
           })
-          .catch(() => undefined);
+          .catch(() => {});
       }
       await this.repository.markOutputRemoved(version.id);
     }
@@ -852,7 +877,7 @@ export class StudioExportService {
       return;
     }
     const cancelled = await this.repository.cancel(version.id, {
-      errorCode: `studio_export_${String(code).replaceAll('-', '_')}`,
+      errorCode: `studio_export_${code.replaceAll('-', '_')}`,
       error: message,
     });
     if (!cancelled) {
@@ -948,7 +973,8 @@ export class StudioExportService {
       locked: !!privacy.lockReason,
       sensitive: privacy.sensitive === true,
       includesSharedSources:
-        privacy.includesSharedSources ?? sources.some((source) => isLibrarySource(source) && source.ownerId !== version.ownerId),
+        privacy.includesSharedSources ??
+        sources.some((source) => isLibrarySource(source) && source.ownerId !== version.ownerId),
       sourceCount: privacy.sourceCount ?? sources.filter((source) => isLibrarySource(source)).length,
       sizeInBytes: hidden || version.outputSizeInBytes === null ? null : String(version.outputSizeInBytes),
       contentType: version.outputContentType,
@@ -962,7 +988,7 @@ export class StudioExportService {
 }
 
 type PreparedPublication = {
-  versionId?: string;
+  versionId: string;
   stagedPath: string;
   finalPath: string;
   stagingFolder: string;
@@ -974,7 +1000,7 @@ type PreparedPublication = {
   originalFileName: string;
 };
 
-type StudioExportPublishedAssetType = (typeof STUDIO_EXPORT_CONTENT_TYPES)[string]['assetType'];
+type StudioExportPublishedAssetType = AssetType;
 
 /**
  * Run a publication and decide what happened when its answer is lost.

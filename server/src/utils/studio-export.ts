@@ -53,8 +53,7 @@ export const STUDIO_EXPORT_CONTENT_TYPES: Readonly<Record<string, { extension: s
   'video/quicktime': { extension: '.mov', assetType: AssetType.Video },
 };
 
-export const isStudioExportContentType = (value: string): boolean =>
-  Object.hasOwn(STUDIO_EXPORT_CONTENT_TYPES, value);
+export const isStudioExportContentType = (value: string): boolean => Object.hasOwn(STUDIO_EXPORT_CONTENT_TYPES, value);
 
 /** Export formats, colour handling and resolutions offered by the Studio export dialog. */
 export const STUDIO_EXPORT_FORMATS = ['mp4-hevc-main10', 'mp4-h264', 'webm-av1', 'prores-422-hq'] as const;
@@ -63,8 +62,10 @@ export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p'] as 
 
 /** A readable file name for a result: the project's name, without anything a path could use. */
 export const studioExportFileName = (projectName: string, extension: string): string => {
-  const cleaned = projectName
-    .replaceAll(/[\u0000-\u001F\u007F/\\:*?"<>|]+/g, ' ')
+  const cleaned = [...projectName]
+    .map((character) => (character.codePointAt(0)! < 0x20 || character.codePointAt(0) === 0x7f ? ' ' : character))
+    .join('')
+    .replaceAll(/[/\\:*?"<>|]+/g, ' ')
     .replaceAll(/\s+/g, ' ')
     .trim()
     .slice(0, 120);
