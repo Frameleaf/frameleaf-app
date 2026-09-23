@@ -607,7 +607,7 @@ export class BulkOperationService {
     // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
     // locked stack or live photo) is only changed by a job submitted from an unlocked session.
     if (!snapshot.elevated && allowed.length > 0) {
-      const locked = await this.operations.getLockedAssetIds(allowed);
+      const locked = await this.operations.getLockedIds(allowed);
       if (locked.size > 0) {
         for (const id of allowed) {
           if (locked.has(id)) {
