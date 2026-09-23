@@ -185,7 +185,6 @@
             mapMarkers={markers}
             simplified
             clickable
-            showSettings={false}
             onClickPoint={({ lat, lng }) => choose(lat, lng)}
           />
         {/await}

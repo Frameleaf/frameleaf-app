@@ -25,7 +25,7 @@
             </div>
           {/await}
         {:then { default: Map }}
-          <Map clickable={false} {mapMarkers} onSelect={onClose} showSettings={false} rounded autoFitBounds />
+          <Map clickable={false} {mapMarkers} onSelect={onClose} rounded autoFitBounds />
         {/await}
       </div>
     </div>
