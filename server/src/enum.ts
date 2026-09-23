@@ -896,6 +896,12 @@ export enum MediaOperationKind {
   StudioBundleExport = 'studio_bundle_export',
   /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
   StudioBundleImport = 'studio_bundle_import',
+  /**
+   * An enrichment plan over a frozen set of assets (FL-59): the chosen stages (descriptions, the
+   * Locked-content check, reusable video frames, the moment index, optional moment captions) run
+   * asset by asset on the destinations pinned at submit, with a per-asset state for every stage.
+   */
+  EnrichmentPlan = 'enrichment_plan',
 }
 
 export const MediaOperationKindSchema = z
@@ -955,6 +961,55 @@ export const MediaOperationItemStatusSchema = z
   .enum(MediaOperationItemStatus)
   .describe('Per-item outcome of a bulk media operation')
   .meta({ id: 'MediaOperationItemStatus' });
+
+/**
+ * One stage of an enrichment plan (FL-59). Stages that depend on others pull them in: the moment
+ * index and moment captions both need the reusable video frames. They run in this order per asset.
+ */
+export enum EnrichmentStage {
+  /** Six evenly spaced, ranked video frames cached for reuse. Never tied to duplicate detection. */
+  Frames = 'frames',
+  /** The Locked-content (sensitive) check on photos. */
+  LockedCheck = 'locked-check',
+  /** Generated description and tags. Videos are described from their reusable frames. */
+  Description = 'description',
+  /** A timestamped search embedding for every reusable frame. */
+  MomentIndex = 'moment-index',
+  /** Optional generated caption per moment: one extra model request per frame. Off by default. */
+  MomentCaptions = 'moment-captions',
+}
+
+export const EnrichmentStageSchema = z
+  .enum(EnrichmentStage)
+  .describe('Enrichment plan stage')
+  .meta({ id: 'EnrichmentStage' });
+
+/** Where one asset, or one stage of one asset, stands in an enrichment plan (FL-59). */
+export enum EnrichmentItemState {
+  Queued = 'queued',
+  Running = 'running',
+  Skipped = 'skipped',
+  Failed = 'failed',
+  Completed = 'completed',
+  /** The plan was cancelled before this asset was reached. */
+  Cancelled = 'cancelled',
+}
+
+export const EnrichmentItemStateSchema = z
+  .enum(EnrichmentItemState)
+  .describe('Enrichment plan item state')
+  .meta({ id: 'EnrichmentItemState' });
+
+/** Who made a video moment (FL-59). Refreshing generated results never touches a manual moment. */
+export enum VideoMomentSource {
+  Generated = 'generated',
+  Manual = 'manual',
+}
+
+export const VideoMomentSourceSchema = z
+  .enum(VideoMomentSource)
+  .describe('Video moment source')
+  .meta({ id: 'VideoMomentSource' });
 
 /**
  * The durable state machine. `cancelling` is a real persisted state: the request is recorded
@@ -1906,6 +1961,7 @@ export enum ApiTag {
   Deprecated = 'Deprecated',
   Download = 'Download',
   Duplicates = 'Duplicates',
+  Enrichment = 'Enrichment',
   Faces = 'Faces',
   Integrity = 'Integrity (admin)',
   Jobs = 'Jobs',
