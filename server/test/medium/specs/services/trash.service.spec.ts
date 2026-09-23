@@ -2,9 +2,11 @@ import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AssetLockReason, AssetStatus, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -23,7 +25,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(TrashService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, TrashRepository],
+    real: [AccessRepository, ConfigRepository, SystemMetadataRepository, TrashRepository],
     mock: [EventRepository, JobRepository, LoggingRepository],
   });
   ctx.getMock(EventRepository).emit.mockResolvedValue();
