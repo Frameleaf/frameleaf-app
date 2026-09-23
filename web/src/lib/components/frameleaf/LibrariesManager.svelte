@@ -84,7 +84,7 @@
   const selected = $derived(rows.find((row) => row.key === selectedKey) ?? null);
   const scannable = $derived(scannableLibraries(visible));
   const moving = $derived(rows.some((row) => isScanMoving(row.scan)));
-  const editing = $derived(modal?.type === 'edit' ? libraries.find((library) => library.id === modal?.id) : undefined);
+  const editing = $derived(libraries.find((library) => modal?.type === 'edit' && library.id === modal.id));
 
   $effect(() => {
     if (editOnOpenHandled || !editOnOpen || selected?.kind !== 'external' || selected.lifecycle !== 'active') {

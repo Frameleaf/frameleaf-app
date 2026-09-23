@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Put } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -8,6 +8,11 @@ import {
   ConfigCredentialUpdateDto,
 } from 'src/dtos/config-credential.dto.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
+import {
+  AdminConfigRevisionResponseDto,
+  AdminConfigRevisionUpdateDto,
+  SystemConfigHistoryResponseDto,
+} from 'src/dtos/system-config.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -89,5 +94,45 @@ export class ConfigAdminController {
     @Param() { name }: ConfigCredentialParamDto,
   ): Promise<ConfigCredentialResponseDto> {
     return this.service.clearCredential(auth, name);
+  }
+
+  @Get('history')
+  @Authenticated({ permission: Permission.AdminConfigRead, admin: true })
+  @Endpoint({
+    summary: 'Get the settings change history',
+    description:
+      'The newest saved settings changes, each with its time, the administrator who saved it and the changed settings before and after. Credentials are listed only as replaced or cleared.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAdminConfigHistory(): Promise<SystemConfigHistoryResponseDto> {
+    return this.service.getConfigHistory();
+  }
+
+  @Get('revision')
+  @Authenticated({ permission: Permission.AdminConfigRead, admin: true })
+  @Endpoint({
+    summary: 'Get the admin configuration with its revision',
+    description:
+      'Retrieve the admin configuration together with a revision that changes whenever a saved setting changes. Send the revision back when saving so a save made against older settings is refused.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAdminConfigWithRevision(): Promise<AdminConfigRevisionResponseDto> {
+    return this.service.getAdminConfigWithRevision();
+  }
+
+  @Put('revision')
+  @Authenticated({ permission: Permission.AdminConfigUpdate, admin: true })
+  @Endpoint({
+    summary: 'Update the system configuration if it is unchanged',
+    description:
+      'Save a complete system configuration only when the saved settings still match the revision it was made against. Returns the saved configuration and its new revision.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  @ApiResponse({ status: 409, description: 'The saved settings changed since the given revision; nothing was saved.' })
+  updateAdminConfigWithRevision(
+    @Auth() auth: AuthDto,
+    @Body() dto: AdminConfigRevisionUpdateDto,
+  ): Promise<AdminConfigRevisionResponseDto> {
+    return this.service.updateAdminConfigWithRevision(dto, auth);
   }
 }

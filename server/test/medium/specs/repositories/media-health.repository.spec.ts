@@ -17,6 +17,13 @@ import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
+const pointDuplicateFrameTrigger = (db: Kysely<DB>, fn: 'updated_at' | 'media_health_updated_at') =>
+  sql
+    .raw(
+      `CREATE OR REPLACE TRIGGER "asset_video_duplicate_frame_updatedAt" BEFORE UPDATE ON "asset_video_duplicate_frame" FOR EACH ROW EXECUTE FUNCTION ${fn}()`,
+    )
+    .execute(db);
+
 let defaultDatabase: Kysely<DB>;
 
 const setup = () => {
@@ -212,6 +219,9 @@ describe(MediaHealthRepository.name, () => {
     it('upgrades populated legacy health tables without rewriting rows or changing asset sync triggers', async () => {
       await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
       try {
+        // 2100000000530 later points the duplicate-frame trigger at the same function; a downgrade takes
+        // that back first, as migrations revert newest first
+        await pointDuplicateFrameTrigger(defaultDatabase, 'updated_at');
         await revertHealthTriggers(defaultDatabase);
         const { asset, finding, candidate, sut } = await arrangeManagedRelink();
         const before = await sql`SELECT oid, relfilenode FROM pg_class
@@ -220,6 +230,7 @@ describe(MediaHealthRepository.name, () => {
         );
         await repairHealthTriggers(defaultDatabase);
         await repairHealthTriggers(defaultDatabase);
+        await pointDuplicateFrameTrigger(defaultDatabase, 'media_health_updated_at');
 
         expect(await sut.getByIds([finding.id])).toEqual([finding]);
         expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
@@ -263,6 +274,7 @@ describe(MediaHealthRepository.name, () => {
         }
       } finally {
         await repairHealthTriggers(defaultDatabase);
+        await pointDuplicateFrameTrigger(defaultDatabase, 'media_health_updated_at');
         await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
       }
     });

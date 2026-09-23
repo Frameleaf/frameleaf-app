@@ -298,7 +298,7 @@
           aria-expanded={showNotifications}
           onclick={() => (showNotifications = !showNotifications)}
         >
-          <Icon icon={mdiBellOutline} size={20} aria-hidden="true" />
+          <Icon icon={mdiBellOutline} size="20" aria-hidden="true" />
           {#if unreadCount > 0}
             <span class="fl-notif-count" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>
           {/if}

@@ -371,7 +371,15 @@
           </button>
 
           {#if menuOpen}
-            <div bind:this={menu} id={menuId} class="menu" role="menu" aria-label={$t('more')} onkeydown={menuKeydown}>
+            <div
+              bind:this={menu}
+              id={menuId}
+              class="menu"
+              role="menu"
+              tabindex="-1"
+              aria-label={$t('more')}
+              onkeydown={menuKeydown}
+            >
               {#each menuGroups as group (group.id)}
                 <div role="group" aria-labelledby={`${menuId}-${group.id}`}>
                   <p class="menu-title" id={`${menuId}-${group.id}`}>{$t(group.titleKey)}</p>

@@ -470,7 +470,7 @@ export const copyImageToClipboard = async (source: HTMLImageElement) => {
   await navigator.clipboard.write([new ClipboardItem({ ['image/png']: imgToBlob(source) })]);
 };
 
-export const navigateToAsset = async (targetAsset: AssetResponseDto | undefined | null) => {
+export const navigateToAsset = async (targetAsset: Pick<AssetResponseDto, 'id'> | undefined | null) => {
   if (!targetAsset) {
     return false;
   }

@@ -2,7 +2,7 @@
   import type { EditorSettings } from '$lib/frameleaf/editor-draft';
 
   /** Copy settings / Paste settings works across photos for the life of the page. */
-  let settingsClipboard: EditorSettings | null = null;
+  let settingsClipboard = $state<EditorSettings | null>(null);
 </script>
 
 <script lang="ts">
@@ -28,11 +28,15 @@
   import DevelopGroup from '$lib/components/frameleaf/editor/DevelopGroup.svelte';
   import EditorSlider from '$lib/components/frameleaf/editor/EditorSlider.svelte';
   import Histogram from '$lib/components/frameleaf/editor/Histogram.svelte';
+  import MaskOverlay from '$lib/components/frameleaf/editor/MaskOverlay.svelte';
+  import MaskPanel from '$lib/components/frameleaf/editor/MaskPanel.svelte';
   import PresetStrip from '$lib/components/frameleaf/editor/PresetStrip.svelte';
   import RestorationCompare from '$lib/components/frameleaf/editor/RestorationCompare.svelte';
   import RestorationPanel, {
     type RestorationCompareRequest,
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
+  import RoundTripPanel from '$lib/components/frameleaf/editor/RoundTripPanel.svelte';
+  import UserPresets from '$lib/components/frameleaf/editor/UserPresets.svelte';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -51,7 +55,6 @@
     rotateRect,
     straightenScale,
     toneKey,
-    toneOnlyRecipe,
     type AspectId,
     type CropRect,
     type DevelopGroupId,
@@ -66,6 +69,7 @@
   import {
     anyRevisionBusy,
     changeDraft,
+    rebaseDraft,
     createDraft,
     geometryIsDefault,
     initialRecipe,
@@ -81,12 +85,22 @@
     type EditorDraft,
     type EditorRecipe,
   } from '$lib/frameleaf/editor-draft';
+  import {
+    flipMask,
+    maskIsActive,
+    presetSettingsFrom,
+    rotateMask,
+    shortChecksum,
+    tonePreviewRecipe,
+    type EditorMask,
+  } from '$lib/frameleaf/photo-tools';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetDevelopFileKind,
     AssetDevelopPreset,
+    AssetDevelopRevisionKind,
     AssetDevelopRevisionStatus,
     AssetMediaSize,
     cancelAssetDevelopRender,
@@ -121,11 +135,12 @@
     mdiRotateRight,
     mdiTune,
     mdiUndo,
+    mdiVectorEllipse,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
-  type Tool = 'adjust' | 'crop' | 'presets' | 'restore' | 'versions';
+  type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'restore' | 'versions';
 
   let {
     asset,
@@ -151,9 +166,10 @@
     edited: false,
   });
 
-  const tools: { id: Tool; label: string; icon: string }[] = [
+  const tools: { id: Tool; label: Translations; icon: string }[] = [
     { id: 'adjust', label: 'frameleaf_editor_tool_adjust', icon: mdiTune },
     { id: 'crop', label: 'frameleaf_editor_tool_crop', icon: mdiCropRotate },
+    { id: 'masks', label: 'frameleaf_editor_tool_masks', icon: mdiVectorEllipse },
     { id: 'presets', label: 'frameleaf_editor_tool_presets', icon: mdiImageFilterVintage },
     { id: 'restore', label: 'frameleaf_editor_tool_restore', icon: mdiAutoFix },
     { id: 'versions', label: 'frameleaf_editor_tool_versions', icon: mdiHistory },
@@ -214,7 +230,7 @@
     try {
       develop = await getAssetDevelop({ id: asset.id });
       const start = openingRecipe(develop);
-      draft = createDraft(start);
+      draft = rebaseDraft(draft, start);
       opened = start;
       if (anyRevisionBusy(develop.revisions)) {
         follow();
@@ -241,7 +257,9 @@
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
   const identityTone = $derived(
-    DEVELOP_KEYS.every((key) => recipe[key] === 0) && presetFor(recipe.preset).id === AssetDevelopPreset.Original,
+    DEVELOP_KEYS.every((key) => recipe[key] === 0) &&
+      presetFor(recipe.preset).id === AssetDevelopPreset.Original &&
+      recipe.masks.every((mask) => !maskIsActive(mask)),
   );
   const currentToneKey = $derived(toneKey(toServerRecipe(recipe)));
   const previewMatches = $derived(identityTone || serverPreview?.key === currentToneKey);
@@ -252,7 +270,7 @@
     }
     const key = currentToneKey;
     const identity = identityTone;
-    const request = toneOnlyRecipe(toServerRecipe(untrack(() => recipe)));
+    const request = tonePreviewRecipe(toServerRecipe(untrack(() => recipe)));
     clearTimeout(previewTimer);
     previewAbort?.abort();
     if (identity) {
@@ -268,23 +286,27 @@
     previewFailed = false;
     const controller = new AbortController();
     previewAbort = controller;
-    previewTimer = setTimeout(async () => {
-      try {
-        const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal);
-        if (!result || controller.signal.aborted) {
-          return;
-        }
-        serverPreview?.revoke();
-        serverPreview = { ...result, key };
-        previewPending = false;
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          previewPending = false;
-          previewFailed = true;
-          handleError(error, $t('frameleaf_editor_preview_error'));
-        }
-      }
-    }, PREVIEW_DEBOUNCE_MS);
+    previewTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal);
+            if (!result || controller.signal.aborted) {
+              return;
+            }
+            serverPreview?.revoke();
+            serverPreview = { ...result, key };
+            previewPending = false;
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              previewPending = false;
+              previewFailed = true;
+              handleError(error, $t('frameleaf_editor_preview_error'));
+            }
+          }
+        })(),
+      PREVIEW_DEBOUNCE_MS,
+    );
   });
 
   /* Stage ---------------------------------------------------------------- */
@@ -325,9 +347,9 @@
       }
     };
     update();
+    // Every supported browser has ResizeObserver; without one the first measurement stands.
     if (typeof ResizeObserver === 'undefined') {
-      addEventListener('resize', update);
-      return () => removeEventListener('resize', update);
+      return;
     }
     const observer = new ResizeObserver(update);
     observer.observe(element);
@@ -415,18 +437,72 @@
     const ratio = aspectRatioValue(id, frame.fw, frame.fh);
     change({ aspect: id, crop: id === 'Free' ? recipe.crop : fitCropRect(ratio, frame.fw, frame.fh) });
   };
-  const rotate = (clockwise: boolean) =>
+  // Masks turn and mirror with the frame, like the crop, so they stay on the same content (FL-64).
+  // The frame is always turned before it is mirrored (stage and renderer alike), so with one
+  // mirror applied a clockwise turn moves the drawn frame's content counter-clockwise.
+  const rotate = (clockwise: boolean) => {
+    const drawn = recipe.flipHorizontal === recipe.flipVertical ? clockwise : !clockwise;
     change({
       rotation: (recipe.rotation + (clockwise ? 90 : 270)) % 360,
-      crop: rotateRect(recipe.crop, clockwise),
+      crop: rotateRect(recipe.crop, drawn),
       aspect: rotateAspect(recipe.aspect),
+      masks: recipe.masks.map((mask) => rotateMask(mask, drawn)),
     });
+  };
   const flip = (axis: 'h' | 'v') =>
     change(
       axis === 'h'
-        ? { flipHorizontal: !recipe.flipHorizontal, crop: { ...recipe.crop, x: 1 - recipe.crop.x - recipe.crop.w } }
-        : { flipVertical: !recipe.flipVertical, crop: { ...recipe.crop, y: 1 - recipe.crop.y - recipe.crop.h } },
+        ? {
+            flipHorizontal: !recipe.flipHorizontal,
+            crop: { ...recipe.crop, x: 1 - recipe.crop.x - recipe.crop.w },
+            masks: recipe.masks.map((mask) => flipMask(mask, 'h')),
+          }
+        : {
+            flipVertical: !recipe.flipVertical,
+            crop: { ...recipe.crop, y: 1 - recipe.crop.y - recipe.crop.h },
+            masks: recipe.masks.map((mask) => flipMask(mask, 'v')),
+          },
     );
+
+  /* Masks, presets and version comparison (FL-64) -------------------------- */
+  let selectedMaskId = $state<string | null>(null);
+  let dragMask = $state<EditorMask | null>(null);
+  const selectedMask = $derived(dragMask ?? recipe.masks.find((mask) => mask.id === selectedMaskId) ?? null);
+  $effect(() => {
+    if (selectedMaskId && recipe.masks.every((mask) => mask.id !== selectedMaskId)) {
+      selectedMaskId = recipe.masks[0]?.id ?? null;
+    }
+  });
+  const commitMask = (next: EditorMask) =>
+    change({ masks: recipe.masks.map((mask) => (mask.id === next.id ? next : mask)) });
+  const currentSettings = $derived(presetSettingsFrom(pickSettings(recipe)));
+
+  let versionCompare = $state<RestorationCompareRequest | null>(null);
+  $effect(() => {
+    if (tool !== 'versions') {
+      versionCompare = null;
+    }
+  });
+  const compareVersion = (revision: AssetDevelopRevisionResponseDto) => {
+    versionCompare = versionCompare?.after.includes(revision.id)
+      ? null
+      : {
+          before: originalPreviewUrl,
+          after: developFileUrl(asset.id, revision.id, AssetDevelopFileKind.Preview, revision.renderedAt),
+          isVideo: false,
+          beforeLabel: $t('frameleaf_editor_version_original'),
+          afterLabel:
+            revision.label ?? $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
+        };
+  };
+  const onImported = (revision: AssetDevelopRevisionResponseDto) => {
+    develop = {
+      assetId: asset.id,
+      currentRevisionId: develop?.currentRevisionId ?? null,
+      revisions: [revision, ...(develop?.revisions ?? [])],
+    };
+    follow();
+  };
   const allAdjustDefault = $derived(DEVELOP_KEYS.every((key) => recipe[key] === 0));
   const currentPreset = $derived(presetFor(recipe.preset));
 
@@ -594,21 +670,29 @@
   };
   const railKey = (event: KeyboardEvent) => {
     const index = tools.findIndex((item) => item.id === tool);
-    let next: number | null = null;
-    if (['ArrowDown', 'ArrowRight'].includes(event.key)) {
-      next = index + 1;
-    }
-    if (['ArrowUp', 'ArrowLeft'].includes(event.key)) {
-      next = index - 1;
-    }
-    if (event.key === 'Home') {
-      next = 0;
-    }
-    if (event.key === 'End') {
-      next = tools.length - 1;
-    }
-    if (next === null) {
-      return;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowRight': {
+        next = index + 1;
+        break;
+      }
+      case 'ArrowUp':
+      case 'ArrowLeft': {
+        next = index - 1;
+        break;
+      }
+      case 'Home': {
+        next = 0;
+        break;
+      }
+      case 'End': {
+        next = tools.length - 1;
+        break;
+      }
+      default: {
+        return;
+      }
     }
     event.preventDefault();
     const target = tools[(next + tools.length) % tools.length];
@@ -856,6 +940,10 @@
               <div class="ed-restore-stage">
                 <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
               </div>
+            {:else if tool === 'versions' && versionCompare}
+              <div class="ed-restore-stage" aria-label={$t('frameleaf_editor_version_compare_stage')}>
+                <RestorationCompare {...versionCompare} alt={asset.originalFileName} />
+              </div>
             {:else if frame}
               {#if split}
                 <div class="ed-frame before" style={frameStyle('before')} aria-hidden="true">
@@ -874,6 +962,9 @@
                     style={mediaStyle(before)}
                     onload={() => (imageTick += 1)}
                   />
+                  {#if tool === 'masks' && selectedMask && !before && !split}
+                    <MaskOverlay mask={selectedMask} onPreview={(next) => (dragMask = next)} onCommit={commitMask} />
+                  {/if}
                 </div>
                 {#if !before && !previewMatches}
                   <div class="ed-window" style={windowStyle}>
@@ -910,8 +1001,7 @@
                   onkeydown={(event) => {
                     if (event.key === 'ArrowLeft') {
                       splitAt = Math.max(0.04, splitAt - 0.02);
-                    }
-                    if (event.key === 'ArrowRight') {
+                    } else if (event.key === 'ArrowRight') {
                       splitAt = Math.min(0.96, splitAt + 0.02);
                     }
                   }}
@@ -935,9 +1025,10 @@
         </div>
       </div>
 
-      <nav
+      <div
         class="ed-rail"
         role="tablist"
+        tabindex="-1"
         aria-label={$t('frameleaf_editor_tools_label')}
         aria-orientation="vertical"
         onkeydown={railKey}
@@ -958,9 +1049,9 @@
             <span>{$t(item.label)}</span>
           </button>
         {/each}
-      </nav>
+      </div>
 
-      <section
+      <div
         class="ed-panel"
         id="fl-editor-panel"
         role="tabpanel"
@@ -1029,7 +1120,7 @@
                   aria-checked={recipe.aspect === aspect.id}
                   onclick={() => chooseAspect(aspect.id)}
                 >
-                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label) : aspect.label}
+                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
                 </button>
               {/each}
             </div>
@@ -1070,6 +1161,8 @@
             </div>
             <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
           </div>
+        {:else if tool === 'masks'}
+          <MaskPanel masks={recipe.masks} bind:selectedId={selectedMaskId} onChange={(masks) => change({ masks })} />
         {:else if tool === 'restore'}
           <RestorationPanel
             {asset}
@@ -1116,6 +1209,7 @@
               {/each}
             </div>
             <p>{$t('frameleaf_editor_social_help')}</p>
+            <UserPresets current={currentSettings} onApply={(settings) => change(settings)} />
           </div>
         {:else}
           <div class="ed-panel-body">
@@ -1164,13 +1258,47 @@
                       ? ` · ${revision.rendererVersion}`
                       : ''}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
                   </small>
+                  {#if revision.kind === AssetDevelopRevisionKind.External}
+                    <small>
+                      {$t('frameleaf_editor_version_external', {
+                        values: { file: revision.fileName ?? '' },
+                      })}{revision.software ? ` · ${revision.software}` : ''}
+                    </small>
+                  {/if}
+                  {#if revision.sourceChecksum}
+                    <small>
+                      {$t('frameleaf_editor_version_lineage', {
+                        values: {
+                          original: shortChecksum(revision.sourceChecksum),
+                          master: shortChecksum(revision.renditionChecksum),
+                        },
+                      })}
+                    </small>
+                  {/if}
                   {#if revision.error}
-                    <small>{revision.error}</small>
+                    <small>
+                      {revision.status === AssetDevelopRevisionStatus.Queued && revision.attempts > 0
+                        ? $t('frameleaf_editor_version_retrying', { values: { error: revision.error } })
+                        : revision.error}
+                    </small>
                   {/if}
                   <div class="ed-row">
-                    <button type="button" class="ed-chip" onclick={() => loadRevision(revision)}>
-                      {$t('frameleaf_editor_load_settings')}
-                    </button>
+                    {#if revision.kind !== AssetDevelopRevisionKind.External}
+                      <button type="button" class="ed-chip" onclick={() => loadRevision(revision)}>
+                        {$t('frameleaf_editor_load_settings')}
+                      </button>
+                    {/if}
+                    {#if revision.hasPreview}
+                      <button
+                        type="button"
+                        class="ed-chip"
+                        aria-pressed={!!versionCompare?.after.includes(revision.id)}
+                        onclick={() => compareVersion(revision)}
+                      >
+                        <Icon icon={mdiCompareHorizontal} size="16" />
+                        {$t('frameleaf_editor_compare_with_original')}
+                      </button>
+                    {/if}
                     {#if revision.status === AssetDevelopRevisionStatus.Rendered && !revision.isCurrent}
                       <button type="button" class="ed-chip" onclick={() => makeCurrent(revision)}>
                         <Icon icon={mdiCheck} size="16" />
@@ -1203,10 +1331,11 @@
               {#if revisions.length === 0}
                 <p class="ed-empty">{$t('frameleaf_editor_no_versions')}</p>
               {/if}
+              <RoundTripPanel {asset} {onImported} />
             {/if}
           </div>
         {/if}
-      </section>
+      </div>
     {/if}
   </div>
   <div class="ed-live" role="status" aria-live="polite">{announce}</div>

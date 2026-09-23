@@ -8,6 +8,7 @@ import {
   RenderWorkerAuditEventSchema,
   RenderWorkerRefusalReasonSchema,
   RenderWorkerStatusSchema,
+  StudioExportRemoteReasonSchema,
 } from 'src/enum.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -275,10 +276,37 @@ const RenderWorkerCheckpointCompleteSchema = z
   })
   .meta({ id: 'RenderWorkerCheckpointCompleteDto' });
 
+/**
+ * The file a Studio export render produced (FL-106). It must be inside the directory the claim
+ * named for this render; publication hashes it again and never trusts the worker's word alone.
+ */
+const RenderWorkerOutputSchema = z
+  .object({
+    path: z.string().min(1).max(4096).describe('Absolute path inside the render directory the claim named'),
+    checksum: z
+      .string()
+      .regex(/^[\da-f]{64}$/i, 'SHA-256 hex digest')
+      .describe('SHA-256 of the whole file'),
+    sizeInBytes: BigIntString,
+    contentType: z.string().min(1).max(100).describe('`video/mp4`, `video/webm` or `video/quicktime`'),
+    remoteRef: z
+      .string()
+      .min(1)
+      .max(512)
+      .nullable()
+      .optional()
+      .describe('What the worker calls a copy it kept; it is asked to delete it until it acknowledges'),
+  })
+  .meta({ id: 'RenderWorkerOutputDto' });
+
 const RenderWorkerCompleteSchema = z
   .object({
     claimToken: ClaimTokenSchema,
-    resultAssetId: z.uuidv4().nullable(),
+    resultAssetId: z
+      .uuidv4()
+      .nullable()
+      .describe('Must be null for a Studio export: its result is adopted by publication, never named by a worker'),
+    output: RenderWorkerOutputSchema.optional().describe('Required for a Studio export'),
   })
   .meta({ id: 'RenderWorkerCompleteDto' });
 
@@ -296,6 +324,17 @@ const RenderWorkerCancelAckSchema = z
     released: z.boolean().describe('True when remote resources are confirmed gone'),
   })
   .meta({ id: 'RenderWorkerCancelAckDto' });
+
+/** Something this worker holds for a Studio export that it must stop or delete (FL-106). */
+const RenderWorkerRemoteReferenceSchema = z
+  .object({
+    id: z.uuidv7(),
+    operationId: z.uuidv7().describe('The render job'),
+    reason: StudioExportRemoteReasonSchema,
+    remoteRef: z.string().nullable().describe('The copy to delete, for a `delete` reference'),
+    requestedAt: z.string().meta({ format: 'date-time' }),
+  })
+  .meta({ id: 'RenderWorkerRemoteReferenceDto' });
 
 /** The answer to every guarded write. `accepted: false` means the claim no longer authorizes it. */
 const RenderWorkerWriteResultSchema = z
@@ -326,6 +365,8 @@ export class RenderWorkerProgressDto extends createZodDto(RenderWorkerProgressSc
 export class RenderWorkerCheckpointPlanDto extends createZodDto(RenderWorkerCheckpointPlanSchema) {}
 export class RenderWorkerCheckpointCompleteDto extends createZodDto(RenderWorkerCheckpointCompleteSchema) {}
 export class RenderWorkerCompleteDto extends createZodDto(RenderWorkerCompleteSchema) {}
+export class RenderWorkerOutputDto extends createZodDto(RenderWorkerOutputSchema) {}
+export class RenderWorkerRemoteReferenceDto extends createZodDto(RenderWorkerRemoteReferenceSchema) {}
 export class RenderWorkerFailDto extends createZodDto(RenderWorkerFailSchema) {}
 export class RenderWorkerCancelAckDto extends createZodDto(RenderWorkerCancelAckSchema) {}
 export class RenderWorkerWriteResultDto extends createZodDto(RenderWorkerWriteResultSchema) {}

@@ -12,6 +12,7 @@
  * for longer than one round trip.
  */
 import { AssetDevelopPreset, type AssetDevelopRecipeDto } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const round = (value: number, places = 3) => {
@@ -23,7 +24,7 @@ const finite = (value: unknown, fallback = 0) =>
 
 export type DevelopGroupId = 'light' | 'color' | 'effects' | 'detail';
 
-export const DEVELOP_GROUPS: { id: DevelopGroupId; label: string }[] = [
+export const DEVELOP_GROUPS: { id: DevelopGroupId; label: Translations }[] = [
   { id: 'light', label: 'frameleaf_editor_group_light' },
   { id: 'color', label: 'frameleaf_editor_group_color' },
   { id: 'effects', label: 'frameleaf_editor_group_effects' },
@@ -51,7 +52,7 @@ export type DevelopKey =
 export type DevelopParamSpec = {
   id: DevelopKey;
   /** i18n key of the slider label. */
-  label: string;
+  label: Translations;
   group: DevelopGroupId;
   min: number;
   max: number;
@@ -60,7 +61,12 @@ export type DevelopParamSpec = {
   unit: string;
 };
 
-const param = (id: DevelopKey, label: string, group: DevelopGroupId, options: Partial<DevelopParamSpec> = {}) => ({
+const param = (
+  id: DevelopKey,
+  label: Translations,
+  group: DevelopGroupId,
+  options: Partial<DevelopParamSpec> = {},
+) => ({
   id,
   label,
   group,
@@ -147,7 +153,7 @@ export type DevelopLook = { grayscale: number; sepia: number };
 export type DevelopPresetSpec = {
   id: AssetDevelopPreset;
   /** i18n key. */
-  label: string;
+  label: Translations;
   params: Partial<DevelopValues>;
   look?: Partial<DevelopLook>;
 };
@@ -427,7 +433,7 @@ export const ASPECTS: { id: AspectId; label: string }[] = [
 ];
 export const ASPECT_IDS: readonly AspectId[] = ASPECTS.map((item) => item.id);
 
-export const SOCIAL_PRESETS: { id: string; label: string; aspect: AspectId; note: string }[] = [
+export const SOCIAL_PRESETS: { id: string; label: Translations; aspect: AspectId; note: Translations }[] = [
   { id: 'portrait', label: 'frameleaf_editor_social_portrait', aspect: '4:5', note: 'frameleaf_editor_social_feed' },
   { id: 'shorts', label: 'frameleaf_editor_social_shorts', aspect: '9:16', note: 'frameleaf_editor_social_vertical' },
   { id: 'wide', label: 'frameleaf_editor_social_wide', aspect: '16:9', note: 'frameleaf_editor_social_landscape' },
@@ -524,9 +530,7 @@ export function resizeCropRect(
     const verticalOnly = handle === 'n' || handle === 's';
     if (horizontalOnly) {
       h = w / k;
-    } else if (verticalOnly) {
-      w = h * k;
-    } else if (w / k > h) {
+    } else if (verticalOnly || w / k > h) {
       w = h * k;
     } else {
       h = w / k;
@@ -628,10 +632,15 @@ export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecip
 /** Stable key of everything that changes the server preview, so stale previews are never shown. */
 export const toneKey = (recipe: AssetDevelopRecipeDto): string => {
   const tone = toneOnlyRecipe(recipe);
+  // Masks are sent in the source frame, so their preview also depends on the turns and flips (FL-64).
+  const masks = recipe.masks?.length
+    ? [recipe.masks, recipe.rotation ?? 0, !!recipe.flipHorizontal, !!recipe.flipVertical]
+    : [];
   return JSON.stringify([
     ...DEVELOP_KEYS.map((key) => tone[key] ?? 0),
     tone.preset ?? AssetDevelopPreset.Original,
     tone.presetStrength ?? 100,
+    ...masks,
   ]);
 };
 

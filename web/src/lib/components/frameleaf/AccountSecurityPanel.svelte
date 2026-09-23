@@ -46,7 +46,7 @@
   // of the next account shown in this same panel instance.
   let revokedIds = $state<Set<string>>(new Set());
   $effect(() => {
-    user.id;
+    void user.id;
     revokedIds = new Set();
   });
   const visibleSessions = $derived(sessions.filter((session) => !revokedIds.has(session.id)));

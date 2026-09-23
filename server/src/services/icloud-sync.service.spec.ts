@@ -114,6 +114,8 @@ describe(ICloudSyncService.name, () => {
       return result.value;
     });
     repository.checkpoint.mockResolvedValue({ complete: true });
+    // a run that ends closes its run record
+    repository.endRun.mockResolvedValue(undefined);
     repository.inventory.mockResolvedValue({ libraries: [], albums: [] });
     repository.claim.mockReset();
     repository.claim.mockResolvedValueOnce(resource).mockResolvedValue(undefined);
@@ -379,7 +381,7 @@ describe(ICloudSyncService.name, () => {
     it('stops at the next boundary when its owner cancels, and closes the run record', async () => {
       operations.setBulkResult.mockResolvedValue({ ...working, status: MediaOperationStatus.Cancelling });
       await sut.run(operation(), 'token');
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run', { released: false });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run', 'token', { released: false });
       expect(repository.endRun).toHaveBeenCalledWith('connection', 'cancelled');
       expect(operations.complete).not.toHaveBeenCalled();
     });

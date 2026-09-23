@@ -44,6 +44,8 @@
     }
   };
 
+  const tone = $derived(toneOf(notification.level));
+
   const getIconType = (type: NotificationType) => {
     switch (type) {
       case NotificationType.BackupFailed: {
@@ -106,8 +108,15 @@
   {#if !notification.readAt}
     <span class="fl-notif-dot" aria-hidden="true"></span>
   {/if}
-  <span class="fl-notif-icon tone-{toneOf(notification.level)}" aria-hidden="true">
-    <Icon icon={getIconType(notification.type)} size={18} />
+  <span
+    class="fl-notif-icon"
+    class:tone-info={tone === 'info'}
+    class:tone-success={tone === 'success'}
+    class:tone-warning={tone === 'warning'}
+    class:tone-danger={tone === 'danger'}
+    aria-hidden="true"
+  >
+    <Icon icon={getIconType(notification.type)} size="18" />
   </span>
   <span class="fl-notif-text">
     <strong>

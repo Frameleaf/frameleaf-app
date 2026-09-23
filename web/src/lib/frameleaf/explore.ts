@@ -1,5 +1,6 @@
 import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
 import { mdiCameraOutline, mdiHeartOutline, mdiImageSearchOutline, mdiMovieOpenOutline } from '@mdi/js';
+import type { Translations } from 'svelte-i18n';
 import { Route } from '$lib/route';
 
 /**
@@ -53,7 +54,7 @@ export type ExploreShortcutId = 'favorites' | 'photos' | 'videos' | 'withoutPeop
 
 export interface ExploreShortcut {
   id: ExploreShortcutId;
-  labelKey: string;
+  labelKey: Translations;
   icon: string;
   count: number | null;
   href: string;

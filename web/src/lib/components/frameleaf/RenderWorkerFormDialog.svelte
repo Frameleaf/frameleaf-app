@@ -205,11 +205,16 @@
         <small>{$t('frameleaf_render_workers_form_destination_hint')}</small>
       </label>
 
-      <fieldset aria-invalid={error === 'kinds'}>
+      <fieldset class:invalid={error === 'kinds'}>
         <legend id={kindsId}>{$t('frameleaf_render_workers_form_kinds')}</legend>
         {#each kinds as kind (kind)}
           <label class="check">
-            <input type="checkbox" checked={form.kinds.includes(kind)} onchange={() => toggleKind(kind)} />
+            <input
+              type="checkbox"
+              checked={form.kinds.includes(kind)}
+              aria-invalid={error === 'kinds'}
+              onchange={() => toggleKind(kind)}
+            />
             <span>{$t(operationKindKey[kind])}</span>
           </label>
         {/each}
@@ -331,7 +336,8 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  [aria-invalid='true'] {
+  [aria-invalid='true'],
+  fieldset.invalid {
     border-color: var(--fl-danger);
   }
   .mono {

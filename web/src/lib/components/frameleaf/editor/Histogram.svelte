@@ -43,21 +43,21 @@
     const max = bins.max || 1;
     const trace = (values: number[], fill: string | null, stroke?: string) => {
       const last = values.length - 1;
-      context.beginPath();
-      context.moveTo(0, height);
+      const path = new Path2D();
+      path.moveTo(0, height);
       for (const [index, value] of values.entries()) {
-        context.lineTo((index / last) * width, height - (value / max) ** 0.65 * (height - 6));
+        path.lineTo((index / last) * width, height - (value / max) ** 0.65 * (height - 6));
       }
-      context.lineTo(width, height);
-      context.closePath();
+      path.lineTo(width, height);
+      path.closePath();
       if (fill) {
         context.fillStyle = fill;
-        context.fill();
+        context.fill(path);
       }
       if (stroke) {
         context.strokeStyle = stroke;
         context.lineWidth = 1;
-        context.stroke();
+        context.stroke(path);
       }
     };
     context.globalCompositeOperation = 'screen';
