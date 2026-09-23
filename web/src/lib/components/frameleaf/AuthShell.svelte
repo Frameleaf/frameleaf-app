@@ -15,6 +15,7 @@
    * read, so a PIN prompt reached mid-session matches the rest of the app rather than
    * flashing to a default.
    */
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import '$lib/frameleaf/tokens.css';
   import { Icon, Theme as AppTheme, ThemePreference, ThemeSwitcher, themeManager } from '@immich/ui';
   import type { Snippet } from 'svelte';
@@ -39,7 +40,7 @@
 <section class="frameleaf fl-auth-screen" data-theme={appTheme}>
   <div class="fl-auth-panel">
     <div class="fl-auth-top">
-      <span class="fl-auth-brand">Frameleaf</span>
+      <FrameleafLogo variant="inline" theme={appTheme} class="h-7" />
       {#if themeManager.preference !== ThemePreference.System}
         <ThemeSwitcher size="medium" color="secondary" />
       {/if}
@@ -93,11 +94,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-  }
-  .fl-auth-brand {
-    font-weight: 600;
-    font-size: 1.0625rem;
-    color: var(--fl-text);
   }
   .fl-auth-body {
     display: flex;

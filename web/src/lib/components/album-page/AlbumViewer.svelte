@@ -3,6 +3,7 @@
   import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -21,14 +22,7 @@
   import { handlePromiseError } from '$lib/utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import {
-    ActionButton,
-    Icon,
-    IconButton as ImmichIconButton,
-    Logo,
-    Theme as AppTheme,
-    themeManager,
-  } from '@immich/ui';
+  import { ActionButton, Icon, IconButton as ImmichIconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import ControlAppBar from '../shared-components/ControlAppBar.svelte';
@@ -164,7 +158,7 @@
     <ControlAppBar>
       {#snippet leading()}
         <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-          <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
+          <FrameleafLogo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} theme={appTheme} class="min-w-10" />
         </a>
       {/snippet}
 

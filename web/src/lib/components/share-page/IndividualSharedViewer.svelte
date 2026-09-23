@@ -3,6 +3,7 @@
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import RemoveFromSharedLink from '$lib/components/timeline/actions/RemoveFromSharedLinkAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -21,14 +22,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import {
-    Icon,
-    IconButton as ImmichIconButton,
-    Logo,
-    Theme as AppTheme,
-    themeManager,
-    toastManager,
-  } from '@immich/ui';
+  import { Icon, IconButton as ImmichIconButton, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import ControlAppBar from '../shared-components/ControlAppBar.svelte';
@@ -156,7 +150,7 @@
       <ControlAppBar>
         {#snippet leading()}
           <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-            <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
+            <FrameleafLogo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} theme={appTheme} class="min-w-10" />
           </a>
         {/snippet}
 
