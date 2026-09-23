@@ -124,6 +124,11 @@ export class MediaHealthOperationService {
       return;
     }
 
+    // A search step hashes up to gigabytes and a scan batch decodes whole videos: the claim is kept
+    // alive while the job is in hand, and a lost claim still stops it at the next write.
+    const keepAlive = setInterval(() => {
+      this.operations.heartbeat(operation.id, claimToken, MEDIA_HEALTH_LEASE_MS).catch(() => false);
+    }, MEDIA_HEALTH_LEASE_MS / 4);
     try {
       await (snapshot.mode === 'scan'
         ? this.scan(operation, claimToken, snapshot)
@@ -140,6 +145,8 @@ export class MediaHealthOperationService {
       if (failed) {
         await this.mediaHealth.setRunState(snapshot, failed === 'retrying' ? 'retrying' : 'failed', counts, message);
       }
+    } finally {
+      clearInterval(keepAlive);
     }
   }
 

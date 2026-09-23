@@ -410,6 +410,14 @@ export class BulkOperationService {
       return null;
     }
 
+    // Library Care reads, hashes and may copy whole originals (FL-69): one item can outlast the
+    // lease, so the claim is kept alive while the batch is in hand. A lost claim still stops the job
+    // at the next write.
+    const keepAlive = isMediaHealthBulkAction(job.snapshot.action)
+      ? setInterval(() => {
+          this.operations.heartbeat(job.id, job.claimToken, BULK_LEASE_MS).catch(() => false);
+        }, BULK_LEASE_MS / 4)
+      : undefined;
     try {
       await this.requireCredentials(job.ownerId, job.snapshot);
       return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom));
@@ -420,6 +428,8 @@ export class BulkOperationService {
         return null;
       }
       throw error;
+    } finally {
+      clearInterval(keepAlive);
     }
   }
 
