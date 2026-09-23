@@ -294,17 +294,23 @@ export class UserAdminService extends BaseService {
 
   async updatePreferences(auth: AuthDto, id: string, dto: UserPreferencesUpdateDto) {
     const user = await this.findOrFail(id, { withDeleted: false });
-    const metadata = await this.userRepository.getMetadata(id);
-    // `mergePreferences` changes the object it is given, so keep a separate copy to compare with
-    const previous = getPreferences(metadata);
-    const newPreferences = mergePreferences(getPreferences(metadata), dto, 'admin');
-
-    await this.userRepository.upsertMetadata(id, {
-      key: UserMetadataKey.Preferences,
-      value: getPreferencesPartial(newPreferences),
+    // FL-67: under the account's preferences lock, so an administrator's save can never write back
+    // Locked rules (or anything else) the account changed between this read and the write.
+    // FL-76: `mergePreferences` changes the object it is given, so keep a separate copy to compare with.
+    let previous: Preferences | undefined;
+    const newPreferences = await this.databaseRepository.withUserPreferencesLock(id, async (trx) => {
+      const metadata = await this.userRepository.getMetadata(id, trx);
+      previous = getPreferences(metadata);
+      const merged = mergePreferences(getPreferences(metadata), dto, 'admin');
+      await this.userRepository.upsertMetadata(
+        id,
+        { key: UserMetadataKey.Preferences, value: getPreferencesPartial(merged) },
+        trx,
+      );
+      return merged;
     });
 
-    await this.recordAdminEvents(this.getPreferencesEvents(auth, user, previous, newPreferences));
+    await this.recordAdminEvents(this.getPreferencesEvents(auth, user, previous ?? newPreferences, newPreferences));
 
     return mapPreferences(newPreferences, 'admin');
   }

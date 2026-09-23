@@ -111,6 +111,8 @@ export interface EnvData {
   storage: {
     ignoreMountCheckErrors: boolean;
     mediaLocation?: string;
+    /** Directories administrators may select Google Photos imports from (FL-65). */
+    importRoots: string[];
     /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
     recoveryRoots?: RecoveryRootConfig[];
   };
@@ -333,6 +335,7 @@ const getEnv = (): EnvData => {
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
+      importRoots: dto.IMMICH_IMPORT_ROOTS,
       recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 

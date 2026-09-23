@@ -48,6 +48,7 @@ import { MediaService } from 'src/services/media.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import { WorkerInventoryService } from 'src/services/worker-inventory.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
@@ -79,6 +80,8 @@ import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { TagService } from 'src/services/tag.service.js';
+import { TakeoutWorkerService } from 'src/services/takeout-worker.service.js';
+import { TakeoutService } from 'src/services/takeout.service.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -140,6 +143,7 @@ export const services = [
   MediaService,
   MemoryService,
   MlDestinationService,
+  WorkerInventoryService,
   MetadataService,
   NotificationService,
   NotificationAdminService,
@@ -174,6 +178,8 @@ export const services = [
   SystemConfigService,
   SystemMetadataService,
   TagService,
+  TakeoutService,
+  TakeoutWorkerService,
   TimelineService,
   TranscodingService,
   TrashService,

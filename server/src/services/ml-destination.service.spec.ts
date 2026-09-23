@@ -3,8 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import { RESTORATION_PROTOCOL, RestorationDynamicRange, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
-import { ImmichWorker, MlAdmissionRefusal, MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
-import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import {
+  ImmichWorker,
+  MlAdmissionRefusal,
+  MlDestinationHealth,
+  MlDestinationKind,
+  MlWorkerRole,
+  MlWorkload,
+} from 'src/enum.js';
+import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -81,6 +88,58 @@ describe(MlDestinationService.name, () => {
       expect(routed).not.toContain(MlWorkload.RestorationFaithful);
       expect(routed).not.toContain(MlWorkload.RestorationCreative);
       expect(routed).not.toContain(MlWorkload.StudioAi);
+    });
+
+    const bootWith = (urls: string[]) =>
+      sut.onConfigInit({
+        newConfig: {
+          ...defaults,
+          machineLearning: {
+            ...defaults.machineLearning,
+            urls,
+            availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
+          },
+        },
+      } as never);
+
+    it('turns off the local destination whose URL left the list, keeping its routes so work is refused (FL-72)', async () => {
+      const second = { ...mlDestinationStub.local, id: 'ml-destination-second', url: 'http://second:3003' };
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, second, mlDestinationStub.lan]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: second.id, updatedAt: new Date() });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+
+      await bootWith(['http://immich-machine-learning:3003']);
+
+      expect(mocks.mlDestination.update).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(second.id, { enabled: false });
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        second.id,
+        expect.objectContaining({ summary: ML_URL_REMOVED_SUMMARY, health: MlDestinationHealth.Unhealthy }),
+      );
+      // Routes are never rewritten to another endpoint.
+      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.clearRoute).not.toHaveBeenCalled();
+    });
+
+    it('turns a destination back on when its URL returns, but not one an administrator turned off', async () => {
+      const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
+      mocks.mlDestination.getAll.mockResolvedValue([removed]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(removed);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: removed.id, updatedAt: new Date() });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+
+      await bootWith(['http://immich-machine-learning:3003']);
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(removed.id, { enabled: true });
+
+      vi.clearAllMocks();
+      const adminOff = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: 'Serves face' };
+      mocks.mlDestination.getAll.mockResolvedValue([adminOff]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(adminOff);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: adminOff.id, updatedAt: new Date() });
+
+      await bootWith(['http://immich-machine-learning:3003']);
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
     it('leaves existing routes alone', async () => {
@@ -237,12 +296,63 @@ describe(MlDestinationService.name, () => {
     it('probes a LAN destination with its token and persists the served workloads', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
       mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.restoration);
+      mocks.machineLearning.getRestorationModels.mockRejectedValue(new Error('offline'));
 
       const result = await sut.probe(mlDestinationStub.lan.id);
 
       expect(mocks.machineLearning.probe).toHaveBeenCalledWith({ url: mlDestinationStub.lan.url, authToken: 'lan-token' });
       expect(result.servedWorkloads).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
       expect(result.status).toBe(MlDestinationHealth.Healthy);
+    });
+
+    it('keeps the acceleration and GPU memory a restoration worker reported (FL-72)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.restoration,
+        hardware: {
+          providers: [],
+          openvinoDeviceIds: [],
+          torchCudaAvailable: false,
+          cudaDeviceCount: 1,
+          preferredAcceleration: 'cuda' as never,
+        },
+      });
+      mocks.machineLearning.getRestorationModels.mockResolvedValue({
+        protocol: RESTORATION_PROTOCOL,
+        workloads: [MlWorkload.RestorationFaithful],
+        models: [],
+        gpus: [{ name: 'NVIDIA RTX 4070 Ti SUPER', memoryTotalBytes: 17_171_480_576, driverVersion: '550.54.14' }],
+        configurationProblems: [],
+        checkedAt: '2026-09-22T12:00:00.000Z',
+      });
+
+      await sut.probe(mlDestinationStub.lan.id);
+
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        mlDestinationStub.lan.id,
+        expect.objectContaining({
+          latencyMs: 40,
+          hardware: {
+            preferredAcceleration: 'cuda',
+            providers: [],
+            cudaDeviceCount: 1,
+            gpus: [{ name: 'NVIDIA RTX 4070 Ti SUPER', memoryTotalBytes: 17_171_480_576 }],
+          },
+        }),
+      );
+    });
+
+    it('asks only restoration workers for GPUs', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+
+      await sut.probe(mlDestinationStub.local.id);
+
+      expect(mocks.machineLearning.getRestorationModels).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        mlDestinationStub.local.id,
+        expect.objectContaining({ hardware: null, latencyMs: 12 }),
+      );
     });
   });
 
@@ -276,6 +386,119 @@ describe(MlDestinationService.name, () => {
     it('returns 404 for an unknown destination', async () => {
       mocks.mlDestination.getById.mockResolvedValue(undefined);
       await expect(sut.admit('missing', { workload: MlWorkload.Face })).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('separate library-analysis and restoration workers (FL-72)', () => {
+    it('refuses a destination that would run library analysis and restoration together', async () => {
+      await expect(
+        sut.create({
+          kind: MlDestinationKind.Lan,
+          name: 'Everything box',
+          url: 'http://gpu.lan:3003',
+          workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
+          enabled: true,
+        }),
+      ).rejects.toThrow(/not both/);
+      expect(mocks.mlDestination.create).not.toHaveBeenCalled();
+    });
+
+    it('never offers the managed RunPod pod for restoration', async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
+      await expect(
+        sut.create({ kind: MlDestinationKind.RunPod, name: 'RunPod', workloads: [MlWorkload.RestorationCreative], enabled: true }),
+      ).rejects.toThrow(/library analysis only/);
+    });
+
+    it('needs the persistent worker URL for a RunPod video worker', async () => {
+      await expect(
+        sut.create({
+          kind: MlDestinationKind.RunPodVideo,
+          name: 'RunPod video worker',
+          workloads: [MlWorkload.RestorationCreative],
+          enabled: true,
+        }),
+      ).rejects.toThrow(/URL of the persistent worker/);
+    });
+
+    it('creates a RunPod video worker that needs consent and keeps its own token hidden', async () => {
+      mocks.mlDestination.create.mockResolvedValue({ ...mlDestinationStub.runPodVideo, id: 'created' });
+
+      const result = await sut.create({
+        kind: MlDestinationKind.RunPodVideo,
+        name: 'RunPod video worker',
+        url: 'https://video-worker.proxy.runpod.net',
+        authToken: 'video-token',
+        workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+        enabled: true,
+        sharesLibraryHardware: false,
+      });
+
+      expect(mocks.mlDestination.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: MlDestinationKind.RunPodVideo, authToken: 'video-token', sharesLibraryHardware: false }),
+      );
+      expect(result.role).toBe(MlWorkerRole.Restoration);
+      expect(result.consent.required).toBe(true);
+      expect(result.authTokenConfigured).toBe(true);
+      expect(JSON.stringify(result)).not.toContain('video-token');
+    });
+
+    it('marks only a restoration worker as sharing hardware with library analysis', async () => {
+      await expect(
+        sut.create({
+          kind: MlDestinationKind.Lan,
+          name: 'Study PC',
+          url: 'http://study.lan:3003',
+          workloads: [MlWorkload.Face],
+          enabled: true,
+          sharesLibraryHardware: true,
+        }),
+      ).rejects.toThrow(/Only a restoration worker/);
+    });
+
+    it('never marks a RunPod video worker as sharing a GPU on this network', async () => {
+      await expect(
+        sut.create({
+          kind: MlDestinationKind.RunPodVideo,
+          name: 'RunPod video worker',
+          url: 'https://video-worker.proxy.runpod.net',
+          workloads: [MlWorkload.RestorationFaithful],
+          enabled: true,
+          sharesLibraryHardware: true,
+        }),
+      ).rejects.toThrow(/cloud worker cannot share/);
+    });
+
+    it('still lets an administrator rename or disable a row saved before the rule', async () => {
+      const mixed = { ...mlDestinationStub.lan, workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful] };
+      mocks.mlDestination.getById.mockResolvedValue(mixed);
+
+      await sut.update(mixed.id, { enabled: false });
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mixed.id, expect.objectContaining({ enabled: false }));
+
+      await expect(sut.update(mixed.id, { workloads: mixed.workloads })).rejects.toThrow(/not both/);
+    });
+
+    it('refuses a restoration route on an endpoint library analysis is routed to', async () => {
+      const sameUrl = { ...mlDestinationStub.lan, url: mlDestinationStub.local.url };
+      mocks.mlDestination.getById.mockImplementation((id: string) =>
+        Promise.resolve(id === sameUrl.id ? sameUrl : id === mlDestinationStub.local.id ? mlDestinationStub.local : undefined),
+      );
+
+      await expect(sut.setRoute(MlWorkload.RestorationFaithful, { destinationId: sameUrl.id })).rejects.toThrow(
+        /restoration runs only on a separate worker/,
+      );
+      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
+    });
+
+    it('routes restoration to its own worker', async () => {
+      mocks.mlDestination.getById.mockImplementation((id: string) =>
+        Promise.resolve(id === mlDestinationStub.lan.id ? mlDestinationStub.lan : mlDestinationStub.local),
+      );
+
+      await sut.setRoute(MlWorkload.RestorationFaithful, { destinationId: mlDestinationStub.lan.id });
+
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.RestorationFaithful, mlDestinationStub.lan.id);
     });
   });
 
@@ -318,7 +541,7 @@ describe(MlDestinationService.name, () => {
     it('does not count an unconsented cloud destination even when it is healthy and serves the workload', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([
         {
-          ...mlDestinationStub.runPod,
+          ...mlDestinationStub.runPodVideo,
           lastProbeHealth: MlDestinationHealth.Healthy,
           lastProbeWorkloads: [MlWorkload.RestorationFaithful],
         },
@@ -364,7 +587,7 @@ describe(MlDestinationService.name, () => {
       const result = await sut.getRestorationModels(mlDestinationStub.lan.id);
 
       expect(mocks.machineLearning.getRestorationModels).toHaveBeenCalledWith({
-        url: 'http://workshop.lan:3003',
+        url: mlDestinationStub.lan.url,
         authToken: 'lan-token',
       });
       expect(result).toEqual({

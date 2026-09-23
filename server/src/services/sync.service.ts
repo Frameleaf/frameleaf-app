@@ -13,13 +13,14 @@ import {
   SyncStreamDto,
   syncAlbumV2ToV1,
 } from 'src/dtos/sync.dto.js';
-import { JobName, QueueName, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { JobName, QueueName, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
+import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
@@ -236,7 +237,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.PeopleV1]: () => this.syncPeopleV1(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV2]: () => this.syncAssetFacesV2(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV3]: () => this.syncAssetFacesV3(options, response, checkpointMap),
-      [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap),
+      [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap, auth),
       [SyncRequestType.AssetOcrV1]: () => this.syncAssetOcrV1(options, response, checkpointMap, auth),
     } as const;
 
@@ -964,7 +965,16 @@ export class SyncService extends BaseService {
     }
   }
 
-  private async syncUserMetadataV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+  /**
+   * FL-67: the account's Locked people, pets and tags are left out of its preferences unless the
+   * syncing session is unlocked, as `GET /users/me/preferences` does.
+   */
+  private async syncUserMetadataV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+    auth: AuthDto,
+  ) {
     const deleteType = SyncEntityType.UserMetadataDeleteV1;
     const deletes = this.syncRepository.userMetadata.getDeletes({ ...options, ack: checkpointMap[deleteType] });
 
@@ -974,9 +984,14 @@ export class SyncService extends BaseService {
 
     const upsertType = SyncEntityType.UserMetadataV1;
     const upserts = this.syncRepository.userMetadata.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    const revealLockedRules = !!auth.session?.hasElevatedPermission;
 
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
+      const visible =
+        data.key === UserMetadataKey.Preferences && !revealLockedRules
+          ? { ...data, value: withoutStoredLockedRuleIds(data.value) }
+          : data;
+      await send(response, { type: upsertType, ids: [updateId], data: visible });
     }
   }
 

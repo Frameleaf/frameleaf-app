@@ -36,6 +36,7 @@ import {
 } from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
+import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
@@ -59,6 +60,7 @@ import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
 import { TagController } from 'src/controllers/tag.controller.js';
+import { TakeoutController } from 'src/controllers/takeout.controller.js';
 import { TimelineController } from 'src/controllers/timeline.controller.js';
 import { TrashController } from 'src/controllers/trash.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
@@ -104,6 +106,7 @@ export const controllers = [
   RenderWorkerController,
   MemoryController,
   MlDestinationController,
+  WorkerInventoryController,
   NotificationController,
   NotificationAdminController,
   OAuthController,
@@ -127,6 +130,7 @@ export const controllers = [
   SystemConfigController,
   SystemMetadataController,
   TagController,
+  TakeoutController,
   TimelineController,
   TrashController,
   UserAdminController,

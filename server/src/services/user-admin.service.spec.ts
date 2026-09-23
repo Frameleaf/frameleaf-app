@@ -346,10 +346,12 @@ describe(UserAdminService.name, () => {
       await expect(
         sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } }),
       ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true } });
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
-        key: UserMetadataKey.Preferences,
-        value: { cast: { gCastEnabled: true, adminDisabled: true } },
-      });
+      // the third argument is the preferences-lock transaction (FL-67); the unit mock passes undefined
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        userStub.user1.id,
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
+        undefined,
+      );
     });
 
     it("should let the user's own choice apply again when casting is allowed", async () => {
@@ -360,10 +362,11 @@ describe(UserAdminService.name, () => {
       await expect(
         sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: false } }),
       ).resolves.toMatchObject({ cast: { gCastEnabled: true, adminDisabled: false } });
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
-        key: UserMetadataKey.Preferences,
-        value: { cast: { gCastEnabled: true } },
-      });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        userStub.user1.id,
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true } } },
+        undefined,
+      );
     });
 
     it('should report the administrator decision from getPreferences', async () => {
@@ -398,10 +401,15 @@ describe(UserAdminService.name, () => {
       });
       expect(saved).toMatchObject({ download: { archiveSize: 1_234_567 }, people: { minimumFaces: 4 } });
       expect(saved.revision).not.toBe(loaded.revision);
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
-        key: UserMetadataKey.Preferences,
-        value: { memories: { duration: 9 }, people: { minimumFaces: 4 }, download: { archiveSize: 1_234_567 } },
-      });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        userStub.user1.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { memories: { duration: 9 }, people: { minimumFaces: 4 }, download: { archiveSize: 1_234_567 } },
+        },
+        undefined,
+      );
+      expect(mocks.database.withUserPreferencesLock).toHaveBeenCalledWith(userStub.user1.id, expect.any(Function));
     });
 
     it('should reject a save made against preferences that changed since they were loaded', async () => {
@@ -431,10 +439,14 @@ describe(UserAdminService.name, () => {
         tags: { enabled: true },
       });
       expect(saved.privacy.suppression.personIds).toEqual([]);
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
-        key: UserMetadataKey.Preferences,
-        value: { tags: { enabled: true }, privacy: { suppression: { personIds: [personId] } } },
-      });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        userStub.user1.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { tags: { enabled: true }, privacy: { suppression: { personIds: [personId] } } },
+        },
+        undefined,
+      );
     });
   });
 

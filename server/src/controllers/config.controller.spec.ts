@@ -4,6 +4,7 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { defaults, mapPublicConfig, mapUserConfig } from 'src/dtos/config.dto.js';
+import { ConfigCredential } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
@@ -76,6 +77,59 @@ describe('config controllers', () => {
         ]),
       );
       expect(service.updateAdminConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('credentials (FL-67)', () => {
+    it('should list whether each credential is stored', async () => {
+      service.getCredentials.mockResolvedValue([{ name: ConfigCredential.SmtpPassword, configured: true }]);
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/credentials');
+
+      expect(status).toBe(200);
+      expect(body).toEqual([{ name: 'smtp-password', configured: true }]);
+    });
+
+    it('should replace a credential with the value sent', async () => {
+      service.setCredential.mockResolvedValue({ name: ConfigCredential.OAuthClientSecret, configured: true });
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/oauth-client-secret')
+        .send({ value: 'new-secret' });
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ name: 'oauth-client-secret', configured: true });
+      expect(service.setCredential).toHaveBeenCalledWith(undefined, ConfigCredential.OAuthClientSecret, {
+        value: 'new-secret',
+      });
+    });
+
+    it('should reject a blank credential value', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/smtp-password')
+        .send({ value: '   ' });
+
+      expect(status).toBe(400);
+      expect(service.setCredential).not.toHaveBeenCalled();
+    });
+
+    it('should reject an unknown credential name', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/admin/config/credentials/database-password')
+        .send({ value: 'secret' });
+
+      expect(status).toBe(400);
+      expect(service.setCredential).not.toHaveBeenCalled();
+    });
+
+    it('should clear a credential', async () => {
+      service.clearCredential.mockResolvedValue({ name: ConfigCredential.HuggingFaceToken, configured: false });
+
+      const { status, body } = await request(ctx.getHttpServer()).delete('/admin/config/credentials/huggingface-token');
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ name: 'huggingface-token', configured: false });
+      expect(service.clearCredential).toHaveBeenCalledWith(undefined, ConfigCredential.HuggingFaceToken);
     });
   });
 
