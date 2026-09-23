@@ -24,12 +24,13 @@ class PluginManager {
   constructor() {
     eventManager.on({
       AuthLogout: () => this.clearCache(),
-      AuthUserLoaded: () => this.initialize(),
+      // The event bus does not await listeners; pages call ready() to surface discovery errors.
+      AuthUserLoaded: () => void this.initialize().catch(() => {}),
     });
 
     // loaded event might have already happened
     if (authManager.authenticated) {
-      void this.initialize();
+      void this.initialize().catch(() => {});
     }
   }
 
