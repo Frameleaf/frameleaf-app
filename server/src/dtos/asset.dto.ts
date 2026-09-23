@@ -131,6 +131,13 @@ const ImageDescriptionEnrichmentResponseSchema = z
     context: z.string().optional(),
     appliedDescription: z.boolean(),
     appliedTags: z.boolean(),
+    destinationId: z.string().optional().describe('The processing destination that generated the description'),
+    staleReason: z
+      .enum(['source-changed', 'identity-changed', 'config-changed'])
+      .optional()
+      .describe(
+        'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
+      ),
   })
   .meta({ id: 'ImageDescriptionEnrichmentResponseDto' });
 
