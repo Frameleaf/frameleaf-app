@@ -22,6 +22,9 @@ import {
   scanProgress,
 } from 'src/utils/media-health-operation.js';
 
+type Counts = { checked: number; missing?: number; corrupt?: number; found?: number };
+type Progress = { counts: Counts };
+
 /** How often the worker looks for queued Library Care jobs. */
 export const MEDIA_HEALTH_TICK_MS = 5000;
 /**
@@ -129,10 +132,14 @@ export class MediaHealthOperationService {
     const keepAlive = setInterval(() => {
       this.operations.heartbeat(operation.id, claimToken, MEDIA_HEALTH_LEASE_MS).catch(() => false);
     }, MEDIA_HEALTH_LEASE_MS / 4);
+    // What the job has recorded so far, so a failure reports the counts it actually reached.
+    const progress: Progress = {
+      counts: snapshot.mode === 'scan' ? parseScanResult(operation.result) : parseLocateResult(operation.result),
+    };
     try {
       await (snapshot.mode === 'scan'
-        ? this.scan(operation, claimToken, snapshot)
-        : this.locate(operation, claimToken, snapshot));
+        ? this.scan(operation, claimToken, snapshot, progress)
+        : this.locate(operation, claimToken, snapshot, progress));
     } catch (error) {
       const message = bulkErrorMessage(error);
       this.logger.error(`Library Care job ${operation.id} failed: ${message}`);
@@ -140,10 +147,9 @@ export class MediaHealthOperationService {
         error: message,
         errorCode: 'media_health_failed',
       });
-      const counts =
-        snapshot.mode === 'scan' ? parseScanResult(operation.result) : { checked: 0, found: 0, missing: 0, corrupt: 0 };
       if (failed) {
-        await this.mediaHealth.setRunState(snapshot, failed === 'retrying' ? 'retrying' : 'failed', counts, message);
+        const state = failed === 'retrying' ? 'retrying' : 'failed';
+        await this.mediaHealth.setRunState(snapshot, state, progress.counts, message);
       }
     } finally {
       clearInterval(keepAlive);
@@ -151,7 +157,12 @@ export class MediaHealthOperationService {
   }
 
   /** A scan of every asset the owner has, a batch at a time from the recorded cursor. */
-  private async scan(operation: MediaOperation, claimToken: string, snapshot: MediaHealthScanSnapshot) {
+  private async scan(
+    operation: MediaOperation,
+    claimToken: string,
+    snapshot: MediaHealthScanSnapshot,
+    progress: Progress,
+  ) {
     const { id } = operation;
     let result: MediaHealthScanResult = parseScanResult(operation.result);
     if (result.total === null) {
@@ -184,6 +195,7 @@ export class MediaHealthOperationService {
         total: Math.max(result.total ?? 0, result.checked + page.checked),
         restored: done,
       };
+      progress.counts = result;
 
       const written = await this.operations.setBulkResult(id, claimToken, {
         result: result as unknown as Record<string, unknown>,
@@ -201,7 +213,12 @@ export class MediaHealthOperationService {
   }
 
   /** A search for originals, one bounded step of the directory walk at a time. */
-  private async locate(operation: MediaOperation, claimToken: string, snapshot: MediaHealthLocateSnapshot) {
+  private async locate(
+    operation: MediaOperation,
+    claimToken: string,
+    snapshot: MediaHealthLocateSnapshot,
+    progress: Progress,
+  ) {
     const { id } = operation;
     let result: MediaHealthLocateResult = parseLocateResult(operation.result);
     const total = snapshot.findingIds.length;
@@ -224,6 +241,7 @@ export class MediaHealthOperationService {
         found: step.foundAssets,
         steps: result.steps + 1,
       };
+      progress.counts = result;
 
       complete = !step.continuation;
       const written = await this.operations.setBulkResult(id, claimToken, {

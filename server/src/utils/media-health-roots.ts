@@ -202,3 +202,48 @@ export const publishVerifiedCopy = async (input: {
 
   return published;
 };
+
+const errorCode = (error: unknown) =>
+  error && typeof error === 'object' && 'code' in error ? (error as { code: unknown }).code : undefined;
+
+/**
+ * Move a file to a new name without ever replacing anything (FL-69).
+ *
+ * The new name is hard-linked first, which fails rather than overwrites, and the old name is only
+ * removed once the new one holds the same file. Across filesystems the bytes are copied to the new
+ * name exclusively and flushed before the old name is removed. A repeat after an interruption finds
+ * both names on the same file and just removes the old one; a different file already at the new name
+ * is an error and nothing is changed.
+ */
+export const retainFile = async (source: string, destination: string): Promise<void> => {
+  await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+  try {
+    await link(source, destination);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === 'EXDEV') {
+      await copyFile(source, destination, constants.COPYFILE_EXCL);
+      const file = await open(destination, 'r');
+      try {
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+    } else if (code === 'EEXIST') {
+      const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
+      if (from.ino !== to.ino || from.dev !== to.dev) {
+        throw new Error(`${destination} already holds a different file`);
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  const directory = await open(path.dirname(destination), 'r');
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+  await unlink(source);
+};
