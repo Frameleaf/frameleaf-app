@@ -22,6 +22,7 @@ import {
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
+  SystemConfigHistoryResponseDto,
 } from 'src/dtos/system-config.dto.js';
 import {
   BootstrapEventPriority,
@@ -37,6 +38,7 @@ import {
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { appendConfigHistory, describeConfigChanges, readConfigHistory } from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
@@ -334,7 +336,9 @@ export class SystemConfigService extends BaseService {
           }
         }
 
-        return { oldConfig: current, newConfig: await this.updateConfig(prepared.config) };
+        const saved = await this.updateConfig(prepared.config);
+        await this.recordConfigHistory(current, saved, auth);
+        return { oldConfig: current, newConfig: saved };
       },
     );
 
@@ -450,7 +454,9 @@ export class SystemConfigService extends BaseService {
 
       const newConfig = cloneDeep(current);
       set(newConfig, CREDENTIAL_PATHS[name], value);
-      return { oldConfig: current, newConfig: await this.updateConfig(newConfig) };
+      const saved = await this.updateConfig(newConfig);
+      await this.recordConfigHistory(current, saved, auth);
+      return { oldConfig: current, newConfig: saved };
     });
 
     if (!result) {
@@ -498,6 +504,41 @@ export class SystemConfigService extends BaseService {
     }
 
     return { revision: getConfigRevision(oldConfig) };
+  }
+
+  /** FL-66: the settings change history, newest first. */
+  async getConfigHistory(): Promise<SystemConfigHistoryResponseDto> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory);
+    return readConfigHistory(stored);
+  }
+
+  /**
+   * FL-66: adds a saved change to the settings change history. Called under the settings lock
+   * right after the write, so entries are appended one at a time in the order the saves landed.
+   * Recording never fails or undoes the save it records: if it fails, the save stands and the
+   * failure is logged.
+   */
+  private async recordConfigHistory(oldConfig: SystemConfig, newConfig: SystemConfig, auth?: AuthDto) {
+    const changes = describeConfigChanges(oldConfig, newConfig);
+    if (changes.length === 0) {
+      return;
+    }
+
+    try {
+      const history = readConfigHistory(await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory));
+      const entry = {
+        id: this.cryptoRepository.randomUUID(),
+        createdAt: new Date().toISOString(),
+        actorId: auth?.user.id ?? null,
+        actorName: auth?.user.name ?? null,
+      };
+      await this.systemMetadataRepository.set(
+        SystemMetadataKey.SystemConfigHistory,
+        appendConfigHistory(history, entry, changes),
+      );
+    } catch (error) {
+      this.logger.error(`Unable to record the settings change in the change history: ${error}`);
+    }
   }
 
   /**
