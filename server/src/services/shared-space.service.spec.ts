@@ -6,7 +6,7 @@ import { ActivityFactory } from 'test/factories/activity.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
-import { getForAlbum } from 'test/mappers.js';
+import { getForActivity, getForAlbum } from 'test/mappers.js';
 import { newDate, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -745,7 +745,7 @@ describe(SharedSpaceService.name, () => {
       const activity = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
         .user({ id: editor.id, name: editor.name })
         .build();
-      mocks.activity.create.mockResolvedValue(activity);
+      mocks.activity.create.mockResolvedValue(getForActivity(activity));
       mocks.user.get.mockResolvedValue(owner);
       const comment = `Look @{${owner.id}}, and me @{${editor.id}}`;
 
@@ -795,7 +795,7 @@ describe(SharedSpaceService.name, () => {
       const editorsComment = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
         .user({ id: editor.id, name: editor.name })
         .build();
-      mocks.activity.getById.mockResolvedValue(editorsComment);
+      mocks.activity.getById.mockResolvedValue(getForActivity(editorsComment));
 
       await expect(
         sut.updateComment(AuthFactory.create(owner), space.id, editorsComment.id, { comment: 'y' }),
@@ -809,9 +809,9 @@ describe(SharedSpaceService.name, () => {
       const existing = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: `@{${owner.id}}` })
         .user({ id: editor.id, name: editor.name })
         .build();
-      mocks.activity.getById.mockResolvedValue(existing);
+      mocks.activity.getById.mockResolvedValue(getForActivity(existing));
       mocks.albumUser.getMentions.mockResolvedValue([{ activityId: existing.id, userId: owner.id }]);
-      mocks.activity.update.mockResolvedValue({ ...existing, comment: `@{${owner.id}} still` });
+      mocks.activity.update.mockResolvedValue(getForActivity({ ...existing, comment: `@{${owner.id}} still` }));
       mocks.user.get.mockResolvedValue(owner);
 
       await sut.updateComment(AuthFactory.create(editor), space.id, existing.id, { comment: `@{${owner.id}} still` });
@@ -834,14 +834,14 @@ describe(SharedSpaceService.name, () => {
       asEditor(space);
 
       const ownersComment = ActivityFactory.from({ albumId: space.id, userId: owner.id, comment: 'mine' }).build();
-      mocks.activity.getById.mockResolvedValue(ownersComment);
+      mocks.activity.getById.mockResolvedValue(getForActivity(ownersComment));
       await expect(sut.deleteComment(AuthFactory.create(viewer), space.id, ownersComment.id)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(mocks.albumUser.deleteCommentWithReplies).not.toHaveBeenCalled();
 
       const viewersComment = ActivityFactory.from({ albumId: space.id, userId: viewerId, comment: 'x' }).build();
-      mocks.activity.getById.mockResolvedValue(viewersComment);
+      mocks.activity.getById.mockResolvedValue(getForActivity(viewersComment));
       await sut.deleteComment(AuthFactory.create(owner), space.id, viewersComment.id);
       // The thread goes with its top-level comment, in one statement.
       expect(mocks.albumUser.deleteCommentWithReplies).toHaveBeenCalledWith(viewersComment.id);
@@ -852,12 +852,16 @@ describe(SharedSpaceService.name, () => {
       const { space, owner } = spaceWithEditor();
       asOwner(space);
 
-      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build());
+      mocks.activity.getById.mockResolvedValue(
+        getForActivity(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build()),
+      );
       await expect(sut.deleteComment(AuthFactory.create(owner), space.id, newUuid())).rejects.toBeInstanceOf(
         NotFoundException,
       );
 
-      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: space.id, isLiked: true }).build());
+      mocks.activity.getById.mockResolvedValue(
+        getForActivity(ActivityFactory.from({ albumId: space.id, isLiked: true }).build()),
+      );
       await expect(sut.deleteComment(AuthFactory.create(owner), space.id, newUuid())).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -877,7 +881,7 @@ describe(SharedSpaceService.name, () => {
       const root = commentBy(space.id, owner);
       const reply = commentBy(space.id, editor);
       const other = commentBy(space.id, editor);
-      mocks.activity.search.mockResolvedValue([root, reply, other]);
+      mocks.activity.search.mockResolvedValue([getForActivity(root), getForActivity(reply), getForActivity(other)]);
       mocks.albumUser.getMentions.mockResolvedValue([]);
       mocks.albumUser.getCommentParents.mockResolvedValue([{ activityId: reply.id, parentActivityId: root.id }]);
 
@@ -897,9 +901,9 @@ describe(SharedSpaceService.name, () => {
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const root = commentBy(space.id, owner);
       const created = commentBy(space.id, editor);
-      mocks.activity.getById.mockResolvedValue(root);
+      mocks.activity.getById.mockResolvedValue(getForActivity(root));
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
-      mocks.activity.create.mockResolvedValue(created);
+      mocks.activity.create.mockResolvedValue(getForActivity(created));
 
       const result = await sut.createComment(AuthFactory.create(editor), space.id, {
         comment: 'agreed',
@@ -941,12 +945,12 @@ describe(SharedSpaceService.name, () => {
       const firstReply = commentBy(space.id, editor);
       const created = commentBy(space.id, owner);
       const byId = new Map([
-        [root.id, root],
-        [firstReply.id, firstReply],
+        [root.id, getForActivity(root)],
+        [firstReply.id, getForActivity(firstReply)],
       ]);
       mocks.activity.getById.mockImplementation((id: string) => Promise.resolve(byId.get(id)));
       mocks.albumUser.getCommentParents.mockResolvedValue([{ activityId: firstReply.id, parentActivityId: root.id }]);
-      mocks.activity.create.mockResolvedValue(created);
+      mocks.activity.create.mockResolvedValue(getForActivity(created));
       mocks.user.get.mockResolvedValue(editor);
 
       await sut.createComment(AuthFactory.create(owner), space.id, {
@@ -972,7 +976,7 @@ describe(SharedSpaceService.name, () => {
       asEditor(space);
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const root = commentBy(space.id, owner, newUuid());
-      mocks.activity.getById.mockResolvedValue(root);
+      mocks.activity.getById.mockResolvedValue(getForActivity(root));
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
       mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
 
@@ -989,7 +993,7 @@ describe(SharedSpaceService.name, () => {
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const assetId = newUuid();
       const root = commentBy(space.id, owner, assetId);
-      mocks.activity.getById.mockResolvedValue(root);
+      mocks.activity.getById.mockResolvedValue(getForActivity(root));
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
       mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set([assetId]));
 
@@ -1008,12 +1012,16 @@ describe(SharedSpaceService.name, () => {
       asEditor(space);
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
 
-      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: space.id, isLiked: true }).build());
+      mocks.activity.getById.mockResolvedValue(
+        getForActivity(ActivityFactory.from({ albumId: space.id, isLiked: true }).build()),
+      );
       await expect(
         sut.createComment(AuthFactory.create(editor), space.id, { comment: 'hm', parentId: newUuid() }),
       ).rejects.toBeInstanceOf(NotFoundException);
 
-      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build());
+      mocks.activity.getById.mockResolvedValue(
+        getForActivity(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build()),
+      );
       await expect(
         sut.createComment(AuthFactory.create(editor), space.id, { comment: 'hm', parentId: newUuid() }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -1026,9 +1034,9 @@ describe(SharedSpaceService.name, () => {
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const root = commentBy(space.id, owner);
       const created = commentBy(space.id, editor);
-      mocks.activity.getById.mockResolvedValue(root);
+      mocks.activity.getById.mockResolvedValue(getForActivity(root));
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
-      mocks.activity.create.mockResolvedValue(created);
+      mocks.activity.create.mockResolvedValue(getForActivity(created));
       mocks.albumUser.createCommentThread.mockRejectedValue(new Error('boom'));
       mocks.activity.delete.mockResolvedValue();
 
@@ -1046,8 +1054,8 @@ describe(SharedSpaceService.name, () => {
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const root = commentBy(space.id, owner);
       const created = commentBy(space.id, editor);
-      mocks.activity.getById.mockResolvedValueOnce(root).mockResolvedValueOnce(void 0);
-      mocks.activity.create.mockResolvedValue(created);
+      mocks.activity.getById.mockResolvedValueOnce(getForActivity(root)).mockResolvedValueOnce(void 0);
+      mocks.activity.create.mockResolvedValue(getForActivity(created));
       mocks.albumUser.createCommentThread.mockRejectedValue(new Error('foreign key violation'));
       mocks.activity.delete.mockResolvedValue();
 
@@ -1061,9 +1069,9 @@ describe(SharedSpaceService.name, () => {
       const { space, editor } = spaceWithEditor();
       asEditor(space);
       const existing = commentBy(space.id, editor);
-      mocks.activity.getById.mockResolvedValue(existing);
+      mocks.activity.getById.mockResolvedValue(getForActivity(existing));
       mocks.albumUser.getMentions.mockResolvedValue([]);
-      mocks.activity.update.mockResolvedValue({ ...existing, comment: 'edited' });
+      mocks.activity.update.mockResolvedValue(getForActivity({ ...existing, comment: 'edited' }));
       mocks.albumUser.getCommentParents.mockResolvedValue([]);
       mocks.albumUser.getCommentReplies.mockResolvedValue([
         { activityId: newUuid(), parentActivityId: existing.id },

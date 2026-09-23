@@ -19,9 +19,9 @@ beforeEach(() => {
 
 describe('SharedLinkForm', () => {
   it('creates a link over the real endpoint and never leaves the password in the component afterwards', async () => {
+    // `target` is also a mount option name, so the props are passed explicitly.
     render(SharedLinkForm, {
-      open: true,
-      target: { type: SharedLinkType.Album, albumId: 'album-1', name: 'Summer trip' },
+      props: { open: true, target: { type: SharedLinkType.Album, albumId: 'album-1', name: 'Summer trip' } },
     });
 
     await fireEvent.input(screen.getByLabelText(en.password), { target: { value: 'hunter2' } });
@@ -50,12 +50,15 @@ describe('SharedLinkForm', () => {
       slug: 'family',
     });
 
-    render(SharedLinkForm, { open: true, link });
+    const first = render(SharedLinkForm, { open: true, link });
 
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
     expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: undefined }));
 
+    // A successful save closes the form, so the second edit opens it again.
+    first.unmount();
     vi.clearAllMocks();
+    render(SharedLinkForm, { open: true, link });
     await fireEvent.click(screen.getByLabelText(en.frameleaf_sharing.remove_password));
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
     expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: null }));
@@ -64,8 +67,7 @@ describe('SharedLinkForm', () => {
   it('computes a future expiry from a preset', async () => {
     const before = Date.now();
     render(SharedLinkForm, {
-      open: true,
-      target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' },
+      props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
     });
 
     await fireEvent.change(screen.getByLabelText(en.expire_after), { target: { value: '1d' } });

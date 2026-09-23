@@ -248,7 +248,7 @@ export const physicalDeduplicationPlanItems = (
     });
   }
 
-  return { items, retained: [...used.values()] };
+  return { items, retained: used.values().toArray() };
 };
 
 /** An asset row as the evidence check reads it. */

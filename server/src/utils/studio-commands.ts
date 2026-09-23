@@ -35,7 +35,6 @@ import {
   type StudioCommandCapability,
   type StudioCommandId,
   type StudioCommandMirror,
-  type StudioCommandScope,
   studioCommandMirror,
 } from 'src/utils/studio-commands.generated.js';
 

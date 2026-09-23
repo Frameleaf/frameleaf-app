@@ -1,8 +1,10 @@
 import { fireEvent, screen } from '@testing-library/svelte';
 import { DateTime } from 'luxon';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { addMessages } from 'svelte-i18n';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { locale } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
+import en from '../../../../../i18n/en.json';
 import MaintenanceBackupEntry from './MaintenanceBackupEntry.svelte';
 
 const restoreDatabaseBackup = vi.fn();
@@ -16,6 +18,11 @@ vi.mock('$lib/services/database-backups.service', () => ({
 }));
 
 describe('MaintenanceBackupEntry', () => {
+  beforeAll(() => {
+    // The assertions read the English copy the administrator sees.
+    addMessages('dev', en);
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-24T12:00:00Z'));

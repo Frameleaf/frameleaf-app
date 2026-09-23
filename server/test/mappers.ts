@@ -150,6 +150,7 @@ export const getForMetadataExtraction = (
   fileModifiedAt: asset.fileModifiedAt,
   isExternal: asset.isExternal,
   visibility: asset.visibility,
+  isLocked: asset.isLocked,
   libraryId: asset.libraryId,
   livePhotoVideoId: asset.livePhotoVideoId,
   localDateTime: asset.localDateTime,
