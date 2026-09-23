@@ -9,6 +9,9 @@ run = "nest build"
 env._.path = "./node_modules/.bin"
 run = "vitest --config test/vitest.config.mjs"
 
+[tasks."test-runtime"]
+run = "pnpm run test:runtime"
+
 [tasks."test-medium"]
 env._.path = "./node_modules/.bin"
 run = "vitest --config test/vitest.config.medium.mjs"
@@ -61,6 +64,7 @@ run = [
   { task = ":lint" },
   { task = ":check" },
   { task = ":test --run" },
+  { task = ":test-runtime" },
 ]
 
 [tasks.ci-medium]
