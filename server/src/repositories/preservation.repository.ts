@@ -32,8 +32,11 @@ export type PreservationPreviewCounts = {
   lockedBytes: number;
 };
 
-/** A jsonb value. Arrays especially: node-postgres would otherwise send them as SQL arrays. */
-const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::jsonb`;
+/**
+ * A jsonb value, serialized exactly once. The driver JSON-encodes a parameter it is told is jsonb, so
+ * the already-serialized text is cast through `text`; a bare `::jsonb` would store a JSON string.
+ */
+const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::text::jsonb`;
 
 const toNumber = (value: unknown) => Number(value ?? 0);
 
