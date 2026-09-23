@@ -150,7 +150,7 @@ describe(AssetRestorationService.name, () => {
 
       const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
 
-      expect(options).toMatchObject({ sourceType: 'image', outputWidth: 3240, outputHeight: 2160, previewSeconds: null, adapterInstalled: false });
+      expect(options).toMatchObject({ sourceType: 'image', outputWidth: 3240, outputHeight: 2160, previewSeconds: null, adapterInstalled: true });
       const local = options.destinations.find((item) => item.id === mlDestinationStub.local.id);
       const lan = options.destinations.find((item) => item.id === mlDestinationStub.lan.id);
       const runPod = options.destinations.find((item) => item.id === mlDestinationStub.runPod.id);

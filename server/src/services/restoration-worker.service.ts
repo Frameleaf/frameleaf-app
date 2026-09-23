@@ -5,14 +5,14 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
-import { Colorspace, ImageFormat, ImmichWorker, JobName, MediaOperationStatus, MlWorkload, StorageFolder } from 'src/enum.js';
+import { Colorspace, ImageFormat, ImmichWorker, JobName, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MachineLearningRepository, MlSelection } from 'src/repositories/machine-learning.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
@@ -22,13 +22,13 @@ import type { RawImageInfo } from 'src/types.js';
 import { getConfig } from 'src/utils/config.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { MlDestinationNotFoundError, MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
+import { MlDestinationNotFoundError, MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_OPERATION_KINDS,
   RESTORATION_PREVIEW_EDGE,
   RESTORATION_PREVIEW_SECONDS,
   RestorationErrorCode,
-  RestorationInference,
+  RestorationSelection,
   RestorationSnapshot,
   RestorationStage,
   STAGE_STATUSES,
@@ -40,9 +40,9 @@ import {
   previewExpiryAfterReady,
   previewRegionPixels,
   restorationChunkIdentity,
-  restorationInferenceOf,
   restorationOutputPaths,
   restorationWorkDir,
+  selectRestorationDestination,
   stageOfKind,
 } from 'src/utils/restoration.js';
 
@@ -95,8 +95,7 @@ type RunContext = {
   stage: RestorationStage;
   restoration: AssetRestoration;
   source: Source;
-  selection: MlSelection;
-  inference: RestorationInference;
+  selection: RestorationSelection;
   signal: AbortSignal;
   workDir: string;
   /** Temporary files to remove on failure. Published files are moved out of this list. */
@@ -334,14 +333,6 @@ export class RestorationWorkerService {
         : 4;
       await this.progress(context, MediaOperationStatus.Preparing, 0, total);
 
-      const inference = restorationInferenceOf(this.machineLearningRepository);
-      if (!inference) {
-        throw new RestorationFailure(
-          RestorationErrorCode.AdapterMissing,
-          'This server has no restoration adapter installed yet, so nothing was sent anywhere',
-        );
-      }
-
       // No visibility filter on purpose: the owner asked for this job on this asset.
       const source = await this.assetJobRepository.getForGenerateThumbnailJob(snapshot.assetId);
       if (!source) {
@@ -354,11 +345,21 @@ export class RestorationWorkerService {
         );
       }
 
-      let selection: MlSelection;
+      let selection: RestorationSelection;
       try {
-        selection = await selectMlDestination(
+        // The owner named this destination on their own request (it is required and never
+        // inferred, and the restoration panel says when it leaves the network), so that choice
+        // is the per-request cloud confirmation FL-114's restore requires. Admission still needs
+        // the administrator's recorded consent, budget, health and a qualified model.
+        selection = await selectRestorationDestination(
           { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
-          { workload: snapshot.workload as MlWorkload, destinationId: snapshot.destinationId, jobId: operation.id, jobName: operation.kind },
+          {
+            mode: snapshot.mode,
+            destinationId: snapshot.destinationId,
+            acknowledgeCloudUpload: true,
+            jobId: operation.id,
+            jobName: operation.kind,
+          },
         );
       } catch (error) {
         if (error instanceof MlDestinationRefusedError || error instanceof MlDestinationNotFoundError) {
@@ -369,7 +370,7 @@ export class RestorationWorkerService {
       await this.progress(context, MediaOperationStatus.Preparing, 1, total);
 
       this.storageRepository.mkdirSync(workDir);
-      const full: RunContext = { ...context, source, selection, inference } as RunContext;
+      const full: RunContext = { ...context, source, selection } as RunContext;
 
       const output =
         snapshot.sourceType === AssetRestorationSourceType.Video
@@ -426,7 +427,8 @@ export class RestorationWorkerService {
 
     const cap = cappedOutputSize(before.width, before.height, snapshot.upscale);
     const afterTmp = this.scratch(ctx, path.join(workDir, `after-${operation.id}.png`));
-    const result = await ctx.inference.restore(
+    await this.clearStaleOutput(afterTmp);
+    const result = await this.machineLearningRepository.restore(
       ctx.selection,
       { kind: 'image', path: beforeTmp, width: before.width, height: before.height },
       this.inferenceOptions(ctx, afterTmp, cap),
@@ -471,7 +473,8 @@ export class RestorationWorkerService {
 
     const cap = { width: snapshot.output.width, height: snapshot.output.height };
     const resultTmp = this.scratch(ctx, path.join(workDir, `result-${operation.id}.png`));
-    const result = await ctx.inference.restore(
+    await this.clearStaleOutput(resultTmp);
+    const result = await this.machineLearningRepository.restore(
       ctx.selection,
       { kind: 'image', path: inputPath, width: input.width, height: input.height },
       this.inferenceOptions(ctx, resultTmp, cap),
@@ -551,7 +554,8 @@ export class RestorationWorkerService {
 
     const cap = cappedOutputSize(beforeStream.width, beforeStream.height, snapshot.upscale);
     const afterTmp = this.scratch(ctx, path.join(workDir, `after-${operation.id}.mp4`));
-    const result = await ctx.inference.restore(
+    await this.clearStaleOutput(afterTmp);
+    const result = await this.machineLearningRepository.restore(
       ctx.selection,
       {
         kind: 'video',
@@ -689,7 +693,8 @@ export class RestorationWorkerService {
 
       // Chunk outputs are not scratch: they are the checkpoints a resume reuses.
       const chunkOut = path.join(workDir, `chunk-${plan.sequence}-${plan.chunkKey.slice(0, 12)}.mp4`);
-      const result = await ctx.inference.restore(
+      await this.clearStaleOutput(chunkOut);
+      const result = await this.machineLearningRepository.restore(
         ctx.selection,
         { kind: 'video', path: chunkIn, width: stream.width, height: stream.height, durationSeconds: probe.format.duration },
         this.inferenceOptions(ctx, chunkOut, cap),
@@ -928,6 +933,15 @@ export class RestorationWorkerService {
   private scratch(ctx: Pick<RunContext, 'scratch'>, file: string): string {
     ctx.scratch.push(file);
     return file;
+  }
+
+  /**
+   * Remove a scratch output an interrupted attempt of this same job left behind. The adapter
+   * creates its output exclusively and refuses to replace any file, so a requeued job would
+   * otherwise fail on its own leftover. Only paths inside this job's work directory reach here.
+   */
+  private async clearStaleOutput(file: string): Promise<void> {
+    await this.storageRepository.unlink(file).catch(() => undefined);
   }
 
   private async discard(files: string[]): Promise<void> {

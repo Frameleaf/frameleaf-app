@@ -4,7 +4,7 @@ import { AssetType, JobName, MediaOperationDestination, MediaOperationKind, Medi
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
-import { RestorationErrorCode, RestorationSnapshot } from 'src/utils/restoration.js';
+import { RestorationErrorCode, RestorationSnapshot, restorationAdmissionOf } from 'src/utils/restoration.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -191,7 +191,7 @@ describe(RestorationWorkerService.name, () => {
       .mockResolvedValueOnce({ width: 2048, height: 1536, isTransparent: false });
     mocks.storage.checkFileExists.mockResolvedValue(true);
 
-    // The adapter FL-114 provides: `restore(selection, input, options)`. Installed here as a mock.
+    // MachineLearningRepository.restore (FL-114): `restore(selection, input, options)`, mocked here.
     restore = vi.fn().mockImplementation((_selection, _input, options) =>
       Promise.resolve({ outputPath: options.outputPath, width: 2048, height: 1536, modelName: 'faithful-v1', modelVersion: '1.0' }),
     );
@@ -259,22 +259,12 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
-    it('fails honestly when no restoration adapter is installed, without touching the network', async () => {
-      delete (mocks.machineLearning as unknown as { restore?: unknown }).restore;
-
+    it('restores only through a selection admitted for restoration on the owner-named destination', async () => {
       await sut.run(operation(), CLAIM);
 
-      expect(operations.fail).toHaveBeenCalledWith(
-        OPERATION_ID,
-        CLAIM,
-        expect.objectContaining({ errorCode: RestorationErrorCode.AdapterMissing }),
-      );
-      expect(restorations.transition).toHaveBeenCalledWith(
-        RESTORATION_ID,
-        [AssetRestorationStatus.PreviewRendering],
-        expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed }),
-      );
-      expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+      const selection = restore.mock.calls[0][0];
+      expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
     });
 
     it('leaves the row running while the job waits for its automatic retry (FL-104)', async () => {
