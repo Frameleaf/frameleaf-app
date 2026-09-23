@@ -2,6 +2,7 @@ import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
+import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -85,6 +86,7 @@ export const services = [
   ActivityService,
   AlbumService,
   ApiService,
+  AssetDevelopService,
   AssetFileService,
   AssetMediaService,
   AssetService,
