@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import {
   AssetStatus,
   AssetVisibility,
@@ -25,6 +25,20 @@ const setup = () => {
     mock: [LoggingRepository],
   });
   return { ctx, sut: new DuplicateDecisionRepository(defaultDatabase) };
+};
+
+/** The stored JSON kind of each list: a value serialized twice would read back as 'string'. */
+const jsonTypes = async (id: string) => {
+  const { rows } = await sql<{ memberIds: string; keepAssetIds: string; trashAssetIds: string; state: string }>`
+    SELECT
+      jsonb_typeof("memberIds") AS "memberIds",
+      jsonb_typeof("keepAssetIds") AS "keepAssetIds",
+      jsonb_typeof("trashAssetIds") AS "trashAssetIds",
+      jsonb_typeof(state) AS state
+    FROM duplicate_decision
+    WHERE id = ${id}::uuid
+  `.execute(defaultDatabase);
+  return rows[0];
 };
 
 beforeAll(async () => {
@@ -125,11 +139,19 @@ describe(DuplicateDecisionRepository.name, () => {
       const replay = await sut.create(values);
 
       expect(replay.id).toBe(first.id);
+      expect(await jsonTypes(first.id)).toEqual({
+        memberIds: 'array',
+        keepAssetIds: 'array',
+        trashAssetIds: 'array',
+        state: 'object',
+      });
       expect(first.memberIds).toEqual(values.memberIds);
       expect(first.trashAssetIds).toEqual(values.trashAssetIds);
       expect(await sut.getUnfinished(user.id, values.duplicateId)).toEqual(expect.objectContaining({ id: first.id }));
 
       await sut.markApplied(first.id, { stackId: null, state: { before: {}, after: {} } });
+      expect((await jsonTypes(first.id))?.state).toBe('object');
+      expect((await sut.getById(user.id, first.id))?.state).toEqual({ before: {}, after: {} });
       expect(await sut.getUnfinished(user.id, values.duplicateId)).toBeUndefined();
       expect((await sut.getById(user.id, first.id))?.appliedAt).not.toBeNull();
     });
