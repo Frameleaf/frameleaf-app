@@ -4,6 +4,7 @@ import {
   buildArchiveName,
   formatArchiveDate,
   namedArchiveName,
+  namedEntitySegments,
   sanitizeArchiveSegment,
   withArchiveDetail,
 } from './archive-name';
@@ -128,5 +129,35 @@ describe('withArchiveDetail', () => {
 
   it('re-sanitizes the base, so it stays safe to call twice', () => {
     expect(withArchiveDetail('frameleaf-Photos', 'A', 'B')).toBe('frameleaf-Photos-A-B');
+  });
+});
+
+describe('namedEntitySegments', () => {
+  const andMoreLabel = (remaining: number) => `and ${remaining} more`;
+
+  it('returns every name when there are no more than maxNames', () => {
+    expect(namedEntitySegments(['Ada'], 1, andMoreLabel)).toEqual(['Ada']);
+    expect(namedEntitySegments(['Ada', 'Grace'], 2, andMoreLabel)).toEqual(['Ada', 'Grace']);
+  });
+
+  it('caps at maxNames and appends an "and N more" tail for the rest', () => {
+    expect(namedEntitySegments(['Ada', 'Grace', 'Hedy'], 3, andMoreLabel)).toEqual(['Ada', 'Grace', 'and 1 more']);
+  });
+
+  it('counts an unresolved id toward "more" without ever inventing a name for it', () => {
+    // Three ids, only two names resolved (the third was hidden, unnamed, or the lookup failed) —
+    // the unresolved id still shows up as "and 1 more" rather than silently disappearing.
+    expect(namedEntitySegments(['Ada', null, 'Hedy'], 3, andMoreLabel)).toEqual(['Ada', 'Hedy', 'and 1 more']);
+    // Four ids, two resolved.
+    expect(namedEntitySegments(['Ada', null, 'Hedy', null], 4, andMoreLabel)).toEqual(['Ada', 'Hedy', 'and 2 more']);
+  });
+
+  it('returns an empty array when nothing resolved, so the caller falls back to its generic label', () => {
+    expect(namedEntitySegments([], 0, andMoreLabel)).toEqual([]);
+    expect(namedEntitySegments([null, undefined], 2, andMoreLabel)).toEqual([]);
+  });
+
+  it('respects a custom maxNames', () => {
+    expect(namedEntitySegments(['Ada', 'Grace', 'Hedy'], 3, andMoreLabel, 1)).toEqual(['Ada', 'and 2 more']);
   });
 });
