@@ -1,7 +1,9 @@
 <script lang="ts">
   /**
-   * The account lifecycle zone (FL-76), from the `resource-danger-zone` block of the design
-   * template's account detail panel (`design/frameleaf/template/src/AccountsLibraries.jsx`).
+   * The account lifecycle zone (FL-76): the `resource-danger-zone` block at the foot of the
+   * design template's account detail Overview tab
+   * (`design/frameleaf/template/src/AccountsLibraries.jsx`), so this mounts inside
+   * `AccountDetailTabs`'s Overview tab rather than owning a tab or card of its own.
    *
    * Four states, each matching what the server will actually accept:
    * deleted (restore, with the end of the configured recovery window), removing (no way back),
@@ -11,7 +13,6 @@
   import AccountDeleteDialog from '$lib/components/frameleaf/AccountDeleteDialog.svelte';
   import AccountRestoreDialog from '$lib/components/frameleaf/AccountRestoreDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import Pane from '$lib/components/frameleaf/Pane.svelte';
   import { accountLifecycle, accountRecoveryDeadline, canDeleteAccount } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -34,9 +35,7 @@
     );
 </script>
 
-<Pane label={$t('frameleaf_users_lifecycle_title')}>
-  <h2>{$t('frameleaf_users_lifecycle_title')}</h2>
-
+<div class="danger-zone" aria-label={$t('frameleaf_users_lifecycle_title')}>
   {#if lifecycle === 'deleted'}
     <p>
       {$t('frameleaf_users_deleted_notice', {
@@ -62,17 +61,24 @@
       {$t('frameleaf_users_delete')}
     </Button>
   {/if}
-</Pane>
+</div>
 
 <style>
-  h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    color: var(--fl-text);
+  .danger-zone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-top: 1.75rem;
+    padding-top: 1.125rem;
+    border-top: 1px solid var(--fl-border);
   }
   p {
-    margin: 0 0 0.75rem;
+    margin: 0;
+    max-width: 32rem;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+    line-height: 1.7;
   }
 </style>

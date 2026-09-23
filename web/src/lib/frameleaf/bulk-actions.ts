@@ -50,6 +50,12 @@ export type BulkActionId =
   | 'unstack'
   | 'link-live-photo'
   | 'unlink-live-photo'
+  /**
+   * The Live Photo Utilities candidate review page's batch relink (FL-70). Distinct from
+   * `link-live-photo`, which links exactly the one pair the selection bar has selected: this one
+   * carries any number of reviewed pairs and is the action that goes durable above the threshold.
+   */
+  | 'relink-live-photo'
   | 'tag'
   /** Undo-only: reverses a tag. It has no descriptor row, so it never appears in the bar. */
   | 'untag'
@@ -128,7 +134,21 @@ export type BulkActionContext = {
    * that need the individual assets (stack, Live Photo linking, album cover) are not offered.
    */
   snapshot?: boolean;
+  /**
+   * True when the results are a shared space's contents and the signed-in person is only a viewer
+   * there (FL-48 map/space follow-ups). Combined with `snapshot`, this narrows the matching set's
+   * actions to the two a viewer's role always permits: download and adding what they can see to an
+   * album of their own — neither one touches the space. The album-level actions (remove from album,
+   * tag, change date, archive, Mark Sensitive, stacking, ...) need the editor or owner role the server
+   * already checks per item; offering them over a set the client has not resolved would just fail
+   * across items the member cannot act on. A manually built selection is unaffected by this flag —
+   * those items are already visible, and the per-item check still decides, as it always has.
+   */
+  spaceViewerMatching?: boolean;
 };
+
+/** The only actions a shared space's "select everything matching" offers a viewer (FL-48). */
+const SPACE_VIEWER_MATCHING_ACTIONS: ReadonlySet<BulkActionId> = new Set<BulkActionId>(['download', 'add-to-album']);
 
 export type BulkAction = {
   id: BulkActionId;
@@ -188,6 +208,8 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   /** The ordinary library destinations: neither trash nor the Locked folder. */
   const live = !trash && !locked && !readOnly;
   const snapshot = !!context.snapshot;
+  /** A shared-space viewer's matching set: only download and add-to-album are ever available. */
+  const spaceViewerMatching = snapshot && !!context.spaceViewerMatching;
   /** True when no asset is loaded: the descriptor cannot inspect the selection, so it offers. */
   const unknown = assets.length === 0;
   const any = (predicate: (asset: BulkAsset) => boolean) => assets.some(predicate);
@@ -428,6 +450,9 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       undoable: false,
       ...row,
       ...(row.group === 'album' && albumId ? { albumId } : {}),
+      // A space viewer's matching set never offers more than download and add-to-album, whatever the
+      // asset-shaped predicates above decided.
+      ...(spaceViewerMatching && !SPACE_VIEWER_MATCHING_ACTIONS.has(row.id) ? { available: false } : {}),
     }))
     .sort((left, right) => BULK_ACTION_GROUP_ORDER.indexOf(left.group) - BULK_ACTION_GROUP_ORDER.indexOf(right.group));
 };
