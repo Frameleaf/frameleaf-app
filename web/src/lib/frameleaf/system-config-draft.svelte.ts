@@ -178,17 +178,6 @@ export class SystemConfigDraftStore {
     };
   }
 
-  /** Whether the given groups differ from their defaults in the draft ("Reset this page" is offered). */
-  differsFromDefaults(keys: readonly (keyof AdminConfigDto)[]) {
-    return configKeysDiffer(this.draft, this.defaults, keys);
-  }
-
-  /** Whether the draft changes any of the given groups. */
-  hasChangesIn(keys: readonly string[]) {
-    const changed = this.changedKeys;
-    return keys.some((key) => changed.has(key));
-  }
-
   dismissNotice() {
     this.notice = null;
   }
