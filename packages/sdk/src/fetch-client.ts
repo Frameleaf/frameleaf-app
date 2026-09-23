@@ -2847,6 +2847,229 @@ export type MediaOperationDetailDto = (MediaOperationDto) & {
         [key: string]: any;
     };
 };
+export type RenderWorkerDto = {
+    /** Operations the worker currently holds */
+    activeOperations: number;
+    /** Oldest conformance evidence admission accepts, in milliseconds */
+    conformanceMaxAgeMs: number;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Engine and patch digest the worker must keep reporting */
+    engineDigest: string | null;
+    /** GPU memory the worker was qualified with, in bytes */
+    gpuMemoryBytes: string | null;
+    /** Render worker ID */
+    id: string;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    lastAdmittedAt: string | null;
+    lastSeenAt: string | null;
+    /** Operations this worker may hold at once */
+    maxConcurrentOperations: number;
+    /** Most output bytes one operation may produce here */
+    maxOutputBytes: string | null;
+    /** Longest one operation may run here, in milliseconds */
+    maxWallClockMs: string | null;
+    /** What the administrator calls this worker */
+    name: string;
+    revokedAt: string | null;
+    status: RenderWorkerStatus;
+    updatedAt: string;
+};
+export type RenderWorkerCreateDto = {
+    conformanceMaxAgeMs?: number;
+    destination: MediaOperationDestination;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name: string;
+};
+export type RenderWorkerCreateResponseDto = {
+    /** Shown once. Give it to the worker; the server keeps only its hash */
+    enrolmentSecret: string;
+    worker: RenderWorkerDto;
+};
+export type RenderWorkerAuditDto = {
+    /** The administrator who acted, when one did */
+    actorId: string | null;
+    createdAt: string;
+    /** Operator detail. Never a secret, never a path */
+    detail: {
+        [key: string]: any;
+    } | null;
+    event: RenderWorkerAuditEvent;
+    id: string;
+    operationId: string | null;
+    reason: (RenderWorkerRefusalReason) | null;
+    workerId: string | null;
+};
+export type RenderWorkerLimitDto = {
+    /** Operations one account may have claimed at once */
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** `instance` for the default, otherwise a user ID */
+    subject: string;
+    updatedAt: string;
+    userId: string | null;
+};
+export type RenderWorkerLimitsResponseDto = {
+    instance: RenderWorkerLimitDto;
+    users: RenderWorkerLimitDto[];
+};
+export type RenderWorkerLimitUpdateDto = {
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** Omit or null for the instance default */
+    userId?: string | null;
+};
+export type RenderWorkerUpdateDto = {
+    conformanceMaxAgeMs?: number;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    kinds?: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name?: string;
+};
+export type RenderWorkerAdmissionDto = {
+    /** Encoder and decoder names the check verified */
+    codecs?: string[];
+    /** When the conformance check ran */
+    conformanceReportedAt: string;
+    /** Digest of the engine and patches actually loaded */
+    engineDigest: string;
+    enrolmentSecret: string;
+    /** GPU memory measured by the conformance check */
+    gpuMemoryBytes: string | null;
+    /** True when the renderer is a software or fallback device */
+    softwareRenderer: boolean;
+    workerId: string;
+};
+export type RenderWorkerSessionDto = {
+    expiresAt: string;
+    /** How often the worker should heartbeat a held claim */
+    heartbeatIntervalMs: number;
+    /** How long a claim lasts without a heartbeat */
+    leaseMs: number;
+    scopes: MediaOperationKind[];
+    /** Present as the x-frameleaf-worker-session header on every worker call */
+    sessionToken: string;
+    workerId: string;
+};
+export type RenderWorkerInputGrantDto = {
+    /** Digest the manifest was resolved against, when known */
+    checksum: string | null;
+    expiresAt: string;
+    /** FL-90 resource key, or `source` for a single-asset workload */
+    inputId: string;
+    /** Resource class: library-asset, edited-master, font, lut, … */
+    kind: string;
+    /** Asset or resource id. Never a path */
+    resourceId: string;
+    /** Relative URL, valid for this claim only and only until expiresAt */
+    url: string;
+};
+export type RenderWorkerClaimLimitsDto = {
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+};
+export type RenderWorkerClaimDto = {
+    attempt: number;
+    checkpoints: MediaOperationCheckpointDto[];
+    /** Required on every write to this operation */
+    claimToken: string;
+    inputs: RenderWorkerInputGrantDto[];
+    kind: MediaOperationKind;
+    leaseMs: number;
+    limits: RenderWorkerClaimLimitsDto;
+    operationId: string;
+    projectId: string | null;
+    revisionId: string | null;
+    settings: {
+        [key: string]: any;
+    };
+    snapshot: {
+        [key: string]: any;
+    };
+};
+export type RenderWorkerClaimRequestDto = {
+    /** Narrow the claim to these kinds */
+    kinds?: MediaOperationKind[];
+};
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerCancelAckDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** True when remote resources are confirmed gone */
+    released: boolean;
+};
+export type RenderWorkerCheckpointPlanDto = {
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    configDigest: string;
+    endTicks: string;
+    historyDigest: string;
+    inputDigest: string;
+    prerollTicks?: string;
+    requiresSequentialContext?: boolean;
+    seed: string | null;
+    sequence: number;
+    startTicks: string;
+    timebase: string;
+};
+export type RenderWorkerCheckpointCompleteDto = {
+    /** Must match the planned chunk; a re-planned chunk cannot be completed */
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputChecksum: string;
+    outputPath: string;
+    sizeInBytes: string;
+};
+export type RenderWorkerCompleteDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    resultAssetId: string | null;
+};
+export type RenderWorkerFailDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    error: string;
+    errorCode: string;
+};
+export type RenderWorkerHeartbeatResponseDto = {
+    /** The owner asked to stop; acknowledge with cancel-ack */
+    cancelRequested: boolean;
+    leaseExtended: boolean;
+    leaseMs: number;
+    /** Set when a limit stopped the operation */
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerHeartbeatDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Total output bytes produced so far */
+    outputBytes?: string;
+};
+export type RenderWorkerProgressDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputBytes?: string;
+    processedUnits: number;
+    status: "preparing" | "rendering";
+    totalUnits: number | null;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
@@ -5609,6 +5832,126 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
     })));
 }
 /**
+ * List render workers
+ */
+export function listRenderWorkers(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto[];
+    }>("/admin/render-workers", {
+        ...opts
+    }));
+}
+/**
+ * Enrol a render worker
+ */
+export function createRenderWorker({ renderWorkerCreateDto }: {
+    renderWorkerCreateDto: RenderWorkerCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RenderWorkerCreateResponseDto;
+    }>("/admin/render-workers", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCreateDto
+    })));
+}
+/**
+ * Search the render worker audit trail
+ */
+export function searchRenderWorkerAudit({ take, workerId }: {
+    take?: number;
+    workerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerAuditDto[];
+    }>(`/admin/render-workers/audit${QS.query(QS.explode({
+        take,
+        workerId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get render limits
+ */
+export function getRenderWorkerLimits(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerLimitsResponseDto;
+    }>("/admin/render-workers/limits", {
+        ...opts
+    }));
+}
+/**
+ * Set render limits
+ */
+export function updateRenderWorkerLimits({ renderWorkerLimitUpdateDto }: {
+    renderWorkerLimitUpdateDto: RenderWorkerLimitUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerLimitDto;
+    }>("/admin/render-workers/limits", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: renderWorkerLimitUpdateDto
+    })));
+}
+/**
+ * Remove an account’s render limits
+ */
+export function deleteRenderWorkerUserLimit({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/render-workers/limits/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Revoke a render worker
+ */
+export function revokeRenderWorker({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/render-workers/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a render worker
+ */
+export function getRenderWorker({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto;
+    }>(`/admin/render-workers/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a render worker
+ */
+export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
+    id: string;
+    renderWorkerUpdateDto: RenderWorkerUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto;
+    }>(`/admin/render-workers/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: renderWorkerUpdateDto
+    })));
+}
+/**
  * Search users
  */
 export function searchUsersAdmin({ id, withDeleted }: {
@@ -7558,6 +7901,219 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Admit a render worker
+ */
+export function admitRenderWorker({ renderWorkerAdmissionDto }: {
+    renderWorkerAdmissionDto: RenderWorkerAdmissionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RenderWorkerSessionDto;
+    }>("/render-workers/admission", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerAdmissionDto
+    })));
+}
+/**
+ * Claim the next admitted operation
+ */
+export function claimRenderOperation({ renderWorkerClaimRequestDto, xFrameleafWorkerSession }: {
+    renderWorkerClaimRequestDto: RenderWorkerClaimRequestDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerClaimDto;
+    }>("/render-workers/claims", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerClaimRequestDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Acknowledge a cancellation
+ */
+export function acknowledgeRenderCancel({ id, renderWorkerCancelAckDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCancelAckDto: RenderWorkerCancelAckDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/cancel-ack`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCancelAckDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Plan a render checkpoint
+ */
+export function planRenderCheckpoint({ id, renderWorkerCheckpointPlanDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCheckpointPlanDto: RenderWorkerCheckpointPlanDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointPlanDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a render checkpoint
+ */
+export function completeRenderCheckpoint({ id, sequence, renderWorkerCheckpointCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    sequence: number;
+    renderWorkerCheckpointCompleteDto: RenderWorkerCheckpointCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(sequence)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a claimed operation
+ */
+export function completeRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Fail a claimed operation
+ */
+export function failRenderOperation({ id, renderWorkerFailDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerFailDto: RenderWorkerFailDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerFailDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Heartbeat a claimed operation
+ */
+export function heartbeatRenderOperation({ id, renderWorkerHeartbeatDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerHeartbeatDto: RenderWorkerHeartbeatDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerHeartbeatResponseDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/heartbeat`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerHeartbeatDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Read an operation input
+ */
+export function readRenderOperationInput({ grant, id, xFrameleafWorkerSession }: {
+    grant: string;
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/inputs/${encodeURIComponent(grant)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Report progress on a claimed operation
+ */
+export function reportRenderOperationProgress({ id, renderWorkerProgressDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerProgressDto: RenderWorkerProgressDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/progress`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerProgressDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Begin validating a claimed operation
+ */
+export function validateRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/validate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
 }
 /**
  * List your media operations
@@ -11013,6 +11569,38 @@ export enum MediaOperationCheckpointState {
     Pending = "pending",
     Complete = "complete",
     Invalid = "invalid"
+}
+export enum RenderWorkerStatus {
+    Active = "active",
+    Revoked = "revoked"
+}
+export enum RenderWorkerAuditEvent {
+    Enrolled = "enrolled",
+    Admitted = "admitted",
+    Refused = "refused",
+    ClaimRefused = "claim_refused",
+    LimitExceeded = "limit_exceeded",
+    Revoked = "revoked",
+    Updated = "updated"
+}
+export enum RenderWorkerRefusalReason {
+    InvalidCredential = "invalid_credential",
+    WorkerRevoked = "worker_revoked",
+    SessionExpired = "session_expired",
+    ConformanceStale = "conformance_stale",
+    ConformanceReplayed = "conformance_replayed",
+    EngineDigestMismatch = "engine_digest_mismatch",
+    SoftwareRenderer = "software_renderer",
+    DestinationMismatch = "destination_mismatch",
+    WorkerMismatch = "worker_mismatch",
+    ScopeExceeded = "scope_exceeded",
+    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
+    UserConcurrencyExceeded = "user_concurrency_exceeded",
+    GpuMemoryInsufficient = "gpu_memory_insufficient",
+    WallClockExceeded = "wall_clock_exceeded",
+    OutputBytesExceeded = "output_bytes_exceeded",
+    DestinationUnavailable = "destination_unavailable",
+    ManifestIncomplete = "manifest_incomplete"
 }
 export enum MemorySearchOrder {
     Asc = "asc",
