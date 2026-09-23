@@ -1601,7 +1601,7 @@ async function validateLedger(ledger) {
     acceptedRoutes:
       "06f16bd025906f8590381e10e28859156593f0ec312430d3af54b60655c1873a",
     acceptedActionFamilies:
-      "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f",
+      "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
     acceptedNative:
       "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6",
     acceptedFreecut:
