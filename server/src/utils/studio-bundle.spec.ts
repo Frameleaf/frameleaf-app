@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { crc32, deflateRawSync } from 'node:zlib';
 import {
   STUDIO_BUNDLE_FORMAT,
@@ -296,7 +296,8 @@ describe('readZipEntry and digestZipEntry', () => {
   });
 
   it('digests a deflated entry through the streaming inflater', async () => {
-    const media = Buffer.from('frame '.repeat(40_000));
+    // Incompressible, so the entry passes the ratio check and is actually inflated.
+    const media = randomBytes(200_000);
     const zip = buildZip([{ name: 'media/library-asset-y.bin', data: media }]);
     const source = sourceOf(zip);
     const directory = await readZipDirectory(source);

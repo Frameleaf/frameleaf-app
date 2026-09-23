@@ -112,7 +112,9 @@ const StudioProjectSchema = z
       .nullable()
       .describe('Library asset the owner chose as the poster; null for a reviewer'),
     duplicatedFromId: z.uuidv7().nullable().describe('The project this one was duplicated from; null for a reviewer'),
-    importedFromBundle: z.boolean().describe('The project was read in from a portable bundle'),
+    importedFromBundle: z
+      .boolean()
+      .describe('The project was read in from a portable bundle; always false for a reviewer'),
     createdAt: z.string().meta({ format: 'date-time' }),
     updatedAt: z.string().meta({ format: 'date-time' }),
   })

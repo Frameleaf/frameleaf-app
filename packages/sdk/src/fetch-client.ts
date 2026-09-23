@@ -5185,7 +5185,7 @@ export type StudioProjectDto = {
     duplicatedFromId: string | null;
     /** Studio project ID */
     id: string;
-    /** The project was read in from a portable bundle */
+    /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;
@@ -5243,7 +5243,7 @@ export type StudioProjectDetailDto = {
     envelope: (StudioProjectEnvelopeDto) | null;
     /** Studio project ID */
     id: string;
-    /** The project was read in from a portable bundle */
+    /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;

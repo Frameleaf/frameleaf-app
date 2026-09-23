@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PassThrough, Writable } from 'node:stream';
 import { crc32 } from 'node:zlib';
@@ -18,8 +18,10 @@ import {
   STUDIO_BUNDLE_MANIFEST_ENTRY,
   STUDIO_BUNDLE_MAX_ATTEMPTS,
   StudioBundleManifest,
+  buildStudioBundleManifest,
   readZipDirectory,
   readZipEntry,
+  serializeStudioBundleProject,
 } from 'src/utils/studio-bundle.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
@@ -340,13 +342,20 @@ describe(StudioBundleService.name, () => {
       studio.authorizeRevision.mockResolvedValue(authorized('reviewer', []));
       await expect(sut.createExport(owner, newUuidV7(), {})).rejects.toBeInstanceOf(ForbiddenException);
 
+      const projectId = newUuidV7();
       const first = operationOf({
         kind: MediaOperationKind.StudioBundleExport,
+        snapshot: { kind: 'studio-bundle-export', projectId },
         createdAt: new Date(),
         updatedAt: new Date(),
       } as never);
       operations.getByRequestKey.mockResolvedValue(first);
-      await expect(sut.createExport(owner, newUuidV7(), { requestKey: 'k' })).resolves.toMatchObject({ id: first.id });
+      await expect(sut.createExport(owner, projectId, { requestKey: 'k' })).resolves.toMatchObject({ id: first.id });
+
+      // The same key for another project is a client bug, never a replay of somebody else's job.
+      await expect(sut.createExport(owner, newUuidV7(), { requestKey: 'k' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
       expect(operations.create).not.toHaveBeenCalled();
     });
   });
@@ -359,6 +368,34 @@ describe(StudioBundleService.name, () => {
       await expect(sut.registerUpload(owner, file as Express.Multer.File)).rejects.toBeInstanceOf(BadRequestException);
       expect(fs.files.has('/uploads/x.zip')).toBe(false);
       expect(projects.createUpload).not.toHaveBeenCalled();
+    });
+
+    it('refuses a bundle whose project uses media the manifest does not list', async () => {
+      const project = serializeStudioBundleProject(envelope);
+      const manifest = buildStudioBundleManifest({
+        createdAt: new Date('2026-09-22T10:00:00.000Z'),
+        producerVersion: '3.0.0',
+        name: 'Lake trip',
+        revision: 1,
+        digest: studioEnvelopeDigest(envelope),
+        sourceProjectId: 'p',
+        engine: STUDIO_ENGINE,
+        engineRevision: 'rev-1',
+        project,
+        sources: [],
+        media: {},
+      });
+      fs.files.set(
+        '/uploads/m.zip',
+        buildZip([
+          { name: 'manifest.json', data: Buffer.from(JSON.stringify(manifest)) },
+          { name: 'project.json', data: project },
+        ]),
+      );
+      const file = { path: '/uploads/m.zip', size: 10, originalname: 'm.zip' };
+
+      await expect(sut.registerUpload(owner, file as Express.Multer.File)).rejects.toBeInstanceOf(BadRequestException);
+      expect(fs.files.has('/uploads/m.zip')).toBe(false);
     });
 
     it('refuses a ZIP that is not a bundle', async () => {
