@@ -1,21 +1,27 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import PartnerLibraryHeader from '$lib/components/frameleaf/PartnerLibraryHeader.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
+  import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, type PartnerResponseDto } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider } from '@immich/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
+  /**
+   * A partner's library (FL-33 cleanup): the Frameleaf library over someone else's photos.
+   *
+   * Nothing here is owned by the signed-in user, so the bulk set narrows itself: the selection bar
+   * skips every action whose asset belongs to someone else, which leaves the share link, add to
+   * album and download the legacy select bar offered.
+   */
   interface Props {
     data: PageData;
   }
@@ -26,7 +32,8 @@
   // a live asset count; both can change after the load already ran (the toggle itself, or
   // assets loading into the timeline), so they are held here rather than read once from data.
   let partner: PartnerResponseDto = $state(data.partner);
-  let timelineManager = $state<TimelineManager>();
+  let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
 
   const options = $derived({
     userId: data.partner.id,
@@ -34,28 +41,22 @@
     withStacked: true,
   });
 
-  const handleEscape = () => {
-    if (!assetMultiSelectManager.selectionActive) {
-      return;
-    }
-
-    assetMultiSelectManager.clear();
-    return;
-  };
+  const selecting = $derived(librarySession.selection.length > 0);
 </script>
 
 <main class="relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6">
-  <Timeline
-    enableRouting={true}
+  <LibraryView
     {options}
     bind:timelineManager
-    assetInteraction={assetMultiSelectManager}
-    onEscape={handleEscape}
+    destination={{ kind: 'library' }}
+    enableRouting
+    syncUrl={false}
+    selectAll="loaded"
+    onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     <!-- FL-54: the partner library's own header (identity, show-in-timeline toggle, stop
-         sharing) renders inside Timeline's own scrollable header section (the same slot
-         AlbumViewer.svelte uses for the album title), so it scrolls with the grid instead of
-         being clipped by `main`'s fixed height. -->
+         sharing) renders inside the timeline's own scrollable header section, so it scrolls
+         with the grid instead of being clipped by `main`'s fixed height. -->
     <section class="px-2 pt-8 md:px-0 md:pt-24">
       <PartnerLibraryHeader
         bind:partner
@@ -63,18 +64,18 @@
         onStopped={() => goto(Route.sharing())}
       />
     </section>
-  </Timeline>
+
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} withStacked />
+        {/if}
+      </Portal>
+    {/snippet}
+  </LibraryView>
 </main>
 
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    {@const Actions = getAssetBulkActions($t)}
-    <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-    <CreateSharedLink />
-    <ActionButton action={Actions.AddToAlbum} />
-    <DownloadAction />
-  </AssetSelectControlBar>
-{:else}
+{#if !selecting}
   <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(Route.sharing())}>
     {#snippet leading()}
       <p class="whitespace-nowrap text-immich-fg dark:text-immich-dark-fg">

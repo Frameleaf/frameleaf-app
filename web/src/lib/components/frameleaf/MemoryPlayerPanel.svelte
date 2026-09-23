@@ -24,40 +24,32 @@
    *    and downloads the finished archive. The run is the same one the Activity page (FL-104)
    *    lists, which is why the state lives on the server and not in this component.
    *
-   * The floating selection bar and the below-the-fold `GalleryViewer` are shared,
-   * already-Frameleaf-agnostic components reused across the app; this story restyles the
-   * chrome it owns (header, stage, controls) and leaves those two as-is.
+   * FL-33 cleanup: the below-the-fold gallery and the selection bar are now the Frameleaf ones.
+   * `ResultsView` draws the memory's assets in the Frameleaf grid and mounts FL-32's selection
+   * bar over the same library session, so the bulk actions here are the ones offered everywhere
+   * instead of a hand-assembled list; hiding an asset from a memory stays the memory manager's own
+   * call, which is what the delete and archive entries reported into before.
    */
   import { goto } from '$app/navigation';
   import { shortcuts } from '$lib/actions/shortcut';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import ShareSheet from '$lib/components/frameleaf/ShareSheet.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import { exportProgress, isExportActive, latestExport } from '$lib/frameleaf/memory-stories';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
+  import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { writeStudioHandoff } from '$lib/frameleaf/studio-handoff';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
   import type { TimelineAsset, Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob, getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
+  import { navigateToAsset } from '$lib/utils/asset-utils';
+  import { getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetMediaSize,
@@ -72,7 +64,6 @@
     type MemoryExportResponseDto,
   } from '@immich/sdk';
   import {
-    ActionButton,
     Icon,
     IconButton as ImmichIconButton,
     Text,
@@ -87,7 +78,6 @@
     mdiChevronRight,
     mdiChevronUp,
     mdiClose,
-    mdiDotsVertical,
     mdiDownload,
     mdiExportVariant,
     mdiHeart,
@@ -97,7 +87,6 @@
     mdiMovieEditOutline,
     mdiPause,
     mdiPlay,
-    mdiSelectAll,
     mdiShareVariantOutline,
     mdiStopCircleOutline,
     mdiVolumeHigh,
@@ -134,12 +123,12 @@
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
   );
   let currentTimelineAssets = $derived(current?.memory.assets ?? []);
+  /** The memory's assets as the Frameleaf grid reads them. */
+  let galleryAssets = $derived(currentTimelineAssets.map((asset) => toTimelineAsset(asset)));
 
   let viewerHeight = $state(0);
 
   const viewport: Viewport = $state({ width: 0, height: 0 });
-  // need to include padding in the viewport for gallery
-  const galleryViewport: Viewport = $derived({ height: viewport.height, width: viewport.width - 32 });
   let progressBarController: Tween<number> | undefined = $state(undefined);
   let videoPlayer: HTMLVideoElement | undefined = $state();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -160,8 +149,7 @@
   };
 
   const handleEscape = async () => goto(memoryManager.memoriesHref);
-  const handleSelectAll = () =>
-    assetMultiSelectManager.selectAssets(current?.memory.assets.map((a) => toTimelineAsset(a)) || []);
+  const handleSelectAll = () => librarySession.selectAll((current?.memory.assets ?? []).map((asset) => asset.id));
 
   const handleAction = async (callingContext: string, action: 'reset' | 'pause' | 'play') => {
     if (!progressBarController) {
@@ -476,38 +464,6 @@
       ]}
 />
 
-{#if assetMultiSelectManager.selectionActive}
-  <div class="dark frameleaf sticky top-0 z-1" data-theme={appTheme}>
-    <AssetSelectControlBar>
-      {@const Actions = getAssetBulkActions($t)}
-      <CreateSharedLink />
-      <IconButton label={$t('select_all')} onclick={handleSelectAll}>
-        <Icon icon={mdiSelectAll} size={20} />
-      </IconButton>
-
-      <ActionButton action={Actions.AddToAlbum} />
-
-      <FavoriteAction removeFavorite={assetMultiSelectManager.isAllFavorite} />
-
-      <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-        <DownloadAction menuItem />
-        <ChangeDate menuItem />
-        <ChangeDescription menuItem />
-        <ChangeLocation menuItem />
-        <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} onArchive={handleHideAssets} />
-        {#if assetMultiSelectManager.ownedAssets.length > 0}
-          <MarkNsfwAction menuItem />
-          <MarkNsfwAction menuItem markSafe />
-        {/if}
-        {#if authManager.preferences.tags.enabled && assetMultiSelectManager.isAllUserOwned}
-          <TagAction menuItem />
-        {/if}
-        <DeleteAssets menuItem onAssetDelete={handleHideAssets} />
-      </ButtonContextMenu>
-    </AssetSelectControlBar>
-  </div>
-{/if}
-
 <section
   id="memory-viewer"
   data-sveltekit-noscroll
@@ -763,17 +719,21 @@
     </div>
 
     <div id="gallery-memory" {@attach galleryObserver} bind:this={memoryGallery}>
-      <GalleryViewer
-        assets={currentTimelineAssets}
-        viewerAssets={current.viewerAssets}
-        viewport={galleryViewport}
-        assetInteraction={assetMultiSelectManager}
-        slidingWindowOffset={viewerHeight}
-        arrowNavigation={false}
+      <ResultsView
+        assets={galleryAssets}
+        onSelectAll={handleSelectAll}
+        onRemoved={handleHideAssets}
+        onOpen={(asset) => void navigateToAsset(asset)}
       />
     </div>
   </section>
 {/if}
+
+<ResultsAssetViewer
+  assets={current?.viewerAssets ?? []}
+  onRemove={(id) => handleHideAssets([id])}
+  emptyRoute={memoryManager.memoriesHref}
+/>
 
 <ShareSheet bind:open={shareOpen} assetIds={currentTimelineAssets.map((asset) => asset.id)} />
 
