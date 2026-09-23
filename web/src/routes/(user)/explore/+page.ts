@@ -1,6 +1,6 @@
 import {
   AssetTypeEnum,
-  getAllAlbums,
+  getAlbumTree,
   getAllPeople,
   getAssetStatistics,
   getBestPhotos,
@@ -8,8 +8,8 @@ import {
   MemorySearchOrder,
   searchAssetStatistics,
   type AlbumResponseDto,
+  type AlbumTreeResponseDto,
 } from '@immich/sdk';
-import { buildAlbumTree } from '$lib/frameleaf/album-tree';
 import {
   BEST_PHOTOS_PREVIEW_LIMIT,
   BEST_PHOTOS_QUALITY_MIN_SCORE,
@@ -27,10 +27,8 @@ const EXPLORE_ALBUM_PREVIEW_COUNT = 6;
 /** Standalone albums only — matches "From your albums" in the September 22, 2026 revision, which
  * replaces the earlier "Collections" wording; a collection groups albums and is not itself where
  * photos live, so it does not belong in this preview. */
-const previewAlbums = (albums: AlbumResponseDto[]): AlbumResponseDto[] => {
-  const standaloneIds = new Set(buildAlbumTree(albums).albums.map((node) => node.id));
-  return albums
-    .filter((album) => standaloneIds.has(album.id))
+const previewAlbums = (albums: AlbumTreeResponseDto): AlbumResponseDto[] => {
+  return [...albums.albums]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, EXPLORE_ALBUM_PREVIEW_COUNT);
 };
@@ -53,7 +51,7 @@ export const load = (async ({ url }) => {
   ] = await Promise.all([
     getExploreData(),
     getAllPeople({ withHidden: false }),
-    getAllAlbums({}),
+    getAlbumTree(),
     memoryManager.refresh().then(() => memoryManager.memories),
     // Card counts share the same scope/archive/privacy rules as the destinations they link to.
     // Favorites shares `getAssetStatistics`' default (timeline-only) visibility with the

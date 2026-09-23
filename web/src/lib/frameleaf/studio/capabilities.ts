@@ -18,6 +18,8 @@ import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
 
 export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapabilities => ({
+  analysisWorker: false,
+  generationWorker: false,
   gpuWorker: studio.gpuWorker,
   renderWorker: studio.renderWorker,
   restorationWorker: studio.restorationWorker,
