@@ -1,0 +1,195 @@
+/*
+ * Shared layout for the personal account access sections and their dialogs (FL-67), after the
+ * `personal-access` and `resource-*` styles of the design template's accounts stylesheet. Every
+ * class is prefixed so this unscoped file cannot reach anything else.
+ */
+
+.fl-access-section {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  color: var(--fl-text);
+}
+
+.fl-access-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.fl-access-head > div:first-child {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.fl-access-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--fl-text);
+}
+
+.fl-access-head p,
+.fl-access-section > p {
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+
+.fl-access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fl-access-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fl-access-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6875rem;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+
+.fl-access-item > div:first-child {
+  display: grid;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.fl-access-item strong {
+  color: var(--fl-text);
+  overflow-wrap: anywhere;
+}
+
+.fl-access-item small,
+.fl-access-footnote {
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+
+.fl-access-status {
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+}
+
+.fl-access-empty {
+  margin: 0;
+  padding: 0.5rem 0.6875rem;
+  color: var(--fl-muted);
+  border: 1px dashed var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+
+.fl-access-error {
+  margin: 0;
+  font-size: var(--fl-font-small);
+  color: var(--fl-danger);
+}
+
+.fl-access-notice {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  font-size: var(--fl-font-small);
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  border-left: 2px solid var(--fl-accent);
+}
+
+.fl-access-notice p {
+  margin: 0;
+}
+
+.fl-access-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  font-size: var(--fl-font-small);
+}
+
+.fl-access-facts dt {
+  color: var(--fl-muted);
+}
+
+.fl-access-facts dd {
+  margin: 0;
+  color: var(--fl-text);
+  overflow-wrap: anywhere;
+}
+
+.fl-access-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  min-width: min(26rem, 100%);
+}
+
+.fl-access-form p {
+  margin: 0;
+  color: var(--fl-text);
+}
+
+.fl-access-field {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--fl-text);
+}
+
+.fl-access-field > span {
+  font-weight: 550;
+}
+
+.fl-access-field input:not([type='checkbox']),
+.fl-access-field select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  color: var(--fl-text);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  font: inherit;
+}
+
+.fl-access-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  color: var(--fl-text);
+}
+
+.fl-access-form footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.fl-access-secret {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, monospace;
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  word-break: break-all;
+  user-select: all;
+}
