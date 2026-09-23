@@ -1,28 +1,43 @@
 <script lang="ts">
+  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
   import RuleBuilder from '$lib/components/frameleaf/RuleBuilder.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import { defaultIconFor } from '$lib/frameleaf/album-directory';
   import { fromResponse, ruleProblem, toUpdate, type RuleDraft } from '$lib/frameleaf/classification-rules';
   import type { RuleSources } from '$lib/frameleaf/classification-sources';
+  import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
-  import { deleteClassificationRule, updateClassificationRule, type ClassificationRuleResponseDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    deleteClassificationRule,
+    updateClassificationRule,
+    type AlbumResponseDto,
+    type ClassificationRuleResponseDto,
+  } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
   /**
-   * Edit a smart album's rule (FL-60): the design's edit dialog with the Smart album switch and rule
-   * builder. Saving changes nothing in the library; re-evaluating applies the rule. Turning the rule
-   * off keeps everything it applied. Turning Smart album off removes the rule and leaves an ordinary
-   * album with everything still in it.
+   * Edit a smart album (FL-60), ported from `CollectionFormDialog` in `CollectionHeader.jsx` as the
+   * design opens it from "Edit details": name, description, icon, the Smart album switch and the rule
+   * builder. Saving the rule changes nothing in the library; Re-evaluate applies it. Pausing the rule
+   * keeps everything it applied. Turning Smart album off removes the rule and leaves an ordinary album
+   * with everything still in it.
    */
   interface Props {
+    album: AlbumResponseDto;
     rule: ClassificationRuleResponseDto;
     sources: RuleSources;
     open?: boolean;
-    onSaved: (rule: ClassificationRuleResponseDto | null, message: string) => void;
+    onSaved: (rule: ClassificationRuleResponseDto | null, message: string, album?: AlbumResponseDto) => void;
   }
 
-  let { rule, sources, open = $bindable(false), onSaved }: Props = $props();
+  let { album, rule, sources, open = $bindable(false), onSaved }: Props = $props();
 
+  let albumName = $state('');
+  let description = $state('');
+  let icon = $state('');
   let draft = $state<RuleDraft>(fromResponse(rule));
   let smart = $state(true);
   let busy = $state(false);
@@ -32,7 +47,9 @@
     if (!open) {
       return;
     }
-
+    albumName = album.albumName;
+    description = album.description ?? '';
+    icon = album.icon ?? defaultIconFor(AlbumKind.Album);
     draft = fromResponse(rule);
     smart = true;
     error = '';
@@ -40,25 +57,42 @@
 
   const save = async (event: SubmitEvent) => {
     event.preventDefault();
+    const name = albumName.trim();
+    if (!name) {
+      error = $t('frameleaf_albums_name_required');
+      return;
+    }
+    const problem = smart ? ruleProblem(draft) : null;
+    if (problem) {
+      error = $t(problem);
+      return;
+    }
     busy = true;
     error = '';
     try {
+      let updatedAlbum: AlbumResponseDto | undefined;
+      const details = {
+        ...(name !== album.albumName && { albumName: name }),
+        ...(description.trim() !== (album.description ?? '') && { description: description.trim() }),
+        ...(icon !== (album.icon ?? defaultIconFor(AlbumKind.Album)) && { icon }),
+      };
+      if (Object.keys(details).length > 0) {
+        updatedAlbum = await handleUpdateAlbumInfo(album.id, details);
+        if (!updatedAlbum) {
+          return;
+        }
+      }
       if (!smart) {
         await deleteClassificationRule({ id: rule.id });
-        onSaved(null, $t('frameleaf_rules_removed'));
+        onSaved(null, $t('frameleaf_rules_removed'), updatedAlbum);
         open = false;
-        return;
-      }
-      const problem = ruleProblem(draft);
-      if (problem) {
-        error = $t(problem);
         return;
       }
       const updated = await updateClassificationRule({
         id: rule.id,
         classificationRuleUpdateDto: toUpdate(draft, rule),
       });
-      onSaved(updated, $t('frameleaf_rules_saved'));
+      onSaved(updated, $t('frameleaf_rules_saved'), updatedAlbum);
       open = false;
     } catch (error_) {
       handleError(error_, $t('frameleaf_rules_save_failed'));
@@ -68,13 +102,23 @@
   };
 </script>
 
-<Dialog
-  title={$t('frameleaf_rules_edit_title', { values: { name: rule.albumName } })}
-  closeLabel={$t('close')}
-  wide
-  bind:open
->
+<Dialog title={$t('edit_album')} closeLabel={$t('close')} wide bind:open>
   <form class="form" onsubmit={save}>
+    <label class="field">
+      <span>{$t('name')}</span>
+      <input type="text" bind:value={albumName} required maxlength="120" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>{$t('description')}</span>
+      <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
+    </label>
+    <div class="field">
+      <span class="field-label">
+        {$t('icon')}
+        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
+      </span>
+      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
+    </div>
     <label class="switch">
       <input type="checkbox" role="switch" bind:checked={smart} />
       <span>{$t('frameleaf_albums_smart_mark')}</span>
@@ -116,6 +160,33 @@
     gap: 0.75rem;
     margin-block-start: 1rem;
     width: min(44rem, calc(100vw - 4rem));
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .field > span,
+  .field-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--fl-muted);
+  }
+  .field input,
+  .field textarea {
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: inherit;
+  }
+  .preview {
+    display: inline-flex;
+    color: var(--fl-text);
   }
   .switch {
     display: grid;

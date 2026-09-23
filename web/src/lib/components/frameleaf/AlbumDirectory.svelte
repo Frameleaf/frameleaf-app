@@ -10,6 +10,7 @@
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
   import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
+  import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
@@ -317,7 +318,27 @@
     await refresh();
   };
 
+  let ruleEdit = $state<{
+    open: boolean;
+    album?: AlbumResponseDto;
+    rule?: ClassificationRuleResponseDto;
+    sources: RuleSources;
+  }>({ open: false, sources: { people: [], tags: [] } });
+
   const edit = async (album: AlbumResponseDto) => {
+    // A smart album is edited with its rule, as the design's edit dialog does (FL-60).
+    if (album.smartRuleId) {
+      try {
+        const [rule, sources] = await Promise.all([
+          getClassificationRule({ id: album.smartRuleId }),
+          loadRuleSources(),
+        ]);
+        ruleEdit = { open: true, album, rule, sources };
+      } catch (error) {
+        handleError(error, $t('frameleaf_rules_save_failed'));
+      }
+      return;
+    }
     await modalManager.show(AlbumEditModal, { album });
     await refresh();
   };
@@ -689,6 +710,19 @@
     targets={moveTargets(tree, moveDialog.album, currentUserId)}
     {busy}
     onMove={(collectionId) => moveDialog.album && void move(moveDialog.album, collectionId)}
+  />
+{/if}
+
+{#if ruleEdit.rule && ruleEdit.album}
+  <SmartAlbumRuleDialog
+    album={ruleEdit.album}
+    rule={ruleEdit.rule}
+    sources={ruleEdit.sources}
+    bind:open={ruleEdit.open}
+    onSaved={(_saved, message) => {
+      status = message;
+      void refresh();
+    }}
   />
 {/if}
 

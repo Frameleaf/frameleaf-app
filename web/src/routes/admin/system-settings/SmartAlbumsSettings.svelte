@@ -78,33 +78,28 @@
           isEdited={smartAlbums.enabled !== savedSmartAlbums.enabled}
         />
 
-        <!-- Rules people write for their own smart albums (FL-60). Archiving is never a default. -->
-        <SettingGroup
-          key="smart-albums-rules"
-          title={$t('admin.smart_albums_rules_title')}
-          subtitle={$t('admin.smart_albums_rules_description')}
-        >
-          <div class="flex flex-col gap-4">
-            <SettingToggle
-              title={$t('admin.smart_albums_rules_visual')}
-              subtitle={$t('admin.smart_albums_rules_visual_description')}
-              {disabled}
-              bind:checked={rules.visualCategories}
-              isEdited={rules.visualCategories !== savedRules.visualCategories}
-            />
-            <SettingSelect
-              label={$t('admin.smart_albums_rules_default_action')}
-              desc={$t('admin.smart_albums_rules_default_action_description')}
-              {disabled}
-              options={[
-                { value: ClassificationRuleAction.Review, text: $t('frameleaf_rules_action_review') },
-                { value: ClassificationRuleAction.Tag, text: $t('frameleaf_rules_action_tag') },
-              ]}
-              bind:value={rules.defaultAction}
-              isEdited={rules.defaultAction !== savedRules.defaultAction}
-            />
-          </div>
-        </SettingGroup>
+        <!--
+          The design's "Categories & smart albums" section (settings-catalog.mjs): curated smart albums,
+          custom visual categories, then the default rule action. Archiving is never a default (FL-60).
+        -->
+        <SettingToggle
+          title={$t('admin.smart_albums_rules_visual')}
+          subtitle={$t('admin.smart_albums_rules_visual_description')}
+          {disabled}
+          bind:checked={rules.visualCategories}
+          isEdited={rules.visualCategories !== savedRules.visualCategories}
+        />
+        <SettingSelect
+          label={$t('admin.smart_albums_rules_default_action')}
+          desc={$t('admin.smart_albums_rules_default_action_description')}
+          {disabled}
+          options={[
+            { value: ClassificationRuleAction.Review, text: $t('frameleaf_rules_action_review') },
+            { value: ClassificationRuleAction.Tag, text: $t('frameleaf_rules_action_tag') },
+          ]}
+          bind:value={rules.defaultAction}
+          isEdited={rules.defaultAction !== savedRules.defaultAction}
+        />
 
         <hr />
 
