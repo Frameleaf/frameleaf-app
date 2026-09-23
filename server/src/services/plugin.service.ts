@@ -35,7 +35,8 @@ export class PluginService extends BaseService {
   }
 
   async searchTemplates(): Promise<PluginTemplateResponseDto[]> {
-    const plugins = await this.pluginRepository.search();
+    // templates of enabled plugins only, like the methods they use
+    const plugins = await this.pluginRepository.search({ enabled: true });
     return plugins.flatMap((plugin) => plugin.templates.map((template) => mapTemplate(plugin, template)));
   }
 }

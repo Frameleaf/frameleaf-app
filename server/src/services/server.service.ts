@@ -6,6 +6,7 @@ import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
   ServerAboutResponseDto,
   ServerApkLinksDto,
+  ServerAppReleasesResponseDto,
   ServerConfigDto,
   ServerFeaturesDto,
   ServerMediaTypesResponseDto,
@@ -18,6 +19,7 @@ import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { UserStatsQueryResponse } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.service.js';
+import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -58,13 +60,32 @@ export class ServerService extends BaseService {
     };
   }
 
+  /**
+   * The signed APKs of this server version, from the release destination the operator configured
+   * (FL-82). Without one there is nothing to download: installation is never sent to another
+   * product's releases.
+   */
   getApkLinks(): ServerApkLinksDto {
-    const baseUrl = `https://github.com/immich-app/immich/releases/download/v${serverVersion.toString()}`;
+    const { android } = this.configRepository.getEnv().appReleases;
+    if (!android) {
+      throw new NotFoundException('No signed Android release is configured for this server');
+    }
+    return apkLinks(android.releaseUrl, serverVersion.toString());
+  }
+
+  /** What the app download and Obtainium setup pages can offer, and what is unavailable (FL-82). */
+  getAppReleases(): ServerAppReleasesResponseDto {
+    const { android, iosUrl } = this.configRepository.getEnv().appReleases;
     return {
-      arm64v8a: `${baseUrl}/app-arm64-v8a-release.apk`,
-      armeabiv7a: `${baseUrl}/app-armeabi-v7a-release.apk`,
-      universal: `${baseUrl}/app-release.apk`,
-      x86_64: `${baseUrl}/app-x86_64-release.apk`,
+      android: android
+        ? {
+            available: true,
+            appId: android.appId,
+            signingCertificateSha256: android.signingSha256,
+            links: apkLinks(android.releaseUrl, serverVersion.toString()),
+          }
+        : { available: false },
+      ios: iosUrl ? { available: true, url: iosUrl } : { available: false },
     };
   }
 

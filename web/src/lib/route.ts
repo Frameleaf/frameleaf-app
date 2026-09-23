@@ -216,6 +216,10 @@ export const Route = {
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('missing-media', params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
 
+
+  downloadsUtility: () => utilitiesUrl('downloads'),
+  obtainiumUtility: () => utilitiesUrl('obtainium'),
+
   // workflows
   workflows: () => '/workflows',
   viewWorkflow: ({ id }: { id: string }) => `/workflows/${id}`,

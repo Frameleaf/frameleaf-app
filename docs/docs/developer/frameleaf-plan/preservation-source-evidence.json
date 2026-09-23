@@ -4,7 +4,7 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "d219cdd43224fb5e09cafcc6a67196b997a20a5b33b58a113b4fc1d67a1ee7bc"
+      "sha256": "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
@@ -811,6 +811,21 @@
       "status": "planned-not-qualified"
     },
     {
+      "id": "/utilities/downloads",
+      "family": "utilities",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/utilities/downloads/+page.svelte",
+        "web/src/routes/(user)/utilities/downloads/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "ADM-105",
+      "secondaryIssueIds": ["ADM-001", "ADM-005"],
+      "rationale": "Added by FL-82: Own the Mobile applications setup from the prototype Utilities; downloads come only from the owner-configured signed release destinations (GET /server/app-releases) with a truthful unavailable state, never another product's stores.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
       "id": "/utilities/geolocation",
       "family": "utilities",
       "access": "authenticated",
@@ -896,6 +911,21 @@
       "rationale": "Own missing-original scan/candidate/recovery evidence. The menu currently lists this under an administrator condition, but the page loader authenticates normally and MediaHealthService scopes findings/actions to auth.user.id. Navigation visibility is not the source authorization boundary.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/utilities/obtainium",
+      "family": "utilities",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+        "web/src/routes/(user)/utilities/obtainium/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "ADM-105",
+      "secondaryIssueIds": ["ADM-001", "ADM-005"],
+      "rationale": "Added by FL-82: Own the Obtainium setup for direct Android updates from the prototype Utilities; downloads come only from the owner-configured signed release destinations (GET /server/app-releases) with a truthful unavailable state, never another product's stores.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/workflows",
