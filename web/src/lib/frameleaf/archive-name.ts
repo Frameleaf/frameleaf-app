@@ -137,3 +137,30 @@ export const brandedArchiveName = (
  */
 export const withArchiveDetail = (base: string, ...details: Array<string | null | undefined>): string =>
   buildArchiveName([base, ...details], { fallback: base });
+
+/**
+ * Segments for a resolved list of person/pet/tag names behind an id-list filter (FL-45 owner
+ * decision): up to `maxNames` names, followed by a translated "and N more" tail when more remain,
+ * so a filter naming several people does not grow the filename without bound. `names` carries one
+ * entry per id in the original filter, `null` where that id's name could not or should not be
+ * shown (unresolvable, unnamed, hidden — see `filter-entity-names.ts`); those still count toward
+ * "more" so the total is honest even though no fabricated name is ever shown for them.
+ *
+ * Returns `[]` when nothing could be named at all, which tells the caller to fall back to its own
+ * generic, translated field label instead (e.g. "People", "Tags") rather than emit an empty or
+ * placeholder-only segment.
+ */
+export const namedEntitySegments = (
+  names: Array<string | null | undefined>,
+  totalCount: number,
+  andMoreLabel: (remaining: number) => string,
+  maxNames = 2,
+): string[] => {
+  const usable = names.filter((name): name is string => !!name && name.trim().length > 0);
+  if (usable.length === 0) {
+    return [];
+  }
+  const shown = usable.slice(0, maxNames);
+  const remaining = totalCount - shown.length;
+  return remaining > 0 ? [...shown, andMoreLabel(remaining)] : shown;
+};
