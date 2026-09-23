@@ -24,6 +24,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       `CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,"isFavorite" boolean DEFAULT false,visibility text DEFAULT 'timeline',"fileCreatedAt" timestamptz DEFAULT '2000-01-01Z',"localDateTime" timestamptz DEFAULT '2000-01-01Z',"deletedAt" timestamptz)`,
       `CREATE TABLE asset_exif("assetId" uuid PRIMARY KEY REFERENCES asset,"dateTimeOriginal" timestamptz,"timeZone" text,"lockedProperties" text[] DEFAULT '{}',description text DEFAULT '',latitude double precision,longitude double precision)`,
       'CREATE TABLE asset_job_status("assetId" uuid PRIMARY KEY REFERENCES asset,"metadataExtractedAt" timestamptz)',
+      'CREATE TABLE album(id uuid PRIMARY KEY,"albumThumbnailAssetId" uuid REFERENCES asset)',
+      'CREATE TABLE album_asset("albumId" uuid REFERENCES album,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
     ]) {
       await sql.raw(statement).execute(db);
     }
@@ -100,6 +102,29 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       applied: { isFavorite: true, visibility: 'locked', fileCreatedAt: '2020-03-04T12:34:56.000Z' },
     });
     expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+  });
+
+  it('removes a photo it moves into the Locked folder as the cover of every album (FL-53)', async () => {
+    const ctx = await setup();
+    const otherAssetId = randomUUID();
+    const [ownAlbumId, otherAlbumId] = [randomUUID(), randomUUID()];
+    await sql`INSERT INTO asset(id,"ownerId") VALUES(${otherAssetId}::uuid,${ctx.ownerId}::uuid)`.execute(db);
+    await sql`INSERT INTO album VALUES(${ownAlbumId}::uuid,${ctx.assetId}::uuid),(${otherAlbumId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO album_asset VALUES(${ownAlbumId}::uuid,${ctx.assetId}::uuid),(${ownAlbumId}::uuid,${otherAssetId}::uuid),(${otherAlbumId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    const covers = await sql<{ id: string; albumThumbnailAssetId: string | null }>`
+      SELECT id,"albumThumbnailAssetId" FROM album WHERE id IN (${ownAlbumId}::uuid,${otherAlbumId}::uuid)`.execute(db);
+    expect(Object.fromEntries(covers.rows.map((row) => [row.id, row.albumThumbnailAssetId]))).toEqual({
+      [ownAlbumId]: otherAssetId,
+      [otherAlbumId]: null,
+    });
   });
 
   it('uses source baselines for favorite changes and preserves local edits and all privacy choices', async () => {
