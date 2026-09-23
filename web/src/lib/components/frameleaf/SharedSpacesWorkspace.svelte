@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
+  import SharedSpaceInvitations from '$lib/components/frameleaf/SharedSpaceInvitations.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { isOwner, canEdit } from '$lib/frameleaf/album-directory';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
@@ -19,7 +20,13 @@
     handleRemoveUserFromAlbum,
   } from '$lib/services/album.service';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumResponseDto, type CreateAlbumDto, type PartnerResponseDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    type AlbumResponseDto,
+    type CreateAlbumDto,
+    type PartnerResponseDto,
+    type SharedSpacePreviewResponseDto,
+  } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -28,6 +35,7 @@
     mdiDotsHorizontal,
     mdiDownloadOutline,
     mdiFolderOpenOutline,
+    mdiImageMultipleOutline,
     mdiLogoutVariant,
     mdiPencilOutline,
     mdiPlus,
@@ -48,11 +56,17 @@
   interface Props {
     spaces: AlbumResponseDto[];
     partners: PartnerResponseDto[];
+    /**
+     * Shared spaces this account has been invited to and has not answered. They
+     * are not memberships, so they are not in `spaces`: nothing about them is
+     * reachable until the invitation is accepted.
+     */
+    invitations?: SharedSpacePreviewResponseDto[];
     /** Re-fetch after a change; the route owns the loader. */
     onRefresh: () => Promise<void> | void;
   }
 
-  let { spaces, partners, onRefresh }: Props = $props();
+  let { spaces, partners, invitations = [], onRefresh }: Props = $props();
 
   const currentUserId = $derived(authManager.user.id);
   let createOpen = $state(false);
@@ -84,7 +98,7 @@
       }
       // A shared space is the workspace itself: open it straight away so its owner can
       // invite people, the way opening a freshly created album does.
-      await goto(Route.viewAlbum({ id: space.id }));
+      await goto(Route.viewSharedSpace({ id: space.id }));
       return true;
     } finally {
       busy = false;
@@ -123,7 +137,16 @@
     direction="left"
     size="small"
   >
-    <MenuOption icon={mdiFolderOpenOutline} text={$t('open')} onClick={() => goto(Route.viewAlbum({ id: space.id }))} />
+    <MenuOption
+      icon={mdiFolderOpenOutline}
+      text={$t('open')}
+      onClick={() => goto(Route.viewSharedSpace({ id: space.id }))}
+    />
+    <MenuOption
+      icon={mdiImageMultipleOutline}
+      text={$t('frameleaf_spaces_open_photos')}
+      onClick={() => goto(Route.viewAlbum({ id: space.id }))}
+    />
     {#if editor}
       <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(space)} />
     {/if}
@@ -160,6 +183,8 @@
 
   <Status message={status} {busy} />
 
+  <SharedSpaceInvitations {invitations} onAnswered={refresh} />
+
   {#if partners.length > 0}
     <section class="partners" aria-label={$t('partners')}>
       <h2>{$t('partners')}<small>{$t('frameleaf_spaces_partners_hint')}</small></h2>
@@ -181,7 +206,7 @@
     {#if spaces.length > 0}
       <div class="grid">
         {#each spaces as space (space.id)}
-          <AlbumTile album={space} {currentUserId}>
+          <AlbumTile album={space} {currentUserId} href={Route.viewSharedSpace({ id: space.id })}>
             {#snippet actions()}{@render menu(space)}{/snippet}
           </AlbumTile>
         {/each}

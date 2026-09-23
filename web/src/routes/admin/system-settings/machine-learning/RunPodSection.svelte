@@ -1,9 +1,9 @@
 <script lang="ts">
   import RunPodPanel from '$lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte';
   import RunPodReferralBanner from '$lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import {
     Mode as RunPodMode,
@@ -14,8 +14,8 @@
   import { Icon } from '@immich/ui';
   import { mdiCheck, mdiOpenInNew } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
-  import SettingTextarea from '../SettingTextarea.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { computeRunpodMode } from './machine-learning-helpers';
 
   interface Props {
@@ -59,12 +59,12 @@
   const savedRunpodGpuTypeIdsText = $derived((savedRunpodServerless?.gpuTypeIds ?? []).join('\n'));
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="runpod"
   title={$t('admin.machine_learning_runpod_pod_accordion_title')}
   subtitle={$t('admin.machine_learning_runpod_pod_accordion_subtitle')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <RunPodReferralBanner />
 
     <SettingSelect
@@ -81,7 +81,7 @@
     <hr />
 
     <div class="flex flex-col gap-1">
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.PASSWORD}
         label={$t('admin.machine_learning_runpod_api_key')}
         bind:value={runpod.apiKey}
@@ -100,7 +100,7 @@
     </div>
 
     <div class="flex flex-col gap-1">
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.PASSWORD}
         label={$t('admin.machine_learning_runpod_hf_token')}
         description={$t('admin.machine_learning_runpod_hf_token_description')}
@@ -119,7 +119,7 @@
       {/if}
     </div>
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_runpod_container_image')}
       description={$t('admin.machine_learning_runpod_container_image_description')}
@@ -129,7 +129,7 @@
     />
 
     {#if runpodMode === 'pod'}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.machine_learning_runpod_default_gpu_type_id')}
         description={$t('admin.machine_learning_runpod_default_gpu_type_id_description')}
@@ -138,7 +138,7 @@
         isEdited={runpod.defaultGpuTypeId !== savedRunpod.defaultGpuTypeId}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_container_disk_gb')}
         bind:value={runpod.containerDiskGb}
@@ -146,7 +146,7 @@
         isEdited={runpod.containerDiskGb !== savedRunpod.containerDiskGb}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_volume_gb')}
         description={$t('admin.machine_learning_runpod_volume_gb_description')}
@@ -155,14 +155,14 @@
         isEdited={runpod.volumeGb !== savedRunpod.volumeGb}
       />
 
-      <SettingSwitch
+      <SettingToggle
         title={$t('admin.machine_learning_runpod_auto_stop_enabled')}
         subtitle={$t('admin.machine_learning_runpod_auto_stop_enabled_description')}
         bind:checked={runpod.autoStopEnabled}
         disabled={disabled || !workingConfig.enabled}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_auto_stop_grace_minutes')}
         description={$t('admin.machine_learning_runpod_auto_stop_grace_minutes_description')}
@@ -171,14 +171,14 @@
         isEdited={runpod.autoStopGraceMinutes !== savedRunpod.autoStopGraceMinutes}
       />
 
-      <SettingSwitch
+      <SettingToggle
         title={$t('admin.machine_learning_runpod_auto_backfill_on_launch')}
         subtitle={$t('admin.machine_learning_runpod_auto_backfill_on_launch_description')}
         bind:checked={runpod.autoBackfillOnLaunch}
         disabled={disabled || !workingConfig.enabled}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_max_runtime_hours')}
         description={$t('admin.machine_learning_runpod_max_runtime_hours_description')}
@@ -187,7 +187,7 @@
         isEdited={runpod.maxRuntimeHours !== savedRunpod.maxRuntimeHours}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_provision_timeout_minutes')}
         description={$t('admin.machine_learning_runpod_provision_timeout_minutes_description')}
@@ -224,7 +224,7 @@
         {/snippet}
       </SettingTextarea>
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_workers_min')}
         description={$t('admin.machine_learning_runpod_workers_min_description')}
@@ -235,7 +235,7 @@
         isEdited={runpodServerless.workersMin !== savedRunpodServerless.workersMin}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_workers_max')}
         description={$t('admin.machine_learning_runpod_workers_max_description')}
@@ -246,7 +246,7 @@
         isEdited={runpodServerless.workersMax !== savedRunpodServerless.workersMax}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_idle_timeout_seconds')}
         description={$t('admin.machine_learning_runpod_idle_timeout_seconds_description')}
@@ -257,7 +257,7 @@
         isEdited={runpodServerless.idleTimeoutSeconds !== savedRunpodServerless.idleTimeoutSeconds}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_execution_timeout_ms')}
         description={$t('admin.machine_learning_runpod_execution_timeout_ms_description')}
@@ -281,7 +281,7 @@
         isEdited={runpodServerless.scalerType !== savedRunpodServerless.scalerType}
       />
 
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.NUMBER}
         label={$t('admin.machine_learning_runpod_scaler_value')}
         description={$t('admin.machine_learning_runpod_scaler_value_description')}
@@ -297,4 +297,4 @@
 
     <RunPodPanel {workingConfig} />
   </div>
-</SettingAccordion>
+</SettingGroup>

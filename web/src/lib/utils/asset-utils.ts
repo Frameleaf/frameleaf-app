@@ -21,11 +21,9 @@ import { toastManager } from '@immich/ui';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
-import type { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
 import { downloadUrlPost, withError } from '$lib/utils';
@@ -362,36 +360,6 @@ export const keepThisDeleteOthers = async (keepAsset: AssetResponseDto, stack: S
   }
 };
 
-export const selectAllAssets = async (timelineManager: TimelineManager, assetInteraction: AssetMultiSelectManager) => {
-  if (assetInteraction.selectAll) {
-    // Selection is already ongoing
-    return;
-  }
-  assetInteraction.selectAll = true;
-
-  try {
-    for (const timelineMonth of timelineManager.months) {
-      if (!timelineMonth.isLoaded) {
-        await timelineManager.loadTimelineMonth(timelineMonth.yearMonth);
-      }
-
-      if (!assetInteraction.selectAll) {
-        assetInteraction.clear();
-        break; // Cancelled
-      }
-      assetInteraction.selectAssets([...timelineMonth.assetsIterator()]);
-
-      for (const dateGroup of timelineMonth.timelineDays) {
-        assetInteraction.addGroupToMultiselectGroup(dateGroup.groupTitle);
-      }
-    }
-  } catch (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.error_selecting_all_assets'));
-    assetInteraction.selectAll = false;
-  }
-};
-
 export const toggleArchive = async (asset: AssetResponseDto) => {
   const $t = get(t);
   try {
@@ -453,32 +421,6 @@ const undoArchiveAssets = async (assets: TimelineAsset[]) => {
   } catch (error) {
     handleError(error, $t('errors.unable_to_archive_unarchive', { values: { archived: false } }));
   }
-};
-
-export const archiveAssets = async (assets: TimelineAsset[], visibility: AssetVisibility) => {
-  const ids = assets.map(({ id }) => id);
-  const $t = get(t);
-
-  try {
-    if (ids.length > 0) {
-      await updateAssets({
-        assetBulkUpdateDto: { ids, visibility },
-      });
-    }
-
-    if (visibility === AssetVisibility.Archive) {
-      showUndoArchiveToast($t('archived_count', { values: { count: ids.length } }), assets);
-    } else {
-      toastManager.primary($t('unarchived_count', { values: { count: ids.length } }));
-    }
-  } catch (error) {
-    handleError(
-      error,
-      $t('errors.unable_to_archive_unarchive', { values: { archived: visibility === AssetVisibility.Archive } }),
-    );
-  }
-
-  return ids;
 };
 
 export const delay = async (ms: number) => {

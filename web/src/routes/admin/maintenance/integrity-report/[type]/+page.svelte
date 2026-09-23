@@ -1,5 +1,6 @@
 <script lang="ts">
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import IntegrityReportTableItem from '$lib/components/maintenance/integrity/IntegrityReportTableItem.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { filterMaintenanceReportItems, summarizeMaintenanceReportFilter } from '$lib/frameleaf/maintenance-report';
@@ -7,7 +8,7 @@
   import { getIntegrityReportActions } from '$lib/services/integrity.service';
   import { asyncTimeout } from '$lib/utils';
   import { getIntegrityReport, getQueuesLegacy, IntegrityReport } from '@immich/sdk';
-  import { Button, Table, TableBody, TableHeader, TableHeading } from '@immich/ui';
+  import { Button, Table, TableBody, TableHeader, TableHeading, Theme as AppTheme, themeManager } from '@immich/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -17,6 +18,8 @@
   };
 
   let { data }: Props = $props();
+
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   let integrityReport = $state(data.integrityReport);
 
@@ -86,24 +89,26 @@
 >
   <section id="setting-content" class="flex place-content-center sm:mx-4">
     <section class="w-full pb-28 sm:w-5/6 md:w-212.5">
-      <div class="frameleaf-report-search">
-        <label for="frameleaf-maintenance-report-search" class="sr-only">
-          {$t('admin.frameleaf_maintenance_report_search_label')}
-        </label>
-        <input
-          id="frameleaf-maintenance-report-search"
-          type="search"
-          placeholder={$t('admin.frameleaf_maintenance_report_search_placeholder')}
-          bind:value={reportQuery}
-        />
-        <span aria-live="polite" class="frameleaf-report-search-summary">
-          {#if filterSummary.isFiltered}
-            {$t('admin.frameleaf_maintenance_report_search_count', {
-              values: { filtered: filterSummary.filtered, total: filterSummary.total },
-            })}
-          {/if}
-        </span>
-      </div>
+      <Theme theme={appTheme}>
+        <div class="frameleaf-report-search">
+          <label for="frameleaf-maintenance-report-search" class="sr-only">
+            {$t('admin.frameleaf_maintenance_report_search_label')}
+          </label>
+          <input
+            id="frameleaf-maintenance-report-search"
+            type="search"
+            placeholder={$t('admin.frameleaf_maintenance_report_search_placeholder')}
+            bind:value={reportQuery}
+          />
+          <span aria-live="polite" class="frameleaf-report-search-summary">
+            {#if filterSummary.isFiltered}
+              {$t('admin.frameleaf_maintenance_report_search_count', {
+                values: { filtered: filterSummary.filtered, total: filterSummary.total },
+              })}
+            {/if}
+          </span>
+        </div>
+      </Theme>
       <Table striped spacing="tiny">
         <TableHeader>
           <TableHeading class="w-7/8 text-left">{$t('filename')}</TableHeading>
@@ -118,7 +123,11 @@
 
         {#if filterSummary.isFiltered && filteredItems.length === 0}
           <tfoot>
-            <tr><td colspan="2" class="frameleaf-report-empty">{$t('admin.frameleaf_maintenance_report_search_empty')}</td></tr>
+            <tr
+              ><td colspan="2" class="frameleaf-report-empty frameleaf" data-theme={appTheme}
+                >{$t('admin.frameleaf_maintenance_report_search_empty')}</td
+              ></tr
+            >
           </tfoot>
         {:else if integrityReport.nextCursor}
           <tfoot class="mt-4 flex justify-center">

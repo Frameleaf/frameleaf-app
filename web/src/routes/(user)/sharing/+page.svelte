@@ -25,6 +25,11 @@
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <SharedSpacesWorkspace spaces={data.spaces} partners={data.partners} onRefresh={refresh} />
+    <SharedSpacesWorkspace
+      spaces={data.spaces}
+      partners={data.partners}
+      invitations={data.invitations}
+      onRefresh={refresh}
+    />
   </Theme>
 </UserPageLayout>
