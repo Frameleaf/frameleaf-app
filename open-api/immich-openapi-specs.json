@@ -23949,6 +23949,118 @@
         ],
         "type": "string"
       },
+      "TrashApplyDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TrashReviewAction"
+          },
+          "ids": {
+            "description": "The chosen items, for trash, restore and delete. Ignored by restore-all and empty.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "type": "array"
+          },
+          "token": {
+            "description": "The token returned by the review",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "token"
+        ],
+        "type": "object"
+      },
+      "TrashItemResponseDto": {
+        "properties": {
+          "fileSizeInByte": {
+            "description": "Size of the original, in bytes, when known",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isLocked": {
+            "description": "Locked media; only listed for its owner in an unlocked session",
+            "type": "boolean"
+          },
+          "isOffline": {
+            "description": "The original is missing from an external library",
+            "type": "boolean"
+          },
+          "originalFileName": {
+            "description": "Original file name",
+            "type": "string"
+          },
+          "trashedAt": {
+            "description": "When the item was moved to the trash",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "required": [
+          "fileSizeInByte",
+          "id",
+          "isLocked",
+          "isOffline",
+          "originalFileName",
+          "trashedAt",
+          "type"
+        ],
+        "type": "object"
+      },
+      "TrashItemSort": {
+        "description": "Trash order: most recently deleted, largest original, or file name",
+        "enum": [
+          "recent",
+          "size",
+          "name"
+        ],
+        "type": "string"
+      },
+      "TrashItemsResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrashItemResponseDto"
+            },
+            "type": "array"
+          },
+          "nextPage": {
+            "description": "The next page number, or null on the last page",
+            "nullable": true,
+            "type": "string"
+          },
+          "total": {
+            "description": "Items matching the filters",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextPage",
+          "total"
+        ],
+        "type": "object"
+      },
       "TrashResponseDto": {
         "properties": {
           "count": {
@@ -23960,6 +24072,118 @@
         },
         "required": [
           "count"
+        ],
+        "type": "object"
+      },
+      "TrashReviewAction": {
+        "description": "A reviewed change to items in, or into, the trash",
+        "enum": [
+          "trash",
+          "restore",
+          "restore-all",
+          "delete",
+          "empty"
+        ],
+        "type": "string"
+      },
+      "TrashReviewDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TrashReviewAction"
+          },
+          "ids": {
+            "description": "The chosen items, for trash, restore and delete. Ignored by restore-all and empty.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "TrashReviewResponseDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TrashReviewAction"
+          },
+          "bytes": {
+            "description": "Combined size of their originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items the action will change",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "names": {
+            "description": "The first file names, alphabetically",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "retainedBytes": {
+            "description": "Size of those shared originals, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedOriginals": {
+            "description": "Items whose original another item still uses; deleting them does not free that file",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "token": {
+            "description": "Fingerprint of the reviewed set; apply refuses when the set has changed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "bytes",
+          "count",
+          "names",
+          "retainedBytes",
+          "retainedOriginals",
+          "token"
+        ],
+        "type": "object"
+      },
+      "TrashSummaryResponseDto": {
+        "properties": {
+          "bytes": {
+            "description": "Combined size of their originals, in bytes. Not the space deleting them frees.",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "description": "Items in your trash this session can see",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pendingDeletion": {
+            "description": "Items already permanently deleted whose files are still being removed from storage",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "count",
+          "pendingDeletion"
         ],
         "type": "object"
       },
@@ -51845,6 +52069,62 @@
         "x-immich-state": "Internal"
       }
     },
+    "/trash/apply": {
+      "post": {
+        "description": "Applies an action to exactly the reviewed set. The set is resolved again with the same ownership, Locked and privacy rules; if it differs from the review in any way the request fails with 409 and nothing changes.",
+        "operationId": "applyTrashReview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrashApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply a reviewed trash change",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/trash/empty": {
       "post": {
         "description": "Permanently delete all items in the trash.",
@@ -51893,6 +52173,103 @@
         ],
         "x-immich-permission": "asset.delete",
         "x-immich-state": "Stable"
+      }
+    },
+    "/trash/items": {
+      "get": {
+        "description": "One page of your own trash, filtered by file name and media type and ordered by deletion time, size or name. Locked media is listed only in an unlocked session.",
+        "operationId": "getTrashItems",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number, from 1",
+            "schema": {
+              "default": 1,
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "Words that must all appear in the file name",
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TrashItemSort"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AssetTypeEnum"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List trash items",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/trash/restore": {
@@ -52003,6 +52380,108 @@
         ],
         "x-immich-permission": "asset.delete",
         "x-immich-state": "Stable"
+      }
+    },
+    "/trash/review": {
+      "post": {
+        "description": "Resolves exactly which items an action would change (move to trash, restore, restore all, delete or empty) and returns their count, size, shared originals and a token that fingerprints the set. Nothing is changed.",
+        "operationId": "reviewTrash",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrashReviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashReviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review a trash change",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/trash/summary": {
+      "get": {
+        "description": "Counts for your own trash as this session may see it: items, the combined size of their originals, and items still being removed from storage. Locked media counts only in an unlocked session.",
+        "operationId": "getTrashSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get trash summary",
+        "tags": [
+          "Trash"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/users": {
