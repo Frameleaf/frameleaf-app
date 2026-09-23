@@ -9,7 +9,8 @@ export const load = (async ({ url }) => {
   const [destinations, { routes }, inventory] = await Promise.all([
     listMlDestinations(),
     getMlWorkloadRoutes(),
-    getWorkerInventory(),
+    // The inventory is a read-only view; if it cannot be read, the destinations still load.
+    getWorkerInventory().catch(() => null),
   ]);
   const $t = await getFormatter();
 

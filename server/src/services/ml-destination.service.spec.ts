@@ -11,7 +11,7 @@ import {
   MlWorkerRole,
   MlWorkload,
 } from 'src/enum.js';
-import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -88,6 +88,58 @@ describe(MlDestinationService.name, () => {
       expect(routed).not.toContain(MlWorkload.RestorationFaithful);
       expect(routed).not.toContain(MlWorkload.RestorationCreative);
       expect(routed).not.toContain(MlWorkload.StudioAi);
+    });
+
+    const bootWith = (urls: string[]) =>
+      sut.onConfigInit({
+        newConfig: {
+          ...defaults,
+          machineLearning: {
+            ...defaults.machineLearning,
+            urls,
+            availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
+          },
+        },
+      } as never);
+
+    it('turns off the local destination whose URL left the list, keeping its routes so work is refused (FL-72)', async () => {
+      const second = { ...mlDestinationStub.local, id: 'ml-destination-second', url: 'http://second:3003' };
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, second, mlDestinationStub.lan]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: second.id, updatedAt: new Date() });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+
+      await bootWith(['http://immich-machine-learning:3003']);
+
+      expect(mocks.mlDestination.update).toHaveBeenCalledTimes(1);
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(second.id, { enabled: false });
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        second.id,
+        expect.objectContaining({ summary: ML_URL_REMOVED_SUMMARY, health: MlDestinationHealth.Unhealthy }),
+      );
+      // Routes are never rewritten to another endpoint.
+      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.clearRoute).not.toHaveBeenCalled();
+    });
+
+    it('turns a destination back on when its URL returns, but not one an administrator turned off', async () => {
+      const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
+      mocks.mlDestination.getAll.mockResolvedValue([removed]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(removed);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: removed.id, updatedAt: new Date() });
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+
+      await bootWith(['http://immich-machine-learning:3003']);
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(removed.id, { enabled: true });
+
+      vi.clearAllMocks();
+      const adminOff = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: 'Serves face' };
+      mocks.mlDestination.getAll.mockResolvedValue([adminOff]);
+      mocks.mlDestination.getByUrl.mockResolvedValue(adminOff);
+      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: adminOff.id, updatedAt: new Date() });
+
+      await bootWith(['http://immich-machine-learning:3003']);
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
     it('leaves existing routes alone', async () => {
@@ -402,6 +454,19 @@ describe(MlDestinationService.name, () => {
           sharesLibraryHardware: true,
         }),
       ).rejects.toThrow(/Only a restoration worker/);
+    });
+
+    it('never marks a RunPod video worker as sharing a GPU on this network', async () => {
+      await expect(
+        sut.create({
+          kind: MlDestinationKind.RunPodVideo,
+          name: 'RunPod video worker',
+          url: 'https://video-worker.proxy.runpod.net',
+          workloads: [MlWorkload.RestorationFaithful],
+          enabled: true,
+          sharesLibraryHardware: true,
+        }),
+      ).rejects.toThrow(/cloud worker cannot share/);
     });
 
     it('still lets an administrator rename or disable a row saved before the rule', async () => {

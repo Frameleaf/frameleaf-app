@@ -219,7 +219,9 @@
       name: destination.name,
       url: destination.kind === MlDestinationKind.RunPod ? '' : (destination.url ?? ''),
       authToken: '',
-      workloads: [...destination.workloads],
+      // A RunPod pod saved before FL-72 may still allow restoration, which it can no longer run
+      // and the form cannot show; leave it out so saving the form clears it instead of failing.
+      workloads: destination.workloads.filter((workload) => workloadsForKind(destination.kind).includes(workload)),
       budgetLimitUsd: destination.costControls.budgetLimitUsd?.toString() ?? '',
       maxRuntimeMinutes: destination.costControls.maxRuntimeMinutes?.toString() ?? '',
       maxUploadMb:

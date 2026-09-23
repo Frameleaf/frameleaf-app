@@ -188,6 +188,20 @@ describe(AssetRestorationService.name, () => {
   describe('requestPreview', () => {
     const request = { mode: AssetRestorationMode.Faithful, upscale: 2 as const, keepGrain: false, destinationId: mlDestinationStub.lan.id };
 
+    it('refuses restoration on the library-analysis pod up front and creates nothing (FL-72)', async () => {
+      const legacyPod = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationFaithful] };
+      mocks.mlDestination.getById.mockResolvedValue(legacyPod);
+
+      const error = await sut
+        .requestPreview(authStub.user1, asset.id, { ...request, destinationId: legacyPod.id })
+        .catch((error_: unknown) => error_);
+
+      expect(error).toBeInstanceOf(MlDestinationRefusedError);
+      expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.RoleConflict);
+      expect(restorations.create).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+    });
+
     it('refuses a cloud destination without consent and creates nothing', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
 

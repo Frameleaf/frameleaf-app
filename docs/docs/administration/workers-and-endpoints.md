@@ -41,7 +41,7 @@ The inventory refreshes every 30 seconds while the page is open. When a refresh 
 
 ### The machine-learning URL list
 
-**Machine-learning endpoints** edits the machine-learning URL list from the machine-learning settings. Use each worker's base URL (HTTP or HTTPS, without a password, query or fragment); up to 32 are supported and at least one must remain. The server creates a destination for each URL on this network and routes unrouted library work to the first one. Removing a URL does not stop a remote worker, and existing restorations keep their chosen destination.
+**Machine-learning endpoints** edits the machine-learning URL list from the machine-learning settings. Use each worker's base URL (HTTP or HTTPS, without a password, query or fragment); up to 32 are supported and at least one must remain. The server creates a destination for each URL on this network and routes library work that has no route yet to the first one; the order sets nothing else. When a URL leaves the list (removed, or edited to a new address) its destination is turned off: work routed to it is refused, not moved, until you route it elsewhere. If the URL is added back, that destination is turned on again. Removing a URL does not stop a remote worker, and existing restorations keep their chosen destination.
 
 ## Deployment: a separate restoration container
 
@@ -55,7 +55,7 @@ Then add a home-network destination at `http://frameleaf-restoration:3004`, allo
 
 | Variable                        | Purpose                                                             | Default                 |
 | ------------------------------- | ------------------------------------------------------------------- | ----------------------- |
-| `FRAMELEAF_RESTORATION_GPU`     | The GPU the restoration worker uses                                 | `0`                     |
+| `FRAMELEAF_RESTORATION_GPU`     | The GPU the restoration worker uses                                 | none: you must set it   |
 | `FRAMELEAF_RESTORATION_TOKEN`   | Bearer token the worker requires; store it on the destination       | empty (no token)        |
 | `FRAMELEAF_RESTORATION_CONFIG`  | Folder with the model manifest and qualification record (read-only) | `./restoration/config`  |
 | `FRAMELEAF_RESTORATION_WEIGHTS` | Folder with the model weights (read-only)                           | `./restoration/weights` |

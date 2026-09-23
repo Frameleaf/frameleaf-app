@@ -38,9 +38,17 @@ import {
   mlWorkerRoleOf,
   resolveEndpoint,
   restorationRoleConflict,
+  sameEndpointUrl,
   summarizeProbe,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
+
+/**
+ * The check summary a local destination carries while it is off because its URL left the
+ * machine-learning URL list (FL-72). Only a destination carrying it is turned back on when the
+ * URL returns.
+ */
+export const ML_URL_REMOVED_SUMMARY = 'Removed from the machine-learning URL list';
 
 /** Window over which measured throughput is averaged for estimates. */
 export const ML_ESTIMATE_WINDOW_DAYS = 30;
@@ -102,11 +110,28 @@ export class MlDestinationService extends BaseService {
   /**
    * Make sure every configured ML URL has a local destination and every library workload
    * has a route. Nothing here touches LAN or RunPod rows.
+   *
+   * FL-72: a local destination whose URL has left the list is turned off, so work routed to it
+   * is refused (its routes stay; nothing moves to another endpoint) until an administrator
+   * routes that work elsewhere. If the URL is added back, the destination this rule turned off
+   * is turned on again; one an administrator turned off stays off.
    */
   private async ensureLocalDestinations(urls: string[]) {
     let first: MlDestinationRow | undefined;
     for (const url of urls) {
       let row = await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url);
+      if (row && !row.enabled && row.lastProbeSummary === ML_URL_REMOVED_SUMMARY) {
+        row = await this.mlDestinationRepository.update(row.id, { enabled: true });
+        await this.mlDestinationRepository.recordProbe(row.id, {
+          health: MlDestinationHealth.Unknown,
+          summary: null,
+          workloads: null,
+          probedAt: new Date(),
+          hardware: null,
+          latencyMs: null,
+        });
+        this.logger.log(`Turned local machine-learning destination ${row.name} back on: ${url} is listed again`);
+      }
       if (!row) {
         row = await this.mlDestinationRepository.create({
           kind: MlDestinationKind.Local,
@@ -122,6 +147,25 @@ export class MlDestinationService extends BaseService {
         this.logger.log(`Created local machine-learning destination for ${url}`);
       }
       first ??= row;
+    }
+
+    if (urls.length > 0) {
+      for (const row of await this.mlDestinationRepository.getAll()) {
+        const listed = row.url !== null && urls.some((url) => sameEndpointUrl(url, row.url as string));
+        if (row.kind !== MlDestinationKind.Local || !row.enabled || listed) {
+          continue;
+        }
+        await this.mlDestinationRepository.update(row.id, { enabled: false });
+        await this.mlDestinationRepository.recordProbe(row.id, {
+          health: MlDestinationHealth.Unhealthy,
+          summary: ML_URL_REMOVED_SUMMARY,
+          workloads: null,
+          probedAt: new Date(),
+          hardware: null,
+          latencyMs: null,
+        });
+        this.logger.log(`Turned off local machine-learning destination ${row.name}: ${row.url} left the URL list`);
+      }
     }
 
     if (!first) {
@@ -482,6 +526,9 @@ export class MlDestinationService extends BaseService {
     }
     if (sharesLibraryHardware && !workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
       throw new BadRequestException('Only a restoration worker can be marked as sharing hardware with library analysis');
+    }
+    if (sharesLibraryHardware && isCloudDestination(kind)) {
+      throw new BadRequestException('A cloud worker cannot share a GPU with library analysis on this network');
     }
   }
 
