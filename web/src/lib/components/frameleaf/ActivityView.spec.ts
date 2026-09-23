@@ -96,7 +96,7 @@ describe('Frameleaf Activity page', () => {
     );
     await mount([operation({ status: MediaOperationStatus.Failed, error: 'The worker stopped responding' })]);
 
-    // The first answer lands after the request is sent; wait for the row rather than racing it.
+    // The request resolving is not the page having rendered its answer: wait for the row first.
     expect(await screen.findByText('The worker stopped responding')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
 
