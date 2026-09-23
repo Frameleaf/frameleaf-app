@@ -4,7 +4,7 @@ import { Kysely, sql } from 'kysely';
  * Studio project lifecycle and portable bundle uploads (FL-91, `STU-204`).
  *
  * Additive only. `studio_project` gains the trash (`deletedAt`, `purgeAfter`), the archive
- * (`archivedAt`), the recents pointer (`lastOpenedAt`) and three lineage columns; every one is
+ * (`archivedAt`), the recents pointer (`lastOpenedAt`) and four lineage columns; every one is
  * nullable, so a row written before this migration is a live, unarchived project exactly as it
  * was. `studio_bundle_upload` registers an uploaded bundle file before the import job reads it.
  *
@@ -14,6 +14,9 @@ import { Kysely, sql } from 'kysely';
  * Constraint and index names follow the generator's conventions (`{table}_{column}_fkey`,
  * `{table}_pkey`, and a `{table}_{column}_idx` index for every foreign-key column) so
  * `migrations:generate` produces no drift against the table classes.
+ *
+ * `importOperationId` is unique so a bundle import retried after a lost worker finds the project
+ * the first attempt created instead of creating a second one.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "studio_project" ADD "deletedAt" timestamp with time zone;`.execute(db);
@@ -23,6 +26,10 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "studio_project" ADD "thumbnailAssetId" uuid;`.execute(db);
   await sql`ALTER TABLE "studio_project" ADD "duplicatedFromId" uuid;`.execute(db);
   await sql`ALTER TABLE "studio_project" ADD "importedFromDigest" character varying;`.execute(db);
+  await sql`ALTER TABLE "studio_project" ADD "importOperationId" uuid;`.execute(db);
+  await sql`ALTER TABLE "studio_project" ADD CONSTRAINT "studio_project_importOperationId_uq" UNIQUE ("importOperationId");`.execute(
+    db,
+  );
 
   await sql`ALTER TABLE "studio_project" ADD CONSTRAINT "studio_project_thumbnailAssetId_fkey" FOREIGN KEY ("thumbnailAssetId") REFERENCES "asset" ("id") ON UPDATE CASCADE ON DELETE SET NULL;`.execute(
     db,
@@ -65,6 +72,8 @@ export async function down(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "studio_project" DROP CONSTRAINT "studio_project_duplicatedFromId_fkey";`.execute(db);
   await sql`ALTER TABLE "studio_project" DROP CONSTRAINT "studio_project_thumbnailAssetId_fkey";`.execute(db);
 
+  await sql`ALTER TABLE "studio_project" DROP CONSTRAINT "studio_project_importOperationId_uq";`.execute(db);
+  await sql`ALTER TABLE "studio_project" DROP COLUMN "importOperationId";`.execute(db);
   await sql`ALTER TABLE "studio_project" DROP COLUMN "importedFromDigest";`.execute(db);
   await sql`ALTER TABLE "studio_project" DROP COLUMN "duplicatedFromId";`.execute(db);
   await sql`ALTER TABLE "studio_project" DROP COLUMN "thumbnailAssetId";`.execute(db);

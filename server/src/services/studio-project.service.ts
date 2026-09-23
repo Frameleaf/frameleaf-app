@@ -12,12 +12,15 @@ import {
   StudioCommentListResponseDto,
   StudioCommentUpdateDto,
   StudioProjectCreateDto,
+  StudioProjectDeleteQueryDto,
   StudioProjectDetailDto,
   StudioProjectDiffDto,
   StudioProjectDto,
+  StudioProjectDuplicateDto,
   StudioProjectHistoryResponseDto,
   StudioProjectLeaseDto,
   StudioProjectLeaseRequestDto,
+  StudioProjectLibrarySearchDto,
   StudioProjectListResponseDto,
   StudioProjectResourcesDto,
   StudioProjectRestoreDto,
@@ -26,6 +29,7 @@ import {
   StudioProjectSaveDto,
   StudioProjectSaveResponseDto,
   StudioProjectSearchDto,
+  StudioProjectTrashEmptyResponseDto,
   StudioProjectUpdateDto,
 } from 'src/dtos/studio-project.dto.js';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
@@ -55,8 +59,10 @@ import {
   normalizeCommandSummary,
   normalizeStudioTime,
   studioEnvelopeDigest,
+  studioProjectShelf,
+  studioPurgeAfter,
 } from 'src/utils/studio-project.js';
-import { StudioDestination } from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 
 const DEFAULT_TAKE = 50;
 const MANIFEST_CACHE_LIMIT = 2000;
@@ -72,7 +78,11 @@ export type StudioConflictReason =
   | 'lease-lost'
   | 'lease-held'
   | 'request-key-reused'
-  | 'revision-missing';
+  | 'revision-missing'
+  /** FL-91: the project is in the trash; restore it before changing it. */
+  | 'project-trashed'
+  /** FL-91: the project is archived and read-only; bring it back before editing. */
+  | 'project-archived';
 
 export type StudioConflictBody = {
   statusCode: 409;
@@ -174,10 +184,12 @@ export class StudioProjectService {
    */
   async getReadableRevision(projectId: string, userId: string): Promise<number | null> {
     const project = await this.repository.getById(projectId);
-    if (!project) {
+    if (!project || project.deletedAt) {
+      // A trashed project previews nothing, for its owner included (FL-91).
       return null;
     }
-    if (project.ownerId !== userId && !(project.spaceId && (await this.isSpaceMember(userId, project.spaceId)))) {
+    const reviewable = !project.archivedAt && !!project.spaceId && (await this.isSpaceMember(userId, project.spaceId));
+    if (project.ownerId !== userId && !reviewable) {
       return null;
     }
     return project.currentRevision;
@@ -196,6 +208,10 @@ export class StudioProjectService {
     options: { projectId: string; revision?: number; destination?: StudioDestination; cloudConsent?: boolean },
   ): Promise<StudioRevisionAuthorization> {
     const { project, access } = await this.findAccessible(auth, options.projectId);
+    if (project.deletedAt) {
+      // Nothing is previewed, rendered or exported from a project its owner has thrown away.
+      throw this.conflict('project-trashed', 'This project is in the trash; restore it first');
+    }
     const number = options.revision ?? project.currentRevision;
     const revision = number > 0 ? await this.repository.getRevision(project.id, number) : undefined;
     if (!revision) {
@@ -220,11 +236,18 @@ export class StudioProjectService {
   /* Projects                                                             */
   /* ------------------------------------------------------------------ */
 
-  async search(auth: AuthDto, dto: StudioProjectSearchDto): Promise<StudioProjectListResponseDto> {
+  /**
+   * The project library (FL-91): one shelf at a time. The active shelf includes projects shared
+   * with a space the account belongs to; the archive and the trash hold the account's own only.
+   */
+  async search(auth: AuthDto, dto: StudioProjectLibrarySearchDto): Promise<StudioProjectListResponseDto> {
     this.requireInteractive(auth);
     const { items, total } = await this.repository.listVisible(auth.user.id, {
       take: dto.take ?? DEFAULT_TAKE,
       skip: dto.skip ?? 0,
+      state: dto.shelf ?? 'active',
+      query: dto.query ?? null,
+      sort: dto.sort ?? 'updated',
     });
 
     return {
@@ -289,31 +312,137 @@ export class StudioProjectService {
     };
   }
 
+  /**
+   * Rename, share for review, archive or bring back, and choose a poster. Owner only.
+   *
+   * A trashed project changes nothing until it is restored. Archiving drops the write lease, so an
+   * editor still open on the project turns read-only at its next renewal rather than writing to a
+   * project its owner put away. The poster is a reference to library media the owner may read now,
+   * checked through the same resolver a render uses, so nothing Locked, trashed or hidden becomes
+   * the face of a project.
+   */
   async update(auth: AuthDto, id: string, dto: StudioProjectUpdateDto): Promise<StudioProjectDto> {
     const { project } = await this.requireOwner(auth, id);
+    if (project.deletedAt) {
+      throw this.conflict('project-trashed', 'This project is in the trash; restore it before changing it');
+    }
 
     if (dto.spaceId) {
       await this.assertSpaceUsable(auth, dto.spaceId);
     }
+    if (dto.thumbnailAssetId) {
+      await this.assertPosterUsable(auth, project, dto.thumbnailAssetId);
+    }
 
-    const updated = await this.repository.update(project.id, { name: dto.name, spaceId: dto.spaceId });
+    const archivedAt =
+      dto.archived === undefined ? undefined : dto.archived ? (project.archivedAt ?? new Date()) : null;
+
+    const updated = await this.repository.update(project.id, {
+      name: dto.name,
+      spaceId: dto.spaceId,
+      archivedAt,
+      thumbnailAssetId: dto.thumbnailAssetId,
+    });
     if (!updated) {
       throw new NotFoundException('Studio project not found');
     }
 
-    if (dto.spaceId !== undefined && dto.spaceId !== project.spaceId) {
-      // Reviewers changed, so nothing resolved for the old audience may be reused.
+    let after = updated;
+    if (dto.archived === true && !project.archivedAt) {
+      await this.repository.clearLease(project.id);
+      after = { ...updated, leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null };
+      this.logger.log(`Studio project ${project.id} archived by its owner`);
+    }
+
+    if ((dto.spaceId !== undefined && dto.spaceId !== project.spaceId) || dto.archived !== undefined) {
+      // The audience changed, so nothing resolved for the old one may be reused.
       this.forgetManifests(project.id);
     }
 
-    return this.mapProject(updated, 'owner', auth.user.id, null);
+    return this.mapProject(after, 'owner', auth.user.id, null);
   }
 
-  async remove(auth: AuthDto, id: string): Promise<void> {
+  /**
+   * Move a project to the trash, or delete it for good when `permanent` is set.
+   *
+   * Either way only the project goes: its history, its comments and its references. No library
+   * asset is touched, whatever the project used, because a project never owns media. A trashed
+   * project is restorable until `purgeAfter`; the lifecycle sweep deletes it after that.
+   */
+  async remove(auth: AuthDto, id: string, dto: StudioProjectDeleteQueryDto = {}): Promise<void> {
     const { project } = await this.requireOwner(auth, id);
-    await this.repository.delete(project.id);
     this.forgetManifests(project.id);
-    this.logger.log(`Studio project ${project.id} deleted by its owner`);
+
+    if (dto.permanent) {
+      await this.repository.delete(project.id);
+      this.logger.log(`Studio project ${project.id} deleted for good by its owner`);
+      return;
+    }
+
+    await this.repository.trash(project.id, studioPurgeAfter());
+    this.logger.log(`Studio project ${project.id} moved to the trash by its owner`);
+  }
+
+  /** Bring a project back from the trash to the shelf it was on. Idempotent for a live project. */
+  async restoreFromTrash(auth: AuthDto, id: string): Promise<StudioProjectDto> {
+    const { project } = await this.requireOwner(auth, id);
+    if (!project.deletedAt) {
+      return this.mapProject(project, 'owner', auth.user.id, null);
+    }
+    const restored = (await this.repository.untrash(project.id)) ?? (await this.repository.getById(project.id));
+    if (!restored) {
+      throw new NotFoundException('Studio project not found');
+    }
+    this.logger.log(`Studio project ${project.id} restored from the trash`);
+    return this.mapProject(restored, 'owner', auth.user.id, null);
+  }
+
+  /** Delete every project in the account's trash for good. Library media is never touched. */
+  async emptyTrash(auth: AuthDto): Promise<StudioProjectTrashEmptyResponseDto> {
+    this.requireInteractive(auth);
+    const count = await this.repository.emptyTrash(auth.user.id);
+    if (count > 0) {
+      this.logger.log(`Studio trash emptied: ${count} projects deleted for good`);
+    }
+    return { count };
+  }
+
+  /**
+   * A new project of the owner's whose revision 1 is this project's head, byte for byte. The copy
+   * is not shared with the original's space: review is something the owner grants per project.
+   */
+  async duplicate(auth: AuthDto, id: string, dto: StudioProjectDuplicateDto): Promise<StudioProjectDto> {
+    const { project } = await this.requireOwner(auth, id);
+    if (project.deletedAt) {
+      throw this.conflict('project-trashed', 'This project is in the trash; restore it before duplicating it');
+    }
+
+    const name = dto.name ?? project.name;
+    const head =
+      project.currentRevision > 0 ? await this.repository.getRevision(project.id, project.currentRevision) : undefined;
+
+    if (!head) {
+      const created = await this.repository.create({ ownerId: auth.user.id, name });
+      const linked = (await this.repository.update(created.id, { duplicatedFromId: project.id })) ?? created;
+      return this.mapProject(linked, 'owner', auth.user.id, null);
+    }
+
+    const { project: copy } = await this.repository.createWithRevision({
+      ownerId: auth.user.id,
+      name,
+      duplicatedFromId: project.id,
+      revision: {
+        authorId: auth.user.id,
+        envelope: head.envelope,
+        digest: head.digest,
+        graphBytes: head.graphBytes,
+        summary: { counts: { 'project.duplicate': 1 }, total: 1 },
+        requestKey: `duplicate:${project.id}:${head.revision}`,
+      },
+    });
+
+    this.logger.log(`Studio project ${project.id} duplicated as ${copy.id}`);
+    return this.mapProject(copy, 'owner', auth.user.id, null);
   }
 
   /* ------------------------------------------------------------------ */
@@ -331,6 +460,7 @@ export class StudioProjectService {
    */
   async acquireLease(auth: AuthDto, id: string, dto: StudioProjectLeaseRequestDto): Promise<StudioProjectLeaseDto> {
     const { project } = await this.requireOwner(auth, id);
+    this.assertEditable(project);
 
     const leased = await this.repository.acquireLease(project.id, {
       userId: auth.user.id,
@@ -391,6 +521,7 @@ export class StudioProjectService {
       return replay;
     }
 
+    this.assertEditable(project);
     this.assertHead(project, dto.expectedRevision);
     this.assertLease(project, auth.user.id, dto.clientId);
 
@@ -440,6 +571,7 @@ export class StudioProjectService {
       return replay;
     }
 
+    this.assertEditable(project);
     this.assertHead(project, dto.expectedRevision);
     this.assertLease(project, auth.user.id, dto.clientId);
 
@@ -551,6 +683,9 @@ export class StudioProjectService {
   /** Owner and reviewers may comment. No lease: a comment is not a change to the document. */
   async addComment(auth: AuthDto, id: string, dto: StudioCommentCreateDto): Promise<StudioCommentDto> {
     const { project } = await this.findAccessible(auth, id);
+    if (project.deletedAt) {
+      throw this.conflict('project-trashed', 'This project is in the trash; restore it before commenting');
+    }
 
     const time = normalizeStudioTime(dto.time);
     if (!time) {
@@ -648,7 +783,9 @@ export class StudioProjectService {
     if (project.ownerId === auth.user.id) {
       return { project, access: 'owner' };
     }
-    if (project.spaceId && (await this.isSpaceMember(auth.user.id, project.spaceId))) {
+    // An archived or trashed project is off the shelf for everybody but its owner (FL-91).
+    const onShelf = !project.deletedAt && !project.archivedAt;
+    if (onShelf && project.spaceId && (await this.isSpaceMember(auth.user.id, project.spaceId))) {
       return { project, access: 'reviewer' };
     }
 
@@ -682,6 +819,40 @@ export class StudioProjectService {
     }
     if (!(await this.isSpaceMember(auth.user.id, spaceId))) {
       throw new BadRequestException('You are not a member of that shared space');
+    }
+  }
+
+  /** Writes to the document itself: refused in the trash and in the archive (FL-91). */
+  private assertEditable(project: StudioProject): void {
+    if (project.deletedAt) {
+      throw this.conflict('project-trashed', 'This project is in the trash; restore it before editing', {
+        currentRevision: project.currentRevision,
+      });
+    }
+    if (project.archivedAt) {
+      throw this.conflict('project-archived', 'This project is archived; bring it back before editing', {
+        currentRevision: project.currentRevision,
+      });
+    }
+  }
+
+  /**
+   * A poster must be library media the owner could place in the project right now, decided by the
+   * FL-90 resolver for this session: Locked, trashed, offline and hidden media are all refused.
+   */
+  private async assertPosterUsable(auth: AuthDto, project: StudioProject, assetId: string): Promise<void> {
+    const { manifest } = await this.resources.resolveProjectResources(auth, {
+      projectId: project.id,
+      ownerId: project.ownerId,
+      revision: project.currentRevision,
+      graph: { poster: { assetId } },
+      destination: StudioDestination.Local,
+    });
+    const usable = manifest.entries.some(
+      (entry) => entry.kind === StudioResourceKind.LibraryAsset && entry.id === assetId,
+    );
+    if (!manifest.complete || !usable) {
+      throw new BadRequestException('That item cannot be used as the poster for this project');
     }
   }
 
@@ -939,6 +1110,8 @@ export class StudioProjectService {
     userId: string,
     clientId: string | null,
   ): StudioProjectDto {
+    // Lineage, recents and the poster are the owner's library furniture; a reviewer sees none of it.
+    const isOwner = access === 'owner';
     return {
       id: project.id,
       ownerId: project.ownerId,
@@ -947,6 +1120,14 @@ export class StudioProjectService {
       revision: project.currentRevision,
       access,
       lease: this.mapLease(project, userId, clientId),
+      shelf: studioProjectShelf(project),
+      archivedAt: asIso(project.archivedAt),
+      deletedAt: asIso(project.deletedAt),
+      purgeAfter: asIso(project.purgeAfter),
+      lastOpenedAt: isOwner ? asIso(project.lastOpenedAt) : null,
+      thumbnailAssetId: isOwner ? project.thumbnailAssetId : null,
+      duplicatedFromId: isOwner ? project.duplicatedFromId : null,
+      importedFromBundle: !!project.importedFromDigest,
       createdAt: asRequiredIso(project.createdAt),
       updatedAt: asRequiredIso(project.updatedAt),
     };

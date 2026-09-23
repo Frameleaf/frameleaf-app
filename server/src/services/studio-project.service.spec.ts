@@ -14,9 +14,10 @@ import {
   STUDIO_ENGINE,
   STUDIO_ENVELOPE_SCHEMA_VERSION,
   STUDIO_LEASE_MS,
+  STUDIO_TRASH_RETENTION_DAYS,
   studioEnvelopeDigest,
 } from 'src/utils/studio-project.js';
-import { StudioDestination } from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
@@ -117,6 +118,15 @@ describe(StudioProjectService.name, () => {
       listVisible: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       update: vi.fn(),
       delete: vi.fn(),
+      trash: vi.fn().mockImplementation((id: string, purgeAfter: Date) =>
+        Promise.resolve({ ...project, id, deletedAt: new Date(), purgeAfter, leaseHolderId: null }),
+      ),
+      untrash: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve({ ...project, id, deletedAt: null, purgeAfter: null }),
+      ),
+      emptyTrash: vi.fn().mockResolvedValue(2),
+      clearLease: vi.fn(),
+      createWithRevision: vi.fn(),
       getSpace: vi.fn(),
       acquireLease: vi.fn(),
       releaseLease: vi.fn().mockResolvedValue(true),
@@ -557,6 +567,137 @@ describe(StudioProjectService.name, () => {
 
       memberOf(newUuid());
       await expect(sut.getReadableRevision(project.id, reviewer.user.id)).resolves.toBeNull();
+    });
+  });
+  describe('lifecycle (FL-91)', () => {
+    it('moves a project to the trash with the retention deadline, and never touches the library', async () => {
+      const before = Date.now();
+      await sut.remove(owner, project.id);
+
+      expect(repository.delete).not.toHaveBeenCalled();
+      expect(repository.trash).toHaveBeenCalledTimes(1);
+      const purgeAfter = repository.trash.mock.calls[0][1] as Date;
+      expect(purgeAfter.getTime()).toBeGreaterThanOrEqual(before + STUDIO_TRASH_RETENTION_DAYS * 86_400_000);
+    });
+
+    it('deletes for good only when asked to', async () => {
+      await sut.remove(owner, project.id, { permanent: true });
+      expect(repository.delete).toHaveBeenCalledWith(project.id);
+      expect(repository.trash).not.toHaveBeenCalled();
+    });
+
+    it('restores a trashed project to the shelf it came from', async () => {
+      project = projectStub({ deletedAt: new Date(), purgeAfter: future(), archivedAt: new Date() } as never);
+      const restored = await sut.restoreFromTrash(owner, project.id);
+      expect(repository.untrash).toHaveBeenCalledWith(project.id);
+      expect(restored.shelf).toBe('archived');
+      expect(restored.purgeAfter).toBeNull();
+    });
+
+    it('refuses every edit to a trashed project until it is restored', async () => {
+      project = projectStub({ deletedAt: new Date(), purgeAfter: future() } as never);
+      const save = { clientId: 'tab-a', requestKey: 'r9', expectedRevision: 3, envelope: envelope({ tracks: [1] }) };
+
+      expect(await conflictOf(sut.save(owner, project.id, save))).toMatchObject({ reason: 'project-trashed' });
+      expect(await conflictOf(sut.acquireLease(owner, project.id, { clientId: 'tab-a' }))).toMatchObject({
+        reason: 'project-trashed',
+      });
+      expect(await conflictOf(sut.update(owner, project.id, { name: 'x' }))).toMatchObject({
+        reason: 'project-trashed',
+      });
+      expect(await conflictOf(sut.authorizeRevision(owner, { projectId: project.id }))).toMatchObject({
+        reason: 'project-trashed',
+      });
+      await expect(sut.getReadableRevision(project.id, owner.user.id)).resolves.toBeNull();
+      expect(repository.appendRevision).not.toHaveBeenCalled();
+    });
+
+    it('makes an archived project read-only for its owner and invisible to reviewers', async () => {
+      project = projectStub({ spaceId: newUuid(), archivedAt: new Date() } as never);
+      memberOf(project.spaceId as string);
+
+      const save = { clientId: 'tab-a', requestKey: 'r9', expectedRevision: 3, envelope: envelope({ tracks: [1] }) };
+      expect(await conflictOf(sut.save(owner, project.id, save))).toMatchObject({ reason: 'project-archived' });
+      await expect(sut.get(owner, project.id)).resolves.toMatchObject({ shelf: 'archived' });
+      await expect(sut.get(reviewer, project.id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.getReadableRevision(project.id, reviewer.user.id)).resolves.toBeNull();
+    });
+
+    it('drops the write lease when a project is archived', async () => {
+      repository.update.mockResolvedValue(projectStub({ archivedAt: new Date() } as never));
+      const archived = await sut.update(owner, project.id, { archived: true });
+
+      expect(repository.update).toHaveBeenCalledWith(
+        project.id,
+        expect.objectContaining({ archivedAt: expect.any(Date) }),
+      );
+      expect(repository.clearLease).toHaveBeenCalledWith(project.id);
+      expect(archived.shelf).toBe('archived');
+    });
+
+    it('accepts a poster only when the resolver authorizes it for this session', async () => {
+      const assetId = newUuid();
+      resources.resolveProjectResources.mockResolvedValueOnce(manifest(false));
+      await expect(sut.update(owner, project.id, { thumbnailAssetId: assetId })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      resources.resolveProjectResources.mockResolvedValueOnce(
+        manifest(true, { entries: [{ kind: StudioResourceKind.LibraryAsset, id: assetId }] as never }),
+      );
+      repository.update.mockResolvedValue(projectStub({ thumbnailAssetId: assetId } as never));
+      await expect(sut.update(owner, project.id, { thumbnailAssetId: assetId })).resolves.toMatchObject({
+        thumbnailAssetId: assetId,
+      });
+      expect(resources.resolveProjectResources).toHaveBeenLastCalledWith(
+        owner,
+        expect.objectContaining({ graph: { poster: { assetId } }, destination: StudioDestination.Local }),
+      );
+    });
+
+    it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {
+      project = projectStub({ spaceId: newUuid() });
+      const copy = projectStub({ id: newUuidV7(), duplicatedFromId: project.id, currentRevision: 1 } as never);
+      repository.createWithRevision.mockResolvedValue({ project: copy, created: true });
+
+      const result = await sut.duplicate(owner, project.id, { name: 'Lake trip (copy)' });
+
+      expect(repository.createWithRevision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: owner.user.id,
+          name: 'Lake trip (copy)',
+          duplicatedFromId: project.id,
+          revision: expect.objectContaining({ envelope: head.envelope, digest: head.digest }),
+        }),
+      );
+      expect(repository.createWithRevision.mock.calls[0][0].spaceId).toBeUndefined();
+      expect(result.duplicatedFromId).toBe(project.id);
+    });
+
+    it('hides lineage, recents and the poster from a reviewer', async () => {
+      project = projectStub({ spaceId: newUuid(), thumbnailAssetId: newUuid(), lastOpenedAt: new Date() } as never);
+      memberOf(project.spaceId as string);
+
+      const seen = await sut.get(reviewer, project.id);
+      expect(seen.thumbnailAssetId).toBeNull();
+      expect(seen.lastOpenedAt).toBeNull();
+      expect(seen.duplicatedFromId).toBeNull();
+    });
+
+    it('lists one shelf with the query and order the library asked for', async () => {
+      await sut.search(owner, { shelf: 'trashed', query: 'lake', sort: 'recent' });
+      expect(repository.listVisible).toHaveBeenCalledWith(owner.user.id, {
+        take: 50,
+        skip: 0,
+        state: 'trashed',
+        query: 'lake',
+        sort: 'recent',
+      });
+    });
+
+    it('empties the trash for the acting account only', async () => {
+      await expect(sut.emptyTrash(owner)).resolves.toEqual({ count: 2 });
+      expect(repository.emptyTrash).toHaveBeenCalledWith(owner.user.id);
     });
   });
 });

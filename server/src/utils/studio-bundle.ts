@@ -27,7 +27,13 @@ import { createHash } from 'node:crypto';
 import { createInflateRaw, inflateRawSync } from 'node:zlib';
 import { MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
 import { StudioProjectEnvelope, canonicalJson, checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
-import { STUDIO_MAX_GRAPH_BYTES, StudioResourceKind, isStudioResourceKind, studioReferenceKey } from 'src/utils/studio-resources.js';
+import {
+  STUDIO_MAX_GRAPH_BYTES,
+  StudioResourceKind,
+  extractStudioResourceReferences,
+  isStudioResourceKind,
+  studioReferenceKey,
+} from 'src/utils/studio-resources.js';
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                            */
@@ -56,6 +62,13 @@ export const STUDIO_BUNDLE_MAX_JSON_BYTES = STUDIO_MAX_GRAPH_BYTES + 1024 * 1024
 export const STUDIO_BUNDLE_RATIO_FLOOR_BYTES = 64 * 1024;
 /** Uncompressed-to-compressed ratio above which an entry is treated as a decompression bomb. */
 export const STUDIO_BUNDLE_MAX_RATIO = 200;
+/**
+ * Everything the archive may inflate to, summed over its entries. Entries that share their
+ * compressed bytes are refused separately; this caps the honest-looking case.
+ */
+export const STUDIO_BUNDLE_MAX_UNCOMPRESSED_BYTES = STUDIO_BUNDLE_MAX_BYTES;
+/** The central directory is read into memory whole; this bounds that read. */
+export const STUDIO_BUNDLE_MAX_DIRECTORY_BYTES = 8 * 1024 * 1024;
 /** Longest entry name accepted. */
 export const STUDIO_BUNDLE_MAX_NAME_LENGTH = 512;
 /** Chunk size for streaming reads out of the archive. */
@@ -163,6 +176,7 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
   }
   const sources: StudioBundleSource[] = [];
   const keys = new Set<string>();
+  const paths = new Set<string>();
   for (const [index, raw] of value.entries()) {
     if (!isPlainObject(raw)) {
       return `sources[${index}]: not an object`;
@@ -195,6 +209,10 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
       if (!files[raw.path]) {
         return `sources[${index}]: ${raw.path} is not listed in files`;
       }
+      if (paths.has(raw.path)) {
+        return `sources[${index}]: ${raw.path} belongs to two sources`;
+      }
+      paths.add(raw.path);
       path = raw.path;
     } else if (raw.path !== undefined && raw.path !== null) {
       return `sources[${index}]: a reference carries no path`;
@@ -382,13 +400,14 @@ export const zipEntryNameProblem = (name: string): string | null => {
   return null;
 };
 
-const safeNameChars = /[^\w.-]+/g;
+const plainExtension = /^\.[\dA-Za-z]{1,10}$/;
 
 /** The `media/` entry name for an embedded copy: stable, unique per key, and free of path tricks. */
 export const bundleMediaEntryName = (source: Pick<StudioBundleSource, 'kind' | 'id' | 'fileName'>): string => {
   const extension = source.fileName?.includes('.') ? source.fileName.slice(source.fileName.lastIndexOf('.')) : '';
-  const cleanExtension = extension.replace(safeNameChars, '').slice(0, 16);
-  return `${STUDIO_BUNDLE_MEDIA_PREFIX}${source.kind}-${source.id}${cleanExtension.startsWith('.') ? cleanExtension : ''}`;
+  // Only a plain `.ext` survives: anything with a separator, a second dot or nothing after the dot
+  // is dropped rather than cleaned into something that merely looks like an extension.
+  return `${STUDIO_BUNDLE_MEDIA_PREFIX}${source.kind}-${source.id}${plainExtension.test(extension) ? extension : ''}`;
 };
 
 /** The download name for an exported bundle: the project's own name, sanitized, never the id. */
@@ -509,6 +528,9 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
   if (directoryOffset + directorySize > source.size || directorySize < entryCount * CENTRAL_MIN) {
     refuse('bundle_corrupt', 'The central directory lies outside the file');
   }
+  if (directorySize > STUDIO_BUNDLE_MAX_DIRECTORY_BYTES) {
+    refuse('bundle_too_large', 'The central directory is larger than any bundle needs');
+  }
 
   const directory = await source.read(directoryOffset, directorySize);
   const entries: ZipEntry[] = [];
@@ -551,8 +573,8 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     if (byName.has(name)) {
       refuse('bundle_entry_name', `duplicate entry ${name.slice(0, 80)}`);
     }
-    if (localHeaderOffset + LOCAL_MIN > source.size) {
-      refuse('bundle_corrupt', `${name.slice(0, 80)} points outside the file`);
+    if (localHeaderOffset + LOCAL_MIN + compressedSize > directoryOffset) {
+      refuse('bundle_corrupt', `${name.slice(0, 80)} points outside the file's data`);
     }
     if (method === METHOD_STORE && compressedSize !== uncompressedSize) {
       refuse('bundle_corrupt', `${name.slice(0, 80)} is stored but declares two different sizes`);
@@ -581,6 +603,21 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     byName.set(name, entry);
   }
 
+  // Declared totals and overlaps, from the directory alone. Two entries that point into the same
+  // compressed bytes are how a small file claims to hold far more than it does, so every entry's
+  // data must end before the next one's header begins.
+  const declared = entries.reduce((total, entry) => total + entry.uncompressedSize, 0);
+  if (declared > STUDIO_BUNDLE_MAX_UNCOMPRESSED_BYTES) {
+    refuse('bundle_too_large', `The archive declares ${declared} bytes once inflated`);
+  }
+  const ordered = [...entries].sort((a, b) => a.localHeaderOffset - b.localHeaderOffset);
+  for (let index = 1; index < ordered.length; index++) {
+    const previous = ordered[index - 1];
+    if (previous.localHeaderOffset + LOCAL_MIN + previous.compressedSize > ordered[index].localHeaderOffset) {
+      refuse('bundle_overlap', `${ordered[index].name.slice(0, 80)} overlaps the entry before it`);
+    }
+  }
+
   return { entries, byName };
 };
 
@@ -604,7 +641,7 @@ export const zipEntryDataOffset = async (source: ZipByteSource, entry: ZipEntry)
  * lied about an entry cannot make this allocate more than it promised.
  */
 export const readZipEntry = async (source: ZipByteSource, entry: ZipEntry): Promise<Buffer> => {
-  if (entry.uncompressedSize > STUDIO_BUNDLE_MAX_JSON_BYTES) {
+  if (entry.uncompressedSize > STUDIO_BUNDLE_MAX_JSON_BYTES || entry.compressedSize > STUDIO_BUNDLE_MAX_JSON_BYTES) {
     refuse('bundle_too_large', `${entry.name.slice(0, 80)} is too large to read into memory`);
   }
   const start = await zipEntryDataOffset(source, entry);
@@ -654,40 +691,67 @@ export const digestZipEntry = async (
       await consume(chunk);
     }
   } else {
+    // Counted and hashed as the inflater produces output, synchronously, so a lying entry is caught
+    // within one zlib chunk of its declared size instead of after a whole input chunk has inflated.
     const inflate = createInflateRaw();
-    const pending: Buffer[] = [];
-    let failure: Error | null = null;
-    inflate.on('data', (chunk: Buffer) => pending.push(chunk));
-    inflate.on('error', (error: Error) => {
-      failure = error;
+    // Held in an object: the callbacks below set it, and a plain `let` would stay narrowed to null.
+    const state: { failure: StudioBundleArchiveError | null } = { failure: null };
+    inflate.on('data', (chunk: Buffer) => {
+      if (state.failure) {
+        return;
+      }
+      produced += chunk.length;
+      if (produced > entry.uncompressedSize) {
+        state.failure = new StudioBundleArchiveError(
+          'bundle_corrupt',
+          `${entry.name.slice(0, 80)} inflates past its declared size`,
+        );
+        inflate.destroy();
+        return;
+      }
+      hash.update(chunk);
+    });
+    const ended = new Promise<void>((resolve) => {
+      inflate.once('end', () => resolve());
+      inflate.once('close', () => resolve());
+      inflate.once('error', (error: Error) => {
+        state.failure ??= new StudioBundleArchiveError(
+          'bundle_corrupt',
+          `${entry.name.slice(0, 80)} could not be inflated: ${error.message.slice(0, 80)}`,
+        );
+        resolve();
+      });
     });
 
-    const drain = async () => {
-      while (pending.length > 0) {
-        await consume(pending.shift() as Buffer);
-      }
-      if (failure) {
-        refuse('bundle_corrupt', `${entry.name.slice(0, 80)} could not be inflated`);
-      }
-    };
+    const write = (chunk: Buffer) =>
+      new Promise<void>((resolve) => {
+        const flushed = inflate.write(chunk, () => resolve());
+        if (!flushed) {
+          // The write callback still fires once the chunk is consumed, or on error/destroy.
+          inflate.once('drain', () => resolve());
+        }
+      });
 
-    for (let position = 0; position < entry.compressedSize; position += chunkSize) {
+    for (let position = 0; position < entry.compressedSize && !state.failure; position += chunkSize) {
       const length = Math.min(chunkSize, entry.compressedSize - position);
       const chunk = await source.read(start + position, length);
       if (chunk.length !== length) {
+        inflate.destroy();
         refuse('bundle_corrupt', `${entry.name.slice(0, 80)} is truncated`);
       }
-      await new Promise<void>((resolve) => {
-        if (!inflate.write(chunk)) {
-          inflate.once('drain', () => resolve());
-        } else {
-          resolve();
-        }
-      });
-      await drain();
+      await write(chunk);
+      if (!state.failure) {
+        await options.onProgress?.(produced);
+      }
     }
-    await new Promise<void>((resolve) => inflate.end(() => resolve()));
-    await drain();
+    if (!state.failure) {
+      inflate.end();
+    }
+    await ended;
+    if (state.failure) {
+      throw state.failure;
+    }
+    await options.onProgress?.(produced);
   }
 
   if (produced !== entry.uncompressedSize) {
@@ -758,10 +822,15 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
       } else if (key === 'editedMasterOf') {
         out[key] = mapId(StudioResourceKind.EditedMaster, value);
       } else if (key === '$resource' && isPlainObject(value) && isStudioResourceKind(value.kind)) {
-        out[key] =
-          value.kind === StudioResourceKind.LibraryAsset || value.kind === StudioResourceKind.EditedMaster
-            ? { ...value, id: mapId(value.kind, value.id) }
-            : { ...value };
+        if (value.kind === StudioResourceKind.LibraryAsset || value.kind === StudioResourceKind.EditedMaster) {
+          out[key] = { ...value, id: mapId(value.kind, value.id) };
+        } else if (value.kind === StudioResourceKind.Audio && value.source === 'asset') {
+          // An audio stream taken from a library video is that video: it relinks with it.
+          out[key] = { ...value, id: mapId(StudioResourceKind.LibraryAsset, value.id) };
+        } else {
+          // Like FL-90's walker, nothing inside another kind's declaration is an asset id.
+          out[key] = { ...value };
+        }
       } else {
         out[key] = walk(value);
       }
@@ -773,6 +842,115 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
   const unused = [...mapping.keys()].filter((key) => !used.has(key)).sort();
   return { graph: result, replaced, unused };
 };
+
+/**
+ * The media sources a graph names, as bundle source keys, sorted and unique.
+ *
+ * Library assets and edited masters are the only sources a bundle carries: they are the person's
+ * own media, which another server cannot know about. Presets, bundled fonts, catalogue music and
+ * the other deployment resources resolve by name on any Frameleaf server, and project imports and
+ * generated intermediates are re-created by the engine, so none of them needs relinking. An audio
+ * stream declared from a library video is recorded under that video's key.
+ */
+export type StudioBundleSourceKey = { key: string; kind: StudioResourceKind; id: string };
+
+export const studioBundleSourceKeys = (graph: unknown): StudioBundleSourceKey[] => {
+  const found = new Map<string, StudioBundleSourceKey>();
+  for (const reference of extractStudioResourceReferences(graph).references) {
+    const kind =
+      reference.kind === StudioResourceKind.Audio && reference.source === 'asset'
+        ? StudioResourceKind.LibraryAsset
+        : reference.kind;
+    if (!(STUDIO_BUNDLE_EMBEDDABLE_KINDS as readonly StudioResourceKind[]).includes(kind)) {
+      continue;
+    }
+    const key = studioReferenceKey({ kind, id: reference.id });
+    if (!found.has(key)) {
+      found.set(key, { key, kind, id: reference.id });
+    }
+  }
+  return [...found.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+};
+
+/**
+ * A library checksum as the SHA-256 hex a manifest records, or null. This server stores SHA-256
+ * for new uploads and SHA-1 for older ones; only a 32-byte digest is a SHA-256, and a SHA-1 is
+ * never passed off as one.
+ */
+export const studioChecksumSha256 = (checksum: Buffer | string | null | undefined): string | null => {
+  if (!checksum) {
+    return null;
+  }
+  const bytes = typeof checksum === 'string' ? Buffer.from(checksum, 'base64') : checksum;
+  return bytes.length === 32 ? bytes.toString('hex') : null;
+};
+
+export type StudioBundleManifestInput = {
+  createdAt: Date;
+  producerVersion: string;
+  name: string;
+  revision: number;
+  digest: string;
+  sourceProjectId: string;
+  engineRevision: string;
+  engine: string;
+  project: Buffer;
+  sources: StudioBundleSource[];
+  /** Digest of every embedded copy, by entry name. */
+  media: Record<string, StudioBundleFileDigest>;
+};
+
+/** Assemble the manifest the export writes. Checked with {@link checkStudioBundleManifest} before use. */
+export const buildStudioBundleManifest = (input: StudioBundleManifestInput): StudioBundleManifest => ({
+  format: STUDIO_BUNDLE_FORMAT,
+  schemaVersion: STUDIO_BUNDLE_SCHEMA_VERSION,
+  createdAt: input.createdAt.toISOString(),
+  producer: { product: 'frameleaf', version: input.producerVersion.slice(0, 64) },
+  project: {
+    name: input.name.slice(0, 200),
+    revision: input.revision,
+    digest: input.digest,
+    sourceProjectId: input.sourceProjectId,
+  },
+  engine: { engine: input.engine, engineRevision: input.engineRevision },
+  files: {
+    [STUDIO_BUNDLE_PROJECT_ENTRY]: { sha256: sha256Of(input.project), bytes: input.project.length },
+    ...input.media,
+  },
+  sources: input.sources,
+});
+
+/**
+ * How one bundle source will land on this server, before anything is imported.
+ *
+ * `mapped` names an asset the importer chose (or accepted as a suggestion); `kept` means the
+ * original id already resolves for the importer, which is the case for a bundle re-imported on the
+ * server that made it; `missing` is everything else and is reported, never guessed at.
+ */
+export type StudioBundleSourcePlan =
+  | { key: string; outcome: 'mapped'; assetId: string }
+  | { key: string; outcome: 'kept' }
+  | { key: string; outcome: 'missing' };
+
+export const planStudioBundleRelink = (
+  sources: readonly Pick<StudioBundleSource, 'key' | 'id'>[],
+  options: {
+    /** Explicit choices, by source key. An asset id equal to the source id means "keep". */
+    mapping: Readonly<Record<string, string>>;
+    /** Source keys whose original id resolves for the importer through FL-90. */
+    resolvable: ReadonlySet<string>;
+  },
+): StudioBundleSourcePlan[] =>
+  sources.map((source) => {
+    const chosen = options.mapping[source.key];
+    if (chosen && chosen !== source.id) {
+      return { key: source.key, outcome: 'mapped', assetId: chosen };
+    }
+    if (options.resolvable.has(source.key)) {
+      return { key: source.key, outcome: 'kept' };
+    }
+    return { key: source.key, outcome: 'missing' };
+  });
 
 /* ------------------------------------------------------------------ */
 /* Operation snapshots and results                                      */
@@ -786,9 +964,19 @@ export type StudioBundleExportSnapshot = {
   /** Digest of the revision at submit; the runner refuses to write a different document. */
   digest: string;
   includeMedia: boolean;
-  /** Sources the submitting session was allowed to read, so the runner may copy them. */
+  /**
+   * Sources the submitting session was allowed to copy: resolved through FL-90 for that session
+   * and owned by it. The runner never embeds anything outside this list, even though it can read
+   * more (a background task reaches Locked media; a download must not).
+   */
   embed: Array<{ key: string; kind: StudioResourceKind; id: string }>;
+  /**
+   * Reserved for exporting a subset of sequences. Choosing sequences inside the graph is the
+   * engine's job, so until the editor is part of the build this is always null.
+   */
   sequenceIds: string[] | null;
+  /** The client's idempotency key, so a repeated submit answers with the first job. */
+  requestKey: string | null;
 };
 
 export type StudioBundleImportSnapshot = {
@@ -797,8 +985,9 @@ export type StudioBundleImportSnapshot = {
   /** SHA-256 of the uploaded file at registration; the runner re-verifies it before reading. */
   digest: string;
   name: string | null;
-  /** Source key to the asset the importer chose; verified for access at submit. */
+  /** Source key to the asset the importer chose; verified for access at submit and again at run. */
   mapping: Record<string, string>;
+  requestKey: string | null;
 };
 
 export type StudioBundleExportResult = {
@@ -860,6 +1049,7 @@ export const parseBundleExportSnapshot = (value: unknown): StudioBundleExportSna
     includeMedia: raw.includeMedia === true,
     embed,
     sequenceIds: Array.isArray(raw.sequenceIds) ? raw.sequenceIds.filter((id) => typeof id === 'string') : null,
+    requestKey: typeof raw.requestKey === 'string' ? raw.requestKey : null,
   };
 };
 
@@ -880,6 +1070,7 @@ export const parseBundleImportSnapshot = (value: unknown): StudioBundleImportSna
     digest: raw.digest,
     name: typeof raw.name === 'string' && raw.name.trim().length > 0 ? raw.name.trim().slice(0, 200) : null,
     mapping,
+    requestKey: typeof raw.requestKey === 'string' ? raw.requestKey : null,
   };
 };
 

@@ -34,6 +34,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  */
 @Index({ columns: ['ownerId', 'updatedAt'] })
 @Index({ columns: ['purgeAfter'] })
+@Unique({ columns: ['importOperationId'] })
 @Table('studio_project')
 @UpdatedAtTrigger('studio_project_updatedAt')
 export class StudioProjectTable {
@@ -92,6 +93,10 @@ export class StudioProjectTable {
   /** SHA-256, hex, of the portable bundle file this project was imported from. */
   @Column({ nullable: true })
   importedFromDigest!: string | null;
+
+  /** The import job that created this project; unique, so a retried import finds it again. */
+  @Column({ type: 'uuid', nullable: true })
+  importOperationId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

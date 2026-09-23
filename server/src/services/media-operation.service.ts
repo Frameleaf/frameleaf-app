@@ -124,7 +124,7 @@ const mapBulkItems = (operation: MediaOperation) => {
   }));
 };
 
-const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
+export const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
   status: operation.status as MediaOperationStatus,

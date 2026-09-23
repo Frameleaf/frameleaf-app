@@ -65,6 +65,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
+import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { SyncService } from 'src/services/sync.service.js';
@@ -151,6 +152,7 @@ export const services = [
   StudioPreviewService,
   StorageService,
   StorageTemplateService,
+  StudioBundleService,
   StudioProjectService,
   StudioResourceService,
   SyncService,
