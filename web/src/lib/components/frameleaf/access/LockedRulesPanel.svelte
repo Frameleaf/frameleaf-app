@@ -349,6 +349,7 @@
   onSessionLocked={() => relock()}
   onSessionAccessChanged={({ isElevated }) => (isElevated ? void load() : relock())}
   onUserPinCodeReset={() => void load()}
+  onUserPinCodeCreated={() => void load()}
 />
 
 {#if phase !== 'ready'}
