@@ -120,6 +120,8 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.Bulk,
   MediaOperationKind.StudioExport,
   MediaOperationKind.Restoration,
+  // An iCloud sync resumes from its inventory checkpoints and leased resources (FL-68).
+  MediaOperationKind.ICloudSync,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
