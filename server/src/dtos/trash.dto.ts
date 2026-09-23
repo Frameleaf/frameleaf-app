@@ -35,6 +35,10 @@ export const TrashReviewActionSchema = z
 const TrashSummaryResponseSchema = z
   .object({
     count: z.int().min(0).describe('Items in your trash this session can see'),
+    offline: z
+      .int()
+      .min(0)
+      .describe('Of those, external-library originals that went missing; the library scan manages them'),
     bytes: z.int().min(0).describe('Combined size of their originals, in bytes. Not the space deleting them frees.'),
     pendingDeletion: z
       .int()

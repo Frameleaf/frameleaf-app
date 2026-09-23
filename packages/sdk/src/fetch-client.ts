@@ -5881,6 +5881,8 @@ export type TrashSummaryResponseDto = {
     bytes: number;
     /** Items in your trash this session can see */
     count: number;
+    /** Of those, external-library originals that went missing; the library scan manages them */
+    offline: number;
     /** Items already permanently deleted whose files are still being removed from storage */
     pendingDeletion: number;
 };
