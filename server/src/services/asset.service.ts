@@ -580,7 +580,10 @@ export class AssetService extends BaseService {
       ...videoDuplicateFrameFiles.map(({ path }) => path),
     ];
 
-    if (deleteOnDisk && !asset.isOffline) {
+    // FL-78: an external library item only references its original, which stays in the library's
+    // folder whatever happens to the item; its sidecar there is the owner's too. Generated files
+    // above are Frameleaf's own and go either way.
+    if (deleteOnDisk && !asset.isOffline && !asset.libraryId) {
       files.push(
         assetFiles.sidecarFile?.path,
         removedAsset.originalPath,
