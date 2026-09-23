@@ -176,7 +176,6 @@ const SpeedParametersSchema = z
   )
   .meta({ id: 'SpeedParameters' });
 
-// TODO: ideally we would use the discriminated union directly in the future not only for type support but also for validation and openapi generation
 const __AssetEditActionItemSchema = z.discriminatedUnion('action', [
   z.object({ action: AssetEditActionSchema.extract(['Crop']), parameters: CropParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Rotate']), parameters: RotateParametersSchema }),
@@ -194,68 +193,38 @@ const __AssetEditActionItemSchema = z.discriminatedUnion('action', [
 ]);
 
 const AssetEditParametersSchema = z
-  .union(
-    [
-      CropParametersSchema,
-      RotateParametersSchema,
-      MirrorParametersSchema,
-      TrimParametersSchema,
-      StraightenParametersSchema,
-      AdjustParametersSchema,
-      LookParametersSchema,
-      ToggleParametersSchema,
-      TextOverlayParametersSchema,
-      AudioParametersSchema,
-      SpeedParametersSchema,
-    ],
-    {
-      error: getExpectedKeysByActionMessage,
-    },
-  )
+  .union([
+    CropParametersSchema,
+    RotateParametersSchema,
+    MirrorParametersSchema,
+    TrimParametersSchema,
+    StraightenParametersSchema,
+    AdjustParametersSchema,
+    LookParametersSchema,
+    ToggleParametersSchema,
+    TextOverlayParametersSchema,
+    AudioParametersSchema,
+    SpeedParametersSchema,
+  ])
   .describe('List of edit actions to apply');
 
-const actionParameterMap = {
-  [AssetEditAction.Crop]: CropParametersSchema,
-  [AssetEditAction.Rotate]: RotateParametersSchema,
-  [AssetEditAction.Mirror]: MirrorParametersSchema,
-  [AssetEditAction.Trim]: TrimParametersSchema,
-  [AssetEditAction.Straighten]: StraightenParametersSchema,
-  [AssetEditAction.Adjust]: AdjustParametersSchema,
-  [AssetEditAction.Filter]: LookParametersSchema,
-  [AssetEditAction.Effect]: LookParametersSchema,
-  [AssetEditAction.AutoEnhance]: ToggleParametersSchema,
-  [AssetEditAction.Stabilize]: ToggleParametersSchema,
-  [AssetEditAction.TextOverlay]: TextOverlayParametersSchema,
-  [AssetEditAction.Audio]: AudioParametersSchema,
-  [AssetEditAction.Speed]: SpeedParametersSchema,
-} as const;
-
-function getExpectedKeysByActionMessage(): string {
-  const expectedByAction = Object.entries(actionParameterMap)
-    .map(([action, schema]) => `${action}: [${Object.keys(schema.shape).join(', ')}]`)
-    .join('; ');
-
-  return `Invalid parameters for action, expected keys by action: ${expectedByAction}`;
-}
-
-function isParametersValidForAction(edit: z.infer<typeof AssetEditActionItemSchema>): boolean {
-  return actionParameterMap[edit.action].safeParse(edit.parameters).success;
-}
-
+// Select the action before parsing parameters: an untagged union can accept an
+// unrelated all-optional shape and silently discard the requested edit values.
 const AssetEditActionItemSchema = z
   .object({
     action: AssetEditActionSchema,
-    parameters: AssetEditParametersSchema,
+    parameters: z.record(z.string(), z.unknown()).meta({
+      // Keep the existing wire contract while deferring parsing to the action discriminator.
+      type: undefined,
+      additionalProperties: undefined,
+      propertyNames: undefined,
+      description: AssetEditParametersSchema.description,
+      anyOf: AssetEditParametersSchema.options.map((schema) => ({
+        $ref: `#/components/schemas/${schema.meta()!.id}`,
+      })),
+    }),
   })
-  .superRefine((edit, ctx) => {
-    if (!isParametersValidForAction(edit)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['parameters'],
-        message: `Invalid parameters for action '${edit.action}', expecting keys: ${Object.keys(actionParameterMap[edit.action].shape).join(', ')}`,
-      });
-    }
-  })
+  .pipe(__AssetEditActionItemSchema)
   .meta({ id: 'AssetEditActionItemDto' });
 
 export type AssetEditActionItem = z.infer<typeof __AssetEditActionItemSchema>;
@@ -290,9 +259,13 @@ const AssetEditsCreateSchema = z
   })
   .meta({ id: 'AssetEditsCreateDto' });
 
-const AssetEditActionItemResponseSchema = AssetEditActionItemSchema.extend({
-  id: z.uuidv4().describe('Asset edit ID'),
-}).meta({ id: 'AssetEditActionItemResponseDto' });
+const AssetEditActionItemResponseSchema = z
+  .object({
+    action: AssetEditActionSchema,
+    parameters: AssetEditParametersSchema,
+    id: z.uuidv4().describe('Asset edit ID'),
+  })
+  .meta({ id: 'AssetEditActionItemResponseDto' });
 
 const AssetEditsResponseSchema = z
   .object({
