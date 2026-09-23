@@ -17651,6 +17651,12 @@
             "description": "Hex-encoded SHA-1 checksum of the original file",
             "type": "string"
           },
+          "hiddenCopies": {
+            "description": "Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "originalFileName": {
             "type": "string"
           },
@@ -17691,6 +17697,7 @@
           "assetId",
           "canView",
           "checksum",
+          "hiddenCopies",
           "originalFileName",
           "originalPath",
           "ownerId",

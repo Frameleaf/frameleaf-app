@@ -359,13 +359,15 @@ describe(PhysicalDeduplicationService.name, () => {
     };
 
     it('binds the per-group decisions to the plan and freezes exactly the copies it shares', async () => {
-      const { sut } = setup();
+      const { sut, mocks } = setup();
 
       const plan = await sut.preparePlan(authStub.admin, { fingerprint });
 
       expect(plan.planId).toBe(physicalDeduplicationPlanId(fingerprint));
       expect(plan.confirmation).toBe(`APPLY ${plan.planId}`);
-      expect(plan.reviewToken).toBe(physicalDeduplicationReviewToken(fingerprint, []));
+      // Keyed with the server's own secret: nobody else can make a token for this plan.
+      const secret = mocks.crypto.randomBytesAsText.mock.results[0].value as string;
+      expect(plan.reviewToken).toBe(physicalDeduplicationReviewToken(secret, fingerprint, []));
       expect(plan.items.map((item) => item.assetId)).toEqual([COPY_1, COPY_2]);
       expect(plan.retained).toEqual([expect.objectContaining({ assetId: MASTER_ID, referencesBefore: 1 })]);
       expect(plan.estimatedBytes).toBe(20);
@@ -380,12 +382,13 @@ describe(PhysicalDeduplicationService.name, () => {
       ).rejects.toThrow('This plan has no exact copies to share.');
     });
 
-    it('refuses a left-out group that is not part of the plan', async () => {
+    it('ignores a left-out id that is not a group of the plan, without saying so', async () => {
       const { sut } = setup();
 
-      await expect(
-        sut.preparePlan(authStub.admin, { fingerprint, excludedRetainedAssetIds: [COPY_1] }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      const plan = await sut.preparePlan(authStub.admin, { fingerprint, excludedRetainedAssetIds: [COPY_1] });
+
+      expect(plan.excludedRetainedAssetIds).toEqual([]);
+      expect(plan.items).toHaveLength(2);
     });
 
     it('answers 409 when a newer preview replaced the plan on screen', async () => {
@@ -458,6 +461,33 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.forkSchema.getState.mockResolvedValue({ ...forkSchemaActive, active: false, phase: 'inactive' });
 
       await expect(sut.preparePlan(authStub.admin, { fingerprint })).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('recordPlanApplied (FL-73)', () => {
+    it('marks the reviewed plan applied, keeping its fingerprint', async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      const stored = { ...lastDryRun, retained: [], copies: [], copiesTruncated: false };
+      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' }, stored);
+      const fingerprint = physicalDeduplicationFingerprint(stored as never);
+
+      await sut.recordPlanApplied(fingerprint, { linkedAssets: 2, deletedBytes: 20 });
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+        SystemMetadataKey.PhysicalDeduplicationMigration,
+        expect.objectContaining({ mode: 'apply', linkedAssets: 2, deletedBytes: 20 }),
+      );
+      const [, written] = mocks.systemMetadata.set.mock.calls[0] as [unknown, never];
+      expect(physicalDeduplicationFingerprint(written)).toBe(fingerprint);
+    });
+
+    it('leaves a newer preview alone', async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
+
+      await sut.recordPlanApplied('ff'.repeat(32), { linkedAssets: 2, deletedBytes: 20 });
+
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
   });
 
@@ -916,6 +946,47 @@ describe(PhysicalDeduplicationService.name, () => {
       expect(plan?.hiddenCopies).toBe(1);
       // Hidden rows still count toward the plan: backend work reaches Locked media.
       expect(plan?.applicableCopies).toBe(1);
+    });
+
+    it("counts each group's unlisted Locked copies so leaving the group out is counted exactly (FL-73)", async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      const retained = {
+        assetId: 'master-1',
+        ownerId: 'master-user',
+        originalFileName: 'a.jpg',
+        originalPath: '/a.jpg',
+        type: 'IMAGE',
+        sizeInBytes: 1,
+        checksum: 'aa',
+        referencesBefore: 1,
+        referencesAfter: 3,
+      };
+      const copy = (assetId: string) => ({
+        assetId,
+        ownerId: 'jamie',
+        originalFileName: 'a.jpg',
+        originalPath: `/${assetId}.jpg`,
+        type: 'IMAGE',
+        sizeInBytes: 1,
+        checksum: 'aa',
+        retainedAssetId: 'master-1',
+        checksumMatch: true,
+        decision: PhysicalDeduplicationDecision.Share,
+        reason: null,
+      });
+      mockConfig(
+        mocks,
+        { enabled: true, masterUserId: 'master-user' },
+        { ...lastDryRun, retained: [retained], copies: [copy('shown'), copy('locked')], copiesTruncated: false },
+      );
+      mocks.job.getJobCounts.mockResolvedValue(counts);
+      mocks.user.getList.mockResolvedValue([] as never);
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set(['locked']));
+
+      const { plan } = await sut.getPreview(authStub.admin);
+
+      expect(plan?.copies.map((item) => item.assetId)).toEqual(['shown']);
+      expect(plan?.retained).toEqual([expect.objectContaining({ assetId: 'master-1', hiddenCopies: 1 })]);
     });
 
     it('names the plan by its fingerprint (FL-73)', async () => {

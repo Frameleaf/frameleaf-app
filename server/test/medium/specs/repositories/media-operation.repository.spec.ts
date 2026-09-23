@@ -1,5 +1,11 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  DatabaseLock,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -892,6 +898,27 @@ describe(MediaOperationRepository.name, () => {
 
       await sut.requestCancel(operation.id, user.id);
       await expect(sut.getActiveOfKind(MediaOperationKind.PhysicalDeduplication)).resolves.toBeUndefined();
+    });
+
+    it('starts only one of two plans applied at the same moment', async () => {
+      const { ctx, sut } = setup();
+      const { user: first } = await ctx.newUser();
+      const { user: second } = await ctx.newUser();
+      const values = (ownerId: string, fingerprint: string) => ({
+        ownerId,
+        destination: MediaOperationDestination.Local,
+        ...plan(fingerprint),
+      });
+
+      const outcomes = await Promise.all([
+        sut.createExclusive(values(first.id, 'd'.repeat(64)), DatabaseLock.PhysicalDeduplicationApply),
+        sut.createExclusive(values(second.id, 'e'.repeat(64)), DatabaseLock.PhysicalDeduplicationApply),
+      ]);
+
+      expect(outcomes.filter((outcome) => 'created' in outcome)).toHaveLength(1);
+      expect(outcomes.filter((outcome) => 'active' in outcome)).toHaveLength(1);
+      const rows = await sut.listRecentOfKind(MediaOperationKind.PhysicalDeduplication, 10);
+      expect(rows).toHaveLength(1);
     });
   });
 });

@@ -1935,6 +1935,8 @@ export enum DatabaseLock {
   Migrations = 200,
   SystemFileMounts = 300,
   StorageTemplateMigration = 420,
+  /** One reviewed physical deduplication plan at a time (FL-73): held while the job row is created. */
+  PhysicalDeduplicationApply = 425,
   VersionHistory = 500,
   CLIPDimSize = 512,
   Library = 1337,
