@@ -46,11 +46,12 @@ import {
   VectorIndex,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { batched, findOrFail, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { batched, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { Point, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -66,10 +67,9 @@ export class PersonService extends BaseService {
     };
 
     if (closestPersonId) {
-      const person = await this.personRepository.getByGroupId({
-        ownerId: auth.user.id,
-        personGroupId: closestPersonId,
-      });
+      const person = isSuppressedWhileLocked(auth, 'person', closestPersonId)
+        ? undefined
+        : await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId: closestPersonId });
       if (!person?.faceAssetId) {
         throw new NotFoundException('Person not found');
       }
@@ -118,6 +118,15 @@ export class PersonService extends BaseService {
 
     const suggestions: PersonMergeSuggestionDto[] = [];
     for (const candidate of candidates) {
+      // FL-37: a person suppressed while the session is not unlocked is not there, so neither is a
+      // suggestion that names them
+      if (
+        isSuppressedWhileLocked(auth, 'person', candidate.personId) ||
+        isSuppressedWhileLocked(auth, 'person', candidate.suggestionId)
+      ) {
+        continue;
+      }
+
       const person = byId.get(candidate.personId);
       const suggestion = byId.get(candidate.suggestionId);
       if (person && suggestion) {
@@ -130,13 +139,13 @@ export class PersonService extends BaseService {
 
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
   async getCorrectionHistory(auth: AuthDto, personGroupId: string): Promise<PersonCorrectionsResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     const corrections = await this.personRepository.getCorrections(personGroupId);
     return { corrections: corrections.map((face) => mapCorrection(face)) };
   }
 
   async reassignFaces(auth: AuthDto, personGroupId: string, dto: AssetFaceUpdateDto): Promise<PersonResponseDto[]> {
-    await this.requireAccess({ auth, permission: Permission.PersonUpdate, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonUpdate, personGroupId);
     const person = await this.findOrFail(auth, personGroupId);
     const result: PersonResponseDto[] = [];
     const changeFeaturePhoto = new Map<string, PersonId>();
@@ -167,7 +176,7 @@ export class PersonService extends BaseService {
   }
 
   async reassignFacesById(auth: AuthDto, personGroupId: string, dto: FaceDto): Promise<PersonResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PersonUpdate, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonUpdate, personGroupId);
     await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [dto.id] });
     const face = await this.personRepository.getFaceById(dto.id, { viewingUserId: auth.user.id });
     const person = await this.findOrFail(auth, personGroupId);
@@ -211,17 +220,17 @@ export class PersonService extends BaseService {
   }
 
   async getById(auth: AuthDto, personGroupId: string): Promise<PersonResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     return mapPerson(await this.findOrFail(auth, personGroupId));
   }
 
   async getStatistics(auth: AuthDto, personGroupId: string): Promise<PersonStatisticsResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     return this.personRepository.getStatistics(personGroupId, auth.user.id, getHiddenContentQueryOptions(auth));
   }
 
   async getThumbnail(auth: AuthDto, personGroupId: string): Promise<ImmichFileResponse> {
-    await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
     if (!person || !person.thumbnailPath) {
       throw new NotFoundException();
@@ -261,7 +270,7 @@ export class PersonService extends BaseService {
   }
 
   async update(auth: AuthDto, personGroupId: string, dto: PersonUpdateDto): Promise<PersonResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PersonUpdate, ids: [personGroupId] });
+    await this.requirePerson(auth, Permission.PersonUpdate, personGroupId);
 
     const { ownerId } = await this.findOrFail(auth, personGroupId);
     const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color } = dto;
@@ -295,8 +304,9 @@ export class PersonService extends BaseService {
     return mapPerson(person);
   }
 
-  delete(auth: AuthDto, id: string): Promise<void> {
-    return this.deleteAll(auth, { ids: [id] });
+  async delete(auth: AuthDto, id: string): Promise<void> {
+    await this.requirePerson(auth, Permission.PersonDelete, id);
+    await this.removeAllPersonGroups([id], auth.user.id);
   }
 
   async updateAll(auth: AuthDto, dto: PeopleUpdateDto): Promise<BulkIdResponseDto[]> {
@@ -648,6 +658,8 @@ export class PersonService extends BaseService {
   }
 
   async mergePerson(auth: AuthDto, personGroupId: string, dto: MergePersonDto): Promise<BulkIdResponseDto[]> {
+    // The route names the person the others merge into; that person answers like any other single read
+    await this.requirePerson(auth, Permission.PersonMerge, personGroupId);
     return this.mergePeople(auth, { ids: [personGroupId, ...dto.ids] });
   }
 
@@ -736,15 +748,29 @@ export class PersonService extends BaseService {
     return results;
   }
 
-  private findOrFail(auth: AuthDto, personGroupId: string) {
-    return findOrFail(() => this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId }), 'Person');
+  private async findOrFail(auth: AuthDto, personGroupId: string) {
+    // A 404 like the access check's, so a person removed between the two reads looks missing too
+    const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
+    if (!person) {
+      throw new NotFoundException('Person not found');
+    }
+    return person;
+  }
+
+  /**
+   * The access check for a route that names one person (FL-37). A missing person, someone else's,
+   * and one suppressed while the session is not unlocked (owner decision, September 22, 2026) all
+   * answer the same 404; the access query itself leaves the suppressed person out.
+   */
+  private requirePerson(auth: AuthDto, permission: Permission, personGroupId: string) {
+    return requireEntityAccess(this.accessRepository, { auth, permission, ids: [personGroupId] }, 'Person');
   }
 
   // TODO return a asset face response
   async createFace(auth: AuthDto, dto: AssetFaceCreateDto): Promise<void> {
     await Promise.all([
       this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [dto.assetId] }),
-      this.requireAccess({ auth, permission: Permission.PersonRead, ids: [dto.personId] }),
+      this.requirePerson(auth, Permission.PersonRead, dto.personId),
     ]);
 
     const [asset, person] = await Promise.all([
