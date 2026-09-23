@@ -1585,6 +1585,8 @@ export enum DatabaseLock {
   RunPodTransition = 900,
   MlDestinationBootstrap = 910,
   HlsSessionCleanup = 850,
+  /** FL-66: an administrator's settings save compares the revision and writes as one step. */
+  SystemConfigUpdate = 930,
 }
 
 export enum MaintenanceAction {
