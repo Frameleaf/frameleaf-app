@@ -16,7 +16,7 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingField
           inputType={SettingInputFieldType.NUMBER}
           min={1}
@@ -27,9 +27,7 @@
         />
       </div>
 
-      <div class="ms-4">
-        <SettingActions bind:configToEdit keys={['user']} {disabled} />
-      </div>
+      <SettingActions bind:configToEdit keys={['user']} {disabled} />
     </form>
   </div>
 </div>

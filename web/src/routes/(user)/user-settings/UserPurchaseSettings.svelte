@@ -2,7 +2,7 @@
   import { fade } from 'svelte/transition';
 
   import PurchaseContent from '$lib/components/shared-components/purchasing/PurchaseContent.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { dateFormats } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -107,7 +107,7 @@
     {#if authManager.isPurchased}
       <!-- BADGE TOGGLE -->
       <div class="mb-4">
-        <SettingSwitch
+        <SettingToggle
           title={$t('show_supporter_badge')}
           subtitle={$t('show_supporter_badge_description')}
           bind:checked={authManager.preferences.purchase.showSupportBadge}
