@@ -1,19 +1,19 @@
-import { PartnerDirection, getAllAlbums, getPartners } from '@immich/sdk';
+import { getAlbumTree, getPartners, PartnerDirection } from '@immich/sdk';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ url }) => {
+export const load = (async ({ url, depends }) => {
   await authenticate(url);
-  const sharedAlbums = await getAllAlbums({ isShared: true });
-  const partners = await getPartners({ direction: PartnerDirection.SharedWith });
+  depends('spaces:data');
+  const [tree, partners] = await Promise.all([getAlbumTree(), getPartners({ direction: PartnerDirection.SharedWith })]);
   const $t = await getFormatter();
 
   return {
-    sharedAlbums,
+    spaces: tree.spaces,
     partners,
     meta: {
-      title: $t('sharing'),
+      title: $t('frameleaf_spaces_title'),
     },
   };
 }) satisfies PageLoad;
