@@ -1,0 +1,478 @@
+import { describe, expect, it } from 'vitest';
+import { defaults } from 'src/dtos/config.dto.js';
+import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import {
+  AssetFileType,
+  ColorMatrix,
+  ColorPrimaries,
+  ColorTransfer,
+  DvProfile,
+  ToneMapping,
+  VideoCodec,
+} from 'src/enum.js';
+import {
+  EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT,
+  EDITED_MASTER_MAX_CRF,
+  EditedMasterColorPolicy,
+  FRAMELEAF_RENDERER,
+  MediaPolicyError,
+  MediaPolicyViolation,
+  applyEditedMasterAudioPolicy,
+  applyEditedMasterPixelFormatPolicy,
+  assertOriginalPreserved,
+  assertRenderSourceIsOriginal,
+  buildEditedMasterLineage,
+  computeRecipeRevision,
+  getEditedMasterColorArgs,
+  getEditedMasterFfmpegConfig,
+  getEditedMasterLineagePath,
+  getEditedMasterTimingArgs,
+  isHighBitDepth,
+  isPlaybackProxyFileType,
+  qualifyMetadataOnlyRotation,
+  resolveEditedMasterColorPolicy,
+} from 'src/utils/media-policy.js';
+import { probeStub } from 'test/fixtures/media.stub.js';
+
+const ffmpeg = defaults.ffmpeg;
+const sdrStream = probeStub.videoStreamH264.videoStream;
+const hdrStream = probeStub.videoStreamHDR.videoStream;
+const dolbyVisionStream = probeStub.videoStreamDolbyVision.videoStream;
+
+const preserve = { policy: EditedMasterColorPolicy.Preserve, reason: 'test' };
+const toneMap = { policy: EditedMasterColorPolicy.ToneMap, reason: 'test' };
+
+const crop: AssetEditActionItem = {
+  action: AssetEditAction.Crop,
+  parameters: { x: 2, y: 4, width: 300, height: 200 },
+};
+const rotate: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters: { angle: 90 } };
+
+describe('assertOriginalPreserved', () => {
+  it('throws when the render output is the original file', () => {
+    expect(() =>
+      assertOriginalPreserved({ originalPath: '/library/a.mp4', outputPath: '/library/a.mp4' }),
+    ).toThrowError(MediaPolicyError);
+  });
+
+  it('throws when the output resolves to the original through a relative path', () => {
+    expect(() =>
+      assertOriginalPreserved({ originalPath: '/library/a.mp4', outputPath: '/library/sub/../a.mp4' }),
+    ).toThrowError(MediaPolicyError);
+  });
+
+  it('reports the violation code so callers can fail the job rather than crash', () => {
+    try {
+      assertOriginalPreserved({ originalPath: '/library/a.mp4', outputPath: '/library/a.mp4' });
+      expect.unreachable('expected a policy error');
+    } catch (error) {
+      expect((error as MediaPolicyError).code).toBe(MediaPolicyViolation.OriginalWouldBeOverwritten);
+    }
+  });
+
+  it('allows a derived output beside the original', () => {
+    expect(() =>
+      assertOriginalPreserved({ originalPath: '/library/a.mp4', outputPath: '/encoded/a_edited.mp4' }),
+    ).not.toThrow();
+  });
+});
+
+describe('assertRenderSourceIsOriginal', () => {
+  it('allows the original as the render source', () => {
+    expect(() =>
+      assertRenderSourceIsOriginal({ originalPath: '/library/a.mp4', sourcePath: '/library/a.mp4' }),
+    ).not.toThrow();
+  });
+
+  it('refuses to render a new master from an existing edited master', () => {
+    expect(() =>
+      assertRenderSourceIsOriginal({
+        originalPath: '/library/a.mp4',
+        sourcePath: '/encoded/a_edited.mp4',
+        derivedPaths: ['/encoded/a_edited.mp4'],
+      }),
+    ).toThrowError(/derived file/);
+  });
+
+  it('refuses to render a new master from a playback proxy', () => {
+    try {
+      assertRenderSourceIsOriginal({
+        originalPath: '/library/a.mp4',
+        sourcePath: '/encoded/a.mp4',
+        derivedPaths: ['/encoded/a.mp4'],
+      });
+      expect.unreachable('expected a policy error');
+    } catch (error) {
+      expect((error as MediaPolicyError).code).toBe(MediaPolicyViolation.DerivedSourceForNewMaster);
+    }
+  });
+});
+
+describe('isPlaybackProxyFileType', () => {
+  it.each([AssetFileType.EncodedVideo, AssetFileType.Preview, AssetFileType.Thumbnail])(
+    'treats %s as a replaceable proxy',
+    (type) => {
+      expect(isPlaybackProxyFileType(type)).toBe(true);
+    },
+  );
+
+  it('does not treat the full-size rendition as a proxy', () => {
+    expect(isPlaybackProxyFileType(AssetFileType.FullSize)).toBe(false);
+  });
+});
+
+describe('getEditedMasterFfmpegConfig', () => {
+  it('ignores the playback target resolution', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, targetResolution: '720' }, sdrStream);
+    expect(config.targetResolution).toBe('original');
+  });
+
+  it('clamps a coarse playback CRF to the master quality target', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, crf: 30 }, sdrStream);
+    expect(config.crf).toBe(EDITED_MASTER_MAX_CRF);
+  });
+
+  it('keeps a CRF that is already finer than the master target', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, crf: 12 }, sdrStream);
+    expect(config.crf).toBe(12);
+  });
+
+  it('removes the playback bitrate ceiling and its two-pass rate control', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, maxBitrate: '4500k', twoPass: true }, sdrStream);
+    expect(config.maxBitrate).toBe('0');
+    expect(config.twoPass).toBe(false);
+  });
+
+  it('promotes H.264 to HEVC when the source carries more than 8 bits per component', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, targetVideoCodec: VideoCodec.H264 }, hdrStream);
+    expect(config.targetVideoCodec).toBe(VideoCodec.Hevc);
+  });
+
+  it('leaves the codec alone for an 8-bit source', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, targetVideoCodec: VideoCodec.H264 }, sdrStream);
+    expect(config.targetVideoCodec).toBe(VideoCodec.H264);
+  });
+
+  it('leaves the preset alone, which trades encoding time rather than the quality target', () => {
+    const config = getEditedMasterFfmpegConfig({ ...ffmpeg, preset: 'ultrafast' }, sdrStream);
+    expect(config.preset).toBe('ultrafast');
+  });
+});
+
+describe('isHighBitDepth', () => {
+  it.each(['yuv420p10le', 'yuv422p10le', 'yuv444p12le', 'p010le', 'p016be'])('detects %s', (pixelFormat) => {
+    expect(isHighBitDepth({ pixelFormat })).toBe(true);
+  });
+
+  it.each(['yuv420p', 'yuvj420p', 'nv12', 'rgb24'])('does not flag %s', (pixelFormat) => {
+    expect(isHighBitDepth({ pixelFormat })).toBe(false);
+  });
+});
+
+describe('applyEditedMasterPixelFormatPolicy', () => {
+  it('rewrites the playback 8-bit conversion to its 10-bit equivalent when preserving a 10-bit source', () => {
+    expect(applyEditedMasterPixelFormatPolicy(['format=yuv420p'], hdrStream, preserve)).toEqual([
+      `format=${EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT}`,
+    ]);
+  });
+
+  it('leaves the chain alone when the render deliberately tone maps', () => {
+    expect(applyEditedMasterPixelFormatPolicy(['format=yuv420p'], hdrStream, toneMap)).toEqual(['format=yuv420p']);
+  });
+
+  it('leaves the chain alone for an 8-bit source', () => {
+    expect(applyEditedMasterPixelFormatPolicy(['format=yuv420p'], sdrStream, preserve)).toEqual(['format=yuv420p']);
+  });
+
+  it('does not disturb other filters', () => {
+    expect(applyEditedMasterPixelFormatPolicy(['scale=-2:1080', 'format=yuv420p'], hdrStream, preserve)).toEqual([
+      'scale=-2:1080',
+      `format=${EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT}`,
+    ]);
+  });
+});
+
+describe('resolveEditedMasterColorPolicy', () => {
+  it('preserves an SDR source', () => {
+    expect(resolveEditedMasterColorPolicy(sdrStream, ffmpeg).policy).toBe(EditedMasterColorPolicy.Preserve);
+  });
+
+  it('records a tone map as a deliberate decision rather than performing it silently', () => {
+    const decision = resolveEditedMasterColorPolicy(hdrStream, { tonemap: ToneMapping.Hable });
+    expect(decision.policy).toBe(EditedMasterColorPolicy.ToneMap);
+    expect(decision.reason).toContain('hable');
+  });
+
+  it('carries HDR through when tone mapping is disabled', () => {
+    const decision = resolveEditedMasterColorPolicy(hdrStream, { tonemap: ToneMapping.Disabled });
+    expect(decision.policy).toBe(EditedMasterColorPolicy.Preserve);
+  });
+
+  it('refuses Dolby Vision profile 5, which has no qualified edited-master path', () => {
+    try {
+      resolveEditedMasterColorPolicy({ ...hdrStream, dvProfile: DvProfile.Dvhe05 }, ffmpeg);
+      expect.unreachable('expected a policy error');
+    } catch (error) {
+      expect((error as MediaPolicyError).code).toBe(MediaPolicyViolation.UnsupportedPreservation);
+    }
+  });
+
+  it('allows a Dolby Vision profile that has a usable base layer', () => {
+    expect(() => resolveEditedMasterColorPolicy(dolbyVisionStream, ffmpeg)).not.toThrow();
+  });
+});
+
+describe('getEditedMasterTimingArgs', () => {
+  it('pins the frame timing to passthrough so a variable-rate source is never resampled', () => {
+    expect(getEditedMasterTimingArgs(sdrStream)).toEqual(expect.arrayContaining(['-fps_mode', 'passthrough']));
+  });
+
+  it('pins the output timescale to the source time base', () => {
+    expect(getEditedMasterTimingArgs({ timeBase: 600 })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '600',
+    ]);
+  });
+
+  it('omits the timescale when the source time base is unknown', () => {
+    expect(getEditedMasterTimingArgs({ timeBase: null })).toEqual(['-fps_mode', 'passthrough']);
+  });
+
+  it('never emits a constant-frame-rate mode', () => {
+    expect(getEditedMasterTimingArgs(sdrStream)).not.toContain('cfr');
+  });
+});
+
+describe('getEditedMasterColorArgs', () => {
+  it('tags the source colour volume when it is preserved', () => {
+    expect(getEditedMasterColorArgs(hdrStream, preserve)).toEqual([
+      '-color_primaries',
+      'bt2020',
+      '-color_trc',
+      'smpte2084',
+      '-colorspace',
+      'bt2020nc',
+    ]);
+  });
+
+  it('tags the tone-mapped result rather than the source it came from', () => {
+    expect(getEditedMasterColorArgs(hdrStream, toneMap)).toEqual([
+      '-color_primaries',
+      'bt709',
+      '-color_trc',
+      'bt709',
+      '-colorspace',
+      'bt709',
+    ]);
+  });
+
+  it('leaves unknown tags off rather than guessing at them', () => {
+    const unknown = {
+      colorPrimaries: ColorPrimaries.Unknown,
+      colorTransfer: ColorTransfer.Unknown,
+      colorMatrix: ColorMatrix.Unknown,
+    };
+    expect(getEditedMasterColorArgs(unknown, preserve)).toEqual([]);
+  });
+});
+
+describe('applyEditedMasterAudioPolicy', () => {
+  const aac = { index: 1, codecName: 'aac', bitrate: 100, profile: null };
+
+  it('removes the playback stereo downmix', () => {
+    const options = ['-c:v', 'h264', '-c:a', 'aac', '-map', '0:0', '-map', '0:1', '-ac', '2'];
+    applyEditedMasterAudioPolicy(options, { audioStream: aac, hasAudioFilters: false, muted: false });
+    expect(options).not.toContain('-ac');
+    expect(options).not.toContain('2');
+  });
+
+  it('stream-copies an untouched track so its layout survives exactly', () => {
+    const options = ['-c:v', 'h264', '-c:a', 'aac', '-ac', '2'];
+    const result = applyEditedMasterAudioPolicy(options, { audioStream: aac, hasAudioFilters: false, muted: false });
+    expect(result.streamCopy).toBe(true);
+    expect(options).toEqual(['-c:v', 'h264', '-c:a', 'copy']);
+  });
+
+  it('re-encodes when the recipe touches audio, and still does not force stereo', () => {
+    const options = ['-c:v', 'h264', '-c:a', 'aac', '-ac', '2'];
+    const result = applyEditedMasterAudioPolicy(options, { audioStream: aac, hasAudioFilters: true, muted: false });
+    expect(result.streamCopy).toBe(false);
+    expect(options).toEqual(['-c:v', 'h264', '-c:a', 'aac']);
+    expect(result.args).not.toContain('-ac');
+  });
+
+  it('does not stream-copy a codec the master container cannot hold', () => {
+    const options = ['-c:v', 'h264', '-c:a', 'aac', '-ac', '2'];
+    const result = applyEditedMasterAudioPolicy(options, {
+      audioStream: { ...aac, codecName: 'opus' },
+      hasAudioFilters: false,
+      muted: false,
+    });
+    expect(result.streamCopy).toBe(false);
+    expect(options).toContain('aac');
+  });
+
+  it('pins a known channel layout and sample rate when it must re-encode', () => {
+    const options = ['-c:a', 'aac', '-ac', '2'];
+    const result = applyEditedMasterAudioPolicy(options, {
+      audioStream: { ...aac, channels: 6, channelLayout: '5.1', sampleRate: 48_000 },
+      hasAudioFilters: true,
+      muted: false,
+    });
+    expect(result.args).toEqual(['-ac', '6', '-channel_layout', '5.1', '-ar', '48000']);
+  });
+
+  it('adds nothing for a muted recipe', () => {
+    const options = ['-c:a', 'aac', '-ac', '2'];
+    const result = applyEditedMasterAudioPolicy(options, { audioStream: aac, hasAudioFilters: false, muted: true });
+    expect(result).toEqual({ streamCopy: false, args: [] });
+    expect(options).toEqual(['-c:a', 'aac']);
+  });
+
+  it('adds nothing when the source has no audio', () => {
+    const options = ['-c:v', 'h264'];
+    const result = applyEditedMasterAudioPolicy(options, { hasAudioFilters: false, muted: false });
+    expect(result).toEqual({ streamCopy: false, args: [] });
+  });
+});
+
+describe('qualifyMetadataOnlyRotation', () => {
+  const mp4 = { formatName: 'mov,mp4,m4a,3gp,3g2,mj2' };
+  const h264 = { codecName: 'h264', rotation: 0 };
+  const aac = { codecName: 'aac' };
+
+  it('qualifies a lone right-angle rotation of a remuxable source', () => {
+    expect(qualifyMetadataOnlyRotation({ edits: [rotate], videoStream: h264, audioStream: aac, format: mp4 })).toEqual({
+      angle: 90,
+      displayRotation: -90,
+    });
+  });
+
+  it('qualifies without an audio track', () => {
+    expect(qualifyMetadataOnlyRotation({ edits: [rotate], videoStream: h264, format: mp4 })).not.toBeNull();
+  });
+
+  it('does not qualify when the recipe also changes the pixels', () => {
+    const edits = [rotate, crop];
+    expect(qualifyMetadataOnlyRotation({ edits, videoStream: h264, audioStream: aac, format: mp4 })).toBeNull();
+  });
+
+  it('does not qualify a non-right-angle recipe', () => {
+    const straighten: AssetEditActionItem = { action: AssetEditAction.Straighten, parameters: { angle: 3 } };
+    expect(qualifyMetadataOnlyRotation({ edits: [straighten], videoStream: h264, format: mp4 })).toBeNull();
+  });
+
+  it('does not qualify when the source already carries a display matrix to compose with', () => {
+    expect(
+      qualifyMetadataOnlyRotation({ edits: [rotate], videoStream: { ...h264, rotation: 90 }, format: mp4 }),
+    ).toBeNull();
+  });
+
+  it('does not qualify a video codec the master container cannot hold', () => {
+    expect(
+      qualifyMetadataOnlyRotation({ edits: [rotate], videoStream: { ...h264, codecName: 'vp9' }, format: mp4 }),
+    ).toBeNull();
+  });
+
+  it('does not qualify an audio codec the master container cannot hold', () => {
+    expect(
+      qualifyMetadataOnlyRotation({
+        edits: [rotate],
+        videoStream: h264,
+        audioStream: { codecName: 'opus' },
+        format: mp4,
+      }),
+    ).toBeNull();
+  });
+
+  it('does not qualify a container whose packets cannot be remuxed', () => {
+    expect(
+      qualifyMetadataOnlyRotation({ edits: [rotate], videoStream: h264, format: { formatName: 'matroska,webm' } }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [90, -90],
+    [180, 180],
+    [270, 90],
+  ])('turns a %i degree clockwise recipe into %i degrees counter-clockwise', (angle, displayRotation) => {
+    const edit: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters: { angle } };
+    expect(qualifyMetadataOnlyRotation({ edits: [edit], videoStream: h264, format: mp4 })).toEqual({
+      angle,
+      displayRotation,
+    });
+  });
+});
+
+describe('computeRecipeRevision', () => {
+  it('is stable for the same recipe', () => {
+    expect(computeRecipeRevision([crop, rotate])).toBe(computeRecipeRevision([crop, rotate]));
+  });
+
+  it('is independent of the key order the parameters were serialised in', () => {
+    const reordered: AssetEditActionItem = {
+      action: AssetEditAction.Crop,
+      parameters: { height: 200, width: 300, y: 4, x: 2 },
+    };
+    expect(computeRecipeRevision([reordered])).toBe(computeRecipeRevision([crop]));
+  });
+
+  it('changes when a parameter changes', () => {
+    const wider: AssetEditActionItem = {
+      action: AssetEditAction.Crop,
+      parameters: { x: 2, y: 4, width: 301, height: 200 },
+    };
+    expect(computeRecipeRevision([wider])).not.toBe(computeRecipeRevision([crop]));
+  });
+
+  it('changes when the actions are reordered, because the render order differs', () => {
+    expect(computeRecipeRevision([rotate, crop])).not.toBe(computeRecipeRevision([crop, rotate]));
+  });
+
+  it('gives an empty recipe its own stable revision', () => {
+    expect(computeRecipeRevision([])).toBe(computeRecipeRevision([]));
+  });
+});
+
+describe('buildEditedMasterLineage', () => {
+  const lineage = buildEditedMasterLineage({
+    sourceAssetId: 'asset-id',
+    sourceOriginalPath: '/library/a.mp4',
+    sourceChecksum: 'Y2hlY2tzdW0=',
+    edits: [crop, rotate],
+    color: preserve,
+    createdAt: new Date('2026-09-22T00:00:00.000Z'),
+  });
+
+  it('records the source asset and the original it was rendered from', () => {
+    expect(lineage.sourceAssetId).toBe('asset-id');
+    expect(lineage.sourceOriginalPath).toBe('/library/a.mp4');
+    expect(lineage.sourceChecksum).toBe('Y2hlY2tzdW0=');
+  });
+
+  it('records the recipe revision and the ordered actions', () => {
+    expect(lineage.recipeRevision).toBe(computeRecipeRevision([crop, rotate]));
+    expect(lineage.recipeActions).toEqual([AssetEditAction.Crop, AssetEditAction.Rotate]);
+  });
+
+  it('records the renderer identity so a stale master can be recognised', () => {
+    expect(lineage.renderer).toBe(FRAMELEAF_RENDERER);
+    expect(lineage.rendererVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('records the colour decision so a loss is never silent', () => {
+    expect(lineage.color).toEqual(preserve);
+  });
+
+  it('stamps the render time', () => {
+    expect(lineage.createdAt).toBe('2026-09-22T00:00:00.000Z');
+  });
+});
+
+describe('getEditedMasterLineagePath', () => {
+  it('sits beside the master it describes', () => {
+    expect(getEditedMasterLineagePath('/encoded/a_edited.mp4')).toBe('/encoded/a_edited.mp4.lineage.json');
+  });
+});

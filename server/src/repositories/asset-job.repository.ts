@@ -125,6 +125,8 @@ export class AssetJobRepository {
         'asset.ownerId',
         'asset.thumbhash',
         'asset.type',
+        // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
+        'asset.checksum',
       ])
       .select((eb) =>
         jsonArrayFrom(
@@ -456,7 +458,8 @@ export class AssetJobRepository {
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
       .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
-      .select(['asset.id', 'asset.ownerId', 'asset.originalPath'])
+      // `checksum` identifies the exact original an edited master was rendered from (FL-39 lineage).
+      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.checksum'])
       .select(withFiles)
       .select((eb) => withAudioStream(eb).as('audioStream'))
       .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
