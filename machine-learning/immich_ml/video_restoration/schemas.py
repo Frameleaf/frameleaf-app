@@ -116,7 +116,7 @@ class RestorationRequest(WireModel):
     requestId: str = Field(min_length=1, max_length=200)
     mode: RestorationMode
     # None: the worker's available model for the mode. A value names one model exactly.
-    modelId: str | None = Field(default=None, max_length=64)
+    modelId: str | None = Field(default=None, min_length=1, max_length=64)
     # A full render passes the fingerprint its approved preview reported; any change to the
     # model revision or weights since then is refused with ``model-changed``.
     modelFingerprint: str | None = Field(default=None, pattern=SHA256_PATTERN)
@@ -154,7 +154,8 @@ class OutputDescription(WireModel):
     videoCodec: str
     dynamicRange: DynamicRange
     bitDepth: int
-    audio: Literal["copied", "none"]
+    # "transcoded" when a source codec cannot live in MP4 (PCM, for example) and became AAC.
+    audio: Literal["copied", "transcoded", "none"]
     bytes: int
     sha256: str = Field(pattern=SHA256_PATTERN)
 

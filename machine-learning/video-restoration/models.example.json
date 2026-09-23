@@ -52,7 +52,6 @@
         "minVramBytes": 0
       },
       "dynamicRanges": ["sdr"],
-      "requiresCuda": true,
       "notes": "Every value marked REPLACE and every limit must come from the qualification run. minVramBytes 0 is a placeholder, not a measurement."
     },
     {
@@ -120,7 +119,6 @@
         "minVramBytes": 0
       },
       "dynamicRanges": ["sdr"],
-      "requiresCuda": true,
       "notes": "Upstream reads its checkpoints from fixed paths under the checkout, so the weight paths point there (mount the weights volume at ckpts/). The file names follow the upstream README and must be confirmed against the pinned commit. minVramBytes 0 is a placeholder, not a measurement."
     }
   ]

@@ -23,9 +23,9 @@ A model is available only when every one of these holds, checked in this order:
 5. hashes to its pinned sha256;
 6. a qualification record for this model id, revision and exact weight hashes carries a
    ``pass`` for every required evidence item and names this container revision;
-7. that record approves the code and weight licences;
-8. a GPU is present (both runtimes are CUDA-only as pinned);
-9. the GPU is one the record qualified; and
+7. that record approves the code and weight licenses;
+8. an NVIDIA GPU is present (both runtimes are CUDA-only as pinned);
+9. the GPU model and driver branch are ones the record qualified; and
 10. it has at least the manifest's minimum memory.
 
 Anything else reports an honest unavailable state with every reason found. Nothing here
@@ -176,7 +176,6 @@ class ModelSpec(ConfigModel):
     weights: list[WeightSpec] = Field(min_length=1)
     limits: LimitsSpec
     dynamicRanges: list[DynamicRange] = Field(default_factory=lambda: [DynamicRange.SDR])
-    requiresCuda: bool = True
     notes: str = ""
 
     @model_validator(mode="after")
@@ -371,11 +370,12 @@ def resolve_weight_path(weights_root: Path, weight: WeightSpec) -> Path:
 
 
 class WeightVerifier:
-    """Hash weight files, reusing a hash while a file's size and modification time are
-    unchanged. Any change, including an in-place overwrite, forces a fresh hash."""
+    """Hash weight files, reusing a hash only while the file's device, inode, size,
+    modification time and status-change time are all unchanged. A replaced file or any write
+    moves the status-change time, which a caller cannot set back, so it forces a fresh hash."""
 
     def __init__(self) -> None:
-        self._cache: dict[Path, tuple[int, int, str]] = {}
+        self._cache: dict[Path, tuple[tuple[int, int, int, int, int], str]] = {}
         self._lock = threading.Lock()
 
     def sha256(self, path: Path) -> str | None:
@@ -383,11 +383,11 @@ class WeightVerifier:
             stat = path.stat()
         except OSError:
             return None
-        key = (stat.st_size, stat.st_mtime_ns)
+        key = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         with self._lock:
             cached = self._cache.get(path)
-        if cached is not None and cached[:2] == key:
-            return cached[2]
+        if cached is not None and cached[0] == key:
+            return cached[1]
 
         digest = hashlib.sha256()
         try:
@@ -398,7 +398,7 @@ class WeightVerifier:
             return None
         value = digest.hexdigest()
         with self._lock:
-            self._cache[path] = (key[0], key[1], value)
+            self._cache[path] = (key, value)
         return value
 
     def verify(self, spec: ModelSpec, weights_root: Path) -> WeightStatus:
@@ -490,13 +490,17 @@ def find_qualification(
     problems: list[str] = []
     if not record.reviewedBy or record.reviewedAt is None:
         problems.append(f"qualification record {record.id} has not been reviewed")
-    results = {evidence.item: evidence.result for evidence in record.evidence}
     for item in sorted(REQUIRED_EVIDENCE[spec.family]):
-        result = results.get(item)
-        if result is None:
+        entries = [evidence for evidence in record.evidence if evidence.item == item]
+        # Every entry for an item must pass and point at its evidence; a later "pass" never
+        # hides an earlier "fail", and a pass without an artifact is only a claim.
+        if not entries:
             problems.append(f"evidence {item} is missing")
-        elif result != "pass":
-            problems.append(f"evidence {item} is {result}")
+        elif any(entry.result != "pass" for entry in entries):
+            failed = sorted({entry.result for entry in entries if entry.result != "pass"})
+            problems.append(f"evidence {item} is {', '.join(failed)}")
+        elif any(not entry.artifact.strip() for entry in entries):
+            problems.append(f"evidence {item} passes without an artifact to reproduce it")
     if not record.measurements:
         problems.append("no measured throughput was recorded")
     if not record.hardware:
@@ -506,6 +510,11 @@ def find_qualification(
     elif container_revision not in record.containerRevisions:
         problems.append(f"worker image {container_revision} is not a qualified revision")
     return record, problems
+
+
+def driver_branch(version: str) -> str:
+    """The NVIDIA driver branch ("550" of "550.54.14"); minor updates stay qualified."""
+    return version.strip().split(".", 1)[0]
 
 
 # The worker's encode path writes 8-bit SDR H.264. Offering HDR needs both an independently
@@ -549,24 +558,26 @@ def evaluate_model(
     record, gaps = find_qualification(spec, records, container_revision)
     findings += [(ModelState.UNQUALIFIED, gap) for gap in gaps]
     if record is None or not record.license.complete:
-        findings.append((ModelState.LICENSE_UNREVIEWED, "the code and weight licences are not approved"))
+        findings.append((ModelState.LICENSE_UNREVIEWED, "the code and weight licenses are not approved"))
 
-    qualified_gpus: set[str] = {hardware.gpu for hardware in record.hardware} if record else set()
-    if spec.requiresCuda:
-        if not gpus:
-            findings.append((ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker"))
-        else:
-            matching = [gpu for gpu in gpus if gpu.name in qualified_gpus]
-            if not matching:
-                names = ", ".join(gpu.name for gpu in gpus)
-                findings.append((ModelState.GPU_UNQUALIFIED, f"{names} is not a qualified GPU for {spec.id}"))
-            elif max(gpu.memoryTotalBytes for gpu in matching) < spec.limits.minVramBytes:
-                findings.append(
-                    (
-                        ModelState.INSUFFICIENT_VRAM,
-                        f"{spec.id} needs {spec.limits.minVramBytes} bytes of GPU memory",
-                    )
+    # Both runtimes are CUDA-only as pinned, so a qualified NVIDIA GPU is always required: the
+    # same model name on the same driver branch the evidence was recorded with.
+    hardware = record.hardware if record else []
+    qualified = {(entry.gpu, driver_branch(entry.driverVersion)) for entry in hardware}
+    if not gpus:
+        findings.append((ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker"))
+    else:
+        matching = [gpu for gpu in gpus if (gpu.name, driver_branch(gpu.driverVersion)) in qualified]
+        if not matching:
+            present = ", ".join(f"{gpu.name} (driver {gpu.driverVersion})" for gpu in gpus)
+            findings.append((ModelState.GPU_UNQUALIFIED, f"{present} is not a qualified GPU and driver for {spec.id}"))
+        elif max(gpu.memoryTotalBytes for gpu in matching) < spec.limits.minVramBytes:
+            findings.append(
+                (
+                    ModelState.INSUFFICIENT_VRAM,
+                    f"{spec.id} needs {spec.limits.minVramBytes} bytes of GPU memory",
                 )
+            )
 
     verified = weights.verified and not is_pinned(spec)
     return ModelCapability(
@@ -635,6 +646,23 @@ RUNTIME_ENV = {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
 }
 
+# Variables a runtime may inherit from the worker's environment.
+RUNTIME_ENV_ALLOWED = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        "TMPDIR",
+        "LD_LIBRARY_PATH",
+        "CUDA_VISIBLE_DEVICES",
+        "CUDA_HOME",
+        "NVIDIA_VISIBLE_DEVICES",
+        "NVIDIA_DRIVER_CAPABILITIES",
+    }
+)
+
 OOM_MARKERS = ("out of memory", "outofmemoryerror", "cuda error: out of memory", "cudnn_status_alloc_failed")
 
 
@@ -702,6 +730,8 @@ class RuntimeJob:
     source_size: tuple[int, int]
     target_size: tuple[int, int]
     seed: int
+    # swscale matrix of the source, for any conversion back to YCbCr and out again.
+    yuv_matrix: str = "bt709"
 
 
 @dataclass(frozen=True)
@@ -736,7 +766,10 @@ class RestorationAdapter(ABC):
         return values
 
     def invocation(self, values: dict[str, str]) -> RuntimeInvocation:
-        env = {**os.environ, **self.spec.runtime.env, **RUNTIME_ENV}
+        # Only what a CUDA runtime needs is inherited; the worker's own secrets (its bearer
+        # token, for one) never reach third-party model code.
+        inherited = {name: value for name, value in os.environ.items() if name in RUNTIME_ENV_ALLOWED}
+        env = {**inherited, **self.spec.runtime.env, **RUNTIME_ENV}
         return RuntimeInvocation(
             argv=render_argv(self.spec.runtime.argv, values),
             cwd=self.spec.runtime.root,
@@ -794,7 +827,9 @@ class SeedVr2Adapter(RestorationAdapter):
         output_dir.mkdir()
         timeout = float(self.spec.runtime.timeoutSeconds)
         try:
-            media.encode_lossless_clip(job.source_frames, input_dir / "source.mp4", job.frame_rate, timeout=timeout)
+            media.encode_near_lossless_clip(
+                job.source_frames, input_dir / "source.mp4", job.frame_rate, yuv_matrix=job.yuv_matrix, timeout=timeout
+            )
         except media.MediaError as error:
             raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=self.spec.id)
 
@@ -810,7 +845,7 @@ class SeedVr2Adapter(RestorationAdapter):
             )
         intermediate = videos[0]
         try:
-            media.decode_video_frames(intermediate, frames_dir, timeout=timeout)
+            media.decode_video_frames(intermediate, frames_dir, yuv_matrix=job.yuv_matrix, timeout=timeout)
         except media.MediaError as error:
             raise RestorationFailure(RestorationErrorCode.INVALID_OUTPUT, str(error), model_id=self.spec.id)
         return AdapterRun(

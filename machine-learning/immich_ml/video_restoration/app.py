@@ -54,6 +54,7 @@ AUTH_EXEMPT_PATHS = frozenset({"/", "/ping"})
 MAX_AUTH_HEADER_LENGTH = 8 * 1024
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 BUSY_RETRY_AFTER_S = 30
+DEFAULT_REFRESH_S = 300
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,8 @@ class WorkerSettings:
     image_revision: str | None
     host: str
     port: int
+    # How often the published capability report is rebuilt; 0 verifies at startup only.
+    refresh_s: int = DEFAULT_REFRESH_S
 
     @classmethod
     def from_env(cls) -> "WorkerSettings":
@@ -79,6 +82,7 @@ class WorkerSettings:
             image_revision=env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None,
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
             port=int(env.get("FRAMELEAF_RESTORATION_PORT", "3004")),
+            refresh_s=int(env.get("FRAMELEAF_RESTORATION_REFRESH_S", str(DEFAULT_REFRESH_S))),
         )
 
 
@@ -108,6 +112,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def remove_work_dir(path: Path) -> None:
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def encode_result(result: RestorationResult) -> str:
     """base64url without padding, as ``Buffer.from(value, 'base64url')`` reads it."""
     return base64.urlsafe_b64encode(result.model_dump_json().encode("utf-8")).rstrip(b"=").decode("ascii")
@@ -125,21 +133,32 @@ def create_app(
     work_root: Path,
     auth_token: str | None = None,
     refresh_on_startup: bool = True,
+    refresh_s: int = DEFAULT_REFRESH_S,
     adapter_factory: AdapterFactory = adapter_for,
 ) -> FastAPI:
     busy = threading.Lock()
+    stop = threading.Event()
 
     def refresh_in_background() -> None:
-        try:
-            registry.refresh()
-        except Exception:
-            log.exception("Restoration model verification failed")
+        # Verify at startup, then keep the advertised workloads current: a model whose weights,
+        # checkout or evidence changed stops being advertised without waiting for a request.
+        # Every request re-verifies its model regardless.
+        while True:
+            try:
+                registry.refresh()
+            except Exception:
+                log.exception("Restoration model verification failed")
+            if refresh_s <= 0 or stop.wait(refresh_s):
+                return
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if refresh_on_startup:
             threading.Thread(target=refresh_in_background, name="restoration-verify", daemon=True).start()
-        yield
+        try:
+            yield
+        finally:
+            stop.set()
 
     app = FastAPI(lifespan=lifespan)
     app.add_middleware(BearerAuthMiddleware, expected_token=auth_token)
@@ -197,11 +216,11 @@ def create_app(
                 shutil.copyfileobj(media.file, handle, UPLOAD_CHUNK_BYTES)
             result, output_path = restore(registry, parsed, media_path, work_dir, adapter_factory=adapter_factory)
         except RestorationFailure as failure:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            remove_work_dir(work_dir)
             log.warning("Restoration %s refused or failed: %s (%s)", parsed.requestId, failure.code, failure.message)
             return error_response(failure)
         except Exception:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            remove_work_dir(work_dir)
             log.exception("Restoration %s failed unexpectedly", parsed.requestId)
             return error_response(
                 RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, "the restoration failed unexpectedly")
@@ -216,7 +235,7 @@ def create_app(
             output_path,
             media_type="video/mp4",
             headers={RESULT_HEADER: encode_result(result)},
-            background=BackgroundTask(shutil.rmtree, work_dir, ignore_errors=True),
+            background=BackgroundTask(remove_work_dir, work_dir),
         )
 
     return app
@@ -229,5 +248,10 @@ def create_app_from_env() -> tuple[FastAPI, WorkerSettings]:
         settings.qualification,
         container_revision=settings.image_revision,
     )
-    app = create_app(registry, work_root=settings.work_root, auth_token=settings.auth_token)
+    app = create_app(
+        registry,
+        work_root=settings.work_root,
+        auth_token=settings.auth_token,
+        refresh_s=settings.refresh_s,
+    )
     return app, settings

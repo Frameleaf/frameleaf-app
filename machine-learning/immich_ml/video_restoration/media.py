@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from PIL import Image
@@ -28,6 +28,20 @@ HDR_PRIMARIES = frozenset({"bt2020"})
 # A constant-frame-rate source has matching nominal and average rates. Phones often record
 # variable rate; conforming it is a separate, explicit step, never done silently here.
 FRAME_RATE_TOLERANCE = Fraction(1, 1000)
+# ffprobe ``color_space`` values mapped to swscale matrix names.
+YUV_MATRICES = {
+    "bt709": "bt709",
+    "smpte170m": "bt601",
+    "bt470bg": "bt601",
+    "fcc": "fcc",
+    "smpte240m": "smpte240m",
+}
+# Audio codecs an MP4 carries as they are. Anything else (PCM from camera MOV files, for
+# example) is transcoded to AAC and the result says so.
+MP4_COPYABLE_AUDIO = frozenset({"aac", "mp3", "alac", "ac3", "eac3"})
+# ``-vsync`` is spelled ``-fps_mode`` from ffmpeg 5.1, but the old spelling still works there
+# and is the only one ffmpeg 4.4 (Ubuntu 22.04, the worker image) understands.
+PASSTHROUGH_TIMING = ["-vsync", "passthrough"]
 
 
 class MediaError(Exception):
@@ -47,7 +61,7 @@ class SourceProbe:
     duration_ms: int
     dynamic_range: DynamicRange
     bit_depth: int
-    audio_streams: int
+    audio_codecs: tuple[str, ...]
     color_primaries: str | None
     color_transfer: str | None
     color_space: str | None
@@ -55,6 +69,17 @@ class SourceProbe:
     @property
     def frame_rate_text(self) -> str:
         return f"{self.frame_rate.numerator}/{self.frame_rate.denominator}"
+
+    @property
+    def audio_streams(self) -> int:
+        return len(self.audio_codecs)
+
+    @property
+    def yuv_matrix(self) -> str:
+        """The swscale matrix for this source's YCbCr coefficients, used for both directions
+        of every RGB conversion so colours survive the round trip. Untagged sources follow
+        the usual convention: BT.709 from 720 lines up, BT.601 below."""
+        return YUV_MATRICES.get(self.color_space or "", "bt709" if self.height >= 720 else "bt601")
 
 
 def parse_rational(value: str | None) -> Fraction | None:
@@ -118,7 +143,9 @@ def parse_probe(payload: dict[str, Any]) -> SourceProbe:
         duration_ms=duration_ms,
         dynamic_range=DynamicRange.HDR if hdr else DynamicRange.SDR,
         bit_depth=bit_depth_of(video.get("pix_fmt"), video.get("bits_per_raw_sample")),
-        audio_streams=sum(1 for stream in streams if stream.get("codec_type") == "audio"),
+        audio_codecs=tuple(
+            str(stream.get("codec_name") or "unknown") for stream in streams if stream.get("codec_type") == "audio"
+        ),
         color_primaries=primaries if isinstance(primaries, str) and primaries != "unknown" else None,
         color_transfer=transfer if isinstance(transfer, str) and transfer != "unknown" else None,
         color_space=video.get("color_space") if video.get("color_space") not in (None, "unknown") else None,
@@ -182,6 +209,7 @@ def extract_frames(
     *,
     start_ms: int | None,
     end_ms: int | None,
+    yuv_matrix: str,
     timeout: float,
 ) -> int:
     """Decode the video frames of ``source`` (optionally one segment) to RGB PNG files."""
@@ -197,10 +225,10 @@ def extract_frames(
             str(source),
             "-map",
             "0:v:0",
-            "-fps_mode",
-            "passthrough",
-            "-pix_fmt",
-            "rgb24",
+            *PASSTHROUGH_TIMING,
+            "-vf",
+            # The source's own range tag decides limited or full range.
+            f"scale=in_color_matrix={yuv_matrix}:in_range=auto,format=rgb24",
             str(frames_dir / FRAME_PATTERN),
         ],
         timeout=timeout,
@@ -208,8 +236,11 @@ def extract_frames(
     return count_frames(frames_dir)
 
 
-def encode_lossless_clip(frames_dir: Path, output: Path, frame_rate: str, *, timeout: float) -> None:
-    """Pack frames into a lossless H.264 clip for runtimes that read video files."""
+def encode_near_lossless_clip(
+    frames_dir: Path, output: Path, frame_rate: str, *, yuv_matrix: str, timeout: float
+) -> None:
+    """Pack frames into an H.264 clip for runtimes that read video files: quantiser 0 and
+    4:4:4 chroma, so only the RGB-to-YCbCr rounding is lost."""
     _run(
         [
             FFMPEG,
@@ -222,19 +253,19 @@ def encode_lossless_clip(frames_dir: Path, output: Path, frame_rate: str, *, tim
             "1",
             "-i",
             str(frames_dir / FRAME_PATTERN),
+            "-vf",
+            f"scale=out_color_matrix={yuv_matrix}:out_range=tv,format=yuv444p",
             "-c:v",
             "libx264",
             "-qp",
             "0",
-            "-pix_fmt",
-            "yuv420p",
             str(output),
         ],
         timeout=timeout,
     )
 
 
-def decode_video_frames(video: Path, frames_dir: Path, *, timeout: float) -> int:
+def decode_video_frames(video: Path, frames_dir: Path, *, yuv_matrix: str, timeout: float) -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
     _run(
         [
@@ -246,10 +277,9 @@ def decode_video_frames(video: Path, frames_dir: Path, *, timeout: float) -> int
             str(video),
             "-map",
             "0:v:0",
-            "-fps_mode",
-            "passthrough",
-            "-pix_fmt",
-            "rgb24",
+            *PASSTHROUGH_TIMING,
+            "-vf",
+            f"scale=in_color_matrix={yuv_matrix}:in_range=tv,format=rgb24",
             str(frames_dir / FRAME_PATTERN),
         ],
         timeout=timeout,
@@ -339,17 +369,21 @@ def encode_output(
     start_ms: int | None,
     end_ms: int | None,
     timeout: float,
-) -> None:
+) -> Literal["copied", "transcoded", "none"]:
     """Resize restored frames to the target with a conventional Lanczos filter and encode
-    them at the source's exact frame rate, copying every source audio stream for the same
-    segment so timing and audio are preserved."""
+    them at the source's exact frame rate with every source audio stream for the same
+    segment, so timing and audio are preserved. Returns how the audio was carried."""
+    audio: Literal["copied", "transcoded", "none"] = "none"
     audio_input: list[str] = []
     audio_map: list[str] = []
     audio_codec: list[str] = []
     if source_probe.audio_streams > 0:
         audio_input = [*_segment_args(start_ms, end_ms), "-i", str(source)]
         audio_map = ["-map", "1:a?"]
-        audio_codec = ["-c:a", "copy"]
+        if all(codec in MP4_COPYABLE_AUDIO for codec in source_probe.audio_codecs):
+            audio, audio_codec = "copied", ["-c:a", "copy"]
+        else:
+            audio, audio_codec = "transcoded", ["-c:a", "aac", "-b:a", "256k"]
 
     colour: list[str] = []
     if source_probe.color_primaries:
@@ -377,7 +411,10 @@ def encode_output(
             "0:v:0",
             *audio_map,
             "-vf",
-            f"scale={width}:{height}:flags=lanczos,format=yuv420p",
+            (
+                f"scale={width}:{height}:flags=lanczos:out_color_matrix={source_probe.yuv_matrix}:out_range=tv,"
+                "format=yuv420p"
+            ),
             "-c:v",
             "libx264",
             "-preset",
@@ -392,3 +429,4 @@ def encode_output(
         ],
         timeout=timeout,
     )
+    return audio
