@@ -1168,8 +1168,12 @@ export const toServerFilter = (filter: SearchFilter): SearchFilter => {
  * A shared space is an album of kind `space`, and its photos are what an album-confined search
  * returns for it (`space-photos.svelte.ts`). Searching in a space therefore also requires the space
  * among the item's albums, on top of any album condition the filter already has.
+ *
+ * Exported so `bulk-operations.ts` can resolve a "select all matching" snapshot for a space the same
+ * way (FL-48 map/space follow-ups): the space is an album condition there too, not a scope the search
+ * DTO cannot express.
  */
-const withSpaceScope = (filter: SearchFilter, spaceId: string): SearchFilter => {
+export const withSpaceScope = (filter: SearchFilter, spaceId: string): SearchFilter => {
   const albums = filter.albumIds;
   return {
     ...filter,
