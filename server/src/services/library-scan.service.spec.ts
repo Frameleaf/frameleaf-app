@@ -29,6 +29,7 @@ const enoent = () => Promise.reject(Object.assign(new Error('missing'), { code: 
 
 async function* walkOf(...batches: string[][]) {
   for (const batch of batches) {
+    // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
     yield await Promise.resolve(batch);
   }
 }
@@ -252,7 +253,11 @@ describe(LibraryScanService.name, () => {
         { ...existing, originalPath: '/mnt/photos/gone.jpg', fileModifiedAt: new Date('2024-01-01') },
       ] as never);
       mocks.storage.stat.mockImplementation((path: string) =>
-        path === '/mnt/photos' ? Promise.resolve(directory) : path.endsWith('gone.jpg') ? enoent() : Promise.resolve(file()),
+        path === '/mnt/photos'
+          ? Promise.resolve(directory)
+          : path.endsWith('gone.jpg')
+            ? enoent()
+            : Promise.resolve(file()),
       );
 
       const operation = operationOf();

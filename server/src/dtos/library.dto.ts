@@ -91,7 +91,7 @@ const LibraryScanResponseSchema = z
     operationId: z.uuidv4().describe('The scan job, a media operation of kind library_scan'),
     status: MediaOperationStatusSchema,
     phase: LibraryScanPhaseSchema,
-    progress: z.number().min(0).max(100).describe('Progress, 0 to 100'),
+    progress: z.number().min(0).max(100).meta({ format: 'double' }).describe('Progress, 0 to 100'),
     processedUnits: z.int().min(0).describe('Files and items handled so far'),
     totalUnits: z.int().min(0).describe('Files and items known so far; grows while the folders are read'),
     added: z.int().min(0).describe('New items indexed'),
