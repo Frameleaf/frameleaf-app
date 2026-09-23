@@ -425,7 +425,7 @@ export class TakeoutService {
       this.repository.withImport(auth.user.id, id, async (tx, row, operation) => {
         this.requireReviewable(row, operation);
         const item = await this.repository.lockItem(tx, id, itemId);
-        if (!item || (item.locked && !includeLocked)) {
+        if (!item || (item.withheld && !includeLocked)) {
           throw new TakeoutNotFound('Item not found');
         }
         if (item.state === 'imported' || item.state === 'matched' || item.state === 'importing') {
@@ -489,7 +489,7 @@ export class TakeoutService {
             this.repository.lockItem(tx, id, dto.photoItemId),
             this.repository.lockItem(tx, id, dto.videoItemId),
           ]);
-          if (!photo || !video || photo.locked || video.locked) {
+          if (!photo || !video || photo.withheld || video.withheld) {
             throw new TakeoutNotFound('Pair not found');
           }
         }

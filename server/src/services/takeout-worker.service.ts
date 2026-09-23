@@ -119,8 +119,6 @@ type TakeoutRun = {
   lastWrite: number;
   result: ImportResult;
   albums: Map<string, string>;
-  /** Bytes the scan has extracted for this import, for the account's quota. */
-  extracted: number;
 };
 
 const isFile = (name: string) => {
@@ -300,7 +298,6 @@ export class TakeoutWorkerService {
       lastWrite: 0,
       result: (operation.result ?? {}) as ImportResult,
       albums: new Map(),
-      extracted: 0,
     };
 
     // Keeps the lease while a long step runs, and notices a pause or cancel asked for meanwhile.
@@ -364,7 +361,6 @@ export class TakeoutWorkerService {
     const counts = await this.repository.counts(row.id);
     run.processed = counts.files;
     run.total = counts.files;
-    run.extracted = await this.repository.stagedFileBytes(row.id);
     await this.checkpoint(run, true);
 
     for (const source of sources) {
@@ -460,7 +456,7 @@ export class TakeoutWorkerService {
         modifiedAt: file.modifiedAt,
         refused: file.link,
         stage: (destination) =>
-          this.staging.stageFile(source.path, file.filePath, file.size, destination, run.controller.signal),
+          this.staging.stageFile(source.path, file, destination, run.controller.signal),
       });
       if (outcome === 'rejected') {
         rejected++;
@@ -512,10 +508,9 @@ export class TakeoutWorkerService {
     if (await this.repository.hasFile(id)) {
       return 'staged';
     }
-    const quota = run.auth.user.quotaSizeInBytes;
-    if (quota !== null && quota !== undefined && run.auth.user.quotaUsageInBytes + run.extracted + entry.size > quota) {
-      throw new TakeoutJobError('takeout_quota', 'This export is larger than the storage left on your account');
-    }
+    // Staging is bounded by the staging volume, not the account's quota: much of an export can be
+    // photos the library already has, and each new asset is checked against the quota when it is
+    // created.
     if ((await this.staging.freeBytes(directory)) < entry.size + TAKEOUT_STAGING_RESERVE_BYTES) {
       throw new TakeoutJobError(
         'takeout_no_space',
@@ -535,7 +530,6 @@ export class TakeoutWorkerService {
       throw error;
     }
 
-    run.extracted += digest.size;
     const metadata =
       kind === 'sidecar' ? (parseTakeoutSidecar(await this.staging.readSidecar(destination)) ?? null) : null;
     await this.repository.recordFile({
@@ -723,11 +717,11 @@ export class TakeoutWorkerService {
         const existing = item.createPath ? await this.repository.getAssetState(found.assetId) : undefined;
         assetId = found.assetId;
         resultKind = existing && existing.originalPath === item.createPath ? 'created' : 'matched';
-      } else {
-        if (item.createPath) {
-          // A copy an earlier run made but never turned into an asset; nothing refers to it.
-          await this.staging.remove(item.createPath);
+        if (resultKind === 'matched') {
+          await this.removeAbandonedCopy(item);
         }
+      } else {
+        await this.removeAbandonedCopy(item);
         const created = await this.createAsset(run, item, options);
         assetId = created.id;
         resultKind = created.created ? 'created' : 'matched';
@@ -787,6 +781,16 @@ export class TakeoutWorkerService {
     await this.repository.itemDone(item.id, resultKind === 'created' ? 'imported' : 'matched');
     // The original is in the library now; the staged copy only took up space.
     await this.staging.remove(item.path);
+  }
+
+  /**
+   * The copy an earlier run made at `createPath` but never turned into its asset. It is removed only
+   * when no asset has it as its original; a copy something refers to is never touched.
+   */
+  private async removeAbandonedCopy(item: TakeoutItem) {
+    if (item.createPath && !(await this.repository.isOriginalPath(item.createPath))) {
+      await this.staging.remove(item.createPath);
+    }
   }
 
   /** The photo already in the owner's library with either of the item's digests, if any. */

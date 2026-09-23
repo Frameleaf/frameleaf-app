@@ -58,6 +58,7 @@ const itemOf = (overrides: Partial<TakeoutItem> = {}): TakeoutItem => ({
   assetId: null,
   resultKind: null,
   createPath: null,
+  withheld: false,
   error: null,
   relativePath: 'Trip/IMG_1.jpg',
   folder: 'Trip',
@@ -124,7 +125,7 @@ describe(TakeoutWorkerService.name, () => {
       advancePhase: vi.fn().mockResolvedValue(true),
       sources: vi.fn().mockResolvedValue([]),
       counts: vi.fn().mockResolvedValue({ files: 0 }),
-      stagedFileBytes: vi.fn().mockResolvedValue(0),
+      isOriginalPath: vi.fn().mockResolvedValue(false),
       hasFile: vi.fn().mockResolvedValue(false),
       recordFile: vi.fn(),
       markSourceScanned: vi.fn(),
@@ -352,6 +353,25 @@ describe(TakeoutWorkerService.name, () => {
 
       expect(staging.remove).toHaveBeenCalledWith('/data/upload/user-id/aa/bb/abandoned.jpg');
       expect(repository.itemCreating).toHaveBeenCalledWith(itemOf().id, expect.stringMatching(/^\/data\/upload\//));
+    });
+
+    it('never removes an earlier copy that an asset uses as its original', async () => {
+      pending = [[itemOf({ state: 'importing', createPath: '/data/upload/user-id/aa/bb/kept.jpg' })]];
+      repository.isOriginalPath.mockResolvedValue(true);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(staging.remove).not.toHaveBeenCalledWith('/data/upload/user-id/aa/bb/kept.jpg');
+    });
+
+    it('removes the orphaned earlier copy when the photo turns out to be elsewhere in the library', async () => {
+      pending = [[itemOf({ state: 'importing', createPath: '/data/upload/user-id/aa/bb/abandoned.jpg' })]];
+      assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'matched');
+      expect(staging.remove).toHaveBeenCalledWith('/data/upload/user-id/aa/bb/abandoned.jpg');
     });
 
     it('counts a photo that arrived between the check and the upload as matched', async () => {

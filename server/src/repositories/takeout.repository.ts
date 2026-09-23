@@ -71,6 +71,8 @@ export type TakeoutItem = {
   resultKind: TakeoutResultKind | null;
   /** Where a run copied the file before creating its asset (see the column). */
   createPath: string | null;
+  /** Goes into Locked, or matched a photo that is Locked: never named to a locked session. */
+  withheld: boolean;
   error: string | null;
   /** From the file. */
   relativePath: string;
@@ -221,6 +223,7 @@ const mapItem = (row: Record<string, unknown>): TakeoutItem => ({
   assetId: (row.assetId as string | null) ?? null,
   resultKind: (row.resultKind as TakeoutResultKind | null) ?? null,
   createPath: (row.createPath as string | null) ?? null,
+  withheld: row.withheld === true,
   error: (row.error as string | null) ?? null,
   relativePath: row.relativePath as string,
   folder: row.folder as string,
@@ -481,12 +484,10 @@ export class TakeoutRepository {
     return toNumber(rows[0]?.total);
   }
 
-  /** Bytes the scan has extracted for an import so far. */
-  async stagedFileBytes(importId: string): Promise<number> {
-    const { rows } = await sql<{ total: string | null }>`
-      select coalesce(sum(size), 0) as total from takeout_file where "importId" = ${importId}::uuid
-    `.execute(this.db);
-    return toNumber(rows[0]?.total);
+  /** Whether any asset's original is the file at `originalPath`. */
+  async isOriginalPath(originalPath: string): Promise<boolean> {
+    const { rows } = await sql`select 1 from asset where "originalPath" = ${originalPath} limit 1`.execute(this.db);
+    return rows.length > 0;
   }
 
   async removeSource(tx: Transaction<DB>, sourceId: string): Promise<void> {
@@ -616,7 +617,8 @@ export class TakeoutRepository {
   private itemSelect(db: Kysely<DB>, where: ReturnType<typeof sql>, tail: ReturnType<typeof sql> = sql``) {
     return sql<Record<string, unknown>>`
       select item.*, file."relativePath", file.folder, file.name, file.kind, file.path, file.size, file.checksum,
-             file."legacyChecksum", file."modifiedAt", source.name as "sourceName"
+             file."legacyChecksum", file."modifiedAt", source.name as "sourceName",
+             ${itemIsLocked('item')} as withheld
       from takeout_item item
       inner join takeout_file file on file.id = item.id
       inner join takeout_source source on source.id = file."sourceId"

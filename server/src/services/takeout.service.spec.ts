@@ -70,6 +70,7 @@ const itemOf = (overrides: Partial<TakeoutItem> = {}): TakeoutItem => ({
   assetId: null,
   resultKind: null,
   createPath: null,
+  withheld: false,
   error: null,
   relativePath: 'Trip/IMG_1.jpg',
   folder: 'Trip',
@@ -522,11 +523,18 @@ describe(TakeoutService.name, () => {
     });
 
     it('does not reveal a Locked item to a session that has not unlocked Locked', async () => {
-      repository.lockItem.mockResolvedValue(itemOf({ locked: true }));
+      repository.lockItem.mockResolvedValue(itemOf({ locked: true, withheld: true }));
       await expect(sut.resolve(authStub.user1, importId, itemId, { skip: true })).rejects.toBeInstanceOf(
         NotFoundException,
       );
       expect(repository.updateDecision).not.toHaveBeenCalled();
+    });
+
+    it('does not reveal an item that matched a photo already Locked in the library', async () => {
+      repository.lockItem.mockResolvedValue(itemOf({ withheld: true }));
+      await expect(sut.resolve(authStub.user1, importId, itemId, { skip: true })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('never changes an item already in the library', async () => {
