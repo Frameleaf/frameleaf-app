@@ -33,6 +33,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isLockedAsset } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
 import { upsertTags } from 'src/utils/tag.js';
@@ -963,6 +964,7 @@ export class MetadataService extends BaseService {
       faces: { id: string; sourceType: SourceType }[];
       originalPath: string;
       visibility: AssetVisibility;
+      isLocked?: boolean | null;
     },
     tags: ImmichTags,
   ) {
@@ -1018,7 +1020,7 @@ export class MetadataService extends BaseService {
         });
         // A face on a Locked photo is never a person's thumbnail (FL-53): the person is created without
         // one and takes another face of theirs later (the missing-thumbnail sweep), or keeps none.
-        if (asset.visibility !== AssetVisibility.Locked) {
+        if (!isLockedAsset(asset)) {
           missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
         }
       }

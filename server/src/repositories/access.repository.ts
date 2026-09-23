@@ -15,6 +15,7 @@ import {
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
 
@@ -204,7 +205,7 @@ class AssetAccess {
       .where('album.deletedAt', 'is', null)
       // Locked media stays a member of an album but is never reachable through the album: only its
       // owner's elevated session sees it, via checkOwnerAccess (owner decision, September 22, 2026).
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute()
       .then((assets) => {
@@ -242,7 +243,7 @@ class AssetAccess {
       .select('asset.id')
       .where('asset.id', 'in', [...assetIds])
       .where('asset.ownerId', '=', userId)
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
@@ -269,6 +270,8 @@ class AssetAccess {
           eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
         ]),
       )
+      // a partner never reaches locked media (FL-34)
+      .where(isNotLocked('asset'))
 
       .where('asset.id', 'in', [...assetIds])
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
@@ -296,14 +299,14 @@ class AssetAccess {
         join
           .onRef('asset.id', '=', 'shared_link_asset.assetId')
           .on('asset.deletedAt', 'is', null)
-          .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+          .on(isNotLocked('asset')),
       )
       .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
       .leftJoin('asset as albumAssets', (join) =>
         join
           .onRef('albumAssets.id', '=', 'album_asset.assetId')
           .on('albumAssets.deletedAt', 'is', null)
-          .on('albumAssets.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+          .on(isNotLocked('albumAssets')),
       )
       .select([
         'asset.id as assetId',
@@ -371,7 +374,7 @@ class AssetFileAccess {
       .selectFrom('asset_file')
       .select('asset_file.id')
       .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-      .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
       .where('asset.ownerId', '=', userId)
       .where('asset_file.id', 'in', [...fileIds])
       .execute()
@@ -545,7 +548,7 @@ class MemoryAccess {
                 .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
                 .select('memory_asset.memoriesId')
                 .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .where(isTimelineVisible('asset'))
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets))),
             ),
@@ -662,7 +665,7 @@ class PersonAccess {
                   .innerJoin('asset', (join) =>
                     join
                       .onRef('asset.id', '=', 'asset_face.assetId')
-                      .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                      .on(isTimelineVisible('asset'))
                       .on('asset.deletedAt', 'is', null),
                   )
                   .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -676,7 +679,7 @@ class PersonAccess {
                 .innerJoin('asset', (join) =>
                   join
                     .onRef('asset.id', '=', 'asset_face.assetId')
-                    .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                    .on(isTimelineVisible('asset'))
                     .on('asset.deletedAt', 'is', null),
                 )
                 .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')

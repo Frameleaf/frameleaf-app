@@ -3,11 +3,10 @@ import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 
 type Values = { isFavorite?: boolean; isHidden?: boolean; fileCreatedAt?: string };
 type Baseline = {
@@ -136,21 +135,16 @@ export class ICloudMetadataRepository {
           }
         }
         // Apple Hidden is private. Immich Hidden is reserved for motion companions;
-        // tighten to Locked and never automatically remove a destination privacy choice.
+        // tighten to Locked (FL-34: a lock record, never a stored visibility) and never
+        // automatically remove a destination privacy choice.
         if (
           state.source.isHidden === true &&
           target.visibility === AssetVisibility.Timeline &&
           !state.overridden.includes('isHidden')
         ) {
           if (candidate.previous?.applied.visibility === undefined) {
-            await db
-              .updateTable('asset')
-              .set({ visibility: AssetVisibility.Locked })
-              .where('id', '=', candidate.assetId)
-              .where('ownerId', '=', ownerId)
-              .execute();
-            // a Locked photo is never a cover, featured photo or face thumbnail (FL-53)
-            await releaseLockedCoverReferences(db, [candidate.assetId]);
+            // the lock also releases every cover, featured photo and face thumbnail it was (FL-53)
+            await new AssetRepository(db).lock([candidate.assetId], AssetLockReason.Marked, null);
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');

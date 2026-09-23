@@ -1,10 +1,11 @@
 import { Expression, ExpressionBuilder, Kysely, sql } from 'kysely';
-import { AssetVisibility, JobName } from 'src/enum.js';
+import { JobName } from 'src/enum.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { automaticAlbumCover } from 'src/utils/album-cover.js';
 import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
+import { isDefaultVisible, isLocked, isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 /**
  * Locked photos are never covers (owner decision, September 22, 2026, FL-53).
@@ -29,9 +30,10 @@ import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
  * Membership is untouched: a Locked photo stays in its albums, spaces, people and pets, and each read
  * hides it from whoever may not see it. Only the covers are released.
  *
- * Call it after the visibility change and in the same transaction, so a cover and the Locked flag
- * never disagree. It must be a separate statement from the asset update, because a statement does
- * not see the rows another part of the same statement changes and would pick the asset again.
+ * Call it after the lock records are written (FL-34, `AssetRepository.lock`) and in the same
+ * transaction, so a cover and the lock never disagree. It must be a separate statement from the write,
+ * because a statement does not see the rows another part of the same statement changes and would pick
+ * the asset again.
  * Unaffected ids are ignored, so it is safe after any update.
  */
 export const releaseLockedCoverReferences = async (db: Kysely<DB>, assetIds: string[]): Promise<void> => {
@@ -45,13 +47,8 @@ export const releaseLockedCoverReferences = async (db: Kysely<DB>, assetIds: str
   await releasePetFeaturedPhotos(db, assetIds);
 };
 
-/** True when `assetId` is a Locked asset. */
-const isLockedAssetId = (assetId: Expression<unknown>) => sql<boolean>`exists (
-    select 1
-    from asset as locked_asset
-    where locked_asset.id = ${assetId}
-      and locked_asset.visibility = ${sql.lit(AssetVisibility.Locked)}
-  )`;
+/** True when `assetId` is a locked asset (FL-34: the lock record, `src/utils/locked.ts`). */
+const isLockedAssetId = (assetId: Expression<unknown>) => lockedAssetIdExists(assetId);
 
 /** Albums, collections and shared spaces: back to the automatic cover, which is never Locked. */
 const releaseAlbumCovers = async (db: Kysely<DB>, assetIds: string[]) => {
@@ -76,7 +73,7 @@ export const sharedSpacePersonCover = (eb: ExpressionBuilder<DB, 'shared_space_p
     .select('asset.id')
     .whereRef('album_asset.albumId', '=', 'shared_space_person.albumId')
     .whereRef('asset_face.personGroupId', '=', 'shared_space_person.personGroupId')
-    .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
+    .where(isDefaultVisible('asset'))
     .where('asset.deletedAt', 'is', null)
     .where(sql<boolean>`not ${nsfwAssetIdExists(sql.ref('asset.id'))}`)
     .where('asset_face.deletedAt', 'is', null)
@@ -104,7 +101,7 @@ export const nextPersonFace = (eb: ExpressionBuilder<DB, 'person'>) =>
     .innerJoin('asset', (join) =>
       join
         .onRef('asset.id', '=', 'asset_face.assetId')
-        .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+        .on(isNotLocked('asset')),
     )
     .select('asset_face.id')
     .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -123,7 +120,7 @@ const releasePersonFaces = async (db: Kysely<DB>, assetIds: string[]) => {
         .innerJoin('asset', (join) =>
           join
             .onRef('asset.id', '=', 'asset_face.assetId')
-            .on('asset.visibility', '=', sql.lit(AssetVisibility.Locked)),
+            .on(isLocked('asset')),
         )
         .select('asset_face.id')
         .where('asset_face.assetId', '=', anyUuid(assetIds)),

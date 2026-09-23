@@ -38,9 +38,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Selectable } from 'kysely';
 import { createHmac } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { isLockedAsset } from 'src/utils/locked.js';
 import {
   StudioAudioSource,
   StudioDestination,
@@ -250,7 +251,7 @@ export type StudioGrantVerification =
 type AssetRow = Pick<
   Selectable<AssetTable>,
   'id' | 'ownerId' | 'type' | 'visibility' | 'deletedAt' | 'isOffline' | 'originalPath' | 'checksum'
->;
+> & { isLocked?: boolean | null };
 
 type AssetDecision =
   | { ok: true; asset: AssetRow; sourceAccess: 'owner' | 'shared' }
@@ -1029,7 +1030,7 @@ export class StudioResourceService extends BaseService {
         decisions.set(id, { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' });
       } else if (asset.deletedAt) {
         decisions.set(id, { ok: false, reason: StudioRefusalReason.Trashed, detail: 'The asset is in the trash.' });
-      } else if (asset.visibility === AssetVisibility.Locked && !backgroundRunner) {
+      } else if (isLockedAsset(asset) && !backgroundRunner) {
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.Locked,

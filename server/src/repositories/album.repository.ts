@@ -8,7 +8,7 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRole } from 'src/enum.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -16,6 +16,7 @@ import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates, automaticAlbumCover } from 'src/utils/album-cover.js';
 import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked, lockedOwnerScope } from 'src/utils/locked.js';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -639,7 +640,7 @@ export class AlbumRepository {
       .select('asset.id')
       .where('asset.id', '=', anyUuid(assetIds))
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+      .where(isNotLocked('asset'))
       .orderBy(sql`array_position(${assetIds}::uuid[], "asset"."id")`)
       .limit(1)
       .executeTakeFirst();
@@ -664,14 +665,7 @@ export class AlbumRepository {
       .innerJoin('asset', 'asset.id', 'assetId')
       .where('asset.deletedAt', 'is', sql.lit(null))
       .where('album_asset.albumId', '=', id)
-      .where((eb) =>
-        lockedOwnerId
-          ? eb.or([
-              eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
-              eb('asset.ownerId', '=', lockedOwnerId),
-            ])
-          : eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
-      )
+      .where(lockedOwnerScope(lockedOwnerId, 'asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .select('asset.ownerId as userId')
       .select((eb) => eb.fn.countAll<number>().as('assetCount'))

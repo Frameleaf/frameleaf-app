@@ -11,6 +11,7 @@ import { WorkflowLogTable } from 'src/schema/tables/workflow-log.table.js';
 import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table.js';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 import { nsfwAssetIdExists, withTags } from 'src/utils/database.js';
+import { effectiveVisibility } from 'src/utils/locked.js';
 
 export type WorkflowStepUpsert = Omit<Insertable<WorkflowStepTable>, 'workflowId' | 'order'>;
 
@@ -207,7 +208,8 @@ export class WorkflowRepository {
     const row = await this.db
       .selectFrom('asset')
       .select((eb) => [
-        'asset.visibility',
+        // `locked` for a locked asset (FL-34): plugins never see locked media
+        effectiveVisibility('asset').as('visibility'),
         // The shared phase-aware predicate uses legacy state during legacy and
         // dual-write, then switches exclusively to the fork privacy sidecar.
         nsfwAssetIdExists(sql.ref('asset.id')).as('isNsfw'),

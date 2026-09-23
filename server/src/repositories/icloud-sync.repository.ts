@@ -679,6 +679,7 @@ export class ICloudSyncRepository {
     }>`SELECT r."assetId",r.id AS "resourceId",r.verification->>'outcome' AS outcome
       FROM immich_fork.icloud_resource r JOIN public.asset a ON a.id=r."assetId" AND a."ownerId"=r."ownerId"
       WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a.visibility NOT IN ('hidden','locked')
+        AND NOT EXISTS (SELECT 1 FROM asset_lock l WHERE l."assetId"=a.id)
         AND a."deletedAt" IS NULL AND r.verification->>'outcome' IS NOT NULL AND r.status IN ('committed','finalized')
       ORDER BY r."updatedAt" DESC,r.id LIMIT 100`.execute(this.db);
     return rows;
