@@ -43,6 +43,7 @@ import { SessionController } from 'src/controllers/session.controller.js';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
+import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { SystemMetadataController } from 'src/controllers/system-metadata.controller.js';
@@ -101,6 +102,7 @@ export const controllers = [
   SharedLinkController,
   SharedSpaceController,
   StackController,
+  StudioProjectController,
   SyncController,
   SystemConfigController,
   SystemMetadataController,

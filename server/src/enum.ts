@@ -1591,6 +1591,7 @@ export enum ApiTag {
   SharedLinks = 'Shared links',
   SharedSpaces = 'Shared spaces',
   Stacks = 'Stacks',
+  StudioProjects = 'Studio projects',
   Sync = 'Sync',
   SystemConfig = 'System config',
   SystemMetadata = 'System metadata',

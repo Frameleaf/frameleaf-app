@@ -298,3 +298,99 @@ export const normalizeCommandSummary = (value: unknown): StudioCommandSummary =>
 
   return { counts, total };
 };
+
+/* ------------------------------------------------------------------ */
+/* History diff                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What changed between two opaque graphs, as paths and counts and nothing else.
+ *
+ * The graph may carry private text — clip names, captions, review notes — so the diff never
+ * reports a value, only where one differs. Paths are JSON-pointer-like (`tracks/2/clips/0/grade`),
+ * aggregated at {@link STUDIO_DIFF_MAX_DEPTH} so a thousand keyframe edits read as one changed
+ * path rather than a thousand, and capped at {@link STUDIO_DIFF_MAX_PATHS} with `truncated` set.
+ */
+export type StudioGraphDiff = {
+  added: number;
+  removed: number;
+  changed: number;
+  paths: string[];
+  truncated: boolean;
+};
+
+export const STUDIO_DIFF_MAX_DEPTH = 4;
+export const STUDIO_DIFF_MAX_PATHS = 200;
+
+const isLeaf = (value: unknown): boolean => value === null || typeof value !== 'object';
+
+export const diffStudioGraphs = (before: unknown, after: unknown): StudioGraphDiff => {
+  const paths = new Set<string>();
+  let added = 0;
+  let removed = 0;
+  let changed = 0;
+  let truncated = false;
+
+  const record = (path: string) => {
+    if (paths.size < STUDIO_DIFF_MAX_PATHS) {
+      paths.add(path);
+    } else if (!paths.has(path)) {
+      truncated = true;
+    }
+  };
+
+  const walk = (a: unknown, b: unknown, path: string, depth: number) => {
+    if (a === b) {
+      return;
+    }
+    if (isLeaf(a) || isLeaf(b) || Array.isArray(a) !== Array.isArray(b)) {
+      changed += 1;
+      record(path || '/');
+      return;
+    }
+    if (depth >= STUDIO_DIFF_MAX_DEPTH) {
+      // Deep enough: report the subtree once rather than every leaf inside it.
+      if (canonicalJson(a) !== canonicalJson(b)) {
+        changed += 1;
+        record(path || '/');
+      }
+      return;
+    }
+
+    const left = a as Record<string, unknown>;
+    const right = b as Record<string, unknown>;
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    for (const key of keys) {
+      const next = `${path}/${key}`;
+      const inLeft = key in left && left[key] !== undefined;
+      const inRight = key in right && right[key] !== undefined;
+      if (inLeft && !inRight) {
+        removed += 1;
+        record(next);
+      } else if (!inLeft && inRight) {
+        added += 1;
+        record(next);
+      } else {
+        walk(left[key], right[key], next, depth + 1);
+      }
+    }
+  };
+
+  walk(before, after, '', 0);
+
+  return { added, removed, changed, paths: [...paths].sort(), truncated };
+};
+
+/** Combine the summaries of a run of saves into one, for a diff spanning several revisions. */
+export const mergeCommandSummaries = (summaries: readonly unknown[]): StudioCommandSummary => {
+  const counts: Record<string, number> = {};
+  let total = 0;
+  for (const raw of summaries) {
+    const summary = normalizeCommandSummary(raw);
+    for (const [id, count] of Object.entries(summary.counts)) {
+      counts[id] = (counts[id] ?? 0) + count;
+    }
+    total += summary.total;
+  }
+  return { counts, total };
+};
