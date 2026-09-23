@@ -26,6 +26,10 @@ from
 where
   "activity"."albumId" = $1
   and "asset"."deletedAt" is null
+  and (
+    "asset"."id" is null
+    or "asset"."visibility" != 'locked'
+  )
   and not (
     case
       when "asset"."id" is null then false
