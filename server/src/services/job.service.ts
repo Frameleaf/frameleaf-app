@@ -37,6 +37,10 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
       return { name: JobName.DatabaseBackup };
     }
 
+    case ManualJobName.AnalyticsCollect: {
+      return { name: JobName.AnalyticsCollect };
+    }
+
     case ManualJobName.BestPhotosBackfill: {
       return { name: JobName.BestPhotosScoreQueueAll, data: { force: true } };
     }
