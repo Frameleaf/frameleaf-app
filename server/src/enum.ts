@@ -559,6 +559,8 @@ export enum ManualJobName {
   IntegrityMissingFilesDeleteAll = `integrity-missing-files-delete-all`,
   IntegrityUntrackedFilesDeleteAll = `integrity-untracked-files-delete-all`,
   IntegrityChecksumFilesDeleteAll = `integrity-checksum-mismatch-delete-all`,
+  /** FL-79: run the local analytics collector now, the manual retry after its one automatic retry. */
+  AnalyticsCollect = 'analytics-collect',
 }
 
 export const ManualJobNameSchema = z.enum(ManualJobName).describe('Manual job name').meta({ id: 'ManualJobName' });
@@ -1779,6 +1781,8 @@ export const QueueJobStatusSchema = z.enum(QueueJobStatus).describe('Queue job s
 
 export enum JobName {
   ICloudSync = 'ICloudSync',
+  /** FL-79: the nightly local analytics collector, with its retention and downsampling. */
+  AnalyticsCollect = 'AnalyticsCollect',
   ForkSchemaBackfill = 'ForkSchemaBackfill',
 
   AssetDelete = 'AssetDelete',
@@ -2192,6 +2196,98 @@ export const SharedSpaceEventTypeSchema = z
   .meta({ id: 'SharedSpaceEventType' });
 
 /**
+ * The approved analytics series (FL-79). Each one is defined — unit, grain, source, scopes, owner —
+ * in `ANALYTICS_SERIES` (`src/utils/analytics.ts`); nothing outside this list is ever collected or
+ * reported. `collected` series are written by the local collector; the rest are read live from
+ * the tables that already hold them.
+ */
+export enum AnalyticsSeriesId {
+  LibraryItems = 'library.items',
+  LibraryPhotos = 'library.photos',
+  LibraryVideos = 'library.videos',
+  LibraryLogicalBytes = 'library.logicalBytes',
+  LibraryPhysicalBytes = 'library.physicalBytes',
+  HostVolumeUsedBytes = 'host.volumeUsedBytes',
+  HostCapacityBytes = 'host.capacityBytes',
+  Arrivals = 'library.arrivals',
+  Captures = 'library.captures',
+  ProcessingCompleted = 'processing.completed',
+  ProcessingFailed = 'processing.failed',
+  ProcessingEstimatedCost = 'processing.estimatedCostUsd',
+}
+
+export const AnalyticsSeriesIdSchema = z
+  .enum(AnalyticsSeriesId)
+  .describe('Approved analytics series')
+  .meta({ id: 'AnalyticsSeriesId' });
+
+/** How finely a stored collector sample is kept. */
+export enum AnalyticsSampleGrain {
+  Day = 'day',
+  Week = 'week',
+}
+
+/** The date range of an analytics report. */
+export enum AnalyticsRange {
+  NinetyDays = '90days',
+  Year = 'year',
+}
+
+export const AnalyticsRangeSchema = z.enum(AnalyticsRange).describe('Analytics date range').meta({ id: 'AnalyticsRange' });
+
+/** What an analytics selection covers: the whole server, one account, or one external library. */
+export enum AnalyticsScopeKind {
+  Host = 'host',
+  Account = 'account',
+  Library = 'library',
+}
+
+export const AnalyticsScopeKindSchema = z
+  .enum(AnalyticsScopeKind)
+  .describe('Analytics scope kind')
+  .meta({ id: 'AnalyticsScopeKind' });
+
+export enum AnalyticsUnit {
+  Items = 'items',
+  Bytes = 'bytes',
+  Attempts = 'attempts',
+  Usd = 'usd',
+}
+
+export const AnalyticsUnitSchema = z.enum(AnalyticsUnit).describe('Analytics unit').meta({ id: 'AnalyticsUnit' });
+
+/** The finest time step a series is defined at. `snapshot` is a single current reading. */
+export enum AnalyticsGrain {
+  Snapshot = 'snapshot',
+  Day = 'day',
+}
+
+export const AnalyticsGrainSchema = z.enum(AnalyticsGrain).describe('Analytics grain').meta({ id: 'AnalyticsGrain' });
+
+/**
+ * Whether a series measures the selection or always the whole host, whatever is selected. Host
+ * figures are never split between selections and never subtracted from to invent "other" usage.
+ */
+export enum AnalyticsMeasurementScope {
+  Selection = 'selection',
+  Host = 'host',
+}
+
+export const AnalyticsMeasurementScopeSchema = z
+  .enum(AnalyticsMeasurementScope)
+  .describe('Analytics measurement scope')
+  .meta({ id: 'AnalyticsMeasurementScope' });
+
+/** Whether a reading is current, too old to trust, or has never been taken. */
+export enum AnalyticsState {
+  Measured = 'measured',
+  Stale = 'stale',
+  Unknown = 'unknown',
+}
+
+export const AnalyticsStateSchema = z.enum(AnalyticsState).describe('Analytics reading state').meta({ id: 'AnalyticsState' });
+
+/**
  * What an administrator did to an account or to one of its libraries (FL-76). Recorded in
  * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
  */
@@ -2300,6 +2396,7 @@ export enum ConfigVisibility {
 export enum ApiTag {
   Activities = 'Activities',
   Albums = 'Albums',
+  Analytics = 'Analytics',
   ApiKeys = 'API keys',
   Authentication = 'Authentication',
   AuthenticationAdmin = 'Authentication (admin)',
