@@ -7,7 +7,13 @@ import type { IBulkAsset } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MemorySearchDto } from 'src/dtos/memory.dto.js';
-import { AssetOrderWithRandom, AssetVisibility, MemoryExportStatus, MemoryType } from 'src/enum.js';
+import {
+  AssetOrderWithRandom,
+  AssetVisibility,
+  MemoryExportStatus,
+  MemoryType,
+  PetObservationState,
+} from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
@@ -119,6 +125,24 @@ export class MemoryRepository implements IBulkAsset {
                     .select((eb) => eb.val(1).as('one'))
                     .whereRef('asset_face.assetId', '=', 'asset.id')
                     .where('person.isHidden', '=', true),
+                ),
+              ),
+            )
+            // FL-62: a photo of a pet its owner hid stays out of memories, as a photo of a hidden person
+            // does. Only the owner's confirmed observations count; literals keep the parameter list
+            // unchanged.
+            .where((eb) =>
+              eb.not(
+                eb.exists(
+                  eb
+                    .selectFrom('pet_observation')
+                    .innerJoin('pet', (join) =>
+                      join.onRef('pet.id', '=', 'pet_observation.petId').onRef('pet.ownerId', '=', 'asset.ownerId'),
+                    )
+                    .select('pet_observation.assetId')
+                    .whereRef('pet_observation.assetId', '=', 'asset.id')
+                    .where('pet_observation.state', '=', sql.lit(PetObservationState.Confirmed))
+                    .where('pet.isHidden', 'is', true),
                 ),
               ),
             )
