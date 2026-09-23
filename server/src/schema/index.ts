@@ -107,6 +107,12 @@ import {
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
+import {
+  PreservationItemTable,
+  PreservationPackageTable,
+  PreservationRestoreItemTable,
+  PreservationRestoreTable,
+} from 'src/schema/tables/preservation.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
@@ -227,6 +233,10 @@ export class ImmichDatabase {
     PetObservationTable,
     PetDetectionTable,
     PetCandidateTable,
+    PreservationPackageTable,
+    PreservationItemTable,
+    PreservationRestoreTable,
+    PreservationRestoreItemTable,
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
@@ -393,6 +403,11 @@ export interface DB {
   cluster_group_request: ClusterGroupRequestTable;
 
   physical_file: PhysicalFileTable;
+
+  preservation_package: PreservationPackageTable;
+  preservation_item: PreservationItemTable;
+  preservation_restore: PreservationRestoreTable;
+  preservation_restore_item: PreservationRestoreItemTable;
 
   render_worker: RenderWorkerTable;
   render_worker_session: RenderWorkerSessionTable;

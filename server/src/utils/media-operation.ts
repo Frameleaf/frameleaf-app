@@ -122,6 +122,11 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.Restoration,
   // FL-59: an enrichment plan records every asset as it finishes and resumes from its cursor.
   MediaOperationKind.EnrichmentPlan,
+  // FL-74: every preservation job records each item as it finishes and carries on from the rest.
+  MediaOperationKind.PreservationExport,
+  MediaOperationKind.PreservationVerify,
+  MediaOperationKind.PreservationReview,
+  MediaOperationKind.PreservationRestore,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
