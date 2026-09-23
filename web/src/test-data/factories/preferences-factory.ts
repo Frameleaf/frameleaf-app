@@ -6,6 +6,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     defaultAssetOrder: AssetOrder.Desc,
   },
   cast: {
+    adminDisabled: false,
     gCastEnabled: false,
   },
   download: {

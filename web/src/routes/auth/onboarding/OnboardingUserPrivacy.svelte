@@ -7,8 +7,14 @@
   import { t } from 'svelte-i18n';
 
   let gCastEnabled = $state(authManager.authenticated ? authManager.preferences.cast.gCastEnabled : false);
+  // FL-77: an administrator may already have turned casting off for this account.
+  const castDisabledByAdmin = $derived(authManager.authenticated && authManager.preferences.cast.adminDisabled);
 
   onDestroy(async () => {
+    if (castDisabledByAdmin) {
+      return;
+    }
+
     try {
       const response = await updateMyPreferences({ userPreferencesUpdateDto: { cast: { gCastEnabled } } });
       authManager.setPreferences(response);
@@ -23,5 +29,10 @@
     {$t('onboarding_privacy_description')}
   </p>
 
-  <SettingToggle title={$t('gcast_enabled')} subtitle={$t('gcast_enabled_description')} bind:checked={gCastEnabled} />
+  <SettingToggle
+    title={$t('gcast_enabled')}
+    subtitle={castDisabledByAdmin ? $t('frameleaf_cast_disabled_by_admin') : $t('gcast_enabled_description')}
+    disabled={castDisabledByAdmin}
+    bind:checked={gCastEnabled}
+  />
 </div>
