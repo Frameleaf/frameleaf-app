@@ -15,6 +15,8 @@ import {
   type StudioHostServices,
   type StudioProjectHandle,
 } from '$lib/frameleaf/studio/host-contract';
+import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
+import { rational } from '$lib/frameleaf/studio/rational-time';
 
 /**
  * The Studio route's own contract (FL-88, source anchor `web/src/lib/frameleaf/StudioPage.spec.ts`).
@@ -148,6 +150,8 @@ describe('Studio route, engine present', () => {
       'capabilities',
       'handoffAssetIds',
       'online',
+      // FL-96: the preview reaches the engine as data. There is still no transport here.
+      'preview',
       'project',
       'theme',
     ]);
@@ -213,6 +217,87 @@ describe('Studio route, engine present', () => {
       expect(screen.getByTestId('studio-state')).toHaveAttribute('data-phase', 'error');
     });
     expect(screen.getByText('frameleaf_studio_error_body')).toBeInTheDocument();
+  });
+});
+
+describe('Studio preview area', () => {
+  const previewView = (overrides: Partial<StudioPreviewView> = {}): StudioPreviewView => ({
+    ...idleStudioPreviewView(),
+    ...overrides,
+  });
+
+  const mounted = async (preview: StudioPreviewView) => {
+    const engine = stubEngine();
+    render(StudioHost, { ...baseProps(), loadEngine: engine.load, preview });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    return engine;
+  };
+
+  it('says nothing while the frame on screen is the current one', async () => {
+    await mounted(previewView({ phase: 'ready', messageKey: null }));
+
+    expect(screen.queryByTestId('studio-preview-state')).not.toBeInTheDocument();
+  });
+
+  it('says the frame is being rendered', async () => {
+    await mounted(previewView({ phase: 'rendering', messageKey: 'frameleaf_studio_preview_rendering' }));
+
+    expect(screen.getByTestId('studio-preview-state')).toHaveAttribute('data-preview-phase', 'rendering');
+    expect(screen.getByText('frameleaf_studio_preview_rendering')).toBeInTheDocument();
+  });
+
+  it('says a frame is out of date rather than leaving it looking current', async () => {
+    await mounted(
+      previewView({
+        phase: 'stale',
+        messageKey: 'frameleaf_studio_preview_stale',
+        staleFrame: {
+          previewId: 'preview-1',
+          revisionDigest: 'rev-a',
+          time: rational(1001, 30_000),
+          quality: 'standard',
+          objectUrl: 'blob:a',
+          framePts: null,
+          framePtsTimebase: null,
+          toneMapped: false,
+        },
+      }),
+    );
+
+    expect(screen.getByTestId('studio-preview-state')).toHaveAttribute('data-preview-phase', 'stale');
+    expect(screen.getByText('frameleaf_studio_preview_stale')).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_studio_preview_showing_previous')).toBeInTheDocument();
+  });
+
+  it('says a frame could not be rendered instead of showing an empty monitor', async () => {
+    await mounted(
+      previewView({ phase: 'unavailable', messageKey: 'frameleaf_studio_preview_unavailable', errorCode: 'worker_lost' }),
+    );
+
+    expect(screen.getByTestId('studio-preview-state')).toHaveAttribute('data-preview-phase', 'unavailable');
+    expect(screen.getByText('frameleaf_studio_preview_unavailable')).toBeInTheDocument();
+    // The stable code is diagnostics, never the message a person reads.
+    expect(screen.queryByText('worker_lost')).not.toBeInTheDocument();
+  });
+
+  it('labels a tone-mapped frame so it is never mistaken for the colour reference', async () => {
+    await mounted(
+      previewView({
+        phase: 'ready',
+        frame: {
+          previewId: 'preview-1',
+          revisionDigest: 'rev-a',
+          time: rational(1001, 30_000),
+          quality: 'standard',
+          objectUrl: 'blob:a',
+          framePts: '3003',
+          framePtsTimebase: '1/90000',
+          toneMapped: true,
+        },
+      }),
+    );
+
+    expect(screen.getByText('frameleaf_studio_preview_tone_mapped')).toBeInTheDocument();
   });
 });
 

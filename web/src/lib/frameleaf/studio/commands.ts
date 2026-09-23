@@ -115,6 +115,8 @@ export const studioCommandIds = [
   'media.relink',
   'media.remove',
   'music.add',
+  'preview.release',
+  'preview.request',
   'project.applyTemplate',
   'project.exportBundle',
   'project.importBundle',
@@ -386,6 +388,21 @@ export interface StudioCommandPayloads {
   'media.relink': { mediaId: string; assetId: string };
   'media.remove': { mediaIds: string[] };
   'music.add': { musicId: string; at: StudioTime; duration?: StudioDuration; volume?: number };
+  /** The engine no longer needs the frame it last asked for; stop paying for it. */
+  'preview.release': Record<string, never>;
+  /**
+   * Ask for one frame of the current revision (FL-96).
+   *
+   * `at` is a `StudioTime` — FL-93's exact rational — never float seconds: a preview must
+   * address the same frame the export does. The viewport is part of the frame's identity, not
+   * a hint; the engine reports the size of the surface it will paint into.
+   */
+  'preview.request': {
+    at: StudioTime;
+    quality: 'draft' | 'standard' | 'full';
+    viewportWidth: number;
+    viewportHeight: number;
+  };
   'project.applyTemplate': { templateId: string };
   'project.exportBundle': { sequenceIds?: string[] };
   'project.importBundle': { bundleUploadId: string };
@@ -442,6 +459,7 @@ export type StudioCommandScope =
   | 'job'
   | 'keyframe'
   | 'media'
+  | 'preview'
   | 'project'
   | 'review'
   | 'sequence'
@@ -996,6 +1014,28 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     undoable: true,
     owner: 'FL-94',
     prototypeSource: 'addMusic',
+  }),
+  define({
+    id: 'preview.release',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    owner: 'FL-96',
+    prototypeSource: 'Studio.jsx preview monitor',
+  }),
+  define({
+    /**
+     * Not a graph change and not undoable: asking to look at a frame changes nothing about the
+     * project. It needs the GPU worker, and it is accepted in a read-only review session
+     * because reviewing without a picture is not reviewing.
+     */
+    id: 'preview.request',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'gpuWorker',
+    owner: 'FL-96',
+    prototypeSource: 'Studio.jsx preview monitor',
   }),
   define({
     id: 'project.applyTemplate',
