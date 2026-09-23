@@ -49,8 +49,14 @@
   const hasLocation = (asset: AssetResponseDto) =>
     typeof asset.exifInfo?.latitude === 'number' && typeof asset.exifInfo?.longitude === 'number';
   const owned = (asset: AssetResponseDto) => asset.ownerId === authManager.user.id;
+  const actionable = $derived(
+    rows.filter(
+      (asset) =>
+        selected.includes(asset.id) && owned(asset) && durableBulkTracker.stateOf(asset.id)?.state !== 'pending',
+    ),
+  );
   const markers = $derived(
-    assets
+    rows
       .filter((asset) => hasLocation(asset))
       .map((asset) => ({
         id: asset.id,
@@ -110,7 +116,7 @@
     if (!valid || bulk.busy) {
       return;
     }
-    const ids = assets.filter((asset) => selected.includes(asset.id) && owned(asset)).map((asset) => asset.id);
+    const ids = actionable.map((asset) => asset.id);
     if (ids.length === 0) {
       return;
     }
@@ -188,8 +194,8 @@
     <div class="coordinates">
       <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
       <label>{$t('longitude')}<input type="number" min="-180" max="180" step="any" bind:value={longitude} /></label>
-      <Button variant="primary" disabled={!valid || selected.length === 0 || bulk.busy} onclick={ask}
-        >{$t('frameleaf_utilities_apply_location', { values: { count: selected.length } })}</Button
+      <Button variant="primary" disabled={!valid || actionable.length === 0 || bulk.busy} onclick={ask}
+        >{$t('frameleaf_utilities_apply_location', { values: { count: actionable.length } })}</Button
       >
     </div>
   </div>
