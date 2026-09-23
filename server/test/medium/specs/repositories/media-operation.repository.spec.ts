@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -382,6 +382,113 @@ describe(MediaOperationRepository.name, () => {
       const mine = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
       expect(mine.total).toBe(1);
       expect(mine.items.every((item) => item.ownerId === user.id)).toBe(true);
+    });
+  });
+
+  describe('bulk operations (FL-32)', () => {
+    const newBulk = (sut: MediaOperationRepository, ownerId: string, assetIds: string[], requestId?: string) =>
+      newOperation(sut, ownerId, {
+        kind: MediaOperationKind.Bulk,
+        label: 'favorite',
+        snapshot: { action: 'favorite', assetIds, payload: {}, truncated: false, requestId: requestId ?? null },
+        settings: {},
+        totalUnits: String(assetIds.length),
+      });
+
+    it('records the result while cancelling and reports the cancel in the same write', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      await newBulk(sut, user.id, ['a', 'b']);
+      const claim = await sut.claimNext({ kinds: [MediaOperationKind.Bulk], workerId: 'bulk-1', leaseMs: LEASE_MS });
+      await sut.requestCancel(claim!.operation.id, user.id);
+
+      const written = await sut.setBulkResult(claim!.operation.id, claim!.claimToken, {
+        result: { requested: 2, succeeded: 1 },
+        processedUnits: 1,
+        totalUnits: 2,
+        progress: 50,
+        leaseMs: LEASE_MS,
+      });
+
+      expect(written?.status).toBe(MediaOperationStatus.Cancelling);
+      expect(written?.cancelRequestedAt).not.toBeNull();
+      const row = await sut.getForOwner(claim!.operation.id, user.id);
+      expect(row?.result).toEqual({ requested: 2, succeeded: 1 });
+      expect(String(row?.processedUnits)).toBe('1');
+    });
+
+    it('refuses a result from a stale claim', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newBulk(sut, user.id, ['a']);
+      await sut.claimNext({ kinds: [MediaOperationKind.Bulk], workerId: 'bulk-1', leaseMs: LEASE_MS });
+
+      const written = await sut.setBulkResult(operation.id, '00000000-0000-4000-8000-000000000000', {
+        result: {},
+        processedUnits: 1,
+        totalUnits: 1,
+        progress: 100,
+        leaseMs: LEASE_MS,
+      });
+
+      expect(written).toBeUndefined();
+    });
+
+    it('finds a submission by its request key, for this owner only', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const requestId = '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c';
+      const operation = await newBulk(sut, user.id, ['a'], requestId);
+
+      await expect(sut.getBulkByRequestId(user.id, requestId)).resolves.toEqual(
+        expect.objectContaining({ id: operation.id }),
+      );
+      await expect(sut.getBulkByRequestId(other.id, requestId)).resolves.toBeUndefined();
+    });
+
+    it('leaves the frozen ids and recorded refusals out of the list', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      await newBulk(sut, user.id, ['a', 'b']);
+
+      const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
+
+      expect(items[0].snapshot).toEqual({ action: 'favorite', payload: {}, truncated: false, requestId: null });
+    });
+
+    it('counts only the owner’s Locked items', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: timeline } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: other.id, visibility: AssetVisibility.Locked });
+
+      await expect(sut.countLockedAssets(user.id, [locked.id, timeline.id, theirs.id])).resolves.toBe(1);
+      await expect(sut.countLockedAssets(user.id, [])).resolves.toBe(0);
+    });
+
+    it('recovers only the kinds it is asked to', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      await newBulk(sut, user.id, ['a']);
+      await newOperation(sut, user.id);
+      await sut.claimNext({ kinds: [MediaOperationKind.Bulk], workerId: 'bulk-1', leaseMs: 1 });
+      await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'render-1', leaseMs: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const recovered = await sut.recoverExpiredClaims({
+        kinds: [MediaOperationKind.Bulk],
+        errorCode: 'bulk_worker_lost',
+        error: 'gone',
+      });
+
+      expect(recovered.requeued).toBe(1);
+      const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
+      const byKind = Object.fromEntries(items.map((item) => [item.kind, item.status]));
+      expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Queued);
+      expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Preparing);
     });
   });
 });
