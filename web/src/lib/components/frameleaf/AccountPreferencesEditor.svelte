@@ -41,6 +41,13 @@
     onUpdated?: (preferences: UserPreferencesResponseDto) => void;
     /** Only offered on the administrator's own account. */
     onOpenPrivacy?: () => void;
+    /**
+     * False when the account detail's own outer tab bar (FL-76) already switches between
+     * Features / Preferences / Notifications, so this editor's internal one would only repeat
+     * it. `section` still drives which fieldset shows; the caller owns the tab the visible nav
+     * reads as current.
+     */
+    showTabs?: boolean;
   };
 
   let {
@@ -53,6 +60,7 @@
     onSaved,
     onUpdated,
     onOpenPrivacy,
+    showTabs = true,
   }: Props = $props();
 
   const store = untrack(
@@ -253,13 +261,15 @@
     </div>
   {/if}
 
-  <nav class="ap-tabs" aria-label={$t('frameleaf_account_prefs_tabs_label')}>
-    {#each ACCOUNT_PREFERENCES_SECTIONS as name (name)}
-      <button type="button" aria-current={section === name ? 'page' : undefined} onclick={() => (section = name)}>
-        {sectionLabel[name]}
-      </button>
-    {/each}
-  </nav>
+  {#if showTabs}
+    <nav class="ap-tabs" aria-label={$t('frameleaf_account_prefs_tabs_label')}>
+      {#each ACCOUNT_PREFERENCES_SECTIONS as name (name)}
+        <button type="button" aria-current={section === name ? 'page' : undefined} onclick={() => (section = name)}>
+          {sectionLabel[name]}
+        </button>
+      {/each}
+    </nav>
+  {/if}
 
   <form
     class="account-preferences"

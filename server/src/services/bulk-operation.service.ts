@@ -22,7 +22,9 @@ import {
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -36,10 +38,13 @@ import {
   BulkOperationResult,
   BulkOperationSnapshot,
   bulkAssetUpdate,
+  bulkBatchLength,
   bulkErrorMessage,
+  bulkGroupIndex,
   bulkProgress,
   classifyBulkError,
   fromBulkIdResponse,
+  isDuplicateDecisionAction,
   isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
@@ -48,6 +53,7 @@ import {
   pruneShiftOrigins,
   recordShiftOrigins,
 } from 'src/utils/bulk-operation.js';
+import { parseDuplicateGroups } from 'src/utils/duplicate-review.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 
 /** How often the worker looks for queued bulk jobs. */
@@ -77,6 +83,8 @@ type BulkRun = {
   auth: AuthDto;
   snapshot: BulkOperationSnapshot;
   total: number;
+  /** For a duplicate decision job, which group each asset belongs to: batches end on a group boundary. */
+  groupIndex: ReadonlyMap<string, string> | null;
 };
 
 /** The result with neither pass marked in flight. */
@@ -168,6 +176,8 @@ export class BulkOperationService {
     private trash: TrashService,
     private stacks: StackService,
     private enrichment: ImageEnrichmentService,
+    private livePhoto: LivePhotoService,
+    private duplicateDecisions: DuplicateDecisionService,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -291,7 +301,8 @@ export class BulkOperationService {
       return;
     }
 
-    const job: BulkRun = { id, claimToken, ownerId: operation.ownerId, auth, snapshot, total };
+    const groupIndex = bulkGroupIndex(snapshot);
+    const job: BulkRun = { id, claimToken, ownerId: operation.ownerId, auth, snapshot, total, groupIndex };
     // A stack is one call over every member, and unstacking works on stack ids: neither is batched.
     const whole =
       snapshot.action === MediaOperationBulkAction.Stack || snapshot.action === MediaOperationBulkAction.Unstack;
@@ -303,7 +314,9 @@ export class BulkOperationService {
         return;
       }
 
-      const batch = snapshot.assetIds.slice(processed, processed + (whole ? total : BULK_BATCH_SIZE));
+      // a duplicate decision job never splits a group across two batches (FL-61)
+      const size = whole ? total : bulkBatchLength(snapshot.assetIds, processed, BULK_BATCH_SIZE, groupIndex);
+      const batch = snapshot.assetIds.slice(processed, processed + size);
       result = await this.withShiftOrigins(job, result, batch);
       const marked = { ...result, inFlight: { start: processed, size: batch.length } };
       const outcomes = await this.step(job, marked, processed, batch);
@@ -348,7 +361,8 @@ export class BulkOperationService {
       }
 
       const pass = result.retry;
-      const batch = pass.ids.slice(pass.processed, pass.processed + (whole ? pass.ids.length : BULK_BATCH_SIZE));
+      const size = whole ? pass.ids.length : bulkBatchLength(pass.ids, pass.processed, BULK_BATCH_SIZE, groupIndex);
+      const batch = pass.ids.slice(pass.processed, pass.processed + size);
       result = await this.withShiftOrigins(job, result, batch);
       const outcomes = await this.step(
         job,
@@ -402,7 +416,7 @@ export class BulkOperationService {
 
     try {
       await this.requireCredentials(job.ownerId, job.snapshot);
-      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom));
+      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom, job.id));
     } catch (error) {
       if (error instanceof BulkJobError) {
         await this.write(job.id, job.claimToken, withoutInFlight(marked), processed, job.total);
@@ -572,14 +586,20 @@ export class BulkOperationService {
    * them and only the rest is sent.
    *
    * `shiftFrom` is the recorded starting date of each item, for a relative date shift only.
+   * `operationId` is the job's own id, which a duplicate decision is recorded against (FL-61).
    */
   async applyBatch(
     auth: AuthDto,
     snapshot: BulkOperationSnapshot,
     batch: string[],
     shiftFrom: BulkOperationResult['shiftFrom'] = {},
+    operationId?: string,
   ): Promise<Outcome[]> {
     await this.requireTarget(auth, snapshot);
+
+    if (isDuplicateDecisionAction(snapshot.action)) {
+      return this.applyDuplicateBatch(auth, snapshot, batch, operationId);
+    }
 
     const { action, payload } = snapshot;
     const outcomes: Outcome[] = [];
@@ -605,7 +625,7 @@ export class BulkOperationService {
     // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
     // locked stack or live photo) is only changed by a job submitted from an unlocked session.
     if (!snapshot.elevated && allowed.length > 0) {
-      const locked = await this.operations.getLockedAssetIds(allowed);
+      const locked = await this.operations.getLockedIds(allowed);
       if (locked.size > 0) {
         for (const id of allowed) {
           if (locked.has(id)) {
@@ -723,9 +743,70 @@ export class BulkOperationService {
         break;
       }
 
+      case MediaOperationBulkAction.RelinkLivePhoto: {
+        // `allowed` is the frozen set of still ids; the payload carries each still's video partner.
+        // Submit validated this pairing, so a still with no partner here means a corrupt snapshot.
+        const videoIdByPhotoId = new Map((payload.pairs ?? []).map((pair) => [pair.photoId, pair.videoId]));
+        outcomes.push(...(await this.relinkLivePhotos(auth, allowed, videoIdByPhotoId)));
+        break;
+      }
+
       default: {
         // Every action is handled above; an unknown one is refused rather than guessed at.
         outcomes.push(...allowed.map((id) => refused(id, new Error(`Unsupported bulk action: ${String(action)}`))));
+      }
+    }
+
+    return outcomes;
+  }
+
+  /**
+   * Duplicate review decisions and their undo (FL-61), one complete group at a time.
+   *
+   * A group is decided whole or not at all, so everything about it is answered for the whole group:
+   * a group holding an item locked since a job submitted without the PIN is skipped entirely rather
+   * than decided without that item, and a group's outcome is every member's outcome.
+   */
+  private async applyDuplicateBatch(
+    auth: AuthDto,
+    snapshot: BulkOperationSnapshot,
+    batch: string[],
+    operationId?: string,
+  ): Promise<Outcome[]> {
+    if (!operationId) {
+      return batch.map((id) => refused(id, new Error('A duplicate decision needs the job it belongs to')));
+    }
+
+    const inBatch = new Set(batch);
+    const locked = snapshot.elevated ? new Set<string>() : await this.duplicateDecisions.getLockedIds(batch);
+    const undo = snapshot.action === MediaOperationBulkAction.UndoDuplicates;
+    const outcomes: Outcome[] = [];
+
+    for (const group of parseDuplicateGroups(snapshot.payload.duplicateGroups)) {
+      const ids = group.memberIds.filter((id) => inBatch.has(id));
+      if (ids.length === 0) {
+        continue;
+      }
+
+      if (ids.some((id) => locked.has(id))) {
+        outcomes.push(
+          ...ids.map((id) => ({
+            id,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_locked',
+          })),
+        );
+        continue;
+      }
+
+      try {
+        const answers = undo
+          ? await this.duplicateDecisions.undoGroup(auth, operationId, group)
+          : await this.duplicateDecisions.applyGroup(auth, operationId, group);
+        const byId = new Map(answers.map((answer) => [answer.id, answer]));
+        outcomes.push(...ids.map((id) => byId.get(id) ?? refused(id, new Error('The group did not answer'))));
+      } catch (error) {
+        outcomes.push(...ids.map((id) => refused(id, error)));
       }
     }
 
@@ -809,6 +890,49 @@ export class BulkOperationService {
       );
     }
 
+    return outcomes;
+  }
+
+  /**
+   * Relink one still + video pair at a time (FL-70). `LivePhotoService.relinkOne` re-validates
+   * ownership, type and current link state itself, the same as the direct `POST /live-photo/relink`
+   * endpoint, so a pair that changed between candidate review and this batch (already linked,
+   * deleted, or claimed by another pair earlier in the same job) is refused here rather than
+   * silently reapplied. A refusal is business rule, not a transient error, so it is reported
+   * skipped: the automatic retry pass would only reach the same answer.
+   */
+  private async relinkLivePhotos(
+    auth: AuthDto,
+    photoIds: readonly string[],
+    videoIdByPhotoId: ReadonlyMap<string, string>,
+  ): Promise<Outcome[]> {
+    const outcomes: Outcome[] = [];
+    for (const photoId of photoIds) {
+      const videoId = videoIdByPhotoId.get(photoId);
+      if (!videoId) {
+        outcomes.push({
+          id: photoId,
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_not_found',
+        });
+        continue;
+      }
+      try {
+        const result = await this.livePhoto.relinkOne(auth, photoId, videoId);
+        outcomes.push(
+          result.success
+            ? ok(photoId)
+            : {
+                id: photoId,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: 'frameleaf_bulk_reason_live_photo_relink_rejected',
+                message: result.error,
+              },
+        );
+      } catch (error) {
+        outcomes.push(refused(photoId, error));
+      }
+    }
     return outcomes;
   }
 

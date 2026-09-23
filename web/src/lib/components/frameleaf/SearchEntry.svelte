@@ -4,7 +4,7 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import CommandPalette from '$lib/components/frameleaf/CommandPalette.svelte';
   import SearchDialog from '$lib/components/frameleaf/SearchDialog.svelte';
-  import { contextDiscoveryQuery, type DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
   import {
     buildCatalogueCommands,
     buildPageCommands,
@@ -15,6 +15,7 @@
   } from '$lib/frameleaf/command-index';
   import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
+  import { searchContextFor } from '$lib/frameleaf/search-context';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -103,8 +104,12 @@
   const settingsCommandIndex = $derived(commandIndex.filter((item) => item.group === 'settings'));
   const paletteIndex = $derived(paletteScope === 'settings' ? settingsCommandIndex : commandIndex);
 
-  /** The query the dialog opens on: whatever the current route already implies. */
-  const currentQuery = $derived(contextDiscoveryQuery(page.url));
+  /**
+   * The query the dialog opens on: the search the page already shows, or the scope it stands for,
+   * together with its session's filters (FL-48). Nothing the page is narrowed by is reset.
+   */
+  const currentContext = $derived(searchContextFor(page.url));
+  const currentQuery = $derived(currentContext.query);
 
   /**
    * The prototype's `screen === "admin"` branch (App.jsx): the top bar's one search entry hides
@@ -201,6 +206,7 @@
 {#if showSearch}
   <SearchDialog
     query={currentQuery}
+    unsupported={currentContext.unsupported}
     {commandIndex}
     {section}
     onClose={closeAll}

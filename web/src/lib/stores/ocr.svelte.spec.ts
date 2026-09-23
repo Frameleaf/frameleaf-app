@@ -1,5 +1,5 @@
 import { getAssetOcr } from '@immich/sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { ocrManager, type OcrBoundingBox } from '$lib/stores/ocr.svelte';
 
@@ -224,6 +224,54 @@ describe('OcrManager', () => {
       const secondReference = ocrManager.data;
 
       expect(firstReference).not.toBe(secondReference);
+    });
+  });
+
+  describe('document text (FL-63)', () => {
+    afterEach(() => {
+      ocrManager.setDocumentText(null);
+    });
+
+    it('draws the owner’s corrections and leaves dismissed lines out', async () => {
+      vi.mocked(getAssetOcr).mockResolvedValue([
+        ...createMockOcrData({ id: 'corrected', text: 'T0TAL' }),
+        ...createMockOcrData({ id: 'dismissed', text: 'noise' }),
+        ...createMockOcrData({ id: 'untouched', text: 'Lake Agnes' }),
+      ]);
+      await ocrManager.getAssetOcr('asset-123');
+
+      ocrManager.setDocumentText({
+        assetId: 'asset-123',
+        overrides: new Map<string, string | null>([
+          ['corrected', 'TOTAL'],
+          ['dismissed', null],
+        ]),
+      });
+
+      expect(ocrManager.data.map((box) => [box.id, box.text])).toEqual([
+        ['corrected', 'TOTAL'],
+        ['untouched', 'Lake Agnes'],
+      ]);
+      expect(ocrManager.hasOcrData).toBe(true);
+    });
+
+    it('never applies one photo’s decisions to another photo', async () => {
+      vi.mocked(getAssetOcr).mockResolvedValue(createMockOcrData({ id: 'line', text: 'Visible' }));
+      await ocrManager.getAssetOcr('asset-123');
+
+      ocrManager.setDocumentText({ assetId: 'other-asset', overrides: new Map([['line', null]]) });
+
+      expect(ocrManager.data.map((box) => box.text)).toEqual(['Visible']);
+    });
+
+    it('points at one region of one photo and forgets it when cleared', () => {
+      ocrManager.setHighlight('asset-123', { x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.1, x3: 0.4, y3: 0.2, x4: 0.1, y4: 0.2 });
+
+      expect(ocrManager.highlight).toMatchObject({ assetId: 'asset-123', x1: 0.1, y3: 0.2 });
+
+      ocrManager.clear();
+
+      expect(ocrManager.highlight).toBeNull();
     });
   });
 });

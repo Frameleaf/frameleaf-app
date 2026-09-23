@@ -76,6 +76,8 @@ export enum OpenQueryParam {
   NOTIFICATIONS = 'notifications',
   PURCHASE_SETTINGS = 'user-purchase-settings',
   SHARING = 'sharing',
+  /** The trash retention settings, from the Trash page (FL-47). */
+  TRASH = 'trash',
 }
 
 export const maximumLengthSearchPeople = 100;

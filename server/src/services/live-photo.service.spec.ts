@@ -158,6 +158,90 @@ describe(LivePhotoService.name, () => {
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
+    it('rejects a pair where the still and the video roles are swapped', async () => {
+      const auth = AuthFactory.create();
+      const ownerId = auth.user.id;
+      // "photo-1" is a video and "video-1" is an image: a mismatched pair, not merely reversed ids.
+      const photo = AssetFactory.from({
+        id: 'photo-1',
+        ownerId,
+        type: AssetType.Video,
+        livePhotoVideoId: null,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const video = AssetFactory.from({
+        id: 'video-1',
+        ownerId,
+        type: AssetType.Image,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      mocks.asset.getByIds.mockResolvedValue([photo, video] as never);
+
+      const result = await sut.relink(auth, { pairs: [{ photoId: 'photo-1', videoId: 'video-1' }] });
+
+      expect(result.results[0]).toEqual({
+        photoId: 'photo-1',
+        videoId: 'video-1',
+        success: false,
+        error: 'A live photo must be an image paired with a video',
+      });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('reports partial success across a batch: one relinked pair and one stale, already-claimed pair', async () => {
+      const auth = AuthFactory.create();
+      const ownerId = auth.user.id;
+      const goodPhoto = AssetFactory.from({
+        id: 'photo-good',
+        ownerId,
+        type: AssetType.Image,
+        livePhotoVideoId: null,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const goodVideo = AssetFactory.from({
+        id: 'video-good',
+        ownerId,
+        type: AssetType.Video,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const stalePhoto = AssetFactory.from({
+        id: 'photo-stale',
+        ownerId,
+        type: AssetType.Image,
+        livePhotoVideoId: null,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const staleVideo = AssetFactory.from({
+        id: 'video-stale',
+        ownerId,
+        type: AssetType.Video,
+        // Already hidden, i.e. already claimed as another live photo's motion part since this
+        // candidate was found: the classic "stale existing link" the review page must surface.
+        visibility: AssetVisibility.Hidden,
+      }).build();
+      mocks.asset.getByIds.mockResolvedValue([goodPhoto, goodVideo, stalePhoto, staleVideo] as never);
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      const result = await sut.relink(auth, {
+        pairs: [
+          { photoId: 'photo-good', videoId: 'video-good' },
+          { photoId: 'photo-stale', videoId: 'video-stale' },
+        ],
+      });
+
+      expect(result.results).toEqual([
+        { photoId: 'photo-good', videoId: 'video-good', success: true },
+        {
+          photoId: 'photo-stale',
+          videoId: 'video-stale',
+          success: false,
+          error: 'Video is already part of a live photo',
+        },
+      ]);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: 'photo-good', livePhotoVideoId: 'video-good' });
+      expect(mocks.asset.update).not.toHaveBeenCalledWith({ id: 'photo-stale', livePhotoVideoId: 'video-stale' });
+    });
+
     it('does not relink the same photo twice within a single request', async () => {
       const auth = AuthFactory.create();
       const ownerId = auth.user.id;
@@ -195,6 +279,58 @@ describe(LivePhotoService.name, () => {
       // Only the first pair is linked; the stale snapshot must not overwrite it.
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: 'photo-1', livePhotoVideoId: 'video-a' });
       expect(mocks.asset.update).not.toHaveBeenCalledWith({ id: 'photo-1', livePhotoVideoId: 'video-b' });
+    });
+  });
+
+  describe('relinkOne', () => {
+    it('links a validated pair, the same way relink() does for a single item (FL-70)', async () => {
+      const auth = AuthFactory.create();
+      const ownerId = auth.user.id;
+      const photo = AssetFactory.from({
+        id: 'photo-1',
+        ownerId,
+        type: AssetType.Image,
+        livePhotoVideoId: null,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const video = AssetFactory.from({
+        id: 'video-1',
+        ownerId,
+        type: AssetType.Video,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      mocks.asset.getByIds.mockResolvedValue([photo, video] as never);
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+
+      const result = await sut.relinkOne(auth, 'photo-1', 'video-1');
+
+      expect(result).toEqual({ success: true });
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: 'photo-1', livePhotoVideoId: 'video-1' });
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: 'video-1', visibility: AssetVisibility.Hidden });
+    });
+
+    it('rejects a pair that has since changed, without touching either asset (FL-70)', async () => {
+      const auth = AuthFactory.create();
+      const ownerId = auth.user.id;
+      const photo = AssetFactory.from({
+        id: 'photo-1',
+        ownerId,
+        type: AssetType.Image,
+        livePhotoVideoId: 'already-linked',
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      const video = AssetFactory.from({
+        id: 'video-1',
+        ownerId,
+        type: AssetType.Video,
+        visibility: AssetVisibility.Timeline,
+      }).build();
+      mocks.asset.getByIds.mockResolvedValue([photo, video] as never);
+
+      const result = await sut.relinkOne(auth, 'photo-1', 'video-1');
+
+      expect(result).toEqual({ success: false, error: 'Image is already linked to a motion video' });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
   });
 });

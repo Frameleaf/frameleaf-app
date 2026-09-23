@@ -341,6 +341,8 @@ export type AdminConfigNsfwDetectionDto = {
     threshold: number;
 };
 export type AdminConfigOcrDto = {
+    /** Suggest receipt and document fields (dates, totals, references) from recognized text */
+    documentFields?: boolean;
     /** Whether the task is enabled */
     enabled: boolean;
     /** Maximum resolution for OCR processing */
@@ -2478,6 +2480,120 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DocumentSearchResponseDto = {
+    items: AssetResponseDto[];
+    nextPage: string | null;
+    total: number;
+};
+export type DocumentRegionDto = {
+    /** Normalized x coordinate of corner 1 (0-1) */
+    x1: number;
+    /** Normalized x coordinate of corner 2 (0-1) */
+    x2: number;
+    /** Normalized x coordinate of corner 3 (0-1) */
+    x3: number;
+    /** Normalized x coordinate of corner 4 (0-1) */
+    x4: number;
+    /** Normalized y coordinate of corner 1 (0-1) */
+    y1: number;
+    /** Normalized y coordinate of corner 2 (0-1) */
+    y2: number;
+    /** Normalized y coordinate of corner 3 (0-1) */
+    y3: number;
+    /** Normalized y coordinate of corner 4 (0-1) */
+    y4: number;
+};
+export type DocumentFieldCandidateDto = {
+    /** Recognition confidence of that line; null for a corrected line */
+    confidence: number | null;
+    /** Recognized line the value was read from */
+    lineId: string;
+    region: DocumentRegionDto;
+    /** The value as the text reads it */
+    value: string;
+};
+export type DocumentFieldResponseDto = {
+    /** Values the text suggests, most likely first */
+    candidates: DocumentFieldCandidateDto[];
+    /** Recognition confidence of the supporting line (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this field */
+    editId: string | null;
+    /** The supporting text has since been read differently or is gone */
+    evidenceChanged: boolean;
+    field: DocumentField;
+    /** Recognized line supporting the value */
+    lineId: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentFieldStatus;
+    /** When the owner last decided */
+    updatedAt: string | null;
+    /** The suggested, confirmed or corrected value; null when dismissed */
+    value: string | null;
+};
+export type DocumentLineDto = {
+    /** Recognition confidence (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this line */
+    editId: string | null;
+    /** The decision was made against text that has since been read differently */
+    evidenceChanged: boolean;
+    /** Recognized line ID, or the decision ID of a kept correction */
+    id: string;
+    /** Recognized line ID; null once the line is gone */
+    ocrId: string | null;
+    /** The recognized text, while the recognized line exists */
+    recognizedText: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentLineStatus;
+    /** What the line reads: the owner’s correction or the recognized text */
+    text: string;
+};
+export type DocumentRecognitionDto = {
+    /** Text recognition is switched on */
+    enabled: boolean;
+    /** A processing destination is chosen for text recognition */
+    routed: boolean;
+};
+export type DocumentResponseDto = {
+    assetId: string;
+    /** The caller owns the photo and may correct its text */
+    canEdit: boolean;
+    fields: DocumentFieldResponseDto[];
+    /** Field suggestions are switched on */
+    fieldsEnabled: boolean;
+    lines: DocumentLineDto[];
+    /** Whether the photo can be read again; owner only */
+    recognition: (DocumentRecognitionDto) | null;
+    /** When the text was last read */
+    recognizedAt: string | null;
+};
+export type DocumentFieldEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line supporting the value */
+    lineId?: string | null;
+    /** The recognized text of that line the caller read */
+    recognizedText?: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The value, for confirm and correct */
+    value?: string;
+};
+export type DocumentLineEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line the decision is about */
+    ocrId: string;
+    /** The recognized text the caller read; refused when it changed */
+    recognizedText: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The corrected text, for correct */
+    value?: string;
+};
 export type DownloadArchiveDto = {
     /** The name of the archive to download, without extension */
     archiveName?: string;
@@ -2727,6 +2843,63 @@ export type VideoMomentUpdateDto = {
     endMs?: number | null;
     timestampMs?: number;
     transcript?: string | null;
+};
+export type DuplicateActiveGroupDto = {
+    duplicateId: string;
+    memberIds: string[];
+};
+export type DuplicateActiveOperationDto = {
+    action: MediaOperationBulkAction;
+    groups: DuplicateActiveGroupDto[];
+    operationId: string;
+};
+export type DuplicateDecisionGroupDto = {
+    applied: boolean;
+    decision: DuplicateDecisionKind;
+    decisionId: string;
+    duplicateId: string;
+    keepAssetIds: string[];
+    memberIds: string[];
+    trashAssetIds: string[];
+    /** An undo job has started on this decision */
+    undoing: boolean;
+    undone: boolean;
+};
+export type DuplicateDecisionBatchDto = {
+    createdAt: string;
+    groups: DuplicateDecisionGroupDto[];
+    /** The durable job that applied these decisions */
+    operationId: string;
+    /** Every decision of the job is applied and none has been undone */
+    undoable: boolean;
+};
+export type DuplicateDecisionHistoryDto = {
+    /** Decision and undo jobs still running */
+    active: DuplicateActiveOperationDto[];
+    /** The most recent decision jobs, newest first */
+    recent: DuplicateDecisionBatchDto[];
+};
+export type DuplicateReviewQualityDto = {
+    assetId: string;
+    /** Evidence for or against keeping this copy */
+    reasons: DuplicateQualityReason[];
+};
+export type DuplicateReviewGroupDto = {
+    /** The photos of the group this session may see */
+    assets: AssetResponseDto[];
+    blockedReason: (DuplicateGroupBlock) | null;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Whether this session may decide the group */
+    editable: boolean;
+    /** Photos of the group this session does not see */
+    hiddenMemberCount: number;
+    kind: DuplicateGroupKind;
+    qualities: DuplicateReviewQualityDto[];
+    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
+    suggestedKeepAssetIds: string[];
+    /** Size of the originals shown, in bytes */
+    totalBytes: number;
 };
 export type AssetFaceResponseDto = {
     /** Bounding box X1 coordinate */
@@ -3313,15 +3486,35 @@ export type StudioPreviewRequestDto = {
     viewportHeight: number;
     viewportWidth: number;
 };
+export type MediaOperationLivePhotoPairDto = {
+    /** Still image asset ID */
+    photoId: string;
+    /** Motion video asset ID */
+    videoId: string;
+};
+export type MediaOperationDuplicateGroupDto = {
+    decision: DuplicateDecisionKind;
+    /** For `undo-duplicates`: the recorded decision to reverse */
+    decisionId?: string;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed */
+    keepAssetIds: string[];
+    /** Every photo of the group, as reviewed */
+    memberIds: string[];
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
+    /** Duplicate review decisions, one complete group each (FL-61) */
+    duplicateGroups?: MediaOperationDuplicateGroupDto[];
     latitude?: number;
     longitude?: number;
     /** Relative shift in minutes, for `dateMode: shift` */
     minutes?: number;
+    pairs?: MediaOperationLivePhotoPairDto[];
     primaryId?: string;
     stackIds?: string[];
     tagIds?: string[];
@@ -6032,6 +6225,65 @@ export type TrashResponseDto = {
     /** Number of items in trash */
     count: number;
 };
+export type TrashApplyDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+    /** The token returned by the review */
+    token: string;
+};
+export type TrashItemResponseDto = {
+    /** Size of the original, in bytes, when known */
+    fileSizeInByte: number | null;
+    /** Asset ID */
+    id: string;
+    /** Locked media; only listed for its owner in an unlocked session */
+    isLocked: boolean;
+    /** The library scan found this external original missing and manages it; trash actions do not change it */
+    isOffline: boolean;
+    /** Original file name */
+    originalFileName: string;
+    /** When the item was moved to the trash */
+    trashedAt: string | null;
+    "type": AssetTypeEnum;
+};
+export type TrashItemsResponseDto = {
+    items: TrashItemResponseDto[];
+    /** The next page number, or null on the last page */
+    nextPage: string | null;
+    /** Items matching the filters */
+    total: number;
+};
+export type TrashReviewDto = {
+    action: TrashReviewAction;
+    /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
+    ids?: string[];
+};
+export type TrashReviewResponseDto = {
+    action: TrashReviewAction;
+    /** Combined size of their originals, in bytes */
+    bytes: number;
+    /** Items the action will change */
+    count: number;
+    /** The first file names, alphabetically */
+    names: string[];
+    /** Size of those shared originals, in bytes */
+    retainedBytes: number;
+    /** Items whose original another item still uses; deleting them does not free that file */
+    retainedOriginals: number;
+    /** Fingerprint of the reviewed set; apply refuses when the set has changed */
+    token: string;
+};
+export type TrashSummaryResponseDto = {
+    /** Combined size of their originals, in bytes. Not the space deleting them frees. */
+    bytes: number;
+    /** Items in your trash this session can see */
+    count: number;
+    /** Of those, external-library originals that went missing; the library scan manages them */
+    offline: number;
+    /** Items already permanently deleted whose files are still being removed from storage */
+    pendingDeletion: number;
+};
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
     /** User email */
@@ -7311,6 +7563,18 @@ export function getUserSessionsAdmin({ id }: {
         data: SessionResponseDto[];
     }>(`/admin/users/${encodeURIComponent(id)}/sessions`, {
         ...opts
+    }));
+}
+/**
+ * Delete a user session
+ */
+export function deleteUserSessionAdmin({ id, sessionId }: {
+    id: string;
+    sessionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, {
+        ...opts,
+        method: "DELETE"
     }));
 }
 /**
@@ -8723,6 +8987,107 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Search documents
+ */
+export function searchDocuments({ page, query, size }: {
+    page?: number;
+    query?: string;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentSearchResponseDto;
+    }>(`/documents${QS.query(QS.explode({
+        page,
+        query,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve a document
+ */
+export function getDocument({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Clear a document field decision
+ */
+export function deleteDocumentField({ field, id, revision }: {
+    field: DocumentField;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Decide a document field
+ */
+export function updateDocumentField({ field, id, documentFieldEditDto }: {
+    field: DocumentField;
+    id: string;
+    documentFieldEditDto: DocumentFieldEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentFieldEditDto
+    })));
+}
+/**
+ * Correct or dismiss a line of text
+ */
+export function updateDocumentLine({ id, documentLineEditDto }: {
+    id: string;
+    documentLineEditDto: DocumentLineEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentLineEditDto
+    })));
+}
+/**
+ * Restore a line of text
+ */
+export function deleteDocumentLine({ editId, id, revision }: {
+    editId: string;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines/${encodeURIComponent(editId)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Download asset archive
  */
 export function downloadArchive({ key, slug, downloadArchiveDto }: {
@@ -8786,6 +9151,17 @@ export function getAssetDuplicates(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Retrieve recent duplicate decisions
+ */
+export function getDuplicateDecisions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateDecisionHistoryDto;
+    }>("/duplicates/decisions", {
+        ...opts
+    }));
+}
+/**
  * Resolve duplicate groups
  */
 export function resolveDuplicates({ duplicateResolveDto }: {
@@ -8799,6 +9175,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
         method: "POST",
         body: duplicateResolveDto
     })));
+}
+/**
+ * Retrieve the duplicate review
+ */
+export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DuplicateReviewGroupDto[];
+    }>("/duplicates/review", {
+        ...opts
+    }));
 }
 /**
  * Dismiss a duplicate group
@@ -12942,6 +13329,21 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     }));
 }
 /**
+ * Apply a reviewed trash change
+ */
+export function applyTrashReview({ trashApplyDto }: {
+    trashApplyDto: TrashApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashResponseDto;
+    }>("/trash/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashApplyDto
+    })));
+}
+/**
  * Empty trash
  */
 export function emptyTrash(opts?: Oazapfts.RequestOpts) {
@@ -12951,6 +13353,29 @@ export function emptyTrash(opts?: Oazapfts.RequestOpts) {
     }>("/trash/empty", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List trash items
+ */
+export function getTrashItems({ page, query, size, sort, $type }: {
+    page?: number;
+    query?: string;
+    size?: number;
+    sort?: TrashItemSort;
+    $type?: AssetTypeEnum;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashItemsResponseDto;
+    }>(`/trash/items${QS.query(QS.explode({
+        page,
+        query,
+        size,
+        sort,
+        "type": $type
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -12979,6 +13404,32 @@ export function restoreAssets({ bulkIdsDto }: {
         method: "POST",
         body: bulkIdsDto
     })));
+}
+/**
+ * Review a trash change
+ */
+export function reviewTrash({ trashReviewDto }: {
+    trashReviewDto: TrashReviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashReviewResponseDto;
+    }>("/trash/review", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: trashReviewDto
+    })));
+}
+/**
+ * Get trash summary
+ */
+export function getTrashSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TrashSummaryResponseDto;
+    }>("/trash/summary", {
+        ...opts
+    }));
 }
 /**
  * Get all users
@@ -13715,6 +14166,7 @@ export enum Permission {
     AdminUserUpdate = "adminUser.update",
     AdminUserDelete = "adminUser.delete",
     AdminSessionRead = "adminSession.read",
+    AdminSessionDelete = "adminSession.delete",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
 export enum AssetFileType {
@@ -13739,8 +14191,33 @@ export enum AssetRejectReason {
 export enum AssetJobName {
     RefreshFaces = "refresh-faces",
     RefreshMetadata = "refresh-metadata",
+    RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum DocumentLineStatus {
+    Recognized = "recognized",
+    Corrected = "corrected",
+    Dismissed = "dismissed",
+    Kept = "kept"
+}
+export enum DocumentField {
+    Date = "date",
+    Total = "total",
+    Reference = "reference",
+    Email = "email",
+    Phone = "phone"
+}
+export enum DocumentFieldStatus {
+    Suggested = "suggested",
+    Confirmed = "confirmed",
+    Corrected = "corrected",
+    Dismissed = "dismissed"
+}
+export enum DocumentEditAction {
+    Confirm = "confirm",
+    Correct = "correct",
+    Dismiss = "dismiss"
 }
 export enum AssetTypeEnum {
     Image = "IMAGE",
@@ -14017,7 +14494,10 @@ export enum MediaOperationBulkAction {
     RefreshThumbnails = "refresh-thumbnails",
     RefreshMetadata = "refresh-metadata",
     RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces"
+    RefreshFaces = "refresh-faces",
+    RelinkLivePhoto = "relink-live-photo",
+    ResolveDuplicates = "resolve-duplicates",
+    UndoDuplicates = "undo-duplicates"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -14101,6 +14581,27 @@ export enum RestorationModelState {
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
 }
+export enum DuplicateDecisionKind {
+    Keepers = "keepers",
+    KeepAll = "keep-all",
+    Stack = "stack"
+}
+export enum DuplicateGroupBlock {
+    HiddenMembers = "hidden-members",
+    OtherOwner = "other-owner"
+}
+export enum DuplicateGroupKind {
+    Duplicates = "duplicates",
+    Burst = "burst"
+}
+export enum DuplicateQualityReason {
+    OriginalFormat = "original-format",
+    LargestFile = "largest-file",
+    HighestResolution = "highest-resolution",
+    MostMetadata = "most-metadata",
+    CompressedCopy = "compressed-copy",
+    LowerResolution = "lower-resolution"
+}
 export enum MediaOperationItemStatus {
     Ok = "ok",
     Skipped = "skipped",
@@ -14162,6 +14663,18 @@ export enum MemoryExportStatus {
     Failed = "failed",
     Cancelling = "cancelling",
     Cancelled = "cancelled"
+}
+export enum TrashReviewAction {
+    Trash = "trash",
+    Restore = "restore",
+    RestoreAll = "restore-all",
+    Delete = "delete",
+    Empty = "empty"
+}
+export enum TrashItemSort {
+    Recent = "recent",
+    Size = "size",
+    Name = "name"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
