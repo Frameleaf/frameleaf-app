@@ -243,6 +243,10 @@ where
       else false
     end
   )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $7
+  )
 order by
   "album_asset"."updateId" asc
 
@@ -383,6 +387,10 @@ where
       else false
     end
   )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $7
+  )
 order by
   "asset"."updateId" asc
 
@@ -522,6 +530,10 @@ where
       else false
     end
   )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $6
+  )
 order by
   "album_asset"."updateId" asc
 
@@ -602,6 +614,10 @@ where
       )
       else false
     end
+  )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $5
   )
 order by
   "album_asset"."updateId" asc
@@ -685,6 +701,10 @@ where
       else false
     end
   )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $5
+  )
 order by
   "asset_exif"."updateId" asc
 
@@ -767,6 +787,10 @@ where
       else false
     end
   )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $4
+  )
 order by
   "album_asset"."updateId" asc
 
@@ -823,6 +847,10 @@ where
       )
       else false
     end
+  )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $5
   )
 order by
   "album_asset"."updateId" asc
@@ -943,6 +971,10 @@ where
       )
       else false
     end
+  )
+  and (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $4
   )
 order by
   "album_asset"."updateId" asc

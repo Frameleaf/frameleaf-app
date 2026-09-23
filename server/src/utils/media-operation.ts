@@ -84,6 +84,17 @@ export const isTerminalMediaOperation = (status: MediaOperationStatus) =>
 export const canTransitionMediaOperation = (from: MediaOperationStatus, to: MediaOperationStatus) =>
   MEDIA_OPERATION_TRANSITIONS[from].includes(to);
 
+/**
+ * Automatic retries every job gets before a failure is reported (FL-104, owner decision
+ * September 22, 2026). Exactly one: a transient failure — a restart, a dropped connection, a
+ * worker that ran out of lease — is retried without anybody asking, and a failure that happens
+ * again is reported so a person can decide. Manual retry stays available after that.
+ */
+export const MEDIA_OPERATION_AUTO_RETRIES = 1;
+
+/** How long a job that failed waits before its automatic retry is claimed. */
+export const MEDIA_OPERATION_AUTO_RETRY_DELAY_MS = 30_000;
+
 /** Only a failed or cancelled job may be retried; retry copies the snapshot into a new row. */
 export const canRetryMediaOperation = (status: MediaOperationStatus) =>
   status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled;

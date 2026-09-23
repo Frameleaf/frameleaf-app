@@ -4,16 +4,17 @@ import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { asUuid, dummy, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -24,7 +25,13 @@ export interface AlbumAssetCount {
   lastModifiedAssetTimestamp: Date | null;
 }
 
-export interface AlbumInfoOptions extends HiddenContentQueryOptions {
+/**
+ * Privacy options for an album read: the hidden-content (sensitive) filter and, for an elevated
+ * session, the viewer as `lockedOwnerId` so their own Locked media is included. See `withAlbumVisibility`.
+ */
+export type AlbumReadOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
+
+export interface AlbumInfoOptions extends AlbumReadOptions {
   withAssets: boolean;
 }
 
@@ -61,7 +68,7 @@ const withAssets = (options: AlbumInfoOptions) => (eb: ExpressionBuilder<DB, 'al
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .whereRef('album_asset.albumId', '=', 'album.id')
         .where('asset.deletedAt', 'is', null)
-        .$call(withDefaultVisibility)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .orderBy('asset.fileCreatedAt', 'desc')
         .as('asset'),
@@ -171,7 +178,7 @@ export class AlbumRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
-  async getMetadataForIds(ids: string[], options: HiddenContentQueryOptions = {}): Promise<AlbumAssetCount[]> {
+  async getMetadataForIds(ids: string[], options: AlbumReadOptions = {}): Promise<AlbumAssetCount[]> {
     // Guard against running invalid query when ids list is empty.
     if (ids.length === 0) {
       return [];
@@ -180,7 +187,7 @@ export class AlbumRepository {
     return (
       this.db
         .selectFrom('asset')
-        .$call(withDefaultVisibility)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .select('album_asset.albumId as albumId')
@@ -621,26 +628,57 @@ export class AlbumRepository {
     return Number(result[0].numUpdatedRows);
   }
 
+  /**
+   * The album assets that may serve as its cover. Locked media never does (owner decision, September
+   * 22, 2026): the cover shows on album lists, in shared links and to other members, none of whom may
+   * see it, so a Locked cover is treated as invalid and replaced here.
+   */
   private updateThumbnailBuilder(eb: ExpressionBuilder<DB, 'album'>) {
     return eb
       .selectFrom('album_asset')
       .innerJoin('asset', (join) =>
-        join.onRef('album_asset.assetId', '=', 'asset.id').on('asset.deletedAt', 'is', null),
+        join
+          .onRef('album_asset.assetId', '=', 'asset.id')
+          .on('asset.deletedAt', 'is', null)
+          .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
       )
       .whereRef('album_asset.albumId', '=', 'album.id');
   }
 
   /**
+   * The first of `assetIds`, in the given order, that may become an album cover: a Locked item never
+   * does, whoever adds it. Undefined when every candidate is Locked or gone.
+   */
+  async getFirstCoverCandidate(assetIds: string[]): Promise<string | undefined> {
+    if (assetIds.length === 0) {
+      return undefined;
+    }
+
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+      .orderBy(sql`array_position(${assetIds}::uuid[], "asset"."id")`)
+      .limit(1)
+      .executeTakeFirst();
+
+    return row?.id;
+  }
+
+  /**
    * Get per-user asset contribution counts for a single album.
-   * Excludes deleted assets, orders by count desc.
+   * Excludes deleted assets and, like every album read, media the viewer may not see; orders by count desc.
    */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
-  getContributorCounts(id: string, options: HiddenContentQueryOptions = {}) {
+  getContributorCounts(id: string, options: AlbumReadOptions = {}) {
     return this.db
       .selectFrom('album_asset')
       .innerJoin('asset', 'asset.id', 'assetId')
       .where('asset.deletedAt', 'is', sql.lit(null))
       .where('album_asset.albumId', '=', id)
+      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .select('asset.ownerId as userId')
       .select((eb) => eb.fn.countAll<number>().as('assetCount'))

@@ -7,6 +7,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 
 @Injectable()
@@ -56,6 +57,9 @@ export class TimelineService extends BaseService {
     return {
       ...options,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
+      // An album shows the viewer their own Locked members in an elevated session (owner decision,
+      // September 22, 2026). The main timeline never does: the Locked folder is its own view.
+      ...(dto.albumId ? getLockedVisibilityOptions(auth) : {}),
       userIds,
       ...(locationHiddenOwnerIds.length > 0 ? { locationHiddenOwnerIds } : {}),
     };
@@ -66,6 +70,12 @@ export class TimelineService extends BaseService {
 
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
+      if (dto.userId && dto.userId !== auth.user.id) {
+        throw new BadRequestException("You may not access another user's locked timeline");
+      }
+      // Locked media is owner-private: whatever else narrows the request (an album, a person), only
+      // the caller's own Locked items may come back, so the owner scope is always the caller.
+      dto.userId = auth.user.id;
     }
 
     if (dto.albumId) {
@@ -78,9 +88,6 @@ export class TimelineService extends BaseService {
       await this.requireAccess({ auth, permission: Permission.TimelineRead, ids: [dto.userId] });
       if (dto.visibility === AssetVisibility.Archive) {
         await this.requireAccess({ auth, permission: Permission.ArchiveRead, ids: [dto.userId] });
-      }
-      if (dto.visibility === AssetVisibility.Locked && dto.userId !== auth.user.id) {
-        throw new BadRequestException("You may not access another user's locked timeline");
       }
     }
 

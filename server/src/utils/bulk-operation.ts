@@ -90,8 +90,35 @@ export type BulkOperationResult = {
   itemsTruncated: boolean;
   /**
    * The batch being applied right now, written before it is sent. If the worker dies mid-batch the
-   * next claim finds this and knows exactly which items may or may not have been changed.
+   * next claim finds this and applies the same batch again; every action is safe to repeat (a
+   * relative date shift through `shiftFrom` below).
    */
+  inFlight: { start: number; size: number } | null;
+  /**
+   * The automatic retry pass over the items that failed (owner decision, September 22, 2026).
+   *
+   * Once the first pass reaches the end, every recorded failure is moved in here, taken out of
+   * `items` and `failed`, and applied once more on the next claim. What happens to it the second
+   * time is what is reported. Null until the pass is planned; it is only ever planned once.
+   */
+  retry: BulkRetryPass | null;
+  /**
+   * The capture date each item had before a relative date shift touched it, as an ISO string, or
+   * null when it had none. Recorded in the same write that marks the batch in flight, before the
+   * batch is applied, and never overwritten: the shift then sets `from + minutes` rather than adding
+   * to whatever the date is now, so applying the same batch again never moves an item twice. Kept
+   * only while an item might still be applied again — in flight, failed or waiting for its retry.
+   */
+  shiftFrom: Record<string, string | null>;
+};
+
+export type BulkRetryPass = {
+  /** The failed items, in snapshot order. */
+  ids: string[];
+  /** How many there are; kept apart from `ids` so the list view can drop the ids and keep this. */
+  total: number;
+  /** The retry pass's own cursor over `ids`. */
+  processed: number;
   inFlight: { start: number; size: number } | null;
 };
 
@@ -110,6 +137,37 @@ const parseInFlight = (value: unknown): BulkOperationResult['inFlight'] => {
   const start = asNumber(value.start);
   const size = asNumber(value.size);
   return Number.isInteger(start) && Number.isInteger(size) && start >= 0 && size > 0 ? { start, size } : null;
+};
+
+const parseRetryPass = (value: unknown): BulkRetryPass | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  // The list query trims the ids and keeps the count, so the bound falls back to it.
+  const ids = [...new Set(asStringArray(value.ids))];
+  const total = ids.length > 0 ? ids.length : asNumber(value.total);
+  const processed = asNumber(value.processed);
+  return {
+    ids,
+    total,
+    processed: Number.isInteger(processed) ? Math.min(Math.max(0, processed), total) : 0,
+    inFlight: parseInFlight(value.inFlight),
+  };
+};
+
+const parseShiftFrom = (value: unknown): Record<string, string | null> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const origins: Record<string, string | null> = {};
+  for (const [id, from] of Object.entries(value)) {
+    if (from === null) {
+      origins[id] = null;
+    } else if (typeof from === 'string' && !Number.isNaN(Date.parse(from))) {
+      origins[id] = from;
+    }
+  }
+  return origins;
 };
 
 const BULK_ACTIONS = new Set<string>(Object.values(MediaOperationBulkAction));
@@ -158,6 +216,8 @@ export const emptyBulkResult = (requested: number): BulkOperationResult => ({
   items: [],
   itemsTruncated: false,
   inFlight: null,
+  retry: null,
+  shiftFrom: {},
 });
 
 /** Read an accumulated result back, tolerating a row that has never been written to. */
@@ -191,9 +251,10 @@ export const parseBulkResult = (result: unknown, requested: number): BulkOperati
     items,
     itemsTruncated: result.itemsTruncated === true,
     inFlight: parseInFlight(result.inFlight),
+    retry: parseRetryPass(result.retry),
+    shiftFrom: parseShiftFrom(result.shiftFrom),
   };
 };
-
 
 /**
  * Fold a finished batch into the running result.
@@ -245,10 +306,12 @@ export const bulkProcessedCount = (result: BulkOperationResult): number =>
 /**
  * What a retry of this operation must cover.
  *
- * Two groups, and both matter:
+ * Three groups, and all of them matter:
  *
- * - items that were attempted and failed, and
- * - items the operation never reached, because it was cancelled or its worker died partway.
+ * - items that were attempted and failed,
+ * - items the operation never reached, because it was cancelled or its worker died partway —
+ *   including a batch that was in flight at that moment, which is safe to apply again, and
+ * - items waiting in the automatic retry pass that the pass had not reached yet.
  *
  * Items that were skipped are *not* included: they were refused because the account has no access
  * to them, and running them again would fail in exactly the same way. The order of the original
@@ -267,29 +330,121 @@ export const bulkResumeIds = (
   );
   const cursor = Math.max(0, Math.min(processed, snapshot.assetIds.length));
   const unreached = new Set(snapshot.assetIds.slice(cursor));
-
-  // A batch that was in flight when the worker died may already have been applied. Running it
-  // again is harmless for every action except a relative date shift, which would move those items
-  // twice; for that one action the interrupted batch is left out rather than risked.
-  if (result.inFlight && !isReplaySafe(snapshot)) {
-    const { start, size } = result.inFlight;
-    for (const id of snapshot.assetIds.slice(start, start + size)) {
-      unreached.delete(id);
-      retryable.delete(id);
-    }
+  for (const id of bulkRetryPending(result)) {
+    unreached.add(id);
   }
 
   return snapshot.assetIds.filter((id) => retryable.has(id) || unreached.has(id));
 };
 
+/** The items of the automatic retry pass it has not answered for yet. */
+export const bulkRetryPending = (result: Pick<BulkOperationResult, 'retry'>): string[] =>
+  result.retry ? result.retry.ids.slice(result.retry.processed) : [];
+
 /**
- * Whether applying the same batch twice leaves the library as applying it once would.
+ * Plan the automatic retry pass: every recorded failure, once (owner decision, September 22, 2026).
  *
- * True for everything this runner does except a relative date shift. The runner uses it to decide
- * what to do with a batch that was in flight when a worker died: replay it, or report it.
+ * The failed items leave `items` and the `failed` count and go into `retry`, in snapshot order, so
+ * the counts stay exact while they wait — they are neither done nor failed until the second attempt
+ * answers for them. Returns null when there is nothing to retry or the pass has already been
+ * planned; a job's items are retried automatically once, never more.
+ *
+ * Only recorded failures can be retried. When more failed than `BULK_RECORDED_ITEM_LIMIT` allows
+ * the list to hold, the unrecorded ones stay counted as failed, as `itemsTruncated` already says.
  */
-export const isReplaySafe = (snapshot: Pick<BulkOperationSnapshot, 'action' | 'payload'>): boolean =>
-  !(snapshot.action === MediaOperationBulkAction.ChangeDate && snapshot.payload.dateMode === 'shift');
+export const planBulkRetryPass = (
+  snapshot: Pick<BulkOperationSnapshot, 'assetIds'>,
+  result: BulkOperationResult,
+): BulkOperationResult | null => {
+  if (result.retry) {
+    return null;
+  }
+
+  const failed = new Set(
+    result.items.filter((item) => item.status === MediaOperationItemStatus.Failed).map((item) => item.id),
+  );
+  if (failed.size === 0) {
+    return null;
+  }
+
+  const ids = snapshot.assetIds.filter((id) => failed.has(id));
+  return {
+    ...result,
+    failed: Math.max(0, result.failed - ids.length),
+    items: result.items.filter((item) => !(item.status === MediaOperationItemStatus.Failed && failed.has(item.id))),
+    retry: { ids, total: ids.length, processed: 0, inFlight: null },
+  };
+};
+
+/** True for the one action whose repeat would compound: a relative date shift. */
+export const isRelativeDateShift = (snapshot: Pick<BulkOperationSnapshot, 'action' | 'payload'>): boolean =>
+  snapshot.action === MediaOperationBulkAction.ChangeDate && snapshot.payload.dateMode === 'shift';
+
+/**
+ * Record where each item's capture date started, for the ones not recorded yet.
+ *
+ * An item already in `shiftFrom` keeps its first value: by now the shift may have been applied to
+ * it, and reading the date again would record the shifted date as the start and move it twice.
+ * An item the reader did not answer for (not the owner's, or gone) is left out; the access check
+ * refuses it before anything is applied.
+ */
+export const recordShiftOrigins = (
+  result: BulkOperationResult,
+  ids: readonly string[],
+  current: ReadonlyMap<string, Date | null>,
+): BulkOperationResult => {
+  const shiftFrom = { ...result.shiftFrom };
+  for (const id of ids) {
+    if (id in shiftFrom || !current.has(id)) {
+      continue;
+    }
+    const value = current.get(id) ?? null;
+    shiftFrom[id] = value ? value.toISOString() : null;
+  }
+  return { ...result, shiftFrom };
+};
+
+/**
+ * Forget the starting dates nothing can apply again: keep an item only while it is in flight,
+ * recorded as failed (a manual retry may reach it) or waiting in the retry pass.
+ */
+export const pruneShiftOrigins = (
+  snapshot: Pick<BulkOperationSnapshot, 'assetIds'>,
+  result: BulkOperationResult,
+): BulkOperationResult => {
+  const keys = Object.keys(result.shiftFrom);
+  if (keys.length === 0) {
+    return result;
+  }
+
+  const keep = new Set([
+    ...result.items.filter((item) => item.status === MediaOperationItemStatus.Failed).map((item) => item.id),
+    ...bulkRetryPending(result),
+  ]);
+  if (result.inFlight) {
+    for (const id of snapshot.assetIds.slice(result.inFlight.start, result.inFlight.start + result.inFlight.size)) {
+      keep.add(id);
+    }
+  }
+  if (result.retry?.inFlight) {
+    const { start, size } = result.retry.inFlight;
+    for (const id of result.retry.ids.slice(start, start + size)) {
+      keep.add(id);
+    }
+  }
+
+  return {
+    ...result,
+    shiftFrom: Object.fromEntries(Object.entries(result.shiftFrom).filter(([id]) => keep.has(id))),
+  };
+};
+
+/** The recorded starting dates a manual retry of these items carries over. */
+export const carriedShiftOrigins = (
+  result: Pick<BulkOperationResult, 'shiftFrom'>,
+  ids: readonly string[],
+): Record<string, string | null> =>
+  Object.fromEntries(ids.filter((id) => id in result.shiftFrom).map((id) => [id, result.shiftFrom[id]]));
 
 export const chunkIds = (ids: readonly string[], size = BULK_BATCH_SIZE): string[][] => {
   const width = Number.isInteger(size) && size > 0 ? size : BULK_BATCH_SIZE;
@@ -437,8 +592,10 @@ export const bulkAssetUpdate = (
       return { visibility: AssetVisibility.Timeline };
     }
     case MediaOperationBulkAction.ChangeDate: {
+      // A relative shift is not a bulk update: `dateTimeRelative` adds to whatever the date is now,
+      // so repeating it would move items twice. The runner shifts from recorded starting dates.
       return payload.dateMode === 'shift'
-        ? { dateTimeRelative: payload.minutes }
+        ? null
         : { dateTimeOriginal: payload.dateTimeOriginal, ...(payload.timeZone ? { timeZone: payload.timeZone } : {}) };
     }
     case MediaOperationBulkAction.ChangeDescription: {

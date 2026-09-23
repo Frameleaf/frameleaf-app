@@ -272,6 +272,24 @@ describe(DownloadService.name, () => {
       expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', { excludeNsfw: true });
     });
 
+    it('should include the elevated owner as the Locked owner of an album download (FL-32)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
+      mocks.downloadRepository.downloadAlbumId.mockReturnValue(
+        makeStream([
+          { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
+          { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
+        ]),
+      );
+
+      await expect(sut.getDownloadInfo(auth, { albumId: 'album-1' })).resolves.toEqual(downloadResponse);
+
+      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', {
+        lockedOwnerId: auth.user.id,
+      });
+    });
+
     it('should return a list of archives (userId)', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(

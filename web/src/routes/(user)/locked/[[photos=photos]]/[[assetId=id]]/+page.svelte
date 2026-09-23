@@ -23,8 +23,10 @@
    *
    * `locked` in the bulk context keeps this destination's own, narrower action set — move out of
    * the Locked folder, download, change date and location, and the permanent delete — which is
-   * exactly what the legacy select bar offered here. Sharing, albums and the refresh jobs are not
-   * offered on locked items, as they were not before.
+   * what the legacy select bar offered here, plus adding to an album: this page is only open in
+   * an unlocked session, and an unlocked person may put Locked items in an album (owner decision,
+   * September 22, 2026). They stay Locked, and the album hides them outside that session. Sharing
+   * and the refresh jobs are not offered on locked items.
    */
   interface Props {
     data: PageData;

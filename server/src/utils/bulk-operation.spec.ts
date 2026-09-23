@@ -7,14 +7,19 @@ import {
   bulkPayloadProblem,
   bulkProgress,
   bulkResumeIds,
+  bulkRetryPending,
+  carriedShiftOrigins,
   chunkIds,
   classifyBulkError,
   emptyBulkResult,
   fromBulkIdResponse,
-  isReplaySafe,
+  isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
   parseBulkSnapshot,
+  planBulkRetryPass,
+  pruneShiftOrigins,
+  recordShiftOrigins,
 } from 'src/utils/bulk-operation.js';
 
 const ids = ['a', 'b', 'c', 'd', 'e'];
@@ -98,32 +103,136 @@ describe('bulk-operation', () => {
       expect(bulkResumeIds(snapshotOf(), result, 3)).toEqual(['b', 'd', 'e']);
     });
 
-    it('leaves out an interrupted relative date shift so nothing moves twice', () => {
+    it('includes an interrupted relative date shift, which is now safe to apply again', () => {
       const snapshot = snapshotOf({
         action: MediaOperationBulkAction.ChangeDate,
         payload: { dateMode: 'shift', minutes: 30 },
       });
       const result = { ...emptyBulkResult(5), inFlight: { start: 2, size: 2 } };
 
-      expect(bulkResumeIds(snapshot, result, 2)).toEqual(['e']);
+      expect(bulkResumeIds(snapshot, result, 2)).toEqual(['c', 'd', 'e']);
     });
 
-    it('replays an interrupted batch that is safe to repeat', () => {
+    it('replays an interrupted batch of any other action', () => {
       const result = { ...emptyBulkResult(5), inFlight: { start: 2, size: 2 } };
 
       expect(bulkResumeIds(snapshotOf(), result, 2)).toEqual(['c', 'd', 'e']);
     });
+
+    it('covers the items the automatic retry pass had not reached', () => {
+      const result = {
+        ...emptyBulkResult(5),
+        succeeded: 3,
+        retry: { ids: ['b', 'd'], total: 2, processed: 1, inFlight: null },
+      };
+
+      expect(bulkResumeIds(snapshotOf(), result, 5)).toEqual(['d']);
+    });
   });
 
-  describe(isReplaySafe.name, () => {
-    it('treats only a relative date shift as unsafe to repeat', () => {
-      expect(isReplaySafe(snapshotOf())).toBe(true);
-      expect(
-        isReplaySafe(snapshotOf({ action: MediaOperationBulkAction.ChangeDate, payload: { dateMode: 'set' } })),
-      ).toBe(true);
-      expect(
-        isReplaySafe(snapshotOf({ action: MediaOperationBulkAction.ChangeDate, payload: { dateMode: 'shift' } })),
-      ).toBe(false);
+  describe(planBulkRetryPass.name, () => {
+    const withOutcomes = () =>
+      mergeBulkOutcomes(emptyBulkResult(5), [
+        { id: 'a', status: MediaOperationItemStatus.Ok },
+        { id: 'b', status: MediaOperationItemStatus.Failed, reasonKey: 'frameleaf_bulk_reason_failed' },
+        { id: 'c', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_no_permission' },
+        { id: 'd', status: MediaOperationItemStatus.Failed, reasonKey: 'frameleaf_bulk_reason_failed' },
+        { id: 'e', status: MediaOperationItemStatus.Ok },
+      ]);
+
+    it('moves every recorded failure into one retry pass, keeping the counts exact', () => {
+      const planned = planBulkRetryPass(snapshotOf(), withOutcomes());
+
+      expect(planned).toEqual(
+        expect.objectContaining({
+          succeeded: 2,
+          failed: 0,
+          skipped: 1,
+          retry: { ids: ['b', 'd'], total: 2, processed: 0, inFlight: null },
+        }),
+      );
+      expect(planned!.items.map((item) => item.id)).toEqual(['c']);
+      expect(bulkRetryPending(planned!)).toEqual(['b', 'd']);
+    });
+
+    it('plans the pass only once and not at all without failures', () => {
+      const planned = planBulkRetryPass(snapshotOf(), withOutcomes())!;
+
+      expect(planBulkRetryPass(snapshotOf(), planned)).toBeNull();
+      expect(planBulkRetryPass(snapshotOf(), emptyBulkResult(5))).toBeNull();
+    });
+
+    it('reads the pass back from the row, and its count without its ids as the list returns it', () => {
+      const planned = planBulkRetryPass(snapshotOf(), withOutcomes())!;
+      const stored = JSON.parse(JSON.stringify(planned));
+
+      expect(parseBulkResult(stored, 5).retry).toEqual(planned.retry);
+      expect(parseBulkResult({ ...stored, retry: { total: 2, processed: 1 } }, 5).retry).toEqual({
+        ids: [],
+        total: 2,
+        processed: 1,
+        inFlight: null,
+      });
+    });
+  });
+
+  describe('relative date shift origins', () => {
+    const shift = snapshotOf({
+      action: MediaOperationBulkAction.ChangeDate,
+      payload: { dateMode: 'shift', minutes: 30 },
+    });
+
+    it('recognises only a relative shift', () => {
+      expect(isRelativeDateShift(shift)).toBe(true);
+      expect(isRelativeDateShift(snapshotOf({ action: MediaOperationBulkAction.ChangeDate, payload: {} }))).toBe(false);
+      expect(isRelativeDateShift(snapshotOf())).toBe(false);
+    });
+
+    it('records a starting date once and never overwrites it with a shifted one', () => {
+      const first = recordShiftOrigins(
+        emptyBulkResult(5),
+        ['a', 'b', 'c'],
+        new Map<string, Date | null>([
+          ['a', new Date('2026-09-22T10:00:00.000Z')],
+          ['b', null],
+        ]),
+      );
+
+      expect(first.shiftFrom).toEqual({ a: '2026-09-22T10:00:00.000Z', b: null });
+
+      // The same batch again, after the shift reached `a`: its first value stands.
+      const again = recordShiftOrigins(first, ['a'], new Map([['a', new Date('2026-09-22T10:30:00.000Z')]]));
+      expect(again.shiftFrom.a).toBe('2026-09-22T10:00:00.000Z');
+    });
+
+    it('keeps starting dates only while an item might be applied again', () => {
+      const result = {
+        ...mergeBulkOutcomes(emptyBulkResult(5), [
+          { id: 'a', status: MediaOperationItemStatus.Ok },
+          { id: 'b', status: MediaOperationItemStatus.Failed },
+        ]),
+        inFlight: { start: 2, size: 1 },
+        shiftFrom: {
+          a: '2026-01-01T00:00:00.000Z',
+          b: '2026-01-02T00:00:00.000Z',
+          c: '2026-01-03T00:00:00.000Z',
+          d: '2026-01-04T00:00:00.000Z',
+        },
+      };
+
+      expect(Object.keys(pruneShiftOrigins(shift, result).shiftFrom).toSorted()).toEqual(['b', 'c']);
+    });
+
+    it('carries recorded starting dates over to a manual retry', () => {
+      expect(carriedShiftOrigins({ shiftFrom: { a: null, b: '2026-01-02T00:00:00.000Z' } }, ['b', 'e'])).toEqual({
+        b: '2026-01-02T00:00:00.000Z',
+      });
+    });
+
+    it('reads back only well-formed starting dates', () => {
+      const stored = { shiftFrom: { a: null, b: '2026-01-02T00:00:00.000Z', c: 'soon', d: 4 } };
+
+      expect(parseBulkResult(stored, 4).shiftFrom).toEqual({ a: null, b: '2026-01-02T00:00:00.000Z' });
     });
   });
 
@@ -162,10 +271,9 @@ describe('bulk-operation', () => {
       }
     });
 
-    it('builds a relative shift and an absolute date', () => {
-      expect(bulkAssetUpdate(MediaOperationBulkAction.ChangeDate, { dateMode: 'shift', minutes: -90 })).toEqual({
-        dateTimeRelative: -90,
-      });
+    it('builds an absolute date and leaves a relative shift to the runner', () => {
+      // `dateTimeRelative` adds to the current date; repeating it would move items twice.
+      expect(bulkAssetUpdate(MediaOperationBulkAction.ChangeDate, { dateMode: 'shift', minutes: -90 })).toBeNull();
       expect(
         bulkAssetUpdate(MediaOperationBulkAction.ChangeDate, {
           dateMode: 'set',

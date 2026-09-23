@@ -26,6 +26,7 @@ describe('the bulk controller', () => {
   let api: BulkGateway;
   let controller: BulkController;
   const queued = vi.fn();
+  const tracker = { track: vi.fn() };
 
   const dispatch = vi.fn((action: LibrarySessionAction) => {
     session = reduceLibrarySession(session, action);
@@ -44,7 +45,8 @@ describe('the bulk controller', () => {
       upsertTags: vi.fn().mockResolvedValue([]),
     } as unknown as BulkGateway;
     queued.mockClear();
-    controller = new BulkController({ dispatch, gateway: api, queued });
+    tracker.track.mockClear();
+    controller = new BulkController({ dispatch, gateway: api, queued, tracker });
   });
 
   it('offers restore as the undo for a trashed selection and runs it against the same ids', async () => {
@@ -83,6 +85,28 @@ describe('the bulk controller', () => {
     expect(queued).toHaveBeenCalled();
   });
 
+  it('keeps a large delete on the page with a loader on every tile until the job answers for it', async () => {
+    const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
+
+    await controller.run('delete', ids);
+
+    // Nothing leaves the page at submit; the tracker removes items as the job finishes them.
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mutated' }));
+    expect(tracker.track).toHaveBeenCalledWith('delete', 'job-1', ids);
+  });
+
+  it('follows each part of a set split across several jobs with its own ids', async () => {
+    vi.mocked(api.createBulkMediaOperation)
+      .mockResolvedValueOnce({ id: 'job-1' } as never)
+      .mockResolvedValueOnce({ id: 'job-2' } as never);
+    const ids = Array.from({ length: 50_001 }, (_, index) => `id-${index}`);
+
+    await controller.run('archive', ids);
+
+    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-1', ids.slice(0, 50_000));
+    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-2', ids.slice(50_000));
+  });
+
   it('keeps a large download in this tab, because only this tab can receive it', async () => {
     const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
     (api as unknown as { downloadArchive: unknown }).downloadArchive = vi.fn().mockResolvedValue(undefined);
@@ -111,6 +135,7 @@ describe('the bulk controller', () => {
     // The server owns the job now; Activity shows it, so the tab's own record is dropped.
     expect(session.operations).toHaveLength(0);
     expect(queued).toHaveBeenCalled();
+    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-1', ['a', 'b']);
   });
 
   it('reports a refused scope as a failed operation without calling anything', async () => {
