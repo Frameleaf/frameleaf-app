@@ -103,17 +103,17 @@ async function mutateJson(root, file, mutate) {
 
 test("documentation coverage joins every reproducibility contract", async () => {
   assert.deepEqual(await validateDocumentationCoverage(), {
-    confluencePages: 72,
-    currentMirrorReceipts: 35,
+    confluencePages: 73,
+    currentMirrorReceipts: 37,
     declaredDependencies: 408,
     epics: 24,
-    historicalMirrorReceipts: 37,
+    historicalMirrorReceipts: 36,
     jiraIssues: 142,
     jiraLinks: 275,
     ledgerRequirements: 1197,
     ledgerSourceRows: 1217,
     sourceAnchorSha256:
-      "0ee95ad4a2b4b187e112d2dcc30495f9ee7575973dc8b9c877f6deb5f6000196",
+      "092ad94b4eb09ce991111a59f5c24c4f0b9c272deb3a8ea5a7221baad2105c1d",
     sourceAnchors: 517,
     stories: 118,
   });
