@@ -52,6 +52,19 @@ import {
 export const RENDER_WORKER_STALE_MS = 10 * 60 * 1000;
 
 const budgetWindowStart = () => new Date(Date.now() - ML_BUDGET_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+/** Active and waiting jobs summed over `queues`; a queue without counts adds nothing. */
+const sumQueueLoad = <Q>(queues: readonly Q[], counts: ReadonlyMap<Q, { active: number; waiting: number }>) => {
+  const total = { active: 0, waiting: 0 };
+  for (const queue of queues) {
+    const entry = counts.get(queue);
+    if (entry) {
+      total.active += entry.active;
+      total.waiting += entry.waiting;
+    }
+  }
+  return total;
+};
+
 const iso = (value: unknown): string | null => (value ? new Date(value as string | Date).toISOString() : null);
 
 /**
@@ -110,15 +123,12 @@ export class WorkerInventoryService {
           configuredUrls,
           backlog,
           restorationLoad: loadByDestination.get(row.id),
-          libraryLoad: LIBRARY_ML_WORKLOADS.filter((workload) => routedTo.get(workload) === row.id)
-            .flatMap((workload) => LIBRARY_ANALYSIS_QUEUES[workload])
-            .reduce(
-              (total, queue) => {
-                const entry = queueByName.get(queue);
-                return entry ? { active: total.active + entry.active, waiting: total.waiting + entry.waiting } : total;
-              },
-              { active: 0, waiting: 0 },
+          libraryLoad: sumQueueLoad(
+            LIBRARY_ML_WORKLOADS.filter((workload) => routedTo.get(workload) === row.id).flatMap(
+              (workload) => LIBRARY_ANALYSIS_QUEUES[workload],
             ),
+            queueByName,
+          ),
         }),
       );
     }
@@ -300,6 +310,9 @@ export class WorkerInventoryService {
       }
       byWorker.set(claimant.workerId, current);
     }
-    return [...byWorker.values()].sort((a, b) => a.workerId.localeCompare(b.workerId));
+    return byWorker
+      .values()
+      .toArray()
+      .sort((a, b) => a.workerId.localeCompare(b.workerId));
   }
 }
