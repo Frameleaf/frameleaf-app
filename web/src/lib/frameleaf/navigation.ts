@@ -25,6 +25,7 @@ import {
   mdiTrashCanOutline,
   mdiTuneVariant,
 } from '@mdi/js';
+import type { Translations } from 'svelte-i18n';
 import { Route } from '$lib/route';
 
 /**
@@ -48,7 +49,7 @@ export type PrimaryDestinationId = 'library' | 'studio' | 'activity';
 export interface PrimaryDestination {
   id: PrimaryDestinationId;
   /** Key in i18n/en.json. */
-  labelKey: string;
+  labelKey: Translations;
   icon: string;
   href: string;
 }
@@ -201,7 +202,7 @@ export type RailDestinationId =
 export interface RailDestination {
   id: RailDestinationId;
   /** Key in i18n/en.json. */
-  labelKey: string;
+  labelKey: Translations;
   icon: string;
   href: string;
   /** When true the entry is only current for its exact path, not for child routes. */
@@ -213,7 +214,7 @@ export type RailSectionId = 'library' | 'albums' | 'spaces' | 'explore' | 'tools
 export interface RailSection {
   id: RailSectionId;
   /** Key in i18n/en.json, or undefined for an unlabelled group. */
-  labelKey?: string;
+  labelKey?: Translations;
   destinations: RailDestination[];
 }
 
@@ -247,7 +248,7 @@ export const defaultRailCapabilities = (): RailCapabilities => ({
 
 const destination = (
   id: RailDestinationId,
-  labelKey: string,
+  labelKey: Translations,
   icon: string,
   href: string,
   options: { exact?: boolean } = {},

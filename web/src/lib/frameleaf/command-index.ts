@@ -1,10 +1,10 @@
 import {
-  getAllAlbums,
+  getAlbumTree,
   getAllPeople,
   getSearchSuggestions,
   searchPerson,
   SearchSuggestionType,
-  type AlbumResponseDto,
+  type AlbumTreeResponseDto,
   type PersonResponseDto,
 } from '@immich/sdk';
 import {
@@ -46,7 +46,7 @@ import {
   mdiVideoOutline,
   mdiWrench,
 } from '@mdi/js';
-import type { MessageFormatter } from 'svelte-i18n';
+import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
 import type { CommandIndexInput, CommandInput } from '$lib/frameleaf/command-palette';
 import { buildPrimaryDestinations, buildRailSections, type RailCapabilities } from '$lib/frameleaf/navigation';
@@ -380,10 +380,10 @@ const settingsHref = (base: string, key: string) => `${base}?isOpen=${encodeURIC
 export const buildSettingsCommands = ($t: MessageFormatter, context: CommandIndexContext): CommandInput[] => {
   const areas: CommandInput[] = USER_SETTINGS_AREAS.map((area) => ({
     id: `user:${area.key}`,
-    title: $t(area.titleKey),
+    title: $t(area.titleKey as Translations),
     subtitle: $t('frameleaf_search_subtitle_settings'),
     icon: area.icon,
-    keywords: [$t(area.descriptionKey), $t('settings')],
+    keywords: [$t(area.descriptionKey as Translations), $t('settings')],
     href: settingsHref(Route.userSettings(), area.key),
   }));
 
@@ -395,10 +395,10 @@ export const buildSettingsCommands = ($t: MessageFormatter, context: CommandInde
     ...areas,
     ...ADMIN_SETTINGS_AREAS.map((area) => ({
       id: `admin:${area.key}`,
-      title: $t(area.titleKey),
+      title: $t(area.titleKey as Translations),
       subtitle: $t('frameleaf_search_subtitle_admin_settings'),
       icon: area.icon,
-      keywords: [$t(area.descriptionKey), $t('admin.system_settings')],
+      keywords: [$t(area.descriptionKey as Translations), $t('admin.system_settings')],
       href: settingsHref(Route.systemSettings(), area.key),
     })),
   ];
@@ -455,7 +455,7 @@ export const loadCommandCatalogue = async (term: string, signal?: AbortSignal): 
           ),
       [],
     ),
-    settle<AlbumResponseDto[]>(getAllAlbums({}, { signal }), []),
+    settle<AlbumTreeResponseDto>(getAlbumTree({ signal }), { albums: [], collections: [], spaces: [] }),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.State }, { signal }), []),
     settle<string[]>(getSearchSuggestions({ $type: SearchSuggestionType.Country }, { signal }), []),
