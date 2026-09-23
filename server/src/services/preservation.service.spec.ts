@@ -342,9 +342,17 @@ describe(PreservationService.name, () => {
 
   describe('downloadPackage', () => {
     it('refuses a package holding Locked items to a session that has not unlocked', async () => {
+      repository.getPackage.mockResolvedValue(packageOf({ includeLocked: true }));
+      await expect(sut.downloadPackage(owner, newUuidV7())).rejects.toBeInstanceOf(ForbiddenException);
+      expect(storage.createZipStream).not.toHaveBeenCalled();
+    });
+
+    it('does not tell a locked session that items were locked after the package was written', async () => {
       repository.getPackage.mockResolvedValue(packageOf());
       repository.hasLockedItems.mockResolvedValue(true);
-      await expect(sut.downloadPackage(owner, newUuidV7())).rejects.toBeInstanceOf(ForbiddenException);
+      const refusal = sut.downloadPackage(owner, newUuidV7());
+      await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
+      await expect(refusal).rejects.toThrow('This package is not ready to download');
       expect(storage.createZipStream).not.toHaveBeenCalled();
     });
 
