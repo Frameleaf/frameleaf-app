@@ -251,6 +251,33 @@ export class AssetService extends BaseService {
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }
 
+  /**
+   * Shift capture dates by a number of minutes from recorded starting dates (FL-32).
+   *
+   * `updateAll` with `dateTimeRelative` adds to whatever the date is now, so sending it twice moves
+   * an item twice. This sets each item to `from + minutes` instead and otherwise follows the same
+   * steps — the capture date and its lock, then the asset's own dates, then the sidecar — so it ends
+   * in the same place, and sending it again changes nothing. The durable bulk runner records `from`
+   * before a batch is first sent, which is what makes an interrupted or retried shift safe.
+   */
+  async shiftDateTimeOriginalFrom(auth: AuthDto, items: { id: string; from: Date }[], minutes: number): Promise<void> {
+    const ids = items.map(({ id }) => id);
+    if (ids.length === 0) {
+      return;
+    }
+
+    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+
+    for (const { id, from } of items) {
+      const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
+      if (updated) {
+        await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(updated.dateTimeOriginal?.toISOString()) });
+      }
+    }
+
+    await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+  }
+
   async copy(
     auth: AuthDto,
     {

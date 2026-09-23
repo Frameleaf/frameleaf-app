@@ -170,6 +170,7 @@ describe('durable bulk jobs', () => {
         skipped: 10,
         snapshotTruncated: false,
         itemsTruncated: false,
+        retried: 0,
       },
       ...overrides,
     });
@@ -206,6 +207,7 @@ describe('durable bulk jobs', () => {
           skipped: 10,
           snapshotTruncated: false,
           itemsTruncated: false,
+          retried: 0,
         },
       }),
     );
@@ -230,6 +232,7 @@ describe('durable bulk jobs', () => {
             skipped: 10,
             snapshotTruncated: false,
             itemsTruncated: false,
+            retried: 0,
           },
         }),
       ).canRetry,
