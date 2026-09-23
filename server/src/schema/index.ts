@@ -77,6 +77,12 @@ import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
+import {
+  PetCandidateTable,
+  PetDetectionTable,
+  PetObservationTable,
+  PetTable,
+} from 'src/schema/tables/pet.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -161,6 +167,10 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonGroupAuditTable,
+    PetTable,
+    PetObservationTable,
+    PetDetectionTable,
+    PetCandidateTable,
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
@@ -288,6 +298,11 @@ export interface DB {
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_group_audit: PersonGroupAuditTable;
+
+  pet: PetTable;
+  pet_observation: PetObservationTable;
+  pet_detection: PetDetectionTable;
+  pet_candidate: PetCandidateTable;
 
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;

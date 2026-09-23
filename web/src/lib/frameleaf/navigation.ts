@@ -14,6 +14,7 @@ import {
   mdiLinkVariant,
   mdiMapMarkerMultipleOutline,
   mdiMapOutline,
+  mdiPawOutline,
   mdiShieldCheckOutline,
   mdiShieldLockOutline,
   mdiStarOutline,
@@ -37,10 +38,12 @@ import { Route } from '$lib/route';
  *   Library Care, Settings, Support
  *
  * Every entry points at a route that exists in production, so the rail never renders a
- * dead link. Two Explore destinations from the design are therefore absent until their
- * production owner lands: Pets waits on the identity model in FL-58, and Documents
- * waits on the discovery work in FL-46/FL-62 (the search DTO carries no document media
- * filter today, only a free-text `ocr` term). Add them here when those routes exist.
+ * dead link. Pets landed with the identity model in FL-58 and is unconditional: it is a
+ * Frameleaf feature with no upstream account preference behind it, so there is nothing
+ * for an account to switch off. One Explore destination from the design is still absent:
+ * Documents waits on the discovery work in FL-46/FL-62 (the search DTO carries no
+ * document media filter today, only a free-text `ocr` term). Add it here when that route
+ * exists.
  *
  * Duplicate review, large files and Live Photo pairing deliberately have no rail entry.
  * They stay under Settings -> Utilities, reached through the single Library Care entry.
@@ -58,6 +61,7 @@ export type RailDestinationId =
   | 'sharing'
   | 'explore'
   | 'people'
+  | 'pets'
   | 'memories'
   | 'places'
   | 'map'
@@ -164,6 +168,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       destinations: [
         ...keep(capabilities.search, destination('explore', 'explore', mdiImageSearchOutline, Route.explore())),
         ...keep(capabilities.people, destination('people', 'people', mdiAccountOutline, Route.people())),
+        destination('pets', 'frameleaf_pets_title', mdiPawOutline, Route.pets()),
         ...keep(capabilities.memories, destination('memories', 'memories', mdiHistory, Route.memories())),
         destination('places', 'places', mdiMapMarkerMultipleOutline, Route.places()),
         ...keep(capabilities.map, destination('map', 'map', mdiMapOutline, Route.map())),
