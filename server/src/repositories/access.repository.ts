@@ -9,6 +9,7 @@ import {
   asUuid,
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
+  isMotionOfLockedStill,
   isNotLockedAsset,
   tagHasVisibleAssetOrNoAssets,
   withDefaultVisibility,
@@ -235,6 +236,8 @@ class AssetAccess {
       .where('asset.id', 'in', [...assetIds])
       .where('asset.ownerId', '=', userId)
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      // the motion part of a Locked live photo is as private as the still (FL-34)
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
@@ -263,6 +266,8 @@ class AssetAccess {
       )
 
       .where('asset.id', 'in', [...assetIds])
+      // a partner never reaches the motion part of a Locked live photo (FL-34)
+      .where((eb) => eb.not(isMotionOfLockedStill(eb)))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
@@ -364,6 +369,7 @@ class AssetFileAccess {
       .select('asset_file.id')
       .innerJoin('asset', 'asset.id', 'asset_file.assetId')
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
       .where('asset.ownerId', '=', userId)
       .where('asset_file.id', 'in', [...fileIds])
       .execute()
