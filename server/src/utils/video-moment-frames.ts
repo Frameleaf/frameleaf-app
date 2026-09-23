@@ -89,7 +89,9 @@ export const cutFrames = async (
       const { width, height } = await deps.media.getImageMetadata(path).catch(() => ({ width: 0, height: 0 }));
       cut.push({ frameIndex, timestampMs, path, width: width || null, height: height || null, score });
     } catch (error) {
-      deps.logger.warn(`Could not cut moment frame ${frameIndex} of video ${source.id} at ${timestampMs} ms: ${errorMessage(error)}`);
+      deps.logger.warn(
+        `Could not cut moment frame ${frameIndex} of video ${source.id} at ${timestampMs} ms: ${errorMessage(error)}`,
+      );
       await deps.storage.unlink(path).catch(() => {});
     }
   }
@@ -145,7 +147,11 @@ export const ensureVideoFrames = async (
   // removed only once the new ones are published.
   const nonce = Date.now().toString(36);
   const frames = await cutFrames(deps, source, config, (frameIndex) =>
-    StorageCore.getNestedPath(StorageFolder.Thumbnails, source.ownerId, `${source.id}_moment_${nonce}_${frameIndex}.jpeg`),
+    StorageCore.getNestedPath(
+      StorageFolder.Thumbnails,
+      source.ownerId,
+      `${source.id}_moment_${nonce}_${frameIndex}.jpeg`,
+    ),
   );
   if (frames.length === 0) {
     return { status: 'failed', message: 'No frame could be cut from this video' };
