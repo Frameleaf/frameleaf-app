@@ -249,7 +249,11 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       labelKey: 'frameleaf_bulk_create_shared_link',
       icon: 'mdiLinkVariant',
       group: 'primary',
-      available: live && has,
+      // The prototype never creates a public link silently: Share link opens the shared-link form
+      // (expiry, password, permissions) over the selected items. A scope snapshot has no item list
+      // to hand the form, so the action waits until the selection is explicit.
+      dialog: true,
+      available: live && has && !snapshot,
     },
     {
       id: 'download',

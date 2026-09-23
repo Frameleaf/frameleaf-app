@@ -46,6 +46,9 @@ export type BulkUndoEntry = {
   run: () => Promise<void>;
 };
 
+/** How long the result toast keeps its Undo, as the prototype's undo toast does. */
+const UNDO_TOAST_TIMEOUT_MS = 8000;
+
 const requestKey = () =>
   globalThis.crypto?.randomUUID?.() ?? `fl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
@@ -127,16 +130,6 @@ export class BulkController {
     const translate = await getFormatter();
     const { key, values } = bulkResultSummary(result);
     const message = `${translate(`frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations)}: ${translate(key, { values })}`;
-    if (result.succeeded.length === 0 && result.failed.length > 0) {
-      toastManager.danger(message);
-    } else {
-      toastManager.primary(message);
-    }
-
-    const removed = this.#removed(action, result);
-    if (removed.length > 0) {
-      this.#dispatch({ type: 'mutated', removedIds: removed });
-    }
 
     // Trash undoes through restore; every other reversible action reverses itself.
     this.undo = result.undo
@@ -149,6 +142,35 @@ export class BulkController {
           },
         }
       : null;
+
+    if (result.succeeded.length === 0 && result.failed.length > 0) {
+      toastManager.danger(message);
+    } else if (this.undo) {
+      // The prototype's toast carries Undo. It matters most when the action emptied the selection
+      // (trash, restore, remove from album): the bar and its own Undo button close with it, so the
+      // toast is the only place left to reverse the action.
+      const undo = this.undo;
+      toastManager.primary(
+        {
+          description: message,
+          button: (close) => ({
+            label: translate('undo'),
+            onclick: () => {
+              close();
+              void undo.run();
+            },
+          }),
+        },
+        { timeout: UNDO_TOAST_TIMEOUT_MS },
+      );
+    } else {
+      toastManager.primary(message);
+    }
+
+    const removed = this.#removed(action, result);
+    if (removed.length > 0) {
+      this.#dispatch({ type: 'mutated', removedIds: removed });
+    }
   }
 
   /**

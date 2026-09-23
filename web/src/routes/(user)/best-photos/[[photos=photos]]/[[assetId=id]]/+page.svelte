@@ -78,7 +78,7 @@
   });
 </script>
 
-<UserPageLayout hideNavbar={librarySession.selection.length > 0} title={data.meta.title} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   <section class="m-4 mb-12 bg-immich-bg dark:bg-immich-dark-bg">
     <ResultsView
       assets={timelineAssets}
