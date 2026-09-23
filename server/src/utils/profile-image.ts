@@ -60,9 +60,16 @@ type ReplaceRepos = Repos & {
  * cannot run (the iCloud reconciler, stack merges). Safe to call at any time: users without such a
  * picture are left alone, and a picture the user changed in the meantime is kept.
  */
-export const replaceLockedProfileImages = async (repos: ReplaceRepos, config: SystemConfig): Promise<void> => {
+export const replaceLockedProfileImages = async (
+  repos: ReplaceRepos,
+  getConfig: () => Promise<SystemConfig>,
+): Promise<void> => {
   const users = await repos.user.getLockedProfileImageSources();
+  if (users.length === 0) {
+    return;
+  }
 
+  const config = await getConfig();
   for (const user of users) {
     if (!user.profileImageAssetId) {
       continue;

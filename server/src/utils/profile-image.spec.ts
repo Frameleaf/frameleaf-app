@@ -36,7 +36,7 @@ describe(replaceLockedProfileImages.name, () => {
   it('copies the replacement photo and removes the picture copied from the Locked photo', async () => {
     const repos = setup();
 
-    await replaceLockedProfileImages(repos, defaults);
+    await replaceLockedProfileImages(repos, () => Promise.resolve(defaults));
 
     expect(repos.user.getProfileImageReplacement).toHaveBeenCalledWith('user-id');
     expect(repos.media.generateThumbnail).toHaveBeenCalledWith(
@@ -58,7 +58,7 @@ describe(replaceLockedProfileImages.name, () => {
     const repos = setup();
     repos.user.getProfileImageReplacement.mockResolvedValue(undefined);
 
-    await replaceLockedProfileImages(repos, defaults);
+    await replaceLockedProfileImages(repos, () => Promise.resolve(defaults));
 
     expect(repos.media.generateThumbnail).not.toHaveBeenCalled();
     expect(repos.user.replaceLockedProfileImage).toHaveBeenCalledWith('user-id', lockedAssetId, {
@@ -75,7 +75,7 @@ describe(replaceLockedProfileImages.name, () => {
     const repos = setup();
     (repos.media.generateThumbnail as ReturnType<typeof vitest.fn>).mockRejectedValue(new Error('unreadable'));
 
-    await replaceLockedProfileImages(repos, defaults);
+    await replaceLockedProfileImages(repos, () => Promise.resolve(defaults));
 
     expect(repos.logger.warn).toHaveBeenCalled();
     expect(repos.user.replaceLockedProfileImage).toHaveBeenCalledWith('user-id', lockedAssetId, {
@@ -88,7 +88,7 @@ describe(replaceLockedProfileImages.name, () => {
     const repos = setup();
     repos.user.replaceLockedProfileImage.mockResolvedValue(false);
 
-    await replaceLockedProfileImages(repos, defaults);
+    await replaceLockedProfileImages(repos, () => Promise.resolve(defaults));
 
     expect(repos.job.queue).toHaveBeenCalledWith({
       name: JobName.FileDelete,
@@ -104,7 +104,7 @@ describe(replaceLockedProfileImages.name, () => {
     const repos = setup();
     repos.user.getLockedProfileImageSources.mockResolvedValue([]);
 
-    await replaceLockedProfileImages(repos, defaults);
+    await replaceLockedProfileImages(repos, () => Promise.resolve(defaults));
 
     expect(repos.user.getProfileImageReplacement).not.toHaveBeenCalled();
     expect(repos.user.replaceLockedProfileImage).not.toHaveBeenCalled();
