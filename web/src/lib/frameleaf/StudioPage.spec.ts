@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
 import {
@@ -133,6 +133,25 @@ describe('Studio route, engine absent', () => {
     render(StudioHost, { ...baseProps(), queuedJobs: 1, onOpenActivity, loadEngine: loadStudioEngine });
 
     expect(screen.getByText('frameleaf_studio_queued_open_activity')).toBeInTheDocument();
+  });
+
+  it('offers the bundle export only when the route passes it, and opens its dialog (FL-91)', async () => {
+    const exportButton = () => screen.queryByRole('button', { name: /frameleaf_studio_bundle_export_action/ });
+    const { unmount } = render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(exportButton()).not.toBeInTheDocument();
+    unmount();
+
+    const onExportBundle = vi.fn();
+    render(StudioHost, { ...baseProps(), onExportBundle, loadEngine: loadStudioEngine });
+    await fireEvent.click(exportButton()!);
+
+    expect(onExportBundle).toHaveBeenCalledTimes(1);
+  });
+
+  it('withdraws the bundle export once the session loses the project', () => {
+    render(StudioHost, { ...baseProps(), onExportBundle: vi.fn(), accessLost: true, loadEngine: loadStudioEngine });
+
+    expect(screen.queryByRole('button', { name: /frameleaf_studio_bundle_export_action/ })).not.toBeInTheDocument();
   });
 });
 

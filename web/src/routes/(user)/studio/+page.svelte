@@ -13,14 +13,16 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
+  import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
+  import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
-  import type { StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
+  import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
   import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
@@ -44,6 +46,7 @@
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { getProfileImageUrl } from '$lib/utils';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -176,6 +179,37 @@
   });
 
   /**
+   * The editor's bundle export dialog (FL-91). It opens from the header's Export bundle button, or
+   * when the editor asks for an export without saying whether to include copies of owned media;
+   * then the editor's command waits here for the answer.
+   */
+  let exportDialogOpen = $state(false);
+  /** Not reactive: the resolver of the editor command waiting for the dialog, if one is. */
+  let pendingExportChoice: ((includeMedia: boolean | null) => void) | null = null;
+
+  const settleExportChoice = (choice: boolean | null): boolean => {
+    const resolve = pendingExportChoice;
+    pendingExportChoice = null;
+    resolve?.(choice);
+    return resolve !== null;
+  };
+
+  const askIncludeMedia = () =>
+    new Promise<boolean | null>((resolve) => {
+      // One question at a time: an older one still waiting is answered as cancelled.
+      settleExportChoice(null);
+      pendingExportChoice = resolve;
+      exportDialogOpen = true;
+    });
+
+  // Closing the dialog any way but Export answers a waiting editor command with a cancel.
+  $effect(() => {
+    if (!exportDialogOpen) {
+      settleExportChoice(null);
+    }
+  });
+
+  /**
    * Portable bundles (FL-91). Both commands queue a durable job and leave the open graph alone: an
    * export writes the stored revision, an import creates a new project. The person follows either
    * in Activity.
@@ -186,6 +220,7 @@
       revision: storedRevision ?? 0,
       saved: storedRevision !== null,
     }),
+    askIncludeMedia,
     onQueued: () => {
       queuedJobs += 1;
       toastManager.primary($t('frameleaf_studio_bundle_queued'));
@@ -289,6 +324,34 @@
   const onBack = () => void goto(Route.studioProjects());
   const onOpenActivity = () => void goto(Route.activity());
 
+  /** Only an owner's saved project can be exported, so the header offers nothing otherwise. */
+  const canExportBundle = $derived(
+    storedRevision !== null && sessionState?.access === 'owner' && !accessLost && !forbidden,
+  );
+  const onExportBundle = () => {
+    exportDialogOpen = true;
+  };
+
+  /**
+   * The person chose Export. A waiting editor command takes the answer and carries on; otherwise the
+   * header started it, and the choice travels as a `project.exportBundle` command through the same
+   * bridge and handler, so both starts share one path to the export endpoint.
+   */
+  const onConfirmExport = async (includeMedia: boolean) => {
+    const answered = settleExportChoice(includeMedia);
+    exportDialogOpen = false;
+    if (answered) {
+      return;
+    }
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope('project.exportBundle', { includeMedia }, project.revision),
+    ]);
+    // The handler shows its own refusals; the bridge's (offline, access) have not been shown yet.
+    if (result?.status === 'rejected' && result.reason !== 'failed') {
+      toastManager.danger($t(result.messageKey));
+    }
+  };
+
   const onReload = () => void session.reload();
   const onReacquire = () => void session.reacquire();
   const onTakeOver = () => void session.takeOver();
@@ -334,6 +397,9 @@
     const lost = () => {
       accessLost = true;
       dirty = false;
+      // Nothing may be exported for a session that no longer has the project.
+      exportDialogOpen = false;
+      settleExportChoice(null);
       void previewClient.dispose();
       preview = idleStudioPreviewView();
       void session.dispose();
@@ -348,6 +414,7 @@
   });
 
   onDestroy(() => {
+    settleExportChoice(null);
     void previewClient.dispose();
     void session.dispose();
   });
@@ -368,6 +435,15 @@
 </script>
 
 <!--
+  The Frameleaf top bar stays above the editor, as on the prototype's Studio screen, so Library,
+  Studio and Activity are one click away (FL-30). Studio has no library rail. Leaving through the
+  bar goes through the same unsaved-work guard as any other navigation.
+-->
+<header>
+  <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={false} />
+</header>
+
+<!--
   `droppedAssetCount` keeps the handoff honest: items the person selected that this session
   cannot read are reported in the chrome rather than quietly missing from the bin.
   `onOpenActivity` follows the bundle jobs this session queued (FL-91) to Activity (FL-104).
@@ -383,6 +459,7 @@
   {services}
   {onBack}
   {onOpenActivity}
+  onExportBundle={canExportBundle ? onExportBundle : undefined}
   {queuedJobs}
   dirty={dirty || (sessionState?.hasDraft ?? false)}
   accessLost={accessLost || forbidden}
@@ -396,4 +473,11 @@
   {onReacquire}
   {onTakeOver}
   {onSaveCopy}
+/>
+
+<!-- The host-side export dialog: the header's Export bundle and the editor's own export both ask here. -->
+<StudioBundleExportDialog
+  bind:open={exportDialogOpen}
+  projectName={project.name}
+  onConfirm={(includeMedia) => void onConfirmExport(includeMedia)}
 />

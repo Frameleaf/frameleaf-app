@@ -2,10 +2,11 @@
   /**
    * The Svelte lifecycle wrapper for the vendored React editor (FL-88, `STU-201`).
    *
-   * This component owns the full-screen Studio chrome from the prototype
-   * (`design/frameleaf/template/src/Studio.jsx`, `studio.css`): the header with the way back
-   * to the library, the project name, the save indicator, who is editing, and the link to
-   * Activity where an export or restoration job is followed. Everything below the header is
+   * This component owns the Studio chrome from the prototype
+   * (`design/frameleaf/template/src/Studio.jsx`, `studio.css`), which fills the page below the
+   * Frameleaf top bar: the header with the way back to the project library, the project name, the
+   * save indicator, who is editing, the project bundle export (FL-91) and the link to Activity
+   * where an export or restoration job is followed. Everything below the header is
    * one element handed to the engine, which owns the workspace tabs, the media bin, the
    * program monitor, the inspector and the timeline.
    *
@@ -29,6 +30,7 @@
     mdiArrowLeft,
     mdiCheckCircle,
     mdiCloudOffOutline,
+    mdiExportVariant,
     mdiHistory,
     mdiLockOutline,
     mdiProgressClock,
@@ -73,6 +75,7 @@
     services,
     onBack,
     onOpenActivity,
+    onExportBundle,
     accessLost = false,
     dirty = false,
     queuedJobs = 0,
@@ -105,6 +108,11 @@
      * When it is absent the host renders no link rather than a control that goes nowhere.
      */
     onOpenActivity?: () => void;
+    /**
+     * Opens the host's project bundle export dialog (FL-91). The route passes it only while the
+     * person owns a saved project, the one case the server exports; otherwise there is no button.
+     */
+    onExportBundle?: () => void;
     /** The session lost the project: sign-out, session delete or relock. */
     accessLost?: boolean;
     /** The engine reports a draft it has not persisted. */
@@ -370,6 +378,13 @@
       </Button>
     {/if}
 
+    {#if onExportBundle && !accessLost}
+      <Button variant="quiet" onclick={onExportBundle}>
+        <Icon icon={mdiExportVariant} size="16" />
+        {$t('frameleaf_studio_bundle_export_action')}
+      </Button>
+    {/if}
+
     {#if hasSavedProject}
       <Button variant="quiet" pressed={historyOpen} onclick={() => (historyOpen = !historyOpen)}>
         <Icon icon={mdiHistory} size="16" />
@@ -505,9 +520,13 @@
    * subtree and nothing the engine loads can restyle the shell.
    */
   .fl-studio {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
+    /*
+     * Below the Frameleaf top bar, as the prototype's Studio screen sits in the workspace under
+     * `.topbar` (FL-30). Its own stacking context at level 0 keeps the top bar's menus above it.
+     */
+    position: relative;
+    z-index: 0;
+    height: calc(100dvh - var(--fl-topbar-height));
     display: flex;
     flex-direction: column;
     background: var(--fl-canvas);
@@ -658,6 +677,12 @@
   @media (max-width: 48rem) {
     .fl-studio-editor-as {
       display: none;
+    }
+  }
+  /* Tailwind's `md`, where the top bar becomes its two-row phone grid. */
+  @media (max-width: 47.99rem) {
+    .fl-studio {
+      height: calc(100dvh - var(--fl-topbar-height-phone));
     }
   }
 </style>
