@@ -2,7 +2,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     getSmartAlbumReevaluateEstimate,
-    type Kind3 as SmartAlbumKind,
+    type SmartAlbumBuiltInKind as SmartAlbumKind,
     triggerSmartAlbumReevaluate,
     type SmartAlbumReevaluateEstimateDto,
     type SmartAlbumReevaluateRequestDto,

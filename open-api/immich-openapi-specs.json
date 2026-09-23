@@ -58281,6 +58281,17 @@
         ],
         "type": "object"
       },
+      "SmartAlbumBuiltInKind": {
+        "enum": [
+          "travel",
+          "documents",
+          "screenshots",
+          "food",
+          "pets",
+          "nature"
+        ],
+        "type": "string"
+      },
       "SmartAlbumReevaluateEstimateDto": {
         "properties": {
           "totalAssets": {
@@ -58305,16 +58316,8 @@
       "SmartAlbumReevaluateRequestDto": {
         "properties": {
           "kind": {
-            "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind.",
-            "enum": [
-              "travel",
-              "documents",
-              "screenshots",
-              "food",
-              "pets",
-              "nature"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/SmartAlbumBuiltInKind",
+            "description": "Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind."
           }
         },
         "type": "object"
