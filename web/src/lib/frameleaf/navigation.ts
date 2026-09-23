@@ -62,16 +62,66 @@ const pathOf = (href: string) => href.split('?')[0].split('#')[0];
 
 const isWithin = (pathname: string, root: string) => pathname === root || pathname.startsWith(`${root}/`);
 
-/** Settings, account and administration: the prototype's settings screen, where no workspace is current. */
+/**
+ * Settings, account and administration: the prototype's `openSettings()` in App.jsx always sets
+ * `screen("admin")`, whatever area it opens (account preferences, system administration,
+ * utilities, trash settings), so the switcher leaves no workspace current there.
+ */
 const SETTINGS_ROOTS = ['/admin', '/user-settings'];
+
+/** Whether `pathname` is one of the prototype's single "admin" screen's routes. */
+export const isSettingsRoute = (pathname: string): boolean =>
+  SETTINGS_ROOTS.some((root) => isWithin(pathname, root));
+
+/**
+ * Index pages the prototype's own "collections" screen (`setScreen("collections")` in App.jsx):
+ * browsing every album or every shared space. The switcher leaves Library uncurrent there.
+ * Opening one specific album or space (`navigateCollection` in App.jsx) lands back on the
+ * library screen, so only the index itself — not its children — is excluded.
+ */
+const LIBRARY_INDEX_ROOTS = [pathOf(Route.albums()), pathOf(Route.sharing())];
+
+/**
+ * Roots that are the prototype's "library" screen: every named collection reached through
+ * `navigate()`/`navigateCollection()`/`exploreQuery()` in App.jsx (Library, Favorites, Recently
+ * added, Best Photos, Archive, Locked, Pets, an individual album or shared space), plus the
+ * "explore" screen (`goExplore()`). Each root's own child routes (an asset viewer, an
+ * album/space's own photos) stay current with it. `/search` has no screen of its own in the
+ * prototype — it opens as a panel over whatever screen was already current — so it is treated
+ * as library, the screen search is always reached from.
+ */
+const LIBRARY_ROOTS = [
+  Route.photos(),
+  Route.favorites(),
+  Route.recentlyAdded(),
+  Route.bestPhotos(),
+  Route.archive(),
+  Route.locked(),
+  Route.suppressed(),
+  Route.pets(),
+  Route.albums(),
+  Route.sharing(),
+  Route.explore(),
+  Route.search(),
+].map(pathOf);
+
+/**
+ * `people` is the prototype's "people" screen, in the Library-highlight set — but only its list.
+ * Opening one person (`openPerson` in App.jsx) switches to a separate "person" screen that the
+ * switcher leaves uncurrent, unlike every other library child route above.
+ */
+const PEOPLE_ROOT = pathOf(Route.people());
 
 /**
  * Which workspace the current page belongs to, for the switcher's current state.
  *
- * Studio covers the project library and the editor (`/studio`, `/studio/projects`); Activity covers
- * its own page. Settings and administration belong to none, as in the prototype, where the
- * settings screen leaves the switcher without a current item. Every other page of the signed-in
- * app is part of the library, the workspace the rail navigates, so Library stays current there.
+ * Studio covers the project library and the editor (`/studio`, `/studio/projects`); Activity
+ * covers its own page. Settings and administration belong to none. Library is current on its own
+ * screens and "people"/"explore", exactly as the prototype's `.primary-nav` decides it in
+ * App.jsx (`screen === value || (value === "library" && ["people", "explore"].includes(screen))`).
+ * Every other screen the prototype has — Places, Map, Memories, Tags, Folders, the all-albums and
+ * all-spaces indexes, a person's own page, a partner's library, Buy, Workflows, Trash, Utilities —
+ * leaves the switcher without a current item there too, even though the rail still navigates them.
  */
 export const currentPrimaryDestination = (pathname: string): PrimaryDestinationId | null => {
   if (isWithin(pathname, pathOf(Route.studio()))) {
@@ -80,10 +130,19 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
   if (isWithin(pathname, pathOf(Route.activity()))) {
     return 'activity';
   }
-  if (SETTINGS_ROOTS.some((root) => isWithin(pathname, root))) {
+  if (isSettingsRoute(pathname)) {
     return null;
   }
-  return 'library';
+  if (pathname === PEOPLE_ROOT) {
+    return 'library';
+  }
+  if (LIBRARY_INDEX_ROOTS.includes(pathname)) {
+    return null;
+  }
+  if (LIBRARY_ROOTS.some((root) => isWithin(pathname, root))) {
+    return 'library';
+  }
+  return null;
 };
 
 /**
