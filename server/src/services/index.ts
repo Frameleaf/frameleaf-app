@@ -35,6 +35,7 @@ import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { MediaOperationSweepService } from 'src/services/media-operation-sweep.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
@@ -123,6 +124,7 @@ export const services = [
   MapService,
   MediaHealthService,
   MediaOperationService,
+  MediaOperationSweepService,
   RenderWorkerService,
   MediaService,
   MemoryService,
