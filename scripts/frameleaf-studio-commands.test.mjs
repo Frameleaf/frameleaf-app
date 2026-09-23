@@ -8,11 +8,9 @@ import {
   CATALOGUE_PATH,
   ISSUE_MAP_PATH,
   MANIFEST_PATH,
-  NATIVE_CONTRACT_PATH,
   PROTOTYPE_PATH,
   SERVER_MIRROR_PATH,
   WEB_VOCABULARY_PATH,
-  buildNativeContract,
   buildServerMirror,
   canonicalJson,
   generate,
@@ -48,7 +46,7 @@ test('the published catalogue and its generated contracts are current', async ()
   for (const [file, content] of Object.entries(files)) {
     assert.equal(await read(file), content, `${file} is stale; run the generator with --write`);
   }
-  assert.deepEqual(Object.keys(files).sort(), [NATIVE_CONTRACT_PATH, CATALOGUE_PATH, SERVER_MIRROR_PATH].sort());
+  assert.deepEqual(Object.keys(files).sort(), [CATALOGUE_PATH, SERVER_MIRROR_PATH].sort());
 });
 
 test('the catalogue covers every mutating function of the prototype project model', async () => {
@@ -145,14 +143,12 @@ test('the web vocabulary parser reads the file this repository actually has', as
   assert.equal(web.payloadKeys.length, document.counts.commands);
 });
 
-test('the generated contracts describe every command in both languages', async () => {
+test('the server mirror describes every command', async () => {
   const { document } = await generate(repository);
   const mirror = buildServerMirror(document);
-  const dart = buildNativeContract(document);
 
   for (const command of document.commands) {
     assert.ok(mirror.includes(`'${command.id}': {`), `${command.id} missing from the server mirror`);
-    assert.ok(dart.includes(`id: '${command.id}',`), `${command.id} missing from the native contract`);
     for (const [name, declared] of Object.entries(command.payload)) {
       assert.ok(mirror.includes(`${name}: '${declared}',`), `${command.id}.${name} missing from the server mirror`);
     }
