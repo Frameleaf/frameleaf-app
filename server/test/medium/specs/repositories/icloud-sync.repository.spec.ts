@@ -47,7 +47,7 @@ describe(ICloudSyncRepository.name, () => {
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(async () => {
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({}));
+    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     connection.state = 'connected';
   });

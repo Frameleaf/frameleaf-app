@@ -24,8 +24,8 @@ const box = (x: number, y: number, width = 0.3, height = 0.05): DocumentRegion =
   y4: y + height,
 });
 
-const line = (id: string, text: string, region: DocumentRegion, scores = { boxScore: 0.95, textScore: 0.9 }) =>
-  ({ id, text, ...region, ...scores }) satisfies DocumentOcrLine;
+const line = (id: string, text: string, region: DocumentRegion, scores?: { boxScore: number; textScore: number }) =>
+  ({ id, text, ...region, ...(scores ?? { boxScore: 0.95, textScore: 0.9 }) }) satisfies DocumentOcrLine;
 
 const edit = (
   overrides: Partial<DocumentEditRow> & Pick<DocumentEditRow, 'key' | 'action'>,

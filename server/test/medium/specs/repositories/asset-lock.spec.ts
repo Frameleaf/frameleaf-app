@@ -277,7 +277,8 @@ describe('asset lock (FL-34)', () => {
       const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
       const { asset: folder } = await ctx.newAsset({ ownerId: user.id });
       const { asset: marked } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: open } = await ctx.newAsset({ ownerId: user.id });
+      // an ordinary photo: the one Timeline item
+      await ctx.newAsset({ ownerId: user.id });
       await ctx.database
         .insertInto('asset_lock')
         .values([

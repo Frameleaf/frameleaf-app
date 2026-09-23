@@ -234,7 +234,7 @@ export class StudioBundleService {
       revision: authorized.revision.revision,
       digest: authorized.revision.digest,
       includeMedia: dto.includeMedia === true,
-      embed: [...embed.values()],
+      embed: embed.values().toArray(),
       sequenceIds: null,
       requestKey: dto.requestKey ?? null,
     };

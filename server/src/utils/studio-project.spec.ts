@@ -21,11 +21,11 @@ import {
 } from 'src/utils/studio-project.js';
 import { STUDIO_MAX_GRAPH_BYTES } from 'src/utils/studio-resources.js';
 
-const envelope = (graph: unknown = { tracks: [] }) => ({
+const envelope = (graph?: unknown) => ({
   schemaVersion: STUDIO_ENVELOPE_SCHEMA_VERSION,
   engine: STUDIO_ENGINE,
   engineRevision: 'abc123',
-  graph,
+  graph: graph === undefined ? { tracks: [] } : graph,
 });
 
 describe('checkStudioEnvelope', () => {
