@@ -193,12 +193,15 @@ export class StudioExportRepository {
   async listForProject(
     projectId: string,
     ownerId: string,
-    page: { take: number; skip: number },
+    page: { take: number; skip: number; includeLocked: boolean },
   ): Promise<{ items: StudioExportVersion[]; total: number }> {
+    // A result that inherited a lock exists only for its owner's unlocked session (FL-34): outside it
+    // the row is not listed and not counted, like any Locked media.
     const query = this.db
       .selectFrom('studio_export_version')
       .where('projectId', '=', projectId)
-      .where('ownerId', '=', ownerId);
+      .where('ownerId', '=', ownerId)
+      .$if(!page.includeLocked, (qb) => qb.where(sql<boolean>`coalesce("privacy" ->> 'lockReason', '') = ''`));
     const [items, total] = await Promise.all([
       query.selectAll().orderBy('createdAt', 'desc').orderBy('id', 'desc').limit(page.take).offset(page.skip).execute(),
       query
@@ -207,6 +210,25 @@ export class StudioExportRepository {
         .then((row) => Number(row?.count ?? 0)),
     ]);
     return { items: items as unknown as StudioExportVersion[], total };
+  }
+
+  /** The sources of several versions in one query, by version. */
+  async getSourcesFor(versionIds: readonly string[]): Promise<Map<string, StudioExportVersionSource[]>> {
+    const bySource = new Map<string, StudioExportVersionSource[]>(versionIds.map((id) => [id, []]));
+    if (versionIds.length === 0) {
+      return bySource;
+    }
+    const rows = (await this.db
+      .selectFrom('studio_export_version_source')
+      .selectAll()
+      .where('versionId', 'in', [...versionIds])
+      .orderBy('versionId')
+      .orderBy('key', 'asc')
+      .execute()) as StudioExportVersionSource[];
+    for (const row of rows) {
+      bySource.get(row.versionId)?.push(row);
+    }
+    return bySource;
   }
 
   getSources(versionId: string): Promise<StudioExportVersionSource[]> {
@@ -450,6 +472,8 @@ export class StudioExportRepository {
       let createdAssetId: string | null = null;
       let reusedAssetId: string | null = null;
       if (privacy.scope === StudioExportScope.Library) {
+        // Locks an asset lockIn may also be locking; should Postgres pick this transaction as a deadlock
+        // victim, the publication attempt fails and its automatic retry publishes it (FL-104).
         const duplicate = await tx
           .selectFrom('asset')
           .select(['id', 'deletedAt'])
