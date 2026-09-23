@@ -59,19 +59,25 @@ describe('Frameleaf settings areas', () => {
     expect(resolveSettingsArea({ isOpen: 'preservation' })).toBe('backup');
   });
 
-  it('puts the account settings under Your preferences in the Personal group', () => {
+  it('places the account settings where the template does', () => {
     expect(area('preferences').group).toBe('personal');
-    for (const key of [
-      'account',
-      'app-settings',
-      'api-keys',
-      'authorized-devices',
-      'oauth',
-      'notifications',
-      'sharing',
-    ]) {
+    for (const key of ['account', 'app-settings', 'download-settings', 'feature']) {
       expect(areaForPersonalSection(key)).toBe('preferences');
     }
+    // Sign-in, Locked tags & people, devices and API keys: Access & security.
+    for (const key of [
+      'password',
+      'user-pin-code-settings',
+      'oauth',
+      'suppressed-content',
+      'api-keys',
+      'authorized-devices',
+    ]) {
+      expect(areaForPersonalSection(key)).toBe('security');
+    }
+    // The account's email notifications, under their old name too: Notifications.
+    expect(areaForPersonalSection('email-preferences')).toBe('notifications');
+    expect(areaForPersonalSection('notifications')).toBe('notifications');
   });
 
   it('opens Library analytics as a command center screen, as the template does (FL-79)', () => {
@@ -107,7 +113,7 @@ describe('Frameleaf settings areas', () => {
   describe(isAreaAvailable.name, () => {
     it('offers an account without administration only areas it has something in', () => {
       const offered = SETTINGS_AREAS.filter((item) => isAreaAvailable(item, false)).map((item) => item.id);
-      expect(offered).toEqual(['backup', 'preferences', 'utilities']);
+      expect(offered).toEqual(['backup', 'security', 'notifications', 'preferences', 'utilities']);
       expect(SETTINGS_AREAS.every((item) => isAreaAvailable(item, true))).toBe(true);
     });
   });
@@ -133,9 +139,11 @@ describe('Frameleaf settings areas', () => {
     });
 
     it('reads a bare key as the account section, as the old personal settings page did', () => {
-      expect(resolveSettingsArea({ isOpen: 'notifications' })).toBe('preferences');
-      expect(resolveSettingsArea({ isOpen: 'oauth' })).toBe('preferences');
-      expect(resolveSettingsArea({ area: 'notifications', isOpen: 'notifications' })).toBe('notifications');
+      expect(resolveSettingsArea({ isOpen: 'notifications' })).toBe('notifications');
+      expect(resolveSettingsSection('notifications', { isOpen: 'notifications' })).toBe('email-preferences');
+      expect(resolveSettingsArea({ isOpen: 'oauth' })).toBe('security');
+      expect(resolveSettingsSection('security', { isOpen: 'oauth' })).toBe('oauth');
+      expect(resolveSettingsSection('notifications', { section: 'notifications' })).toBe('notifications');
     });
   });
 
@@ -144,6 +152,7 @@ describe('Frameleaf settings areas', () => {
       expect(resolveSettingsSection('server', { section: 'theme' })).toBe('theme');
       expect(resolveSettingsSection('server', { section: 'job' })).toBeUndefined();
       expect(resolveSettingsSection('processing', { isOpen: 'library-watch job' })).toBe('job');
+      expect(resolveSettingsSection('notifications', { isOpen: 'notifications' })).toBe('email-preferences');
       expect(resolveSettingsSection('backup', { isOpen: 'preservation' })).toBe('preservation');
       expect(resolveSettingsSection('storage', {})).toBeUndefined();
     });
@@ -176,11 +185,14 @@ describe('Frameleaf settings areas', () => {
 
     it('keeps the server and account notifications apart', () => {
       const both = [
+        { key: 'email-preferences', title: 'Your email notifications' },
         { key: 'notifications', title: 'Email delivery', admin: true },
-        { key: 'notifications', title: 'Your email notifications' },
       ];
-      expect(sectionsForArea(both, 'notifications').map((s) => s.title)).toEqual(['Email delivery']);
-      expect(sectionsForArea(both, 'preferences').map((s) => s.title)).toEqual(['Your email notifications']);
+      expect(sectionsForArea(both, 'notifications').map((s) => s.title)).toEqual([
+        'Email delivery',
+        'Your email notifications',
+      ]);
+      expect(sectionsForArea(both, 'preferences')).toEqual([]);
     });
 
     it('keeps the change history as its own personal area without settings forms (FL-66)', () => {
