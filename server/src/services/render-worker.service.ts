@@ -1175,6 +1175,11 @@ export class RenderWorkerService {
   /**
    * Enforce the wall-clock and output ceilings on a claimed operation. A breach fails the job under
    * its own claim and audits it; the returned reason is what the worker is told.
+   *
+   * Both ceilings are per attempt. The clock runs from `attemptStartedAt`, which every claim
+   * resets, and `outputBytes` is reset by the claim too, so the automatic retry an operation gets
+   * after a failure is not charged for the attempt that failed. `startedAt` is only the fallback
+   * for a row claimed before the column existed.
    */
   private async enforceRunningLimits(
     workerId: string,
@@ -1194,8 +1199,9 @@ export class RenderWorkerService {
     );
 
     const outputBytes = Math.max(Number(operation.outputBytes ?? 0), Number(reportedOutputBytes ?? 0));
+    const attemptStartedAt = operation.attemptStartedAt ?? operation.startedAt;
     const decision = evaluateRunningLimits({
-      startedAt: operation.startedAt ? new Date(operation.startedAt) : null,
+      startedAt: attemptStartedAt ? new Date(attemptStartedAt) : null,
       outputBytes,
       limits,
       now: new Date(),
@@ -1214,6 +1220,7 @@ export class RenderWorkerService {
       reason: decision.reason,
       operationId: operation.id,
       detail: {
+        attempt: operation.attempt,
         outputBytes: String(outputBytes),
         maxOutputBytes: limits.maxOutputBytes,
         maxWallClockMs: limits.maxWallClockMs,
