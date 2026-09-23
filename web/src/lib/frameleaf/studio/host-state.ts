@@ -1,3 +1,4 @@
+import type { Translations } from 'svelte-i18n';
 /**
  * The Studio host state machine (FL-88).
  *
@@ -29,7 +30,7 @@ export interface StudioHostState {
   /** Why the engine itself could not be resolved, when that is the reason. */
   engineAbsence: StudioEngineAbsenceReason | null;
   /** i18n key for the body text of the current non-ready state. */
-  messageKey: string | null;
+  messageKey: Translations | null;
   /** Developer-facing detail; never rendered as the primary message. */
   detail: string | null;
   /** The engine reports unpersisted changes, so the navigation guard is armed. */
@@ -48,7 +49,7 @@ export const initialStudioHostState = (): StudioHostState => ({
 
 export type StudioHostEvent =
   | { type: 'capabilities'; capabilities: StudioCapabilities }
-  | { type: 'engine-absent'; reason: StudioEngineAbsenceReason; messageKey: string; detail?: string }
+  | { type: 'engine-absent'; reason: StudioEngineAbsenceReason; messageKey: Translations; detail?: string }
   | { type: 'engine-mounted' }
   | { type: 'engine-disposed' }
   | { type: 'connectivity'; online: boolean }
@@ -181,7 +182,7 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
 };
 
 /** The heading key for a non-ready state, or null when the editor is up. */
-export const studioHostHeadingKey = (state: StudioHostState): string | null => {
+export const studioHostHeadingKey = (state: StudioHostState): Translations | null => {
   switch (state.phase) {
     case 'ready': {
       return null;
@@ -215,7 +216,7 @@ export const studioHostBlocksNavigation = (state: StudioHostState): boolean => s
  * Capability names the unavailable state lists, as i18n keys. Spelled out rather than
  * interpolated so every key in this file is greppable in `i18n/en.json`.
  */
-const capabilityLabelKeys: Record<StudioCapabilityId, string> = {
+const capabilityLabelKeys: Record<StudioCapabilityId, Translations> = {
   analysisWorker: 'frameleaf_studio_capability_analysis_worker',
   generationWorker: 'frameleaf_studio_capability_generation_worker',
   gpuWorker: 'frameleaf_studio_capability_gpu_worker',
@@ -224,4 +225,4 @@ const capabilityLabelKeys: Record<StudioCapabilityId, string> = {
   transcriptionWorker: 'frameleaf_studio_capability_transcription_worker',
 };
 
-export const studioCapabilityLabelKey = (id: StudioCapabilityId): string => capabilityLabelKeys[id];
+export const studioCapabilityLabelKey = (id: StudioCapabilityId): Translations => capabilityLabelKeys[id];
