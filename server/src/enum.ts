@@ -471,6 +471,11 @@ export enum SystemMetadataKey {
    * through a configuration file the upgrade migration cannot read.
    */
   LockedDetectionsState = 'locked-detections-state',
+  /**
+   * FL-66: the settings change history (the newest saved settings changes, who saved them and
+   * their values before and after; credentials only as replaced or cleared, never a value).
+   */
+  SystemConfigHistory = 'system-config-history',
 }
 
 export enum UserMetadataKey {

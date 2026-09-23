@@ -8,7 +8,11 @@ import {
   ConfigCredentialUpdateDto,
 } from 'src/dtos/config-credential.dto.js';
 import { AdminConfigDto } from 'src/dtos/config.dto.js';
-import { AdminConfigRevisionResponseDto, AdminConfigRevisionUpdateDto } from 'src/dtos/system-config.dto.js';
+import {
+  AdminConfigRevisionResponseDto,
+  AdminConfigRevisionUpdateDto,
+  SystemConfigHistoryResponseDto,
+} from 'src/dtos/system-config.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -90,6 +94,18 @@ export class ConfigAdminController {
     @Param() { name }: ConfigCredentialParamDto,
   ): Promise<ConfigCredentialResponseDto> {
     return this.service.clearCredential(auth, name);
+  }
+
+  @Get('history')
+  @Authenticated({ permission: Permission.AdminConfigRead, admin: true })
+  @Endpoint({
+    summary: 'Get the settings change history',
+    description:
+      'The newest saved settings changes, each with its time, the administrator who saved it and the changed settings before and after. Credentials are listed only as replaced or cleared.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getAdminConfigHistory(): Promise<SystemConfigHistoryResponseDto> {
+    return this.service.getConfigHistory();
   }
 
   @Get('revision')

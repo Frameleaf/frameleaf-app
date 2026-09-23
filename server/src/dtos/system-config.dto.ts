@@ -157,3 +157,37 @@ const AdminConfigRevisionUpdateSchema = z
   .meta({ id: 'AdminConfigRevisionUpdateDto' });
 
 export class AdminConfigRevisionUpdateDto extends createZodDto(AdminConfigRevisionUpdateSchema) {}
+
+// FL-66: the settings change history, newest first. Values are what an administrator can read,
+// JSON encoded and shortened; credentials only say whether they were replaced or cleared.
+const SystemConfigHistoryChangeSchema = z
+  .object({
+    path: z.string().describe('The changed setting, as a dotted path such as trash.days'),
+    before: z.string().nullable().describe('The value before the change, JSON encoded; null for a credential'),
+    after: z.string().nullable().describe('The value after the change, JSON encoded; null for a credential'),
+    credential: z
+      .enum(['replaced', 'cleared'])
+      .optional()
+      .describe('Set for a write-only credential: whether it was replaced or cleared. Its value is never recorded')
+      .meta({ id: 'SystemConfigHistoryCredentialChange' }),
+  })
+  .meta({ id: 'SystemConfigHistoryChangeDto' });
+
+const SystemConfigHistoryEntrySchema = z
+  .object({
+    id: z.string().describe('Entry ID'),
+    createdAt: z.string().describe('When the change was saved (ISO 8601)'),
+    actorId: z.string().nullable().describe('The administrator who saved the change'),
+    actorName: z.string().nullable().describe("The administrator's name when the change was saved"),
+    changes: z.array(SystemConfigHistoryChangeSchema).describe('Every changed setting'),
+    omittedChanges: z.int().min(0).describe('Changed settings left out because the entry reached its limit'),
+  })
+  .meta({ id: 'SystemConfigHistoryEntryDto' });
+
+const SystemConfigHistoryResponseSchema = z
+  .object({
+    entries: z.array(SystemConfigHistoryEntrySchema).describe('The newest settings changes first'),
+  })
+  .meta({ id: 'SystemConfigHistoryResponseDto' });
+
+export class SystemConfigHistoryResponseDto extends createZodDto(SystemConfigHistoryResponseSchema) {}
