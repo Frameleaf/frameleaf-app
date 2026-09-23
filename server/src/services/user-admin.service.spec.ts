@@ -4,6 +4,7 @@ import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
+import { UserMetadataItem } from 'src/types.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -308,14 +309,15 @@ describe(UserAdminService.name, () => {
   });
 
   describe('updatePreferences (FL-77 admin casting permission)', () => {
+    const storedPreferences = (value: Record<string, unknown>) =>
+      [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
+
     beforeEach(() => {
       mocks.user.upsertMetadata.mockResolvedValue();
     });
 
     it("should turn casting off for a user without overwriting the user's own choice", async () => {
-      mocks.user.getMetadata.mockResolvedValue([
-        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true } } },
-      ]);
+      mocks.user.getMetadata.mockResolvedValue(storedPreferences({ cast: { gCastEnabled: true } }));
 
       await expect(
         sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } }),
@@ -327,9 +329,9 @@ describe(UserAdminService.name, () => {
     });
 
     it("should let the user's own choice apply again when casting is allowed", async () => {
-      mocks.user.getMetadata.mockResolvedValue([
-        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
-      ]);
+      mocks.user.getMetadata.mockResolvedValue(
+        storedPreferences({ cast: { gCastEnabled: true, adminDisabled: true } }),
+      );
 
       await expect(
         sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: false } }),
@@ -341,9 +343,7 @@ describe(UserAdminService.name, () => {
     });
 
     it('should report the administrator decision from getPreferences', async () => {
-      mocks.user.getMetadata.mockResolvedValue([
-        { key: UserMetadataKey.Preferences, value: { cast: { adminDisabled: true } } },
-      ]);
+      mocks.user.getMetadata.mockResolvedValue(storedPreferences({ cast: { adminDisabled: true } }));
 
       await expect(sut.getPreferences(authStub.admin, userStub.user1.id)).resolves.toMatchObject({
         cast: { gCastEnabled: false, adminDisabled: true },

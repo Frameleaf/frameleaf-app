@@ -7,6 +7,7 @@ import {
 import { UserAdmin } from 'src/database.js';
 import { AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
 import { UserService } from 'src/services/user.service.js';
+import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -423,7 +424,7 @@ describe(UserService.name, () => {
   describe('updateMyPreferences (FL-77 admin casting permission)', () => {
     const castTurnedOff = [
       { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
-    ];
+    ] as unknown as UserMetadataItem[];
 
     beforeEach(() => {
       mocks.user.upsertMetadata.mockResolvedValue();
