@@ -1,0 +1,154 @@
+<script lang="ts">
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import { buildAlbumTree } from '$lib/frameleaf/album-tree';
+  import { uploadManager } from '$lib/managers/upload-manager.svelte';
+  import { fileUploadHandler, openFilePicker } from '$lib/utils/file-uploader';
+  import { handleError } from '$lib/utils/handle-error';
+  import { getAllAlbums } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
+  import { mdiFolderOutline, mdiImageMultipleOutline, mdiTrayArrowUp } from '@mdi/js';
+  import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
+
+  /**
+   * Top bar upload control (FL-45), ported from the prototype's `UploadButton` in
+   * `UploadPanel.jsx`. Offers file and whole-folder selection plus an explicit album
+   * target, all handed to the real upload manager (`fileUploadHandler`) — nothing here
+   * simulates a transfer. `defaultAlbumId` seeds the target with the album the caller is
+   * already viewing, matching the drag-and-drop overlay's existing route-based default;
+   * the person can still pick a different album or none from the menu.
+   */
+  let {
+    defaultAlbumId,
+    isLockedAssets = false,
+  }: {
+    defaultAlbumId?: string;
+    isLockedAssets?: boolean;
+  } = $props();
+
+  type Target = { id: string; name: string };
+
+  let targets: Target[] = $state([]);
+  let target = $state(defaultAlbumId ?? '');
+  let open = $state(false);
+
+  onMount(async () => {
+    try {
+      const albums = await getAllAlbums({});
+      // A collection groups albums and is not itself a place to add photos (see
+      // BulkAlbumDialog); only real albums and shared spaces are valid upload targets.
+      const tree = buildAlbumTree(albums);
+      targets = [...tree.albums, ...tree.spaces, ...tree.collections.flatMap((collection) => collection.children)]
+        .map((node) => ({ id: node.id, name: node.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
+    }
+  });
+
+  $effect(() => {
+    target = defaultAlbumId ?? '';
+  });
+
+  const targetLabel = $derived(targets.find((entry) => entry.id === target)?.name);
+
+  const pick = async (directory: boolean) => {
+    const extensions = uploadManager.getExtensions();
+    const files = await openFilePicker({
+      multiple: true,
+      extensions: directory ? undefined : extensions,
+      directory,
+    });
+    if (files.length === 0) {
+      return;
+    }
+    await fileUploadHandler({ files, albumId: target || undefined, isLockedAssets });
+  };
+</script>
+
+<div class="upload-menu">
+  <Menu label={$t('upload')} bind:open>
+    {#snippet trigger()}
+      <Icon icon={mdiTrayArrowUp} size={20} aria-hidden="true" />
+    {/snippet}
+
+    <MenuItem onSelect={() => pick(false)}>
+      <Icon icon={mdiImageMultipleOutline} size={18} aria-hidden="true" />
+      <span class="item-text">
+        <strong>{$t('frameleaf_transfer_upload_files')}</strong>
+        <small>{$t('frameleaf_transfer_upload_files_hint')}</small>
+      </span>
+    </MenuItem>
+    <MenuItem onSelect={() => pick(true)}>
+      <Icon icon={mdiFolderOutline} size={18} aria-hidden="true" />
+      <span class="item-text">
+        <strong>{$t('frameleaf_transfer_upload_folder')}</strong>
+        <small>{$t('frameleaf_transfer_upload_folder_hint')}</small>
+      </span>
+    </MenuItem>
+
+    {#if targets.length > 0}
+      <div class="target">
+        <label for="upload-target-select">{$t('frameleaf_transfer_add_to')}</label>
+        <select id="upload-target-select" bind:value={target}>
+          <option value="">{$t('frameleaf_transfer_library_only')}</option>
+          {#each targets as entry (entry.id)}
+            <option value={entry.id}>{entry.name}</option>
+          {/each}
+        </select>
+        {#if targetLabel}
+          <span class="hint">{$t('frameleaf_transfer_new_target_hint', { values: { album: targetLabel } })}</span>
+        {/if}
+      </div>
+    {/if}
+  </Menu>
+</div>
+
+<style>
+  .upload-menu :global(.menu-root > button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 0.375rem;
+    color: var(--fl-text, inherit);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 999px;
+  }
+  .upload-menu :global(.menu-root > button:hover) {
+    background: var(--fl-raised, rgb(0 0 0 / 6%));
+  }
+  .item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    text-align: start;
+  }
+  .item-text small {
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .target {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.5rem 0.625rem 0.375rem;
+    margin-top: 0.25rem;
+    border-top: 1px solid var(--fl-border);
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+  }
+  .target select {
+    padding: 0.35rem 0.5rem;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    font-size: 0.8125rem;
+  }
+  .target .hint {
+    font-size: 0.6875rem;
+  }
+</style>

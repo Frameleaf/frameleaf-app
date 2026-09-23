@@ -1,16 +1,27 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
+  import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { fileUploadHandler } from '$lib/utils/file-uploader';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { Logo } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { mdiCloudUploadOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
+  /**
+   * Drag-and-drop upload overlay for library pages (FL-45), restyled from the legacy
+   * `routes/(user)/DragAndDropUploadOverlay.svelte` under the Frameleaf token sheet. The
+   * directory-reading and paste handling are unchanged from the production component this
+   * replaces; only the drop card's appearance is new (`design/frameleaf/template/src/App.jsx`
+   * `DragDropOverlay`). Files still go straight to `fileUploadHandler`, never a simulation.
+   */
+
   let albumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
   let isInLockedFolder = $derived(isLockedFolderRoute(page.route.id));
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   let dragStartTarget: EventTarget | null = $state(null);
   let isInternalDrag = false;
@@ -181,11 +192,57 @@
 {#if dragStartTarget}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed inset-0 flex size-full flex-col items-center justify-center bg-gray-100/90 text-immich-dark-gray dark:bg-immich-dark-bg/90 dark:text-immich-gray"
+    class="frameleaf fl-drop-overlay"
+    data-theme={appTheme}
+    role="status"
+    aria-live="polite"
     transition:fade={{ duration: 250 }}
     ondragover={onDragOver}
   >
-    <Logo variant="icon" size="giant" class="m-16 animate-bounce" />
-    <div class="text-2xl">{$t('drop_files_to_upload')}</div>
+    <div class="fl-drop-frame" aria-hidden="true"></div>
+    <div class="fl-drop-card">
+      <Icon icon={mdiCloudUploadOutline} size={40} aria-hidden="true" />
+      <strong>{$t('drop_files_to_upload')}</strong>
+      <span>{$t('frameleaf_transfer_drop_hint')}</span>
+    </div>
   </div>
 {/if}
+
+<style>
+  .fl-drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--fl-canvas), transparent 8%);
+  }
+  .fl-drop-frame {
+    position: absolute;
+    inset: 0.75rem;
+    border: 2px dashed var(--fl-accent);
+    border-radius: var(--fl-radius-card);
+    pointer-events: none;
+  }
+  .fl-drop-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem 2.5rem;
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-dialog);
+    box-shadow: var(--fl-shadow-2);
+  }
+  .fl-drop-card strong {
+    font-size: 1.0625rem;
+  }
+  .fl-drop-card span {
+    color: var(--fl-muted);
+    font-size: 0.8125rem;
+  }
+</style>
