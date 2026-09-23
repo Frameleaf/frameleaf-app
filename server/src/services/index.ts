@@ -5,6 +5,7 @@ import { ApiService } from 'src/services/api.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -50,6 +51,7 @@ import { PhysicalDeduplicationService } from 'src/services/physical-deduplicatio
 import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RunPodService } from 'src/services/runpod.service.js';
+import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -92,6 +94,7 @@ export const services = [
   AssetDevelopService,
   AssetFileService,
   AssetMediaService,
+  AssetRestorationService,
   AssetService,
   AuthService,
   AuthAdminService,
@@ -130,6 +133,7 @@ export const services = [
   PluginService,
   QueueService,
   RunPodService,
+  RestorationWorkerService,
   SearchService,
   ServerService,
   SessionService,
