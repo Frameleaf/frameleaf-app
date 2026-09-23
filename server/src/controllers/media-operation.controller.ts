@@ -95,6 +95,32 @@ export class MediaOperationController {
     return this.service.cancel(auth, id);
   }
 
+  @Post(':id/pause')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Pause a media operation',
+    description:
+      'Holds a bulk operation, Studio export or restoration. A queued job is paused at once; a running job stops at its next checkpoint and reports `pauseRequestedAt` until then. Other kinds cannot be paused.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  pauseMediaOperation(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<MediaOperationDto> {
+    return this.service.pause(auth, id);
+  }
+
+  @Post(':id/resume')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Resume a media operation',
+    description:
+      'Returns a paused job to the queue, where it carries on from what it recorded, or withdraws a pause its worker has not reached yet.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  resumeMediaOperation(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<MediaOperationDto> {
+    return this.service.resume(auth, id);
+  }
+
   @Post(':id/retry')
   @HttpCode(HttpStatus.CREATED)
   @Authenticated()
