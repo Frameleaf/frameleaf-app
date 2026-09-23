@@ -47,6 +47,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -92,6 +93,7 @@ import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 
 export type ControllerContext = {
   authenticate: Mock;
@@ -264,6 +266,7 @@ export type ServiceOverrides = {
   media: MediaRepository;
   memory: MemoryRepository;
   metadata: MetadataRepository;
+  mlDestination: MlDestinationRepository;
   move: MoveRepository;
   notification: NotificationRepository;
   ocr: OcrRepository;
@@ -353,6 +356,7 @@ export const getMocks = () => {
     media: newMediaRepositoryMock(),
     memory: automock(MemoryRepository),
     metadata: newMetadataRepositoryMock(),
+    mlDestination: automock(MlDestinationRepository),
     move: automock(MoveRepository, { strict: false }),
     notification: automock(NotificationRepository),
     ocr: automock(OcrRepository, { strict: false }),
@@ -390,6 +394,17 @@ export const getMocks = () => {
 
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
+
+  // library workloads are routed to a healthy local destination unless a test says otherwise
+  mocks.mlDestination.getRoute.mockImplementation((workload) =>
+    Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
+  );
+  mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  mocks.mlDestination.getSpend.mockResolvedValue(0);
+  mocks.mlDestination.recordProbe.mockResolvedValue();
+  mocks.mlDestination.recordAccounting.mockResolvedValue();
+  mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+  mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
 
   return mocks;
 };
@@ -430,6 +445,7 @@ export const newTestService = <T extends BaseService>(
     overrides.media || (mocks.media as As<MediaRepository>),
     overrides.memory || (mocks.memory as As<MemoryRepository>),
     overrides.metadata || (mocks.metadata as As<MetadataRepository>),
+    overrides.mlDestination || (mocks.mlDestination as As<MlDestinationRepository>),
     overrides.move || (mocks.move as As<MoveRepository>),
     overrides.notification || (mocks.notification as As<NotificationRepository>),
     overrides.oauth || (mocks.oauth as As<OAuthRepository>),

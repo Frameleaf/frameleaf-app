@@ -737,6 +737,84 @@ export const MediaHealthStatusSchema = z
   .meta({ id: 'MediaHealthStatus' });
 
 /**
+ * Where a machine-learning workload may run (FL-110). A destination is always named
+ * explicitly by the caller; the server never picks one on the caller's behalf and never
+ * moves work from one kind to another when the chosen destination is unavailable.
+ */
+export enum MlDestinationKind {
+  /** The deployment's own machine-learning container (the configured ML URLs). */
+  Local = 'local',
+  /** Another machine on the home network, configured by URL. Media stays on the LAN. */
+  Lan = 'lan',
+  /** The RunPod pod or serverless endpoint managed by the RunPod service. Media leaves the network. */
+  RunPod = 'runpod',
+}
+
+export const MlDestinationKindSchema = z
+  .enum(MlDestinationKind)
+  .describe('Kind of machine-learning destination')
+  .meta({ id: 'MlDestinationKind' });
+
+/** Destination kinds whose selection sends media off the operator's network. */
+export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([MlDestinationKind.RunPod]);
+
+/**
+ * A kind of work a destination can serve. Capabilities (what a destination can run) and
+ * workloads (what a caller asks for) are separate on purpose: a reachable ML URL proves
+ * nothing about restoration or Studio profiles, so each workload is admitted on its own.
+ */
+export enum MlWorkload {
+  Face = 'face',
+  Clip = 'clip',
+  Ocr = 'ocr',
+  /** Image description, tagging and NSFW classification. */
+  Enrichment = 'enrichment',
+  RestorationFaithful = 'restoration-faithful',
+  RestorationCreative = 'restoration-creative',
+  /** Studio AI features (transcription, captioning, speech, music, interpolation). */
+  StudioAi = 'studio-ai',
+}
+
+export const MlWorkloadSchema = z.enum(MlWorkload).describe('Machine-learning workload').meta({ id: 'MlWorkload' });
+
+/** The workloads the ordinary `/predict` container serves; restoration and Studio need dedicated workers. */
+export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Face,
+  MlWorkload.Clip,
+  MlWorkload.Ocr,
+  MlWorkload.Enrichment,
+];
+
+export enum MlDestinationHealth {
+  Healthy = 'healthy',
+  Unhealthy = 'unhealthy',
+  Unknown = 'unknown',
+}
+
+export const MlDestinationHealthSchema = z
+  .enum(MlDestinationHealth)
+  .describe('Last probed health of a machine-learning destination')
+  .meta({ id: 'MlDestinationHealth' });
+
+/** Why a selection was refused. Every value is a refusal; there is no "fell back" outcome. */
+export enum MlAdmissionRefusal {
+  DestinationMissing = 'destination-missing',
+  DestinationDisabled = 'destination-disabled',
+  WorkloadNotRouted = 'workload-not-routed',
+  WorkloadNotAllowed = 'workload-not-allowed',
+  WorkloadNotServed = 'workload-not-served',
+  ConsentMissing = 'consent-missing',
+  BudgetExceeded = 'budget-exceeded',
+  EndpointUnresolved = 'endpoint-unresolved',
+  DestinationUnhealthy = 'destination-unhealthy',
+}
+
+export const MlAdmissionRefusalSchema = z
+  .enum(MlAdmissionRefusal)
+  .describe('Reason a destination refused a workload')
+  .meta({ id: 'MlAdmissionRefusal' });
+
+/**
  * Pet identity model (FL-58).
  *
  * `PetSpecies` is what the owner says the animal is. A detector may guess a species on
@@ -779,6 +857,8 @@ export const PetObservationSourceSchema = z
   .enum(PetObservationSource)
   .describe('How a pet observation was recorded')
   .meta({ id: 'PetObservationSource' });
+
+/**
  * Durable, user-visible media operations (FL-43, FL-104).
  *
  * One persistent job contract covers every long-running workload a person can see in Activity.
@@ -1344,6 +1424,7 @@ export enum DatabaseLock {
   IntegrityCheck = 67,
   VersionCheck = 800,
   RunPodTransition = 900,
+  MlDestinationBootstrap = 910,
   HlsSessionCleanup = 850,
 }
 
@@ -1624,6 +1705,7 @@ export enum ApiTag {
   MediaHealth = 'Media Health',
   MediaOperations = 'Media operations',
   Memories = 'Memories',
+  MlDestinations = 'ML destinations',
   Notifications = 'Notifications',
   NotificationsAdmin = 'Notifications (admin)',
   ClusterGroups = 'Cluster groups',

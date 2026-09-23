@@ -37,6 +37,19 @@ const MachineLearningHardwareResponseSchema = z
 
 export class MachineLearningHardwareResponseDto extends createZodDto(MachineLearningHardwareResponseSchema) {}
 
+const MachineLearningHardwareQuerySchema = z
+  .object({
+    destinationId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly.',
+      ),
+  })
+  .meta({ id: 'MachineLearningHardwareQueryDto' });
+
+export class MachineLearningHardwareQueryDto extends createZodDto(MachineLearningHardwareQuerySchema) {}
+
 const ImageDescriptionRequeueEstimateSchema = z
   .object({
     totalAssets: z.int().min(0).describe('Total eligible image assets'),

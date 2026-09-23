@@ -72,6 +72,11 @@ import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
+import {
+  MlDestinationTable,
+  MlWorkloadAccountingTable,
+  MlWorkloadRouteTable,
+} from 'src/schema/tables/ml-destination.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
@@ -169,6 +174,9 @@ export class ImmichDatabase {
     MemoryExportTable,
     MemoryAssetTable,
     MemoryAssetAuditTable,
+    MlDestinationTable,
+    MlWorkloadRouteTable,
+    MlWorkloadAccountingTable,
     MoveTable,
     NaturalEarthCountriesTable,
     NotificationTable,
@@ -313,6 +321,9 @@ export interface DB {
 
   naturalearth_countries: NaturalEarthCountriesTable;
 
+  ml_destination: MlDestinationTable;
+  ml_workload_route: MlWorkloadRouteTable;
+  ml_workload_accounting: MlWorkloadAccountingTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
 

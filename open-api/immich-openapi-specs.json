@@ -11062,6 +11062,563 @@
         ],
         "type": "object"
       },
+      "MlAdmissionRefusal": {
+        "description": "Reason a destination refused a workload",
+        "enum": [
+          "destination-missing",
+          "destination-disabled",
+          "workload-not-routed",
+          "workload-not-allowed",
+          "workload-not-served",
+          "consent-missing",
+          "budget-exceeded",
+          "endpoint-unresolved",
+          "destination-unhealthy"
+        ],
+        "type": "string"
+      },
+      "MlAdmissionRefusalResponseDto": {
+        "properties": {
+          "destinationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "refusal": {
+            "$ref": "#/components/schemas/MlAdmissionRefusal"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "destinationId",
+          "detail",
+          "refusal",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlAdmissionRequestDto": {
+        "properties": {
+          "jobId": {
+            "description": "Job the admission is for, recorded with the accounting row",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlAdmissionResponseDto": {
+        "properties": {
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/MlThroughputEstimateDto"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealthStateDto"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "destinationId",
+          "estimate",
+          "health",
+          "kind",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlCapabilitiesResponseDto": {
+        "properties": {
+          "probedAt": {
+            "description": "When this snapshot was assembled",
+            "type": "string"
+          },
+          "studio": {
+            "$ref": "#/components/schemas/StudioCapabilitiesDto"
+          },
+          "workloads": {
+            "items": {
+              "$ref": "#/components/schemas/MlWorkloadCapabilityDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "probedAt",
+          "studio",
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "MlCapabilityDestinationDto": {
+        "properties": {
+          "available": {
+            "description": "Enabled, healthy on the last probe, consented and reporting this workload",
+            "type": "boolean"
+          },
+          "consentGranted": {
+            "description": "True when the destination needs no consent or consent is recorded",
+            "type": "boolean"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealth"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "consentGranted",
+          "health",
+          "id",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MlDestinationConsentDto": {
+        "properties": {
+          "acknowledgedAt": {
+            "description": "When an administrator recorded consent, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "acknowledgedBy": {
+            "description": "Administrator who recorded consent, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether this destination sends media off the network and needs consent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "acknowledgedAt",
+          "acknowledgedBy",
+          "required"
+        ],
+        "type": "object"
+      },
+      "MlDestinationConsentRequestDto": {
+        "properties": {
+          "acknowledgeMediaLeavesNetwork": {
+            "description": "The administrator confirms that media sent to this destination leaves the network",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "acknowledgeMediaLeavesNetwork"
+        ],
+        "type": "object"
+      },
+      "MlDestinationCostControlsDto": {
+        "properties": {
+          "budgetLimitUsd": {
+            "description": "Spend ceiling over the rolling budget window, or null for no ceiling",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "budgetWindowDays": {
+            "description": "Length of the rolling window `spentUsd` covers",
+            "type": "integer"
+          },
+          "maxRuntimeMinutes": {
+            "description": "Longest single job this destination may run, or null",
+            "nullable": true,
+            "type": "integer"
+          },
+          "maxUploadBytes": {
+            "description": "Largest upload one job may send to this destination, or null",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "spentUsd": {
+            "description": "Attributed spend inside the budget window; 0 when no cost has been attributed yet",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "budgetLimitUsd",
+          "budgetWindowDays",
+          "maxRuntimeMinutes",
+          "maxUploadBytes",
+          "spentUsd"
+        ],
+        "type": "object"
+      },
+      "MlDestinationCreateDto": {
+        "properties": {
+          "authToken": {
+            "description": "Bearer token for a LAN worker (write-only)",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "budgetLimitUsd": {
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "maxRuntimeMinutes": {
+            "maximum": 10080,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "maxUploadBytes": {
+            "format": "double",
+            "minimum": 1,
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "url": {
+            "description": "Required for a LAN destination, optional for a local one, forbidden for RunPod",
+            "format": "uri",
+            "type": "string"
+          },
+          "workloads": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "maxItems": 16,
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MlDestinationHealth": {
+        "description": "Last probed health of a machine-learning destination",
+        "enum": [
+          "healthy",
+          "unhealthy",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "MlDestinationHealthStateDto": {
+        "properties": {
+          "probedAt": {
+            "description": "When the destination was last probed, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "servedWorkloads": {
+            "description": "Workloads the worker itself reported on the last probe, or null when it never answered",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MlDestinationHealth"
+          },
+          "summary": {
+            "description": "Human-readable probe result, or null",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "probedAt",
+          "servedWorkloads",
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "MlDestinationKind": {
+        "description": "Kind of machine-learning destination",
+        "enum": [
+          "local",
+          "lan",
+          "runpod"
+        ],
+        "type": "string"
+      },
+      "MlDestinationResponseDto": {
+        "properties": {
+          "authTokenConfigured": {
+            "description": "Whether a bearer token is stored for this destination",
+            "type": "boolean"
+          },
+          "consent": {
+            "$ref": "#/components/schemas/MlDestinationConsentDto"
+          },
+          "costControls": {
+            "$ref": "#/components/schemas/MlDestinationCostControlsDto"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealthStateDto"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Endpoint URL; null for a RunPod destination with no ready worker",
+            "nullable": true,
+            "type": "string"
+          },
+          "workloads": {
+            "description": "Workloads the administrator allows on this destination",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "authTokenConfigured",
+          "consent",
+          "costControls",
+          "createdAt",
+          "enabled",
+          "health",
+          "id",
+          "kind",
+          "name",
+          "updatedAt",
+          "url",
+          "workloads"
+        ],
+        "type": "object"
+      },
+      "MlDestinationUpdateDto": {
+        "properties": {
+          "authToken": {
+            "description": "New bearer token; null clears it; omitted keeps the stored token",
+            "maxLength": 4096,
+            "nullable": true,
+            "type": "string"
+          },
+          "budgetLimitUsd": {
+            "format": "double",
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxRuntimeMinutes": {
+            "maximum": 10080,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "maxUploadBytes": {
+            "format": "double",
+            "minimum": 1,
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          },
+          "workloads": {
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "maxItems": 16,
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "MlThroughputEstimateDto": {
+        "properties": {
+          "bytesPerSecond": {
+            "description": "Measured throughput for this destination and workload, or null with no samples",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "sampleCount": {
+            "description": "Successful requests the estimate is measured from",
+            "type": "integer"
+          },
+          "windowDays": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytesPerSecond",
+          "sampleCount",
+          "windowDays"
+        ],
+        "type": "object"
+      },
+      "MlWorkload": {
+        "description": "Machine-learning workload",
+        "enum": [
+          "face",
+          "clip",
+          "ocr",
+          "enrichment",
+          "restoration-faithful",
+          "restoration-creative",
+          "studio-ai"
+        ],
+        "type": "string"
+      },
+      "MlWorkloadCapabilityDto": {
+        "properties": {
+          "available": {
+            "description": "At least one destination can serve this workload right now",
+            "type": "boolean"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/MlCapabilityDestinationDto"
+            },
+            "type": "array"
+          },
+          "routedDestinationId": {
+            "description": "Destination library jobs use for this workload, or null",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "available",
+          "destinations",
+          "routedDestinationId",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlWorkloadRouteDto": {
+        "properties": {
+          "destinationId": {
+            "description": "Destination the workload is routed to, or null when unrouted",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "destinationId",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "MlWorkloadRouteUpdateDto": {
+        "properties": {
+          "destinationId": {
+            "description": "Destination to route the workload to; null removes the route",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationId"
+        ],
+        "type": "object"
+      },
+      "MlWorkloadRoutesResponseDto": {
+        "properties": {
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/MlWorkloadRouteDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "routes"
+        ],
+        "type": "object"
+      },
       "MoveAlbumDto": {
         "properties": {
           "collectionId": {
@@ -18002,6 +18559,33 @@
         },
         "required": [
           "matches"
+        ],
+        "type": "object"
+      },
+      "StudioCapabilitiesDto": {
+        "properties": {
+          "gpuWorker": {
+            "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
+            "type": "boolean"
+          },
+          "renderWorker": {
+            "description": "False until the Studio render worker admission (FL-95, FL-104) reports one",
+            "type": "boolean"
+          },
+          "restorationWorker": {
+            "description": "A destination can serve a restoration workload right now",
+            "type": "boolean"
+          },
+          "transcriptionWorker": {
+            "description": "A destination can serve the Studio AI workload right now",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gpuWorker",
+          "renderWorker",
+          "restorationWorker",
+          "transcriptionWorker"
         ],
         "type": "object"
       },
@@ -33623,6 +34207,688 @@
         ]
       }
     },
+    "/ml-destinations": {
+      "get": {
+        "description": "Every configured destination with its consent state, cost controls and last probe.",
+        "operationId": "listMlDestinations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MlDestinationResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List machine-learning destinations",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.",
+        "operationId": "createMlDestination",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlDestinationCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a machine-learning destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/capabilities": {
+      "get": {
+        "description": "What this deployment can run right now, per workload and destination, from the last health probes. Includes the Studio capability row the Studio host reads.",
+        "operationId": "getMlCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlCapabilitiesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get machine-learning capabilities",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/routes": {
+      "get": {
+        "description": "The destination each workload is routed to. A workload without a route is refused, never sent anywhere.",
+        "operationId": "getMlWorkloadRoutes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlWorkloadRoutesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List workload routes",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/routes/{workload}": {
+      "put": {
+        "description": "Route a workload to one destination, or remove its route with a null destination. Routing to a cloud destination requires its consent to be recorded first.",
+        "operationId": "setMlWorkloadRoute",
+        "parameters": [
+          {
+            "name": "workload",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/MlWorkload"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlWorkloadRouteUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlWorkloadRoutesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Route a workload",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/{id}": {
+      "delete": {
+        "description": "Removes the destination and every route to it; the affected workloads are refused until routed again.",
+        "operationId": "deleteMlDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a machine-learning destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "operationId": "getMlDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a machine-learning destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "updateMlDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlDestinationUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a machine-learning destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/{id}/admission": {
+      "post": {
+        "description": "Per-request selection: checks that exactly this destination can run the workload now (enabled, allowed, consented, within budget, healthy, serving it) and returns the measured estimate. A refusal is a 4xx error naming the reason; the server never answers with a different destination.",
+        "operationId": "admitMlWorkload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlAdmissionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlAdmissionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Admit a workload on a destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/{id}/consent": {
+      "delete": {
+        "description": "Every workload routed to the destination is refused from the next request on.",
+        "operationId": "revokeMlDestinationConsent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revoke consent for a cloud destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Records that an administrator accepts media leaving the network for this destination.",
+        "operationId": "grantMlDestinationConsent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlDestinationConsentRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record consent for a cloud destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/{id}/probe": {
+      "post": {
+        "description": "Check reachability, served workloads and hardware now, and record the result.",
+        "operationId": "probeMlDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlDestinationHealthStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Probe a machine-learning destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/notifications": {
       "delete": {
         "description": "Delete a list of notifications at once.",
@@ -42359,9 +43625,21 @@
     },
     "/system-config/machine-learning/hardware": {
       "get": {
-        "description": "Retrieve available hardware acceleration providers from the machine learning service.",
+        "description": "Retrieve available hardware acceleration providers from one machine learning destination. Without `destinationId` the first enabled local destination is probed; a cloud destination is never chosen implicitly.",
         "operationId": "getMachineLearningHardware",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "destinationId",
+            "required": false,
+            "in": "query",
+            "description": "Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly.",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

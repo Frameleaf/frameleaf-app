@@ -86,7 +86,8 @@
 
   const detectMachineLearningHardware = async () => {
     try {
-      const hardware = await getMachineLearningHardware();
+      // No destinationId: the server probes the first enabled local destination, never a cloud one.
+      const hardware = await getMachineLearningHardware({});
       const preferredAcceleration = hardware.preferredAcceleration;
 
       if (isImageEnrichmentHardwareAcceleration(preferredAcceleration)) {

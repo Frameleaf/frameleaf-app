@@ -27,6 +27,7 @@ import { MapController } from 'src/controllers/map.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
+import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
@@ -86,6 +87,7 @@ export const controllers = [
   MediaHealthController,
   MediaOperationController,
   MemoryController,
+  MlDestinationController,
   NotificationController,
   NotificationAdminController,
   OAuthController,
