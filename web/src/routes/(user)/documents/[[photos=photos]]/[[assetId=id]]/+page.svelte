@@ -13,9 +13,10 @@
     isAbortError,
   } from '$lib/frameleaf/documents';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
-  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import { sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
@@ -102,7 +103,7 @@
     assets = [];
     total = 0;
     nextPage = null;
-    void load(true);
+    return load(true);
   };
 
   const onQueryInput = () => {
@@ -117,7 +118,7 @@
         keepFocus: true,
         noScroll: true,
       });
-      restart();
+      void restart();
     }, DOCUMENT_SEARCH_DEBOUNCE_MS);
   };
 
@@ -146,13 +147,20 @@
         return;
       }
       wasElevated = elevated;
-      restart();
+      void restart();
     });
   });
 
   onMount(() => {
     librarySession.clearSelection();
     void load(true);
+    return eventManager.on({
+      SessionAccessChanged: ({ isElevated }) => {
+        if (!isElevated) {
+          void trackSessionLockRefresh(restart());
+        }
+      },
+    });
   });
 
   onDestroy(() => {

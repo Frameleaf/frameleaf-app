@@ -35,8 +35,8 @@
     type LockedRules,
   } from '$lib/frameleaf/locked-rules';
   import { isUnnamedPet, sortPets } from '$lib/frameleaf/pets';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
@@ -46,7 +46,6 @@
     getMyPreferences,
     getPerson,
     isHttpError,
-    lockAuthSession,
     searchPerson,
     SuppressionScope,
     updateMyPreferences,
@@ -254,12 +253,7 @@
   };
 
   const hideLocked = async () => {
-    try {
-      await lockAuthSession();
-      eventManager.emit('SessionLocked');
-    } catch {
-      error = $t('frameleaf_locked_rules_lock_failed');
-    }
+    await sessionAccess.retryLock?.();
   };
 
   const unlock = () => goto(Route.pinPrompt({ continue: `${page.url.pathname}?isOpen=${RULES_SECTION}` }));
