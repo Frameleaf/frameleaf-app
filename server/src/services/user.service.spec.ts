@@ -1,8 +1,9 @@
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
-import { CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
 import { UserService } from 'src/services/user.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -151,6 +152,76 @@ describe(UserService.name, () => {
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
+
+    it('records nothing as the source of an uploaded picture', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file);
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImageAssetId: null }),
+      );
+    });
+
+    it('records the photo a picture was copied from (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: authStub.admin.user.id });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file, { assetId: asset.id });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImageAssetId: asset.id }),
+      );
+    });
+
+    it('refuses a Locked photo as the source and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: authStub.admin.user.id, visibility: AssetVisibility.Locked });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toThrow(
+        'A Locked photo cannot be a profile picture',
+      );
+
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('refuses a source photo the caller may not read and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create();
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('refuses a source that is not an id and removes the upload (FL-53)', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: 'not-an-id' })).rejects.toThrow(
+        'Invalid profile picture source',
+      );
+
+      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
   });
 
   describe('deleteProfileImage', () => {
@@ -172,6 +243,10 @@ describe(UserService.name, () => {
       await sut.deleteProfileImage(authStub.admin);
 
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files } }]]);
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ profileImagePath: '', profileImageAssetId: null }),
+      );
     });
   });
 
@@ -205,6 +280,16 @@ describe(UserService.name, () => {
       );
 
       expect(mocks.user.get).toHaveBeenCalledWith(user.id, {});
+    });
+
+    it('never serves a picture copied from a photo that became Locked (FL-53)', async () => {
+      const user = UserFactory.create({ profileImagePath: '/path/to/profile.jpg' });
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.hasLockedProfileImageSource.mockResolvedValue(true);
+
+      await expect(sut.getProfileImage(user.id)).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mocks.user.hasLockedProfileImageSource).toHaveBeenCalledWith(user.id);
     });
 
     it('should return the profile picture with the content-type matching the stored file', async () => {

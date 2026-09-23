@@ -449,7 +449,12 @@ export class AuthService extends BaseService {
         Buffer.from(data),
       );
 
-      await this.userRepository.update(user.id, { profileImagePath, profileChangedAt: new Date() });
+      // a picture from the identity provider is not copied from a photo (FL-53)
+      await this.userRepository.update(user.id, {
+        profileImagePath,
+        profileImageAssetId: null,
+        profileChangedAt: new Date(),
+      });
 
       if (oldPath) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
