@@ -4,7 +4,6 @@ import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { editManager } from '$lib/managers/edit/edit-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
@@ -13,7 +12,7 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewer from './AssetViewer.svelte';
 
-vi.mock('$lib/components/asset-viewer/editor/EditorPanel.svelte', async () => {
+vi.mock('$lib/components/frameleaf/editor/QuickEditor.svelte', async () => {
   const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
   return { default: MockViewerControls };
 });
@@ -81,7 +80,6 @@ describe('AssetViewer', () => {
     const updated = { ...asset, isEdited: true, thumbhash: 'new-thumbhash' };
     authManager.setUser(user);
     authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
-    editManager.hasAppliedEdits = false;
     assetViewerManager.isShowEditor = true;
     vi.mocked(getAssetInfo).mockResolvedValue(updated);
     const onAssetChange = vi.fn();

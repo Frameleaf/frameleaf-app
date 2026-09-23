@@ -1,23 +1,29 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import empty3Url from '$lib/assets/empty-3.svg';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import RestoreAssets from './RestoreAction.svelte';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { getTrashActions } from '$lib/services/trash.service';
   import { handlePromiseError } from '$lib/utils';
+  import { navigate } from '$lib/utils/navigation';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
+  /**
+   * Trash (FL-33 cleanup): the Frameleaf library over the trashed items.
+   *
+   * `trash` in the bulk context is what replaces the legacy select bar's own action list: the live
+   * actions give way to restore and permanent delete, which is exactly what that bar offered.
+   */
   type Props = {
     data: PageData;
   };
@@ -25,54 +31,51 @@
   let { data }: Props = $props();
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
   const options = { isTrashed: true };
 
   if (!featureFlagsManager.value.trash) {
     handlePromiseError(goto(Route.photos()));
   }
 
-  const handleEscape = () => {
-    if (!assetMultiSelectManager.selectionActive) {
-      return;
-    }
-
-    assetMultiSelectManager.clear();
-    return;
-  };
-
   const { Empty, RestoreAll } = $derived(getTrashActions($t));
+  const selecting = $derived(librarySession.selection.length > 0);
 </script>
 
 {#if featureFlagsManager.value.trash}
   <UserPageLayout
-    hideNavbar={assetMultiSelectManager.selectionActive}
-    actions={assetMultiSelectManager.selectionActive ? [] : [Empty, RestoreAll]}
+    hideNavbar={selecting}
+    actions={selecting ? [] : [Empty, RestoreAll]}
     title={data.meta.title}
     scrollbar={false}
   >
-    <Timeline
-      enableRouting={true}
+    <LibraryView
       bind:timelineManager
       {options}
-      assetInteraction={assetMultiSelectManager}
-      onEscape={handleEscape}
+      destination={{ kind: 'trash' }}
+      bulkContext={{ trash: true }}
+      enableRouting
+      syncUrl={false}
+      selectAll="loaded"
+      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
     >
       <p class="p-4 font-medium text-gray-500/60 dark:text-gray-300/60">
         {$t('trashed_items_will_be_permanently_deleted_after', {
           values: { days: serverConfigManager.value.trashDays },
         })}
       </p>
+
       {#snippet empty()}
         <EmptyPlaceholder text={$t('trash_no_results_message')} src={empty3Url} class="mx-auto mt-10" />
       {/snippet}
-    </Timeline>
-  </UserPageLayout>
-{/if}
 
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <DeleteAssets force onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)} />
-    <RestoreAssets onRestore={(assetIds) => timelineManager.removeAssets(assetIds)} />
-  </AssetSelectControlBar>
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
+  </UserPageLayout>
 {/if}

@@ -70,6 +70,7 @@ import {
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
+import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
@@ -164,6 +165,7 @@ export class ImmichDatabase {
     MediaOperationCheckpointTable,
     MemoryTable,
     MemoryAuditTable,
+    MemoryExportTable,
     MemoryAssetTable,
     MemoryAssetAuditTable,
     MoveTable,
@@ -296,6 +298,7 @@ export interface DB {
   memory_audit: MemoryAuditTable;
   memory_asset: MemoryAssetTable;
   memory_asset_audit: MemoryAssetAuditTable;
+  memory_export: MemoryExportTable;
 
   migrations: Migrations;
 

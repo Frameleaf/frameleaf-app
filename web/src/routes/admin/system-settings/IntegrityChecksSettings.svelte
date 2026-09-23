@@ -19,13 +19,13 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingGroup
           key="integrity-checks-missing-files"
           title={$t('admin.integrity_checks_missing_files')}
           subtitle={$t('admin.integrity_checks_missing_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingToggle
               title={$t('admin.integrity_checks_missing_files_enable_description')}
               {disabled}
@@ -64,7 +64,7 @@
           title={$t('admin.integrity_checks_untracked_files')}
           subtitle={$t('admin.integrity_checks_untracked_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingToggle
               title={$t('admin.integrity_checks_untracked_files_enable_description')}
               {disabled}
@@ -103,7 +103,7 @@
           title={$t('admin.integrity_checks_checksum_files')}
           subtitle={$t('admin.integrity_checks_checksum_files_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingToggle
               title={$t('admin.integrity_checks_checksum_files_enable_description')}
               {disabled}

@@ -2,6 +2,7 @@ import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
+import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -58,6 +59,7 @@ import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
+import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
@@ -85,6 +87,7 @@ export const services = [
   ActivityService,
   AlbumService,
   ApiService,
+  AssetDevelopService,
   AssetFileService,
   AssetMediaService,
   AssetService,
@@ -135,6 +138,7 @@ export const services = [
   StackService,
   StorageService,
   StorageTemplateService,
+  StudioResourceService,
   SyncService,
   SystemConfigService,
   SystemMetadataService,

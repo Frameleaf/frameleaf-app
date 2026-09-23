@@ -20,7 +20,7 @@
   title={$t('admin.machine_learning_availability_checks')}
   subtitle={$t('admin.machine_learning_availability_checks_description')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <SettingToggle
       title={$t('admin.machine_learning_availability_checks_enabled')}
       bind:checked={workingConfig.availabilityChecks.enabled}
