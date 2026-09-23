@@ -348,7 +348,7 @@ export class PreservationFileRepository {
       output.once('error', reject);
     });
     // Observed now: a write error rejects this before it is awaited below.
-    void closed.catch(() => undefined);
+    void closed.catch(() => {});
     try {
       const digests = await source.stream(name, (chunk) => writeChunk(output, chunk));
       output.end();

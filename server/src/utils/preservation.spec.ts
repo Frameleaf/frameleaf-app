@@ -181,9 +181,9 @@ describe('index entries', () => {
   });
 
   it('refuses traversal, a path of another identity and unknown fields', () => {
-    expect(
-      checkPreservationEntry(line({ original: { path: '../etc/passwd', sha1, sha256, bytes: 5 } })).ok,
-    ).toBe(false);
+    expect(checkPreservationEntry(line({ original: { path: '../etc/passwd', sha1, sha256, bytes: 5 } })).ok).toBe(
+      false,
+    );
     expect(
       checkPreservationEntry(
         line({ metadata: { path: 'metadata/22222222-2222-4222-8222-222222222222.json', sha256, bytes: 5 } }),

@@ -26,7 +26,7 @@ A written package is **Not verified** until a verification says otherwise. A suc
 
 ## Download
 
-**Download package** streams the package as one ZIP (`name.frameleaf-preservation.zip`); **Download manifest** downloads its manifest alone. A package that holds Locked items can only be downloaded from an unlocked session.
+**Download package** streams the package as one ZIP (`name.frameleaf-preservation.zip`); **Download manifest** downloads its manifest alone. A package that holds Locked items can only be downloaded from an unlocked session. While your session is locked, Locked items are left out of the item report, the restoration review and every count.
 
 ## Restore
 

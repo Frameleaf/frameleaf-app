@@ -6,8 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { basename } from 'node:path';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
 import {
   PreservationDecisionsUpdateDto,
@@ -27,7 +28,6 @@ import {
   PreservationSupport,
 } from 'src/dtos/preservation.dto.js';
 import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
@@ -406,7 +406,10 @@ export class PreservationService {
       throw new ConflictException('Cancel the package’s current job before removing it');
     }
     const restoring = await this.repository.listRestores(auth.user.id, 200);
-    for (const restore of restoring.filter((item) => item.packageId === found.id)) {
+    for (const restore of restoring) {
+      if (restore.packageId !== found.id) {
+        continue;
+      }
       if (await this.repository.activeOperation(auth.user.id, 'restoreId', restore.id)) {
         throw new ConflictException('A restoration from this package is still running');
       }
@@ -689,8 +692,8 @@ export class PreservationService {
       await this.repository.updateRestore(found.id, {
         options: {
           ...options,
-          ...(dto.conflictDefault === undefined ? {} : { conflictDefault: dto.conflictDefault }),
-          ...(dto.restoreEditRecipes === undefined ? {} : { restoreEditRecipes: dto.restoreEditRecipes }),
+          ...(dto.conflictDefault !== undefined && { conflictDefault: dto.conflictDefault }),
+          ...(dto.restoreEditRecipes !== undefined && { restoreEditRecipes: dto.restoreEditRecipes }),
         },
       });
     }

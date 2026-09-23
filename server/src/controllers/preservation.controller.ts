@@ -16,11 +16,11 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import multer from 'multer';
+import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
 import {
   PreservationDecisionsUpdateDto,
@@ -49,7 +49,7 @@ import { UUIDv7ParamDto } from 'src/validation.js';
  * Where an uploaded package is written: the uploading account's own private exports folder, under
  * a random name. Never a path the client chose, never memory — a package can be tens of gigabytes.
  */
-const packageUploadStorage = multer.diskStorage({
+const packageUploadStorage = diskStorage({
   destination: (request, _file, callback) => {
     const ownerId = (request as unknown as AuthRequest).user?.user.id;
     if (!ownerId) {

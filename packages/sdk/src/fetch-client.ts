@@ -4877,12 +4877,10 @@ export type PreservationItemDto = {
     error: string | null;
     id: string;
     locked: boolean;
-    /** Withheld for a Locked item until the session is unlocked */
     name: string | null;
     reasonKey: string | null;
     sha256: string | null;
     sizeBytes: string | null;
-    /** Withheld for a Locked item until the session is unlocked */
     sourceAssetId: string | null;
     state: PreservationItemState;
     verifyState: (PreservationVerifyState) | null;
@@ -4988,9 +4986,8 @@ export type PreservationRestoreItemDto = {
     error: string | null;
     /** Translation keys for what the restore left for you to look at */
     findings: string[];
-    /** A Locked item this session may not see; unlock to review it */
-    hidden: boolean;
     id: string;
+    /** Locked in the package or in your library; listed only to an unlocked session */
     locked: boolean;
     match: PreservationRestoreMatch | null;
     name: string | null;
