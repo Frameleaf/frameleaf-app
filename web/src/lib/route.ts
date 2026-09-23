@@ -12,6 +12,9 @@ import { analyticsAreaUrl, areaForSection, commandCenterUrl } from '$lib/framele
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
+/** The server settings section an `isOpen` key opens; the OAuth group sits in the sign-in methods form. */
+const serverSectionKey = (key: string) => (key === OpenQueryParam.OAUTH ? 'authentication' : key);
+
 const asQueueSlug = (name: QueueName) => {
   return name.replaceAll(/[A-Z]/g, (m) => '-' + m.toLowerCase());
 };
@@ -176,10 +179,8 @@ export const Route = {
   systemSettings: (params?: { isOpen?: OpenQueryParam; openSetting?: string }) =>
     // The OAuth group is part of the sign-in methods form (Access & security).
     commandCenterUrl(
-      params?.isOpen
-        ? areaForSection(params.isOpen === OpenQueryParam.OAUTH ? 'authentication' : params.isOpen)
-        : undefined,
-      undefined,
+      params?.isOpen ? areaForSection(serverSectionKey(params.isOpen)) : undefined,
+      params?.isOpen ? serverSectionKey(params.isOpen) : undefined,
       {
         isOpen: params?.isOpen,
         [QueryParameter.OPEN_SETTING]: params?.openSetting,

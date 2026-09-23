@@ -229,7 +229,8 @@ export const USER_SETTINGS_AREAS: readonly {
     icon: mdiFeatureSearchOutline,
   },
   {
-    key: 'notifications',
+    // The older personal settings page called this group `notifications`; that link still works.
+    key: 'email-preferences',
     titleKey: 'notifications',
     descriptionKey: 'notifications_setting_description',
     icon: mdiBellOutline,

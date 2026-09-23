@@ -74,7 +74,7 @@
   <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 {:else if section === 'feature'}
   <FeatureSettings />
-{:else if section === 'notifications'}
+{:else if section === 'email-preferences'}
   <NotificationsSettings />
 {:else if section === 'oauth'}
   <SignInProviderSection />
