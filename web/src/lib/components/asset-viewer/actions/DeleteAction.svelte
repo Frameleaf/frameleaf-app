@@ -37,8 +37,8 @@
       }
 
       try {
-        preAction({ type: AssetAction.DELETE, asset: timelineAsset });
-        await deleteAssets({ assetBulkDeleteDto: { ids: [asset.id], force: true } });
+        await preAction({ type: AssetAction.DELETE, asset: timelineAsset });
+        await deleteAssets({ assetBulkDeleteDto: { ids: [timelineAsset.id], force: true } });
         onAction({ type: AssetAction.DELETE, asset: timelineAsset });
         toastManager.primary($t('permanently_deleted_asset'));
       } catch (error) {
@@ -48,13 +48,17 @@
       return;
     }
 
-    preAction({ type: AssetAction.TRASH, asset: timelineAsset });
-    await deleteAssetsUtil(
-      false,
-      () => onAction({ type: AssetAction.TRASH, asset: timelineAsset }),
-      [timelineAsset],
-      onUndoDelete,
-    );
+    try {
+      await preAction({ type: AssetAction.TRASH, asset: timelineAsset });
+      await deleteAssetsUtil(
+        false,
+        () => onAction({ type: AssetAction.TRASH, asset: timelineAsset }),
+        [timelineAsset],
+        onUndoDelete,
+      );
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_delete_asset'));
+    }
   };
 </script>
 

@@ -1,0 +1,180 @@
+import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { fireEvent, waitFor } from '@testing-library/svelte';
+import { getAnimateMock } from '$lib/__mocks__/animate.mock';
+import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import '$lib/components/asset-viewer/AssetViewer.svelte';
+import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+import { showDeleteModal } from '$lib/stores/preferences.store';
+import { getAssetInfoFromParam, navigate } from '$lib/utils/navigation';
+import { renderWithTooltips } from '$tests/helpers';
+import { assetFactory } from '@test-data/factories/asset-factory';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
+import Host from './TimelineDeletion.test-host.svelte';
+
+const { deleteRequest, confirmRequest } = vi.hoisted(() => ({
+  deleteRequest: vi.fn<() => Promise<void>>(),
+  confirmRequest: vi.fn<() => Promise<boolean>>(),
+}));
+vi.mock('@immich/ui', async () => {
+  const ui = await vi.importActual<typeof import('@immich/ui')>('@immich/ui');
+  return { ...ui, modalManager: { ...ui.modalManager, show: confirmRequest } };
+});
+vi.mock('@immich/sdk', async () => ({
+  ...(await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk')),
+  deleteAssets: deleteRequest,
+  getAssetInfo: vi.fn(),
+  getFaces: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('$lib/utils/navigation', async () => ({
+  ...(await vi.importActual<typeof import('$lib/utils/navigation')>('$lib/utils/navigation')),
+  navigate: vi.fn(),
+}));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
+  featureFlagsManager: { init: vi.fn(), value: { smartSearch: true, trash: true } },
+}));
+vi.mock('$lib/components/asset-viewer/VideoWrapperViewer.svelte', async () => {
+  const { default: component } = await import('@test-data/components/MockText.svelte');
+  return { default: component };
+});
+vi.mock('$lib/components/frameleaf/editor/QuickEditor.svelte', async () => {
+  const { default: component } = await import('@test-data/components/MockViewerControls.svelte');
+  return { default: component };
+});
+vi.mock('$lib/stores/face.svelte', () => ({
+  faceManager: { clear: vi.fn(), getAssetFaces: vi.fn(), data: [], facesByPersonId: new Map(), people: [] },
+}));
+vi.mock('$lib/stores/ocr.svelte', () => ({
+  ocrManager: { clear: vi.fn(), getAssetOcr: vi.fn(), hasOcrData: false, showOverlay: false },
+}));
+
+beforeAll(() => {
+  Element.prototype.animate = getAnimateMock();
+  vi.stubGlobal('ResizeObserver', getResizeObserverMock());
+});
+afterEach(() => {
+  assetCacheManager.invalidate();
+  authManager.reset();
+  showDeleteModal.set(true);
+  vi.clearAllMocks();
+});
+
+function setup(isTrashed = true) {
+  const user = userAdminFactory.build();
+  authManager.setUser(user);
+  authManager.setPreferences(preferencesFactory.build());
+  const [a, b, c] = assetFactory.buildList(3, { ownerId: user.id, isTrashed });
+  const manager = {
+    getEarlierAsset: vi.fn((asset: AssetResponseDto) =>
+      Promise.resolve(asset.id === a.id ? b : asset.id === b.id ? c : undefined),
+    ),
+    getLaterAsset: vi.fn().mockResolvedValue(undefined),
+    removeAssets: vi.fn(),
+    getTimelineMonthByAssetId: vi.fn(),
+  };
+  vi.mocked(getAssetInfo).mockImplementation(({ id }) => Promise.resolve(id === b.id ? b : c));
+  deleteRequest.mockResolvedValue(undefined);
+  assetViewerManager.setAsset(a);
+  return { a, b, c, manager };
+}
+
+it.each([true, false])(
+  'keeps a delayed route lookup alive until navigation completes before emitting the real local delete event (permanent=%s)',
+  async (force) => {
+    const { a, b, manager } = setup(force);
+    showDeleteModal.set(false);
+    const deleted = vi.fn();
+    const stop = eventManager.on({ AssetsDelete: deleted });
+    const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
+    const button = await view.findByRole('button', { name: force ? 'permanently_delete' : 'delete' });
+    let resolveRoute!: (asset: AssetResponseDto) => void;
+    const response = new Promise<AssetResponseDto>((resolve) => {
+      resolveRoute = resolve;
+    });
+    assetCacheManager.invalidateAsset(b.id);
+    vi.mocked(getAssetInfo).mockReturnValueOnce(response);
+    let routeError: unknown;
+    let routeCompletion: Promise<void> | undefined;
+    vi.mocked(navigate).mockImplementation(
+      ({ assetId }) =>
+        (routeCompletion = (async () => {
+          try {
+            const asset = await getAssetInfoFromParam({ assetId: assetId ?? undefined });
+            if (asset) {
+              assetViewerManager.setAsset(asset);
+            }
+          } catch (error) {
+            routeError = error;
+          }
+        })()),
+    );
+    await fireEvent.click(button);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ assetId: b.id })));
+    const requestsBeforeRouteCompletion = deleteRequest.mock.calls.length;
+    resolveRoute(b);
+    await routeCompletion;
+    await waitFor(() => expect(deleted).toHaveBeenCalledWith([a.id]));
+    expect.soft(requestsBeforeRouteCompletion).toBe(0);
+    expect.soft(routeError).toBeUndefined();
+    expect(assetViewerManager.asset?.id).toBe(b.id);
+    expect(assetViewerManager.isViewing).toBe(true);
+    stop();
+  },
+);
+
+it('does not use B cursor when confirmation for A completes after navigation', async () => {
+  const { a, b, c, manager } = setup();
+  let confirm!: (value: boolean) => void;
+  confirmRequest.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      confirm = resolve;
+    }),
+  );
+  const deleted = vi.fn();
+  const stop = eventManager.on({ AssetsDelete: deleted });
+  const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
+  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await waitFor(() => expect(confirmRequest).toHaveBeenCalledOnce());
+  assetViewerManager.setAsset(b);
+  await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: c.id })));
+  confirm(true);
+  await waitFor(() => expect(deleted).toHaveBeenCalledWith([a.id]));
+  expect(deleteRequest).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: [a.id], force: true } });
+  expect(navigate).not.toHaveBeenCalled();
+  expect(assetViewerManager.asset?.id).toBe(b.id);
+  stop();
+});
+
+it('ignores a late neighbor lookup for an asset that is no longer open', async () => {
+  const { a, b, c, manager } = setup();
+  showDeleteModal.set(false);
+  let releaseOld!: (asset: AssetResponseDto) => void;
+  manager.getEarlierAsset.mockImplementation((asset: AssetResponseDto) =>
+    asset.id === a.id
+      ? new Promise((resolve) => {
+          releaseOld = resolve;
+        })
+      : Promise.resolve(c),
+  );
+  vi.mocked(getAssetInfo).mockImplementation(({ id }) => Promise.resolve(id === b.id ? b : c));
+  vi.mocked(navigate).mockImplementation(async ({ assetId }) => {
+    const target = await getAssetInfoFromParam({ assetId: assetId ?? undefined });
+    if (target) {
+      assetViewerManager.setAsset(target);
+    }
+  });
+  const view = renderWithTooltips(Host, { timelineManager: manager as unknown as TimelineManager });
+  await waitFor(() => expect(manager.getEarlierAsset).toHaveBeenCalledWith(a));
+  assetViewerManager.setAsset(b);
+  await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: c.id })));
+  releaseOld(b);
+  await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
+  await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
+  await waitFor(() => expect(deleteRequest).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: [b.id], force: true } }));
+  expect(assetViewerManager.asset?.id).toBe(c.id);
+});
