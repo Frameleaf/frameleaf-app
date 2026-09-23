@@ -1697,6 +1697,7 @@
   "frameleaf_activity_status_preparing": "Preparing",
   "frameleaf_activity_status_queued": "Queued",
   "frameleaf_activity_status_rendering": "Rendering",
+  "frameleaf_activity_status_retrying": "Retrying shortly",
   "frameleaf_activity_status_validating": "Checking output",
   "frameleaf_activity_summary": "{running} running · {done} done · {failed} needing attention",
   "frameleaf_activity_summary_idle": "Nothing is processing",
