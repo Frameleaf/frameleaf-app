@@ -2879,6 +2879,8 @@ export type LoginCredentialDto = {
     email: string;
     /** User password */
     password: string;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
 };
 export type LoginResponseDto = {
     /** Access token */
@@ -4986,6 +4988,8 @@ export type OAuthBackchannelLogoutDto = {
 export type OAuthCallbackDto = {
     /** OAuth code verifier (PKCE) */
     codeVerifier?: string;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
     /** OAuth state parameter */
     state?: string;
     /** OAuth callback URL */
