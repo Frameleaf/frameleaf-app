@@ -30,6 +30,7 @@ import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getPreferences } from 'src/utils/preferences.js';
+import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -194,6 +195,15 @@ export class AlbumService extends BaseService {
 
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
 
+    // Nobody is put into a shared space without agreeing to it: the people named
+    // at creation are invited, and become members only when they accept.
+    const invitesOnly = kind === AlbumKind.Space;
+    if (invitesOnly) {
+      for (const { role } of albumUsers) {
+        requireInvitableRole(role);
+      }
+    }
+
     const album = await this.albumRepository.create(
       {
         albumName: dto.albumName,
@@ -205,11 +215,21 @@ export class AlbumService extends BaseService {
         kind,
       },
       assetIds,
-      [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
+      invitesOnly
+        ? [{ userId: auth.user.id, role: AlbumUserRole.Owner }]
+        : [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
       auth.user.id,
     );
 
-    for (const { userId } of albumUsers) {
+    for (const { userId, role } of albumUsers) {
+      if (invitesOnly) {
+        await this.albumUserRepository.createInvite({
+          albumId: album.id,
+          userId,
+          role,
+          invitedById: auth.user.id,
+        });
+      }
       await this.eventRepository.emit('AlbumInvite', { id: album.id, userId, senderName: auth.user.name });
     }
 
@@ -448,10 +468,22 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
+    // Membership of a shared space belongs to its owner: an editor contributes
+    // photos but never decides who is in the space. And a space is only entered
+    // by accepting an invitation, so nobody is added to one here.
+    const space = isSharedSpace(album);
+    if (space) {
+      requireSpaceOwner(album, auth.user.id);
+    }
 
     for (const { userId, role } of albumUsers) {
       if (role === AlbumUserRole.Owner) {
         throw new BadRequestException('Cannot add another owner');
+      }
+      // The DTO leaves the role off for "share with edit rights", the album default.
+      const invitedRole = role ?? AlbumUserRole.Editor;
+      if (space) {
+        requireInvitableRole(invitedRole);
       }
 
       const exists = album.albumUsers.some(({ user: { id } }) => id === userId);
@@ -465,7 +497,16 @@ export class AlbumService extends BaseService {
         throw new BadRequestException('Invalid user');
       }
 
-      await this.albumUserRepository.create({ userId, albumId: id, role });
+      if (space) {
+        await this.albumUserRepository.createInvite({
+          albumId: id,
+          userId,
+          role: invitedRole,
+          invitedById: auth.user.id,
+        });
+      } else {
+        await this.albumUserRepository.create({ userId, albumId: id, role });
+      }
       await this.eventRepository.emit('AlbumInvite', { id, userId, senderName: auth.user.name });
     }
 
@@ -480,9 +521,12 @@ export class AlbumService extends BaseService {
     }
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
+    const space = isSharedSpace(album);
 
     const exists = album.albumUsers.find(({ user: { id } }) => id === userId);
     if (!exists) {
+      // Someone who was invited to a shared space and never joined is withdrawn
+      // through DELETE /shared-spaces/{id}/invitations/{userId}, not here.
       throw new BadRequestException('Album not shared with user');
     }
 
@@ -493,9 +537,13 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('Cannot remove the last album owner');
     }
 
-    // non-admin can remove themselves
+    // Anyone can leave; removing somebody else needs share rights, and for a
+    // shared space that means its owner.
     if (auth.user.id !== userId) {
       await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
+      if (space) {
+        requireSpaceOwner(album, auth.user.id);
+      }
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
@@ -509,6 +557,25 @@ export class AlbumService extends BaseService {
 
     if (owner.user.id === userId) {
       throw new BadRequestException('User is owner');
+    }
+
+    if (isSharedSpace(album)) {
+      // Roles in a shared space are the owner's to set, and `owner` is not one
+      // of them: a space has exactly one owner, the person who made it.
+      requireSpaceOwner(album, auth.user.id);
+      requireInvitableRole(dto.role);
+
+      const invite = await this.albumUserRepository.getInvite({ albumId: id, userId });
+      if (invite) {
+        // The person has not joined yet, so the offer changes rather than a role.
+        await this.albumUserRepository.createInvite({
+          albumId: id,
+          userId,
+          role: dto.role,
+          invitedById: invite.invitedById ?? auth.user.id,
+        });
+        return;
+      }
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
