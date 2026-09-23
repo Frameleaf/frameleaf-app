@@ -30,6 +30,10 @@ import {
 
 /** The prototype's guard: a finite number inside the axis limit, or null. */
 export const validCoordinate = (value: unknown, limit: number): number | null => {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    // `Number(null)` and `Number('')` are 0, which would pass as a real coordinate.
+    return null;
+  }
   const number = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(number) && Math.abs(number) <= limit ? number : null;
 };

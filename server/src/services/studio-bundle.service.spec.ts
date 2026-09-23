@@ -110,7 +110,9 @@ const memoryFs = () => {
       const entries: Array<{ name: string; data: Buffer }> = [];
       return {
         stream,
-        addFile: (path: string, name: string) => entries.push({ name, data: read(path) }),
+        addFile: (path: string, name: string) => {
+          entries.push({ name, data: read(path) });
+        },
         finalize: () => {
           stream.end(buildZip(entries));
           return Promise.resolve();

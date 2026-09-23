@@ -746,7 +746,7 @@ export class PhysicalDeduplicationService extends BaseService {
     for (const retained of retainedById.values()) {
       retained.referencesAfter = retained.referencesBefore + (sharesByRetained.get(retained.assetId) ?? 0);
     }
-    summary.retained = [...retainedById.values()];
+    summary.retained = retainedById.values().toArray();
 
     this.logger.log(
       `Physical deduplication preview complete: ${summary.eligibleAssets} eligible, ${summary.reclaimableBytes} reclaimable bytes`,
