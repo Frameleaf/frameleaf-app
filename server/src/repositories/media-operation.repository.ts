@@ -667,8 +667,16 @@ export class MediaOperationRepository {
    * items runs on the next claim, after `delayMs`, from what the result says. It is not a retry of
    * the job itself and does not use `autoRetries`. Returns false when the claim is gone or a cancel
    * was requested; the caller then settles the cancel instead.
+   *
+   * `returnAttempt` gives the claim's attempt back, as `settlePause` does: an iCloud sync (FL-68)
+   * that hands itself back to wait for the provider or for a backed-off item did not fail, and must
+   * not use up the attempts lapse recovery counts.
    */
-  async requeue(id: string, claimToken: string, options: { delayMs: number }): Promise<boolean> {
+  async requeue(
+    id: string,
+    claimToken: string,
+    options: { delayMs: number; returnAttempt?: boolean },
+  ): Promise<boolean> {
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -678,6 +686,7 @@ export class MediaOperationRepository {
         claimToken: null,
         claimedBy: null,
         claimExpiresAt: null,
+        ...(options.returnAttempt ? { attempt: sql<number>`greatest("attempt" - 1, 0)` } : {}),
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)

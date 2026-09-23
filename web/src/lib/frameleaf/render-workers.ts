@@ -160,6 +160,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.StudioBundleExport]: 'frameleaf_render_workers_kind_studio_bundle_export',
   [MediaOperationKind.StudioBundleImport]: 'frameleaf_render_workers_kind_studio_bundle_import',
   [MediaOperationKind.EnrichmentPlan]: 'frameleaf_render_workers_kind_enrichment_plan',
+  [MediaOperationKind.IcloudSync]: 'frameleaf_render_workers_kind_icloud_sync',
 };
 
 export const auditEventKey: Readonly<Record<RenderWorkerAuditEvent, Translations>> = {
