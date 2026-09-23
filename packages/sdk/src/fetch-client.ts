@@ -2535,11 +2535,82 @@ export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
+export type MemoryStoryPlaceDto = {
+    /** City */
+    city: string | null;
+    /** Country */
+    country: string | null;
+    /** State or region */
+    state: string | null;
+};
+export type EventStoryDto = {
+    /** Number of assets the event held before the diversity pass */
+    assetCount: number;
+    /** Number of distinct local days the event covers */
+    dayCount: number;
+    /** Last local day of the event, 'yyyy-MM-dd' */
+    endDate: string;
+    /** Discriminator for an event story */
+    kind: "event_story";
+    place?: MemoryStoryPlaceDto;
+    /** First local day of the event, 'yyyy-MM-dd' */
+    startDate: string;
+    /** Place label for the event, when it has one */
+    title?: string;
+    /** Year the event started */
+    year: number;
+};
+export type YearInReviewDto = {
+    /** Number of assets captured that year */
+    assetCount: number;
+    /** Discriminator for a year in review recap */
+    kind: "year_in_review";
+    /** Number of distinct months represented */
+    monthCount: number;
+    /** Calendar year being recapped */
+    year: number;
+};
+export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryExportResponseDto = {
+    /** Number of assets in the export */
+    assetCount: number;
+    /** When the export was requested */
+    createdAt: string;
+    /** Failure reason, when the export failed */
+    error: string | null;
+    /** When the archive is deleted */
+    expiresAt: string | null;
+    /** When the export reached a terminal state */
+    finishedAt: string | null;
+    format: MemoryExportFormat;
+    /** Export ID */
+    id: string;
+    /** Whether the archive can be downloaded right now */
+    isDownloadable: boolean;
+    /** Memory the export was requested for */
+    memoryId: string;
+    /** Owner user ID */
+    ownerId: string;
+    /** Number of assets written so far */
+    processedAssets: number;
+    /** Size of the finished archive */
+    sizeInBytes: number | null;
+    /** When the worker picked the export up */
+    startedAt: string | null;
+    status: MemoryExportStatus;
+    /** The memory's title when the export was requested */
+    title: string;
+    /** Last update date */
+    updatedAt: string;
+};
+export type MemoryExportCreateDto = {
+    format?: MemoryExportFormat;
+};
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
     createdAt: string;
-    data: OnThisDayDto;
+    data: MemoryData;
     /** Deletion date */
     deletedAt?: string;
     /** Date when memory should be hidden */
@@ -2563,7 +2634,7 @@ export type MemoryResponseDto = {
 export type MemoryCreateDto = {
     /** Asset IDs to associate with memory */
     assetIds?: string[];
-    data: OnThisDayDto;
+    data: MemoryData;
     /** Date when memory should be hidden */
     hideAt?: string;
     /** Is memory saved */
@@ -6946,6 +7017,72 @@ export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, o
     }));
 }
 /**
+ * Retrieve memory exports
+ */
+export function getMemoryExports({ memoryId }: {
+    memoryId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto[];
+    }>(`/memories/exports${QS.query(QS.explode({
+        memoryId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Delete a memory export
+ */
+export function deleteMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/memories/exports/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve a memory export
+ */
+export function getMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto;
+    }>(`/memories/exports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel a memory export
+ */
+export function cancelMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto;
+    }>(`/memories/exports/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Download a memory export
+ */
+export function downloadMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/memories/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
  * Delete a memory
  */
 export function deleteMemory({ id }: {
@@ -6999,6 +7136,22 @@ export function removeMemoryAssets({ id, bulkIdsDto }: {
         ...opts,
         method: "DELETE",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Export a memory
+ */
+export function createMemoryExport({ id, memoryExportCreateDto }: {
+    id: string;
+    memoryExportCreateDto: MemoryExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MemoryExportResponseDto;
+    }>(`/memories/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryExportCreateDto
     })));
 }
 /**
@@ -9393,7 +9546,8 @@ export enum StorageFolder {
     Upload = "upload",
     Profile = "profile",
     Thumbs = "thumbs",
-    Backups = "backups"
+    Backups = "backups",
+    Exports = "exports"
 }
 export enum NotificationLevel {
     Success = "success",
@@ -9807,7 +9961,20 @@ export enum MemorySearchOrder {
     Random = "random"
 }
 export enum MemoryType {
-    OnThisDay = "on_this_day"
+    OnThisDay = "on_this_day",
+    EventStory = "event_story",
+    YearInReview = "year_in_review"
+}
+export enum MemoryExportFormat {
+    Archive = "archive"
+}
+export enum MemoryExportStatus {
+    Pending = "pending",
+    Running = "running",
+    Ready = "ready",
+    Failed = "failed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
