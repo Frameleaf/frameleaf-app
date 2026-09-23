@@ -1,0 +1,128 @@
+# Video restoration worker
+
+The restoration worker serves the **Faithful** and **Creative** restoration workloads
+(`restoration-faithful`, `restoration-creative`). It is a separate process from the
+`/predict` machine-learning container and is added to the server as a local or LAN
+destination (or reached through RunPod) under **Processing destinations**. The server only
+sends it work after an explicit destination choice; a cloud destination additionally needs
+the administrator's recorded consent and a per-request acknowledgement that media leaves
+the network.
+
+Status: **not qualified.** The adapters, the qualification gate and the contract are in
+place; no model weights have been run for this repository. Until a qualification record
+with real evidence exists, the worker reports every model as unavailable and serves no
+restoration workload.
+
+| Mode     | Family                                                           | How it runs                                                                                                        |
+| -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Faithful | [RealBasicVSR](https://github.com/ckkelvinchan/RealBasicVSR)     | Upstream `inference_realbasicvsr.py` on a folder of frames at native x4, then a Lanczos resize to the requested size |
+| Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream `projects/inference_seedvr2_*.py` on a lossless clip at the requested size; its encoded output is decoded   |
+
+The mode names express intention, not a fidelity guarantee.
+
+## Files
+
+- `models.example.json` — the model manifest format. Copy it to the path in
+  `FRAMELEAF_RESTORATION_MODELS` (default `/restoration/config/models.json`) and replace
+  every `REPLACE` value with what the qualification run measured.
+- `qualification.example.json` — the qualification evidence format. Copy it to
+  `FRAMELEAF_RESTORATION_QUALIFICATION` (default `/restoration/config/qualification.json`).
+  The example records are deliberately `pending`.
+- `../Dockerfile.video-restoration` — the worker image, with an optional stage per
+  isolated runtime.
+- `../immich_ml/video_restoration/` — the worker: `models.py` (adapters and gate),
+  `pipeline.py` (one inference), `app.py` (HTTP), `schemas.py` (wire contract).
+
+## When a model is available
+
+`GET /restoration/models` lists every configured model with a `state` and every reason it
+is not available. A model is `available` only when all of these hold:
+
+1. The manifest pins an exact 40-character upstream commit and a sha256 for every weight,
+   including support weights (RealBasicVSR's SPyNet flow network).
+2. The runtime checkout and its interpreter exist.
+3. The checkout is at the pinned commit with no modified tracked files.
+4. Every weight file exists and hashes to its pinned value. Hashes are cached by size and
+   modification time and re-checked before every request, so a replaced file is caught.
+5. A qualification record for the same model id, revision and exact weight hashes has been
+   reviewed, carries `pass` for every required evidence item, has measured throughput and a
+   qualified GPU, and lists this image's `FRAMELEAF_RESTORATION_IMAGE_REVISION`.
+6. The record approves the code and weight licences (`license.approved` with the licence
+   names, reviewer and date).
+7. An NVIDIA GPU is visible, its `nvidia-smi` name is one the record qualified, and it has
+   at least `limits.minVramBytes` of memory.
+
+`GET /capabilities` lists a restoration workload only while at least one model for that
+mode is available, so the server's admission refuses restoration work on any worker that is
+not qualified.
+
+HDR and sources above 8 bits are refused. Offering them needs a record with
+`hdrQualified: true` **and** an HDR output path, which this worker does not have yet.
+Variable-frame-rate sources are refused until they are conformed to a constant rate.
+
+## Required evidence
+
+Every model needs `pass` for: `weights-hashed`, `resource-profile` (measured VRAM, input
+size and time), `compare-faces`, `compare-text`, `compare-foliage`, `compare-motion`,
+`compare-cuts`, `chunk-seams`, `timing-preserved`, `audio-preserved` (each against a
+conventional resize of the same source), `hallucination`, `temporal-stability` (judged over
+motion, not on still frames), `deterministic-repeat`, and the fault tests
+`fault-out-of-memory`, `fault-nan`, `fault-changed-weights`, `fault-dirty-checkout`,
+`fault-unsupported-input`.
+
+RealBasicVSR additionally needs `x4-to-requested-2x`: its x4 output resized to the
+requested 2x compared with a plain 2x resize. SeedVR2 additionally needs
+`intermediate-compression` (the loss its encoded output adds) and `frame-count` (the output
+has exactly the input's frames).
+
+Each evidence entry names an `artifact` (report path, CI run or archive) so the result can
+be reproduced. `measurements` record the GPU, input size, frame count, frames per second and
+peak memory of real runs; the server's estimates come from these and from measured
+throughput, never from constants.
+
+## What must be done on qualified hardware
+
+These cannot be done in this repository's CI and remain open on FL-114:
+
+- Pin both upstream commits, build the isolated runtimes, and confirm the argv templates,
+  checkpoint file names and SPyNet cache location against those commits.
+- Run the real weights on each target GPU; record sha256 of every runtime and support
+  weight, peak VRAM, the largest input size that fits and frames per second.
+- Produce the comparisons above against conventional resize and the fault tests
+  (out-of-memory, NaN, changed weights, dirty checkout, unsupported input) and a
+  deterministic repeat.
+- Review the code and weight licences.
+- Fill in the manifest and qualification files with the measured values and the image
+  revision the evidence covers.
+
+## Wire contract
+
+`POST /restoration/restore` takes a multipart form with `request` (JSON) and `media` (the
+file). The request names the mode, optionally a model id and a model fingerprint (a full
+render passes the fingerprint its preview reported and is refused with `model-changed` if
+anything moved), the scale (1 or 2), the long-edge cap (at most 3840), an optional segment,
+a seed and what the server measured about the source. The worker re-probes the upload and
+refuses a mismatch.
+
+On success the body is the restored MP4 and the `x-restoration-result` header carries the
+base64url JSON result: model identity with weight hashes and qualification id, output
+description with sha256, timing and measured frames per second, peak VRAM and warnings. On
+failure the body is `{ "code", "message", "modelId" }` with a code from `invalid-request`,
+`model-unavailable`, `model-changed`, `unsupported-input`, `source-mismatch`, `busy`,
+`out-of-memory`, `invalid-output`, `runtime-failed` or `timeout`.
+
+The worker only reads the upload and writes the restored file as a new file in a private
+working directory that is deleted after the response. The server writes it as a new
+derivative; originals are never overwritten. The server should cut the segment before
+upload so a remote worker never receives more of the original than the job needs.
+
+## Environment
+
+| Variable                               | Default                                  | Purpose                                                  |
+| -------------------------------------- | ---------------------------------------- | -------------------------------------------------------- |
+| `FRAMELEAF_RESTORATION_MODELS`         | `/restoration/config/models.json`        | Model manifest                                           |
+| `FRAMELEAF_RESTORATION_QUALIFICATION`  | `/restoration/config/qualification.json` | Qualification evidence                                   |
+| `FRAMELEAF_RESTORATION_WORKDIR`        | system temporary directory               | Per-request working directories                          |
+| `FRAMELEAF_RESTORATION_IMAGE_REVISION` | set by the image build                   | Revision the qualification record must list              |
+| `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
+| `IMMICH_ML_AUTH_TOKEN`                 | unset                                    | Bearer token, as for the predict container               |
