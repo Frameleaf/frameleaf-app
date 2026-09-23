@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import UploadCover from './DragAndDropUploadOverlay.svelte';
+  import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import type { Snippet } from 'svelte';
   interface Props {
