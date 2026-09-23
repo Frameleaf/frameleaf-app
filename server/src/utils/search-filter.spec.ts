@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { SearchFilter, isAlbumConfined, isFullyAlbumConfined } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
@@ -6,6 +6,7 @@ import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
   filterUsesLocation,
+  requirePetFilterAllowed,
   usesLocationFilter,
 } from 'src/utils/search-filter.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -87,6 +88,32 @@ describe(collectFilterIds.name, () => {
     const personId = '00000000-0000-4000-8000-00000000000b';
     const filter = { albumIds: { any: [albumId] }, personIds: { any: [personId] } };
     expect(collectFilterIds(filter, 'personIds')).toEqual([personId]);
+  });
+
+  it('should collect pet ids from every operator and branch', () => {
+    const [petA, petB] = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b'];
+    const filter: SearchFilter = { petIds: { any: [petA] }, or: [{ petIds: { none: [petB] } }] };
+    expect(collectFilterIds(filter, 'petIds').toSorted()).toEqual([petA, petB]);
+    expect(collectFilterIds(filter, 'personIds')).toEqual([]);
+  });
+});
+
+describe(requirePetFilterAllowed.name, () => {
+  const petId = '00000000-0000-4000-8000-00000000000a';
+
+  it('should reject a pet filter through a shared link, which authenticates as the link owner', () => {
+    const auth = AuthFactory.from().sharedLink().build();
+    expect(() => requirePetFilterAllowed(auth, [petId])).toThrow(BadRequestException);
+  });
+
+  it('should let a shared link search without a pet filter', () => {
+    const auth = AuthFactory.from().sharedLink().build();
+    expect(() => requirePetFilterAllowed(auth, undefined)).not.toThrow();
+    expect(() => requirePetFilterAllowed(auth, [])).not.toThrow();
+  });
+
+  it('should let the signed-in owner filter by pet', () => {
+    expect(() => requirePetFilterAllowed(unelevatedAuth(), [petId])).not.toThrow();
   });
 });
 

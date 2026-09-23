@@ -82,6 +82,33 @@ describe(TimelineService.name, () => {
     });
   });
 
+  describe('pet filter', () => {
+    const petId = '00000000-0000-4000-8000-00000000000a';
+
+    it('should pass a pet id to the bucket query, which scopes it to the caller', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([{ timeBucket: 'bucket', count: 1 }]);
+
+      await sut.getTimeBuckets(authStub.admin, { petId });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        {
+          petId,
+          userIds: [authStub.admin.user.id],
+        },
+        authStub.admin,
+      );
+    });
+
+    it('should reject a pet filter through a shared link', async () => {
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+
+      await expect(
+        sut.getTimeBucket(authStub.adminSharedLink, { timeBucket: 'bucket', albumId: 'album-id', petId }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getTimeBucket', () => {
     it('should return the assets for a album time bucket if user has album.read', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));

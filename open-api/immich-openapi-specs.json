@@ -3454,6 +3454,27 @@
                 ],
                 "x-immich-state": "Deprecated"
               },
+              "petIds": {
+                "deprecated": true,
+                "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+                "items": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "type": "array",
+                "x-immich-history": [
+                  {
+                    "version": "v3.2.0",
+                    "state": "Added"
+                  },
+                  {
+                    "version": "v3.2.0",
+                    "state": "Deprecated"
+                  }
+                ],
+                "x-immich-state": "Deprecated"
+              },
               "previewPath": {
                 "deprecated": true,
                 "description": "Filter by preview file path",
@@ -11561,6 +11582,27 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
           "previewPath": {
             "deprecated": true,
             "description": "Filter by preview file path",
@@ -15464,6 +15506,27 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
           "rating": {
             "deprecated": true,
             "description": "Filter by rating [1-5], or null for unrated",
@@ -17482,6 +17545,9 @@
           "personIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
+          "petIds": {
+            "$ref": "#/components/schemas/IdsFilter"
+          },
           "rating": {
             "$ref": "#/components/schemas/NumberFilterNullable"
           },
@@ -17582,6 +17648,9 @@
             "$ref": "#/components/schemas/StringPatternFilter"
           },
           "personIds": {
+            "$ref": "#/components/schemas/IdsFilter"
+          },
+          "petIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
           "rating": {
@@ -19667,6 +19736,27 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
           "query": {
             "description": "Natural language search query",
             "type": "string"
@@ -20434,6 +20524,27 @@
               {
                 "version": "v2",
                 "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
               },
               {
                 "version": "v3.2.0",
@@ -44119,6 +44230,32 @@
             }
           },
           {
+            "name": "petIds",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated",
+            "deprecated": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+              }
+            }
+          },
+          {
             "name": "rating",
             "required": false,
             "in": "query",
@@ -49993,6 +50130,17 @@
             }
           },
           {
+            "name": "petId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
             "name": "slug",
             "required": false,
             "in": "query",
@@ -50203,6 +50351,17 @@
             "required": false,
             "in": "query",
             "description": "Filter assets containing a specific person (face recognition)",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "petId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets in which the caller confirmed one of their own pets",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",

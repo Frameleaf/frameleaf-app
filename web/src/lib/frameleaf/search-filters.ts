@@ -30,7 +30,7 @@ export const SET_GROUP_LABEL_KEYS: Record<SetGroup, string> = {
   none: 'frameleaf_search_match_none',
 };
 
-/** An id-set condition (`personIds`, `tagIds`, `albumIds`). */
+/** An id-set condition (`personIds`, `petIds`, `tagIds`, `albumIds`). */
 export type SetCondition = Partial<Record<SetGroup, string[]>> | null;
 type Condition = Record<string, unknown> | null | undefined;
 
@@ -246,6 +246,7 @@ export const isEnrichmentFilter = (value: unknown): value is ImageEnrichmentFilt
 /** Translated field names for the chip row, keyed by `SearchFilter` field. */
 const FIELD_LABEL_KEYS: Record<string, string> = {
   personIds: 'people',
+  petIds: 'frameleaf_pets_title',
   tagIds: 'tags',
   albumIds: 'albums',
   type: 'media_type',
@@ -299,7 +300,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
 const DATE_FIELDS = new Set(['takenAt', 'createdAt', 'updatedAt', 'trashedAt']);
-const SET_FIELDS = new Set(['personIds', 'tagIds', 'albumIds']);
+const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds']);
 
 const formatDay = (value: unknown, locale: string) => {
   const day = typeof value === 'string' ? value : '';
@@ -310,7 +311,7 @@ const formatDay = (value: unknown, locale: string) => {
 };
 
 export interface ChipLabelOptions {
-  /** Resolves an id to a display name (a person, a tag, an album). Falls back to the id. */
+  /** Resolves an id to a display name (a person, a pet, a tag, an album). Falls back to the id. */
   nameFor?: (field: string, id: string) => string | undefined;
   locale?: string;
 }

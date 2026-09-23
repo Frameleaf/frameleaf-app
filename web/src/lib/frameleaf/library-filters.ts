@@ -12,6 +12,7 @@ import type { DiscoveryQuery } from '$lib/components/discovery/query';
 const FIELD_LABEL_KEYS: Record<string, string> = {
   personIds: 'people',
   hasPeople: 'people',
+  petIds: 'frameleaf_pets_title',
   takenAt: 'date_and_time',
   createdAt: 'created',
   updatedAt: 'frameleaf_library_filter_field_updated',
@@ -129,7 +130,7 @@ export const describeFilterFields = (query: DiscoveryQuery, fields: string[]): F
     .filter((description): description is FilterChipDescription => description !== null);
 
 /**
- * The literal ids behind an active `personIds`/`tagIds` (or similar id-list) condition, when it is
+ * The literal ids behind an active `personIds`/`petIds`/`tagIds` (or similar id-list) condition, when it is
  * a positive membership condition (`any`/`all`) — `null` for an exclusion (`none`) and for anything
  * that is not an id-list condition. Naming a download after an id from a `none` condition would say
  * the opposite of what was filtered (FL-45): the download holds everything *except* those ids, so

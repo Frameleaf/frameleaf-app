@@ -285,10 +285,15 @@
   };
 
   /** The id-list filter fields a person/pet/tag's real name can be resolved for (FL-45 owner decision). */
-  const ENTITY_FILTER_FIELDS: Partial<Record<string, FilterEntityKind>> = { personIds: 'person', tagIds: 'tag' };
+  const ENTITY_FILTER_FIELDS: Partial<Record<string, FilterEntityKind>> = {
+    personIds: 'person',
+    // FL-58: a pet-filtered download is named after the pet(s), never a hidden or unnamed one
+    petIds: 'pet',
+    tagIds: 'tag',
+  };
 
   /**
-   * One filter chip's contribution to the download name: a person/tag chip resolves to the actual
+   * One filter chip's contribution to the download name: a person/pet/tag chip resolves to the actual
    * name(s) behind it wherever it can (owner decision, September 22, 2026), falling back to the
    * chip's translated field label ("People"/"Tags") exactly as before when nothing can be named —
    * every id unresolvable, hidden, unnamed, or the lookup itself failed. A negated condition

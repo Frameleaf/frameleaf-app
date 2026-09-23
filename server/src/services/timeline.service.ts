@@ -9,6 +9,7 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
+import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -94,6 +95,9 @@ export class TimelineService extends BaseService {
     if (dto.tagId) {
       await this.requireAccess({ auth, permission: Permission.TagRead, ids: [dto.tagId] });
     }
+
+    // FL-58: a pet is its owner's alone; the bucket SQL also only matches the caller's own pets
+    requirePetFilterAllowed(auth, dto.petId ? [dto.petId] : undefined);
 
     if (auth.sharedLink && !auth.sharedLink.showExif) {
       dto.withCoordinates = false;
