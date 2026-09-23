@@ -15,7 +15,6 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
-  import { focusAsset } from '$lib/components/timeline/actions/focus-actions';
   import Skeleton from '$lib/elements/Skeleton.svelte';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -94,16 +93,40 @@
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
   $effect(() => {
-    // The filling justified layout is what makes a short day group span the timeline.
+    // The filling justified layout is what makes a short day group span the timeline. The space the
+    // manager reserves above each day's rows is exactly what the day group draws there: its header
+    // in Timeline and Work, a plain gap in Browse, which has none.
     timelineManager.setLayoutOptions(
       maxMd
-        ? { rowHeight: 100, headerHeight: 32, gap: 8, fillRowWidth: true }
-        : { rowHeight: 235, headerHeight: 48, gap: 12, fillRowWidth: true },
+        ? { rowHeight: 100, headerHeight: showDayHeaders ? 32 : 8, gap: 8, fillRowWidth: true }
+        : { rowHeight: 235, headerHeight: showDayHeaders ? 48 : 12, gap: 12, fillRowWidth: true },
     );
   });
 
   $effect(() => {
     timelineManager.scrollableElement = scrollable;
+  });
+
+  /**
+   * The page hides this subtree (`display: none`) while the viewer is open, and a hidden element
+   * measures 0 × 0. Handing those zeros to the manager would lay the library out for no width and
+   * drop the header's height, so coming back from the viewer would land somewhere else. Only a
+   * visible measurement is passed on.
+   */
+  let measuredHeight = $state(0);
+  let measuredWidth = $state(0);
+  let measuredTop = $state(0);
+  $effect(() => {
+    if (measuredWidth === 0 || measuredHeight === 0) {
+      return;
+    }
+    if (timelineManager.viewportWidth !== measuredWidth) {
+      timelineManager.viewportWidth = measuredWidth;
+    }
+    if (timelineManager.viewportHeight !== measuredHeight) {
+      timelineManager.viewportHeight = measuredHeight;
+    }
+    timelineManager.topSectionHeight = measuredTop;
   });
 
   /* ------------------------------------------------------------------ */
@@ -116,7 +139,14 @@
   // browsers drop the scroll offset of a hidden element, hence the remembered offset.
   let lastVisibleScrollTop = 0;
 
-  const scrollToAssetPosition = (assetId: string, month: TimelineMonth) => {
+  /**
+   * The edge the last scroll-to-asset aligned the asset with. While the layout is still settling
+   * the asset is kept on that same edge, rather than on whichever edge happens to be nearer after
+   * the months around it moved.
+   */
+  let alignedEdge: 'top' | 'bottom' | null = null;
+
+  const scrollToAssetPosition = (assetId: string, month: TimelineMonth, keepEdge = false) => {
     const position = month.findAssetAbsolutePosition(assetId);
     if (!position) {
       return;
@@ -127,23 +157,30 @@
     const assetBottom = position.top + position.height;
     const visibleTop = timelineManager.visibleWindow.top;
     const visibleBottom = timelineManager.visibleWindow.bottom;
-    if (isIntersecting(assetTop, assetBottom, visibleTop, visibleBottom)) {
-      return;
-    }
-    const currentTop = scrollable?.scrollTop ?? 0;
     const viewportHeight = visibleBottom - visibleTop;
     const alignTop = assetTop;
     const alignBottom = assetBottom - viewportHeight;
+    if (keepEdge && alignedEdge) {
+      const target = alignedEdge === 'top' ? alignTop : alignBottom;
+      if (Math.abs(target - visibleTop) > 1) {
+        timelineManager.scrollTo(target);
+      }
+      return;
+    }
+    if (isIntersecting(assetTop, assetBottom, visibleTop, visibleBottom)) {
+      alignedEdge = null;
+      return;
+    }
+    const currentTop = scrollable?.scrollTop ?? 0;
     // Whichever alignment moves the least.
-    timelineManager.scrollTo(
-      Math.abs(alignTop - currentTop) < Math.abs(alignBottom - currentTop) ? alignTop : alignBottom,
-    );
+    alignedEdge = Math.abs(alignTop - currentTop) < Math.abs(alignBottom - currentTop) ? 'top' : 'bottom';
+    timelineManager.scrollTo(alignedEdge === 'top' ? alignTop : alignBottom);
   };
 
-  const scrollToAssetId = async (assetId: string, load = true) => {
+  const scrollToAssetId = async (assetId: string, load = true, keepEdge = false) => {
     const known = timelineManager.getTimelineMonthByAssetId(assetId);
     if (known) {
-      scrollToAssetPosition(assetId, known);
+      scrollToAssetPosition(assetId, known, keepEdge);
       return true;
     }
     if (!load) {
@@ -163,7 +200,19 @@
     }
   };
 
+  /** Put keyboard focus on an asset's tile, so the arrow keys continue from the asset that was linked. */
+  const focusTile = (assetId: string) => {
+    const tile = scrollable?.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(assetId)}"] button`);
+    tile?.focus({ preventScroll: true });
+  };
+
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
   const scrollAfterNavigate = async () => {
+    // Opening the viewer hides the grid; there is nothing to place until it shows again.
+    if (assetViewerManager.isViewing) {
+      return;
+    }
     if (timelineManager.viewportHeight === 0 || timelineManager.viewportWidth === 0) {
       const rect = scrollable?.getBoundingClientRect();
       if (rect) {
@@ -171,12 +220,28 @@
         timelineManager.viewportWidth = rect.width;
       }
     }
+    // Coming back from the viewer the grid was hidden and lost its offset: put it back first, so the
+    // asset below is only scrolled to when it is no longer where the grid was left.
+    if (lastVisibleScrollTop > 0 && (scrollable?.scrollTop ?? 0) === 0) {
+      timelineManager.scrollTo(lastVisibleScrollTop);
+    }
     // The URL's asset wins; otherwise the session's own scroll anchor decides where we land.
     const target = assetViewerManager.gridScrollTarget?.at ?? session.session.scrollAnchor;
     const scrolled = target ? await scrollToAssetId(target) : false;
+    if (scrolled && target) {
+      // Months measured as the grid shows again can still move the asset for a few frames: keep it
+      // in view until the height stops changing.
+      let lastHeight = -1;
+      for (let attempt = 0; attempt < 30 && timelineManager.totalViewerHeight !== lastHeight; attempt++) {
+        lastHeight = timelineManager.totalViewerHeight;
+        await nextFrame();
+        await nextFrame();
+        await scrollToAssetId(target, false, true);
+      }
+    }
     if (scrolled && assetViewerManager.gridScrollTarget?.at) {
       await tick();
-      focusAsset(assetViewerManager.gridScrollTarget.at);
+      focusTile(assetViewerManager.gridScrollTarget.at);
     } else if (!scrolled && lastVisibleScrollTop > 0) {
       timelineManager.scrollTo(lastVisibleScrollTop);
     }
@@ -187,7 +252,7 @@
       return;
     }
     timelineManager.suspendTransitions = true;
-    if (isAssetViewerRoute(to) !== isAssetViewerRoute(from)) {
+    if (isAssetViewerRoute(to) && !isAssetViewerRoute(from) && scrollable?.clientHeight) {
       // Going into or out of the viewer: remember where the grid was so we can come back to it.
       lastVisibleScrollTop = scrollable?.scrollTop ?? lastVisibleScrollTop;
     }
@@ -210,7 +275,12 @@
     lastLayout = layout;
     const anchor = session.session.scrollAnchor;
     if (anchor) {
-      void tick().then(() => scrollToAssetId(anchor, false));
+      // Work narrows the timeline for its panel and adds captions: the new width is measured and
+      // the months laid out again over the next frames, so the asset is found after that settles.
+      void tick()
+        .then(nextFrame)
+        .then(nextFrame)
+        .then(() => scrollToAssetId(anchor, false));
     }
   });
 
@@ -249,9 +319,21 @@
     }
   };
 
+  /** The keyboard's month jump: the month's first row at the top of the timeline. */
+  const onJump = ({ year, month }: { year: number; month: number }) => {
+    const target = timelineManager.months.find(
+      ({ yearMonth }) => yearMonth.year === year && yearMonth.month === month,
+    );
+    if (target) {
+      timelineManager.scrollTo(Math.min(target.top, timelineManager.maxScroll));
+    }
+  };
+
   // note: don't throttle or debounce - it causes flicker
   const handleScroll = () => {
-    if (!scrollable) {
+    // A hidden grid (the viewer is open) reports a scroll to 0. Acting on it would load and lay out
+    // the months at the top as if they were on screen and forget where the grid was.
+    if (!scrollable || scrollable.clientHeight === 0) {
       return;
     }
     timelineManager.updateSlidingWindow();
@@ -372,14 +454,14 @@
     class="fl-timeline-scroll"
     tabindex="-1"
     bind:this={scrollable}
-    bind:clientHeight={timelineManager.viewportHeight}
-    bind:clientWidth={timelineManager.viewportWidth}
+    bind:clientHeight={measuredHeight}
+    bind:clientWidth={measuredWidth}
     style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
     onscroll={handleScroll}
     aria-busy={rangePending}
   >
     <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
-      <div class="fl-timeline-top" bind:clientHeight={timelineManager.topSectionHeight}>
+      <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
         {@render header?.()}
         {#if isEmpty}
           {@render empty?.()}
@@ -401,6 +483,7 @@
                 {ratingFor}
                 {captionFor}
                 showHeader={showDayHeaders}
+                headerHeight={timelineManager.headerHeight}
                 onOpen={handleOpen}
                 {onToggleSelect}
                 onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
@@ -428,6 +511,7 @@
       {viewportTopMonthScrollPercent}
       {timelineScrollPercent}
       {onScrub}
+      {onJump}
       bind:scrubberWidth
     />
   {/if}

@@ -50,6 +50,15 @@ describe('the bulk controller', () => {
     controller = new BulkController({ dispatch, gateway: api, queued, tracker });
   });
 
+  it('tells the page which items an immediate action changed, so it can show the change at once', async () => {
+    const applied = vi.fn();
+    controller = new BulkController({ dispatch, gateway: api, queued, tracker, applied });
+    await controller.run('favorite', ['a', 'b']);
+    expect(applied).toHaveBeenCalledWith('favorite', ['a', 'b'], undefined);
+    // A favorite leaves nothing: the page decides what an item's new state takes out of its view.
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mutated' }));
+  });
+
   it('offers restore as the undo for a trashed selection and runs it against the same ids', async () => {
     await controller.run('delete', ['a', 'b']);
     expect(api.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['a', 'b'], force: false } });
