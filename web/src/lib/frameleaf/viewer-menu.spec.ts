@@ -187,6 +187,10 @@ describe('viewerMenuGroups', () => {
       expect(idsOf(baseContext({ hasPersonContext: false }))).not.toContain('set-person-featured');
     });
 
+    it('never offers a locked asset as the featured photo (FL-53)', () => {
+      expect(idsOf(baseContext({ hasPersonContext: true, isLocked: true }))).not.toContain('set-person-featured');
+    });
+
     it('never offers a locked asset as the profile picture', () => {
       expect(idsOf(baseContext({ isLocked: true }))).not.toContain('set-profile-picture');
     });
