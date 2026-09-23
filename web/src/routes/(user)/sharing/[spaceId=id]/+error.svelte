@@ -5,6 +5,7 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import { errorStatus, spaceErrorKind, type ErrorPageAction } from '$lib/frameleaf/error-page';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { Route } from '$lib/route';
   import { Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiAccountMultipleRemoveOutline, mdiAlertCircleOutline } from '@mdi/js';
@@ -18,6 +19,14 @@
    * space could not be loaded at all. Either way the person gets a plain explanation and a way on,
    * inside the app's own frame, never the server's message.
    */
+  // A viewer address for a space that cannot be opened still names an item, and the (user) layout
+  // hides the page behind the viewer for it. There is no viewer here, so the explanation must show.
+  $effect(() => {
+    if (assetViewerManager.isViewing) {
+      assetViewerManager.showAssetViewer(false);
+    }
+  });
+
   const code = $derived(errorStatus(page.status, page.error));
   const kind = $derived(spaceErrorKind(code));
 
