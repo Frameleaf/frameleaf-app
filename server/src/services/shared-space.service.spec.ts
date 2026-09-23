@@ -827,12 +827,14 @@ describe(SharedSpaceService.name, () => {
       await expect(sut.deleteComment(AuthFactory.create(viewer), space.id, ownersComment.id)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
-      expect(mocks.activity.delete).not.toHaveBeenCalled();
+      expect(mocks.albumUser.deleteCommentWithReplies).not.toHaveBeenCalled();
 
       const viewersComment = ActivityFactory.from({ albumId: space.id, userId: viewerId, comment: 'x' }).build();
       mocks.activity.getById.mockResolvedValue(viewersComment);
       await sut.deleteComment(AuthFactory.create(owner), space.id, viewersComment.id);
-      expect(mocks.activity.delete).toHaveBeenCalledWith(viewersComment.id);
+      // The thread goes with its top-level comment, in one statement.
+      expect(mocks.albumUser.deleteCommentWithReplies).toHaveBeenCalledWith(viewersComment.id);
+      expect(mocks.activity.delete).not.toHaveBeenCalled();
     });
 
     it('does not treat another album’s comment, or a like, as one of this space’s', async () => {
@@ -848,7 +850,200 @@ describe(SharedSpaceService.name, () => {
       await expect(sut.deleteComment(AuthFactory.create(owner), space.id, newUuid())).rejects.toBeInstanceOf(
         NotFoundException,
       );
-      expect(mocks.activity.delete).not.toHaveBeenCalled();
+      expect(mocks.albumUser.deleteCommentWithReplies).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('threaded replies', () => {
+    const commentBy = (spaceId: string, user: { id: string; name: string }, assetId: string | null = null) =>
+      ActivityFactory.from({ albumId: spaceId, userId: user.id, comment: `said by ${user.name}`, assetId })
+        .user({ id: user.id, name: user.name })
+        .build();
+
+    it('lists comments flat, with each reply naming its top-level comment and the count on the parent', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const root = commentBy(space.id, owner);
+      const reply = commentBy(space.id, editor);
+      const other = commentBy(space.id, editor);
+      mocks.activity.search.mockResolvedValue([root, reply, other]);
+      mocks.albumUser.getMentions.mockResolvedValue([]);
+      mocks.albumUser.getCommentParents.mockResolvedValue([{ activityId: reply.id, parentActivityId: root.id }]);
+
+      const { comments } = await sut.getComments(AuthFactory.create(editor), space.id, {});
+
+      expect(comments.map(({ id, parentId, replyCount }) => ({ id, parentId, replyCount }))).toEqual([
+        { id: root.id, parentId: null, replyCount: 1 },
+        { id: reply.id, parentId: root.id, replyCount: 0 },
+        { id: other.id, parentId: null, replyCount: 0 },
+      ]);
+      expect(mocks.albumUser.getCommentParents).toHaveBeenCalledWith([root.id, reply.id, other.id]);
+    });
+
+    it('stores a reply under its comment, announces it as a reply and tells the comment’s author in the app', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const root = commentBy(space.id, owner);
+      const created = commentBy(space.id, editor);
+      mocks.activity.getById.mockResolvedValue(root);
+      mocks.albumUser.getCommentParents.mockResolvedValue([]);
+      mocks.activity.create.mockResolvedValue(created);
+
+      const result = await sut.createComment(AuthFactory.create(editor), space.id, {
+        comment: 'agreed',
+        parentId: root.id,
+      });
+
+      expect(mocks.activity.create).toHaveBeenCalledWith(
+        expect.objectContaining({ albumId: space.id, userId: editor.id, assetId: null, comment: 'agreed' }),
+      );
+      expect(mocks.albumUser.createCommentThread).toHaveBeenCalledWith({
+        activityId: created.id,
+        parentActivityId: root.id,
+        albumId: space.id,
+      });
+      expect(mocks.albumUser.createSpaceEvent).toHaveBeenCalledWith({
+        albumId: space.id,
+        actorId: editor.id,
+        type: SharedSpaceEventType.Reply,
+        activityId: created.id,
+        targetUserId: owner.id,
+      });
+      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit).toHaveBeenCalledWith('SharedSpaceReply', {
+        id: space.id,
+        assetId: null,
+        activityId: created.id,
+        parentActivityId: root.id,
+        userId: owner.id,
+        senderName: editor.name,
+      });
+      expect(result).toEqual(expect.objectContaining({ parentId: root.id, replyCount: 0 }));
+    });
+
+    it('keeps a reply to a reply in the same thread, under the top-level comment', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asOwner(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const root = commentBy(space.id, owner);
+      const firstReply = commentBy(space.id, editor);
+      const created = commentBy(space.id, owner);
+      const byId = new Map([
+        [root.id, root],
+        [firstReply.id, firstReply],
+      ]);
+      mocks.activity.getById.mockImplementation((id: string) => Promise.resolve(byId.get(id)));
+      mocks.albumUser.getCommentParents.mockResolvedValue([{ activityId: firstReply.id, parentActivityId: root.id }]);
+      mocks.activity.create.mockResolvedValue(created);
+      mocks.user.get.mockResolvedValue(editor);
+
+      await sut.createComment(AuthFactory.create(owner), space.id, {
+        comment: `@{${editor.id}} yes`,
+        parentId: firstReply.id,
+      });
+
+      expect(mocks.albumUser.createCommentThread).toHaveBeenCalledWith({
+        activityId: created.id,
+        parentActivityId: root.id,
+        albumId: space.id,
+      });
+      // The owner wrote the top-level comment, so no reply notice; the editor is told by the mention.
+      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'SharedSpaceMention',
+        expect.objectContaining({ userIds: [editor.id] }),
+      );
+    });
+
+    it('says only "not found" for a comment on an item the member cannot see, and writes nothing', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const root = commentBy(space.id, owner, newUuid());
+      mocks.activity.getById.mockResolvedValue(root);
+      mocks.albumUser.getCommentParents.mockResolvedValue([]);
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: 'hm', parentId: root.id }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+      expect(mocks.albumUser.createCommentThread).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reply that names a different item from the comment it answers', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const assetId = newUuid();
+      const root = commentBy(space.id, owner, assetId);
+      mocks.activity.getById.mockResolvedValue(root);
+      mocks.albumUser.getCommentParents.mockResolvedValue([]);
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set([assetId]));
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, {
+          comment: 'hm',
+          parentId: root.id,
+          assetId: newUuid(),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+    });
+
+    it('does not answer a like, or another album’s comment', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+
+      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: space.id, isLiked: true }).build());
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: 'hm', parentId: newUuid() }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build());
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: 'hm', parentId: newUuid() }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+    });
+
+    it('takes the reply back out when its thread row cannot be written', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const root = commentBy(space.id, owner);
+      const created = commentBy(space.id, editor);
+      mocks.activity.getById.mockResolvedValue(root);
+      mocks.albumUser.getCommentParents.mockResolvedValue([]);
+      mocks.activity.create.mockResolvedValue(created);
+      mocks.albumUser.createCommentThread.mockRejectedValue(new Error('boom'));
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: 'x', parentId: root.id }),
+      ).rejects.toThrow('boom');
+      expect(mocks.activity.delete).toHaveBeenCalledWith(created.id);
+      expect(mocks.albumUser.createSpaceEvent).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('reports where an edited comment already sits in its thread', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      const existing = commentBy(space.id, editor);
+      mocks.activity.getById.mockResolvedValue(existing);
+      mocks.albumUser.getMentions.mockResolvedValue([]);
+      mocks.activity.update.mockResolvedValue({ ...existing, comment: 'edited' });
+      mocks.albumUser.getCommentParents.mockResolvedValue([]);
+      mocks.albumUser.getCommentReplies.mockResolvedValue([
+        { activityId: newUuid(), parentActivityId: existing.id },
+        { activityId: newUuid(), parentActivityId: existing.id },
+      ]);
+
+      const result = await sut.updateComment(AuthFactory.create(editor), space.id, existing.id, { comment: 'edited' });
+
+      expect(result).toEqual(expect.objectContaining({ parentId: null, replyCount: 2 }));
     });
   });
 });

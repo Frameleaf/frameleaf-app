@@ -82,6 +82,8 @@ export class ActivityService extends BaseService {
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ActivityDelete, ids: [id] });
+    // FL-55: a shared space comment takes its replies with it, whichever endpoint removes it.
+    await this.albumUserRepository.deleteCommentReplies(id);
     await this.activityRepository.delete(id);
   }
 

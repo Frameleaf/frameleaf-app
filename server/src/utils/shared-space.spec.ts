@@ -4,18 +4,22 @@ import {
   INVITABLE_SPACE_ROLES,
   canDeleteSpaceComment,
   canEditSpaceComment,
+  isCommentEventType,
   isNewSpaceEvent,
   isSharedSpace,
   isSpaceMember,
   mentionToken,
   narrowSpaceEvent,
   parseMentions,
+  replyRecipient,
   requireInvitableRole,
   requireMentionableMembers,
+  requireReplyOnSameItem,
   requireSharedSpace,
   requireSpaceOwner,
   spaceOwnerId,
   spaceRoleOf,
+  threadComments,
 } from 'src/utils/shared-space.js';
 
 const member = (id: string, role: AlbumUserRole) => ({ role, user: { id } });
@@ -191,6 +195,81 @@ describe('shared space rules', () => {
     it('treats everything by others as news for a member with no marker', () => {
       expect(isNewSpaceEvent({ actorId: 'other', createdAt: earlier }, 'me')).toBe(true);
       expect(isNewSpaceEvent({ actorId: 'other', createdAt: earlier }, 'me', null)).toBe(true);
+    });
+  });
+
+  describe('threaded replies', () => {
+    it('treats a reply like a comment in the feed', () => {
+      expect(isCommentEventType(SharedSpaceEventType.Comment)).toBe(true);
+      expect(isCommentEventType(SharedSpaceEventType.Reply)).toBe(true);
+      expect(isCommentEventType(SharedSpaceEventType.Like)).toBe(false);
+    });
+
+    it('narrows a reply on an item the viewer cannot see away entirely', () => {
+      const reply = { type: SharedSpaceEventType.Reply, assetIds: [], activityAssetId: 'locked' };
+      expect(narrowSpaceEvent(reply, new Set())).toBeNull();
+    });
+
+    it('threads replies under their top-level comment and counts them there', () => {
+      const info = threadComments(
+        ['a', 'b', 'c', 'd'],
+        [
+          { activityId: 'b', parentActivityId: 'a' },
+          { activityId: 'c', parentActivityId: 'a' },
+        ],
+      );
+      expect(info.get('a')).toEqual({ parentId: null, replyCount: 2 });
+      expect(info.get('b')).toEqual({ parentId: 'a', replyCount: 0 });
+      expect(info.get('c')).toEqual({ parentId: 'a', replyCount: 0 });
+      expect(info.get('d')).toEqual({ parentId: null, replyCount: 0 });
+    });
+
+    it('keeps threads one level deep, whatever is stored', () => {
+      const info = threadComments(
+        ['a', 'b', 'c'],
+        [
+          { activityId: 'b', parentActivityId: 'a' },
+          { activityId: 'c', parentActivityId: 'b' },
+        ],
+      );
+      expect(info.get('c')).toEqual({ parentId: 'a', replyCount: 0 });
+      expect(info.get('a')).toEqual({ parentId: null, replyCount: 2 });
+    });
+
+    it('never counts or points at a comment the caller is not shown', () => {
+      const info = threadComments(['b'], [{ activityId: 'b', parentActivityId: 'hidden' }]);
+      expect(info.get('b')).toEqual({ parentId: null, replyCount: 0 });
+
+      const parentOnly = threadComments(['a'], [{ activityId: 'hidden', parentActivityId: 'a' }]);
+      expect(parentOnly.get('a')).toEqual({ parentId: null, replyCount: 0 });
+    });
+
+    it('survives a cycle by showing both comments on their own', () => {
+      const info = threadComments(
+        ['a', 'b'],
+        [
+          { activityId: 'a', parentActivityId: 'b' },
+          { activityId: 'b', parentActivityId: 'a' },
+        ],
+      );
+      expect(info.get('a')).toEqual({ parentId: null, replyCount: 0 });
+      expect(info.get('b')).toEqual({ parentId: null, replyCount: 0 });
+    });
+
+    it('keeps a reply on the same item as the comment it answers', () => {
+      expect(() => requireReplyOnSameItem({ assetId: 'item' }, undefined)).not.toThrow();
+      expect(() => requireReplyOnSameItem({ assetId: 'item' }, 'item')).not.toThrow();
+      expect(() => requireReplyOnSameItem({ assetId: null }, undefined)).not.toThrow();
+      expect(() => requireReplyOnSameItem({ assetId: 'item' }, 'other')).toThrow(BadRequestException);
+    });
+
+    it('tells the author of the answered comment, unless it is the replier, they left, or they are mentioned', () => {
+      const album = space([member('owner-1', AlbumUserRole.Owner), member('editor-1', AlbumUserRole.Editor)]);
+
+      expect(replyRecipient(album, { userId: 'owner-1' }, 'editor-1', [])).toBe('owner-1');
+      expect(replyRecipient(album, { userId: 'editor-1' }, 'editor-1', [])).toBeNull();
+      expect(replyRecipient(album, { userId: 'gone-1' }, 'editor-1', [])).toBeNull();
+      expect(replyRecipient(album, { userId: 'owner-1' }, 'editor-1', ['owner-1'])).toBeNull();
     });
   });
 });
