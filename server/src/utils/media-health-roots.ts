@@ -158,6 +158,10 @@ export const publishVerifiedCopy = async (input: {
   const { source, destination, expected, hash } = input;
   await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
   const temporary = `${destination}.${randomUUID()}.partial`;
+  const matches = (digests: FileDigests) =>
+    digests.sha1.equals(expected.sha1) &&
+    digests.sha256.equals(expected.sha256) &&
+    digests.sizeInBytes === expected.sizeInBytes;
   try {
     await copyFile(source, temporary, constants.COPYFILE_EXCL);
     const file = await open(temporary, 'r');
@@ -165,6 +169,12 @@ export const publishVerifiedCopy = async (input: {
       await file.sync();
     } finally {
       await file.close();
+    }
+
+    // A source that changed since it was verified is never published: the name stays free for a
+    // later attempt instead of holding the wrong bytes.
+    if (!matches(await hash(temporary))) {
+      throw new Error('The copied file does not match the verified original');
     }
 
     try {
@@ -186,11 +196,7 @@ export const publishVerifiedCopy = async (input: {
   }
 
   const published = await hash(destination);
-  if (
-    !published.sha1.equals(expected.sha1) ||
-    !published.sha256.equals(expected.sha256) ||
-    published.sizeInBytes !== expected.sizeInBytes
-  ) {
+  if (!matches(published)) {
     throw new Error('The published copy does not match the verified original');
   }
 
