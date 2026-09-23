@@ -57,6 +57,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000150-AddPetIdentities',
   '2100000000160-AddMediaOperationTables',
   '2100000000190-AddSharedSpaceInvite',
+  '2100000000210-AddMediaOperationBulkResult',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

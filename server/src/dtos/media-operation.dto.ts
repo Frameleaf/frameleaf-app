@@ -1,11 +1,14 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import {
+  MediaOperationBulkActionSchema,
   MediaOperationCheckpointStateSchema,
   MediaOperationDestinationSchema,
+  MediaOperationItemStatusSchema,
   MediaOperationKindSchema,
   MediaOperationStatusSchema,
 } from 'src/enum.js';
+import { BULK_MAX_ITEMS } from 'src/utils/bulk-operation.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
@@ -40,6 +43,79 @@ const MediaOperationEstimateSchema = z
   .meta({ id: 'MediaOperationEstimateDto' });
 
 /**
+ * What a bulk operation has done so far (FL-32).
+ *
+ * Counts are exact at every point, including halfway through. A cancelled operation reports the
+ * items it really did change rather than pretending none of it happened, because the changes are
+ * real and the person has to be able to see them.
+ */
+const MediaOperationBulkSummarySchema = z
+  .object({
+    action: MediaOperationBulkActionSchema,
+    requested: z.int().describe('Items in the frozen set'),
+    succeeded: z.int(),
+    failed: z.int().describe('Items the server attempted and could not apply; a retry covers these'),
+    skipped: z.int().describe('Items refused before anything changed, e.g. no access'),
+    /** The client's own matching set hit its bound, so the frozen set is short of the real total. */
+    snapshotTruncated: z.boolean(),
+    /** More refusals happened than are listed on the detail view; the counts above stay exact. */
+    itemsTruncated: z.boolean(),
+  })
+  .meta({ id: 'MediaOperationBulkSummaryDto' });
+
+/** One recorded refusal. Successes are counted, not listed. */
+const MediaOperationBulkItemSchema = z
+  .object({
+    id: z.uuidv4().describe('Asset ID'),
+    status: MediaOperationItemStatusSchema,
+    reasonKey: z.string().nullable().describe('Stable key the client turns into a message'),
+    message: z.string().nullable().describe('Operator detail from the server'),
+  })
+  .meta({ id: 'MediaOperationBulkItemDto' });
+
+/**
+ * The payload a bulk action needs beyond its asset ids.
+ *
+ * Every field is optional here and required by the action that uses it; the service rejects a
+ * submission whose action has no payload to work with rather than running it over the library with
+ * a default.
+ */
+const MediaOperationBulkPayloadSchema = z
+  .object({
+    albumId: z.uuidv4().optional(),
+    tagIds: z.array(z.uuidv4()).max(50).optional(),
+    dateMode: z.enum(['set', 'shift']).optional(),
+    dateTimeOriginal: z.string().optional(),
+    timeZone: z.string().optional(),
+    minutes: z.number().optional(),
+    description: z.string().max(10_000).optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    primaryId: z.uuidv4().optional(),
+    stackIds: z.array(z.uuidv4()).max(1000).optional(),
+  })
+  .meta({ id: 'MediaOperationBulkPayloadDto' });
+
+/**
+ * Submit a bulk operation to be run durably.
+ *
+ * The asset ids are the whole point: the client resolves the matching set once, against the view
+ * the person was actually looking at, and hands the server that exact list. Nothing is re-resolved
+ * later, so editing a filter — or somebody else adding a photo — cannot change what a running
+ * operation touches. The server still checks access on every item as it applies it.
+ */
+const MediaOperationBulkCreateSchema = z
+  .object({
+    action: MediaOperationBulkActionSchema,
+    assetIds: z.array(z.uuidv4()).min(1).max(BULK_MAX_ITEMS).describe('The frozen matching set, in order'),
+    payload: MediaOperationBulkPayloadSchema.optional(),
+    submittedTotal: z.int().nullable().optional().describe('The count shown to the person at submit'),
+    truncated: z.boolean().optional().describe('The client could not resolve the whole matching set'),
+    scope: JsonObjectSchema.optional().describe('A record of the view the set came from; never re-resolved'),
+  })
+  .meta({ id: 'MediaOperationBulkCreateDto' });
+
+/**
  * One durable job, as its owner sees it.
  *
  * Deliberately absent: the claim token, the worker identity and the remote job handle. They are
@@ -60,6 +136,8 @@ const MediaOperationSchema = z
     revisionId: z.string().nullable(),
     settings: JsonObjectSchema.describe('User-visible render settings'),
     estimate: MediaOperationEstimateSchema.nullable(),
+    /** Present only on `bulk` jobs. Null everywhere else rather than an empty object. */
+    bulk: MediaOperationBulkSummarySchema.nullable(),
     progress: z.number().meta({ format: 'double' }).describe('Percent complete, from counted work'),
     processedUnits: z.string(),
     totalUnits: z.string().nullable(),
@@ -80,6 +158,8 @@ const MediaOperationDetailSchema = MediaOperationSchema.extend({
   checkpoints: z.array(MediaOperationCheckpointSchema),
   /** The immutable binding. Present on the detail view so a render is auditable. */
   snapshot: JsonObjectSchema,
+  /** Recorded per-item refusals for a bulk job, bounded. Empty for every other kind. */
+  bulkItems: z.array(MediaOperationBulkItemSchema),
 }).meta({ id: 'MediaOperationDetailDto' });
 
 const MediaOperationListResponseSchema = z
