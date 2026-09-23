@@ -15,6 +15,7 @@
   import type { BulkActionContext, BulkActionId, BulkAsset } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
+  import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibrarySessionAction } from '$lib/frameleaf/library-session';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
@@ -83,6 +84,17 @@
     }
     session.dispatch(action);
   };
+
+  // A durable job's finished items leave this list as the job finishes them, not all at once and
+  // not on a reload (owner decision, September 22, 2026).
+  $effect(() =>
+    durableBulkTracker.onRemoved((removedIds) => {
+      const shown = removedIds.filter((id) => byId.has(id));
+      if (shown.length > 0) {
+        dispatch({ type: 'mutated', removedIds: shown });
+      }
+    }),
+  );
 
   const bulk = new BulkController({
     dispatch,

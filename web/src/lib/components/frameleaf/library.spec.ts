@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable } from 'svelte/store';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
+import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-import { AssetVisibility } from '@immich/sdk';
+import { AssetVisibility, MediaOperationItemStatus, MediaOperationStatus } from '@immich/sdk';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
 import ResultsToolbar from './ResultsToolbar.svelte';
@@ -141,6 +142,51 @@ describe('AssetTile', () => {
     await fireEvent.click(open);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onToggleSelect).toHaveBeenCalledTimes(2);
+  });
+
+  describe('while a durable bulk job works on the item', () => {
+    afterEach(() => durableBulkTracker.reset());
+
+    it('shows a loader in the corner and says so in the tile’s name', () => {
+      durableBulkTracker.track('delete', 'job-1', ['asset-1']);
+
+      tile();
+
+      expect(screen.getByTestId('frameleaf-tile-job-pending')).toBeTruthy();
+      expect(screen.getByTestId('frameleaf-asset-tile').getAttribute('aria-busy')).toBe('true');
+      expect(screen.getByRole('button', { name: 'A photo, frameleaf_bulk_tile_processing' })).toBeTruthy();
+    });
+
+    it('swaps the loader for a failure mark when the job could not change the item', async () => {
+      durableBulkTracker.track('delete', 'job-1', ['asset-1']);
+      const { container } = tile();
+
+      durableBulkTracker.apply('job-1', {
+        status: MediaOperationStatus.Completed,
+        processedUnits: '1',
+        bulkItems: [
+          {
+            id: 'asset-1',
+            status: MediaOperationItemStatus.Failed,
+            reasonKey: 'frameleaf_bulk_reason_failed',
+            message: null,
+          },
+        ],
+        bulkRetryPending: [],
+        bulk: { retried: 1 },
+      } as never);
+      await tick();
+
+      expect(container.querySelector('[data-testid="frameleaf-tile-job-pending"]')).toBeNull();
+      expect(screen.getByTestId('frameleaf-tile-job-failed')).toBeTruthy();
+      expect(screen.getByTestId('frameleaf-asset-tile').getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('shows nothing for an item no job is working on', () => {
+      const { container } = tile();
+
+      expect(container.querySelector('.fl-tile-job')).toBeNull();
+    });
   });
 
   it('selects from the checkbox without opening the item', async () => {

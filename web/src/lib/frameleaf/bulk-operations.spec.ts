@@ -3,6 +3,8 @@ import {
   AssetJobName,
   AssetVisibility,
   MediaOperationBulkAction,
+  MediaOperationItemStatus,
+  MediaOperationStatus,
   SharedLinkType,
 } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +15,9 @@ import {
   bulkResultSummary,
   countMatching,
   durableBulkAction,
+  durableBulkParts,
+  durableItemStates,
+  removesFromView,
   resolveMatchingIds,
   runBulkAction,
   runBulkOperation,
@@ -453,5 +458,110 @@ describe('durable bulk operations', () => {
 
   it('refuses an action the server does not run', async () => {
     await expect(submitDurableBulk('download', ['a'], {}, api)).rejects.toThrow('frameleaf_bulk_reason_not_durable');
+  });
+});
+
+describe('durable jobs on the page', () => {
+  const ids = ['a', 'b', 'c', 'd'];
+  const detail = (overrides: Record<string, unknown> = {}) =>
+    ({
+      status: MediaOperationStatus.Rendering,
+      processedUnits: '0',
+      bulkItems: [],
+      bulkRetryPending: [],
+      bulk: { retried: 0, itemsTruncated: false },
+      ...overrides,
+    }) as never;
+
+  it('splits and de-duplicates the frozen set exactly as the server will hold it', () => {
+    expect(durableBulkParts(['a', 'b', 'a', 'c'])).toEqual([['a', 'b', 'c']]);
+    const many = Array.from({ length: DURABLE_BULK_MAX_ITEMS + 1 }, (_, index) => `id-${index}`);
+    expect(durableBulkParts(many).map((part) => part.length)).toEqual([DURABLE_BULK_MAX_ITEMS, 1]);
+  });
+
+  it('knows which actions take a finished item out of the view', () => {
+    expect(removesFromView('delete')).toBe(true);
+    expect(removesFromView('delete-permanently')).toBe(true);
+    expect(removesFromView('restore')).toBe(true);
+    expect(removesFromView('remove-from-album')).toBe(true);
+    expect(removesFromView('favorite')).toBe(false);
+  });
+
+  it('reads answered items as done and the rest as pending while the job runs', () => {
+    const states = durableItemStates(ids, detail({ processedUnits: '2' }));
+
+    expect(states.get('a')).toEqual({ state: 'done' });
+    expect(states.get('b')).toEqual({ state: 'done' });
+    expect(states.get('c')).toEqual({ state: 'pending' });
+    expect(states.get('d')).toEqual({ state: 'pending' });
+  });
+
+  it('keeps a failure pending until it has had its automatic retry', () => {
+    const refusal = { id: 'b', status: MediaOperationItemStatus.Failed, reasonKey: 'frameleaf_bulk_reason_failed' };
+    const before = detail({ processedUnits: '4', bulkItems: [refusal] });
+    const after = detail({
+      status: MediaOperationStatus.Completed,
+      processedUnits: '4',
+      bulkItems: [refusal],
+      bulk: { retried: 1 },
+    });
+
+    expect(durableItemStates(ids, before).get('b')).toEqual({ state: 'pending' });
+    expect(durableItemStates(ids, after).get('b')).toEqual({
+      state: 'failed',
+      reasonKey: 'frameleaf_bulk_reason_failed',
+    });
+  });
+
+  it('shows a refusal at once, and treats "already there" as nothing to show', () => {
+    const states = durableItemStates(
+      ids,
+      detail({
+        processedUnits: '4',
+        bulkItems: [
+          { id: 'a', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_no_permission' },
+          { id: 'b', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_duplicate' },
+        ],
+      }),
+    );
+
+    expect(states.get('a')).toEqual({ state: 'failed', reasonKey: 'frameleaf_bulk_reason_no_permission' });
+    expect(states.get('b')).toEqual({ state: 'unchanged' });
+  });
+
+  it('keeps items waiting for their retry pending wherever the cursor is', () => {
+    const states = durableItemStates(
+      ids,
+      detail({
+        status: MediaOperationStatus.Queued,
+        processedUnits: '4',
+        bulkRetryPending: ['c'],
+        bulk: { retried: 1 },
+      }),
+    );
+
+    expect(states.get('c')).toEqual({ state: 'pending' });
+    expect(states.get('d')).toEqual({ state: 'done' });
+  });
+
+  it('leaves unreached items as they were after a cancel, and failed after a failed job', () => {
+    const cancelled = detail({ status: MediaOperationStatus.Cancelled, processedUnits: '1' });
+    const failed = detail({ status: MediaOperationStatus.Failed, processedUnits: '1' });
+
+    expect(durableItemStates(ids, cancelled).get('d')).toEqual({ state: 'unchanged' });
+    expect(durableItemStates(ids, failed).get('d')).toEqual({
+      state: 'failed',
+      reasonKey: 'frameleaf_bulk_reason_failed',
+    });
+  });
+
+  it('never calls an item done on a guess when the refusal list was cut short', () => {
+    const truncated = detail({
+      status: MediaOperationStatus.Completed,
+      processedUnits: '4',
+      bulk: { retried: 0, itemsTruncated: true },
+    });
+
+    expect([...durableItemStates(ids, truncated).values()].every((state) => state.state === 'unchanged')).toBe(true);
   });
 });

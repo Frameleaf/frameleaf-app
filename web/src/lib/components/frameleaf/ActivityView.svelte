@@ -195,6 +195,9 @@
           {#if item.bulk}
             <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
             <p class="meta">{$t('frameleaf_activity_bulk_counts', { values: item.bulk })}</p>
+            {#if item.bulk.retried > 0}
+              <p class="meta">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
+            {/if}
           {/if}
 
           {#if item.running || item.progress !== null}

@@ -1,3 +1,4 @@
+import type { MediaOperationDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
@@ -6,6 +7,8 @@ import {
   countMatching,
   createBulkGateway,
   durableBulkAction,
+  durableBulkParts,
+  removesFromView,
   resolveMatchingIds,
   runBulkAction,
   runBulkOperation,
@@ -16,6 +19,7 @@ import {
   type BulkResult,
   type BulkRunContext,
 } from '$lib/frameleaf/bulk-operations';
+import { durableBulkTracker, type DurableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 import type { BulkOperationRecord, LibrarySessionAction, LibraryViewState } from '$lib/frameleaf/library-session';
 import { downloadArchive } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
@@ -50,6 +54,7 @@ export class BulkController {
   #context: () => BulkRunContext;
   #running = new Map<string, AbortController>();
   #queued: () => void;
+  #tracker: Pick<DurableBulkTracker, 'track'>;
 
   /** The undo offered after the last reversible action, or null. */
   undo = $state<BulkUndoEntry | null>(null);
@@ -61,17 +66,36 @@ export class BulkController {
     gateway = createBulkGateway((fileName, options) => downloadArchive(fileName, options)),
     context = () => ({}),
     queued = () => void activitySession.refresh(),
+    tracker = durableBulkTracker,
   }: {
     dispatch: (action: LibrarySessionAction) => void;
     gateway?: BulkGateway;
     context?: () => BulkRunContext;
     /** Called once a durable job has been accepted, so Activity shows it without waiting a poll. */
     queued?: () => void;
+    /** Follows accepted durable jobs item by item, for the tile loaders. */
+    tracker?: Pick<DurableBulkTracker, 'track'>;
   }) {
     this.#dispatch = dispatch;
     this.#gateway = gateway;
     this.#context = context;
     this.#queued = queued;
+    this.#tracker = tracker;
+  }
+
+  /**
+   * Put a loader on every tile the accepted jobs cover (owner decision, September 22, 2026). The
+   * items stay on the page while the server works; the tracker takes each one off, out of the view
+   * or into a failure mark, as the job answers for it.
+   */
+  #follow(action: BulkActionId, ids: readonly string[], created: readonly MediaOperationDto[]) {
+    const parts = durableBulkParts(ids);
+    for (const [index, operation] of created.entries()) {
+      const part = parts[index];
+      if (operation?.id && part) {
+        this.#tracker.track(action, operation.id, part);
+      }
+    }
   }
 
   /** Tell the person the job is the server's now, and where to follow it. */
@@ -86,17 +110,7 @@ export class BulkController {
 
   /** Assets that left the page, so the session can drop its references to them. */
   #removed(action: BulkActionId, result: BulkResult): string[] {
-    return [
-      'delete',
-      'delete-permanently',
-      'restore',
-      'remove-from-album',
-      // Both directions of the Locked folder move the asset out of the destination it was run from.
-      'move-to-locked',
-      'remove-from-locked',
-    ].includes(action)
-      ? result.succeeded
-      : [];
+    return removesFromView(action) ? result.succeeded : [];
   }
 
   async #report(action: BulkActionId, result: BulkResult) {
@@ -163,7 +177,8 @@ export class BulkController {
   async #queue(action: BulkActionId, ids: string[], payload?: BulkPayload) {
     this.busy = true;
     try {
-      await submitDurableBulk(action, ids, { payload, submittedTotal: ids.length }, this.#gateway);
+      const created = await submitDurableBulk(action, ids, { payload, submittedTotal: ids.length }, this.#gateway);
+      this.#follow(action, ids, created);
       await this.#announceQueued(action, ids.length);
     } catch (error) {
       const $t = await getFormatter();
@@ -297,7 +312,7 @@ export class BulkController {
         return;
       }
 
-      await submitDurableBulk(
+      const created = await submitDurableBulk(
         action,
         resolved.ids,
         {
@@ -309,6 +324,7 @@ export class BulkController {
         },
         this.#gateway,
       );
+      this.#follow(action, resolved.ids, created);
       this.#dispatch({ type: 'operation-dismiss', requestId });
       await this.#announceQueued(action, resolved.ids.length);
     } catch (error) {

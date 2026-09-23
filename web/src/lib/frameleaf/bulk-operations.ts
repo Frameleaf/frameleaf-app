@@ -10,6 +10,8 @@ import {
   deleteAssets,
   deleteStacks,
   MediaOperationBulkAction,
+  MediaOperationItemStatus,
+  MediaOperationStatus,
   removeAssetFromAlbum,
   removeSharedLinkAssets,
   restoreAssets,
@@ -26,6 +28,7 @@ import {
   upsertTags,
   type BulkIdResponseDto,
   type MediaOperationBulkPayloadDto,
+  type MediaOperationDetailDto,
   type MediaOperationDto,
   type MetadataSearchDto,
   type SearchFilter,
@@ -983,6 +986,14 @@ export type DurableBulkRequest = {
 };
 
 /**
+ * The frozen set exactly as the server will hold it: duplicates dropped in order, split into jobs
+ * of at most `DURABLE_BULK_MAX_ITEMS`. The server keeps the same order, which is what lets this tab
+ * read a job's cursor as "these items are done" (see `durableItemStates`).
+ */
+export const durableBulkParts = (requestedIds: readonly string[]): string[][] =>
+  chunk(distinct(requestedIds), DURABLE_BULK_MAX_ITEMS);
+
+/**
  * Hand a frozen set to the server as one or more durable jobs.
  *
  * The ids are the whole contract: the server applies the action to exactly these, checking access
@@ -1000,8 +1011,8 @@ export const submitDurableBulk = async (
   if (!serverAction) {
     throw new Error('frameleaf_bulk_reason_not_durable');
   }
-  const ids = distinct(requestedIds);
-  if (ids.length === 0) {
+  const parts = durableBulkParts(requestedIds);
+  if (parts.length === 0) {
     return [];
   }
   const tagIds =
@@ -1010,7 +1021,7 @@ export const submitDurableBulk = async (
   const requestId = request.requestId && UUID_V4.test(request.requestId) ? request.requestId : undefined;
 
   const created: MediaOperationDto[] = [];
-  for (const [index, part] of chunk(ids, DURABLE_BULK_MAX_ITEMS).entries()) {
+  for (const [index, part] of parts.entries()) {
     created.push(
       await gateway.createBulkMediaOperation({
         mediaOperationBulkCreateDto: {
@@ -1026,4 +1037,103 @@ export const submitDurableBulk = async (
     );
   }
   return created;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Durable jobs on the page (owner decision, September 22, 2026)                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The actions after which a finished item has left the view it was run from. The same list the
+ * immediate path uses, so a durable delete and a small one end the same way on the page.
+ */
+const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
+  'delete',
+  'delete-permanently',
+  'restore',
+  'remove-from-album',
+  // Both directions of the Locked folder move the asset out of the destination it was run from.
+  'move-to-locked',
+  'remove-from-locked',
+]);
+
+export const removesFromView = (action: BulkActionId): boolean => REMOVES_FROM_VIEW.has(action);
+
+/**
+ * Where one item of a durable job stands, as the page shows it.
+ *
+ * - `pending`: the job has not answered for it yet, or it failed and has its automatic retry to
+ *   come. The tile shows a small loader.
+ * - `done`: changed. For an action in `removesFromView` it leaves the page.
+ * - `failed`: the job answered and it did not work — refused, failed its retry too, or never
+ *   reached by a job that failed. The loader gives way to a failure mark.
+ * - `unchanged`: nothing to show — the job was cancelled before reaching it, it was already where
+ *   the action would have put it, or the job cannot say for certain (see `itemsTruncated`).
+ */
+export type DurableItemState =
+  | { state: 'pending' }
+  | { state: 'done' }
+  | { state: 'failed'; reasonKey: string }
+  | { state: 'unchanged' };
+
+const FINISHED_JOB: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Completed,
+  MediaOperationStatus.Cancelled,
+  MediaOperationStatus.Failed,
+];
+
+/**
+ * Read every item's state out of a durable job's detail.
+ *
+ * `ids` must be the job's frozen set in the order the server holds it — `durableBulkParts` gives
+ * exactly that — because the job's cursor (`processedUnits`) counts items in that order: the ones
+ * before it have been answered for. Refusals are listed individually; successes are not, so an
+ * answered item without a refusal is done. Two things keep that honest:
+ *
+ * - Items waiting in the automatic retry pass (`bulkRetryPending`) are pending wherever the cursor
+ *   is, and an item that failed before the retry pass was planned is pending too, because it will
+ *   be tried again. Only a failure that has had its retry is shown as failed.
+ * - When the job recorded more refusals than it lists (`itemsTruncated`), an answered item without
+ *   a refusal may still have failed, so it is `unchanged` rather than `done`: it stays on the page
+ *   instead of being removed on a guess.
+ */
+export const durableItemStates = (
+  ids: readonly string[],
+  detail: Pick<MediaOperationDetailDto, 'status' | 'processedUnits' | 'bulkItems' | 'bulkRetryPending' | 'bulk'>,
+): Map<string, DurableItemState> => {
+  const finished = FINISHED_JOB.includes(detail.status);
+  const cursor = Math.max(0, Number(detail.processedUnits ?? 0) || 0);
+  const refusals = new Map((detail.bulkItems ?? []).map((item) => [item.id, item]));
+  const waiting = new Set(detail.bulkRetryPending ?? []);
+  const retryPlanned = (detail.bulk?.retried ?? 0) > 0;
+  const uncertain = detail.bulk?.itemsTruncated === true;
+  // An item the job never got to: a cancel leaves it as it was; a failed job did not do it.
+  const notReached: DurableItemState =
+    detail.status === MediaOperationStatus.Cancelled
+      ? { state: 'unchanged' }
+      : { state: 'failed', reasonKey: 'frameleaf_bulk_reason_failed' };
+
+  const states = new Map<string, DurableItemState>();
+  for (const [index, id] of ids.entries()) {
+    const refusal = refusals.get(id);
+    if (refusal) {
+      if (refusal.status === MediaOperationItemStatus.Failed && !finished && !retryPlanned) {
+        states.set(id, { state: 'pending' });
+      } else if (refusal.reasonKey === 'frameleaf_bulk_reason_duplicate') {
+        states.set(id, { state: 'unchanged' });
+      } else {
+        states.set(id, { state: 'failed', reasonKey: refusal.reasonKey ?? 'frameleaf_bulk_reason_failed' });
+      }
+      continue;
+    }
+
+    if (waiting.has(id) || index >= cursor) {
+      states.set(id, finished ? notReached : { state: 'pending' });
+      continue;
+    }
+
+    states.set(id, uncertain ? { state: 'unchanged' } : { state: 'done' });
+  }
+
+  return states;
 };
