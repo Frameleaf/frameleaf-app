@@ -143,8 +143,11 @@ export class MemoryController {
     return this.service.downloadExport(auth, id).then(asStreamableFile);
   }
 
+  // `MemoryUpdate`, not `MemoryRead`: starting an export queues work and writes a file, so
+  // a read-only API key must not be able to do it. The service still checks `MemoryRead`
+  // on the memory itself and `AssetDownload` on its assets.
   @Post(':id/exports')
-  @Authenticated({ permission: Permission.MemoryRead })
+  @Authenticated({ permission: Permission.MemoryUpdate })
   @HttpCode(HttpStatus.CREATED)
   @Endpoint({
     summary: 'Export a memory',
