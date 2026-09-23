@@ -333,7 +333,7 @@ describe(EnrichmentPlanService.name, () => {
         retry: { ids: [video], processed: 0 },
       };
 
-      await sut.run(operationOf(snapshot, { result: result as never, processedUnits: '1' }), 'token');
+      await sut.run(operationOf(snapshot, { result: result as never, processedUnits: 1 }), 'token');
 
       expect(moments.runFramesStage).not.toHaveBeenCalled();
       expect(moments.runIndexStage).toHaveBeenCalledTimes(1);

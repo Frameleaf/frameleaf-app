@@ -25,10 +25,11 @@ const operationOf = (snapshot: Record<string, unknown>, overrides: Partial<Media
     ...overrides,
   }) as unknown as MediaOperation;
 
-const page = (checked: number, lastId: string | null, found = { missing: 0, corrupt: 0 }) => ({
+const page = (checked: number, lastId: string | null, { missing = 0, corrupt = 0 } = {}) => ({
   checked,
   lastId,
-  ...found,
+  missing,
+  corrupt,
 });
 
 describe(MediaHealthOperationService.name, () => {

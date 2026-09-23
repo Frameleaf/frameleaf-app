@@ -260,7 +260,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       operations.listRecentOfKind.mockResolvedValue([
         operationOf({
           status: MediaOperationStatus.Completed,
-          processedUnits: '2',
+          processedUnits: 2,
           snapshot: { planId: 'PD-ABABABAB', fingerprint, estimatedBytes: 20 },
           result: { summary: { applied: 1, alreadyApplied: 0, skipped: 1, failed: 0, reclaimedBytes: 10 } },
           finishedAt: new Date('2026-09-23T10:05:00.000Z'),

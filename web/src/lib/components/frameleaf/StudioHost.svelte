@@ -283,9 +283,12 @@
     });
   });
 
-  // Leaving a state the engine may run in tears it down rather than leaving it hidden.
+  // Leaving a state the engine may run in tears it down rather than leaving it hidden. The
+  // phase is read before the (non-reactive) engine check: short-circuiting on a null engine at
+  // first run would leave the effect with no dependencies, so it would never run again.
   $effect(() => {
-    if (engine && shouldDisposeEngine(state.phase)) {
+    const phase = state.phase;
+    if (engine && shouldDisposeEngine(phase)) {
       void disposeEngine();
     }
   });

@@ -251,7 +251,7 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
     uncompressedSize = zip64.uncompressed ?? uncompressedSize;
     compressedSize = zip64.compressed ?? compressedSize;
     localHeaderOffset = zip64.offset ?? localHeaderOffset;
-    if (uncompressedSize === MARKER_32 || compressedSize === MARKER_32 || localHeaderOffset === MARKER_32) {
+    if ([uncompressedSize, compressedSize, localHeaderOffset].includes(MARKER_32)) {
       refuse(`${name.slice(0, 80)} declares ZIP64 sizes it does not carry`);
     }
     if (diskStart !== 0 && diskStart !== MARKER_16) {

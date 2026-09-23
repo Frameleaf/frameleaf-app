@@ -1,4 +1,5 @@
 import { ConflictException, GoneException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
@@ -14,6 +15,9 @@ import { previewETag } from 'src/utils/studio-preview.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
+
+// eslint-friendly alias: a mock whose implementation may return anything, promises included.
+type AnyMock = Mock<(...args: any[]) => any>;
 
 const frameStub = (overrides: Partial<StudioPreviewFrame> = {}): StudioPreviewFrame =>
   ({
@@ -81,9 +85,9 @@ describe(StudioPreviewService.name, () => {
   let operations: MediaOperationRepository;
   let resources: StudioResourceService;
   let projects: {
-    registerRevisionListener: ReturnType<typeof vi.fn>;
-    authorizeRevision: ReturnType<typeof vi.fn>;
-    getReadableRevision: ReturnType<typeof vi.fn>;
+    registerRevisionListener: AnyMock;
+    authorizeRevision: AnyMock;
+    getReadableRevision: AnyMock;
   };
 
   const manifest = (overrides: Partial<StudioAuthorizedManifest> = {}) =>
