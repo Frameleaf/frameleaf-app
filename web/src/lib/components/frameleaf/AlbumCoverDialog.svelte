@@ -3,7 +3,13 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize, searchAssets, type AlbumResponseDto, type AssetResponseDto } from '@immich/sdk';
+  import {
+    AssetMediaSize,
+    AssetVisibility,
+    searchAssets,
+    type AlbumResponseDto,
+    type AssetResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiCheckCircle } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -46,7 +52,9 @@
       const results = await searchAssets({
         metadataSearchDto: { albumIds, size: PAGE },
       });
-      assets = results.assets.items;
+      // An album cover is never a Locked photo (owner decision, September 22, 2026); an unlocked
+      // session's search includes them, so they are left out of the choices.
+      assets = results.assets.items.filter((asset) => asset.visibility !== AssetVisibility.Locked);
     } catch {
       failed = true;
     } finally {

@@ -127,6 +127,13 @@ describe('bulk action descriptors', () => {
     ).toBe(false);
   });
 
+  it('never offers a Locked item as the album cover (FL-53)', () => {
+    const lockedInAlbum = bulkActions({ assets: [photo('a', { isLocked: true })], albumId: 'album-1' });
+    expect(bulkActionById(lockedInAlbum)['set-album-cover']?.available).toBe(false);
+    // it may still be removed from the album
+    expect(bulkActionById(lockedInAlbum)['remove-from-album']?.available).toBe(true);
+  });
+
   it('links a Live Photo only for exactly one still and one video', () => {
     expect(livePhotoPair([photo('a'), video('b')])).toEqual({ photoId: 'a', videoId: 'b' });
     expect(livePhotoPair([photo('a'), video('b'), video('c')])).toBeNull();
@@ -191,7 +198,9 @@ describe('bulk action descriptors', () => {
       isArchived: true,
       isTrashed: false,
       isLivePhoto: false,
+      isLocked: false,
       stackId: 'stack-1',
     });
+    expect(toBulkAsset({ ...asset, visibility: AssetVisibility.Locked })).toMatchObject({ isLocked: true });
   });
 });

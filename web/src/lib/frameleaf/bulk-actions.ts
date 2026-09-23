@@ -82,6 +82,8 @@ export type BulkAsset = {
   isArchived?: boolean;
   isTrashed?: boolean;
   isLivePhoto?: boolean;
+  /** In the Locked folder. Such an item may sit in an album but is never its cover. */
+  isLocked?: boolean;
   stackId?: string | null;
 };
 
@@ -93,6 +95,7 @@ export const toBulkAsset = (asset: AssetResponseDto): BulkAsset => ({
   isArchived: asset.isArchived || asset.visibility === AssetVisibility.Archive,
   isTrashed: asset.isTrashed,
   isLivePhoto: !!asset.livePhotoVideoId,
+  isLocked: asset.visibility === AssetVisibility.Locked,
   stackId: asset.stack?.id ?? null,
 });
 
@@ -392,7 +395,8 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       labelKey: 'frameleaf_bulk_set_album_cover',
       icon: 'mdiImageOutline',
       group: 'album',
-      available: live && resolved && count === 1 && !!albumId,
+      // An album cover is never a Locked photo (owner decision, September 22, 2026).
+      available: live && resolved && count === 1 && !!albumId && !any((asset) => !!asset.isLocked),
     },
     {
       id: 'remove-from-shared-link',
