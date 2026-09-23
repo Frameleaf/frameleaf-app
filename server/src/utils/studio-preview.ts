@@ -10,97 +10,36 @@
  * Framework-free on purpose, like `media-policy.ts`: the service, the repository and the tests
  * all import the same rules rather than restating them, and none of it needs a database.
  *
- * ## Typed seams to stories in flight
+ * ## Typed seams
  *
- * - **Rational time (FL-93 / `VID-102`).** FL-93 owns the production rational-time model and is
- *   on another branch. {@link PreviewTime} here is a deliberately minimal local numerator /
- *   denominator pair with normalisation and comparison, and nothing else. When FL-93 lands, this
- *   type is replaced by its model; every consumer in this story goes through
- *   {@link normalizePreviewTime} and {@link previewTimeKey}, so the swap is one import.
- *   A floating `seconds` is never accepted anywhere: a preview at 1001/30000 must address the
- *   same frame the export does.
+ * - **Rational time (FL-93 / `VID-102`).** {@link PreviewTime} is FL-93's `Rational`, imported
+ *   from `src/utils/rational-time.ts`. A floating `seconds` is never accepted anywhere: a
+ *   preview at 1001/30000 must address the same frame the export does.
  * - **Worker admission (FL-95 / `STU-401`).** Nothing here admits, claims or talks to a worker.
  *   A preview request becomes a durable media operation row and stops; FL-95 owns claiming it.
- * - **Authorized resource manifest (FL-90 / `STU-203`).** The enumerated resource grant is
- *   carried opaquely in the operation snapshot under `resourceManifestId`. This story never
- *   builds one and never resolves graph URLs, so no unauthorized source can leak through
- *   preview.
+ * - **Authorized manifest (FL-90 / `STU-203`).** The enumerated, revision-bound read grant is
+ *   `StudioResourceService`'s. This module never resolves a resource and never sees a graph; it
+ *   only compares the manifest digest a frame was bound to against the current one.
  */
 
 import { createHash } from 'node:crypto';
+import { type Rational, formatRational } from 'src/utils/rational-time.js';
 
 /* ------------------------------------------------------------------ */
-/* Rational time — minimal local stand-in for FL-93                     */
+/* Rational time (FL-93)                                                */
 /* ------------------------------------------------------------------ */
 
 /**
- * An exact point on the sequence timeline, in seconds, as `numerator / denominator`.
+ * An exact point on the sequence timeline, in seconds. FL-93's reduced rational.
  *
- * Minimal local type standing in for FL-93's rational-time model (see the module note). Both
- * fields are `bigint` because a timeline tick count at a 1/90000 timebase over a long project
- * exceeds what a double can hold exactly, and "close enough" is exactly the failure this story
- * exists to prevent.
+ * Reduction is what makes the cache key honest: `2002/60000` and `1001/30000` are the same
+ * instant, so `rational()` gives them the same pair and therefore the same key, instead of the
+ * store quietly rendering one frame twice under two names.
  */
-export type PreviewTime = {
-  numerator: bigint;
-  denominator: bigint;
-};
+export type PreviewTime = Rational;
 
-const gcd = (a: bigint, b: bigint): bigint => {
-  let x = a < 0n ? -a : a;
-  let y = b < 0n ? -b : b;
-  while (y !== 0n) {
-    [x, y] = [y, x % y];
-  }
-  return x;
-};
-
-/**
- * Reduce a time to its canonical form: non-negative denominator, lowest terms.
- *
- * Canonicalisation is what makes the cache key honest. `2/4` and `1/2` are the same instant, so
- * they must produce the same key, or the store quietly renders the same frame twice and the
- * client's "is this the frame I asked for?" check becomes a coin toss.
- */
-export const normalizePreviewTime = (time: PreviewTime): PreviewTime => {
-  if (time.denominator === 0n) {
-    throw new TypeError('Preview time denominator must not be zero');
-  }
-
-  const sign = time.denominator < 0n ? -1n : 1n;
-  const numerator = time.numerator * sign;
-  const denominator = time.denominator * sign;
-  const divisor = gcd(numerator, denominator) || 1n;
-
-  return { numerator: numerator / divisor, denominator: denominator / divisor };
-};
-
-/** Canonical text form, e.g. `1001/30000`. Used in keys and in the ETag. */
-export const previewTimeKey = (time: PreviewTime): string => {
-  const normalized = normalizePreviewTime(time);
-  return `${normalized.numerator}/${normalized.denominator}`;
-};
-
-/** `-1`, `0` or `1`. Cross-multiplied, so two different timebases compare exactly. */
-export const comparePreviewTime = (a: PreviewTime, b: PreviewTime): number => {
-  const left = normalizePreviewTime(a);
-  const right = normalizePreviewTime(b);
-  const difference = left.numerator * right.denominator - right.numerator * left.denominator;
-  return difference === 0n ? 0 : difference < 0n ? -1 : 1;
-};
-
-/** Parse `numerator/denominator` as stored. Returns null rather than guessing. */
-export const parsePreviewTime = (value: string): PreviewTime | null => {
-  const match = /^(-?\d+)\/(\d+)$/.exec(value.trim());
-  if (!match) {
-    return null;
-  }
-  const denominator = BigInt(match[2]);
-  if (denominator === 0n) {
-    return null;
-  }
-  return normalizePreviewTime({ numerator: BigInt(match[1]), denominator });
-};
+/** Canonical text form, e.g. `1001/30000`. Used in the store key and in the ETag. */
+export const previewTimeKey = (time: PreviewTime): string => formatRational(time);
 
 /* ------------------------------------------------------------------ */
 /* The binding                                                          */

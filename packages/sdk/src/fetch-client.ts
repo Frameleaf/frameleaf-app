@@ -744,6 +744,88 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
+export type PhysicalDeduplicationRetainedDto = {
+    /** Asset that keeps the original file */
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    /** Hex-encoded SHA-1 checksum of the original file */
+    checksum: string;
+    originalFileName: string;
+    /** Path of the retained original file */
+    originalPath: string;
+    /** Owner of the retained asset (the retained account) */
+    ownerId: string;
+    /** Display name of the retained account */
+    ownerName: string;
+    /** Assets that would reference this original after the plan is applied */
+    referencesAfter: number;
+    /** Assets that reference this original before the plan is applied (including the retained asset) */
+    referencesBefore: number;
+    sizeInBytes: number;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationCopyDto = {
+    /** Duplicate asset owned by a non-retained account */
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    /** Hex-encoded SHA-1 checksum of the original file */
+    checksum: string;
+    /** Whether checksum and byte size match a retained original */
+    checksumMatch: boolean;
+    decision: PhysicalDeduplicationDecision;
+    originalFileName: string;
+    /** Path of the duplicate copy on disk */
+    originalPath: string;
+    ownerId: string;
+    /** Display name of the copy owner */
+    ownerName: string;
+    /** Present when the decision is skip */
+    reason: (PhysicalDeduplicationSkipReason) | null;
+    /** Retained original this copy matches, if any */
+    retainedAssetId: string | null;
+    sizeInBytes: number;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationPlanDto = {
+    copies: PhysicalDeduplicationCopyDto[];
+    /** True when more copies were reviewed than the stored preview keeps; totals still cover all of them */
+    copiesTruncated: boolean;
+    deletedBytes: number;
+    eligibleAssets: number;
+    linkedAssets: number;
+    /** Account whose originals are retained by this plan */
+    masterUserId: string;
+    /** Display name of the retained account */
+    masterUserName: string;
+    mode: PhysicalDeduplicationPlanMode;
+    /** When the plan was produced */
+    ranAt: string;
+    reclaimableBytes: number;
+    retained: PhysicalDeduplicationRetainedDto[];
+    /** When set, only copies owned by this account were reviewed; null means every account */
+    scopeUserId: string | null;
+    scopeUserName: string | null;
+    skippedExternal: number;
+    skippedMissingMaster: number;
+};
+export type PhysicalDeduplicationPreviewResponseDto = {
+    /** The saved `physicalDeduplication.enabled` */
+    enabled: boolean;
+    /** The latest plan, or null when none has run */
+    plan: (PhysicalDeduplicationPlanDto) | null;
+    /** Whether a deduplication preview or apply job is queued or active */
+    running: boolean;
+    /** The saved `physicalDeduplication.masterUserId` */
+    savedMasterUserId: string | null;
+};
+export type PhysicalDeduplicationPreviewRequestDto = {
+    /** Account to retain originals in for this preview; defaults to the saved master account */
+    masterUserId?: string;
+    /** Limit the review to copies owned by this account */
+    scopeUserId?: string;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -1723,6 +1805,122 @@ export type SpeedParameters = {
     rate: number;
     /** Speed segment start time in milliseconds */
     startMs?: number;
+};
+export type AssetDevelopCrop = {
+    /** Crop height as a fraction of the frame */
+    h: number;
+    /** Crop width as a fraction of the frame */
+    w: number;
+    /** Left edge of the crop as a fraction of the oriented frame width */
+    x: number;
+    /** Top edge of the crop as a fraction of the oriented frame height */
+    y: number;
+};
+export type AssetDevelopRecipeDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: AssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Recipe contract version */
+    version: 1;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type AssetDevelopRevisionResponseDto = {
+    /** Asset this revision belongs to */
+    assetId: string;
+    /** When the version was saved */
+    createdAt: string;
+    /** Why the last render failed, when it did */
+    error: string | null;
+    /** True once the edited master file exists */
+    hasMaster: boolean;
+    /** True once the preview file exists */
+    hasPreview: boolean;
+    /** Height of the edited master in pixels */
+    height: number | null;
+    /** Develop revision ID */
+    id: string;
+    /** True for the version the asset currently shows */
+    isCurrent: boolean;
+    /** Name given when the version was saved */
+    label: string | null;
+    /** Render progress as a percentage */
+    progress: number;
+    recipe: AssetDevelopRecipeDto;
+    /** When the render finished */
+    renderedAt: string | null;
+    /** Identity of the renderer that produced the files, for lineage */
+    rendererVersion: string | null;
+    /** Per-asset sequence number, 1 for the first saved version */
+    revision: number;
+    status: AssetDevelopRevisionStatus;
+    /** When the revision last changed */
+    updatedAt: string;
+    /** Width of the edited master in pixels */
+    width: number | null;
+};
+export type AssetDevelopResponseDto = {
+    /** Asset ID these revisions belong to */
+    assetId: string;
+    /** The revision the asset currently shows; null means the original */
+    currentRevisionId: string | null;
+    /** Every saved version of the recipe, newest first */
+    revisions: AssetDevelopRevisionResponseDto[];
+};
+export type AssetDevelopSaveDto = {
+    /** Optional name for the saved version */
+    label?: string;
+    recipe: AssetDevelopRecipeDto;
+    /** Queue the edited master render immediately after saving the recipe */
+    render?: boolean;
+};
+export type AssetDevelopPreviewDto = {
+    recipe: AssetDevelopRecipeDto;
+    /** Longest edge of the preview in pixels; the original is never upscaled */
+    size?: number;
+};
+export type AssetDevelopRevertDto = {
+    /** Rendered revision to make current again; omitted, the original becomes current */
+    revisionId?: string;
 };
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
@@ -2708,11 +2906,82 @@ export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
+export type MemoryStoryPlaceDto = {
+    /** City */
+    city: string | null;
+    /** Country */
+    country: string | null;
+    /** State or region */
+    state: string | null;
+};
+export type EventStoryDto = {
+    /** Number of assets the event held before the diversity pass */
+    assetCount: number;
+    /** Number of distinct local days the event covers */
+    dayCount: number;
+    /** Last local day of the event, 'yyyy-MM-dd' */
+    endDate: string;
+    /** Discriminator for an event story */
+    kind: "event_story";
+    place?: MemoryStoryPlaceDto;
+    /** First local day of the event, 'yyyy-MM-dd' */
+    startDate: string;
+    /** Place label for the event, when it has one */
+    title?: string;
+    /** Year the event started */
+    year: number;
+};
+export type YearInReviewDto = {
+    /** Number of assets captured that year */
+    assetCount: number;
+    /** Discriminator for a year in review recap */
+    kind: "year_in_review";
+    /** Number of distinct months represented */
+    monthCount: number;
+    /** Calendar year being recapped */
+    year: number;
+};
+export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryExportResponseDto = {
+    /** Number of assets in the export */
+    assetCount: number;
+    /** When the export was requested */
+    createdAt: string;
+    /** Failure reason, when the export failed */
+    error: string | null;
+    /** When the archive is deleted */
+    expiresAt: string | null;
+    /** When the export reached a terminal state */
+    finishedAt: string | null;
+    format: MemoryExportFormat;
+    /** Export ID */
+    id: string;
+    /** Whether the archive can be downloaded right now */
+    isDownloadable: boolean;
+    /** Memory the export was requested for */
+    memoryId: string;
+    /** Owner user ID */
+    ownerId: string;
+    /** Number of assets written so far */
+    processedAssets: number;
+    /** Size of the finished archive */
+    sizeInBytes: number | null;
+    /** When the worker picked the export up */
+    startedAt: string | null;
+    status: MemoryExportStatus;
+    /** The memory's title when the export was requested */
+    title: string;
+    /** Last update date */
+    updatedAt: string;
+};
+export type MemoryExportCreateDto = {
+    format?: MemoryExportFormat;
+};
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
     createdAt: string;
-    data: OnThisDayDto;
+    data: MemoryData;
     /** Deletion date */
     deletedAt?: string;
     /** Date when memory should be hidden */
@@ -2736,7 +3005,7 @@ export type MemoryResponseDto = {
 export type MemoryCreateDto = {
     /** Asset IDs to associate with memory */
     assetIds?: string[];
-    data: OnThisDayDto;
+    data: MemoryData;
     /** Date when memory should be hidden */
     hideAt?: string;
     /** Is memory saved */
@@ -4083,6 +4352,46 @@ export type SessionUpdateDto = {
     /** Reset pending sync state */
     isPendingSyncReset?: boolean;
 };
+export type SharedSpacePreviewResponseDto = {
+    /** True once the recipient has joined the space */
+    accepted: boolean;
+    /** Shared space name */
+    albumName: string;
+    /** Items the recipient would see. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** Shared space description */
+    description: string;
+    /** Latest item date, sensitive and Locked media excluded */
+    endDate?: string;
+    /** Icon: a Material Design Icons name (null = default icon) */
+    icon: string | null;
+    /** Shared space ID */
+    id: string;
+    /** When the invitation was sent */
+    invitedAt: string;
+    /** Who sent the invitation */
+    invitedBy: UserResponseDto | null;
+    /** People already in the shared space, including its owner */
+    memberCount: number;
+    /** Who owns the shared space */
+    owner: UserResponseDto;
+    /** The role the recipient gets on accept */
+    role: AlbumUserRole;
+    /** Earliest item date, sensitive and Locked media excluded */
+    startDate?: string;
+};
+export type SharedSpaceMemberResponseDto = {
+    /** When a pending invitation was sent */
+    invitedAt?: string;
+    /** True while the invitation has not been accepted */
+    pending: boolean;
+    role: AlbumUserRole;
+    user: UserResponseDto;
+};
+export type SharedSpaceMembersResponseDto = {
+    /** Members and pending invitations, owner first */
+    members: SharedSpaceMemberResponseDto[];
+};
 export type SharedLinkResponseDto = {
     album?: AlbumResponseDto;
     /** Allow downloads */
@@ -5332,6 +5641,29 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
+ * Get physical deduplication preview
+ */
+export function getPhysicalDeduplicationPreview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationPreviewResponseDto;
+    }>("/admin/physical-deduplication/preview", {
+        ...opts
+    }));
+}
+/**
+ * Request physical deduplication preview
+ */
+export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPreviewRequestDto }: {
+    physicalDeduplicationPreviewRequestDto: PhysicalDeduplicationPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/physical-deduplication/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationPreviewRequestDto
+    })));
+}
+/**
  * Search users
  */
 export function searchUsersAdmin({ id, withDeleted }: {
@@ -6080,6 +6412,114 @@ export function updateAsset({ id, updateAssetDto }: {
         method: "PUT",
         body: updateAssetDto
     })));
+}
+/**
+ * List develop versions of an asset
+ */
+export function getAssetDevelop({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop`, {
+        ...opts
+    }));
+}
+/**
+ * Save a develop recipe as a new version
+ */
+export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
+    id: string;
+    assetDevelopSaveDto: AssetDevelopSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetDevelopSaveDto
+    })));
+}
+/**
+ * Render a develop preview
+ */
+export function previewAssetDevelop({ id, assetDevelopPreviewDto }: {
+    id: string;
+    assetDevelopPreviewDto: AssetDevelopPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/develop/preview`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopPreviewDto
+    })));
+}
+/**
+ * Revert to the original or an earlier develop version
+ */
+export function revertAssetDevelop({ id, assetDevelopRevertDto }: {
+    id: string;
+    assetDevelopRevertDto: AssetDevelopRevertDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revert`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopRevertDto
+    })));
+}
+/**
+ * View a rendered develop file
+ */
+export function viewAssetDevelopFile({ id, kind, revisionId }: {
+    id: string;
+    kind?: AssetDevelopFileKind;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel a develop render
+ */
+export function cancelAssetDevelopRender({ id, revisionId }: {
+    id: string;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/render`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Render a develop version
+ */
+export function renderAssetDevelopRevision({ id, revisionId }: {
+    id: string;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/render`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Remove edits from an existing asset
@@ -7393,6 +7833,72 @@ export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, o
     }));
 }
 /**
+ * Retrieve memory exports
+ */
+export function getMemoryExports({ memoryId }: {
+    memoryId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto[];
+    }>(`/memories/exports${QS.query(QS.explode({
+        memoryId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Delete a memory export
+ */
+export function deleteMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/memories/exports/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve a memory export
+ */
+export function getMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto;
+    }>(`/memories/exports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel a memory export
+ */
+export function cancelMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryExportResponseDto;
+    }>(`/memories/exports/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Download a memory export
+ */
+export function downloadMemoryExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/memories/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
  * Delete a memory
  */
 export function deleteMemory({ id }: {
@@ -7446,6 +7952,22 @@ export function removeMemoryAssets({ id, bulkIdsDto }: {
         ...opts,
         method: "DELETE",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Export a memory
+ */
+export function createMemoryExport({ id, memoryExportCreateDto }: {
+    id: string;
+    memoryExportCreateDto: MemoryExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MemoryExportResponseDto;
+    }>(`/memories/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryExportCreateDto
     })));
 }
 /**
@@ -8979,6 +9501,80 @@ export function addSharedLinkAssets({ id, assetIdsDto }: {
     })));
 }
 /**
+ * List shared space invitations
+ */
+export function getSharedSpaceInvitations(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePreviewResponseDto[];
+    }>("/shared-spaces/invitations", {
+        ...opts
+    }));
+}
+/**
+ * Accept a shared space invitation
+ */
+export function acceptSharedSpaceInvitation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Decline a shared space invitation
+ */
+export function declineSharedSpaceInvitation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/invitation`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Withdraw a shared space invitation
+ */
+export function removeSharedSpaceInvitation({ id, userId }: {
+    id: string;
+    userId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/invitations/${encodeURIComponent(userId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * List shared space members
+ */
+export function getSharedSpaceMembers({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceMembersResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/members`, {
+        ...opts
+    }));
+}
+/**
+ * Preview a shared space
+ */
+export function getSharedSpacePreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePreviewResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/preview`, {
+        ...opts
+    }));
+}
+/**
  * Delete stacks
  */
 export function deleteStacks({ bulkIdsDto }: {
@@ -10035,7 +10631,8 @@ export enum StorageFolder {
     Upload = "upload",
     Profile = "profile",
     Thumbs = "thumbs",
-    Backups = "backups"
+    Backups = "backups",
+    Exports = "exports"
 }
 export enum NotificationLevel {
     Success = "success",
@@ -10293,6 +10890,29 @@ export enum AssetTypeEnum {
     Audio = "AUDIO",
     Other = "OTHER"
 }
+export enum AssetDevelopRevisionStatus {
+    Saved = "saved",
+    Queued = "queued",
+    Rendering = "rendering",
+    Rendered = "rendered",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum AssetDevelopPreset {
+    Original = "Original",
+    Vivid = "Vivid",
+    Natural = "Natural",
+    Warm = "Warm",
+    Cool = "Cool",
+    Mono = "Mono",
+    Silvertone = "Silvertone",
+    Noir = "Noir",
+    Fade = "Fade"
+}
+export enum AssetDevelopFileKind {
+    Master = "master",
+    Preview = "preview"
+}
 export enum AssetEditAction {
     Crop = "crop",
     Rotate = "rotate",
@@ -10381,6 +11001,21 @@ export enum ManualJobName {
     IntegrityMissingFilesDeleteAll = "integrity-missing-files-delete-all",
     IntegrityUntrackedFilesDeleteAll = "integrity-untracked-files-delete-all",
     IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all"
+}
+export enum PhysicalDeduplicationDecision {
+    Share = "share",
+    Skip = "skip"
+}
+export enum PhysicalDeduplicationSkipReason {
+    ExternalLibrary = "external-library",
+    MissingSize = "missing-size",
+    NoRetainedMatch = "no-retained-match",
+    AlreadyShared = "already-shared",
+    RetainedFileMissing = "retained-file-missing"
+}
+export enum PhysicalDeduplicationPlanMode {
+    DryRun = "dry-run",
+    Apply = "apply"
 }
 export enum QueueName {
     ThumbnailGeneration = "thumbnailGeneration",
@@ -10508,7 +11143,20 @@ export enum MemorySearchOrder {
     Random = "random"
 }
 export enum MemoryType {
-    OnThisDay = "on_this_day"
+    OnThisDay = "on_this_day",
+    EventStory = "event_story",
+    YearInReview = "year_in_review"
+}
+export enum MemoryExportFormat {
+    Archive = "archive"
+}
+export enum MemoryExportStatus {
+    Pending = "pending",
+    Running = "running",
+    Ready = "ready",
+    Failed = "failed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",

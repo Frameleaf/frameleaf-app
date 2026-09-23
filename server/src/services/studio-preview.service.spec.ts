@@ -3,6 +3,8 @@ import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 's
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
+import { rational } from 'src/utils/rational-time.js';
 import { previewETag } from 'src/utils/studio-preview.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -14,6 +16,9 @@ const frameStub = (overrides: Partial<StudioPreviewFrame> = {}): StudioPreviewFr
     projectId: 'project-1',
     revisionDigest: 'rev-a',
     cacheKey: 'cache-key',
+    projectRevision: null,
+    grantToken: null,
+    grantSessionId: null,
     timeNumerator: '1001',
     timeDenominator: '30000',
     quality: StudioPreviewQuality.Standard,
@@ -57,6 +62,29 @@ describe(StudioPreviewService.name, () => {
   let mocks: ServiceMocks;
   let previews: StudioPreviewRepository;
   let operations: MediaOperationRepository;
+  let resources: StudioResourceService;
+
+  const manifest = (overrides: Partial<StudioAuthorizedManifest> = {}) =>
+    ({
+      schemaVersion: 1,
+      projectId: 'project-1',
+      revision: 7,
+      userId: authStub.user1.user.id,
+      destination: 'local',
+      issuedAt: '2026-09-22T11:58:00.000Z',
+      expiresAt: '2100-01-01T00:00:00.000Z',
+      complete: true,
+      refusedCount: 0,
+      entries: [],
+      privacy: {
+        includesSharedSources: false,
+        includesPersonalData: false,
+        originalAccess: false,
+        leavesMachine: false,
+      },
+      digest: 'manifest-digest',
+      ...overrides,
+    }) as unknown as StudioAuthorizedManifest;
 
   beforeEach(() => {
     mocks = getMocks();
@@ -82,7 +110,14 @@ describe(StudioPreviewService.name, () => {
       requestCancel: vi.fn().mockResolvedValue(undefined),
     } as unknown as MediaOperationRepository;
 
-    sut = new StudioPreviewService(mocks.logger as never, previews, operations);
+    resources = {
+      assertAuthorizedManifest: vi.fn(),
+      issuePreviewGrant: vi.fn().mockReturnValue('grant-token'),
+      verifyReadGrant: vi.fn().mockResolvedValue({ valid: true, grant: {}, path: '' }),
+      cacheKey: vi.fn().mockReturnValue('studio:project-1:7:user:local:manifest-digest'),
+    } as unknown as StudioResourceService;
+
+    sut = new StudioPreviewService(mocks.logger as never, previews, operations, resources);
   });
 
   describe('request', () => {
@@ -123,7 +158,7 @@ describe(StudioPreviewService.name, () => {
             revisionDigest: 'rev-a',
             time: '1001/30000',
             // FL-90 owns the authorized manifest; a preview with none has nothing it may read.
-            resourceManifestId: null,
+            manifestDigest: null,
           }),
         }),
       );
@@ -203,6 +238,81 @@ describe(StudioPreviewService.name, () => {
       await sut.request(authStub.user1, request({ seekGeneration: 12 }));
 
       expect(previews.upsert).toHaveBeenCalledWith(expect.objectContaining({ seekGeneration: '12' }));
+    });
+  });
+
+  describe('requestForManifest (FL-90)', () => {
+    it('asserts the manifest before anything is recorded or enqueued', async () => {
+      vi.mocked(resources.assertAuthorizedManifest).mockImplementation(() => {
+        throw new Error('expired');
+      });
+
+      await expect(
+        sut.requestForManifest(authStub.user1, manifest(), {
+          time: { numerator: '1001', denominator: '30000' },
+          quality: StudioPreviewQuality.Standard,
+          viewportWidth: 1920,
+          viewportHeight: 1080,
+        } as never),
+      ).rejects.toThrow('expired');
+
+      expect(previews.upsert).not.toHaveBeenCalled();
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('binds the frame to the manifest digest, not to the graph revision alone', async () => {
+      await sut.requestForManifest(authStub.user1, manifest(), {
+        time: { numerator: '1001', denominator: '30000' },
+        quality: StudioPreviewQuality.Standard,
+        viewportWidth: 1920,
+        viewportHeight: 1080,
+      } as never);
+
+      expect(previews.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ revisionDigest: 'manifest-digest', projectRevision: 7, grantToken: 'grant-token' }),
+      );
+    });
+
+    it('issues a viewer-session preview grant and records the manifest on the render snapshot', async () => {
+      await sut.requestForManifest(authStub.user1, manifest(), {
+        time: { numerator: '0', denominator: '1' },
+        quality: StudioPreviewQuality.Draft,
+        viewportWidth: 960,
+        viewportHeight: 540,
+      } as never);
+
+      expect(resources.issuePreviewGrant).toHaveBeenCalledWith(
+        expect.objectContaining({ digest: 'manifest-digest' }),
+        expect.objectContaining({ workerId: expect.any(String) }),
+      );
+      expect(operations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: expect.objectContaining({ manifestDigest: 'manifest-digest', projectRevision: 7 }),
+        }),
+      );
+    });
+
+    it('answers "not found" for a manifest resolved for another account', async () => {
+      await expect(
+        sut.requestForManifest(authStub.user1, manifest({ userId: 'someone-else' }), {
+          time: { numerator: '0', denominator: '1' },
+          quality: StudioPreviewQuality.Draft,
+          viewportWidth: 960,
+          viewportHeight: 540,
+        } as never),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('never leaks the grant to the browser', async () => {
+      const { preview } = await sut.requestForManifest(authStub.user1, manifest(), {
+        time: { numerator: '0', denominator: '1' },
+        quality: StudioPreviewQuality.Draft,
+        viewportWidth: 960,
+        viewportHeight: 540,
+      } as never);
+
+      expect(preview).not.toHaveProperty('grantToken');
+      expect(JSON.stringify(preview)).not.toContain('grant-token');
     });
   });
 
@@ -292,6 +402,36 @@ describe(StudioPreviewService.name, () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(undefined);
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('verifies the FL-90 grant on every request, not once at admission', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(
+        frameStub({ grantToken: 'grant-token', grantSessionId: 'session-1' }),
+      );
+      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
+
+      await sut.getFrame(authStub.user1, frameStub().id, {});
+
+      expect(resources.verifyReadGrant).toHaveBeenCalledWith('grant-token', {
+        workerId: 'session-1',
+        auth: authStub.user1,
+      });
+    });
+
+    it('stops serving, and drops the frame, the moment the grant stops verifying', async () => {
+      // A relock, an unshare or a re-resolution all land here: the picture must stop at once,
+      // not at the next render.
+      vi.mocked(previews.getForOwner).mockResolvedValue(
+        frameStub({ grantToken: 'grant-token', grantSessionId: 'session-1' }),
+      );
+      vi.mocked(resources.verifyReadGrant).mockResolvedValue({
+        valid: false,
+        reason: 'expired',
+        detail: 'gone',
+      } as never);
+
+      await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(ConflictException);
+      expect(previews.evict).toHaveBeenCalledWith([frameStub().id]);
     });
   });
 

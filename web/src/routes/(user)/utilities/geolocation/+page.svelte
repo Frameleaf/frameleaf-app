@@ -2,16 +2,13 @@
   import { isDefined } from '$lib';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import { AssetAction } from '$lib/constants';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import GeolocationPointPickerModal from '$lib/modals/GeolocationPointPickerModal.svelte';
   import GeolocationUpdateConfirmModal from '$lib/modals/GeolocationUpdateConfirmModal.svelte';
-  import { keyboardManager } from '$lib/stores/keyboard-manager.svelte';
   import type { LatLng } from '$lib/types';
   import { setQueryValue } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -29,6 +26,7 @@
 
   let isLoading = $state(false);
   let point = $state<LatLng>();
+  const selection = $derived(librarySession.selection);
   let locationUpdated = $state(false);
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
@@ -41,46 +39,67 @@
 
   const isOwnAsset = (asset: TimelineAsset) => asset.ownerId === authManager.user.id;
 
+  /** The loaded asset behind a selected id, so ownership can be checked before anything is sent. */
+  const findAsset = (id: string): TimelineAsset | null => {
+    for (const month of timelineManager.months) {
+      for (const day of month.timelineDays) {
+        const match = day.viewerAssets.find((viewerAsset) => viewerAsset.id === id);
+        if (match?.asset) {
+          return match.asset;
+        }
+      }
+    }
+    return null;
+  };
+
   const handleUpdate = async () => {
     if (!point) {
       return;
     }
 
+    const ids = [...selection];
+
     const confirmed = await modalManager.show(GeolocationUpdateConfirmModal, {
       point,
-      assetCount: assetMultiSelectManager.assets.length,
+      assetCount: ids.length,
     });
 
     if (!confirmed) {
       return;
     }
 
+    // Only the signed-in user's own items can be moved; the rest of the selection is left alone.
+    const owned = ids.filter((id) => {
+      const asset = findAsset(id);
+      return !asset || isOwnAsset(asset);
+    });
+
     await updateAssets({
       assetBulkUpdateDto: {
-        ids: assetMultiSelectManager.assets.filter((asset) => isOwnAsset(asset)).map((asset) => asset.id),
+        ids: owned,
         latitude: point.lat,
         longitude: point.lng,
       },
     });
 
     const updatedAssets = await Promise.all(
-      assetMultiSelectManager.assets.map(async (asset) => {
-        const updatedAsset = await getAssetInfo({ ...authManager.params, id: asset.id });
+      ids.map(async (id) => {
+        const updatedAsset = await getAssetInfo({ ...authManager.params, id });
         return toTimelineAsset(updatedAsset);
       }),
     );
 
     timelineManager.upsertAssets(updatedAssets);
 
-    assetMultiSelectManager.clear();
+    librarySession.clearSelection();
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Shift') {
       event.preventDefault();
     }
-    if (event.key === 'Escape' && assetMultiSelectManager.selectionActive) {
-      assetMultiSelectManager.clear();
+    if (event.key === 'Escape' && selection.length > 0) {
+      librarySession.clearSelection();
     }
   };
   const onKeyUp = (event: KeyboardEvent) => {
@@ -97,43 +116,27 @@
 
     point = selected;
   };
-  const handleEscape = () => {
-    if (!assetMultiSelectManager.selectionActive) {
-      return;
-    }
-
-    assetMultiSelectManager.clear();
-    return;
-  };
-
   type AssetPoint = { latitude: number; longitude: number };
 
   const hasGps = (asset: TimelineAsset | AssetPoint): asset is AssetPoint =>
     isDefined(asset.latitude) && isDefined(asset.longitude);
 
-  const handleThumbnailClick = (
-    asset: TimelineAsset,
-    timelineManager: TimelineManager,
-    timelineDay: TimelineDay,
-    onClick: (
-      timelineManager: TimelineManager,
-      assets: TimelineAsset[],
-      groupTitle: string,
-      asset: TimelineAsset,
-    ) => void,
-  ) => {
-    if (keyboardManager.shift) {
-      onClick(timelineManager, timelineDay.getAssets(), timelineDay.groupTitle, asset);
-    } else if (hasGps(asset)) {
-      locationUpdated = true;
-      setTimeout(() => {
-        locationUpdated = false;
-      }, 1500);
-      point = { lat: asset.latitude, lng: asset.longitude };
-      void setQueryValue('at', asset.id);
-    } else if (isOwnAsset(asset)) {
-      onClick(timelineManager, timelineDay.getAssets(), timelineDay.groupTitle, asset);
+  /**
+   * A plain click on an item that already has coordinates reads them into the picker rather than
+   * selecting it — that is how this utility has always worked. Everything else falls through to
+   * the timeline, which selects, because this page is a picking surface.
+   */
+  const handleTileClick = (asset: TimelineAsset) => {
+    if (!hasGps(asset)) {
+      return false;
     }
+    locationUpdated = true;
+    setTimeout(() => {
+      locationUpdated = false;
+    }, 1500);
+    point = { lat: asset.latitude, lng: asset.longitude };
+    void setQueryValue('at', asset.id);
+    return true;
   };
 </script>
 
@@ -169,8 +172,8 @@
         size="small"
         color="secondary"
         variant="ghost"
-        disabled={!assetMultiSelectManager.selectionActive}
-        onclick={() => assetMultiSelectManager.clear()}
+        disabled={selection.length === 0}
+        onclick={() => librarySession.clearSelection()}
       >
         {$t('unselect_all')}
       </Button>
@@ -178,11 +181,11 @@
         leadingIcon={mdiMapMarkerMultipleOutline}
         size="small"
         color="primary"
-        disabled={assetMultiSelectManager.assets.length === 0}
+        disabled={selection.length === 0}
         onclick={() => handleUpdate()}
       >
         <Text class="hidden sm:inline-block">
-          {$t('apply_count', { values: { count: assetMultiSelectManager.assets.length } })}
+          {$t('apply_count', { values: { count: selection.length } })}
         </Text>
       </Button>
     </div>
@@ -194,33 +197,32 @@
     </div>
   {/if}
 
-  <Timeline
-    isSelectionMode={true}
-    enableRouting={true}
+  <LibraryView
+    selectionMode
+    noSelectionBar
+    enableRouting
+    syncUrl={false}
     bind:timelineManager
     {options}
-    assetInteraction={assetMultiSelectManager}
-    removeAction={AssetAction.ARCHIVE}
-    onEscape={handleEscape}
-    withStacked
-    onThumbnailClick={handleThumbnailClick}
+    destination={{ kind: 'library' }}
+    onTileClick={handleTileClick}
   >
-    {#snippet customThumbnailLayout(asset: TimelineAsset)}
+    {#snippet tileOverlay(asset: TimelineAsset)}
       {#if !isOwnAsset(asset)}
-        <div class="pointer-events-none absolute inset-0 rounded-sm bg-black/40"></div>
+        <span class="pointer-events-none absolute inset-0 rounded-sm bg-black/40"></span>
       {/if}
       {#if hasGps(asset)}
-        <div class="absolute inset-e-3 bottom-1 rounded-xl bg-success px-4 py-1 text-xs text-black transition-colors">
+        <span class="absolute inset-e-3 bottom-1 rounded-xl bg-success px-4 py-1 text-xs text-black transition-colors">
           {asset.city || $t('gps')}
-        </div>
+        </span>
       {:else}
-        <div class="absolute inset-e-3 bottom-1 rounded-xl bg-danger px-4 py-1 text-xs text-light transition-colors">
+        <span class="absolute inset-e-3 bottom-1 rounded-xl bg-danger px-4 py-1 text-xs text-light transition-colors">
           {$t('gps_missing')}
-        </div>
+        </span>
       {/if}
     {/snippet}
     {#snippet empty()}
       <EmptyPlaceholder text={$t('no_assets_message')} onClick={() => {}} class="mx-auto mt-10" />
     {/snippet}
-  </Timeline>
+  </LibraryView>
 </UserPageLayout>

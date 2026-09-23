@@ -11,7 +11,13 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
+import {
+  STUDIO_GRANT_TTL_SECONDS,
+  StudioAuthorizedManifest,
+  StudioResourceService,
+} from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { rational } from 'src/utils/rational-time.js';
 import {
   PREVIEW_FRAMES_PER_REVISION,
   PREVIEW_REVISIONS_PER_PROJECT,
@@ -58,10 +64,8 @@ const asRequiredIso = (value: Date | string): string => asIso(value) as string;
 const asString = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
 
-const toPreviewTime = (frame: StudioPreviewFrame): PreviewTime => ({
-  numerator: BigInt(frame.timeNumerator as unknown as string | number),
-  denominator: BigInt(frame.timeDenominator as unknown as string | number),
-});
+const toPreviewTime = (frame: StudioPreviewFrame): PreviewTime =>
+  rational(Number(frame.timeNumerator), Number(frame.timeDenominator));
 
 /**
  * Revision-bound remote preview (FL-96, `STU-402`).
@@ -76,9 +80,11 @@ const toPreviewTime = (frame: StudioPreviewFrame): PreviewTime => ({
  * - **It does not run anything.** A request becomes a durable media operation of kind
  *   `studio_preview` (FL-104's model) and stops there. Admission, claiming and the GPU are
  *   FL-95's (`STU-401`); this service would be wrong to decide a worker is trustworthy.
- * - **It does not resolve resources.** The enumerated, revision-bound read grant is FL-90's
- *   (`STU-203`). The snapshot carries a `resourceManifestId` slot and nothing else, so no graph
- *   URL, local path or browser handle can travel to a worker through preview.
+ * - **It does not resolve resources.** Enumerating them and deciding access is FL-90's
+ *   (`STU-203`). This service asserts the manifest it is handed, records its digest as the
+ *   binding, issues a viewer-session preview grant and re-verifies that grant on every frame.
+ *   It never reads a graph, so no graph URL, local path or browser handle can travel to a
+ *   worker through preview.
  * - **It does not talk to the client's SDK.** The browser reaches it only through the Svelte
  *   host; the React engine has no API dependency at all.
  */
@@ -95,6 +101,7 @@ export class StudioPreviewService {
     private logger: LoggingRepository,
     private repository: StudioPreviewRepository,
     private operations: MediaOperationRepository,
+    private resources: StudioResourceService,
   ) {
     this.logger.setContext(StudioPreviewService.name);
   }
@@ -119,7 +126,19 @@ export class StudioPreviewService {
    * 4. Create the durable operation, if this request is the one that created the row.
    * 5. Evict, last, so a fresh request is never the thing that gets evicted.
    */
-  async request(auth: AuthDto, dto: StudioPreviewRequestDto): Promise<StudioPreviewResponseDto> {
+  async request(
+    auth: AuthDto,
+    dto: StudioPreviewRequestDto,
+    /**
+     * FL-90's authorized manifest, when the caller has one.
+     *
+     * When it is present it is the authority for everything: it is asserted, its digest becomes
+     * the binding this frame is delivered against, and a preview read grant is issued for this
+     * viewer session. See {@link requestForManifest}, which is the entry point the project
+     * service uses and the one that will become the only entry point.
+     */
+    manifest?: StudioAuthorizedManifest,
+  ): Promise<StudioPreviewResponseDto> {
     const time = this.parseTime(dto);
 
     if (!isValidPreviewViewport(dto.viewportWidth, dto.viewportHeight)) {
@@ -128,7 +147,21 @@ export class StudioPreviewService {
 
     const now = new Date();
     const known = await this.repository.getLatestRevisionDigest(dto.projectId, auth.user.id);
-    const authorityDigest = await this.revisionAuthority?.getCurrentRevisionDigest(dto.projectId, auth.user.id);
+
+    if (manifest) {
+      // Throws when the manifest was not issued by this process, has expired, is incomplete or
+      // was resolved for another project. A preview never renders from a partial manifest: an
+      // incomplete resolution means a source was refused, and a picture assembled without it
+      // would be a quietly wrong frame rather than a missing one.
+      this.resources.assertAuthorizedManifest(manifest, { now });
+      if (manifest.projectId !== dto.projectId || manifest.userId !== auth.user.id) {
+        throw new NotFoundException('Studio project not found');
+      }
+    }
+
+    const authorityDigest = manifest
+      ? manifest.digest
+      : await this.revisionAuthority?.getCurrentRevisionDigest(dto.projectId, auth.user.id);
 
     if (authorityDigest === null) {
       // The authority says this account cannot read the project. Same answer as "no project".
@@ -162,13 +195,31 @@ export class StudioPreviewService {
     };
     const cacheKey = previewCacheKey(binding);
 
+    /**
+     * The preview grant is a viewer-session grant (FL-90), not a graph reference: it names the
+     * manifest, the revision and this session, and it is verified again on every frame request.
+     * A session id rather than a worker id, because the thing redeeming it is the browser that
+     * asked for the picture.
+     */
+    const grantSessionId = auth.session?.id ?? auth.user.id;
+    const grantToken = manifest
+      ? this.resources.issuePreviewGrant(manifest, {
+          workerId: grantSessionId,
+          ttlSeconds: STUDIO_GRANT_TTL_SECONDS,
+          now,
+        })
+      : null;
+
     const frame = await this.repository.upsert({
       ownerId: auth.user.id,
       projectId: dto.projectId,
       revisionDigest: currentRevisionDigest,
+      projectRevision: manifest?.revision ?? null,
+      grantToken,
+      grantSessionId: manifest ? grantSessionId : null,
       cacheKey,
-      timeNumerator: time.numerator.toString() as never,
-      timeDenominator: time.denominator.toString() as never,
+      timeNumerator: String(time.num) as never,
+      timeDenominator: String(time.den) as never,
       quality: dto.quality,
       viewportWidth: dto.viewportWidth,
       viewportHeight: dto.viewportHeight,
@@ -186,7 +237,7 @@ export class StudioPreviewService {
       expiresAt: previewExpiry(now),
     });
 
-    const withOperation = frame.operationId ? frame : await this.enqueue(auth, frame, binding);
+    const withOperation = frame.operationId ? frame : await this.enqueue(auth, frame, binding, manifest);
 
     await this.evict(dto.projectId, auth.user.id, currentRevisionDigest, now);
 
@@ -195,6 +246,30 @@ export class StudioPreviewService {
       currentRevisionDigest,
       supersededPreviewIds: superseded.map((row) => row.id),
     };
+  }
+
+  /**
+   * Ask for one frame against FL-90's authorized manifest.
+   *
+   * This is the entry point the project service uses once it can hand over a resolved manifest,
+   * and it is the one that will become the *only* one. The manifest digest is the binding, so a
+   * frame stops being deliverable not only when the graph changes but when the resolution does
+   * — when a source is trashed, unshared, relocked or replaced — which a graph digest on its
+   * own cannot express.
+   *
+   * See the note on {@link request} about the manifest-less path that exists until Studio
+   * project storage lands.
+   */
+  requestForManifest(
+    auth: AuthDto,
+    manifest: StudioAuthorizedManifest,
+    dto: Omit<StudioPreviewRequestDto, 'projectId' | 'revisionDigest'>,
+  ): Promise<StudioPreviewResponseDto> {
+    return this.request(
+      auth,
+      { ...dto, projectId: manifest.projectId, revisionDigest: manifest.digest } as StudioPreviewRequestDto,
+      manifest,
+    );
   }
 
   /** Status of one preview. Owner-scoped; a frame that is not yours is not found. */
@@ -216,6 +291,32 @@ export class StudioPreviewService {
     options: { ifNoneMatch?: string },
   ): Promise<{ file: ImmichFileResponse; etag: string } | { notModified: true; etag: string }> {
     const frame = await this.findOwned(auth, id);
+
+    /**
+     * The FL-90 grant is checked on *every* frame request, not once at admission.
+     *
+     * `verifyReadGrant` re-checks the signature, the expiry, the session it was issued to and
+     * the acting user, so a relocked, expired or re-resolved session stops receiving frames
+     * immediately rather than at the next render. A row that carries no grant was recorded
+     * before a manifest existed for it; it can never have a published frame, because nothing
+     * may render without a manifest, so {@link decidePreviewDelivery} refuses it below as
+     * `not-ready` without needing a second rule here.
+     */
+    if (frame.grantToken) {
+      const verification = await this.resources.verifyReadGrant(frame.grantToken, {
+        workerId: frame.grantSessionId ?? auth.session?.id ?? auth.user.id,
+        auth,
+      });
+      if (!verification.valid) {
+        await this.repository.evict([frame.id]);
+        throw new ConflictException({
+          message: 'This preview is no longer authorized',
+          code: 'studio_preview_grant_revoked',
+          reason: verification.reason,
+        });
+      }
+    }
+
     const currentRevisionDigest = await this.currentRevision(frame);
     const binding = {
       projectId: frame.projectId,
@@ -320,6 +421,7 @@ export class StudioPreviewService {
     auth: AuthDto,
     frame: StudioPreviewFrame,
     binding: { projectId: string; revisionDigest: string; time: PreviewTime; quality: string },
+    manifest?: StudioAuthorizedManifest,
   ): Promise<StudioPreviewFrame> {
     const operation = await this.operations.create({
       ownerId: auth.user.id,
@@ -335,9 +437,10 @@ export class StudioPreviewService {
       projectId: binding.projectId,
       revisionId: binding.revisionDigest,
       /**
-       * The immutable binding. `resourceManifestId` is the slot FL-90's authorized manifest
-       * fills; it is null here, and a worker with no manifest has nothing it is allowed to
-       * read, which is the correct fail-closed default.
+       * The immutable binding. `manifestDigest` is FL-90's authorized manifest: a worker with
+       * no manifest has nothing it is allowed to read, which is the correct fail-closed
+       * default. `cacheKey` is FL-90's own cache key, so anything the worker stores for this
+       * preview stops being readable the moment the manifest is re-resolved.
        */
       snapshot: {
         kind: 'studio-preview',
@@ -348,7 +451,9 @@ export class StudioPreviewService {
         viewportWidth: frame.viewportWidth,
         viewportHeight: frame.viewportHeight,
         previewFrameId: frame.id,
-        resourceManifestId: null,
+        manifestDigest: manifest?.digest ?? null,
+        projectRevision: manifest?.revision ?? null,
+        resourceCacheKey: manifest ? this.resources.cacheKey(manifest) : null,
       },
       settings: {
         quality: binding.quality,
@@ -428,11 +533,14 @@ export class StudioPreviewService {
   }
 
   private parseTime(dto: StudioPreviewRequestDto): PreviewTime {
-    const denominator = BigInt(dto.time.denominator);
-    if (denominator === 0n) {
-      throw new ConflictException({ message: 'Preview time denominator must not be zero', code: 'studio_preview_bad_time' });
+    try {
+      // `rational` reduces and enforces the safe-integer invariants, so two spellings of the
+      // same instant become one cache entry and a value that cannot be exact is refused here
+      // rather than rounded somewhere downstream.
+      return rational(Number(dto.time.numerator), Number(dto.time.denominator));
+    } catch {
+      throw new ConflictException({ message: 'Preview time is not an exact rational', code: 'studio_preview_bad_time' });
     }
-    return { numerator: BigInt(dto.time.numerator), denominator };
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<StudioPreviewFrame> {
@@ -450,7 +558,7 @@ export class StudioPreviewService {
       id: frame.id,
       projectId: frame.projectId,
       revisionDigest: frame.revisionDigest,
-      time: { numerator: time.numerator.toString(), denominator: time.denominator.toString() },
+      time: { numerator: String(time.num), denominator: String(time.den) },
       quality: frame.quality as StudioPreviewQuality,
       viewportWidth: frame.viewportWidth,
       viewportHeight: frame.viewportHeight,
