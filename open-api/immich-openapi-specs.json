@@ -5085,6 +5085,15 @@
         ],
         "type": "object"
       },
+      "AssetLockReason": {
+        "description": "Why an asset is locked",
+        "enum": [
+          "marked",
+          "detected",
+          "immich-locked-folder"
+        ],
+        "type": "string"
+      },
       "AssetMediaCreateDto": {
         "properties": {
           "assetData": {
@@ -23650,6 +23659,18 @@
             },
             "type": "array"
           },
+          "lockReason": {
+            "description": "With visibility LOCKED only: why each asset is locked",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                }
+              ],
+              "nullable": true
+            },
+            "type": "array"
+          },
           "longitude": {
             "description": "Array of longitude coordinates extracted from EXIF GPS data",
             "items": {
@@ -31667,6 +31688,50 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/lock": {
+      "post": {
+        "description": "Locks assets: they keep their albums and organization, are hidden from every view except the Locked view of their owner in a PIN-unlocked session, and stacks and live photos lock as a whole.",
+        "operationId": "lockAssets",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lock assets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/metadata": {
       "delete": {
         "description": "Delete metadata key-value pairs for multiple assets.",
@@ -31848,6 +31913,50 @@
         ],
         "x-immich-permission": "asset.statistics",
         "x-immich-state": "Stable"
+      }
+    },
+    "/assets/unlock": {
+      "post": {
+        "description": "Unlocks assets the caller owns, whatever locked them, returning each exactly where it was. Requires a PIN-unlocked session.",
+        "operationId": "unlockAssets",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkIdsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlock assets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
       }
     },
     "/assets/{id}": {
@@ -51036,6 +51145,15 @@
             }
           },
           {
+            "name": "lockReason",
+            "required": false,
+            "in": "query",
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetLockReason"
+            }
+          },
+          {
             "name": "order",
             "required": false,
             "in": "query",
@@ -51261,6 +51379,15 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "lockReason",
+            "required": false,
+            "in": "query",
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetLockReason"
             }
           },
           {
