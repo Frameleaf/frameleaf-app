@@ -27,6 +27,8 @@ import { ServiceMocks, getMocks } from 'test/utils.js';
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
 const CLAIM = 'claim-token';
+/** Stands in for the transaction `publishValidated` hands its callback (FL-43). */
+const TRX = { transaction: 'publish' } as never;
 
 describe(RestorationWorkerService.name, () => {
   let sut: RestorationWorkerService;
@@ -172,6 +174,7 @@ describe(RestorationWorkerService.name, () => {
     };
     operations = {
       create: vi.fn(),
+      createRetry: vi.fn(),
       getForOwner: vi.fn().mockResolvedValue(operation()),
       list: vi.fn(),
       getCheckpoints: vi.fn().mockResolvedValue([]),
@@ -180,6 +183,18 @@ describe(RestorationWorkerService.name, () => {
       heartbeat: vi.fn().mockResolvedValue(true),
       reportProgress: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
+      // The real one runs `publish` inside a transaction holding the job's row (FL-43); `TRX`
+      // stands in for that transaction so the spec can see the row writes went through it.
+      publishValidated: vi
+        .fn()
+        .mockImplementation(async (id: string, token: string, publish: (trx: unknown) => Promise<boolean>) => {
+          if (!(await publish(TRX))) {
+            return 'rejected';
+          }
+          const complete = operations.complete as unknown as (...args: unknown[]) => Promise<boolean>;
+          return (await complete(id, token, { resultAssetId: null })) ? 'completed' : 'lost';
+        }),
+      isPublishableResult: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       requeue: vi.fn().mockResolvedValue(true),
@@ -317,7 +332,9 @@ describe(RestorationWorkerService.name, () => {
             preview: expect.objectContaining({ destinationId: mlDestinationStub.lan.id }),
           }),
         }),
+        TRX,
       );
+      expect(operations.publishValidated).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.any(Function));
       expect(operations.complete).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { resultAssetId: null });
       expect(operations.fail).not.toHaveBeenCalled();
     });
@@ -470,7 +487,7 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, { released: true });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
       expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
         status: AssetRestorationStatus.PreviewCancelled,
       });
@@ -499,7 +516,48 @@ describe(RestorationWorkerService.name, () => {
       await sut.run(operation(), CLAIM);
 
       expect(operations.settlePause).not.toHaveBeenCalled();
-      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0 });
+      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('publishes nothing when the owner cancelled while the output was being checked (FL-43)', async () => {
+      // The claim no longer holds a validating job when publication starts: the cancel won.
+      operations.publishValidated.mockResolvedValueOnce('lost');
+      operations.getForOwner.mockResolvedValue(
+        operation({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() }),
+      );
+
+      await sut.run(operation(), CLAIM);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(restorations.transition).not.toHaveBeenCalledWith(
+        RESTORATION_ID,
+        expect.anything(),
+        expect.objectContaining({ status: AssetRestorationStatus.PreviewReady }),
+        expect.anything(),
+      );
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
+      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
+        status: AssetRestorationStatus.PreviewCancelled,
+      });
+      // The rendered output stays scratch and is removed; it was never moved into place.
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('never touches the published paths when a stale worker finds its claim gone at publication (FL-43)', async () => {
+      operations.publishValidated.mockResolvedValueOnce('lost');
+      operations.getForOwner.mockResolvedValue(
+        operation({ status: MediaOperationStatus.Rendering, claimToken: 'other' }),
+      );
+      operations.requeue.mockResolvedValueOnce(false);
+
+      await sut.run(operation(), CLAIM);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(expect.stringMatching(/_restore_.*_after\.png$/));
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
