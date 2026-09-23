@@ -22,7 +22,6 @@ import {
 } from 'src/enum.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
@@ -283,8 +282,8 @@ export class DuplicateService extends BaseService {
 
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null, ...assetUpdate });
       if (assetUpdate.visibility === AssetVisibility.Locked) {
-        // a kept copy that became Locked is no longer a face thumbnail (FL-53)
-        await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, idsToKeep);
+        // a kept copy that became Locked is no longer a face thumbnail or profile picture (FL-53)
+        await this.afterAssetsLocked(idsToKeep);
       }
     } else if (idsToKeep.length > 0) {
       await this.assetRepository.updateAll(idsToKeep, { duplicateId: null });

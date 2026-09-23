@@ -23,6 +23,7 @@ export class UserFactory {
       pinCode: null,
       createdAt: newDate(),
       profileImagePath: '',
+      profileImageAssetId: null,
       isAdmin: false,
       shouldChangePassword: false,
       avatarColor: null,

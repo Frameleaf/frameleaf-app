@@ -1,11 +1,17 @@
-import { Kysely } from 'kysely';
-import { AlbumKind, AssetVisibility } from 'src/enum.js';
+import { Kysely, sql } from 'kysely';
+import { AlbumKind, AssetFileType, AssetVisibility, PetObservationState } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { StackRepository } from 'src/repositories/stack.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { up as clearLockedCoverReferences } from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
+import {
+  down as undoLockWholeStacks,
+  up as lockWholeStacks,
+} from 'src/schema/migrations/2100000000310-LockWholeStacksAndRecordProfileImageSource.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -28,9 +34,36 @@ const setup = (db?: Kysely<DB>) => {
   return { ctx, sut: ctx.get(AssetRepository) };
 };
 
+/** The fork schema phase decides where the sensitive flag and Best Photos scores are read. */
+const setForkPhase = (db: Kysely<DB>, phase: string) =>
+  sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(db);
+
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+  // a library before the fork schema cutover: `asset.is_nsfw` and the public scores are authoritative
+  await setForkPhase(defaultDatabase, 'legacy');
 });
+
+/** Marks a photo as a Best Photo (score 0.9 and up). */
+const markBestPhoto = (db: Kysely<DB>, asset: { id: string; ownerId: string }, score = 0.95) =>
+  db
+    .insertInto('asset_best_photo_score')
+    .values({ assetId: asset.id, ownerId: asset.ownerId, score, scoreVersion: 1, computedAt: new Date() })
+    .execute();
+
+const visibilityOf = async (db: Kysely<DB>, assetIds: string[]) => {
+  const rows = await db.selectFrom('asset').select(['id', 'visibility']).where('id', 'in', assetIds).execute();
+  return Object.fromEntries(rows.map((row) => [row.id, row.visibility]));
+};
+
+const coverOf = async (db: Kysely<DB>, albumId: string) => {
+  const { albumThumbnailAssetId } = await db
+    .selectFrom('album')
+    .select('albumThumbnailAssetId')
+    .where('id', '=', albumId)
+    .executeTakeFirstOrThrow();
+  return albumThumbnailAssetId;
+};
 
 const older = new Date('2024-01-01T00:00:00.000Z');
 const newer = new Date('2024-06-01T00:00:00.000Z');
@@ -93,6 +126,23 @@ const seed = async ({ ctx }: ReturnType<typeof setup>) => {
 };
 
 type Seeded = Awaited<ReturnType<typeof seed>>;
+
+/**
+ * A stack of two photos, the second of them the cover of an album that also holds an older photo
+ * outside the stack.
+ */
+const seedStack = async ({ ctx }: ReturnType<typeof setup>) => {
+  const { user: owner } = await ctx.newUser();
+  const { asset: primary } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: newer });
+  const { asset: member } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: newer });
+  const { asset: other } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: older });
+  await ctx.newStack({ ownerId: owner.id }, [primary.id, member.id]);
+  const { album } = await ctx.newAlbum({ ownerId: owner.id, albumThumbnailAssetId: member.id }, [
+    member.id,
+    other.id,
+  ]);
+  return { owner, primary, member, other, album };
+};
 
 const referencesOf = async (db: Kysely<DB>, seeded: Seeded) => {
   const albums = await db
@@ -301,8 +351,8 @@ describe('Locked cover references (FL-53)', () => {
         spaceCover: seeded.fallback.id,
         personFace: seeded.nextFace.id,
         personThumbnailPath: '',
-        // a migration clears a space's picture for a person rather than guess which photo is sensitive
-        spacePersonCover: null,
+        // the phase says where the sensitive flag is kept, so the space takes a photo every member sees
+        spacePersonCover: seeded.fallback.id,
         petFeatured: null,
       });
       await expect(membershipOf(ctx.database, seeded.cover.id)).resolves.toHaveLength(2);
@@ -327,6 +377,376 @@ describe('Locked cover references (FL-53)', () => {
 
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ spaceCover: null, personFace: null, personThumbnailPath: '' }),
+      );
+    });
+
+    it('takes a Best Photo first, then the newest photo', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      const { asset: best } = await ctx.newAsset({ ownerId: seeded.owner.id, fileCreatedAt: new Date('2020-01-01Z') });
+      await ctx.newAlbumAsset({ albumId: seeded.space.id, assetId: best.id });
+      const { assetFace: bestFace } = await ctx.newAssetFace({
+        assetId: best.id,
+        personGroupId: seeded.person.personGroupId,
+      });
+      await markBestPhoto(ctx.database, best);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+
+      await clearLockedCoverReferences(ctx.database);
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: best.id, personFace: bestFace.id, spacePersonCover: best.id }),
+      );
+    });
+
+    it('takes only a Timeline Best Photo that is not flagged sensitive where others see it, when it cannot tell which photos are sensitive', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+
+      await setForkPhase(ctx.database, 'inactive');
+      try {
+        await clearLockedCoverReferences(ctx.database);
+        // the fallback is not a Best Photo, so the shared space and its picture of the person take none
+        await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+          expect.objectContaining({ spaceCover: null, spacePersonCover: null, personFace: seeded.nextFace.id }),
+        );
+
+        await markBestPhoto(ctx.database, seeded.fallback);
+        await ctx.database
+          .updateTable('album')
+          .set({ albumThumbnailAssetId: seeded.cover.id })
+          .where('id', '=', seeded.space.id)
+          .execute();
+        await clearLockedCoverReferences(ctx.database);
+        await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+          expect.objectContaining({ spaceCover: seeded.fallback.id }),
+        );
+      } finally {
+        await setForkPhase(ctx.database, 'legacy');
+      }
+    });
+
+    it('gives a pet the photo of another confirmed observation', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const seeded = await seed(context);
+      await ctx.database
+        .insertInto('pet_observation')
+        .values([
+          { petId: seeded.pet.id, assetId: seeded.cover.id },
+          { petId: seeded.pet.id, assetId: seeded.fallback.id },
+        ])
+        .execute();
+      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+
+      await clearLockedCoverReferences(ctx.database);
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ petFeatured: seeded.fallback.id }),
+      );
+    });
+  });
+
+  describe('replacements (owner decisions 1 and 4)', () => {
+    it('prefers a Best Photo over the newest photo for every cover it replaces', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const seeded = await seed(context);
+      const { asset: best } = await ctx.newAsset({ ownerId: seeded.owner.id, fileCreatedAt: new Date('2020-01-01Z') });
+      await ctx.newAlbumAsset({ albumId: seeded.space.id, assetId: best.id });
+      const { assetFace: bestFace } = await ctx.newAssetFace({
+        assetId: best.id,
+        personGroupId: seeded.person.personGroupId,
+      });
+      await markBestPhoto(ctx.database, best);
+
+      await sut.update({ id: seeded.cover.id, visibility: AssetVisibility.Locked });
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: best.id, personFace: bestFace.id, spacePersonCover: best.id }),
+      );
+    });
+
+    it('ignores a score below the Best Photos threshold', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const seeded = await seed(context);
+      const { asset: good } = await ctx.newAsset({ ownerId: seeded.owner.id, fileCreatedAt: new Date('2020-01-01Z') });
+      await ctx.newAlbumAsset({ albumId: seeded.space.id, assetId: good.id });
+      await markBestPhoto(ctx.database, good, 0.8);
+
+      await sut.update({ id: seeded.cover.id, visibility: AssetVisibility.Locked });
+
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ spaceCover: seeded.fallback.id }),
+      );
+    });
+
+    it('never takes a sensitive photo for a cover others see, and takes it last for a private album', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { user: owner } = await ctx.newUser();
+      const { asset: cover } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: newer });
+      const { asset: sensitive } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: older, is_nsfw: true });
+      const { album: space } = await ctx.newAlbum(
+        { ownerId: owner.id, kind: AlbumKind.Space, albumThumbnailAssetId: cover.id },
+        [cover.id, sensitive.id],
+      );
+      const { album: shared } = await ctx.newAlbum({ ownerId: owner.id, albumThumbnailAssetId: cover.id }, [
+        cover.id,
+        sensitive.id,
+      ]);
+      const { user: member } = await ctx.newUser();
+      await ctx.newAlbumUser({ albumId: shared.id, userId: member.id });
+      const { album: own } = await ctx.newAlbum({ ownerId: owner.id, albumThumbnailAssetId: cover.id }, [
+        cover.id,
+        sensitive.id,
+      ]);
+
+      await sut.update({ id: cover.id, visibility: AssetVisibility.Locked });
+
+      await expect(coverOf(ctx.database, space.id)).resolves.toBeNull();
+      await expect(coverOf(ctx.database, shared.id)).resolves.toBeNull();
+      await expect(coverOf(ctx.database, own.id)).resolves.toBe(sensitive.id);
+    });
+
+    it('falls back to the newest confirmed observation of a pet that is not Locked', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const seeded = await seed(context);
+      const { asset: rejected } = await ctx.newAsset({ ownerId: seeded.owner.id, fileCreatedAt: newer });
+      const { asset: newest } = await ctx.newAsset({
+        ownerId: seeded.owner.id,
+        fileCreatedAt: new Date('2024-03-01Z'),
+      });
+      await ctx.database
+        .insertInto('pet_observation')
+        .values([
+          { petId: seeded.pet.id, assetId: seeded.cover.id },
+          { petId: seeded.pet.id, assetId: seeded.fallback.id },
+          { petId: seeded.pet.id, assetId: newest.id },
+          { petId: seeded.pet.id, assetId: rejected.id, state: PetObservationState.Rejected },
+        ])
+        .execute();
+
+      await sut.update({ id: seeded.cover.id, visibility: AssetVisibility.Locked });
+
+      // the rejected observation is newer, but it is not the pet
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ petFeatured: newest.id }),
+      );
+
+      // with every other confirmed photo Locked, the pet has none
+      await sut.updateAll([seeded.fallback.id, newest.id], { visibility: AssetVisibility.Locked });
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
+        expect.objectContaining({ petFeatured: null }),
+      );
+    });
+  });
+
+  describe('stacks (owner decision 3)', () => {
+    it('locks the whole stack when one photo becomes Locked and releases every cover of it', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { primary, member, other, album } = await seedStack(context);
+
+      await sut.update({ id: primary.id, visibility: AssetVisibility.Locked });
+
+      await expect(visibilityOf(ctx.database, [primary.id, member.id, other.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Locked,
+        [member.id]: AssetVisibility.Locked,
+        [other.id]: AssetVisibility.Timeline,
+      });
+      // the other photo of the stack was the album cover
+      await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
+    });
+
+    it('locks whole stacks in a bulk move', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { primary, member, other, album } = await seedStack(context);
+
+      await sut.updateAll([member.id], { visibility: AssetVisibility.Locked, isFavorite: true });
+
+      await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Locked,
+        [member.id]: AssetVisibility.Locked,
+      });
+      // only the visibility moves the rest of the stack; the other fields are the caller's own
+      const favorites = await ctx.database
+        .selectFrom('asset')
+        .select(['id', 'isFavorite'])
+        .where('id', 'in', [primary.id, member.id])
+        .execute();
+      expect(Object.fromEntries(favorites.map((row) => [row.id, row.isFavorite]))).toEqual({
+        [primary.id]: false,
+        [member.id]: true,
+      });
+      await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
+    });
+
+    it('moves the whole stack out of the Locked folder to the same place', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { primary, member } = await seedStack(context);
+      await sut.update({ id: primary.id, visibility: AssetVisibility.Locked });
+
+      await sut.update({ id: member.id, visibility: AssetVisibility.Archive });
+
+      await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Archive,
+        [member.id]: AssetVisibility.Archive,
+      });
+
+      await sut.updateAll([primary.id], { visibility: AssetVisibility.Locked });
+      await sut.updateAll([primary.id], { visibility: AssetVisibility.Timeline });
+      await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Timeline,
+        [member.id]: AssetVisibility.Timeline,
+      });
+    });
+
+    it('leaves the rest of the stack alone for a change that does not touch the Locked folder', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { primary, member } = await seedStack(context);
+
+      await sut.update({ id: primary.id, visibility: AssetVisibility.Archive });
+
+      await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Archive,
+        [member.id]: AssetVisibility.Timeline,
+      });
+    });
+
+    it('locks a new or merged stack that holds a Locked photo as a whole', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const { user: owner } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: open } = await ctx.newAsset({ ownerId: owner.id });
+
+      const stack = await ctx.get(StackRepository).create({ ownerId: owner.id }, [open.id, locked.id]);
+
+      expect(stack.lockedAssetIds).toEqual([open.id]);
+      await expect(visibilityOf(ctx.database, [open.id])).resolves.toEqual({ [open.id]: AssetVisibility.Locked });
+
+      const { asset: first } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: second } = await ctx.newAsset({ ownerId: owner.id });
+      const { stack: target } = await ctx.newStack({ ownerId: owner.id }, [first.id, second.id]);
+      await ctx.get(StackRepository).merge({ sourceId: stack.id, targetId: target.id });
+
+      await expect(visibilityOf(ctx.database, [first.id, second.id])).resolves.toEqual({
+        [first.id]: AssetVisibility.Locked,
+        [second.id]: AssetVisibility.Locked,
+      });
+    });
+
+    it('queues a new thumbnail for a person whose featured face was on another photo of the stack', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const { owner, primary, member, other } = await seedStack(context);
+      const { person } = await ctx.newPerson({ ownerId: owner.id, thumbnailPath: '/thumbs/person.jpeg' });
+      const { assetFace } = await ctx.newAssetFace({ assetId: member.id, personGroupId: person.personGroupId });
+      await ctx.newAssetFace({ assetId: other.id, personGroupId: person.personGroupId });
+      await ctx.database
+        .updateTable('person')
+        .set({ faceAssetId: assetFace.id })
+        .where('ownerId', '=', owner.id)
+        .where('personGroupId', '=', person.personGroupId)
+        .execute();
+
+      await sut.update({ id: primary.id, visibility: AssetVisibility.Locked });
+
+      await expect(ctx.get(PersonRepository).getMissingThumbnailsForAssets([primary.id])).resolves.toEqual([
+        { ownerId: owner.id, personGroupId: person.personGroupId },
+      ]);
+    });
+  });
+
+  describe('migration 2100000000310-LockWholeStacksAndRecordProfileImageSource', () => {
+    it('locks stacks saved half Locked and repairs the covers of the photos it locks', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const { primary, member, other, album } = await seedStack(context);
+      const untouched = await seedStack(context);
+      await lockBehindTheRelease(ctx.database, primary.id);
+
+      await undoLockWholeStacks(ctx.database);
+      await lockWholeStacks(ctx.database);
+
+      await expect(visibilityOf(ctx.database, [primary.id, member.id, other.id])).resolves.toEqual({
+        [primary.id]: AssetVisibility.Locked,
+        [member.id]: AssetVisibility.Locked,
+        [other.id]: AssetVisibility.Timeline,
+      });
+      await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
+      await expect(visibilityOf(ctx.database, [untouched.primary.id, untouched.member.id])).resolves.toEqual({
+        [untouched.primary.id]: AssetVisibility.Timeline,
+        [untouched.member.id]: AssetVisibility.Timeline,
+      });
+      await expect(coverOf(ctx.database, untouched.album.id)).resolves.toBe(untouched.member.id);
+    });
+  });
+
+  describe('profile pictures (owner decision 2)', () => {
+    it('finds a picture copied from a photo that became Locked and the photo that replaces it', async () => {
+      const context = setup();
+      const { ctx, sut } = context;
+      const users = ctx.get(UserRepository);
+      const { user } = await ctx.newUser();
+      const { asset: source } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: newer });
+      const { asset: newest } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: new Date('2024-05-01Z') });
+      const { asset: best } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: new Date('2019-01-01Z') });
+      const { asset: sensitive } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: newer, is_nsfw: true });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: newer,
+        visibility: AssetVisibility.Archive,
+      });
+      for (const asset of [source, newest, best, sensitive, archived]) {
+        await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `/thumbs/${asset.id}.jpeg` });
+      }
+      await markBestPhoto(ctx.database, best);
+      await markBestPhoto(ctx.database, sensitive, 0.99);
+      await markBestPhoto(ctx.database, archived, 0.99);
+      await users.update(user.id, { profileImagePath: '/profile/old.webp', profileImageAssetId: source.id });
+
+      await expect(users.hasLockedProfileImageSource(user.id)).resolves.toBe(false);
+
+      await sut.update({ id: source.id, visibility: AssetVisibility.Locked });
+
+      await expect(users.hasLockedProfileImageSource(user.id)).resolves.toBe(true);
+      await expect(users.getLockedProfileImageSources()).resolves.toContainEqual({
+        id: user.id,
+        profileImagePath: '/profile/old.webp',
+        profileImageAssetId: source.id,
+      });
+      // a Best Photo anyone may see first: not sensitive, on the Timeline
+      await expect(users.getProfileImageReplacement(user.id)).resolves.toEqual({
+        id: best.id,
+        path: `/thumbs/${best.id}.jpeg`,
+      });
+
+      await expect(
+        users.replaceLockedProfileImage(user.id, source.id, {
+          profileImagePath: '/profile/new.webp',
+          profileImageAssetId: best.id,
+        }),
+      ).resolves.toBe(true);
+      await expect(users.hasLockedProfileImageSource(user.id)).resolves.toBe(false);
+      // a second replacement for the same Locked photo finds a picture the user no longer has
+      await expect(
+        users.replaceLockedProfileImage(user.id, source.id, { profileImagePath: '', profileImageAssetId: null }),
+      ).resolves.toBe(false);
+
+      // without Best Photos, the newest photo anyone may see
+      await ctx.database.deleteFrom('asset_best_photo_score').where('assetId', '=', best.id).execute();
+      await expect(users.getProfileImageReplacement(user.id)).resolves.toEqual(
+        expect.objectContaining({ id: newest.id }),
       );
     });
   });
