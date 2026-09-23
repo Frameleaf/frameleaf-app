@@ -135,6 +135,14 @@ const StudioBundleOperationSchema = z
     progress: z.number().meta({ format: 'double' }),
     attempt: z.int(),
     maxAttempts: z.int(),
+    autoRetries: z
+      .int()
+      .describe('Automatic retries this job has used; every job gets one before a failure is reported'),
+    retryAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When a job waiting for its automatic retry may run again'),
     error: z.string().nullable(),
     errorCode: z.string().nullable(),
     projectId: z.string().nullable().describe('The exported project, or the project an import created'),

@@ -70,6 +70,8 @@
   <Menu label={$t('upload')} bind:open>
     {#snippet trigger()}
       <Icon icon={mdiTrayArrowUp} size={20} aria-hidden="true" />
+      <!-- The prototype labels the button on wide screens; the trigger's name is `label` either way. -->
+      <span class="upload-label" aria-hidden="true">{$t('upload')}</span>
     {/snippet}
 
     <MenuItem onSelect={() => pick(false)}>
@@ -118,6 +120,19 @@
   }
   .upload-menu :global(.menu-root > button:hover) {
     background: var(--fl-raised, rgb(0 0 0 / 6%));
+  }
+  .upload-menu :global(.menu-root > button) {
+    gap: 0.375rem;
+  }
+  .upload-label {
+    display: none;
+    font-size: 0.875rem;
+  }
+  /* The prototype hides the label at 1000px and below. */
+  @media (min-width: 62.5625rem) {
+    .upload-label {
+      display: inline;
+    }
   }
   .item-text {
     display: flex;
