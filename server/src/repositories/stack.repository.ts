@@ -15,8 +15,8 @@ import {
   withAlbumVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
-import { isLocked } from 'src/utils/locked.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { isLocked } from 'src/utils/locked.js';
 
 export interface StackSearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   ownerId: string;

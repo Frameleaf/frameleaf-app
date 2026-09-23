@@ -34,11 +34,11 @@ import { TrashService } from 'src/services/trash.service.js';
 import { checkAccess } from 'src/utils/access.js';
 import { BulkOperationItem, bulkErrorMessage, classifyBulkError } from 'src/utils/bulk-operation.js';
 import {
+  DuplicateGroupDecision,
   classifyDuplicateGroup,
   duplicateQualityReasons,
   duplicateStackPrimary,
   duplicateTrashIds,
-  DuplicateGroupDecision,
   parseDuplicateGroups,
 } from 'src/utils/duplicate-review.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -75,8 +75,8 @@ const answer = (ids: readonly string[], status: MediaOperationItemStatus, reason
   ids.map((id): BulkOperationItem => ({
     id,
     status,
-    ...(reasonKey ? { reasonKey } : {}),
-    ...(message ? { message } : {}),
+    ...(reasonKey && { reasonKey }),
+    ...(message && { message }),
   }));
 
 const ok = (ids: readonly string[]) => answer(ids, MediaOperationItemStatus.Ok);
@@ -211,10 +211,10 @@ export class DuplicateDecisionService {
 
     const ids = new Set<string>();
     for (const decision of decisions) {
-      decision.memberIds.forEach((id) => ids.add(id));
+      for (const id of decision.memberIds) ids.add(id);
     }
     for (const { groups } of activeGroups) {
-      groups.forEach((group) => group.memberIds.forEach((id) => ids.add(id)));
+      for (const group of groups) for (const id of group.memberIds) ids.add(id);
     }
     const locked = getLockedOwnerId(auth) ? new Set<string>() : await this.repository.getLockedIds([...ids]);
     const visible = (memberIds: readonly string[]) => memberIds.every((id) => !locked.has(id));
@@ -697,11 +697,14 @@ export class DuplicateDecisionService {
         update.description = was.description;
       }
       const locationKept = now.latitude === left.latitude && now.longitude === left.longitude;
-      if (locationKept && (was.latitude !== left.latitude || was.longitude !== left.longitude)) {
-        if (was.latitude !== null && was.longitude !== null) {
-          update.latitude = was.latitude;
-          update.longitude = was.longitude;
-        }
+      if (
+        locationKept &&
+        (was.latitude !== left.latitude || was.longitude !== left.longitude) &&
+        was.latitude !== null &&
+        was.longitude !== null
+      ) {
+        update.latitude = was.latitude;
+        update.longitude = was.longitude;
       }
       if (Object.keys(update).length > 0) {
         await this.assets.updateAll(auth, { ids: [id], ...update } as AssetBulkUpdateDto);

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
-import type { Kysely, RawBuilder, Selectable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { Kysely, RawBuilder, Selectable } from 'kysely';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,

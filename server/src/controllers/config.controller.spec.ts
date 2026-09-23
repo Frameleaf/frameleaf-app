@@ -107,7 +107,7 @@ describe('config controllers', () => {
     it('should reject a blank credential value', async () => {
       const { status } = await request(ctx.getHttpServer())
         .put('/admin/config/credentials/smtp-password')
-        .send({ value: '   ' });
+        .send({ value: ' '.repeat(3) });
 
       expect(status).toBe(400);
       expect(service.setCredential).not.toHaveBeenCalled();

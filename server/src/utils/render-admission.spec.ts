@@ -299,7 +299,7 @@ describe(tightestLimits.name, () => {
   });
 
   it('has no concurrency ceiling when no source sets one', () => {
-    expect(tightestLimits(null).maxConcurrentOperations).toBe(Number.POSITIVE_INFINITY);
+    expect(tightestLimits(null).maxConcurrentOperations).toBe(Infinity);
   });
 });
 
@@ -389,7 +389,7 @@ describe('input grants', () => {
 
   it('rejects a grant whose payload was edited after signing', () => {
     const grant = signInputGrant(payload, binding);
-    const [, signature] = grant.split('.');
+    const [, signature] = grant.split('.', 2);
     const forged = Buffer.from(JSON.stringify({ ...payload, resourceId: 'asset-2' })).toString('base64url');
     expect(verifyInputGrant(`${forged}.${signature}`, { operationId: 'op-1', binding, now: NOW })).toEqual({
       valid: false,

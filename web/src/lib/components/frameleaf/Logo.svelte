@@ -18,8 +18,8 @@
    * `decorative` marks the mark `aria-hidden`/`alt=""` for callers (e.g. `TopBar`) that already
    * wrap it in an element carrying its own accessible name, so the name is never announced twice.
    */
-  import logoDarkUrl from '../../../../../design/frameleaf/brand-kit/frameleaf-logo-dark.svg?url';
-  import symbolUrl from '../../../../../design/frameleaf/brand-kit/frameleaf-symbol.svg?url';
+  import logoDarkUrl from '../../assets/frameleaf/frameleaf-logo-dark.svg?url';
+  import symbolUrl from '../../assets/frameleaf/frameleaf-symbol.svg?url';
 
   // Matches @immich/ui's `Logo` size scale so call sites that previously rendered the vendored
   // Immich mark at a given size render this mark at the same size.

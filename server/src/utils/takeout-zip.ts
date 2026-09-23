@@ -291,7 +291,7 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
       localHeaderOffset,
       dataLimit: directoryOffset,
       modifiedAt: zipDosDate(date, time),
-      ...(refused ? { refused } : {}),
+      ...(refused && { refused }),
     });
   }
 

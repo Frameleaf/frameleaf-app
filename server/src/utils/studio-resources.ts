@@ -641,7 +641,7 @@ const tooManyReferences = (state: StudioReferenceExtraction, graphPath: string):
   if (state.references.length < STUDIO_MAX_REFERENCES) {
     return false;
   }
-  if (!state.violations.some((violation) => violation.reason === StudioRefusalReason.TooManyReferences)) {
+  if (state.violations.every((violation) => violation.reason !== StudioRefusalReason.TooManyReferences)) {
     state.violations.push({
       reason: StudioRefusalReason.TooManyReferences,
       graphPath,
@@ -727,7 +727,7 @@ const walk = (
   currentSequence: string | null,
 ): void => {
   if (depth > STUDIO_MAX_GRAPH_DEPTH) {
-    if (!state.violations.some((violation) => violation.reason === StudioRefusalReason.DepthExceeded)) {
+    if (state.violations.every((violation) => violation.reason !== StudioRefusalReason.DepthExceeded)) {
       state.violations.push({
         reason: StudioRefusalReason.DepthExceeded,
         graphPath,

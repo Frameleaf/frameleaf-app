@@ -1,5 +1,5 @@
-import { MlWorkload, QueueName } from 'src/enum.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
+import { MlWorkload, QueueName } from 'src/enum.js';
 
 /**
  * Library analysis and the queues it runs on (FL-72).

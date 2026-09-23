@@ -111,18 +111,20 @@ describe('studio resource registry', () => {
       expect(definition.kind).toBe(kind);
       expect(definition.label.length).toBeGreaterThan(0);
       expect(definition.description.length).toBeGreaterThan(20);
-      expect(Object.keys(definition.egress).sort()).toEqual([...Object.values(StudioDestination)].sort());
+      expect(Object.keys(definition.egress).sort()).toEqual(Object.values(StudioDestination).sort());
       expect(new Set(definition.refusals).size).toBe(definition.refusals.length);
     }
   });
 
   it('never lets personal data leave the machine without explicit consent', () => {
     for (const definition of studioResourceRegistry.values()) {
-      if (definition.carriesPersonalData) {
-        expect(definition.egress[StudioDestination.RunPod]).toBe(StudioEgress.ExplicitConsent);
-        expect(definition.egress[StudioDestination.Local]).toBe(StudioEgress.Allowed);
-        expect(definition.egress[StudioDestination.Lan]).toBe(StudioEgress.Allowed);
+      if (!definition.carriesPersonalData) {
+        continue;
       }
+
+      expect(definition.egress[StudioDestination.RunPod]).toBe(StudioEgress.ExplicitConsent);
+      expect(definition.egress[StudioDestination.Local]).toBe(StudioEgress.Allowed);
+      expect(definition.egress[StudioDestination.Lan]).toBe(StudioEgress.Allowed);
     }
   });
 
@@ -162,8 +164,8 @@ describe(isExternalLocator.name, () => {
     'filesystem:https://app/persistent/x',
     'javascript:alert(1)',
     '/var/lib/immich/upload/x.mp4',
-    'C:\\Users\\x\\y.mp4',
-    '\\\\server\\share\\x',
+    String.raw`C:\Users\x\y.mp4`,
+    String.raw`\\server\share\x`,
     '../../etc/passwd',
     'foo/../bar',
     'a/..',
@@ -231,7 +233,7 @@ describe(extractStudioResourceReferences.name, () => {
       ].sort(),
     );
 
-    expect([...sequences.entries()]).toEqual([
+    expect([...sequences]).toEqual([
       ['seq-main', ['seq-intro']],
       ['seq-intro', []],
     ]);

@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import {
@@ -22,7 +23,6 @@ import {
   ModelType,
   RestorationWorkerError,
 } from 'src/repositories/machine-learning.repository.js';
-import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import {
   RestorationInferenceInput,
   RestorationInferenceOptions,
@@ -36,7 +36,7 @@ const florenceModelName = 'microsoft/Florence-2-base-ft';
 
 const localUrl = 'http://immich-machine-learning:3003';
 // The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
-const lanUrl = 'http://workshop.lan:3004';
+const lanUrl = 'https://workshop.lan:3004';
 const runPodUrl = 'https://endpoint.api.runpod.ai/';
 
 const description = {
@@ -54,7 +54,7 @@ const description = {
 };
 
 const jsonResponse = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  Response.json(body, { status, headers: { 'content-type': 'application/json' } });
 
 const selection = (
   kind: MlDestinationKind,
@@ -529,7 +529,7 @@ describe(MachineLearningRepository.name, () => {
 
     it('reports the worker refusal by code and removes the partial file', async () => {
       const refusal = { code: 'model-unavailable', message: 'no faithful model is available' };
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(refusal), { status: 409 })));
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(refusal, { status: 409 })));
 
       const error = await restore().catch((error_: unknown) => error_);
 

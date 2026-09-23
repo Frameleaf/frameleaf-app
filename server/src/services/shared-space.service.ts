@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AlbumResponseDto, mapAlbum } from 'src/dtos/album.dto.js';
 import {
   SharedSpaceActivityResponseDto,
@@ -9,8 +10,8 @@ import {
   SharedSpaceCommentCreateDto,
   SharedSpaceCommentResponseDto,
   SharedSpaceCommentSearchDto,
-  SharedSpaceCommentsResponseDto,
   SharedSpaceCommentUpdateDto,
+  SharedSpaceCommentsResponseDto,
   SharedSpaceEventResponseDto,
   SharedSpaceMemberResponseDto,
   SharedSpaceMembersResponseDto,
@@ -25,8 +26,9 @@ import { AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
+  type CommentThreadInfo,
+  type SpaceLike,
   canDeleteSpaceComment,
   canEditSpaceComment,
   canUnlink,
@@ -48,8 +50,6 @@ import {
   requireUnlinkRights,
   spaceOwnerId,
   threadComments,
-  type CommentThreadInfo,
-  type SpaceLike,
 } from 'src/utils/shared-space.js';
 
 /**

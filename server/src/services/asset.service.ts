@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -41,10 +42,8 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import {
   getAssetFiles,
   getDimensions,
@@ -59,6 +58,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 const imageEditActions = new Set<AssetEditAction>([
@@ -187,7 +187,7 @@ export class AssetService extends BaseService {
       id,
       ...getAssetDateTimeUpdates(dateTimeOriginal),
       ...rest,
-      ...(storedVisibility ? { visibility: storedVisibility } : {}),
+      ...(storedVisibility && { visibility: storedVisibility }),
     });
 
     if (previousMotion && asset) {

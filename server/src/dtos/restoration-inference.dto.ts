@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { AssetRestorationModeSchema } from 'src/dtos/asset-restoration.dto.js';
+import { AssetRestorationModeSchema, AssetRestorationUpscaleSchema } from 'src/dtos/asset-restoration.dto.js';
 import { MlWorkload, MlWorkloadSchema } from 'src/enum.js';
 
 /**
@@ -102,7 +102,7 @@ export const RestorationWorkerRequestSchema = z
     modelId: z.string().min(1).max(64).nullable().optional(),
     /** A full render may pass its preview's fingerprint; a changed model is then refused. */
     modelFingerprint: z.string().regex(SHA256).nullable().optional(),
-    scale: z.union([z.literal(1), z.literal(2), z.literal(4)]),
+    scale: AssetRestorationUpscaleSchema,
     maxWidth: z.int().min(16).max(RESTORATION_MAX_OUTPUT_EDGE),
     maxHeight: z.int().min(16).max(RESTORATION_MAX_OUTPUT_EDGE),
     keepGrain: z.boolean(),

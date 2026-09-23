@@ -486,7 +486,7 @@ export const chunkIds = (ids: readonly string[], size = BULK_BATCH_SIZE): string
   const width = Number.isInteger(size) && size > 0 ? size : BULK_BATCH_SIZE;
   const batches: string[][] = [];
   for (let index = 0; index < ids.length; index += width) {
-    batches.push([...ids.slice(index, index + width)]);
+    batches.push(ids.slice(index, index + width));
   }
   return batches;
 };
@@ -686,7 +686,7 @@ export const bulkAssetUpdate = (
       // so repeating it would move items twice. The runner shifts from recorded starting dates.
       return payload.dateMode === 'shift'
         ? null
-        : { dateTimeOriginal: payload.dateTimeOriginal, ...(payload.timeZone ? { timeZone: payload.timeZone } : {}) };
+        : { dateTimeOriginal: payload.dateTimeOriginal, ...(payload.timeZone && { timeZone: payload.timeZone }) };
     }
     case MediaOperationBulkAction.ChangeDescription: {
       return { description: payload.description ?? '' };

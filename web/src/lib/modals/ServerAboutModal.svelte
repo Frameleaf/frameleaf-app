@@ -8,7 +8,7 @@
   import { t } from 'svelte-i18n';
   // FL-135: the symbol is imported unmodified from the authorized brand kit (never redrawn);
   // see docs/docs/developer/frameleaf-plan/06-brand-assets.md.
-  import symbolUrl from '../../../../design/frameleaf/brand-kit/frameleaf-symbol.svg?url';
+  import symbolUrl from '../assets/frameleaf/frameleaf-symbol.svg?url';
 
   interface Props {
     onClose: () => void;

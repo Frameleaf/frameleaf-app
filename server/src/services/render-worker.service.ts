@@ -60,7 +60,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { isRenderWorkerMediaOperationKind, RENDER_WORKER_MEDIA_OPERATION_KINDS } from 'src/utils/media-operation.js';
+import { RENDER_WORKER_MEDIA_OPERATION_KINDS, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,

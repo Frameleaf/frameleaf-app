@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import {
   type LockedCondition,
   repairLockedCoverReferences,
-} from './2100000000300-ClearLockedCoverReferences.js';
+} from './2100000000300-ClearLockedCoverReferences.ts';
 
 /**
  * One Locked state (owner decision, September 22, 2026, FL-34).

@@ -167,7 +167,7 @@ describe('readTakeoutZipDirectory', () => {
 
   it('refuses an archive whose upload stopped part way', async () => {
     const zip = buildZip([{ name: 'a.jpg', data: Buffer.alloc(1000, 7), method: 0 }]);
-    await expect(readTakeoutZipDirectory(sourceOf(zip.subarray(0, zip.length - 10)))).rejects.toThrow(TakeoutZipError);
+    await expect(readTakeoutZipDirectory(sourceOf(zip.subarray(0, -10)))).rejects.toThrow(TakeoutZipError);
   });
 
   it('marks encrypted entries, links and unknown methods as refused instead of failing the archive', async () => {

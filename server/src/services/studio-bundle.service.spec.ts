@@ -92,7 +92,7 @@ const memoryFs = () => {
       return Promise.resolve();
     }),
     unlinkDir: vi.fn((folder: string) => {
-      for (const path of [...files.keys()]) {
+      for (const path of files.keys()) {
         if (path.startsWith(`${folder}/`)) {
           files.delete(path);
         }

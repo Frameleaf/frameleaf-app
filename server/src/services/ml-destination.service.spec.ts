@@ -209,7 +209,7 @@ describe(MlDestinationService.name, () => {
       const result = await sut.create({
         kind: MlDestinationKind.Lan,
         name: 'Workshop GPU',
-        url: 'http://workshop.lan:3003',
+        url: 'https://workshop.lan:3003',
         authToken: 'lan-token',
         workloads: [MlWorkload.Face, MlWorkload.Face],
         enabled: true,
@@ -434,7 +434,7 @@ describe(MlDestinationService.name, () => {
         sut.create({
           kind: MlDestinationKind.Lan,
           name: 'Everything box',
-          url: 'http://gpu.lan:3003',
+          url: 'https://gpu.lan:3003',
           workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
           enabled: true,
         }),
@@ -496,7 +496,7 @@ describe(MlDestinationService.name, () => {
         sut.create({
           kind: MlDestinationKind.Lan,
           name: 'Study PC',
-          url: 'http://study.lan:3003',
+          url: 'https://study.lan:3003',
           workloads: [MlWorkload.Face],
           enabled: true,
           sharesLibraryHardware: true,

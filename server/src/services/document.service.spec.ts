@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthSession } from 'src/database.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
@@ -16,7 +17,6 @@ import { fieldKey, lineKey } from 'src/utils/documents.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ownerId = authStub.user1.user.id;
 const assetId = '33333333-3333-4333-8333-333333333333';

@@ -66,7 +66,7 @@ describe(DocumentController.name, () => {
     it('should refuse an empty correction', async () => {
       const { status } = await request(ctx.getHttpServer())
         .put(`/documents/${factory.uuid()}/lines`)
-        .send({ ocrId: factory.uuid(), recognizedText: 'LAKE AGNES', action: 'correct', value: '   ' });
+        .send({ ocrId: factory.uuid(), recognizedText: 'LAKE AGNES', action: 'correct', value: ' '.repeat(3) });
       expect(status).toEqual(400);
       expect(service.editLine).not.toHaveBeenCalled();
     });

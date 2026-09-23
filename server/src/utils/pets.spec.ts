@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import { PetObservationState, PetSpecies } from 'src/enum.js';
 import {
   asKnownSpecies,
@@ -9,7 +10,6 @@ import {
   planObservationMerge,
   sortCandidatesForReview,
 } from 'src/utils/pets.js';
-import { describe, expect, it } from 'vitest';
 
 const decision = (assetId: string, petId: string, state: PetObservationState, id = `${assetId}-${petId}`) => ({
   id,
@@ -23,8 +23,8 @@ const candidate = (id: string, assetId: string, petId: string, score: number) =>
 describe('normalizePetName', () => {
   it('trims and keeps an empty name as a real "not named yet" value', () => {
     expect(normalizePetName('  Biscuit  ')).toBe('Biscuit');
-    expect(normalizePetName('   ')).toBe('');
-    expect(isNamedPet({ name: '   ' })).toBe(false);
+    expect(normalizePetName(' '.repeat(3))).toBe('');
+    expect(isNamedPet({ name: ' '.repeat(3) })).toBe(false);
     expect(isNamedPet({ name: 'Biscuit' })).toBe(true);
   });
 

@@ -76,7 +76,7 @@ export const ICLOUD_MAX_CONNECTIONS = 20;
 
 /** Resource statuses still owed work. Everything else is settled, one way or another. */
 const OPEN_RESOURCE_STATUSES = ['pending', 'retry', 'staging', 'validated', 'promoted', 'committed'];
-const AWAITING_AUTH_STATES = ['awaiting-2fa', 'awaiting-device-approval', 'reauthentication-required'];
+const AWAITING_AUTH_STATES = new Set(['awaiting-2fa', 'awaiting-device-approval', 'reauthentication-required']);
 /** Failures that are the account's to fix; the connection has already told its owner about them. */
 const SIGN_IN_CODES = new Set([
   'two_factor_required',
@@ -218,7 +218,7 @@ export class ICloudSyncService {
       nextRunAt: this.nextRunAt(connection, run),
       counts: {
         ...(await this.repository.counts(connection.id)),
-        awaiting_auth: AWAITING_AUTH_STATES.includes(connection.state) ? 1 : 0,
+        awaiting_auth: AWAITING_AUTH_STATES.has(connection.state) ? 1 : 0,
       },
       run: run ? mapICloudRun(run) : null,
     };
@@ -419,7 +419,7 @@ export class ICloudSyncService {
         throw new BadRequestException('icloud_sign_in_required');
       }
       case 'not-due': {
-        return undefined;
+        return;
       }
       default: {
         throw new NotFoundException();
@@ -429,7 +429,7 @@ export class ICloudSyncService {
 
   /** Wake a worker now instead of at its next tick. Losing the nudge only costs the tick delay. */
   private nudge(id: string) {
-    void this.jobs.queue({ name: JobName.ICloudSync, data: { id } }).catch(() => undefined);
+    void this.jobs.queue({ name: JobName.ICloudSync, data: { id } }).catch(() => {});
   }
 
   /**
@@ -534,7 +534,7 @@ export class ICloudSyncService {
       clearInterval(this.tickHandle);
       this.tickHandle = undefined;
     }
-    await Promise.allSettled([...this.lanes]);
+    await Promise.allSettled(this.lanes);
   }
 
   private async schedule(): Promise<void> {
@@ -647,7 +647,7 @@ export class ICloudSyncService {
 
     await this.repository.startRun(connection);
     const heartbeat = setInterval(() => {
-      void this.operations.heartbeat(id, claimToken, ICLOUD_LEASE_MS).catch(() => undefined);
+      void this.operations.heartbeat(id, claimToken, ICLOUD_LEASE_MS).catch(() => {});
     }, ICLOUD_HEARTBEAT_MS);
     try {
       for (;;) {
@@ -824,7 +824,7 @@ export class ICloudSyncService {
     const connectionId = asObject(claim.operation.snapshot).connectionId;
     if (outcome === 'failed' && typeof connectionId === 'string') {
       // The run record ends with the run; the next run starts a fresh inventory pass.
-      await this.repository.endRun(connectionId, 'failed').catch(() => undefined);
+      await this.repository.endRun(connectionId, 'failed').catch(() => {});
     }
     if (outcome === 'failed' && !SIGN_IN_CODES.has(code)) {
       await this.repository
@@ -834,7 +834,7 @@ export class ICloudSyncService {
           'iCloud Photos sync stopped',
           `The sync of “${claim.operation.label}” stopped after an automatic retry. Open Utilities → iCloud Photos to review it and try again. Photos already imported are unchanged.`,
         )
-        .catch(() => undefined);
+        .catch(() => {});
     }
   }
 

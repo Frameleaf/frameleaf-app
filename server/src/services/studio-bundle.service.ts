@@ -8,10 +8,10 @@ import {
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { StorageCore } from 'src/cores/storage.core.js';
-import { serverVersion } from 'src/constants.js';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { serverVersion } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
 import {
   StudioBundleExportCreateDto,
@@ -588,7 +588,7 @@ export class StudioBundleService {
         await this.storage.unlink(result.path);
       }
       await this.operations.setFinishedResult(operation.id, {
-        ...(operation.result ?? {}),
+        ...operation.result,
         expiredAt: now.toISOString(),
       });
     }
@@ -733,7 +733,7 @@ export class StudioBundleService {
       const output = this.storage.createWriteStream(partial);
       const finished = pipeline(zip.stream, output);
       // A throw below skips `await finished`; observe it now so it cannot go unhandled.
-      void finished.catch(() => undefined);
+      void finished.catch(() => {});
 
       zip.addFile(join(staging, STUDIO_BUNDLE_MANIFEST_ENTRY), STUDIO_BUNDLE_MANIFEST_ENTRY);
       zip.addFile(join(staging, STUDIO_BUNDLE_PROJECT_ENTRY), STUDIO_BUNDLE_PROJECT_ENTRY);

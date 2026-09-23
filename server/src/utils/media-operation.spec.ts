@@ -1,20 +1,20 @@
 import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import {
+  type ChunkPlan,
+  MEDIA_OPERATION_AUTO_RETRIES,
+  MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+  type StoredChunk,
   canDismissMediaOperation,
   canPauseMediaOperation,
   canResumeMediaOperation,
   canRetryMediaOperation,
+  canReuseChunk,
+  canTransitionMediaOperation,
   isActiveMediaOperation,
   isPausableMediaOperationKind,
   isRenderWorkerMediaOperationKind,
-  canReuseChunk,
-  canTransitionMediaOperation,
-  MEDIA_OPERATION_AUTO_RETRIES,
-  MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
   mediaOperationProgress,
   planChunkResume,
-  type ChunkPlan,
-  type StoredChunk,
 } from 'src/utils/media-operation.js';
 
 const plan = (sequence: number, overrides: Partial<ChunkPlan> = {}): ChunkPlan => ({

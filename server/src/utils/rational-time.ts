@@ -256,7 +256,7 @@ export const ceil = (value: Rational): number => roundToInteger(value, 'ceil');
  */
 export const parseRational = (value: string): Rational => {
   const text = value.trim();
-  const [numText, denText = '1'] = text.split('/');
+  const [numText, denText = '1'] = text.split('/', 2);
   const num = Number(numText);
   const den = Number(denText);
   if (!Number.isSafeInteger(num) || !Number.isSafeInteger(den) || den === 0) {

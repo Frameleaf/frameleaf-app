@@ -573,7 +573,7 @@ const removeArgPair = (args: string[], flag: string): void => {
 /** Replaces the value of a `--flag value` pair in an ffmpeg argument array, in place. */
 const setArgValue = (args: string[], flag: string, value: string): void => {
   const index = args.indexOf(flag);
-  if (index >= 0 && index + 1 < args.length) {
+  if (index !== -1 && index + 1 < args.length) {
     args[index + 1] = value;
   }
 };
@@ -582,7 +582,7 @@ const setArgValue = (args: string[], flag: string, value: string): void => {
 const MP4_STREAM_COPYABLE_VIDEO_CODECS = new Set(['h264', 'hevc', 'av1']);
 
 /** Container format names whose packets can be remuxed into `.mp4` without re-encoding. */
-const MP4_REMUXABLE_FORMATS = ['mp4', 'mov', 'm4a', '3gp', '3g2'];
+const MP4_REMUXABLE_FORMATS = new Set(['mp4', 'mov', 'm4a', '3gp', '3g2']);
 
 /**
  * A recipe that only turns the picture by a right angle does not need the pixels re-encoded: the
@@ -635,7 +635,7 @@ export const qualifyMetadataOnlyRotation = ({
   }
 
   const formatNames = (format.formatName ?? '').toLowerCase().split(',');
-  if (!formatNames.some((name) => MP4_REMUXABLE_FORMATS.includes(name.trim()))) {
+  if (formatNames.every((name) => !MP4_REMUXABLE_FORMATS.has(name.trim()))) {
     return null;
   }
 

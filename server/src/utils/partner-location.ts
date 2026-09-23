@@ -59,7 +59,7 @@ export const applyPartnerLocationPolicy = async <T extends { ownerId?: string; e
   assets: T[],
   { userId, repository }: PartnerLocationOptions,
 ): Promise<T[]> => {
-  if (!assets.some((asset) => asset.exifInfo && asset.ownerId !== userId)) {
+  if (assets.every((asset) => !asset.exifInfo || asset.ownerId === userId)) {
     return assets;
   }
 

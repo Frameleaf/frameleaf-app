@@ -40,7 +40,7 @@ export class TrashService extends BaseService {
   private scopeOf(auth: AuthDto): TrashScopeOptions {
     const lockedOwnerId = getLockedOwnerId(auth);
     return {
-      ...(lockedOwnerId ? { lockedOwnerId } : {}),
+      ...(lockedOwnerId && { lockedOwnerId }),
       privacy: getHiddenContentQueryOptions(auth),
     };
   }
@@ -86,7 +86,7 @@ export class TrashService extends BaseService {
       return;
     }
 
-    const unique = [...new Set(ids ?? [])];
+    const unique = [...new Set(ids)];
     if (unique.length === 0) {
       throw new BadRequestException('Choose at least one item');
     }

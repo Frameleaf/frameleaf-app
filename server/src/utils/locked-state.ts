@@ -1,6 +1,6 @@
 import { Expression } from 'kysely';
 import { AssetVisibility } from 'src/enum.js';
-import { isNotLocked, isLockedRow, lockedAssetIdExists } from 'src/utils/locked.js';
+import { isLockedRow, isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 /**
  * The Locked checks FL-53 reads behind the cover fallbacks and profile pictures.

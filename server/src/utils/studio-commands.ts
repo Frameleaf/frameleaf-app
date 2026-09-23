@@ -32,11 +32,11 @@
 
 import { isRational } from 'src/utils/rational-time.js';
 import {
-  studioCommandMirror,
   type StudioCommandCapability,
   type StudioCommandId,
   type StudioCommandMirror,
   type StudioCommandScope,
+  studioCommandMirror,
 } from 'src/utils/studio-commands.generated.js';
 
 export {

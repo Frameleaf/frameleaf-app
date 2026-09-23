@@ -77,6 +77,7 @@ const assets = [
 const faces = [
   { id: "f1", personId: "emma", box: { x: 0.2, y: 0.2, width: 0.1, height: 0.1 } },
   { id: "f2", personId: null, box: { x: 0.6, y: 0.2, width: 0.1, height: 0.1 } },
+  { id: "f3", personId: "ghost", box: { x: 0.8, y: 0.2, width: 0.1, height: 0.1 } },
 ];
 
 let vite;

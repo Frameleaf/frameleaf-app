@@ -3,8 +3,8 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
-import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
@@ -153,7 +153,7 @@ export class ICloudSyncRepository {
       const { rows } = await sql<{ count: number }>`SELECT count(*)::int AS count FROM immich_fork.icloud_connection
         WHERE "ownerId" = ${ownerId}::uuid`.execute(db);
       if ((rows[0]?.count ?? 0) >= limit) {
-        return undefined;
+        return;
       }
       return await sql<ICloudConnection>`INSERT INTO immich_fork.icloud_connection ("ownerId", label, config)
       VALUES (${ownerId}::uuid, ${label}, ${config}::jsonb) RETURNING *`

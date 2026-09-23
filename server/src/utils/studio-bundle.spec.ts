@@ -166,7 +166,7 @@ describe('zipEntryNameProblem', () => {
     expect(zipEntryNameProblem('../etc/passwd')).toMatch(/traverses/);
     expect(zipEntryNameProblem('media/../../x')).toMatch(/traverses/);
     expect(zipEntryNameProblem('/etc/passwd')).toMatch(/absolute/);
-    expect(zipEntryNameProblem('C:\\media\\x')).toMatch(/backslash/);
+    expect(zipEntryNameProblem(String.raw`C:\media\x`)).toMatch(/backslash/);
     expect(zipEntryNameProblem('media/')).toMatch(/directory/);
     expect(zipEntryNameProblem('a\0b')).toMatch(/NUL/);
     expect(zipEntryNameProblem('')).toMatch(/length/);
@@ -602,7 +602,7 @@ describe('names', () => {
 
   it('names the download after the project and never after the id', () => {
     expect(studioBundleFileName('Lake trip: août 2026')).toBe('Lake-trip-aout-2026.frameleaf-studio.zip');
-    expect(studioBundleFileName('   ')).toBe('studio-project.frameleaf-studio.zip');
+    expect(studioBundleFileName(' '.repeat(3))).toBe('studio-project.frameleaf-studio.zip');
   });
 });
 

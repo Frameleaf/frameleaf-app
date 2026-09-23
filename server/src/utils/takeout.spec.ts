@@ -155,9 +155,9 @@ describe('createTakeoutSidecarIndex', () => {
 
   it('matches localized names after Unicode normalization', () => {
     const match = createTakeoutSidecarIndex([
-      { id: '1', name: 'Cafe\u0301.jpg.json', metadata: { title: 'Cafe\u0301.jpg' } },
+      { id: '1', name: 'Cafe\u{301}.jpg.json', metadata: { title: 'Cafe\u{301}.jpg' } },
     ]);
-    expect(match('Caf\u00E9.jpg').map((item) => item.id)).toEqual(['1']);
+    expect(match('Caf\u{E9}.jpg').map((item) => item.id)).toEqual(['1']);
   });
 
   it('reuses an original’s metadata for an edited copy only when the title confirms it', () => {
