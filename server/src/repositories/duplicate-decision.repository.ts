@@ -9,8 +9,11 @@ import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 export type DuplicateDecision = Selectable<DuplicateDecisionTable>;
 
-/** A value for a `jsonb` column. Arrays in particular: the driver would otherwise send a Postgres array. */
-const toJson = <T>(value: T) => sql<T>`${JSON.stringify(value)}::jsonb`;
+/**
+ * A value for a `jsonb` column. Arrays in particular: the driver would otherwise send a Postgres array.
+ * The text cast matters: a parameter typed `jsonb` is JSON-encoded again by the driver, storing a JSON string.
+ */
+const toJson = <T>(value: T) => sql<T>`${JSON.stringify(value)}::text::jsonb`;
 
 /** One member of a duplicate group, as the review reads it: who owns it and nothing else. */
 export type DuplicateGroupMember = { id: string; duplicateId: string; ownerId: string };

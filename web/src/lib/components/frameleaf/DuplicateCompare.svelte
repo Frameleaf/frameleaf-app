@@ -8,7 +8,7 @@
    * metadata) and the file facts that differ between the copies, which is where provenance shows.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { dimensionsOf, type ReviewGroup } from '$lib/frameleaf/duplicate-review';
+  import { dimensionsOf, qualityReasonKey, type ReviewGroup } from '$lib/frameleaf/duplicate-review';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -160,7 +160,7 @@
         {#if reasons.length > 0}
           <ul class="fl-dr-reasons" aria-label={$t('frameleaf_duplicates_quality_label')}>
             {#each reasons as reason (reason)}
-              <li>{$t(`frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}`)}</li>
+              <li>{$t(qualityReasonKey(reason))}</li>
             {/each}
           </ul>
         {/if}

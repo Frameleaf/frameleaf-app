@@ -3,7 +3,7 @@
 Moving a person's library from one server to another is done with the
 resumable migration command of the command-line tool. It runs on a computer
 you control, copies over the API, and finishes with an audit you review in
-**Administration → Maintenance → Server migration** before you retire the
+**Settings → Storage & originals → Move or export your library** before you retire the
 source server.
 
 The web app never runs a migration, never asks for API keys and never deletes
@@ -30,7 +30,7 @@ call shell commands from the web app.
    and reattaches names to faces.
 5. **Verify** checks every original on the destination by checksum, without
    contacting the source, and writes the audit report you open in the
-   Maintenance area.
+   migration checklist's Review stage.
 
 ## Before you start
 
@@ -153,8 +153,9 @@ error, so verification can be scripted.
 
 ## Review the audit report
 
-Open **Administration → Maintenance**, find **Server migration** and choose
-**Open audit report**, then select `library-move.sqlite.audit.json`. The file is
+Open **Settings → Storage & originals → Move or export your library** and choose
+**Prepare migration checklist**. Continue through Source and Preflight to Review,
+choose **Open audit report**, then select `library-move.sqlite.audit.json`. The file is
 read in your browser only; it is not uploaded or saved, and closing the report
 discards it.
 

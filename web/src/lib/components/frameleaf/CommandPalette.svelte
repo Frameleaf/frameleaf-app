@@ -48,8 +48,13 @@
   let input = $state<HTMLInputElement>();
   let listElement = $state<HTMLElement>();
   let query = $state(stripCommandPrefix(initialQuery));
-  let active = $state(0);
-  let recent = $state<string[]>([]);
+  // The roving active option, reset to the first whenever the query changes; keys move it.
+  let active = $derived.by(() => {
+    void query;
+    return 0;
+  });
+  // The page is client-rendered only, so the stored recents are read as the palette opens.
+  let recent = $state<string[]>(loadRecentCommands(localStorage));
 
   const listId = $props.id();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -86,10 +91,6 @@
   const current = $derived(activeIndex >= 0 ? flat[activeIndex] : undefined);
 
   $effect(() => {
-    recent = loadRecentCommands(localStorage);
-  });
-
-  $effect(() => {
     if (!dialog || dialog.open) {
       return;
     }
@@ -101,12 +102,6 @@
         previous.focus({ preventScroll: true });
       }
     };
-  });
-
-  $effect(() => {
-    // Reset the active option whenever the query changes.
-    void query;
-    active = 0;
   });
 
   $effect(() => {

@@ -564,6 +564,8 @@ export enum ManualJobName {
   IntegrityMissingFilesDeleteAll = `integrity-missing-files-delete-all`,
   IntegrityUntrackedFilesDeleteAll = `integrity-untracked-files-delete-all`,
   IntegrityChecksumFilesDeleteAll = `integrity-checksum-mismatch-delete-all`,
+  /** FL-79: run the local analytics collector now, the manual retry after its one automatic retry. */
+  AnalyticsCollect = 'analytics-collect',
 }
 
 export const ManualJobNameSchema = z.enum(ManualJobName).describe('Manual job name').meta({ id: 'ManualJobName' });
@@ -1097,6 +1099,28 @@ export enum MediaOperationKind {
    * so it can pause, survive a restart and carry on without applying anything twice.
    */
   PhysicalDeduplication = 'physical_deduplication',
+  /**
+   * A preservation package written from a frozen selection of the owner's originals (FL-74):
+   * independent copies with checksums, metadata sidecars, albums, people, tags and edit recipes.
+   */
+  PreservationExport = 'preservation_export',
+  /** A preservation package's files checked against its manifest, item by item (FL-74). */
+  PreservationVerify = 'preservation_verify',
+  /**
+   * A package read for restoration (FL-74): verified and compared with the library, item by item,
+   * so the owner can review conflicts. Nothing in the library is written.
+   */
+  PreservationReview = 'preservation_review',
+  /** A reviewed package restored into the owner's library, never over an existing original (FL-74). */
+  PreservationRestore = 'preservation_restore',
+  /**
+   * Publication of a validated Studio export (FL-106): the rendered file is checked against the
+   * checksum its render reported, every source is checked again for the owner's current access,
+   * the union of the sources' Locked and sensitive evidence is installed and only then does the
+   * result become a new version, in one transaction. Runs on this server's own workers, never on a
+   * render worker, and gets the one automatic retry every job gets.
+   */
+  StudioExportPublish = 'studio_export_publish',
 }
 
 export const MediaOperationKindSchema = z
@@ -1147,6 +1171,8 @@ export enum MediaOperationBulkAction {
   RecoverDamagedMedia = 'recover-damaged-media',
   /** Library Care (FL-69): move confirmed damage to the trash after revalidating it. */
   TrashDamagedMedia = 'trash-damaged-media',
+  /** Apply one classification rule to a frozen set of the owner's assets (FL-60). */
+  ApplyClassificationRule = 'apply-classification-rule',
 }
 
 export const MediaOperationBulkActionSchema = z
@@ -1161,6 +1187,57 @@ export const MediaOperationBulkActionSchema = z
  * - `keep-all`: every photo stays; the group is dismissed.
  * - `stack`: every photo stays, stacked together with the first keeper (or the first photo) on top.
  */
+/**
+ * What a classification rule does with a match (FL-60).
+ *
+ * - `review`: the match is suggested; nothing changes until the owner accepts it.
+ * - `tag`: the match joins the rule's smart album and receives the rule-owned tag.
+ *
+ * Archiving is not an action of its own: it is a separate opt-in (`archive`) that is only stored with
+ * the moment the owner consented to it.
+ */
+export enum ClassificationRuleAction {
+  Review = 'review',
+  Tag = 'tag',
+}
+
+export const ClassificationRuleActionSchema = z
+  .enum(ClassificationRuleAction)
+  .describe('What a classification rule does with a match')
+  .meta({ id: 'ClassificationRuleAction' });
+
+/** Which media a classification rule considers (FL-60). */
+export enum ClassificationMediaType {
+  Any = 'any',
+  Photo = 'photo',
+  Video = 'video',
+}
+
+export const ClassificationMediaTypeSchema = z
+  .enum(ClassificationMediaType)
+  .describe('Which media a classification rule considers')
+  .meta({ id: 'ClassificationMediaType' });
+
+/**
+ * What became of one asset a rule matched (FL-60).
+ *
+ * - `matched`: applied by the rule; reprocessing may undo it when the asset stops matching.
+ * - `suggested`: waiting for the owner's review; nothing has been applied.
+ * - `accepted`: the owner kept it. Reprocessing never removes it.
+ * - `rejected`: the owner turned it down or undid it by hand. Reprocessing never applies it again.
+ */
+export enum ClassificationMatchDecision {
+  Matched = 'matched',
+  Suggested = 'suggested',
+  Accepted = 'accepted',
+  Rejected = 'rejected',
+}
+
+export const ClassificationMatchDecisionSchema = z
+  .enum(ClassificationMatchDecision)
+  .describe('What became of an asset a classification rule matched')
+  .meta({ id: 'ClassificationMatchDecision' });
+
 export enum DuplicateDecisionKind {
   Keepers = 'keepers',
   KeepAll = 'keep-all',
@@ -1784,6 +1861,8 @@ export const QueueJobStatusSchema = z.enum(QueueJobStatus).describe('Queue job s
 
 export enum JobName {
   ICloudSync = 'ICloudSync',
+  /** FL-79: the nightly local analytics collector, with its retention and downsampling. */
+  AnalyticsCollect = 'AnalyticsCollect',
   ForkSchemaBackfill = 'ForkSchemaBackfill',
 
   AssetDelete = 'AssetDelete',
@@ -2199,6 +2278,104 @@ export const SharedSpaceEventTypeSchema = z
   .meta({ id: 'SharedSpaceEventType' });
 
 /**
+ * The approved analytics series (FL-79). Each one is defined — unit, grain, source, scopes, owner —
+ * in `ANALYTICS_SERIES` (`src/utils/analytics.ts`); nothing outside this list is ever collected or
+ * reported. `collected` series are written by the local collector; the rest are read live from
+ * the tables that already hold them.
+ */
+export enum AnalyticsSeriesId {
+  LibraryItems = 'library.items',
+  LibraryPhotos = 'library.photos',
+  LibraryVideos = 'library.videos',
+  LibraryLogicalBytes = 'library.logicalBytes',
+  LibraryPhysicalBytes = 'library.physicalBytes',
+  HostVolumeUsedBytes = 'host.volumeUsedBytes',
+  HostCapacityBytes = 'host.capacityBytes',
+  Arrivals = 'library.arrivals',
+  Captures = 'library.captures',
+  ProcessingCompleted = 'processing.completed',
+  ProcessingFailed = 'processing.failed',
+  ProcessingEstimatedCost = 'processing.estimatedCostUsd',
+}
+
+export const AnalyticsSeriesIdSchema = z
+  .enum(AnalyticsSeriesId)
+  .describe('Approved analytics series')
+  .meta({ id: 'AnalyticsSeriesId' });
+
+/** How finely a stored collector sample is kept. */
+export enum AnalyticsSampleGrain {
+  Day = 'day',
+  Week = 'week',
+}
+
+/** The date range of an analytics report. */
+export enum AnalyticsRange {
+  NinetyDays = '90days',
+  Year = 'year',
+}
+
+export const AnalyticsRangeSchema = z
+  .enum(AnalyticsRange)
+  .describe('Analytics date range')
+  .meta({ id: 'AnalyticsRange' });
+
+/** What an analytics selection covers: the whole server, one account, or one external library. */
+export enum AnalyticsScopeKind {
+  Host = 'host',
+  Account = 'account',
+  Library = 'library',
+}
+
+export const AnalyticsScopeKindSchema = z
+  .enum(AnalyticsScopeKind)
+  .describe('Analytics scope kind')
+  .meta({ id: 'AnalyticsScopeKind' });
+
+export enum AnalyticsUnit {
+  Items = 'items',
+  Bytes = 'bytes',
+  Attempts = 'attempts',
+  Usd = 'usd',
+}
+
+export const AnalyticsUnitSchema = z.enum(AnalyticsUnit).describe('Analytics unit').meta({ id: 'AnalyticsUnit' });
+
+/** The finest time step a series is defined at. `snapshot` is a single current reading. */
+export enum AnalyticsGrain {
+  Snapshot = 'snapshot',
+  Day = 'day',
+}
+
+export const AnalyticsGrainSchema = z.enum(AnalyticsGrain).describe('Analytics grain').meta({ id: 'AnalyticsGrain' });
+
+/**
+ * Whether a series measures the selection or always the whole host, whatever is selected. Host
+ * figures are never split between selections and never subtracted from to invent "other" usage.
+ */
+export enum AnalyticsMeasurementScope {
+  Selection = 'selection',
+  Host = 'host',
+}
+
+export const AnalyticsMeasurementScopeSchema = z
+  .enum(AnalyticsMeasurementScope)
+  .describe('Analytics measurement scope')
+  .meta({ id: 'AnalyticsMeasurementScope' });
+
+/** Whether a reading is current, too old to trust, or has never been taken. */
+export enum AnalyticsState {
+  Measured = 'measured',
+  Stale = 'stale',
+  Unknown = 'unknown',
+}
+
+export const AnalyticsStateSchema = z
+  .enum(AnalyticsState)
+  .describe('Analytics reading state')
+  .meta({ id: 'AnalyticsState' });
+
+/**
  * What an administrator did to an account or to one of its libraries (FL-76). Recorded in
  * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
  */
@@ -2280,6 +2457,64 @@ export enum AssetLockReason {
   ImmichLockedFolder = 'immich-locked-folder',
 }
 
+/**
+ * Where a Studio export version stands (FL-106). A version is created with its render job and only
+ * ever moves forward; a version that failed or was cancelled leaves every earlier published version
+ * exactly as it was.
+ */
+export enum StudioExportVersionState {
+  /** Queued or rendering. */
+  Rendering = 'rendering',
+  /** The render finished and its file is staged; publication is queued. */
+  Staged = 'staged',
+  /** Published: numbered, with its privacy installed and its provenance recorded. */
+  Published = 'published',
+  Failed = 'failed',
+  /** Stopped by its owner, or because the owner, the project or a source went away, or a handoff. */
+  Cancelled = 'cancelled',
+}
+
+export const StudioExportVersionStateSchema = z
+  .enum(StudioExportVersionState)
+  .describe('Studio export version state')
+  .meta({ id: 'StudioExportVersionState' });
+
+/**
+ * Where a published Studio export lives (FL-106).
+ *
+ * - `library`: every library source is the owner's, so the result is a new asset in their library,
+ *   carrying the union of its sources' Locked and sensitive evidence.
+ * - `project`: at least one source reached the owner through sharing. The result stays with the
+ *   project and every read re-checks that the owner can still see every source, so a temporary
+ *   share never becomes a permanent, unrestricted copy.
+ */
+export enum StudioExportScope {
+  Library = 'library',
+  Project = 'project',
+}
+
+export const StudioExportScopeSchema = z
+  .enum(StudioExportScope)
+  .describe('Where a published Studio export lives')
+  .meta({ id: 'StudioExportScope' });
+
+/** Why a remote destination is asked to drop something it holds for a Studio export (FL-106). */
+export enum StudioExportRemoteReason {
+  /**
+   * A render was handed to a remote worker. Recorded when it is claimed, so the obligation exists
+   * before anything can go wrong; acknowledged when the render finishes or the worker confirms a
+   * cancel released everything. Until then the remote job must be stopped if it is still running.
+   */
+  Cancel = 'cancel',
+  /** The remote copy of the output is no longer needed (published, failed or cancelled). */
+  Delete = 'delete',
+}
+
+export const StudioExportRemoteReasonSchema = z
+  .enum(StudioExportRemoteReason)
+  .describe('Why a remote destination is asked to drop Studio export data')
+  .meta({ id: 'StudioExportRemoteReason' });
+
 export const AssetLockReasonSchema = z
   .enum(AssetLockReason)
   .describe('Why an asset is locked')
@@ -2307,6 +2542,7 @@ export enum ConfigVisibility {
 export enum ApiTag {
   Activities = 'Activities',
   Albums = 'Albums',
+  Analytics = 'Analytics',
   ApiKeys = 'API keys',
   Authentication = 'Authentication',
   AuthenticationAdmin = 'Authentication (admin)',
@@ -2340,6 +2576,7 @@ export enum ApiTag {
   People = 'People',
   Pets = 'Pets',
   Plugins = 'Plugins',
+  Preservation = 'Preservation',
   Queues = 'Queues',
   RunPod = 'RunPod (admin)',
   Search = 'Search',

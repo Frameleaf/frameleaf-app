@@ -17,6 +17,7 @@ import {
   type WorkerInventoryEntryDto,
   type WorkerInventoryResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /** The prototype supports up to 32 endpoints in the list. */
 export const ML_ENDPOINT_LIMIT = 32;
@@ -63,7 +64,7 @@ export class WorkerUrlChangeError extends Error {
 }
 
 /** The translated message for a refused change. */
-export const workerUrlProblemKey = (problem: WorkerUrlProblem): string => {
+export const workerUrlProblemKey = (problem: WorkerUrlProblem): Translations => {
   switch (problem) {
     case 'changed-elsewhere': {
       return 'admin.frameleaf_workers_problem_changed_elsewhere';
@@ -111,7 +112,9 @@ export const applyWorkerUrlChange = (current: readonly string[], change: WorkerU
       if (next < 0 || next >= urls.length) {
         throw new WorkerUrlChangeError('cannot-move');
       }
-      [urls[index], urls[next]] = [urls[next], urls[index]];
+      const moved = urls[index];
+      urls[index] = urls[next];
+      urls[next] = moved;
       return urls;
     }
     case 'add':
@@ -218,7 +221,7 @@ export const routedEntry = (
 /* Labels                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export const readinessLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'readiness' | 'source'>): string => {
+export const readinessLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'readiness' | 'source'>): Translations => {
   const render = entry.source === WorkerInventorySource.RenderWorker;
   switch (entry.readiness) {
     case MlWorkerReadiness.Unknown: {
@@ -263,7 +266,7 @@ export const readinessTone = (readiness: MlWorkerReadiness): 'teal' | 'blue' | '
   }
 };
 
-export const accelerationLabelKey = (acceleration: MlWorkerAcceleration): string => {
+export const accelerationLabelKey = (acceleration: MlWorkerAcceleration): Translations => {
   switch (acceleration) {
     case MlWorkerAcceleration.Gpu: {
       return 'admin.frameleaf_workers_acceleration_gpu';
@@ -277,7 +280,7 @@ export const accelerationLabelKey = (acceleration: MlWorkerAcceleration): string
   }
 };
 
-export const credentialLabelKey = (credential: WorkerCredentialState): string => {
+export const credentialLabelKey = (credential: WorkerCredentialState): Translations => {
   switch (credential) {
     case WorkerCredentialState.None: {
       return 'admin.frameleaf_workers_credential_none';
@@ -294,7 +297,7 @@ export const credentialLabelKey = (credential: WorkerCredentialState): string =>
   }
 };
 
-export const roleLabelKey = (role: MlWorkerRole): string => {
+export const roleLabelKey = (role: MlWorkerRole): Translations => {
   switch (role) {
     case MlWorkerRole.LibraryAnalysis: {
       return 'admin.frameleaf_ml_role_library_analysis';
@@ -315,7 +318,7 @@ export const roleLabelKey = (role: MlWorkerRole): string => {
 };
 
 /** The "Type" row: what kind of work this worker does, as the prototype names it. */
-export const workerTypeLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'source' | 'role' | 'kind'>): string => {
+export const workerTypeLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'source' | 'role' | 'kind'>): Translations => {
   if (entry.source === WorkerInventorySource.RenderWorker) {
     return 'admin.frameleaf_workers_type_render';
   }

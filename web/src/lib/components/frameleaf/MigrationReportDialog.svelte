@@ -108,7 +108,11 @@
 <Dialog title={$t('admin.frameleaf_migration_report_title')} closeLabel={$t('close')} wide bind:open>
   <div class="report">
     <div class="verdict" data-status={report.status}>
-      <Badge value={$t(statusKey(report.status))} label={$t(statusKey(report.status))} tone={statusTone[report.status]} />
+      <Badge
+        value={$t(statusKey(report.status))}
+        label={$t(statusKey(report.status))}
+        tone={statusTone[report.status]}
+      />
       <p>{$t(`${statusKey(report.status)}_description` as Translations)}</p>
     </div>
     <p class="meta">

@@ -24,7 +24,7 @@ export const CUSTOM_CONDITION = '__custom_condition__';
 
 export type SetGroup = 'any' | 'all' | 'none';
 export const SET_GROUPS: readonly SetGroup[] = ['any', 'all', 'none'];
-export const SET_GROUP_LABEL_KEYS: Record<SetGroup, string> = {
+export const SET_GROUP_LABEL_KEYS: Record<SetGroup, Translations> = {
   any: 'frameleaf_search_match_any',
   all: 'frameleaf_search_match_all',
   none: 'frameleaf_search_match_none',
@@ -325,24 +325,28 @@ const valueLabel = ($t: MessageFormatter, field: string, value: unknown, options
   if (SET_FIELDS.has(field) && typeof value === 'string') {
     return options.nameFor?.(field, value) ?? value;
   }
-  if (field === 'type') {
-    if (value === AssetTypeEnum.Image) {
-      return $t('image');
+  switch (field) {
+    case 'type': {
+      if (value === AssetTypeEnum.Image) {
+        return $t('image');
+      }
+      if (value === AssetTypeEnum.Video) {
+        return $t('video');
+      }
+      break;
     }
-    if (value === AssetTypeEnum.Video) {
-      return $t('video');
+    case 'visibility': {
+      if (value === AssetVisibility.Archive) {
+        return $t('archive');
+      }
+      if (value === AssetVisibility.Timeline) {
+        return $t('frameleaf_search_in_timeline');
+      }
+      break;
     }
-  }
-  if (field === 'visibility') {
-    if (value === AssetVisibility.Archive) {
-      return $t('archive');
+    case 'rating': {
+      return value === null ? $t('frameleaf_search_unrated') : String(value);
     }
-    if (value === AssetVisibility.Timeline) {
-      return $t('frameleaf_search_in_timeline');
-    }
-  }
-  if (field === 'rating') {
-    return value === null ? $t('frameleaf_search_unrated') : String(value);
   }
   if (field === ENRICHMENT_FIELD) {
     const option = ENRICHMENT_OPTIONS.find((item) => item.value === value);

@@ -11,7 +11,7 @@ describe('SettingToggle component', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     const describedBy = toggle.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy!)?.textContent).toBe('Keep deleted items for a while');
+    expect(document.querySelector(`#${CSS.escape(describedBy!)}`)?.textContent).toBe('Keep deleted items for a while');
   });
 
   it('reports the new state through onToggle and flips the checked state', async () => {

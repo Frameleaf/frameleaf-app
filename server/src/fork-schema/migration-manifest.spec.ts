@@ -52,8 +52,13 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000460-AddTakeoutImport')).toBe('legacy-fork');
     expect(classifyMigration('2100000000490-SeparateRestorationWorkers')).toBe('legacy-fork');
     expect(classifyMigration('2100000000500-AddVideoMomentFrameVectorIndex')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000510-AddPreservationPackages')).toBe('legacy-fork');
     expect(classifyMigration('2100000000530-ReconcileFrameleafSchemaSnapshots')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000540-AddPhotoToolsPresetsAndExports')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000560-AddOperationalMetricSample')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000580-AddStudioExportVersions')).toBe('legacy-fork');
     expect(classifyMigration('2100000000590-HardenMediaOperationRetryAndCheckpoints')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000610-AddClassificationRule')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

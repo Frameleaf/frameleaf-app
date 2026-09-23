@@ -2,15 +2,24 @@
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
+  import RuleBuilder from '$lib/components/frameleaf/RuleBuilder.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { defaultIconFor } from '$lib/frameleaf/album-directory';
-  import { AlbumKind, type AlbumResponseDto, type CreateAlbumDto } from '@immich/sdk';
+  import { emptyRule, ruleProblem, toCreate, type RuleDraft } from '$lib/frameleaf/classification-rules';
+  import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
+  import { AlbumKind, type AlbumResponseDto, type ClassificationRuleCreateDto, type CreateAlbumDto } from '@immich/sdk';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
    * Create an album, a collection or a shared space. The icon chooser over the
    * whole Material catalogue is embedded instead of a small fixed grid; an
    * album may be placed inside a collection the user can edit.
+   *
+   * An album can be a smart album (FL-60): the Smart album switch and rule builder from the
+   * design's `CollectionFormDialog`. A smart album is created with its rule in one request and
+   * fills itself only when the rule is applied; the live count above the Create button is a
+   * read-only preview.
    */
   interface Props {
     kind: AlbumKind;
@@ -19,9 +28,41 @@
     defaultParentId?: string | null;
     open?: boolean;
     onCreate: (dto: CreateAlbumDto) => Promise<boolean>;
+    /** Open with the Smart album switch on (the New menu's "Smart album"). */
+    smart?: boolean;
+    /** Create a smart album with its rule. Without it the switch is not offered. */
+    onCreateSmart?: (dto: ClassificationRuleCreateDto) => Promise<boolean>;
   }
 
-  let { kind, collections, defaultParentId = null, open = $bindable(false), onCreate }: Props = $props();
+  let {
+    kind,
+    collections,
+    defaultParentId = null,
+    open = $bindable(false),
+    onCreate,
+    smart: smartDefault = false,
+    onCreateSmart,
+  }: Props = $props();
+
+  let smart = $state(false);
+  let rule = $state<RuleDraft>(emptyRule());
+  let sources = $state<RuleSources>({ people: [], tags: [] });
+  let sourcesLoaded = false;
+  const canBeSmart = $derived(kind === AlbumKind.Album && !!onCreateSmart);
+  const smartOn = $derived(canBeSmart && smart);
+
+  $effect(() => {
+    if (!open || !smartOn || sourcesLoaded) {
+      return;
+    }
+    sourcesLoaded = true;
+    void loadRuleSources().then((loaded) => {
+      sources = loaded;
+      if (loaded.settings && rule.personIds.length + rule.tagIds.length === 0) {
+        rule = { ...rule, action: loaded.settings.defaultAction };
+      }
+    });
+  });
 
   let albumName = $state('');
   let description = $state('');
@@ -40,6 +81,8 @@
     icon = defaultIconFor(kind);
     parentId = kind === AlbumKind.Album ? defaultParentId : null;
     error = '';
+    smart = smartDefault;
+    rule = emptyRule(untrack(() => sources.settings?.defaultAction));
   });
 
   const title = $derived(
@@ -57,16 +100,32 @@
       error = $t('frameleaf_albums_name_required');
       return;
     }
+    if (smartOn) {
+      const problem = ruleProblem(rule);
+      if (problem) {
+        error = $t(problem);
+        return;
+      }
+    }
     busy = true;
     error = '';
     try {
-      const ok = await onCreate({
-        albumName: name,
-        description: description.trim() || null,
-        icon,
-        kind,
-        parentId: kind === AlbumKind.Album && parentId ? parentId : undefined,
-      });
+      const ok = smartOn
+        ? await onCreateSmart!(
+            toCreate(rule, {
+              albumName: name,
+              description: description.trim() || null,
+              icon,
+              parentId: parentId ?? null,
+            }),
+          )
+        : await onCreate({
+            albumName: name,
+            description: description.trim() || null,
+            icon,
+            kind,
+            parentId: kind === AlbumKind.Album && parentId ? parentId : undefined,
+          });
       if (ok) {
         open = false;
       }
@@ -76,8 +135,8 @@
   };
 </script>
 
-<Dialog {title} closeLabel={$t('close')} bind:open>
-  <form class="create" onsubmit={submit}>
+<Dialog {title} closeLabel={$t('close')} wide={smartOn} bind:open>
+  <form class="create" class:smart={smartOn} onsubmit={submit}>
     {#if kind === AlbumKind.Space}
       <p class="hint">{$t('frameleaf_albums_space_description')}</p>
     {/if}
@@ -89,6 +148,13 @@
       <span>{$t('description')}</span>
       <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
     </label>
+    <div class="field">
+      <span class="field-label">
+        {$t('icon')}
+        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
+      </span>
+      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
+    </div>
     {#if kind === AlbumKind.Album && collections.length > 0}
       <label class="field">
         <span>{$t('frameleaf_albums_in_collection')}</span>
@@ -100,13 +166,22 @@
         </select>
       </label>
     {/if}
-    <div class="field">
-      <span class="field-label">
-        {$t('icon')}
-        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
-      </span>
-      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
-    </div>
+    {#if canBeSmart}
+      <label class="switch">
+        <input type="checkbox" role="switch" bind:checked={smart} aria-describedby="album-create-smart-help" />
+        <span>{$t('frameleaf_albums_smart_mark')}</span>
+        <small id="album-create-smart-help">{$t('frameleaf_rules_smart_help')}</small>
+      </label>
+      {#if smartOn}
+        <RuleBuilder
+          {rule}
+          people={sources.people}
+          tags={sources.tags}
+          settings={sources.settings}
+          onChange={(next) => (rule = next)}
+        />
+      {/if}
+    {/if}
     {#if error}
       <Status message={error} />
     {/if}
@@ -124,6 +199,9 @@
     gap: 0.75rem;
     margin-block-start: 1rem;
     width: min(32rem, calc(100vw - 4rem));
+  }
+  .create.smart {
+    width: min(44rem, calc(100vw - 4rem));
   }
   .hint {
     margin: 0;
@@ -153,6 +231,24 @@
     background: var(--fl-raised);
     color: var(--fl-text);
     font: inherit;
+  }
+  .switch {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .switch small {
+    grid-column: 2;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .switch input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--fl-accent);
   }
   .preview {
     display: inline-flex;
