@@ -8,7 +8,7 @@ import { AssetFile } from 'src/database.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { UploadBody } from 'src/types.js';
@@ -339,6 +339,26 @@ describe(AssetMediaService.name, () => {
         expect.any(Date),
         new Date(createDto.fileModifiedAt),
       );
+    });
+
+    it('should lock an upload into the Locked view instead of storing visibility locked (FL-34)', async () => {
+      const file = {
+        uuid: 'random-uuid',
+        originalPath: 'fake_path/asset_1.jpeg',
+        mimeType: 'image/jpeg',
+        checksum: Buffer.from('file hash', 'utf8'),
+        originalName: 'asset_1.jpeg',
+        size: 42,
+      };
+
+      mocks.asset.create.mockResolvedValue(assetEntity);
+
+      await expect(
+        sut.uploadAsset(authStub.user1, { ...createDto, visibility: AssetVisibility.Locked }, file),
+      ).resolves.toEqual({ id: 'id_1', status: AssetMediaStatus.CREATED });
+
+      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ visibility: AssetVisibility.Timeline }));
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['id_1'], AssetLockReason.Marked, authStub.user1.user.id);
     });
 
     it('should handle a file upload', async () => {
