@@ -43,6 +43,7 @@
     ENRICHMENT_STAGE_ORDER,
     VIDEO_ONLY_STAGES,
   } from '$lib/frameleaf/enrichment';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -190,7 +191,7 @@
   const follow = (next: EnrichmentPlanResponseDto) => {
     plan = next;
     step = 2;
-    rememberPlan(next.operation.id);
+    rememberPlan(authManager.user.id, next.operation.id);
     stopPolling();
     const delay = planPollDelay(next.operation.status);
     if (delay === null) {
@@ -209,7 +210,7 @@
     try {
       follow(await getEnrichmentPlan({ id }));
     } catch (error) {
-      rememberPlan(null);
+      rememberPlan(authManager.user.id, null);
       handleError(error, $t('frameleaf_enrichment_plan_error'));
     }
   };
@@ -221,7 +222,7 @@
     }
     void loadOptions();
     void loadRecentPlans();
-    const previous = lastPlan();
+    const previous = lastPlan(authManager.user.id);
     // Reopening returns to the plan this browser last followed; the plan itself is the server's.
     if (previous && !untrack(() => plan)) {
       void openPlan(previous);
@@ -325,7 +326,7 @@
 
   const startOver = () => {
     stopPolling();
-    rememberPlan(null);
+    rememberPlan(authManager.user.id, null);
     plan = null;
     preview = null;
     step = 0;
