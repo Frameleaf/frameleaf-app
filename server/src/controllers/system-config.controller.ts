@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Query } from '@nestjs/common';
 import { ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigDto, ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
 import {
@@ -12,7 +13,7 @@ import {
   SmartAlbumReevaluateResponseDto,
 } from 'src/dtos/system-config.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 
@@ -79,8 +80,8 @@ export class SystemConfigController {
       .stable('v2')
       .deprecated('v3.2.0', { replacementId: 'updateAdminConfig' }),
   })
-  updateConfig(@Body() dto: AdminConfigDto): Promise<AdminConfigDto> {
-    return this.service.updateAdminConfig(dto);
+  updateConfig(@Auth() auth: AuthDto, @Body() dto: AdminConfigDto): Promise<AdminConfigDto> {
+    return this.service.updateAdminConfig(dto, auth);
   }
 
   @Get('storage-template-options')
