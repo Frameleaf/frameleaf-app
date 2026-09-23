@@ -558,6 +558,38 @@ describe(StudioExportRepository.name, () => {
       expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
     });
 
+    it('lists and counts a Locked result only for an unlocked session, reading sources in one query', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const open = [await ownSource(context.ctx, user.id)];
+      const locked = [await ownSource(context.ctx, user.id, { visibility: AssetVisibility.Locked })];
+      const first = await stagedExport(context, user.id, open);
+      await context.sut.publish(publication(first, open));
+      const second = await stagedExport(context, user.id, locked, { projectId: first.projectId });
+      await context.sut.publish(publication(second, locked));
+
+      const ordinary = await context.sut.listForProject(first.projectId, user.id, {
+        take: 10,
+        skip: 0,
+        includeLocked: false,
+      });
+      expect(ordinary.total).toBe(1);
+      expect(ordinary.items.map((item) => item.id)).toEqual([first.version.id]);
+
+      const unlocked = await context.sut.listForProject(first.projectId, user.id, {
+        take: 10,
+        skip: 0,
+        includeLocked: true,
+      });
+      expect(unlocked.total).toBe(2);
+
+      const sources = await context.sut.getSourcesFor([first.version.id, second.version.id]);
+      expect(sources.get(first.version.id)).toEqual([expect.objectContaining({ assetId: open[0].id })]);
+      expect(sources.get(second.version.id)).toEqual([
+        expect.objectContaining({ assetId: locked[0].id, locked: true }),
+      ]);
+    });
+
     it('offers only unreferenced files to retention', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();
