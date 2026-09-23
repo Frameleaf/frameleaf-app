@@ -62,11 +62,13 @@ describe(MediaOperationService.name, () => {
   let sut: MediaOperationService;
   let mocks: ServiceMocks;
   let repository: MediaOperationRepository;
-  let icloud: { queueOperation: ReturnType<typeof vi.fn> };
+  let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
+  let jobs: { queue: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
-    icloud = { queueOperation: vi.fn() };
+    icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined) };
     repository = {
       create: vi.fn(),
       getForOwner: vi.fn(),
@@ -84,7 +86,13 @@ describe(MediaOperationService.name, () => {
       getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
 
-    sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never, icloud as never);
+    sut = new MediaOperationService(
+      mocks.logger as never,
+      repository,
+      mocks.access as never,
+      icloud as never,
+      jobs as never,
+    );
   });
 
   describe('search', () => {
@@ -458,6 +466,21 @@ describe(MediaOperationService.name, () => {
         });
         expect(repository.create).not.toHaveBeenCalled();
         expect(result.retryOfId).toBe(run.id);
+        expect(jobs.queue).toHaveBeenCalledWith({ name: 'ICloudSync', data: { id: connectionId } });
+      });
+
+      it('closes the run record when a run no worker held is cancelled', async () => {
+        const queued = operationStub({
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Queued,
+          snapshot: { connectionId, trigger: 'schedule' },
+        });
+        vi.mocked(repository.getForOwner).mockResolvedValue(queued);
+        vi.mocked(repository.requestCancel).mockResolvedValue({ ...queued, status: MediaOperationStatus.Cancelled });
+
+        await sut.cancel(authStub.user1, queued.id);
+
+        expect(icloud.endRun).toHaveBeenCalledWith(connectionId, 'cancelled');
       });
 
       it('answers with the unfinished run when one is already going', async () => {

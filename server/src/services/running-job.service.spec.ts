@@ -104,6 +104,7 @@ describe(RunningJobService.name, () => {
       operations,
       mocks.access as never,
       {} as never,
+      {} as never,
     );
     sut = new RunningJobService(mocks.logger as never, mocks.job as never, operationService, mocks.memory as never);
   });

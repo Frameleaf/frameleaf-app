@@ -82,6 +82,7 @@ const openConnectionDialog = async (name: string) => {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   addMessages('dev', en);
   authManager.setUser(userAdminFactory.build({ name: 'Taylor', isAdmin: false }));
   mocks.getICloudInventory.mockResolvedValue(inventory);
@@ -157,6 +158,25 @@ describe('ICloudSyncPanel', () => {
       expect(mocks.goto).toHaveBeenCalledWith('/auth/pin-prompt?continue=%2Futilities%2Ficloud-sync'),
     );
     expect(mocks.updateICloudConnection).not.toHaveBeenCalled();
+    expect(JSON.parse(sessionStorage.getItem('frameleaf.icloud.pending-save')!)).toMatchObject({
+      connectionId: id,
+      draft: { includeHidden: true },
+    });
+  });
+
+  it('brings the draft back after unlocking and saves it without asking consent twice', async () => {
+    sessionStorage.setItem(
+      'frameleaf.icloud.pending-save',
+      JSON.stringify({ connectionId: id, draft: { label: 'Personal iCloud', includeHidden: true } }),
+    );
+    mocks.getAuthStatus.mockResolvedValue({ isElevated: true });
+    mocks.updateICloudConnection.mockResolvedValue(connection());
+    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
+    expect(screen.getByRole('checkbox', { name: en.frameleaf_icloud_include_hidden })).toBeChecked();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
+    await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
+    expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.includeHidden).toBe(true);
+    expect(sessionStorage.getItem('frameleaf.icloud.pending-save')).toBeNull();
   });
 
   it('controls the durable run it shows', async () => {

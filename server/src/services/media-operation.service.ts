@@ -9,6 +9,7 @@ import {
   MediaOperationStatisticsDto,
 } from 'src/dtos/media-operation.dto.js';
 import {
+  JobName,
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
@@ -17,6 +18,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -233,6 +235,7 @@ export class MediaOperationService {
     private repository: MediaOperationRepository,
     private access: AccessRepository,
     private icloud: ICloudSyncRepository,
+    private jobs: JobRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -382,6 +385,17 @@ export class MediaOperationService {
     if (!cancelled) {
       // It finished between the read and the write. Report the settled state, not an error.
       return this.present(auth, await this.findOwned(auth, id));
+    }
+
+    // An iCloud sync cancelled before a worker had it closes its run record here; the worker closes
+    // it for one it was running when it acknowledges the cancel (FL-68).
+    const connectionId = asObject(cancelled.snapshot).connectionId;
+    if (
+      cancelled.kind === MediaOperationKind.ICloudSync &&
+      cancelled.status === MediaOperationStatus.Cancelled &&
+      typeof connectionId === 'string'
+    ) {
+      await this.icloud.endRun(connectionId, 'cancelled');
     }
 
     this.logger.log(`Cancellation requested for media operation ${id} (${cancelled.status})`);
@@ -631,6 +645,8 @@ export class MediaOperationService {
       case 'existing':
       case 'busy': {
         this.logger.log(`iCloud sync run ${operation.id} retried as ${queued.operation.id} (${queued.outcome})`);
+        // Wake the worker now instead of at its next tick; losing the nudge only costs that delay.
+        void this.jobs.queue({ name: JobName.ICloudSync, data: { id: connectionId } }).catch(() => undefined);
         return this.present(auth, queued.operation);
       }
       case 'not-ready': {

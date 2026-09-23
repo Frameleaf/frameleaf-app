@@ -1,7 +1,13 @@
 import { ICloudConfigSchema, ICloudConnectionUpdateDto } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, JobName, MediaOperationKind, MediaOperationStatus, NotificationLevel } from 'src/enum.js';
 import { ICloudTransportError } from 'src/repositories/icloud-transport.repository.js';
-import { ICLOUD_IDLE_WAIT_MS, ICloudSyncService, mapICloudRun } from 'src/services/icloud-sync.service.js';
+import {
+  ICLOUD_IDLE_WAIT_MS,
+  ICLOUD_MAX_IDLE_WAITS,
+  ICLOUD_SIGN_IN_WAIT_MS,
+  ICloudSyncService,
+  mapICloudRun,
+} from 'src/services/icloud-sync.service.js';
 
 describe(ICloudSyncService.name, () => {
   const connection = {
@@ -205,15 +211,13 @@ describe(ICloudSyncService.name, () => {
     expect(JSON.stringify(response)).not.toContain('ciphertext');
   });
 
-  it('keeps an account to twenty connections', async () => {
-    repository.list.mockResolvedValue(Array.from({ length: 20 }, () => connection));
+  it('keeps an account to twenty connections, counted under the insert lock', async () => {
+    repository.create.mockResolvedValue(undefined);
+    const config = ICloudConfigSchema.parse({});
     await expect(
-      sut.create({ user: { id: 'owner' }, session: {} } as never, {
-        label: 'Another',
-        config: ICloudConfigSchema.parse({}),
-      }),
+      sut.create({ user: { id: 'owner' }, session: {} } as never, { label: 'Another', config }),
     ).rejects.toThrow('icloud_connection_limit');
-    expect(repository.create).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalledWith('owner', 'Another', config, 20);
   });
 
   describe('a durable run', () => {
@@ -389,6 +393,29 @@ describe(ICloudSyncService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('waits, without spending an attempt, while its owner is signing in again', async () => {
+      repository.get.mockResolvedValue({ ...connection, state: 'authenticating' });
+      await sut.run(operation(), 'token');
+      expect(operations.requeue).toHaveBeenCalledWith('run', 'token', {
+        delayMs: ICLOUD_SIGN_IN_WAIT_MS,
+        returnAttempt: true,
+      });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('reports a run that cannot move for a day instead of waiting forever', async () => {
+      repository.claim.mockReset();
+      repository.claim.mockResolvedValue(undefined);
+      repository.hasPending.mockResolvedValue(true);
+      await sut.run(operation({ result: { phase: 'waiting', idleWaits: ICLOUD_MAX_IDLE_WAITS } }), 'token');
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith('run', 'token', {
+        error: 'icloud_sync_stalled',
+        errorCode: 'icloud_sync_stalled',
+      });
+      expect(repository.endRun).toHaveBeenCalledWith('connection', 'failed');
+    });
+
     it('fails a run whose connection is gone without touching the provider', async () => {
       repository.get.mockResolvedValue(undefined);
       await sut.run(operation(), 'token');
@@ -449,13 +476,14 @@ describe(ICloudSyncService.name, () => {
       expect(repository.endRun).toHaveBeenCalledWith('connection', 'cancelled');
     });
 
-    it('stops the run before forgetting the session on disconnect', async () => {
+    it('disconnects under the lock first, then cancels the last run there can be', async () => {
       repository.latestOperation.mockResolvedValue(operation({ status: MediaOperationStatus.Rendering }));
       operations.requestCancel.mockResolvedValue(operation({ status: MediaOperationStatus.Cancelling }));
       await sut.disconnect(auth, 'connection');
-      expect(operations.requestCancel.mock.invocationCallOrder[0]).toBeLessThan(
-        repository.disconnect.mock.invocationCallOrder[0],
+      expect(repository.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.requestCancel.mock.invocationCallOrder[0],
       );
+      expect(operations.requestCancel).toHaveBeenCalledWith('run', 'owner');
     });
 
     it('explains why a connection cannot be removed yet and releases only staging copies', async () => {
@@ -515,13 +543,15 @@ describe(ICloudSyncService.name, () => {
     });
   });
 
-  it('shows a waiting run apart from one retrying after a failure', () => {
+  it('shows a waiting run apart from one retrying after a failure, by the same rule as Activity', () => {
     const retryAt = new Date();
-    expect(
-      mapICloudRun(operation({ status: MediaOperationStatus.Queued, retryAt, result: { phase: 'waiting' } })),
-    ).toMatchObject({ waiting: true, retrying: false });
-    expect(
-      mapICloudRun(operation({ status: MediaOperationStatus.Queued, retryAt, result: { phase: 'syncing' } })),
-    ).toMatchObject({ waiting: false, retrying: true });
+    expect(mapICloudRun(operation({ status: MediaOperationStatus.Queued, retryAt, autoRetries: 0 }))).toMatchObject({
+      waiting: true,
+      retrying: false,
+    });
+    expect(mapICloudRun(operation({ status: MediaOperationStatus.Queued, retryAt, autoRetries: 1 }))).toMatchObject({
+      waiting: false,
+      retrying: true,
+    });
   });
 });
