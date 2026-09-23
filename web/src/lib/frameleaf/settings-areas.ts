@@ -37,7 +37,8 @@ export type SettingsAreaDefinition = {
 };
 
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
-  { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings'] },
+  // FL-75: `migration` is the template's "Move or export your library", last in this area.
+  { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings', 'migration'] },
   { id: 'backup', group: 'library', sections: ['external-library', 'takeout', 'backup'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
