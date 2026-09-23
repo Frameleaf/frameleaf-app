@@ -10,7 +10,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f"
+      "sha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "7791ccccecc5431810dd9a7c8b721281562c0a73e193ae38e578bc367a75f082",
+  "sourceEvidenceSha256": "e436e1f0dcb40116282837a5bf1841cbde9975eac73abeb6b84bc948dae3ca8f",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",

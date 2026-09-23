@@ -8,7 +8,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f"
+      "sha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
