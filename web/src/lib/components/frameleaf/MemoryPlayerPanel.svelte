@@ -18,6 +18,11 @@
    *    not landed yet (see `$lib/frameleaf/studio-handoff.ts` for the full contract), so
    *    this queues the asset list for Studio to pick up and confirms it to the user rather
    *    than navigating into a route that does not exist.
+   *  - The private highlight export. The first slice downloaded the memory's originals
+   *    straight from the browser; the server slice replaced that with a durable, cancellable
+   *    export job, so this panel now starts a run, follows its progress, offers to cancel it
+   *    and downloads the finished archive. The run is the same one the Activity page (FL-104)
+   *    lists, which is why the state lives on the server and not in this component.
    *
    * The floating selection bar and the below-the-fold `GalleryViewer` are shared,
    * already-Frameleaf-agnostic components reused across the app; this story restyles the
@@ -41,6 +46,7 @@
   import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
   import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
+  import { exportProgress, isExportActive, latestExport } from '$lib/frameleaf/memory-stories';
   import { writeStudioHandoff } from '$lib/frameleaf/studio-handoff';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -50,10 +56,21 @@
   import { Route } from '$lib/route';
   import { getAssetBulkActions } from '$lib/services/asset.service';
   import { locale } from '$lib/stores/preferences.store';
-  import { downloadArchive } from '$lib/utils/asset-utils';
-  import { getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
+  import { downloadBlob, getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
-  import { AssetMediaSize, AssetTypeEnum, getAssetInfo } from '@immich/sdk';
+  import {
+    AssetMediaSize,
+    AssetTypeEnum,
+    MemoryExportStatus,
+    cancelMemoryExport,
+    createMemoryExport,
+    downloadMemoryExport,
+    getAssetInfo,
+    getMemoryExport,
+    getMemoryExports,
+    type MemoryExportResponseDto,
+  } from '@immich/sdk';
   import {
     ActionButton,
     Icon,
@@ -72,6 +89,7 @@
     mdiClose,
     mdiDotsVertical,
     mdiDownload,
+    mdiExportVariant,
     mdiHeart,
     mdiHeartOutline,
     mdiImageMinusOutline,
@@ -81,6 +99,7 @@
     mdiPlay,
     mdiSelectAll,
     mdiShareVariantOutline,
+    mdiStopCircleOutline,
     mdiVolumeHigh,
     mdiVolumeOff,
   } from '@mdi/js';
@@ -94,6 +113,9 @@
   import MemoryVideoViewer from '$lib/components/frameleaf/MemoryVideoViewer.svelte';
 
   const KEN_BURNS_CLASSES = ['fmp-kb-a', 'fmp-kb-b', 'fmp-kb-c'];
+
+  /** how often the player asks the server for the export run's current state */
+  const EXPORT_POLL_MS = 1500;
 
   let memoryGallery: HTMLElement | undefined = $state();
   let memoryWrapper: HTMLElement | undefined = $state();
@@ -294,17 +316,130 @@
   };
 
   /**
-   * Private highlight export: a client-side download of this memory's own assets through
-   * the existing archive-download endpoint, exactly like an album or shared-link download.
-   * There is no separate export job or rendering step - the "export" is the zip itself.
+   * Private highlight export (FL-62 server slice).
+   *
+   * The export is a durable, cancellable job on the server, not a browser download: the
+   * request returns a run row, the worker writes an owner-private archive, and this panel
+   * follows the same run state the Activity page (FL-104) reads. That is what survives a
+   * reload, a closed tab and a worker restart — a `fetch` that dies with the page could not.
+   *
+   * The panel never invents progress. `assetCount`/`processedAssets` come from the run, an
+   * `error` is shown as the server reported it, and polling stops the moment the run
+   * reaches a terminal state.
    */
-  const downloadMemory = () => {
-    if (!current) {
+  let exportRun = $state<MemoryExportResponseDto | undefined>();
+  let exportBusy = $state(false);
+  let exportTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const exportActive = $derived(!!exportRun && isExportActive(exportRun.status));
+  const exportPercent = $derived(exportRun ? Math.round(exportProgress(exportRun) * 100) : 0);
+
+  const stopPolling = () => {
+    if (exportTimer) {
+      clearTimeout(exportTimer);
+      exportTimer = undefined;
+    }
+  };
+
+  const pollExport = async () => {
+    if (!exportRun) {
       return;
     }
-    handlePromiseError(
-      downloadArchive($memoryLaneTitle(current.memory), { assetIds: current.memory.assets.map((asset) => asset.id) }),
-    );
+    try {
+      exportRun = await getMemoryExport({ id: exportRun.id });
+    } catch (error) {
+      // the run is gone (deleted, or its memory was), so there is nothing left to follow
+      handleError(error, $t('frameleaf_memories_export_failed'));
+      exportRun = undefined;
+      stopPolling();
+      return;
+    }
+
+    if (exportRun && isExportActive(exportRun.status)) {
+      exportTimer = setTimeout(() => void pollExport(), EXPORT_POLL_MS);
+    } else {
+      stopPolling();
+    }
+  };
+
+  // Pick up an export that is already running for this memory — started here before a
+  // reload, or from another tab — instead of offering to start a second one.
+  $effect(() => {
+    const memoryId = current?.memory.id;
+    stopPolling();
+    exportRun = undefined;
+    if (!memoryId) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const runs = await getMemoryExports({ memoryId });
+        const existing = latestExport(runs, memoryId);
+        if (existing) {
+          exportRun = existing;
+          if (isExportActive(existing.status)) {
+            exportTimer = setTimeout(() => void pollExport(), EXPORT_POLL_MS);
+          }
+        }
+      } catch {
+        // an unreachable export list must not take the player down with it
+      }
+    })();
+
+    return stopPolling;
+  });
+
+  const startExport = async () => {
+    if (!current || exportBusy) {
+      return;
+    }
+    exportBusy = true;
+    try {
+      exportRun = await createMemoryExport({ id: current.memory.id, memoryExportCreateDto: {} });
+      status = $t('frameleaf_memories_export_started');
+      if (isExportActive(exportRun.status)) {
+        stopPolling();
+        exportTimer = setTimeout(() => void pollExport(), EXPORT_POLL_MS);
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_memories_export_failed'));
+    } finally {
+      exportBusy = false;
+    }
+  };
+
+  const cancelExport = async () => {
+    if (!exportRun || exportBusy) {
+      return;
+    }
+    exportBusy = true;
+    try {
+      exportRun = await cancelMemoryExport({ id: exportRun.id });
+      status = $t('frameleaf_memories_export_cancelled');
+      if (!isExportActive(exportRun.status)) {
+        stopPolling();
+      }
+    } catch (error) {
+      handleError(error, $t('frameleaf_memories_export_failed'));
+    } finally {
+      exportBusy = false;
+    }
+  };
+
+  const saveExport = async () => {
+    if (!exportRun?.isDownloadable || exportBusy) {
+      return;
+    }
+    exportBusy = true;
+    try {
+      const blob = await downloadMemoryExport({ id: exportRun.id });
+      downloadBlob(blob, `${exportRun.title}.zip`);
+    } catch (error) {
+      handleError(error, $t('frameleaf_memories_export_failed'));
+    } finally {
+      exportBusy = false;
+    }
   };
 
   const makeMovie = () => {
@@ -513,14 +648,48 @@
                     </IconButton>
                   {/if}
                 {/await}
-                <IconButton label={$t('download')} onclick={downloadMemory}>
-                  <Icon icon={mdiDownload} size={20} />
-                </IconButton>
+                {#if exportActive}
+                  <span
+                    class="fmp-export"
+                    role="status"
+                    aria-live="polite"
+                    aria-label={$t('frameleaf_memories_export_progress', {
+                      values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
+                    })}
+                  >
+                    <span class="fmp-export-bar" aria-hidden="true">
+                      <span class="fmp-export-fill" style:width={`${exportPercent}%`}></span>
+                    </span>
+                    <span class="fmp-export-text">
+                      {exportRun?.status === MemoryExportStatus.Cancelling
+                        ? $t('frameleaf_memories_export_cancelling')
+                        : $t('frameleaf_memories_export_progress', {
+                            values: { done: exportRun?.processedAssets ?? 0, total: exportRun?.assetCount ?? 0 },
+                          })}
+                    </span>
+                  </span>
+                  <IconButton label={$t('frameleaf_memories_export_cancel')} onclick={() => void cancelExport()}>
+                    <Icon icon={mdiStopCircleOutline} size={20} />
+                  </IconButton>
+                {:else if exportRun?.isDownloadable}
+                  <IconButton label={$t('frameleaf_memories_export_download')} onclick={() => void saveExport()}>
+                    <Icon icon={mdiDownload} size={20} />
+                  </IconButton>
+                {:else}
+                  <IconButton label={$t('frameleaf_memories_export')} onclick={() => void startExport()}>
+                    <Icon icon={mdiExportVariant} size={20} />
+                  </IconButton>
+                {/if}
                 <button type="button" class="fmp-studio" onclick={makeMovie}>
                   <Icon icon={mdiMovieEditOutline} size={18} aria-hidden="true" />
                   {$t('frameleaf_memories_make_movie')}
                 </button>
               </div>
+              {#if exportRun?.status === MemoryExportStatus.Failed}
+                <p class="fmp-export-error" role="alert">
+                  {exportRun.error ?? $t('frameleaf_memories_export_failed')}
+                </p>
+              {/if}
             </div>
 
             {#if current.previousHref}
@@ -763,6 +932,47 @@
     align-self: flex-end;
     gap: 0.25rem;
   }
+  /* Export progress. The bar is decorative — the accessible name on the wrapper carries the
+     real numbers, and it is never animated beyond the width the server reported. */
+  .fmp-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    color: #fff;
+    background: rgb(0 0 0 / 45%);
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
+  }
+  .fmp-export-bar {
+    display: block;
+    inline-size: 5rem;
+    block-size: 0.25rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 30%);
+    overflow: hidden;
+  }
+  .fmp-export-fill {
+    display: block;
+    block-size: 100%;
+    background: #fff;
+    transition: inline-size 200ms linear;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fmp-export-fill {
+      transition: none;
+    }
+  }
+  .fmp-export-error {
+    margin: 0.5rem 0 0;
+    color: #fff;
+    background: rgb(0 0 0 / 55%);
+    border-radius: var(--fl-radius);
+    padding: 0.375rem 0.625rem;
+    font-size: var(--fl-font-small);
+  }
+
   /* The overlay sits over an arbitrary photo or video frame, so every control gets its own
      translucent scrim rather than relying on the surrounding image for contrast. */
   .fmp-overlay-top :global(button),
