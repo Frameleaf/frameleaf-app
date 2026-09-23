@@ -414,6 +414,8 @@ describe(AssetMediaService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue({
         id: 'master-asset-id',
         checksum: file.checksum,
+        originalFileName: 'master.jpeg',
+        type: AssetType.Image,
         originalPath: '/data/library/master.jpeg',
         physicalOriginalFileId: null,
         sizeInBytes: file.size,
