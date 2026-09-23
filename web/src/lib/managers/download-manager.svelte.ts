@@ -21,6 +21,11 @@ class DownloadManager {
     this.assets.clear();
   }
 
+  /** Dismisses one prepared archive without touching the others still preparing or waiting to be saved. */
+  remove(key: string) {
+    this.assets.delete(key);
+  }
+
   markDownloaded(key: string) {
     const state = this.assets.get(key);
     if (state) {
