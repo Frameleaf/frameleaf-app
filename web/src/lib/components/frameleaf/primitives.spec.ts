@@ -42,11 +42,13 @@ describe('Frameleaf primitives', () => {
 
 // Native dialog focus trapping/escape is exercised in the browser fixture;
 // happy-dom verifies the bindable state and invoker restoration contract.
-it('opens modal and restores focus to its invoker when closed', async () => {
+it.each([false, true])('restores its invoker even when opening does not focus it (%s)', async (focused) => {
   const { default: DialogHarness } = await import('$lib/../test-data/frameleaf/DialogHarness.svelte');
   render(DialogHarness);
   const opener = screen.getByRole('button', { name: 'Open details' });
-  opener.focus();
+  if (focused) {
+    opener.focus();
+  }
   await fireEvent.click(opener);
   expect(screen.getByRole('dialog').hasAttribute('open')).toBe(true);
   await fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
