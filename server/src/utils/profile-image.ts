@@ -43,7 +43,10 @@ export const generateProfileImage = async (
 };
 
 type ReplaceRepos = Repos & {
-  user: Pick<UserRepository, 'getLockedProfileImageSources' | 'getProfileImageReplacement' | 'replaceLockedProfileImage'>;
+  user: Pick<
+    UserRepository,
+    'getLockedProfileImageSources' | 'getProfileImageReplacement' | 'replaceLockedProfileImage'
+  >;
   job: Pick<JobRepository, 'queue'>;
   logger: Pick<LoggingRepository, 'warn'>;
 };
