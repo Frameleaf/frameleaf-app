@@ -20,6 +20,7 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { effectiveVisibility, isLocked, isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
@@ -32,7 +33,16 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .leftJoin('smart_search', 'asset.id', 'smart_search.assetId')
-      .select(['id', 'type', 'ownerId', 'duplicateId', 'stackId', 'visibility', 'smart_search.embedding'])
+      // `locked` for a locked asset (FL-34): duplicate review never groups locked media
+      .select([
+        'id',
+        'type',
+        'ownerId',
+        'duplicateId',
+        'stackId',
+        effectiveVisibility('asset').as('visibility'),
+        'smart_search.embedding',
+      ])
       .limit(1)
       .executeTakeFirst();
   }
@@ -151,6 +161,7 @@ export class AssetJobRepository {
     return this.db
       .selectFrom('asset')
       .select(columns.asset)
+      .select(isLocked('asset').as('isLocked'))
       .select(withFaces)
       .select((eb) => withFiles(eb, AssetFileType.Sidecar))
       .innerJoin('user', 'user.id', 'asset.ownerId')
@@ -220,7 +231,7 @@ export class AssetJobRepository {
       .where('asset.type', '=', sql.lit(AssetType.Video))
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+      .where(isNotLocked('asset'))
       .groupBy('asset.id')
       .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount))
       .stream();
@@ -232,7 +243,7 @@ export class AssetJobRepository {
       .selectFrom('asset')
       .innerJoin('asset_video', 'asset_video.assetId', 'asset.id')
       .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.visibility'])
+      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', effectiveVisibility('asset').as('visibility')])
       .select((eb) => withVideoStream(eb).$notNull().as('videoStream'))
       .select((eb) => withVideoFormat(eb).$notNull().as('format'))
       .where('asset.id', '=', id)
@@ -308,7 +319,8 @@ export class AssetJobRepository {
       .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
       .where('asset.status', '=', sql.lit(AssetStatus.Active))
       .where('asset.deletedAt', 'is', null)
-      .$call(withDefaultVisibility)
+      // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.exists((qb) =>
           qb
@@ -583,7 +595,8 @@ export class AssetJobRepository {
     return this.assetsWithPreviews()
       .select(['asset.id'])
       .where('asset.type', '=', sql.lit(AssetType.Image))
-      .$call(withDefaultVisibility)
+      // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .$if(!force, (qb) =>
         qb.where((eb) =>
           eb.not(
@@ -611,7 +624,8 @@ export class AssetJobRepository {
     // `video-frames-unavailable`.
     return this.assetsWithPreviews()
       .select(['asset.id'])
-      .$call(withDefaultVisibility)
+      // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.or([
           eb('asset.type', '=', sql.lit(AssetType.Image)),
@@ -670,7 +684,8 @@ export class AssetJobRepository {
         sql<string[]>`COALESCE(asset_metadata.value -> 'description' -> 'result' -> 'tags', '[]'::jsonb)`.as('tags'),
       ])
       .where('asset.deletedAt', 'is', null)
-      .$call(withDefaultVisibility)
+      // background work includes locked media (owner decision, September 22, 2026): stored visibility only
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.exists((qb) =>
           qb

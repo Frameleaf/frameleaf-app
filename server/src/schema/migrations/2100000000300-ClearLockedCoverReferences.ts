@@ -28,8 +28,33 @@ import { Kysely, RawBuilder, sql } from 'kysely';
  * Which photos are sensitive is read where the server reads it in the current schema phase. Where
  * the phase leaves it undetermined, a shared context only takes a Best Photo on the Timeline that is
  * not flagged sensitive.
+ *
+ * Here Locked is the upstream Locked folder, the only lock that existed then. Migration 2100000000320
+ * (FL-34) moves Locked into lock records and runs the same repair on them (`repairLockedCoverReferences`).
  */
 export async function up(db: Kysely<any>): Promise<void> {
+  await repairLockedCoverReferences(db, lockedFolder);
+}
+
+/** How a repair recognises a Locked photo. */
+export type LockedCondition = {
+  /** A subquery listing the ids of every Locked asset. */
+  lockedIds: RawBuilder<unknown>;
+  /** The `asset` row in scope is Locked. */
+  assetLocked: RawBuilder<boolean>;
+  /** The `asset` row in scope is not Locked. */
+  assetNotLocked: RawBuilder<boolean>;
+};
+
+/** The upstream Locked folder. */
+const lockedFolder: LockedCondition = {
+  lockedIds: sql`SELECT "id" FROM "asset" WHERE "visibility" = 'locked'`,
+  assetLocked: sql<boolean>`"asset"."visibility" = 'locked'`,
+  assetNotLocked: sql<boolean>`"asset"."visibility" != 'locked'`,
+};
+
+/** The repair itself, for whichever Locked state `locked` describes. */
+export async function repairLockedCoverReferences(db: Kysely<any>, locked: LockedCondition): Promise<void> {
   const rules = await getRules(db);
   const { rank, sensitive, visibleToEveryone } = rules;
 
@@ -41,12 +66,12 @@ export async function up(db: Kysely<any>): Promise<void> {
       INNER JOIN "asset" ON "album_asset"."assetId" = "asset"."id"
       WHERE "album_asset"."albumId" = "album"."id"
         AND "asset"."deletedAt" IS NULL
-        AND "asset"."visibility" != 'locked'
+        AND ${locked.assetNotLocked}
         AND (NOT ${isSharedAlbum} OR ${visibleToEveryone})
       ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
       LIMIT 1
     )
-    WHERE "albumThumbnailAssetId" IN (SELECT "id" FROM "asset" WHERE "visibility" = 'locked')
+    WHERE "albumThumbnailAssetId" IN (${locked.lockedIds})
   `.execute(db);
 
   await sql`
@@ -59,6 +84,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       WHERE "album_asset"."albumId" = "shared_space_person"."albumId"
         AND "asset_face"."personGroupId" = "shared_space_person"."personGroupId"
         AND "asset"."visibility" IN ('archive', 'timeline')
+        AND ${locked.assetNotLocked}
         AND "asset"."deletedAt" IS NULL
         AND ${visibleToEveryone}
         AND "asset_face"."deletedAt" IS NULL
@@ -66,7 +92,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       ORDER BY ${rank} DESC, "asset"."fileCreatedAt" DESC
       LIMIT 1
     )
-    WHERE "coverAssetId" IN (SELECT "id" FROM "asset" WHERE "visibility" = 'locked')
+    WHERE "coverAssetId" IN (${locked.lockedIds})
   `.execute(db);
 
   await sql`
@@ -80,7 +106,7 @@ export async function up(db: Kysely<any>): Promise<void> {
           AND "asset_face"."deletedAt" IS NULL
           AND "asset_face"."isVisible" IS TRUE
           AND "asset"."deletedAt" IS NULL
-          AND "asset"."visibility" != 'locked'
+          AND ${locked.assetNotLocked}
         ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
         LIMIT 1
       ),
@@ -90,7 +116,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       FROM "asset_face"
       INNER JOIN "asset"
         ON "asset"."id" = "asset_face"."assetId"
-        AND "asset"."visibility" = 'locked'
+        AND ${locked.assetLocked}
     )
   `.execute(db);
 
@@ -105,12 +131,12 @@ export async function up(db: Kysely<any>): Promise<void> {
           AND "pet_observation"."state" = 'confirmed'
           AND "asset"."ownerId" = "pet"."ownerId"
           AND "asset"."deletedAt" IS NULL
-          AND "asset"."visibility" != 'locked'
+          AND ${locked.assetNotLocked}
         ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
         LIMIT 1
       ),
       "updatedAt" = now()
-    WHERE "featuredAssetId" IN (SELECT "id" FROM "asset" WHERE "visibility" = 'locked')
+    WHERE "featuredAssetId" IN (${locked.lockedIds})
   `.execute(db);
 }
 

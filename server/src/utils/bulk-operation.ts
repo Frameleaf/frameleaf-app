@@ -68,6 +68,12 @@ export type BulkOperationSnapshot = {
    * exists and still grants the action before every batch, so revoking a key stops its jobs.
    */
   apiKeyId: string | null;
+  /**
+   * True when the job was submitted from an unlocked (PIN-elevated) session (FL-34). The worker only
+   * changes an item locked at the time of change when this is set; a job submitted without the PIN
+   * skips anything locked since, whatever locked it.
+   */
+  elevated?: boolean;
 };
 
 export type BulkOperationItem = {
@@ -205,6 +211,7 @@ export const parseBulkSnapshot = (snapshot: unknown): BulkOperationSnapshot => {
     scope: isRecord(snapshot.scope) ? snapshot.scope : undefined,
     requestId: typeof snapshot.requestId === 'string' ? snapshot.requestId : null,
     apiKeyId: typeof snapshot.apiKeyId === 'string' ? snapshot.apiKeyId : null,
+    elevated: snapshot.elevated === true,
   };
 };
 
@@ -547,9 +554,9 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.ChangeDate]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeDescription]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeLocation]: Permission.AssetUpdate,
-  // Sensitive marking runs one item at a time and checks each one itself.
-  [MediaOperationBulkAction.MarkSensitive]: null,
-  [MediaOperationBulkAction.UnmarkSensitive]: null,
+  // Mark Sensitive is the lock (FL-34): the lock and unlock endpoints reject a whole list.
+  [MediaOperationBulkAction.MarkSensitive]: Permission.AssetUpdate,
+  [MediaOperationBulkAction.UnmarkSensitive]: Permission.AssetUpdate,
   [MediaOperationBulkAction.Delete]: Permission.AssetDelete,
   [MediaOperationBulkAction.DeletePermanently]: Permission.AssetDelete,
   [MediaOperationBulkAction.Restore]: Permission.AssetDelete,

@@ -4,7 +4,8 @@ import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { AssetFile } from 'src/database.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   AssetBulkDeleteDto,
@@ -30,6 +31,8 @@ import {
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
+  AssetMetadataKey,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -38,6 +41,7 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
+import { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
@@ -53,7 +57,8 @@ import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { batched, findOrFail } from 'src/utils/misc.js';
+import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 const imageEditActions = new Set<AssetEditAction>([
@@ -162,7 +167,7 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, ...rest } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -177,10 +182,13 @@ export class AssetService extends BaseService {
 
     await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
 
-    const asset = await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(dateTimeOriginal), ...rest });
-    if (rest.visibility === AssetVisibility.Locked) {
-      await this.queueReleasedFaceThumbnails([id]);
-    }
+    const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
+    const asset = await this.assetRepository.update({
+      id,
+      ...getAssetDateTimeUpdates(dateTimeOriginal),
+      ...rest,
+      ...(storedVisibility ? { visibility: storedVisibility } : {}),
+    });
 
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
@@ -194,12 +202,18 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
-    // A visibility change that moves a whole stack into or out of Locked also changes the siblings
-    // `id` never mentions (FL-53, `locked-stacks.ts`); push the same real-time update to `id` and to
-    // every one of them, so every open session reflects the move at once.
-    if (rest.visibility !== undefined) {
+    // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
+    // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
+    // open session reflects the move at once.
+    if (visibility !== undefined) {
       const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
       await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+
+    // Locking needs no PIN, but a session without it can no longer read what it just locked (FL-34):
+    // answer from the updated row instead of refusing a change that was made.
+    if (visibility === AssetVisibility.Locked && !auth.session?.hasElevatedPermission) {
+      return mapAsset({ ...asset, isLocked: true }, { auth });
     }
 
     return this.get(auth, id) as Promise<AssetResponseDto>;
@@ -221,8 +235,9 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
+    const storedVisibility = await this.applyLockedVisibility(auth, ids, visibility);
     const assetDto = omitBy(
-      { isFavorite, visibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
+      { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
       isUndefined,
     );
     const exifDto = omitBy(
@@ -257,33 +272,111 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
-    if (visibility === AssetVisibility.Locked) {
-      await this.queueReleasedFaceThumbnails(ids);
-    }
-
-    // A visibility change that moves whole stacks into or out of Locked also changes siblings `ids`
-    // never names (FL-53, `locked-stacks.ts`); push the same real-time update to `ids` and to every
-    // one of them, so every open session reflects the move at once.
+    // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
+    // push the same real-time update to `ids` and to every one of them, so every open session reflects
+    // the change at once.
     if (visibility !== undefined) {
       const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
       await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
     }
 
-    // Moving into the Locked folder keeps album membership (owner decision, September 22, 2026): the
-    // asset stays in its albums and every album read hides it from everyone but its owner's elevated
-    // session, so it is back in place when it leaves the folder. Upstream removed it from all albums here.
+    // Locking keeps album membership (owner decision, September 22, 2026): the asset stays in its albums
+    // and every album read hides it from everyone but its owner's elevated session, so it is back in
+    // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }
 
   /**
-   * Moving into the Locked folder moved the rest of each stack along and released every cover,
-   * featured photo and face thumbnail the assets were (FL-53, `onAssetsLocked`); the people whose
-   * featured face moved get a new thumbnail from the face that replaced it, and a profile picture
-   * copied from one of the photos is replaced.
+   * Assets locked outside this service (FL-34: the iCloud reconciler locking Apple Hidden photos) get
+   * the same follow-up as a lock made here, once that lock has committed.
    */
-  private queueReleasedFaceThumbnails(ids: string[]) {
-    return this.afterAssetsLocked(ids);
+  @OnEvent({ name: 'AssetLockAll' })
+  async onAssetLockAll({ assetIds, userId }: ArgOf<'AssetLockAll'>): Promise<void> {
+    await this.afterAssetsLocked(assetIds);
+    await this.notifyAssetsUpdated(assetIds, userId);
+  }
+
+  /**
+   * Lock (FL-34): the owner's own lock, recorded as `marked`. A lock is metadata: the assets keep their
+   * albums, favourites, tags, faces and stored visibility, and every read except the owner's elevated
+   * session stops showing them. Stacks and live photos lock as a whole. No elevated session is needed
+   * to lock: it only hides.
+   */
+  async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
+    await this.lockAssets(auth, dto.ids, AssetLockReason.Marked);
+  }
+
+  /**
+   * `visibility: locked` in a request (older clients, the upstream "Move to Locked folder") is a lock
+   * record, never a stored visibility (FL-34). Any other visibility is stored as asked and never unlocks:
+   * a locked asset stays locked, whatever its stored visibility, until its owner unlocks it through
+   * `POST /assets/unlock` from an unlocked session. Returns the visibility to store, if any.
+   */
+  private async applyLockedVisibility(
+    auth: AuthDto,
+    ids: string[],
+    visibility?: AssetVisibility,
+  ): Promise<AssetVisibility | undefined> {
+    if (visibility === undefined) {
+      return undefined;
+    }
+
+    if (visibility === AssetVisibility.Locked) {
+      await this.lockAssets(auth, ids, AssetLockReason.Marked);
+      return undefined;
+    }
+
+    // Never an unlock (FL-34): only `POST /assets/unlock` removes a lock, from an unlocked session,
+    // recording the owner's review. Any other visibility is stored and the lock, if any, stays.
+    return visibility;
+  }
+
+  /**
+   * Locks and follows up (FL-34, FL-53): every cover, featured photo and face thumbnail the newly locked
+   * assets were is released in the lock's transaction; the people whose featured face moved get a new
+   * thumbnail, and a profile picture copied from one of the photos is replaced.
+   */
+  private async lockAssets(auth: AuthDto, ids: string[], reason: AssetLockReason): Promise<void> {
+    const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+      await this.notifyAssetsUpdated(locked, auth.user.id);
+    }
+  }
+
+  /**
+   * A sensitive verdict written through the metadata API locks the asset like the detector's own
+   * (FL-34): an owner's review marking it sensitive is their lock (`marked`); a detection result locks
+   * it as `detected` when "hide sensitive detections" is on. Nothing is ever unlocked here.
+   */
+  private async lockSensitiveMetadata(auth: AuthDto, items: { assetId: string; key: string; value: unknown }[]) {
+    const marked: string[] = [];
+    const detected: string[] = [];
+    for (const { assetId, key, value } of items) {
+      if (key !== AssetMetadataKey.MlEnrichment || deriveIsNsfwFromMetadata(value) !== true) {
+        continue;
+      }
+
+      const review = (value as { nsfwDetection?: { review?: { isNsfw?: unknown } } }).nsfwDetection?.review;
+      if (review?.isNsfw === true) {
+        marked.push(assetId);
+      } else if (!review) {
+        detected.push(assetId);
+      }
+    }
+
+    await this.lockAssets(auth, marked, AssetLockReason.Marked);
+    if (detected.length > 0) {
+      const { machineLearning } = await this.getConfig({ withCache: true });
+      if (isNsfwHidingEnabled(machineLearning)) {
+        const locked = await this.assetRepository.lock(detected, AssetLockReason.Detected, null);
+        if (locked.length > 0) {
+          await this.afterAssetsLocked(locked);
+        }
+      }
+    }
   }
 
   /**
@@ -554,7 +647,9 @@ export class AssetService extends BaseService {
     // 'ml-enrichment' items, so a malicious or curious user who writes
     // 'ml-enrichment' here cannot leave the boolean column out of sync with
     // the JSONB. See AssetRepository.syncIsNsfwForItems.
-    return this.assetRepository.upsertBulkMetadata(dto.items);
+    const result = await this.assetRepository.upsertBulkMetadata(dto.items);
+    await this.lockSensitiveMetadata(auth, dto.items);
+    return result;
   }
 
   async upsertMetadata(auth: AuthDto, id: string, dto: AssetMetadataUpsertDto): Promise<AssetMetadataResponseDto[]> {
@@ -571,7 +666,9 @@ export class AssetService extends BaseService {
 
     // See `upsertBulkMetadata` — the repository handles the asset.is_nsfw
     // sync for any 'ml-enrichment' items in the payload.
-    return this.assetRepository.upsertMetadata(id, dto.items);
+    const result = await this.assetRepository.upsertMetadata(id, dto.items);
+    await this.lockSensitiveMetadata(auth, dto.items.map((item) => ({ assetId: id, ...item })));
+    return result;
   }
 
   async getMetadataByKey(auth: AuthDto, id: string, key: string): Promise<AssetMetadataResponseDto> {

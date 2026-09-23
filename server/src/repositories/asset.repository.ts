@@ -21,6 +21,7 @@ import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetMetadataKey,
   AssetOrder,
   AssetOrderBy,
@@ -51,7 +52,6 @@ import {
   hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
-  isLockedAsset,
   isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
@@ -74,8 +74,16 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
-import { onLockedStateChanged, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
-import { getLockedAssetIds, isLockingVisibility } from 'src/utils/locked-state.js';
+import {
+  effectiveVisibility,
+  isLocked,
+  isNotLocked,
+  isTimelineVisible,
+  lockReasonOf,
+  lockedForReason,
+  visibilityIs,
+} from 'src/utils/locked.js';
+import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -138,6 +146,13 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    * elevated session, looking at an album (see `withAlbumVisibility`). Never set for the main timeline.
    */
   lockedOwnerId?: string;
+  /** FL-34: with `visibility: locked`, only assets locked for one of these reasons. */
+  lockReasons?: AssetLockReason[];
+  /**
+   * FL-34: the owner whose own sensitive marks and detections an ordinary timeline reveals — the viewer,
+   * in an elevated session ("Revealed for this session"). Never set for albums or the Locked view.
+   */
+  revealLockedOwnerId?: string;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -583,11 +598,18 @@ export class AssetRepository {
     });
   }
 
-  async create(asset: Insertable<AssetTable>) {
+  /**
+   * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
+   * in the same transaction, so the asset is never listed unlocked, not even for a moment.
+   */
+  async create(asset: Insertable<AssetTable>, lock?: { reason: AssetLockReason; lockedBy: string | null }) {
     return this.db.transaction().execute(async (tx) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       await this.forkPrivacy.mirrorFromLegacy(result.id, tx);
       await this.forkEnrichment.initialize([result.id], tx);
+      if (lock) {
+        await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
+      }
       return result;
     });
   }
@@ -635,7 +657,7 @@ export class AssetRepository {
         'asset_exif.country as country',
       ])
       .where('asset.ownerId', '=', ownerId)
-      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('asset.deletedAt', 'is', null)
       .where('asset.localDateTime', '>=', from)
       .where('asset.localDateTime', '<=', to)
@@ -676,7 +698,7 @@ export class AssetRepository {
             )`.as('dayRank'),
           ])
           .where('asset.ownerId', '=', ownerId)
-          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where(isTimelineVisible('asset'))
           .where('asset.deletedAt', 'is', null)
           .where(sql`date_part('year', (asset."localDateTime" at time zone 'UTC')::date)::int`, '=', year)
           .where((eb) =>
@@ -733,7 +755,7 @@ export class AssetRepository {
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
                 .where('asset.ownerId', '=', anyUuid(ownerIds))
-                .where('asset.visibility', '=', AssetVisibility.Timeline)
+                .where(isTimelineVisible('asset'))
                 .where((eb) =>
                   eb.exists((qb) =>
                     qb
@@ -761,10 +783,15 @@ export class AssetRepository {
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {
-    return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
   }
 
-  /** Which of these assets sit in the Locked folder, whoever owns them. */
+  /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
   @ChunkedSet()
   async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
@@ -772,12 +799,167 @@ export class AssetRepository {
     }
 
     const rows = await this.db
+      .selectFrom('asset_lock')
+      .select('asset_lock.assetId')
+      .where('asset_lock.assetId', '=', anyUuid(ids))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
+  @ChunkedArray()
+  getLockReasons(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('asset_lock')
+      .select(['asset_lock.assetId', 'asset_lock.reason', 'asset_lock.lockedAt'])
+      .where('asset_lock.assetId', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /**
+   * Locks assets (FL-34). A lock is metadata: albums, favourites, tags, faces, stack and the stored
+   * visibility are left as they are, and every read except the owner's elevated session stops showing
+   * the asset. Stacks and live photos lock as a whole: every member of a stack and both parts of a live
+   * photo lock with any one of them. An asset that is already locked keeps its lock and reason.
+   *
+   * In the same transaction every cover, featured photo and face thumbnail the newly locked assets
+   * were is released (FL-53, `releaseLockedCoverReferences`), and the assets are touched so clients
+   * that sync learn of the change. Returns the ids this call locked, for the caller to queue the
+   * released face thumbnails and sidecar writes.
+   */
+  async lock(ids: string[], reason: AssetLockReason, lockedBy: string | null): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
+  }
+
+  /** `lock` inside the caller's transaction `tx`. */
+  private async lockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reason: AssetLockReason,
+    lockedBy: string | null,
+  ): Promise<string[]> {
+    const targetIds = await this.getLockGroupIds(tx, ids);
+    if (targetIds.length === 0) {
+      return [];
+    }
+
+    const { rows } = await sql<{ assetId: string }>`
+      insert into asset_lock ("assetId", "reason", "lockedBy")
+      select target.id, ${reason}, ${lockedBy}::uuid
+      from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
+      on conflict ("assetId") do nothing
+      returning "assetId"
+    `.execute(tx);
+    const lockedIds = rows.map(({ assetId }) => assetId);
+    if (lockedIds.length > 0) {
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
+      await releaseLockedCoverReferences(tx, lockedIds);
+    }
+
+    return lockedIds;
+  }
+
+  /**
+   * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
+   * (FL-34): what "hide sensitive detections" locks when it is switched on. The source follows the
+   * fork schema phase like `nsfwAssetIdExists` (`asset.is_nsfw` until the cutover, the privacy sidecar
+   * once it is `active`), but only positive evidence counts: an asset with no privacy row, which the
+   * fail-closed read predicate treats as sensitive, is never locked by this. A manual review, either
+   * way, is the owner's and is left alone.
+   */
+  async getUnlockedDetectionIds(): Promise<string[]> {
+    const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
-      .where('asset.id', '=', anyUuid(ids))
-      .where((eb) => isLockedAsset(eb))
+      .where(sql<boolean>`case
+        when coalesce((select phase from immich_fork.state where id = 1), 'inactive') = 'active' then exists (
+          select 1
+          from immich_fork.asset_privacy as privacy_asset
+          where privacy_asset."assetId" = asset.id
+            and privacy_asset."isNsfw" = true
+        )
+        else asset.is_nsfw = true
+      end`)
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('asset_metadata')
+              .select('asset_metadata.assetId')
+              .whereRef('asset_metadata.assetId', '=', 'asset.id')
+              .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+              .where(sql`asset_metadata.value #> '{nsfwDetection,review}'`, 'is not', null),
+          ),
+        ),
+      )
       .execute();
-    return new Set(rows.map(({ id }) => id));
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
+   * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
+   * been locked.
+   */
+  async unlock(ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.inTransaction(async (tx) => {
+      const targetIds = await this.getLockGroupIds(tx, ids);
+      if (targetIds.length === 0) {
+        return [];
+      }
+
+      const unlocked = await tx
+        .deleteFrom('asset_lock')
+        .where('asset_lock.assetId', '=', anyUuid(targetIds))
+        .returning(['asset_lock.assetId', 'asset_lock.reason'])
+        .execute();
+      if (unlocked.length > 0) {
+        const unlockedIds = unlocked.map(({ assetId }) => assetId);
+        await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
+      }
+
+      return unlocked;
+    });
+  }
+
+  /**
+   * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
+   * are, every member of their stacks, and the video parts of all of those.
+   */
+  private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      with direct as (
+        select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
+        union
+        select still.id, still."stackId" from asset as still where still."livePhotoVideoId" = ${anyUuid(ids)}
+      ),
+      grouped as (
+        select direct.id from direct
+        union
+        select member.id from asset as member inner join direct on member."stackId" = direct."stackId"
+      )
+      select grouped.id from grouped
+      union
+      select asset."livePhotoVideoId" as id
+      from asset
+      inner join grouped on grouped.id = asset.id
+      where asset."livePhotoVideoId" is not null
+    `.execute(db);
+    return rows.map(({ id }) => id);
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
@@ -786,6 +968,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .select(withFacesAndPeople({ viewingUserId }))
       .select(withTags)
       .$call(withExif)
@@ -895,6 +1078,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
       .$if(!!faces, (qb) =>
@@ -931,6 +1115,8 @@ export class AssetRepository {
                     .whereRef('stacked.id', '!=', 'stack.primaryAssetId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs never rides along
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .groupBy('stack.id')
                     .as('stacked_assets'),
                 (join) => join.on('stack.id', 'is not', null),
@@ -952,20 +1138,18 @@ export class AssetRepository {
       return;
     }
 
-    const { visibility } = options;
-    if (visibility === undefined) {
-      await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+    // `locked` is never stored (FL-34): it is a lock record. `AssetService` translates a request for
+    // it before it gets here; any other caller that still asks gets the lock, and nothing is stored.
+    if (options.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = options;
+      if (!isEmpty(omitBy(rest, isUndefined))) {
+        await this.db.updateTable('asset').set(rest).where('id', '=', anyUuid(ids)).execute();
+      }
+      await this.lock(ids, AssetLockReason.Marked, null);
       return;
     }
 
-    // Moving into or out of the Locked folder moves whole stacks, and a Locked photo is never a cover
-    // (FL-53): the rest of each stack follows and every cover, featured photo and face thumbnail is
-    // released, in the same transaction.
-    await this.inTransaction(async (tx) => {
-      const wereLocked = isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, ids);
-      await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
-      await onLockedStateChanged(tx, visibility, ids, wereLocked);
-    });
+    await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
   }
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
@@ -987,7 +1171,15 @@ export class AssetRepository {
     return rows.map(({ id }) => id);
   }
 
-  async update(asset: Updateable<AssetTable> & { id: string }) {
+  async update(input: Updateable<AssetTable> & { id: string }) {
+    let asset = input;
+    // `locked` is never stored (FL-34); see `updateAll`
+    if (input.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = input;
+      await this.lock([input.id], AssetLockReason.Marked, null);
+      asset = rest;
+    }
+
     const value = omitBy(asset, isUndefined);
     delete value.id;
     if (isEmpty(value)) {
@@ -1004,25 +1196,14 @@ export class AssetRepository {
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
 
-    const { visibility, stackId } = asset;
-    if (visibility === undefined && !stackId) {
+    if (!asset.stackId) {
       return updateAndSelect(this.db);
     }
 
-    // Moving into or out of the Locked folder moves the whole stack, a stack that holds a Locked photo
-    // is Locked as a whole, and a Locked photo is never a cover (FL-53): the rest of the stack follows
-    // and every cover, featured photo and face thumbnail is released, in the same transaction and as
-    // separate statements so the change is visible to them.
+    // a stack that holds a locked photo is locked as a whole (FL-53, FL-34): joining one locks the rest
     return this.inTransaction(async (tx) => {
-      const wereLocked =
-        visibility === undefined || isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, [asset.id]);
       const updated = await updateAndSelect(tx);
-      if (visibility !== undefined) {
-        await onLockedStateChanged(tx, visibility, [asset.id], wereLocked);
-      }
-      if (stackId) {
-        await onStacksJoined(tx, [stackId]);
-      }
+      await onStacksJoined(tx, [asset.stackId!]);
       return updated;
     });
   }
@@ -1151,7 +1332,7 @@ export class AssetRepository {
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
       .where('ownerId', '=', asUuid(ownerId))
       .$if(visibility === undefined, withDefaultVisibility)
-      .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
+      .$if(!!visibility, (qb) => qb.where(visibilityIs(visibility!, 'asset')))
       .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1219,7 +1400,12 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!!options.visibility, (qb) =>
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+          )
+          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+            qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
           // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
           .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
             qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
@@ -1306,7 +1492,7 @@ export class AssetRepository {
           .select((eb) => [
             'asset.duration',
             'asset.id',
-            'asset.visibility',
+            effectiveVisibility('asset').as('visibility'),
             sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
@@ -1330,6 +1516,9 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
+            qb.select(lockReasonOf('asset').as('lockReason')),
+          )
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
           .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
@@ -1340,7 +1529,12 @@ export class AssetRepository {
           )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!!options.visibility, (qb) =>
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+          )
+          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+            qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
           // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
           .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
             qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
@@ -1400,6 +1594,8 @@ export class AssetRepository {
                     .whereRef('stacked.stackId', '=', 'asset.stackId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs is never counted
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .$call((qb) => withHiddenContentFilter(qb, options, 'stacked'))
                     .groupBy('stacked.stackId')
                     .as('stacked_assets'),
@@ -1438,6 +1634,9 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),
+          )
           .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
             qb.select((eb) => [
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
@@ -1479,7 +1678,7 @@ export class AssetRepository {
       .select(['assetId as data', 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
       .where('ownerId', '=', asUuid(ownerId))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1496,7 +1695,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
-      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1790,8 +1989,8 @@ export class AssetRepository {
       .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
       .where('asset.type', '=', sql.lit(AssetType.Image))
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .$call(withDefaultVisibility)
+      // stored visibility only, like the job: background work includes locked media (FL-34)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.exists(
           eb

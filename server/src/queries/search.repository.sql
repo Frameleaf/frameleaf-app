@@ -34,7 +34,14 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."visibility" != 'locked'
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -55,7 +62,14 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."visibility" != 'locked'
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -96,7 +110,14 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."visibility" != 'locked'
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -142,7 +163,14 @@ from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."visibility" != 'locked'
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])
@@ -165,7 +193,14 @@ from
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
   inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
 where
-  "asset"."visibility" != 'locked'
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."fileCreatedAt" >= $1
   and "asset_exif"."lensModel" = $2
   and "asset"."ownerId" = any ($3::uuid[])

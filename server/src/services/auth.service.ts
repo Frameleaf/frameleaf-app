@@ -27,7 +27,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
-import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -267,8 +266,10 @@ export class AuthService extends BaseService {
       throw new ForbiddenException(`Missing required permission: ${requestedPermission}`);
     }
 
-    const { machineLearning } = await this.getConfig({ withCache: true });
-    const hiddenContent = await this.getHiddenContentFilter(authDto, isNsfwHidingEnabled(machineLearning));
+    // FL-34: sensitive media is hidden by its lock record (`src/utils/locked.ts`), which every read
+    // applies, so it is no longer part of this per-session filter: anything hidden while locked is in
+    // the Locked view. The filter keeps the owner's own suppressed people, tags and pets.
+    const hiddenContent = await this.getHiddenContentFilter(authDto, false);
     if (hasHiddenContentFilter(hiddenContent)) {
       authDto.suppressedContent = hiddenContent;
     }

@@ -1,7 +1,16 @@
 import { createHash } from 'node:crypto';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
-import { AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  JobStatus,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
@@ -594,6 +603,269 @@ describe(ImageEnrichmentService.name, () => {
       undefined,
     );
     expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: assetId } });
+  });
+
+  describe('the sensitive mark is the lock (FL-34)', () => {
+    const detectedMetadata = {
+      key: AssetMetadataKey.MlEnrichment,
+      updatedAt: new Date(),
+      value: {
+        nsfwDetection: {
+          status: 'success',
+          modelName: 'onnx-community/nsfw_image_detection-ONNX',
+          updatedAt: '2026-05-05T00:00:00.000Z',
+          result: { isNsfw: true, score: 0.95, labels: { explicit: 0.95 } },
+        },
+      },
+    };
+
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.getById.mockResolvedValue({ id: assetId, ownerId, exifInfo: { description: '' }, tags: [] } as never);
+    });
+
+    it('locks an asset its owner marks sensitive, as their own lock', async () => {
+      mocks.asset.lock.mockResolvedValue([assetId]);
+
+      await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Marked, authStub.admin.user.id);
+      // what a locked photo may no longer be is released and followed up
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
+    });
+
+    it('needs the unlocked session to mark a locked asset safe', async () => {
+      mocks.asset.getById.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        isLocked: true,
+        exifInfo: { description: '' },
+        tags: [],
+      } as never);
+
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkSafe }),
+      ).rejects.toThrow('Elevated permission is required');
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('unlocks a locked asset marked safe in the unlocked session', async () => {
+      mocks.asset.getById.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        isLocked: true,
+        exifInfo: { description: '' },
+        tags: [],
+      } as never);
+      mocks.asset.getMetadataByKey.mockResolvedValue(detectedMetadata);
+
+      await sut.updateAssetEnrichment(authStub.adminWithElevatedPermission, assetId, {
+        action: AssetImageEnrichmentAction.MarkSafe,
+      });
+
+      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId]);
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('locks a new detection as detected when hiding sensitive detections is on', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: false },
+        },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.95, labels: { explicit: 0.95 } });
+
+      await expect(sut.handleNsfwDetection({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null);
+    });
+
+    it('never locks a detection while hiding sensitive detections is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { enabled: true }, imageDescription: { enabled: false } },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.95, labels: { explicit: 0.95 } });
+
+      await sut.handleNsfwDetection({ id: assetId });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('lets the owner review win over a later detection', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: false },
+        },
+      });
+      mocks.asset.getMetadataByKey.mockResolvedValue({
+        ...detectedMetadata,
+        value: {
+          nsfwDetection: {
+            ...detectedMetadata.value.nsfwDetection,
+            review: { action: 'marked-safe', isNsfw: false, reviewedAt: '2026-09-22T00:00:00Z', reviewedBy: ownerId },
+          },
+        },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.99, labels: { explicit: 0.99 } });
+
+      await sut.handleNsfwDetection({ id: assetId });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('never unlocks when a detection comes back safe', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: false },
+        },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: false, score: 0.01, labels: { normal: 0.99 } });
+
+      await sut.handleNsfwDetection({ id: assetId });
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('unlocks only in the unlocked session', async () => {
+      await expect(sut.unlockAssets(authStub.admin, { ids: [assetId] })).rejects.toThrow(
+        'Elevated permission is required',
+      );
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+    });
+
+    it('records the owner review as safe when unlocking what the check counts as sensitive', async () => {
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Detected }]);
+      mocks.asset.getMetadataByKey.mockResolvedValue(detectedMetadata);
+
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+
+      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId]);
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
+        assetId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            value: expect.objectContaining({
+              nsfwDetection: expect.objectContaining({
+                review: expect.objectContaining({ action: 'marked-safe', isNsfw: false }),
+              }),
+            }),
+          }),
+        ]),
+        undefined,
+      );
+    });
+
+    it('records the owner review even when the check never counted the item as sensitive', async () => {
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+      mocks.asset.getMetadataByKey.mockResolvedValue(undefined);
+
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+
+      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId]);
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
+        assetId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            value: expect.objectContaining({
+              nsfwDetection: expect.objectContaining({
+                review: expect.objectContaining({ action: 'marked-safe', isNsfw: false }),
+              }),
+            }),
+          }),
+        ]),
+        undefined,
+      );
+    });
+
+    it('locks earlier unreviewed detections when hiding sensitive detections is switched on', async () => {
+      mocks.asset.getUnlockedDetectionIds.mockResolvedValue([assetId]);
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      const oldConfig = { ...defaults, machineLearning: { ...defaults.machineLearning } };
+      const newConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigUpdate({ oldConfig, newConfig });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null);
+    });
+
+    it('unlocks nothing when hiding sensitive detections is switched off', async () => {
+      const oldConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigUpdate({ oldConfig, newConfig: defaults });
+
+      expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: false,
+      });
+    });
+
+    it('locks unreviewed detections on start when hiding is on and was not before', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.asset.getUnlockedDetectionIds.mockResolvedValue([assetId]);
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      const newConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigInit({ newConfig });
+
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState);
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: true,
+      });
+    });
+
+    it('locks nothing on start when hiding was already on', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ hideFromLibrary: true });
+      const newConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigInit({ newConfig });
+
+      expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('only remembers the setting on start when hiding is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      await sut.onConfigInit({ newConfig: defaults });
+
+      expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: false,
+      });
+    });
   });
 
   it('should clear previously applied NSFW tags when a rerun detects the asset as safe', async () => {

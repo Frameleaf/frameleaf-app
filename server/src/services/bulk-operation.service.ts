@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
-import { AssetBulkUpdateDto, AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
+import { AssetBulkUpdateDto } from 'src/dtos/asset.dto.js';
 import {
   ImmichWorker,
   MediaOperationBulkAction,
@@ -130,9 +130,10 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  *   sensitive items the owner submitted are changed, not skipped. Ownership, album and tag access
  *   are still checked for every item and every batch. The Locked folder's PIN is enforced where it
  *   belongs, at submit: a job that includes Locked items can only be queued from an unlocked
- *   session (see `MediaOperationService.createBulk`).
- * - **Sensitive marking is metadata.** It goes through the enrichment review action, which writes
- *   the manual mark and its tags; no visibility change, no album write, no move to Locked.
+ *   session (see `MediaOperationService.createBulk`). A job queued without the PIN skips any item
+ *   that was locked after it was queued; nothing but Unmark Sensitive ever removes a lock.
+ * - **Sensitive marking is the lock** (FL-34). Mark Sensitive writes a lock record and Unmark
+ *   Sensitive removes it: no visibility change, no album write, no enrichment tags.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
  * - **A worker that dies** leaves an in-flight marker, and the next claim applies that batch again.
  *   Every action is safe to repeat. The relative date shift is made so: before a batch is marked in
@@ -601,6 +602,20 @@ export class BulkOperationService {
       }
     }
 
+    // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
+    // locked stack or live photo) is only changed by a job submitted from an unlocked session.
+    if (!snapshot.elevated && allowed.length > 0) {
+      const locked = await this.operations.getLockedAssetIds(allowed);
+      if (locked.size > 0) {
+        for (const id of allowed) {
+          if (locked.has(id)) {
+            outcomes.push({ id, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' });
+          }
+        }
+        allowed = allowed.filter((id) => !locked.has(id));
+      }
+    }
+
     if (allowed.length === 0) {
       return outcomes;
     }
@@ -663,19 +678,16 @@ export class BulkOperationService {
         break;
       }
 
-      case MediaOperationBulkAction.MarkSensitive:
+      case MediaOperationBulkAction.MarkSensitive: {
+        // Mark Sensitive is the lock (FL-34): a lock record for each item, its stack and live photo.
+        // Album membership and the stored visibility are not touched.
+        outcomes.push(...(await this.inLists(allowed, (ids) => this.assets.lock(auth, { ids }))));
+        break;
+      }
+
       case MediaOperationBulkAction.UnmarkSensitive: {
-        // Metadata only: the manual review mark and its tags. Album membership, visibility and the
-        // Locked folder are not touched.
-        const enrichment =
-          action === MediaOperationBulkAction.MarkSensitive
-            ? AssetImageEnrichmentAction.MarkNsfw
-            : AssetImageEnrichmentAction.MarkSafe;
-        outcomes.push(
-          ...(await this.oneAtATime(allowed, async (id) => {
-            await this.enrichment.updateAssetEnrichment(auth, id, { action: enrichment });
-          })),
-        );
+        // Unlock, which also records the owner's review so a later detection never locks it again.
+        outcomes.push(...(await this.inLists(allowed, (ids) => this.enrichment.unlockAssets(auth, { ids }))));
         break;
       }
 
@@ -797,26 +809,6 @@ export class BulkOperationService {
       );
     }
 
-    return outcomes;
-  }
-
-  /** The endpoints that take one asset per call, with bounded concurrency. */
-  private async oneAtATime(ids: string[], send: (id: string) => Promise<void>): Promise<Outcome[]> {
-    const outcomes: Outcome[] = [];
-    let cursor = 0;
-    const lane = async () => {
-      while (cursor < ids.length) {
-        const id = ids[cursor++];
-        try {
-          await send(id);
-          outcomes.push(ok(id));
-        } catch (error) {
-          outcomes.push(refused(id, error));
-        }
-      }
-    };
-
-    await Promise.all(Array.from({ length: Math.min(BULK_ITEM_CONCURRENCY, ids.length) }, () => lane()));
     return outcomes;
   }
 

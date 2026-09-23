@@ -111,8 +111,13 @@ describe('viewerMenuGroups', () => {
       const ids = idsOf(baseContext({ isOwner: false, hasAlbumContext: true, canEditAlbum: false }));
       expect(ids).not.toContain('remove-from-album');
       expect(ids).not.toContain('archive');
-      expect(ids).not.toContain('mark-sensitive');
       expect(ids).not.toContain('set-visibility-locked');
+    });
+
+    it('offers one Locked entry, Mark or Unmark Sensitive, to the owner (FL-34)', () => {
+      expect(idsOf(baseContext())).toContain('set-visibility-locked');
+      expect(idsOf(baseContext({ isLocked: true }))).toContain('set-visibility-locked');
+      expect(VIEWER_ACTIONS).not.toContain('mark-sensitive' as never);
     });
 
     it('keeps add to album but hides archive for a locked asset', () => {

@@ -21,7 +21,6 @@
   import SetVisibilityAction from '$lib/components/asset-viewer/actions/SetVisibilityAction.svelte';
   import UnstackAction from '$lib/components/asset-viewer/actions/UnstackAction.svelte';
   import ViewerMenuGroupLabel from '$lib/components/frameleaf/ViewerMenuGroupLabel.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
   import { folderOf } from '$lib/frameleaf/viewer-headline';
   import { isImageAsset, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { viewerMenuGroups, type ViewerActionId, type ViewerMenuGroup } from '$lib/frameleaf/viewer-menu';
@@ -138,12 +137,6 @@
   {/if}
   {#if has(group, 'archive') || has(group, 'unarchive')}
     <ArchiveAction {asset} {onAction} {preAction} />
-  {/if}
-  {#if has(group, 'mark-sensitive')}
-    <MarkNsfwAction menuItem assetIds={[asset.id]} clearSelection={false} />
-  {/if}
-  {#if has(group, 'unmark-sensitive')}
-    <MarkNsfwAction menuItem markSafe assetIds={[asset.id]} clearSelection={false} />
   {/if}
   {#if has(group, 'set-visibility-locked')}
     <SetVisibilityAction asset={toTimelineAsset(asset)} {onAction} {preAction} />

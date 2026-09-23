@@ -269,11 +269,28 @@ export class MediaOperationRepository {
   }
 
   /**
-   * How many of these assets are the owner's and sit in the Locked folder (FL-32).
+   * How many of these assets are the owner's and locked (FL-32; FL-34: the lock record).
    *
    * The bulk worker acts on Locked items, so the Locked folder's PIN is enforced when the job is
    * submitted: a session that has not been unlocked may not queue a job that reaches them.
    */
+  /**
+   * Which of these assets are locked right now (FL-34). The bulk worker skips them for a job that
+   * was submitted without the PIN: something may have locked them after the job was queued.
+   */
+  async getLockedAssetIds(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset_lock')
+      .select('asset_lock.assetId')
+      .where('asset_lock.assetId', '=', anyUuid(assetIds))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
   async countLockedAssets(ownerId: string, assetIds: string[]): Promise<number> {
     if (assetIds.length === 0) {
       return 0;

@@ -1,6 +1,5 @@
 import {
   addAssetsToAlbum,
-  AssetImageEnrichmentAction,
   AssetJobName,
   AssetVisibility,
   bulkTagAssets,
@@ -9,6 +8,7 @@ import {
   createStack,
   deleteAssets,
   deleteStacks,
+  lockAssets,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationStatus,
@@ -20,10 +20,10 @@ import {
   searchAssets,
   searchSmart,
   SharedLinkType,
+  unlockAssets,
   untagAssets,
   updateAlbumInfo,
   updateAsset,
-  updateAssetImageEnrichment,
   updateAssets,
   upsertTags,
   type BulkIdResponseDto,
@@ -130,6 +130,18 @@ export type BulkRunContext = {
   currentUserId?: string;
   /** Owners of the selected assets, when the caller has them loaded. */
   ownerById?: Record<string, string>;
+  /** The view the action runs from, for what leaves it afterwards (FL-34). */
+  view?: BulkView;
+};
+
+/**
+ * The view a bulk action runs from (FL-34), as far as Locked items go: whether it is the Locked view,
+ * and whether it reveals the owner's marked and detected items to an unlocked session (the main
+ * timeline, `revealsLocks`).
+ */
+export type BulkView = {
+  isLocked: boolean;
+  revealsLocks: boolean;
 };
 
 export type BulkRunOptions = {
@@ -147,7 +159,9 @@ export type BulkRunOptions = {
 export type BulkGateway = {
   updateAssets: typeof updateAssets;
   updateAsset: typeof updateAsset;
-  updateAssetImageEnrichment: typeof updateAssetImageEnrichment;
+  /** Lock and Unlock (FL-34). */
+  lockAssets: typeof lockAssets;
+  unlockAssets: typeof unlockAssets;
   addAssetsToAlbum: typeof addAssetsToAlbum;
   removeAssetFromAlbum: typeof removeAssetFromAlbum;
   updateAlbumInfo: typeof updateAlbumInfo;
@@ -176,7 +190,8 @@ export const createBulkGateway = (
 ): BulkGateway => ({
   updateAssets,
   updateAsset,
-  updateAssetImageEnrichment,
+  lockAssets,
+  unlockAssets,
   addAssetsToAlbum,
   removeAssetFromAlbum,
   updateAlbumInfo,
@@ -657,15 +672,6 @@ export const runBulkAction = async (
       }
     }
 
-    /* PUT /assets — the Locked folder is a visibility, exactly as the legacy action set it. */
-    case 'move-to-locked':
-    case 'remove-from-locked': {
-      const visibility = action === 'move-to-locked' ? AssetVisibility.Locked : AssetVisibility.Timeline;
-      return finish(
-        await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, visibility } })),
-      );
-    }
-
     /* PUT /assets/:id — the Live Photo link lives on the still, one asset at a time. */
     case 'link-live-photo': {
       const photoId = String(requirePayload(payload, 'photoId'));
@@ -689,22 +695,17 @@ export const runBulkAction = async (
       );
     }
 
-    /* PUT /assets/:id/image-enrichment — metadata only; album membership is untouched. */
-    case 'mark-sensitive':
+    /*
+     * POST /assets/lock and /assets/unlock — Mark Sensitive is the lock (FL-34): a lock record, never a
+     * visibility or an album change. Only Unmark is undone here: undoing a mark would need the PIN.
+     */
+    case 'mark-sensitive': {
+      return finish(await runInChunks(runner, (batch) => gateway.lockAssets({ bulkIdsDto: { ids: batch } })));
+    }
     case 'unmark-sensitive': {
-      const enrichment =
-        action === 'mark-sensitive' ? AssetImageEnrichmentAction.MarkNsfw : AssetImageEnrichmentAction.MarkSafe;
       return finish(
-        await runPerItem(runner, async (id) => {
-          await gateway.updateAssetImageEnrichment({
-            id,
-            assetImageEnrichmentActionRequestDto: { action: enrichment },
-          });
-        }),
-        (succeeded) => ({
-          action: action === 'mark-sensitive' ? 'unmark-sensitive' : 'mark-sensitive',
-          ids: succeeded,
-        }),
+        await runInChunks(runner, (batch) => gateway.unlockAssets({ bulkIdsDto: { ids: batch } })),
+        (succeeded) => ({ action: 'mark-sensitive', ids: succeeded }),
       );
     }
 
@@ -1052,12 +1053,25 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
   'delete-permanently',
   'restore',
   'remove-from-album',
-  // Both directions of the Locked folder move the asset out of the destination it was run from.
-  'move-to-locked',
-  'remove-from-locked',
 ]);
 
-export const removesFromView = (action: BulkActionId): boolean => REMOVES_FROM_VIEW.has(action);
+/**
+ * Whether a finished item has left `view`. Marking sensitive (FL-34) hides an item everywhere except
+ * the Locked view and a view that reveals the owner's marks, where it stays; unmarking only takes it
+ * out of the Locked view.
+ */
+export const removesFromView = (
+  action: BulkActionId,
+  view: BulkView = { isLocked: false, revealsLocks: false },
+): boolean => {
+  if (action === 'mark-sensitive') {
+    return !view.isLocked && !view.revealsLocks;
+  }
+  if (action === 'unmark-sensitive') {
+    return view.isLocked;
+  }
+  return REMOVES_FROM_VIEW.has(action);
+};
 
 /**
  * Where one item of a durable job stands, as the page shows it.

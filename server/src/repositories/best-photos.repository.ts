@@ -19,6 +19,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
@@ -166,6 +167,7 @@ export class BestPhotosRepository {
         sql.lit(AssetVisibility.Timeline),
         ...(options.includeArchived ? [sql.lit(AssetVisibility.Archive)] : []),
       ])
+      .where(isNotLocked('asset'))
       .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
       .$if(options.minScore !== undefined, (qb) => qb.where('asset_best_photo_score.score', '>=', options.minScore!))
       .$call((qb) => withHiddenContentFilter(qb, options));

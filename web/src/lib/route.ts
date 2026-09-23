@@ -116,7 +116,8 @@ export const Route = {
   viewBestPhotosAsset: ({ id }: { id: string }) => `/best-photos/photos/${id}`,
   archive: () => '/archive',
   favorites: () => '/favorites',
-  locked: () => '/locked',
+  // FL-34: `reason` narrows the Locked view by why items are locked; left out, it shows them all
+  locked: (params?: { reason?: string }) => '/locked' + asQueryString(params),
   suppressed: (params?: { tab?: 'timeline' | 'albums' }) => '/suppressed' + asQueryString(params),
   suppressedAlbum: ({ id }: { id: string }) => `/suppressed/albums/${id}`,
   trash: () => '/trash',

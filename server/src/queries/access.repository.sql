@@ -182,7 +182,14 @@ where
   )
   and "user"."id" = $2
   and "album"."deletedAt" is null
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 
 -- AccessRepository.asset.checkOwnerAccess
 select
@@ -202,7 +209,14 @@ where
         "asset" as "lockedStill"
       where
         "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and "lockedStill"."visibility" = 'locked'
+        and exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "lockedStill"."id"
+        )
     )
   )
 
@@ -231,7 +245,14 @@ where
         "asset" as "lockedStill"
       where
         "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and "lockedStill"."visibility" = 'locked'
+        and exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "lockedStill"."id"
+        )
     )
   )
 
@@ -248,11 +269,25 @@ from
   left join "shared_link_asset" on "shared_link_asset"."sharedLinkId" = "shared_link"."id"
   left join "asset" on "asset"."id" = "shared_link_asset"."assetId"
   and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   left join "album_asset" on "album_asset"."albumId" = "album"."id"
   left join "asset" as "albumAssets" on "albumAssets"."id" = "album_asset"."assetId"
   and "albumAssets"."deletedAt" is null
-  and "albumAssets"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "albumAssets"."id"
+  )
 where
   "shared_link"."id" = $1
   and array[
@@ -279,7 +314,14 @@ where
         "asset" as "lockedStill"
       where
         "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and "lockedStill"."visibility" = 'locked'
+        and exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "lockedStill"."id"
+        )
     )
   )
   and "asset"."ownerId" = $2
@@ -561,7 +603,14 @@ from
 where
   "asset_face"."id" in ($1)
   and "asset"."ownerId" = $2
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false

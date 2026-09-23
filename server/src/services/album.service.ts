@@ -22,13 +22,14 @@ import {
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumKind, AlbumUserRole, AssetVisibility, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
@@ -660,7 +661,7 @@ export class AlbumService extends BaseService {
    */
   private async requireNotOwnLockedCover(auth: AuthDto, assetId: string): Promise<void> {
     const asset = await this.assetRepository.getById(assetId);
-    if (asset && asset.ownerId === auth.user.id && asset.visibility === AssetVisibility.Locked) {
+    if (asset && asset.ownerId === auth.user.id && isLockedRow(asset)) {
       throw new BadRequestException('A Locked photo cannot be an album cover');
     }
   }

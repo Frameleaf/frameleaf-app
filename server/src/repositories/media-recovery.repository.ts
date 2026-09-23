@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import {
+  AssetLockReason,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -159,7 +160,7 @@ export class MediaRecoveryRepository {
           ELSE COALESCE(s.sha1 = ${verified.sha1} AND s.sha256 = ${verified.sha256}, false)
         END AS "matchesContent",
         (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
-        (a.visibility = 'locked' OR ${hidden}) AS hidden,
+        (a.visibility = 'locked' OR EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
         EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
           WHERE h."assetId" = a.id AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
@@ -409,10 +410,18 @@ export class MediaRecoveryRepository {
               fileCreatedAt: createdAt,
               fileModifiedAt: createdAt,
               localDateTime: createdAt,
-              visibility: input.sourceHidden ? AssetVisibility.Locked : AssetVisibility.Timeline,
+              // a hidden source arrives locked (FL-34): a lock record, never a stored `locked` visibility
+              visibility: AssetVisibility.Timeline,
               status: AssetStatus.Active,
             })
             .execute();
+          if (input.sourceHidden) {
+            await trx
+              .insertInto('asset_lock')
+              .values({ assetId, reason: AssetLockReason.Marked, lockedBy: null })
+              .onConflict((oc) => oc.column('assetId').doNothing())
+              .execute();
+          }
           await this.forkPrivacy.mirrorFromLegacy(assetId, trx);
           await this.forkEnrichment.initialize([assetId], trx);
         }

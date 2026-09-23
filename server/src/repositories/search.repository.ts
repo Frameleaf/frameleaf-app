@@ -32,6 +32,7 @@ import {
   withHiddenContentFilter,
   withSearchOrder,
 } from 'src/utils/database.js';
+import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface SearchAssetIdOptions {
@@ -299,6 +300,7 @@ export class SearchRepository {
     const orderDirection = (options.orderDirection?.toLowerCase() || 'desc') as OrderByDirection;
     const items = await searchAssetBuilderLegacy(this.db, options)
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .orderBy('asset.fileCreatedAt', orderDirection)
       .orderBy('asset.id', orderDirection)
       .limit(pagination.size + 1)
@@ -339,6 +341,7 @@ export class SearchRepository {
   async searchRandom(size: number, options: AssetSearchOptions) {
     return searchAssetBuilderLegacy(this.db, options)
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .orderBy(sql`random()`)
       .limit(size)
       .execute();
@@ -360,6 +363,7 @@ export class SearchRepository {
     const orderDirection = (options.orderDirection?.toLowerCase() || 'desc') as OrderByDirection;
     return searchAssetBuilderLegacy(this.db, options)
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .$call(withExifInner)
       .where('asset_exif.fileSizeInByte', '>', options.minFileSize || 0)
       .orderBy('asset_exif.fileSizeInByte', orderDirection)
@@ -389,6 +393,7 @@ export class SearchRepository {
       await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
       const items = await searchAssetBuilderLegacy(trx, options)
         .selectAll('asset')
+        .select(isLocked('asset').as('isLocked'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
         .orderBy(this.smartSearchOrder(options))
         .orderBy('asset.id', 'asc')
@@ -514,7 +519,7 @@ export class SearchRepository {
             .innerJoin('asset', (join) =>
               join
                 .onRef('asset.id', '=', 'pet_observation.assetId')
-                .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .on(isTimelineVisible('asset'))
                 .on('asset.deletedAt', 'is', null),
             )
             .whereRef('pet_observation.petId', '=', 'pet.id')
@@ -536,7 +541,7 @@ export class SearchRepository {
           .select(['city', 'assetId'])
           .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
           .where('asset.ownerId', '=', anyUuid(userIds))
-          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where(isTimelineVisible('asset'))
           .where('asset.type', '=', AssetType.Image)
           .where('asset.deletedAt', 'is', null)
           .$call((qb) => withHiddenContentFilter(qb, options))
@@ -553,7 +558,7 @@ export class SearchRepository {
                 .select(['city', 'assetId'])
                 .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
                 .where('asset.ownerId', '=', anyUuid(userIds))
-                .where('asset.visibility', '=', AssetVisibility.Timeline)
+                .where(isTimelineVisible('asset'))
                 .where('asset.type', '=', AssetType.Image)
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, options))
@@ -570,6 +575,7 @@ export class SearchRepository {
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .innerJoin('cte', 'asset.id', 'cte.assetId')
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .select((eb) =>
         eb
           .fn('to_jsonb', [eb.table('asset_exif')])
@@ -673,6 +679,7 @@ export class SearchRepository {
   async searchMetadataV3(pagination: PaginationOptions, options: AssetSearchBuilderV3Options, scope: AssetSearchScope) {
     const items = await withSearchOrder(searchAssetBuilder(this.db, options, scope), options.order)
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .limit(pagination.take + 1)
       .offset(pagination.skip ?? 0)
       .execute();
@@ -688,6 +695,7 @@ export class SearchRepository {
   ): Promise<MapAsset[]> {
     return searchAssetBuilder(this.db, options, scope)
       .select(columns.searchAsset)
+      .select(isLocked('asset').as('isLocked'))
       .orderBy(sql`random()`)
       .limit(size)
       .execute();
@@ -704,6 +712,7 @@ export class SearchRepository {
       await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
       const items = await searchAssetBuilder(trx, options, scope)
         .select(columns.searchAsset)
+        .select(isLocked('asset').as('isLocked'))
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
         .orderBy(this.smartSearchOrder(options))
         .orderBy('asset.id', 'asc')
@@ -771,7 +780,7 @@ export class SearchRepository {
       .distinctOn(field)
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .where('ownerId', '=', anyUuid(userIds))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(field, 'is not', null)
