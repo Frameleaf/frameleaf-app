@@ -5,7 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, SourceType, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -21,6 +21,7 @@ import {
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { effectiveVisibility, isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
@@ -249,7 +250,7 @@ export class PersonRepository {
         join
           .onRef('asset_face.assetId', '=', 'asset.id')
           .onRef('asset.ownerId', '=', 'person.ownerId')
-          .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+          .on(isTimelineVisible('asset'))
           .on('asset.deletedAt', 'is', null),
       )
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -357,7 +358,12 @@ export class PersonRepository {
           eb
             .selectFrom('asset')
             .innerJoin('user', 'user.id', 'asset.ownerId')
-            .select(['asset.ownerId', 'asset.visibility', 'asset.fileCreatedAt', 'user.clusterGroupId'])
+            .select([
+              'asset.ownerId',
+              effectiveVisibility('asset').as('visibility'),
+              'asset.fileCreatedAt',
+              'user.clusterGroupId',
+            ])
             .whereRef('asset.id', '=', 'asset_face.assetId'),
         ).as('asset'),
       )
@@ -440,7 +446,7 @@ export class PersonRepository {
             .innerJoin('asset', (join) =>
               join
                 .onRef('asset.id', '=', 'asset_face.assetId')
-                .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .on(isTimelineVisible('asset'))
                 .on('asset.deletedAt', 'is', null),
             )
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -474,7 +480,7 @@ export class PersonRepository {
       .leftJoin('asset', (join) =>
         join
           .onRef('asset.id', '=', 'asset_face.assetId')
-          .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+          .on(isTimelineVisible('asset'))
           .on('asset.deletedAt', 'is', null)
           .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
       )
@@ -507,7 +513,7 @@ export class PersonRepository {
                 eb
                   .selectFrom('asset')
                   .whereRef('asset.id', '=', 'asset_face.assetId')
-                  .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                  .where(isTimelineVisible('asset'))
                   .where('asset.deletedAt', 'is', null)
                   .$call((qb) => withHiddenContentFilter(qb, options)),
               ),
@@ -742,7 +748,7 @@ export class PersonRepository {
         .innerJoin('asset', (join) =>
           join
             .onRef('asset.id', '=', 'asset_face.assetId')
-            .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+            .on(isNotLocked('asset')),
         )
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
@@ -854,7 +860,7 @@ export class PersonRepository {
         .selectFrom('asset_face')
         .select('asset_face.id')
         // the caller refuses a Locked photo as a featured face (FL-53)
-        .select(['asset.ownerId', 'asset.visibility'])
+        .select(['asset.ownerId', effectiveVisibility('asset').as('visibility')])
         .where('asset_face.assetId', '=', assetId)
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)

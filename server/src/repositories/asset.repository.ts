@@ -20,6 +20,7 @@ import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetMetadataKey,
   AssetOrder,
   AssetOrderBy,
@@ -70,6 +71,14 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import {
+  effectiveVisibility,
+  isLocked,
+  isTimelineVisible,
+  lockReasonOf,
+  lockedForReason,
+  visibilityIs,
+} from 'src/utils/locked.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -128,6 +137,8 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    * elevated session, looking at an album (see `withAlbumVisibility`). Never set for the main timeline.
    */
   lockedOwnerId?: string;
+  /** FL-34: with `visibility: locked`, only assets locked for one of these reasons. */
+  lockReasons?: AssetLockReason[];
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -621,7 +632,7 @@ export class AssetRepository {
         'asset_exif.country as country',
       ])
       .where('asset.ownerId', '=', ownerId)
-      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('asset.deletedAt', 'is', null)
       .where('asset.localDateTime', '>=', from)
       .where('asset.localDateTime', '<=', to)
@@ -662,7 +673,7 @@ export class AssetRepository {
             )`.as('dayRank'),
           ])
           .where('asset.ownerId', '=', ownerId)
-          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where(isTimelineVisible('asset'))
           .where('asset.deletedAt', 'is', null)
           .where(sql`date_part('year', (asset."localDateTime" at time zone 'UTC')::date)::int`, '=', year)
           .where((eb) =>
@@ -719,7 +730,7 @@ export class AssetRepository {
                 .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
                 .where(sql`(asset."localDateTime" at time zone 'UTC')::date`, '=', sql`today.date`)
                 .where('asset.ownerId', '=', anyUuid(ownerIds))
-                .where('asset.visibility', '=', AssetVisibility.Timeline)
+                .where(isTimelineVisible('asset'))
                 .where((eb) =>
                   eb.exists((qb) =>
                     qb
@@ -747,10 +758,15 @@ export class AssetRepository {
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {
-    return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
   }
 
-  /** Which of these assets sit in the Locked folder, whoever owns them. */
+  /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
   @ChunkedSet()
   async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
@@ -758,12 +774,120 @@ export class AssetRepository {
     }
 
     const rows = await this.db
-      .selectFrom('asset')
-      .select('asset.id')
-      .where('asset.id', '=', anyUuid(ids))
-      .where('asset.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .selectFrom('asset_lock')
+      .select('asset_lock.assetId')
+      .where('asset_lock.assetId', '=', anyUuid(ids))
       .execute();
-    return new Set(rows.map(({ id }) => id));
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
+  @ChunkedArray()
+  getLockReasons(ids: string[]) {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('asset_lock')
+      .select(['asset_lock.assetId', 'asset_lock.reason', 'asset_lock.lockedAt'])
+      .where('asset_lock.assetId', '=', anyUuid(ids))
+      .execute();
+  }
+
+  /**
+   * Locks assets (FL-34). A lock is metadata: albums, favourites, tags, faces, stack and the stored
+   * visibility are left as they are, and every read except the owner's elevated session stops showing
+   * the asset. Stacks and live photos lock as a whole: every member of a stack and both parts of a live
+   * photo lock with any one of them. An asset that is already locked keeps its lock and reason.
+   *
+   * In the same transaction every cover, featured photo and face thumbnail the newly locked assets
+   * were is released (FL-53, `releaseLockedCoverReferences`), and the assets are touched so clients
+   * that sync learn of the change. Returns the ids this call locked, for the caller to queue the
+   * released face thumbnails and sidecar writes.
+   */
+  async lock(ids: string[], reason: AssetLockReason, lockedBy: string | null): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.inTransaction(async (tx) => {
+      const targetIds = await this.getLockGroupIds(tx, ids);
+      if (targetIds.length === 0) {
+        return [];
+      }
+
+      const { rows } = await sql<{ assetId: string }>`
+        insert into asset_lock ("assetId", "reason", "lockedBy")
+        select target.id, ${reason}, ${lockedBy}::uuid
+        from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
+        on conflict ("assetId") do nothing
+        returning "assetId"
+      `.execute(tx);
+      const lockedIds = rows.map(({ assetId }) => assetId);
+      if (lockedIds.length > 0) {
+        await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
+        await releaseLockedCoverReferences(tx, lockedIds);
+      }
+
+      return lockedIds;
+    });
+  }
+
+  /**
+   * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
+   * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
+   * been locked.
+   */
+  async unlock(ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.inTransaction(async (tx) => {
+      const targetIds = await this.getLockGroupIds(tx, ids);
+      if (targetIds.length === 0) {
+        return [];
+      }
+
+      const unlocked = await tx
+        .deleteFrom('asset_lock')
+        .where('asset_lock.assetId', '=', anyUuid(targetIds))
+        .returning(['asset_lock.assetId', 'asset_lock.reason'])
+        .execute();
+      if (unlocked.length > 0) {
+        const unlockedIds = unlocked.map(({ assetId }) => assetId);
+        await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
+      }
+
+      return unlocked;
+    });
+  }
+
+  /**
+   * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
+   * are, every member of their stacks, and the video parts of all of those.
+   */
+  private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      with direct as (
+        select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
+        union
+        select still.id, still."stackId" from asset as still where still."livePhotoVideoId" = ${anyUuid(ids)}
+      ),
+      grouped as (
+        select direct.id from direct
+        union
+        select member.id from asset as member inner join direct on member."stackId" = direct."stackId"
+      )
+      select grouped.id from grouped
+      union
+      select asset."livePhotoVideoId" as id
+      from asset
+      inner join grouped on grouped.id = asset.id
+      where asset."livePhotoVideoId" is not null
+    `.execute(db);
+    return rows.map(({ id }) => id);
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
@@ -772,6 +896,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .select(withFacesAndPeople({ viewingUserId }))
       .select(withTags)
       .$call(withExif)
@@ -881,6 +1006,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .selectAll('asset')
+      .select(isLocked('asset').as('isLocked'))
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
       .$if(!!faces, (qb) =>
@@ -913,6 +1039,8 @@ export class AssetRepository {
                     .whereRef('stacked.id', '!=', 'stack.primaryAssetId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs never rides along
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .groupBy('stack.id')
                     .as('stacked_assets'),
                 (join) => join.on('stack.id', 'is not', null),
@@ -934,24 +1062,33 @@ export class AssetRepository {
       return;
     }
 
-    if (options.visibility !== AssetVisibility.Locked) {
-      await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+    // `locked` is never stored (FL-34): it is a lock record. `AssetService` translates a request for
+    // it before it gets here; any other caller that still asks gets the lock, and nothing is stored.
+    if (options.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = options;
+      if (!isEmpty(omitBy(rest, isUndefined))) {
+        await this.db.updateTable('asset').set(rest).where('id', '=', anyUuid(ids)).execute();
+      }
+      await this.lock(ids, AssetLockReason.Marked, null);
       return;
     }
 
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction.
-    await this.inTransaction(async (tx) => {
-      await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
-      await releaseLockedCoverReferences(tx, ids);
-    });
+    await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
   }
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
   }
 
-  async update(asset: Updateable<AssetTable> & { id: string }) {
+  async update(input: Updateable<AssetTable> & { id: string }) {
+    let asset = input;
+    // `locked` is never stored (FL-34); see `updateAll`
+    if (input.visibility === AssetVisibility.Locked) {
+      const { visibility: _visibility, ...rest } = input;
+      await this.lock([input.id], AssetLockReason.Marked, null);
+      asset = rest;
+    }
+
     const value = omitBy(asset, isUndefined);
     delete value.id;
     if (isEmpty(value)) {
@@ -968,18 +1105,7 @@ export class AssetRepository {
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
 
-    if (asset.visibility !== AssetVisibility.Locked) {
-      return updateAndSelect(this.db);
-    }
-
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction, as a separate statement so
-    // the new visibility is visible to it.
-    return this.inTransaction(async (tx) => {
-      const updated = await updateAndSelect(tx);
-      await releaseLockedCoverReferences(tx, [asset.id]);
-      return updated;
-    });
+    return updateAndSelect(this.db);
   }
 
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
@@ -1104,7 +1230,7 @@ export class AssetRepository {
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
       .where('ownerId', '=', asUuid(ownerId))
       .$if(visibility === undefined, withDefaultVisibility)
-      .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
+      .$if(!!visibility, (qb) => qb.where(visibilityIs(visibility!, 'asset')))
       .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1167,7 +1293,10 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
+          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+            qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.albumId, (qb) =>
             qb
@@ -1250,7 +1379,7 @@ export class AssetRepository {
           .select((eb) => [
             'asset.duration',
             'asset.id',
-            'asset.visibility',
+            effectiveVisibility('asset').as('visibility'),
             sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
@@ -1274,6 +1403,9 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
+          .$if(options.visibility === AssetVisibility.Locked, (qb) =>
+            qb.select(lockReasonOf('asset').as('lockReason')),
+          )
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
           .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
@@ -1284,7 +1416,10 @@ export class AssetRepository {
           )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
+          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+            qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
@@ -1340,6 +1475,8 @@ export class AssetRepository {
                     .whereRef('stacked.stackId', '=', 'asset.stackId')
                     .where('stacked.deletedAt', 'is', null)
                     .where('stacked.visibility', '=', AssetVisibility.Timeline)
+                    // stacks lock as a whole (FL-34); a member whose lock differs is never counted
+                    .where(sql<boolean>`${isLocked('stacked')} = ${isLocked('asset')}`)
                     .$call((qb) => withHiddenContentFilter(qb, options, 'stacked'))
                     .groupBy('stacked.stackId')
                     .as('stacked_assets'),
@@ -1378,6 +1515,9 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(options.visibility === AssetVisibility.Locked, (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),
+          )
           .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
             qb.select((eb) => [
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
@@ -1419,7 +1559,7 @@ export class AssetRepository {
       .select(['assetId as data', 'asset_exif.city as value'])
       .$narrowType<{ value: NotNull }>()
       .where('ownerId', '=', asUuid(ownerId))
-      .where('visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -1436,7 +1576,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select(['id as data', 'createdAt as value'])
       .where('ownerId', '=', asUuid(ownerId))
-      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where(isTimelineVisible('asset'))
       .where('type', '=', AssetType.Image)
       .where('deletedAt', 'is', null)
       .$call((qb) => withHiddenContentFilter(qb, options))

@@ -41,9 +41,12 @@ export class DownloadService extends BaseService {
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });
-      assets = nsfwOptions
-        ? this.downloadRepository.downloadUserId(userId, nsfwOptions)
-        : this.downloadRepository.downloadUserId(userId);
+      // FL-34: locked media only for the viewer's own timeline in an elevated session
+      const userOptions = { ...nsfwOptions, ...getLockedVisibilityOptions(auth) };
+      assets =
+        Object.keys(userOptions).length > 0
+          ? this.downloadRepository.downloadUserId(userId, userOptions)
+          : this.downloadRepository.downloadUserId(userId);
     } else {
       throw new BadRequestException('assetIds, albumId, or userId is required');
     }

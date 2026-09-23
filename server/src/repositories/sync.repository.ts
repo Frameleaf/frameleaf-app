@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Kysely, sql } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SyncAck } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import { AssetMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
+import { effectiveVisibility, isDefaultVisible, isNotLocked, isTimelineVisible, lockedOwnerScope } from 'src/utils/locked.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -78,13 +79,19 @@ const syncChecksum = () =>
 /**
  * An album stream never carries another member's Locked media (owner decision, September 22, 2026):
  * the album keeps the item, but only its owner's own devices learn of it — not its id, file name,
- * thumbhash, checksum or exif. Applied to every album-asset and album-to-asset stream.
+ * thumbhash, checksum or exif. Applied to every album-asset and album-to-asset stream. Locked is the
+ * lock record (FL-34, `src/utils/locked.ts`).
  */
-const albumAssetVisibleTo = (userId: string) => (eb: ExpressionBuilder<DB, 'asset'>) =>
-  eb.or([eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)), eb('asset.ownerId', '=', userId)]);
+const albumAssetVisibleTo = (userId: string) => lockedOwnerScope(userId, 'asset');
+
+/**
+ * The visibility a device receives (FL-34): `locked` for a locked asset, so a client that keeps the
+ * upstream Locked folder still files it there; the stored visibility otherwise.
+ */
+const syncVisibility = () => effectiveVisibility('asset').as('visibility');
 
 const syncAssetColumns = columns.syncAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 
 const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
@@ -98,19 +105,19 @@ const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
 };
 
 const syncAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
 
 const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
 
 const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
-  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
+  (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
-  [...syncPartnerAssetColumns, syncChecksum(), syncLivePhotoVideoId(options)] as const;
+  [...syncPartnerAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
 
 @Injectable()
 export class SyncRepository {
@@ -572,7 +579,7 @@ class PersonSync extends BaseSync {
                   .innerJoin('asset', (join) =>
                     join
                       .onRef('asset.id', '=', 'asset_face.assetId')
-                      .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                      .on(isTimelineVisible('asset'))
                       .on('asset.deletedAt', 'is', null),
                   )
                   .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -586,7 +593,7 @@ class PersonSync extends BaseSync {
                 .innerJoin('asset', (join) =>
                   join
                     .onRef('asset.id', '=', 'asset_face.assetId')
-                    .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                    .on(isTimelineVisible('asset'))
                     .on('asset.deletedAt', 'is', null),
                 )
                 .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
@@ -629,7 +636,7 @@ class AssetFaceSync extends BaseSync {
       .where((eb) =>
         eb.or([
           eb('asset.ownerId', '=', options.userId),
-          eb('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive]),
+          isDefaultVisible('asset'),
         ]),
       )
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
@@ -665,7 +672,7 @@ class AssetFaceSync extends BaseSync {
       .where((eb) =>
         eb.or([
           eb('asset.ownerId', '=', options.userId),
-          eb('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive]),
+          isDefaultVisible('asset'),
         ]),
       )
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
@@ -822,6 +829,8 @@ class PartnerAssetsSync extends BaseSync {
       .select(sql.val(false).as('isFavorite'))
       .select('asset.updateId')
       .where('asset.ownerId', '=', partnerId)
+      // a partner never receives locked media (FL-34)
+      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -845,6 +854,7 @@ class PartnerAssetsSync extends BaseSync {
       .where('asset.ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
+      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -858,6 +868,7 @@ class PartnerAssetExifsSync extends BaseSync {
       .select('asset_exif.updateId')
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .where('asset.ownerId', '=', partnerId)
+      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -873,6 +884,7 @@ class PartnerAssetExifsSync extends BaseSync {
       .where('asset.ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
+      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }

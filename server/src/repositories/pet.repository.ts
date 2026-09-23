@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Insertable, type Kysely, type Selectable, type Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetVisibility, PetObservationState } from 'src/enum.js';
+import { PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -12,6 +12,7 @@ import {
 } from 'src/schema/tables/pet.table.js';
 import { anyUuid, getHiddenContentFilter, hiddenContentAssetIdExists } from 'src/utils/database.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isLocked } from 'src/utils/locked.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
@@ -175,14 +176,14 @@ export class PetRepository {
     return !!row;
   }
 
-  /** Whether an asset is this owner's own and Locked, which is never a featured photo (FL-53). */
+  /** Whether an asset is this owner's own and locked (FL-34), which is never a featured photo (FL-53). */
   async isOwnLockedAsset(ownerId: string, assetId: string): Promise<boolean> {
     const row = await this.db
       .selectFrom('asset')
       .select('asset.id')
       .where('asset.id', '=', assetId)
       .where('asset.ownerId', '=', ownerId)
-      .where('asset.visibility', '=', AssetVisibility.Locked)
+      .where(isLocked('asset'))
       .executeTakeFirst();
     return !!row;
   }
