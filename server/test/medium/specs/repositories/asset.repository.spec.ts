@@ -513,6 +513,24 @@ describe(AssetRepository.name, () => {
     });
   });
 
+  describe('duplicate lookups by checksum', () => {
+    it("should name the owner's Locked media only for their elevated session (FL-34)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+
+      await expect(sut.getByChecksums(user.id, [locked.checksum])).resolves.toEqual([]);
+      await expect(sut.getUploadAssetIdByChecksum(user.id, locked.checksum)).resolves.toBeUndefined();
+
+      await expect(sut.getByChecksums(user.id, [locked.checksum], { lockedOwnerId: user.id })).resolves.toEqual([
+        expect.objectContaining({ id: locked.id }),
+      ]);
+      await expect(
+        sut.getUploadAssetIdByChecksum(user.id, locked.checksum, { lockedOwnerId: user.id }),
+      ).resolves.toBe(locked.id);
+    });
+  });
+
   describe('getCalendarHeatmap', () => {
     it("should count Locked media only for its owner's elevated session (FL-34)", async () => {
       const { ctx, sut } = setup();

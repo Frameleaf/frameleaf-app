@@ -16,6 +16,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -96,7 +97,11 @@ interface AssetStatsOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
 }
 
-type AssetChecksumOptions = HiddenContentQueryOptions;
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then may a duplicate lookup name
+ * their Locked media; otherwise a Locked match stays unnamed (FL-34).
+ */
+type AssetChecksumOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 interface LivePhotoSearchOptions {
   ownerId: string;
@@ -1066,6 +1071,7 @@ export class AssetRepository {
       .select(['id', 'checksum', 'deletedAt'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
@@ -1082,6 +1088,7 @@ export class AssetRepository {
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .where('libraryId', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .limit(1)
       .executeTakeFirst();
