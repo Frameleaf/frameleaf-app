@@ -411,4 +411,78 @@ describe(SharedLinkService.name, () => {
       expect(mocks.sharedLink.get).toHaveBeenCalled();
     });
   });
+
+  describe('Locked media (FL-32)', () => {
+    const elevatedAdmin = authStub.adminWithElevatedPermission;
+
+    it('refuses an individual link over Locked media even for an elevated session', async () => {
+      const locked = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id]));
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([locked.id]));
+
+      await expect(
+        sut.create(elevatedAdmin, { type: SharedLinkType.Individual, assetIds: [locked.id] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
+        elevatedAdmin.user.id,
+        new Set([locked.id]),
+        true,
+      );
+      expect(mocks.asset.getLockedAssetIds).toHaveBeenCalledWith([locked.id]);
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
+    });
+
+    it('creates an individual link for an elevated session when nothing is Locked', async () => {
+      const asset = AssetFactory.create();
+      const sharedLink = SharedLinkFactory.from()
+        .asset(asset, (builder) => builder.exif())
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set());
+      mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.create(elevatedAdmin, { type: SharedLinkType.Individual, assetIds: [asset.id] });
+
+      expect(mocks.sharedLink.create).toHaveBeenCalled();
+    });
+
+    it('does not look Locked media up for an ordinary session, which the access check already refuses', async () => {
+      const asset = AssetFactory.create();
+      const sharedLink = SharedLinkFactory.from()
+        .asset(asset, (builder) => builder.exif())
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.create(authStub.admin, { type: SharedLinkType.Individual, assetIds: [asset.id] });
+
+      expect(mocks.asset.getLockedAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('marks Locked media as not permitted when an elevated session adds it to a link', async () => {
+      const asset = AssetFactory.create();
+      const sharedLink = SharedLinkFactory.from()
+        .asset(asset, (builder) => builder.exif())
+        .build();
+      const [locked, plain] = [AssetFactory.create(), AssetFactory.create()];
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([locked.id]));
+
+      await expect(
+        sut.addAssets(elevatedAdmin, sharedLink.id, { assetIds: [locked.id, plain.id] }),
+      ).resolves.toEqual([
+        { assetId: locked.id, success: false, error: AssetIdErrorReason.NO_PERMISSION },
+        { assetId: plain.id, success: true },
+      ]);
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith({
+        ...getForSharedLink(sharedLink),
+        slug: null,
+        assetIds: [plain.id],
+      });
+    });
+  });
 });

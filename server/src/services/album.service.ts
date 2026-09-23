@@ -23,12 +23,13 @@ import {
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
-import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository.js';
+import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
 
@@ -192,6 +193,7 @@ export class AlbumService extends BaseService {
       ids: dto.assetIds || [],
     });
     const assetIds = [...allowedAssetIdsSet].map((id) => id);
+    const coverAssetId = await this.firstCoverCandidate(auth, assetIds);
 
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
 
@@ -208,7 +210,7 @@ export class AlbumService extends BaseService {
       {
         albumName: dto.albumName,
         description: dto.description,
-        albumThumbnailAssetId: assetIds[0] || null,
+        albumThumbnailAssetId: coverAssetId ?? null,
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
         parentId: dto.parentId ?? null,
         icon: dto.icon ?? null,
@@ -240,7 +242,9 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
 
     const privacyOptions = this.nsfwOptions(auth);
-    const album = await this.findOrFail(id, auth, { withAssets: true });
+    // Locked media is left out even for an elevated owner: a cover is seen by everyone the album is
+    // shown to, so the candidates are the assets that every viewer may see.
+    const album = await this.findOrFail(id, auth, { withAssets: true, lockedOwnerId: undefined });
 
     if (dto.albumThumbnailAssetId) {
       const visibleAssetIds = new Set(album.assets?.map((asset) => asset.id));
@@ -359,14 +363,14 @@ export class AlbumService extends BaseService {
       { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
     );
 
-    const { id: firstNewAssetId } = results.find(({ success }) => success) || {};
-    if (firstNewAssetId) {
+    const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
+    if (newAssetIds.length > 0) {
       await this.albumRepository.update(
         id,
         {
           id,
           updatedAt: new Date(),
-          albumThumbnailAssetId: album.albumThumbnailAssetId ?? firstNewAssetId,
+          albumThumbnailAssetId: album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, newAssetIds)),
         },
         auth.user.id,
       );
@@ -428,7 +432,8 @@ export class AlbumService extends BaseService {
         {
           id: albumId,
           updatedAt: new Date(),
-          albumThumbnailAssetId: album.albumThumbnailAssetId ?? notPresentAssetIds[0],
+          albumThumbnailAssetId:
+            album.albumThumbnailAssetId ?? (await this.firstCoverCandidate(auth, notPresentAssetIds)),
         },
         auth.user.id,
       );
@@ -636,8 +641,32 @@ export class AlbumService extends BaseService {
     await this.albumUserRepository.createSpaceEvent({ albumId: album.id, actorId: auth.user.id, type, assetIds });
   }
 
-  private nsfwOptions(auth: AuthDto, suppressedOnly?: boolean) {
-    return suppressedOnly ? getPrivacyQueryOptions(auth, true) : getHiddenContentQueryOptions(auth);
+  /**
+   * What this viewer may see of an album: the hidden-content filter, and — in an elevated session —
+   * their own Locked media (`lockedOwnerId`). Locked media of other people never shows.
+   */
+  private nsfwOptions(auth: AuthDto, suppressedOnly?: boolean): AlbumReadOptions {
+    return {
+      ...(suppressedOnly ? getPrivacyQueryOptions(auth, true) : getHiddenContentQueryOptions(auth)),
+      ...getLockedVisibilityOptions(auth),
+    };
+  }
+
+  /**
+   * The first of `assetIds` that may become the album cover. Only an elevated session can bring Locked
+   * media into an album (see `Permission.AssetShare`), so only then can the first asset be unfit and
+   * the choice needs the database; every other session keeps the first asset, as before.
+   */
+  private async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
+    if (assetIds.length === 0) {
+      return undefined;
+    }
+
+    if (!auth.session?.hasElevatedPermission) {
+      return assetIds[0];
+    }
+
+    return this.albumRepository.getFirstCoverCandidate(assetIds);
   }
 
   private async hideNsfwAlbumThumbnails<T extends MapAlbumDto>(
@@ -670,7 +699,8 @@ export class AlbumService extends BaseService {
   }
 
   private async findOrFail(id: string, auth: AuthDto, options: AlbumInfoOptions) {
-    const album = await this.albumRepository.getById(id, { ...options, ...this.nsfwOptions(auth) }, auth.user.id);
+    // The caller's explicit options win, so a read can leave the viewer's Locked media out on purpose.
+    const album = await this.albumRepository.getById(id, { ...this.nsfwOptions(auth), ...options }, auth.user.id);
     if (!album) {
       throw new BadRequestException('Album not found');
     }

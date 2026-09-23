@@ -17,7 +17,7 @@ import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LockableProperty, Stack } from 'src/database.js';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
   AssetMetadataKey,
@@ -738,6 +738,22 @@ export class AssetRepository {
   @ChunkedArray()
   getByIds(ids: string[]) {
     return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
+  }
+
+  /** Which of these assets sit in the Locked folder, whoever owns them. */
+  @ChunkedSet()
+  async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(ids))
+      .where('asset.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
