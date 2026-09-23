@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { ReactionType } from 'src/dtos/activity.dto.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -113,9 +113,8 @@ describe(ActivityService.name, () => {
       });
 
       await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', asset.id)
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
         .execute();
 
       const member = factory.auth({ user: sharedWith, session: { hasElevatedPermission: true } });
@@ -139,9 +138,8 @@ describe(ActivityService.name, () => {
       await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
 
       await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', asset.id)
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
         .execute();
 
       const again = await sut.create(auth, { albumId: album.id, assetId: asset.id, type: ReactionType.LIKE });
