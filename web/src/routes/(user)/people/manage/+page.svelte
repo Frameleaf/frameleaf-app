@@ -3,168 +3,419 @@
   import { goto } from '$app/navigation';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import ManagePersonCard from '$lib/components/frameleaf/people/ManagePersonCard.svelte';
-  import { filterPeopleByName, sortPeopleForManage } from '$lib/frameleaf/people';
-  import { locale } from '$lib/stores/preferences.store';
+  import { filterPeopleByName, isUnnamedPerson, sortPeopleForManage } from '$lib/frameleaf/people';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { getAllPeople, updatePeople, type PersonResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { mdiArrowLeft, mdiCheck, mdiEyeOffOutline, mdiEyeOutline, mdiAccountOffOutline, mdiRestore } from '@mdi/js';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteMap } from 'svelte/reactivity';
   import type { PageData } from './$types';
 
-  interface Props {
-    data: PageData;
-  }
-
-  const { data }: Props = $props();
-
-  let people = $derived(data.people.people);
-  const totalPeopleCount = $derived(data.people.total);
-  let nextPage = $state(data.people.hasNextPage ? 2 : null);
+  const { data }: { data: PageData } = $props();
+  const theme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  let blocked = $state(false);
+  let people = $derived(blocked ? [] : data.people.people);
+  let nextPage = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
   const overrides = new SvelteMap<string, boolean>();
+  let saving = $state(false);
+  let loadingPage = $state(false);
+  let pageFailed = $state(false);
+  let failedCount = $state(0);
+  let search = $state('');
+  let confirmLeave = $state(false);
+  let status = $state('');
+  let retired = false;
+  let pageRequest: AbortController | undefined;
+  let saveRequest: AbortController | undefined;
+  const ownerId = untrack(() => (authManager.authenticated ? authManager.user.id : undefined));
+
+  const retire = () => {
+    blocked = true;
+    pageRequest?.abort();
+    saveRequest?.abort();
+    people = [];
+    nextPage = null;
+    overrides.clear();
+    failedCount = 0;
+    pageFailed = false;
+    confirmLeave = false;
+    status = '';
+  };
+  const stopAccess = eventManager.on({
+    SessionLocked: retire,
+    SessionAccessChanged: ({ isElevated }) => {
+      if (!isElevated) {retire();}
+    },
+    UserPinCodeReset: retire,
+    AuthLogout: retire,
+    SessionDelete: retire,
+    AuthUserLoaded: (user) => {
+      if (user.id !== ownerId) {retire();}
+    },
+  });
+  $effect(() => {
+    const currentId = authManager.authenticated ? authManager.user.id : undefined;
+    if (ownerId && currentId !== ownerId) {retire();}
+  });
+  onDestroy(() => {
+    retired = true;
+    retire();
+    stopAccess();
+  });
+
+  const rows = $derived(sortPeopleForManage(filterPeopleByName(people, search)));
+  const pending = $derived(overrides.size);
+  const hiddenCount = $derived(people.filter((person) => overrides.get(person.id) ?? person.isHidden).length);
+  const leave = () => {
+    if (saving) {return;}
+    if (pending) {confirmLeave = true;}
+    else {void goto('/people');}
+  };
+  const setHiddenOverride = (person: PersonResponseDto, isHidden: boolean) => {
+    if (blocked || saving) {return;}
+    status = '';
+    if (isHidden === person.isHidden) {overrides.delete(person.id);}
+    else {overrides.set(person.id, isHidden);}
+  };
+  const batch = (action: 'hide' | 'unnamed' | 'show') => {
+    if (blocked || saving) {return;}
+    // These existing bulk controls apply to loaded people, not an all-matching server snapshot.
+    for (const person of people) {
+      if (action !== 'unnamed' || isUnnamedPerson(person)) {setHiddenOverride(person, action !== 'show');}
+    }
+    status = $t(
+      action === 'show'
+        ? 'frameleaf_people_shown_draft'
+        : action === 'unnamed'
+          ? 'frameleaf_people_unnamed_draft'
+          : 'frameleaf_people_hidden_draft',
+    );
+  };
+  const reset = () => {
+    if (blocked || saving) {return;}
+    overrides.clear();
+    failedCount = 0;
+    status = $t('frameleaf_people_changes_reverted');
+  };
 
   const handleSaveVisibility = async () => {
+    if (blocked || retired || saving || !pending) {return;}
+    saving = true;
+    failedCount = 0;
+    const request = new AbortController();
+    saveRequest = request;
     const changed = Array.from(overrides, ([id, isHidden]) => ({ id, isHidden }));
-
     try {
-      if (changed.length > 0) {
-        const results = await updatePeople({ peopleUpdateDto: { people: changed } });
-        const successCount = results.filter(({ success }) => success).length;
-        const failCount = results.length - successCount;
-        if (failCount > 0) {
-          toastManager.warning($t('errors.unable_to_change_visibility', { values: { count: failCount } }));
-        }
-        toastManager.primary($t('visibility_changed', { values: { count: successCount } }));
+      const results = await updatePeople({ peopleUpdateDto: { people: changed } }, { signal: request.signal });
+      if (request.signal.aborted || retired) {return;}
+      const successful = new Set(results.filter(({ success }) => success).map(({ id }) => id));
+      const confirmed = changed.filter(({ id }) => successful.has(id));
+      for (const { id, isHidden } of confirmed) {
+        const person = people.find((person) => person.id === id);
+        if (person) {person.isHidden = isHidden;}
+        overrides.delete(id);
       }
-
-      for (const person of people) {
-        const isHidden = overrides.get(person.id);
-        if (isHidden !== undefined) {
-          person.isHidden = isHidden;
-        }
-      }
-      overrides.clear();
-
-      await goto('/people');
+      failedCount = changed.length - confirmed.length;
+      if (confirmed.length > 0) {toastManager.primary($t('visibility_changed', { values: { count: confirmed.length } }));}
+      if (!failedCount) {await goto('/people');}
     } catch (error) {
-      handleError(error, $t('errors.unable_to_change_visibility', { values: { count: changed.length } }));
+      if (!request.signal.aborted && !retired) {
+        failedCount = changed.length;
+        handleError(error, $t('errors.unable_to_change_visibility', { values: { count: changed.length } }));
+      }
+    } finally {
+      if (saveRequest === request) {
+        saving = false;
+        saveRequest = undefined;
+      }
     }
   };
-
-  const setHiddenOverride = (person: PersonResponseDto, isHidden: boolean) => {
-    if (isHidden === person.isHidden) {
-      overrides.delete(person.id);
-      return;
-    }
-    overrides.set(person.id, isHidden);
-  };
-
   const loadNextPage = async () => {
-    if (!nextPage) {
-      return;
-    }
+    if (!nextPage || loadingPage || blocked || retired) {return;}
+    const page = nextPage;
+    const request = new AbortController();
+    pageRequest = request;
+    loadingPage = true;
+    pageFailed = false;
     try {
-      const { people: newPeople, hasNextPage } = await getAllPeople({ withHidden: true, page: nextPage });
-      people = people.concat(newPeople);
-      nextPage = hasNextPage ? nextPage + 1 : null;
+      const result = await getAllPeople({ withHidden: true, page }, { signal: request.signal });
+      if (request.signal.aborted || retired) {return;}
+      const existing = new Set(people.map(({ id }) => id));
+      const added = result.people.filter(({ id }) => {
+        if (existing.has(id)) {return false;}
+        existing.add(id);
+        return true;
+      });
+      people = people.concat(added);
+      nextPage = result.hasNextPage ? page + 1 : null;
     } catch (error) {
-      handleError(error, $t('errors.failed_to_load_people'));
-    }
-  };
-
-  // Manage-people page (FL-37): an `overrides` draft saved in one `updatePeople` bulk call,
-  // with a search field and one-shot batch actions, per `ManagePeople.jsx`.
-  let frameleafSearch = $state('');
-  const frameleafRows = $derived(sortPeopleForManage(filterPeopleByName(people, frameleafSearch)));
-  const frameleafPending = $derived(overrides.size);
-  const frameleafHiddenCount = $derived(
-    frameleafRows.filter((person) => overrides.get(person.id) ?? person.isHidden).length,
-  );
-  const hideAllFrameleaf = () => {
-    for (const person of people) {
-      setHiddenOverride(person, true);
-    }
-  };
-  const hideUnnamedFrameleaf = () => {
-    for (const person of people) {
-      if (!person.name) {
-        setHiddenOverride(person, true);
+      if (!request.signal.aborted && !retired) {
+        pageFailed = true;
+        handleError(error, $t('errors.failed_to_load_people'));
       }
-    }
-  };
-  const showAllFrameleaf = () => {
-    for (const person of people) {
-      setHiddenOverride(person, false);
+    } finally {
+      if (pageRequest === request) {
+        loadingPage = false;
+        pageRequest = undefined;
+      }
     }
   };
 </script>
 
-<UserPageLayout title={$t('show_and_hide_people')} description={`(${totalPeopleCount.toLocaleString($locale)})`}>
-  {#snippet buttons()}
-    <div class="frameleaf-manage-toolbar">
-      <input
-        type="search"
-        class="frameleaf-manage-search"
-        aria-label={$t('frameleaf_people_find_a_person')}
-        placeholder={$t('frameleaf_people_find_a_person')}
-        bind:value={frameleafSearch}
-      />
-      <FrameleafButton onclick={hideAllFrameleaf}>{$t('hide_all_people')}</FrameleafButton>
-      <FrameleafButton onclick={hideUnnamedFrameleaf}>{$t('hide_unnamed_people')}</FrameleafButton>
-      <FrameleafButton onclick={showAllFrameleaf}>{$t('show_all_people')}</FrameleafButton>
-      <FrameleafButton disabled={frameleafPending === 0} onclick={() => overrides.clear()}>
-        {$t('reset_people_visibility')}
-      </FrameleafButton>
-      <FrameleafButton variant="primary" disabled={frameleafPending === 0} onclick={handleSaveVisibility}>
-        {frameleafPending > 0
-          ? $t('frameleaf_people_save_changes_count', { values: { count: frameleafPending } })
-          : $t('done')}
-      </FrameleafButton>
-      <FrameleafButton onclick={() => goto('/people')}>{$t('close')}</FrameleafButton>
-    </div>
-  {/snippet}
-
-  <p class="frameleaf-manage-summary">
-    {$t('frameleaf_people_manage_summary', {
-      values: { shown: frameleafRows.length - frameleafHiddenCount, hidden: frameleafHiddenCount },
-    })}
-  </p>
-  <div class="frameleaf-manage-grid">
-    <PeopleInfiniteScroll
-      people={frameleafRows}
-      hasNextPage={nextPage !== null && !frameleafSearch.trim()}
-      {loadNextPage}
-    >
-      {#snippet children({ person })}
-        {@const hidden = overrides.get(person.id) ?? person.isHidden}
-        {@const changed = hidden !== person.isHidden}
-        <ManagePersonCard {person} {hidden} {changed} onToggle={() => setHiddenOverride(person, !hidden)} />
-      {/snippet}
-    </PeopleInfiniteScroll>
-  </div>
+<UserPageLayout>
+  <Theme {theme}>
+    <section class="pm-page" aria-label={$t('show_and_hide_people')}>
+      <header class="pm-header">
+        <div class="pm-title">
+          <FrameleafButton label={$t('frameleaf_people_back')} onclick={leave} disabled={saving}>
+            <Icon icon={mdiArrowLeft} size="18" />
+          </FrameleafButton>
+          <div>
+            <h1>{$t('show_and_hide_people')}</h1>
+            <p>{$t('frameleaf_people_manage_description')}</p>
+          </div>
+        </div>
+        {#if !blocked}
+          <div class="pm-toolbar">
+            <input
+              type="search"
+              aria-label={$t('frameleaf_people_find_a_person')}
+              placeholder={$t('frameleaf_people_find_a_person')}
+              bind:value={search}
+            />
+            <div class="pm-batches" role="group" aria-label={$t('frameleaf_people_visibility_shortcuts')}>
+              <FrameleafButton disabled={saving} onclick={() => batch('hide')}
+                ><Icon icon={mdiEyeOffOutline} size="18" />{$t('frameleaf_people_hide_all')}</FrameleafButton
+              >
+              <FrameleafButton disabled={saving} onclick={() => batch('unnamed')}
+                ><Icon icon={mdiAccountOffOutline} size="18" />{$t('frameleaf_people_hide_unnamed')}</FrameleafButton
+              >
+              <FrameleafButton disabled={saving} onclick={() => batch('show')}
+                ><Icon icon={mdiEyeOutline} size="18" />{$t('frameleaf_people_show_all')}</FrameleafButton
+              >
+              <FrameleafButton disabled={saving || !pending} label={$t('reset_people_visibility')} onclick={reset}
+                ><Icon icon={mdiRestore} size="18" />{$t('reset')}</FrameleafButton
+              >
+            </div>
+          </div>
+        {/if}
+      </header>
+      {#if blocked}
+        <p role="status">{$t('frameleaf_people_access_changed')}</p>
+        <FrameleafButton onclick={() => location.reload()}>{$t('reload')}</FrameleafButton>
+      {:else}
+        <p class="pm-summary">
+          {$t('frameleaf_people_manage_summary', {
+            values: { shown: people.length - hiddenCount, hidden: hiddenCount },
+          })}
+        </p>
+        {#if nextPage}<p class="pm-scope">{$t('frameleaf_people_loaded_scope')}</p>{/if}
+        <div class="pm-grid">
+          <PeopleInfiniteScroll
+            people={rows}
+            hasNextPage={nextPage !== null && !search.trim() && !pageFailed}
+            {loadNextPage}
+            managed
+          >
+            {#snippet children({ person })}
+              {@const hidden = overrides.get(person.id) ?? person.isHidden}
+              {@const changed = hidden !== person.isHidden}
+              <ManagePersonCard
+                {person}
+                {hidden}
+                {changed}
+                disabled={saving}
+                onToggle={() => setHiddenOverride(person, !hidden)}
+              />
+            {/snippet}
+          </PeopleInfiniteScroll>
+        </div>
+        {#if rows.length === 0}<p class="pm-empty" role="status">
+            {$t(search.trim() ? 'frameleaf_people_no_match' : 'frameleaf_people_none_to_manage')}
+          </p>{/if}
+        {#if pageFailed}
+          <div role="alert">
+            <p>{$t('errors.failed_to_load_people')}</p>
+            <FrameleafButton onclick={loadNextPage}>{$t('retry')}</FrameleafButton>
+          </div>
+        {/if}
+        <footer class="pm-footer">
+          <div>
+            {#if failedCount}<p role="alert">
+                {$t('errors.unable_to_change_visibility', { values: { count: failedCount } })}
+              </p>{/if}
+            <span class="pm-pending" role="status" aria-live="polite"
+              >{status ||
+                $t(pending ? 'frameleaf_people_pending_changes' : 'frameleaf_people_no_pending_changes', {
+                  values: { count: pending },
+                })}</span
+            >
+          </div>
+          <div class="pm-footer-actions">
+            <FrameleafButton disabled={saving} onclick={leave}>{$t('cancel')}</FrameleafButton>
+            <FrameleafButton variant="primary" disabled={saving || !pending} onclick={handleSaveVisibility}>
+              <Icon icon={mdiCheck} size="18" />
+              {$t(
+                saving
+                  ? 'frameleaf_settings_draft_saving'
+                  : failedCount
+                    ? 'retry'
+                    : pending
+                      ? 'frameleaf_people_save_changes_count'
+                      : 'frameleaf_settings_draft_save',
+                { values: { count: pending } },
+              )}
+            </FrameleafButton>
+          </div>
+        </footer>
+      {/if}
+    </section>
+    <Dialog title={$t('frameleaf_people_discard_title')} closeLabel={$t('close')} bind:open={confirmLeave}>
+      <p class="pm-dialog-hint">{$t('frameleaf_people_discard_description', { values: { count: pending } })}</p>
+      <div class="pm-footer-actions">
+        <FrameleafButton onclick={() => (confirmLeave = false)}
+          >{$t('frameleaf_settings_draft_keep_editing')}</FrameleafButton
+        >
+        <FrameleafButton
+          variant="primary"
+          onclick={() => {
+            confirmLeave = false;
+            void goto('/people');
+          }}>{$t('frameleaf_settings_draft_discard')}</FrameleafButton
+        >
+      </div>
+    </Dialog>
+  </Theme>
 </UserPageLayout>
 
 <style>
-  .frameleaf-manage-toolbar {
+  /* ManagePeople.jsx and people.css; existing services retain server authorization. */
+  .pm-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: 32px 32px 0;
+  }
+  .pm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .pm-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  .pm-title p {
+    margin: 8px 0 0;
+    color: var(--fl-muted);
+  }
+  .pm-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 10px;
   }
-  .frameleaf-manage-search {
-    padding: 0.4375rem 0.6875rem;
+  .pm-toolbar input {
+    min-width: 0;
+    min-height: 34px;
+    padding: 8px 12px;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .frameleaf-manage-summary {
-    padding: 0 0.5rem 0.5rem;
+  .pm-batches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pm-summary {
+    margin: 18px 0 0;
+    color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  .pm-scope,
+  .pm-empty,
+  .pm-dialog-hint {
     color: var(--fl-muted);
   }
-  .frameleaf-manage-grid {
-    padding: 0 0.5rem 2rem;
+  .pm-grid {
+    padding: 18px 0 110px;
+  }
+  .pm-footer {
+    position: sticky;
+    bottom: -8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: auto -32px 0;
+    padding: 14px 32px;
+    background: color-mix(in srgb, var(--fl-canvas), transparent 8%);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--fl-border);
+    z-index: 5;
+  }
+  .pm-pending {
+    color: var(--fl-muted);
+  }
+  .pm-footer-actions {
+    display: flex;
+    gap: 8px;
+  }
+  @media (max-width: 700px) {
+    .pm-page {
+      padding: 22px 16px 0;
+    }
+    .pm-header {
+      gap: 18px;
+      padding-bottom: 18px;
+    }
+    .pm-title {
+      gap: 10px;
+    }
+    .pm-toolbar {
+      width: 100%;
+    }
+    .pm-toolbar input {
+      flex: 1 1 100%;
+    }
+    .pm-batches {
+      width: 100%;
+    }
+    .pm-batches :global(button) {
+      flex: 1 1 calc(50% - 4px);
+      min-height: 44px;
+    }
+    .pm-grid {
+      padding-bottom: 120px;
+    }
+    .pm-footer {
+      flex-direction: column;
+      align-items: stretch;
+      margin-inline: -16px;
+      padding: 12px 16px;
+    }
+    .pm-footer-actions :global(button) {
+      flex: 1;
+      min-height: 44px;
+    }
   }
 </style>
