@@ -517,7 +517,7 @@ export const resolveMatchingIds = async (
     const { assets }: SearchResponseDto =
       search.kind === 'smart'
         ? await gateway.searchSmart({ smartSearchDto: search.dto })
-        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor && { cursor }) } });
+        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor ? { cursor } : {}) } });
     total = typeof assets.total === 'number' ? assets.total : total;
     for (const asset of assets.items) {
       if (found.size >= limit) {

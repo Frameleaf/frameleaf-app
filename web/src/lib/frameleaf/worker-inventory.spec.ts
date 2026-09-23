@@ -141,14 +141,14 @@ describe('inventory sections (FL-72)', () => {
       entry(),
       entry({ id: 'old', url: 'http://removed:3003', configured: false }),
       entry({ id: 'lan', kind: MlDestinationKind.Lan, url: 'https://study.lan:3003' }),
-      entry({ id: 'pod', kind: MlDestinationKind.RunPod, url: null, leavesNetwork: true }),
+      entry({ id: 'pod', kind: MlDestinationKind.Runpod, url: null, leavesNetwork: true }),
       entry({
         id: 'restore',
         kind: MlDestinationKind.Lan,
         role: MlWorkerRole.Restoration,
         url: 'https://gpu.lan:3004',
       }),
-      entry({ id: 'video', kind: MlDestinationKind.RunPodVideo, role: MlWorkerRole.Restoration, leavesNetwork: true }),
+      entry({ id: 'video', kind: MlDestinationKind.RunpodVideo, role: MlWorkerRole.Restoration, leavesNetwork: true }),
       entry({ id: 'both', kind: MlDestinationKind.Lan, role: MlWorkerRole.Mixed }),
       entry({ id: 'render', source: WorkerInventorySource.RenderWorker, kind: 'lan', role: null, url: null }),
     ],
@@ -210,7 +210,7 @@ describe('labels (FL-72)', () => {
     expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration }))).toBe(
       'admin.frameleaf_workers_type_restoration',
     );
-    expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration, kind: MlDestinationKind.RunPodVideo }))).toBe(
+    expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration, kind: MlDestinationKind.RunpodVideo }))).toBe(
       'admin.frameleaf_workers_type_persistent_video',
     );
     expect(workerTypeLabelKey(entry({ source: WorkerInventorySource.RenderWorker, role: null }))).toBe(
