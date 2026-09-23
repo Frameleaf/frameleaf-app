@@ -35,7 +35,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   CONSTRAINT "duplicate_decision_operationId_duplicateId_uq" UNIQUE ("operationId", "duplicateId"),
   CONSTRAINT "duplicate_decision_pkey" PRIMARY KEY ("id")
 );`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS "duplicate_decision_ownerId_idx" ON "duplicate_decision" ("ownerId");`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS "duplicate_decision_ownerId_idx" ON "duplicate_decision" ("ownerId");`.execute(
+    db,
+  );
   await sql`CREATE INDEX IF NOT EXISTS "duplicate_decision_operationId_idx" ON "duplicate_decision" ("operationId");`.execute(
     db,
   );
