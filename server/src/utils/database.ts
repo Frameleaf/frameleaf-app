@@ -155,9 +155,21 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
  * without an owner no Locked media matches at all.
  */
 export function withLockedOwnerScope<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
-  return qb.where((eb) =>
-    lockedOwnerId ? eb.or([isNotLockedAsset(eb), eb('asset.ownerId', '=', lockedOwnerId)]) : isNotLockedAsset(eb),
-  );
+  return qb.where((eb) => lockedOwnerScope(eb, lockedOwnerId));
+}
+
+/**
+ * The condition behind {@link withLockedOwnerScope}, for a query that reaches the asset table through a
+ * join or under another alias: not Locked, or Locked and owned by `lockedOwnerId`.
+ */
+export function lockedOwnerScope<QDB, TB extends keyof QDB>(
+  eb: ExpressionBuilder<QDB, TB>,
+  lockedOwnerId?: string,
+  alias = 'asset',
+) {
+  return lockedOwnerId
+    ? eb.or([isNotLockedAsset(eb, alias), eb(sql.ref<string>(`${alias}.ownerId`), '=', lockedOwnerId)])
+    : isNotLockedAsset(eb, alias);
 }
 
 /**
