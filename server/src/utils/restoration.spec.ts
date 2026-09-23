@@ -242,16 +242,21 @@ const deps = (overrides: {
   destination?: MlDestinationRow;
   probe?: MlEndpointProbe;
   route?: { workload: MlWorkload; destinationId: string };
+  /** Every route, for the FL-72 check that restoration never lands on a library endpoint. */
+  routes?: Array<{ workload: MlWorkload; destinationId: string }>;
+  others?: MlDestinationRow[];
   runPod?: { url: string; authToken?: string } | null;
 }) => {
   const destination = overrides.destination ?? mlDestinationStub.lan;
-  const find = (id: string) => Promise.resolve(id === destination.id ? destination : undefined);
+  const rows = [destination, ...(overrides.others ?? [])];
+  const find = (id: string) => Promise.resolve(rows.find((row) => row.id === id));
   const mlDestinationRepository = {
     getById: vi.fn().mockImplementation(find),
     getSpend: vi.fn().mockResolvedValue(0),
     recordProbe: vi.fn().mockResolvedValue(undefined),
     recordAccounting: vi.fn().mockResolvedValue(undefined),
     getRoute: vi.fn().mockResolvedValue(overrides.route),
+    getRoutes: vi.fn().mockResolvedValue(overrides.routes ?? []),
   } as unknown as MlDestinationRepository;
   const machineLearningRepository = {
     probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.restoration),
@@ -324,10 +329,10 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('never contacts a cloud destination until the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.runPodVideoConsented, runPod: runPodEndpoint });
     const request = {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPodConsented.id,
+      destinationId: mlDestinationStub.runPodVideoConsented.id,
       acknowledgeCloudUpload: false,
     };
 
@@ -337,9 +342,9 @@ describe('selectRestorationDestination (FL-114)', () => {
 
   it('also refuses a routed cloud destination nobody confirmed', async () => {
     const d = deps({
-      destination: mlDestinationStub.runPodConsented,
+      destination: mlDestinationStub.runPodVideoConsented,
       runPod: runPodEndpoint,
-      route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.runPodConsented.id },
+      route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.runPodVideoConsented.id },
     });
     const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
 
@@ -348,10 +353,10 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('still needs the administrator consent when the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPod, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.runPodVideo, runPod: runPodEndpoint });
     const request = {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPod.id,
+      destinationId: mlDestinationStub.runPodVideo.id,
       acknowledgeCloudUpload: true,
     };
 
@@ -360,16 +365,17 @@ describe('selectRestorationDestination (FL-114)', () => {
   });
 
   it('admits a consented cloud destination once the person confirms the upload', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
+    const d = deps({ destination: mlDestinationStub.runPodVideoConsented, runPod: runPodEndpoint });
 
     const selection = await selectRestorationDestination(d, {
       mode: AssetRestorationMode.Creative,
-      destinationId: mlDestinationStub.runPodConsented.id,
+      destinationId: mlDestinationStub.runPodVideoConsented.id,
       acknowledgeCloudUpload: true,
     });
 
-    expect(selection).toMatchObject({ kind: MlDestinationKind.RunPod, workload: MlWorkload.RestorationCreative });
-    expect(selection.endpoint).toEqual(runPodEndpoint);
+    expect(selection).toMatchObject({ kind: MlDestinationKind.RunPodVideo, workload: MlWorkload.RestorationCreative });
+    // The video worker's own address, never the library-analysis pod the RunPod service published (FL-72).
+    expect(selection.endpoint).toEqual({ url: mlDestinationStub.runPodVideoConsented.url, authToken: 'video-token' });
     expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
   });
 
@@ -382,5 +388,27 @@ describe('selectRestorationDestination (FL-114)', () => {
     };
 
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotServed);
+  });
+
+  it('refuses restoration on the managed RunPod pod, which is a library-analysis worker (FL-72)', async () => {
+    const legacy = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationCreative] };
+    const d = deps({ destination: legacy, runPod: runPodEndpoint });
+    const request = { mode: AssetRestorationMode.Creative, destinationId: legacy.id, acknowledgeCloudUpload: true };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.RoleConflict);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('refuses restoration on an endpoint library analysis is routed to, without moving it (FL-72)', async () => {
+    const sharedUrl = { ...mlDestinationStub.lan, url: mlDestinationStub.local.url };
+    const d = deps({
+      destination: sharedUrl,
+      others: [mlDestinationStub.local],
+      routes: [{ workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id }],
+    });
+    const request = { mode: AssetRestorationMode.Faithful, destinationId: sharedUrl.id, acknowledgeCloudUpload: false };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.RoleConflict);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
   });
 });

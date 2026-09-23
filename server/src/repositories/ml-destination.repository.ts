@@ -6,6 +6,7 @@ import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js'
 import { DB } from 'src/schema/index.js';
 import {
   MlDestinationTable,
+  MlProbeHardware,
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
@@ -24,6 +25,8 @@ export type MlDestinationInsert = {
   budgetLimitUsd: number | null;
   maxRuntimeMinutes: number | null;
   maxUploadBytes: number | null;
+  /** FL-72: a restoration worker on the GPU library analysis uses. Defaults to false. */
+  sharesLibraryHardware?: boolean;
 };
 
 export type MlDestinationPatch = Partial<MlDestinationInsert> & {
@@ -36,6 +39,9 @@ export type MlProbeRecord = {
   summary: string | null;
   workloads: MlWorkload[] | null;
   probedAt: Date;
+  /** FL-72: acceleration facts from the same check. Omitted leaves the stored value alone. */
+  hardware?: MlProbeHardware | null;
+  latencyMs?: number | null;
 };
 
 export type MlAccountingInsert = {
@@ -128,6 +134,13 @@ export class MlDestinationRepository {
         lastProbeSummary: probe.summary,
         lastProbeWorkloads:
           probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
+        ...(probe.hardware === undefined
+          ? {}
+          : {
+              lastProbeHardware:
+                probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
+            }),
+        ...(probe.latencyMs === undefined ? {} : { lastProbeLatencyMs: probe.latencyMs }),
       })
       .where('id', '=', id)
       .execute();

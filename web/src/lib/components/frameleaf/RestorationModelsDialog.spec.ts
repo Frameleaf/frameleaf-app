@@ -4,6 +4,7 @@ import {
   AssetRestorationMode,
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerRole,
   MlWorkload,
   RestorationDynamicRange,
   RestorationModelState,
@@ -24,6 +25,8 @@ const lan: MlDestinationResponseDto = {
   authTokenConfigured: true,
   enabled: true,
   workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+  role: MlWorkerRole.Restoration,
+  sharesLibraryHardware: false,
   consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
   costControls: {
     budgetLimitUsd: null,

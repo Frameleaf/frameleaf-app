@@ -35,7 +35,8 @@ const qwenModelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
 const florenceModelName = 'microsoft/Florence-2-base-ft';
 
 const localUrl = 'http://immich-machine-learning:3003';
-const lanUrl = 'http://workshop.lan:3003';
+// The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
+const lanUrl = 'http://workshop.lan:3004';
 const runPodUrl = 'https://endpoint.api.runpod.ai/';
 
 const description = {
@@ -365,6 +366,7 @@ describe(MachineLearningRepository.name, () => {
         recordProbe: vi.fn().mockResolvedValue(undefined),
         recordAccounting,
         getRoute: vi.fn(),
+        getRoutes: vi.fn().mockResolvedValue([]),
       } as unknown as MlDestinationRepository;
       const machineLearningRepository = {
         probe: vi.fn().mockResolvedValue(mlProbeStub.restoration),
@@ -490,9 +492,10 @@ describe(MachineLearningRepository.name, () => {
       const fetch = vi.fn().mockResolvedValue(answer(result()));
       vi.stubGlobal('fetch', fetch);
 
-      await restore({}, await admit(mlDestinationStub.runPodConsented, true));
+      await restore({}, await admit(mlDestinationStub.runPodVideoConsented, true));
 
-      expect(String(fetch.mock.calls[0][0])).toBe(`${runPodUrl}restoration/restore`);
+      // The RunPod video worker's own URL, not the library-analysis pod's endpoint (FL-72).
+      expect(String(fetch.mock.calls[0][0])).toBe(`${mlDestinationStub.runPodVideoConsented.url}/restoration/restore`);
       expect(await readFile(outputPath)).toEqual(restored);
     });
 
