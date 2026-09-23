@@ -6,10 +6,14 @@ import { authenticate } from '$lib/utils/auth';
 export const redirectUtility = async (url: URL, section?: UtilityId, assetId?: string) => {
   await authenticate(url);
   const params: Record<string, string> = {};
-  for (const key of ['status', 'index', 'at']) {
+  for (const key of ['status', 'index', 'at', 'workflowId']) {
     const value = url.searchParams.get(key);
-    if (value) params[key] = value;
+    if (value) {
+      params[key] = value;
+    }
   }
-  if (assetId) params.assetId = assetId;
+  if (assetId) {
+    params.assetId = assetId;
+  }
   redirect(307, utilitiesUrl(section, params));
 };

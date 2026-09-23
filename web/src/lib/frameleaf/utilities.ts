@@ -113,7 +113,13 @@ export const utilityToolsFor = (isAdmin: boolean) => UTILITY_TOOLS.filter((tool)
 export const utilityTool = (id: string | null) => UTILITY_TOOLS.find((tool) => tool.id === id);
 export const utilitiesUrl = (section?: UtilityId, params: Record<string, string | number | undefined> = {}) => {
   const search = new URLSearchParams({ area: 'utilities' });
-  if (section) search.set('section', section);
-  for (const [key, value] of Object.entries(params)) if (value !== undefined) search.set(key, String(value));
+  if (section) {
+    search.set('section', section);
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      search.set(key, String(value));
+    }
+  }
   return `/user-settings?${search}`;
 };

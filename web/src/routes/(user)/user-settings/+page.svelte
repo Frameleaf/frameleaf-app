@@ -21,7 +21,7 @@
 </script>
 
 <UserPageLayout title={data.meta.title} actions={[KeyboardShortcuts]}>
-  <Container size={data.commandCenter ? "large" : "medium"} center>
+  <Container size={data.commandCenter ? 'large' : 'medium'} center>
     <Theme theme={appTheme}>
       {#if page.url.searchParams.get('screen') === 'care'}
         <LibraryCareScreen />
