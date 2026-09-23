@@ -662,7 +662,10 @@ export class RestorationWorkerService {
     // Checkpoints of this job and of the job it retries: a retry is a new row with the same
     // snapshot, so its predecessor's completed chunks describe exactly this work.
     const stored: StoredChunk[] = [];
-    for (const id of [operation.id, operation.retryOfId].filter((value): value is string => !!value)) {
+    for (const id of [operation.id, operation.retryOfId]) {
+      if (!id) {
+        continue;
+      }
       for (const checkpoint of await this.operationRepository.getCheckpoints(id)) {
         if (stored.some((existing) => existing.sequence === checkpoint.sequence)) {
           continue;
@@ -876,7 +879,7 @@ export class RestorationWorkerService {
 
     const now = new Date();
     const provenance = {
-      ...(typeof restoration.provenance === 'object' && restoration.provenance && restoration.provenance),
+      ...(typeof restoration.provenance === 'object' && restoration.provenance),
       [stage]: {
         operationId: operation.id,
         destinationId: snapshot.destinationId,

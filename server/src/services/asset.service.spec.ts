@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
@@ -149,7 +150,7 @@ describe(AssetService.name, () => {
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
 
-      const response = await sut.get(auth, asset.id);
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
 
       expect(mocks.partner.getAll).toHaveBeenCalledWith(auth.user.id);
       expect(response.exifInfo).toEqual(
@@ -178,7 +179,7 @@ describe(AssetService.name, () => {
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
 
-      const response = await sut.get(auth, asset.id);
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
 
       expect(response.exifInfo).toEqual(expect.objectContaining({ latitude: 42, longitude: 69, city: 'Calgary' }));
     });
@@ -189,7 +190,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
 
-      const response = await sut.get(auth, asset.id);
+      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
 
       expect(mocks.partner.getAll).not.toHaveBeenCalled();
       expect(response.exifInfo).toEqual(expect.objectContaining({ latitude: 42, longitude: 69 }));

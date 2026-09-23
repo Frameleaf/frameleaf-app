@@ -59,8 +59,9 @@
   let candidates = $state<PersonResponseDto[]>([]);
   let isLoadingCandidates = $state(false);
   let isBusy = $state(false);
-  let searchInputEl = $state<HTMLInputElement | undefined>();
-  let nameInputEl = $state<HTMLInputElement | undefined>();
+  // `null`, not `undefined`: @immich/ui `Input` gives `ref` a fallback, and binding `undefined` to it throws.
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+  let nameInputEl = $state<HTMLInputElement | null>(null);
 
   const matches = $derived(
     searchTerm.trim()

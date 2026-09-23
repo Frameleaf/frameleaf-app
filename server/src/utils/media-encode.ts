@@ -186,8 +186,8 @@ export const selectEncoderPixelFormat = ({
   const reducedChroma = layout.chroma !== ChromaSubsampling.Yuv420;
   const software = accel === TranscodeHardwareAcceleration.Disabled;
   const loss =
-    `${reducedBitDepth ? `; the ${layout.bitDepth}-bit source is delivered at ${bitDepth} bits` : ''}` +
-    `${reducedChroma ? `; the ${layout.chroma} source is delivered at 4:2:0` : ''}`;
+    (reducedBitDepth ? `; the ${layout.bitDepth}-bit source is delivered at ${bitDepth} bits` : '') +
+    (reducedChroma ? `; the ${layout.chroma} source is delivered at 4:2:0` : '');
 
   return {
     pixelFormat,
