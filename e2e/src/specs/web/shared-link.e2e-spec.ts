@@ -52,7 +52,7 @@ test.describe('Shared Links', () => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
     await page.locator(`[data-asset-id="${asset.id}"]`).hover();
-    await page.waitForSelector(`[data-asset-id="${asset.id}"] [role="checkbox"]`);
+    await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').waitFor();
     await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download' }).click()]);
   });
 
@@ -65,7 +65,7 @@ test.describe('Shared Links', () => {
   test('enter password for a shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLinkPassword.key}`);
     await page.getByPlaceholder('Password').fill('test-password');
-    await page.getByRole('button', { name: 'Submit' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
   });
 
@@ -103,7 +103,7 @@ test.describe('Shared Links', () => {
 
   test('show error for invalid shared link', async ({ page }) => {
     await page.goto('/share/invalid');
-    await page.getByRole('heading', { name: 'Invalid share key' }).waitFor();
+    await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
   });
 
   test('auth on navigation from shared link to timeline', async ({ context, page }) => {
@@ -121,16 +121,19 @@ test.describe('Shared Links', () => {
     await utils.setAuthCookies(context, admin.accessToken);
 
     await page.goto(`/share/${individualSharedLink.key}`);
-    await page.locator(`[data-asset="${asset.id}"]`).waitFor();
-    await expect(page.locator(`[data-asset]`)).toHaveCount(2);
+    await page.locator(`[data-asset-id="${asset.id}"]`).waitFor();
+    await expect(page.locator(`[data-asset-id]`)).toHaveCount(2);
 
-    await page.locator(`[data-asset="${asset.id}"]`).hover();
-    await page.locator(`[data-asset="${asset.id}"] [role="checkbox"]`).click();
+    await page.locator(`[data-asset-id="${asset.id}"]`).hover();
+    await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').click();
 
-    await page.getByRole('button', { name: 'Remove from shared link' }).click();
-    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    // The floating selection bar (SelectionBar.jsx) keeps the less common actions under More.
+    const selectionBar = page.getByRole('region', { name: 'Selected items' });
+    await selectionBar.getByRole('button', { name: 'More' }).click();
+    // Pruning a link is immediate and reported in the bar, like every other bulk action.
+    await page.getByRole('menuitem', { name: 'Remove from shared link' }).click();
 
-    await expect(page.locator(`[data-asset="${asset.id}"]`)).toHaveCount(0);
-    await expect(page.locator(`[data-asset="${asset2.id}"]`)).toHaveCount(1);
+    await expect(page.locator(`[data-asset-id="${asset.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-asset-id="${asset2.id}"]`)).toHaveCount(1);
   });
 });

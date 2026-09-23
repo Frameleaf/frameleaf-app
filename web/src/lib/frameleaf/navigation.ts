@@ -266,10 +266,9 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
         destination('recentlyAdded', 'recently_added', mdiClockOutline, Route.recentlyAdded()),
         destination('bestPhotos', 'best_photos', mdiStarOutline, Route.bestPhotos()),
         destination('archive', 'archive', mdiArchiveArrowDownOutline, Route.archive()),
-        // Frameleaf "Locked" is the filtered timeline of media marked sensitive, backed
-        // by the elevated session. It is not the upstream move-to-Locked folder, which
-        // relocates assets and stays reachable on its own route.
-        destination('locked', 'frameleaf_locked', mdiShieldLockOutline, Route.suppressed()),
+        // The one Locked view (FL-34): every item its owner locked, whatever locked it, behind
+        // the PIN. Locking is metadata; nothing is relocated.
+        destination('locked', 'frameleaf_locked', mdiShieldLockOutline, Route.locked()),
       ],
     },
     {
