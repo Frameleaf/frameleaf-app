@@ -90,6 +90,23 @@ describe('fromMediaOperation', () => {
     expect(fromMediaOperation(operation()).browserLocal).toBe(false);
   });
 
+  it('reads an iCloud sync as syncing, and a run waiting out a back-off as waiting rather than retrying (FL-68)', () => {
+    const icloud = { kind: MediaOperationKind.IcloudSync, label: 'Personal iCloud' };
+    expect(fromMediaOperation(operation(icloud))).toMatchObject({
+      kindKey: 'frameleaf_activity_kind_icloud_sync',
+      statusKey: 'frameleaf_activity_icloud_syncing',
+    });
+    const retryAt = '2026-09-22T10:05:00.000Z';
+    expect(
+      fromMediaOperation(operation({ ...icloud, status: MediaOperationStatus.Queued, retryAt, autoRetries: 0 }))
+        .statusKey,
+    ).toBe('frameleaf_activity_status_waiting');
+    expect(
+      fromMediaOperation(operation({ ...icloud, status: MediaOperationStatus.Queued, retryAt, autoRetries: 1 }))
+        .statusKey,
+    ).toBe('frameleaf_activity_status_retrying');
+  });
+
   it('shows no bar rather than a zero bar for a queued job with nothing counted', () => {
     const item = fromMediaOperation(
       operation({ status: MediaOperationStatus.Queued, progress: 0, totalUnits: null, startedAt: null }),
