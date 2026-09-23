@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
+import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
@@ -75,6 +76,31 @@ export type SharedSpaceVisit = {
   albumId: string;
   userId: string;
   lastSeenAt: Date;
+};
+
+/**
+ * One stored feed event, as read back. `activityAssetId` and `activityComment`
+ * come from the joined `activity` row of a comment or like event and are null
+ * otherwise. Ids only: the service decides per viewer what may leave.
+ */
+export type SharedSpaceEvent = {
+  id: string;
+  albumId: string;
+  actorId: string | null;
+  type: SharedSpaceEventType;
+  targetUserId: string | null;
+  activityId: string | null;
+  assetIds: string[];
+  subject: string | null;
+  createdAt: Date;
+  activityAssetId: string | null;
+  activityComment: string | null;
+};
+
+/** A member named in a comment. */
+export type SharedSpaceMention = {
+  activityId: string;
+  userId: string;
 };
 
 @Injectable()
@@ -507,5 +533,120 @@ export class AlbumUserRepository {
       .execute();
 
     return rows.map(({ id }) => id);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Activity feed and mentions (FL-55)                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Record that something happened in a space.
+   *
+   * This is a plain insert of ids. It never reads an asset, so it works for
+   * every actor and every item — Locked, sensitive or hidden — without an
+   * elevated session; what a member later sees of it is the reader's problem,
+   * not the writer's.
+   */
+  async createSpaceEvent(event: Insertable<SharedSpaceEventTable>): Promise<void> {
+    await this.db.insertInto('shared_space_event').values(event).execute();
+  }
+
+  /** The space's events, newest first, joined to the comment or like they announce. */
+  async getSpaceEvents(
+    spaceId: string,
+    { before, since, take }: { before?: Date; since?: Date; take: number },
+  ): Promise<SharedSpaceEvent[]> {
+    return this.db
+      .selectFrom('shared_space_event as event')
+      .leftJoin('activity', 'activity.id', 'event.activityId')
+      .select([
+        'event.id',
+        'event.albumId',
+        'event.actorId',
+        'event.type',
+        'event.targetUserId',
+        'event.activityId',
+        'event.assetIds',
+        'event.subject',
+        'event.createdAt',
+        'activity.assetId as activityAssetId',
+        'activity.comment as activityComment',
+      ])
+      .where('event.albumId', '=', spaceId)
+      .$if(before !== undefined, (qb) => qb.where('event.createdAt', '<', before!))
+      .$if(since !== undefined, (qb) => qb.where('event.createdAt', '>', since!))
+      .orderBy('event.createdAt', 'desc')
+      .orderBy('event.id', 'desc')
+      .limit(take)
+      .execute();
+  }
+
+  /**
+   * Of these asset ids, the ones a viewer may see.
+   *
+   * The same exclusions as every other read of a space: Locked and hidden media
+   * through the default visibility filter, media marked sensitive and the
+   * viewer's own suppression settings through the hidden-content filter, and
+   * deleted media. With `inSpace` the item must also still be in the space, so
+   * an addition is only ever shown as items that are actually there; a removal
+   * checks without it, because those items are gone from the space by definition.
+   */
+  async filterVisibleSpaceAssetIds(
+    spaceId: string,
+    assetIds: string[],
+    options: HiddenContentQueryOptions,
+    { inSpace }: { inSpace: boolean },
+  ): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .select('asset.id')
+      .where('asset.id', 'in', assetIds)
+      .where('asset.deletedAt', 'is', null)
+      .$if(inSpace, (qb) =>
+        qb.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('album_asset')
+              .select('album_asset.assetId')
+              .whereRef('album_asset.assetId', '=', 'asset.id')
+              .where('album_asset.albumId', '=', spaceId),
+          ),
+        ),
+      )
+      .execute();
+
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  async createMentions(activityId: string, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+    await this.db
+      .insertInto('shared_space_mention')
+      .values(userIds.map((userId) => ({ activityId, userId })))
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  async deleteMentions(activityId: string): Promise<void> {
+    await this.db.deleteFrom('shared_space_mention').where('activityId', '=', activityId).execute();
+  }
+
+  async getMentions(activityIds: string[]): Promise<SharedSpaceMention[]> {
+    if (activityIds.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom('shared_space_mention')
+      .select(['activityId', 'userId'])
+      .where('activityId', 'in', activityIds)
+      .execute();
   }
 }

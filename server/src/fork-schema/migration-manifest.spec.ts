@@ -35,6 +35,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000200-AddSharedSpacePanels')).toBe('legacy-fork');
     expect(classifyMigration('2100000000210-AddMediaOperationBulkResult')).toBe('legacy-fork');
     expect(classifyMigration('2100000000220-AddStudioProjectTables')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000260-AddSharedSpaceCollaboration')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
