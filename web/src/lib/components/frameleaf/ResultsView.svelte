@@ -45,7 +45,6 @@
      */
     downloadFileName?: string;
     tagOptions?: { id: string; name: string }[];
-    albumOptions?: { id: string; name: string; count?: number }[];
     selectionMode?: boolean;
     singleSelect?: boolean;
     onSelect?: (asset: TimelineAsset) => void;
@@ -65,7 +64,6 @@
     bulkContext,
     downloadFileName,
     tagOptions = [],
-    albumOptions = [],
     selectionMode = false,
     singleSelect = false,
     onSelect,
@@ -175,7 +173,6 @@
     assets={selectedAssets}
     context={{ ...bulkContext, currentUserId }}
     {tagOptions}
-    {albumOptions}
     operations={session.session.operations}
     undoLabel={bulk.undo?.label}
     onAction={runBulk}

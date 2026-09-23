@@ -260,6 +260,9 @@ export class SharedLinkRepository {
           eb
             .selectFrom('asset')
             .whereRef('asset.id', '=', 'shared_link_asset.assetId')
+            // what create and update hand back follows the same rule as every other read of a link:
+            // no Locked media, including a partner's item that moved into their Locked folder
+            .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
             .selectAll('asset')
             .innerJoinLateral(withExifInfo, (join) => join.onTrue())
             .as('assets'),

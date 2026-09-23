@@ -1,12 +1,22 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
 import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
+
+vi.mock('@immich/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@immich/sdk')>()),
+  getAllAlbums: vi.fn(),
+}));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));
 
 /**
- * The bar's contract with the library view: it never calls an endpoint, it hands an action and a
- * payload to `onAction`, and it keeps the complete bulk set reachable by keyboard.
+ * The bar's contract with the library view: it never runs an action itself, it hands an action and a
+ * payload to `onAction`, and it keeps the complete bulk set reachable by keyboard. Its one read is
+ * the album list the Add to album picker loads for itself.
  */
 describe('Frameleaf selection bar', () => {
   const onAction = vi.fn();
@@ -90,6 +100,36 @@ describe('Frameleaf selection bar', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'More' }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Unstack' }));
     expect(onAction).toHaveBeenCalledWith('unstack', { stackIds: ['stack-1'] });
+  });
+
+  it('loads its own album list for Add to album, so any view can offer it with nothing passed in', async () => {
+    const me = userAdminFactory.build({ id: 'me' });
+    const album = (overrides: Partial<AlbumResponseDto>): AlbumResponseDto =>
+      albumFactory.build({
+        kind: AlbumKind.Album,
+        parentId: null,
+        albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
+        ...overrides,
+      });
+    vi.mocked(getAllAlbums).mockResolvedValue([
+      album({ id: 'trips', albumName: 'Trips', kind: AlbumKind.Collection }),
+      album({ id: 'iceland', albumName: 'Iceland', parentId: 'trips' }),
+      album({ id: 'household', albumName: 'Household', kind: AlbumKind.Space }),
+    ]);
+
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
+
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Iceland/ })).toBeInTheDocument());
+    expect(getAllAlbums).toHaveBeenCalledOnce();
+    expect(within(dialog).getByText('Trips')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio', { name: /Trips/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: /Household/ })).toBeInTheDocument();
+
+    await fireEvent.click(within(dialog).getByRole('radio', { name: /Iceland/ }));
+    await fireEvent.submit(within(dialog).getByRole('radio', { name: /Iceland/ }).closest('form')!);
+    expect(onAction).toHaveBeenCalledWith('add-to-album', { albumId: 'iceland' });
   });
 
   it('confirms a permanent delete and never a reversible one', async () => {
