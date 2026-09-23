@@ -35,6 +35,22 @@ export const changesLockedRules = (dto: UserPreferencesUpdateDto): boolean => {
   const suppression = dto.privacy?.suppression;
   return !!suppression && Object.values(suppression).some((value) => value !== undefined);
 };
+
+/**
+ * FL-67: a stored preferences value (the partial kept in `user_metadata`) without the Locked
+ * people, pets and tags, for a reader whose session is not unlocked, such as the sync stream. The
+ * scope and every other preference are kept.
+ */
+export const withoutStoredLockedRuleIds = <T>(value: T): T => {
+  const suppression = (value as DeepPartial<UserPreferences> | null | undefined)?.privacy?.suppression;
+  if (!suppression) {
+    return value;
+  }
+
+  const { tagIds: _tagIds, personIds: _personIds, petIds: _petIds, ...rest } = suppression;
+  const partial = value as DeepPartial<UserPreferences>;
+  return { ...partial, privacy: { ...partial.privacy, suppression: rest } } as T;
+};
 export const PREFERENCES_CHANGED_MESSAGE =
   'These preferences changed after they were loaded. Load the latest preferences and try again.';
 

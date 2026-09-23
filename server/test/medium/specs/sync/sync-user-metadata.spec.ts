@@ -83,6 +83,32 @@ describe(SyncEntityType.UserMetadataV1, () => {
     await ctx.syncAckAll(auth, updatedResponse);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.UserMetadataV1]);
   });
+
+  it('should leave Locked people, pets and tags out of preferences for a session that is not unlocked (FL-67)', async () => {
+    const { auth, user, ctx } = await setup();
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+
+    const userRepo = ctx.get(UserRepository);
+    await userRepo.upsertMetadata(user.id, {
+      key: UserMetadataKey.Preferences,
+      value: { tags: { enabled: true }, privacy: { suppression: { personIds: [personId], scope: 'visible' } } },
+    });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.UserMetadataV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          key: UserMetadataKey.Preferences,
+          userId: user.id,
+          value: { tags: { enabled: true }, privacy: { suppression: { scope: 'visible' } } },
+        },
+        type: 'UserMetadataV1',
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    expect(JSON.stringify(response)).not.toContain(personId);
+  });
 });
 
 describe(SyncEntityType.UserMetadataDeleteV1, () => {

@@ -1071,6 +1071,43 @@ describe(SystemConfigService.name, () => {
       expect(lastPersisted()?.oauth?.clientSecret).toBe('oauth-secret');
     });
 
+    it('should never send the stored SMTP password or OAuth secret to a new server', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+      const redacted = await sut.getAdminConfig();
+
+      await sut.updateAdminConfig({
+        ...redacted,
+        notifications: {
+          smtp: {
+            ...redacted.notifications.smtp,
+            transport: { ...redacted.notifications.smtp.transport, host: 'mail.elsewhere.example' },
+          },
+        },
+        oauth: { ...redacted.oauth, issuerUrl: 'https://id.elsewhere.example' },
+      });
+
+      expect(lastPersisted()?.notifications?.smtp?.transport?.password).toBeUndefined();
+      expect(lastPersisted()?.oauth?.clientSecret).toBeUndefined();
+      // the configuration validated against the new servers (SMTP is verified there) carries no secret
+      const [, validate] = mocks.event.emit.mock.calls.find(([name]) => name === 'ConfigValidate')!;
+      const { newConfig } = validate as { newConfig: SystemConfig };
+      expect(newConfig.notifications.smtp.transport.password).toBe('');
+      expect(newConfig.oauth.clientSecret).toBe('');
+    });
+
+    it('should not treat the read-only configured flags as a change or store them', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+      const redacted = await sut.getAdminConfig();
+
+      await sut.updateAdminConfig({ ...redacted, trash: { ...redacted.trash, days: 12 } });
+
+      const [, validate] = mocks.event.emit.mock.calls.find(([name]) => name === 'ConfigValidate')!;
+      const { newConfig, oldConfig } = validate as { newConfig: SystemConfig; oldConfig: SystemConfig };
+      expect(newConfig.notifications.smtp).toEqual(oldConfig.notifications.smtp);
+      expect(newConfig.oauth).toEqual(oldConfig.oauth);
+      expect(JSON.stringify(lastPersisted())).not.toContain('Configured');
+    });
+
     it('should list whether each credential is stored without returning a value', async () => {
       mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
 
