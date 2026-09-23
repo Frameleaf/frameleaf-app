@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -22,7 +23,7 @@ const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(SmartAlbumService, {
     database: db || defaultDatabase,
     real: [ConfigRepository, SearchRepository, SmartAlbumRepository, SystemMetadataRepository, UserRepository],
-    mock: [LoggingRepository, MachineLearningRepository],
+    mock: [LoggingRepository, MachineLearningRepository, MlDestinationRepository],
   });
   return { sut, ctx };
 };

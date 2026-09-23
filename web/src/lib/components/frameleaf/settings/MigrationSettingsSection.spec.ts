@@ -18,7 +18,7 @@ const openChecklist = async () => {
   await fireEvent.click(screen.getByRole('button', { name: admin.frameleaf_migration_checklist_action }));
   return screen.getByRole('dialog', { name: admin.frameleaf_migration_checklist_title });
 };
-const code = (dialog: HTMLElement) => [...dialog.querySelectorAll('pre code')].map((node) => node.textContent);
+const code = (dialog: HTMLElement) => [...dialog.querySelectorAll(':scope pre code')].map((node) => node.textContent);
 const next = (dialog: HTMLElement) => fireEvent.click(within(dialog).getByRole('button', { name: en.continue }));
 
 const chooseReport = async (value: unknown) => {

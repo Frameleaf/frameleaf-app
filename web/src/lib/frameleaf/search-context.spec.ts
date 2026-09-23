@@ -113,10 +113,14 @@ describe('search context chips (FL-48)', () => {
       filter: { isFavorite: { eq: true } },
     };
     expect(withoutDiscoveryContext(query, 'text')).toEqual({ ...query, text: '' });
-    const { queryAssetId: _queryAssetId, ...withoutReference } = query;
-    expect(withoutDiscoveryContext(query, 'queryAssetId')).toEqual(withoutReference);
-    const { spaceId: _spaceId, ...withoutSpace } = query;
-    expect(withoutDiscoveryContext(query, 'spaceId')).toEqual(withoutSpace);
+    {
+      const { queryAssetId: _, ...withoutReference } = query;
+      expect(withoutDiscoveryContext(query, 'queryAssetId')).toEqual(withoutReference);
+    }
+    {
+      const { spaceId: _, ...withoutSpace } = query;
+      expect(withoutDiscoveryContext(query, 'spaceId')).toEqual(withoutSpace);
+    }
     expect(query.queryAssetId).toBe('asset-1');
   });
 });

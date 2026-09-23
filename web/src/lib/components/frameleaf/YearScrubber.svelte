@@ -114,11 +114,11 @@
   /** Report a track position to the host, which owns the one scroll implementation. */
   const scrubTo = (month: Marked | null, fraction: number) => {
     if (!month) {
-      onScrub?.({ scrubberMonth: undefined, overallScrollPercent: fraction, scrubberMonthScrollPercent: 0 });
+      void onScrub?.({ scrubberMonth: undefined, overallScrollPercent: fraction, scrubberMonthScrollPercent: 0 });
       return;
     }
     const span = month.end - month.start;
-    onScrub?.({
+    void onScrub?.({
       scrubberMonth: { year: month.year, month: month.month },
       overallScrollPercent: fraction,
       scrubberMonthScrollPercent: span > 0 ? clamp01((fraction - month.start) / span) : 0,

@@ -140,14 +140,26 @@
       {#each rows as row (row.id)}
         {@const name = titleOf(row)}
         {@const id = domId(row)}
-        <li class="fl-job is-{row.tone}" class:paused={row.paused} class:pausing={row.pausing}>
+        <li
+          class="fl-job"
+          class:is-warning={row.tone === 'warning'}
+          class:is-neutral={row.tone === 'neutral'}
+          class:paused={row.paused}
+          class:pausing={row.pausing}
+        >
           <a class="fl-job-main" href={row.href} onclick={() => onNavigate?.()}>
             <span class="fl-job-icon" aria-hidden="true"><Icon icon={iconOf(row)} size={18} /></span>
             <span class="fl-job-text">
               <span class="fl-job-row">
                 <strong>{name}</strong>
                 <!-- The prototype's Activity chip: the state in words, with a pulsing dot while work moves. -->
-                <span class="fl-chip fl-chip--{row.tone}">
+                <span
+                  class="fl-chip"
+                  class:fl-chip--info={row.tone === 'info'}
+                  class:fl-chip--success={row.tone === 'success'}
+                  class:fl-chip--warning={row.tone === 'warning'}
+                  class:fl-chip--danger={row.tone === 'danger'}
+                >
                   {#if row.live}<i class="fl-dot" aria-hidden="true"></i>{/if}
                   {$t(row.statusKey)}
                 </span>

@@ -57,11 +57,12 @@
 
   // Every opening starts at the first stage with no report, like the template.
   $effect(() => {
-    if (open) {
-      step = 0;
-      error = undefined;
-      report = undefined;
+    if (!open) {
+      return;
     }
+    step = 0;
+    error = undefined;
+    report = undefined;
   });
 
   const back = () => {

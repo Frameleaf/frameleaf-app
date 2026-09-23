@@ -66,6 +66,9 @@ const disposingPhases: ReadonlySet<StudioHostPhase> = new Set<StudioHostPhase>([
 
 export const shouldDisposeEngine = (phase: StudioHostPhase): boolean => disposingPhases.has(phase);
 
+/** A mount that lands while one of these holds is recorded, but does not make the host ready. */
+const PHASES_THAT_OUTRANK_MOUNTING: ReadonlySet<StudioHostPhase> = new Set(['offline', 'unavailable', 'error']);
+
 export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent): StudioHostState => {
   // Access loss is terminal for this mount, so nothing below can move out of it.
   if (state.phase === 'forbidden' && event.type !== 'retry') {
@@ -142,7 +145,7 @@ export const reduceStudioHost = (state: StudioHostState, event: StudioHostEvent)
     }
 
     case 'engine-mounted': {
-      if (state.phase === 'offline' || state.phase === 'unavailable' || state.phase === 'error') {
+      if (PHASES_THAT_OUTRANK_MOUNTING.has(state.phase)) {
         return { ...state, mounted: true };
       }
       return { ...state, phase: 'ready', mounted: true, messageKey: null, detail: null };

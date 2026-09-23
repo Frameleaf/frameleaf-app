@@ -506,12 +506,10 @@ export class TimelineManager extends VirtualScrollManager {
    * Executes callback on assets, handling moves between groups and removals due to filter criteria.
    */
   update(ids: string[], callback: (asset: TimelineAsset) => void) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     return this.#runAssetCallback(new Set(ids), callback);
   }
 
   removeAssets(ids: string[]) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const result = this.#runAssetCallback(new Set(ids), () => ({ remove: true }));
     return [...result.notUpdated];
   }
@@ -579,9 +577,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   #updateAssets(assets: TimelineAsset[]) {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const cache = new Map<string, TimelineAsset>(assets.map((asset) => [asset.id, asset]));
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const idsToUpdate = new Set(cache.keys());
     const result = this.#runAssetCallback(idsToUpdate, (asset) => void updateObject(asset, cache.get(asset.id)));
     const notUpdated: TimelineAsset[] = Array.from(result.notUpdated, (assetId) => cache.get(assetId)!);
@@ -590,14 +586,10 @@ export class TimelineManager extends VirtualScrollManager {
 
   #runAssetCallback(ids: Set<string>, callback: (asset: TimelineAsset) => void | { remove?: boolean }) {
     if (ids.size === 0) {
-      // eslint-disable-next-line svelte/prefer-svelte-reactivity
       return { updated: new Set<string>(), notUpdated: ids, changedGeometry: false };
     }
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const changedTimelineMonths = new Set<TimelineMonth>();
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     let notUpdated = new Set(ids);
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const updated = new Set<string>();
     const assetsToMoveSegments: MoveAsset[][] = [];
     for (const month of this.months) {

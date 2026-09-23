@@ -310,6 +310,13 @@ export class IntegrityService extends BaseService {
       untrackedFiles.delete(path);
     }
 
+    // Develop versions (edited masters, previews, developed files brought back) are tracked by
+    // their version row; they are a person's work, never an orphan to clean up (FL-64).
+    const developPaths = await this.integrityRepository.getDevelopRevisionPathsByPaths(paths);
+    for (const { path } of developPaths) {
+      untrackedFiles.delete(path);
+    }
+
     if (untrackedFiles.size > 0) {
       await this.integrityRepository.create(
         [...untrackedFiles].map((path) => ({

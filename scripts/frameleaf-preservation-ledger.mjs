@@ -217,22 +217,19 @@ const candidateOnlySettings = new Set([
   "roadmap:enrichment",
   "roadmap:care",
 ]);
-// Settings rows whose production home has shipped outside the design template's own area.
+// Settings rows connected to production workflows.
 // The row stays unqualified until acceptance; it no longer claims "not yet built".
 const shippedSettingHomes = {
-  // FL-75: the template places server migration under Settings > Storage ("Move or export
-  // your library"). Production has no Storage area yet, so the command-line guide and the
-  // read-only audit report live in Administration > Maintenance until that area lands.
+  // FL-75: the prototype's Storage & originals migration checklist opens the CLI audit report.
   "roadmap:migration": {
     target: {
       module:
-        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte",
-      area: "maintenance",
-      section: "server-migration",
-      interimFor: "storage/migration",
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte",
+      area: "storage",
+      section: "migration",
     },
     evidence: [
-      "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.spec.ts",
+      "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.spec.ts",
       "web/src/lib/frameleaf/migration-report.spec.ts",
       "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
       "docs/docs/administration/server-migration.md",
