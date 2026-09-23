@@ -347,6 +347,7 @@ from
 where
   "ownerId" = $1::uuid
   and "checksum" in ($2)
+  and "asset"."visibility" != 'locked'
   and not (
     case
       when "asset"."id" is null then false
@@ -398,6 +399,7 @@ where
   "ownerId" = $1::uuid
   and "checksum" = $2
   and "libraryId" is null
+  and "asset"."visibility" != 'locked'
   and not (
     case
       when "asset"."id" is null then false

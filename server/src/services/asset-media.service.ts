@@ -35,6 +35,7 @@ import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { fromChecksum } from 'src/utils/request.js';
 
@@ -235,8 +236,10 @@ export class AssetMediaService extends BaseService {
           ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum, duplicateOptions)
           : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum);
         if (!duplicateId) {
-          if (auth.hideNsfwAssets) {
-            this.logger.debug('Duplicate asset upload rejected while existing asset is hidden by NSFW privacy mode');
+          // the existing asset is hidden from this session: NSFW privacy mode, or Locked media the session
+          // has not unlocked (a shared-link session never has)
+          if (auth.hideNsfwAssets || (await this.isWithheldLockedDuplicate(auth, file.checksum))) {
+            this.logger.debug('Duplicate asset upload rejected while the existing asset is hidden');
             // Return a nil UUID rather than an empty string so clients that
             // strictly type the asset id (e.g. immich-go's AssetResponse.ID)
             // don't crash. The real duplicate id is still withheld, preserving
@@ -421,8 +424,32 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * A duplicate lookup names only what this session may see: the caller's hidden-content settings
+   * apply, and a Locked match is named only for the owner's elevated session (FL-34). Left out, the
+   * repository withholds Locked matches.
+   */
+  /**
+   * Whether the owner's copy of this checksum is Locked media the session may not name. Checked
+   * server side only, after the named lookup came back empty; its id never leaves this method.
+   */
+  private async isWithheldLockedDuplicate(auth: AuthDto, checksum: Buffer) {
+    if (getLockedOwnerId(auth)) {
+      return false;
+    }
+
+    const lockedId = await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, checksum, {
+      lockedOwnerId: auth.user.id,
+    });
+    return !!lockedId;
+  }
+
   private getDuplicateCheckOptions(auth: AuthDto) {
-    return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
+    const options = {
+      ...(auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : {}),
+      ...getLockedVisibilityOptions(auth),
+    };
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   private async getPhysicalDeduplicationCandidate(ownerId: string, file: UploadFile) {

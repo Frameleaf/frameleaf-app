@@ -523,6 +523,37 @@ describe(AssetMediaService.name, () => {
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
 
+    it('should never name a Locked duplicate to a session that has not unlocked it (FL-34)', async () => {
+      const file = {
+        uuid: 'random-uuid',
+        originalPath: 'fake_path/asset_1.jpeg',
+        mimeType: 'image/jpeg',
+        checksum: Buffer.from('file hash', 'utf8'),
+        originalName: 'asset_1.jpeg',
+        size: 0,
+      };
+      const error = new Error('unique key violation');
+      (error as any).constraint_name = ASSET_CHECKSUM_CONSTRAINT;
+
+      mocks.asset.create.mockRejectedValue(error);
+      // the named lookup withholds Locked; only the owner-scoped server-side check finds it
+      mocks.asset.getUploadAssetIdByChecksum.mockImplementation((_ownerId, _checksum, options) =>
+        Promise.resolve(options?.lockedOwnerId ? 'locked-asset-id' : undefined),
+      );
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+      expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenNthCalledWith(
+        1,
+        authStub.user1.user.id,
+        file.checksum,
+      );
+      expect(mocks.sharedLink.addAssets).not.toHaveBeenCalled();
+      expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
+    });
+
     it('should handle a live photo', async () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden })
         .owner(authStub.user1.user)
@@ -909,6 +940,20 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('bulkUploadCheck', () => {
+    it('should name Locked duplicates only for the elevated owner (FL-34)', async () => {
+      const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+
+      await sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
+      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(authStub.admin.user.id, [file1]);
+
+      const elevated = authStub.adminWithElevatedPermission;
+      await sut.bulkUploadCheck(elevated, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
+      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(elevated.user.id, [file1], {
+        lockedOwnerId: elevated.user.id,
+      });
+    });
+
     it('should accept hex and base64 checksums', async () => {
       const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
       const file2 = Buffer.from('53be335e99f18a66ff12e9a901c7a6171dd76573', 'hex');
