@@ -744,6 +744,83 @@ export const PetObservationSourceSchema = z
   .enum(PetObservationSource)
   .describe('How a pet observation was recorded')
   .meta({ id: 'PetObservationSource' });
+ * Durable, user-visible media operations (FL-43, FL-104).
+ *
+ * One persistent job contract covers every long-running workload a person can see in Activity.
+ * The kind selects the workload; the immutable `snapshot` on the row carries whatever that
+ * workload needs to reproduce the work exactly.
+ */
+export enum MediaOperationKind {
+  /** A Studio project render to a finished file. */
+  StudioExport = 'studio_export',
+  /** A short Studio preview render; same graph, bounded range. */
+  StudioPreview = 'studio_preview',
+  /** A video restoration render. */
+  Restoration = 'restoration',
+  /** The five-second restoration motion preview a full render must inherit from. */
+  RestorationPreview = 'restoration_preview',
+  /** A still-image edit recipe render. */
+  QuickEdit = 'quick_edit',
+}
+
+export const MediaOperationKindSchema = z
+  .enum(MediaOperationKind)
+  .describe('Media operation kind')
+  .meta({ id: 'MediaOperationKind' });
+
+/**
+ * The durable state machine. `cancelling` is a real persisted state: the request is recorded
+ * before the worker answers, so a cancel survives a restart and the remote acknowledgement is
+ * still expected afterwards.
+ */
+export enum MediaOperationStatus {
+  Queued = 'queued',
+  Preparing = 'preparing',
+  Rendering = 'rendering',
+  Validating = 'validating',
+  Completed = 'completed',
+  Cancelling = 'cancelling',
+  Cancelled = 'cancelled',
+  Failed = 'failed',
+}
+
+export const MediaOperationStatusSchema = z
+  .enum(MediaOperationStatus)
+  .describe('Media operation status')
+  .meta({ id: 'MediaOperationStatus' });
+
+/**
+ * Where the work runs. Always explicit and immutable for the life of a job: losing a local GPU
+ * never promotes a job to the cloud, and changing the destination means a new job.
+ */
+export enum MediaOperationDestination {
+  /** This server's own hardware. */
+  Local = 'local',
+  /** A qualified worker on the home network. */
+  Lan = 'lan',
+  /** The configured RunPod workload. Chosen by the person, never as a fallback. */
+  RunPod = 'runpod',
+}
+
+export const MediaOperationDestinationSchema = z
+  .enum(MediaOperationDestination)
+  .describe('Media operation destination')
+  .meta({ id: 'MediaOperationDestination' });
+
+/** The state of one checkpointed chunk of a render. */
+export enum MediaOperationCheckpointState {
+  /** Claimed or planned, not yet proven. */
+  Pending = 'pending',
+  /** Rendered and validated; reusable when every digest still matches. */
+  Complete = 'complete',
+  /** Known not to describe the current inputs; never reusable. */
+  Invalid = 'invalid',
+}
+
+export const MediaOperationCheckpointStateSchema = z
+  .enum(MediaOperationCheckpointState)
+  .describe('Media operation checkpoint state')
+  .meta({ id: 'MediaOperationCheckpointState' });
 
 export enum LogLevel {
   Verbose = 'verbose',
@@ -1427,6 +1504,7 @@ export enum ApiTag {
   Maintenance = 'Maintenance (admin)',
   Map = 'Map',
   MediaHealth = 'Media Health',
+  MediaOperations = 'Media operations',
   Memories = 'Memories',
   Notifications = 'Notifications',
   NotificationsAdmin = 'Notifications (admin)',

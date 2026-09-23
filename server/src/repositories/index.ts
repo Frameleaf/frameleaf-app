@@ -38,6 +38,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -114,6 +115,7 @@ export const repositories = [
   MachineLearningRepository,
   MapRepository,
   MediaHealthRepository,
+  MediaOperationRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,

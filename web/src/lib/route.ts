@@ -47,6 +47,10 @@ const asQueryString = (
 };
 
 export const Route = {
+  // activity
+  /** The durable job feed (FL-104). Renders, restorations, transfers and bulk operations. */
+  activity: (params?: { filter?: 'all' | 'running' | 'done' | 'failed' }) => '/activity' + asQueryString(params),
+
   // auth
   login: (params?: { continue?: string; autoLaunch?: 0 | 1 }) => '/auth/login' + asQueryString(params),
   logout: (params?: { continue?: string }) => '/auth/logout' + asQueryString(params),

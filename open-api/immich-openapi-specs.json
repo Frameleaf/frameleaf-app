@@ -9377,6 +9377,361 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-operations": {
+      "get": {
+        "description": "Durable renders, restorations and edits belonging to the signed-in account, newest first. These survive closing the browser and restarting the server.",
+        "operationId": "searchMediaOperations",
+        "parameters": [
+          {
+            "name": "includeDismissed",
+            "required": false,
+            "in": "query",
+            "description": "Include jobs the owner cleared",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Restrict to one status",
+            "schema": {
+              "$ref": "#/components/schemas/MediaOperationStatus"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your media operations",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/statistics": {
+      "get": {
+        "description": "Operational counts by kind, status and destination. Aggregates only: no owner, label or media is included.",
+        "operationId": "getMediaOperationStatistics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationStatisticsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get media operation statistics",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/{id}": {
+      "get": {
+        "description": "The job with its render checkpoints and the immutable snapshot it was bound to.",
+        "operationId": "getMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Removes a finished job from your Activity list. The record is kept for lineage and remote cleanup.",
+        "operationId": "dismissMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear a finished media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/{id}/cancel": {
+      "post": {
+        "description": "Records the cancellation durably. A queued job stops at once; a claimed job reports `cancelling` until the worker acknowledges it.",
+        "operationId": "cancelMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/{id}/retry": {
+      "post": {
+        "description": "Queues a new job from the failed or cancelled one, reusing its immutable snapshot and destination and recording the lineage.",
+        "operationId": "retryMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry a media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/memories": {
       "get": {
         "description": "Retrieve a list of memories. Memories are sorted descending by creation date by default, although they can also be sorted in ascending order, or randomly.",
@@ -20975,6 +21330,9 @@
       "description": "Media health utilities identify missing and corrupt source files."
     },
     {
+      "name": "Media operations"
+    },
+    {
       "name": "Memories",
       "description": "A memory is a specialized collection of assets with dedicated viewing implementations in the web and mobile clients. A memory includes fields related to visibility and are automatically generated per user via a background job."
     },
@@ -29710,6 +30068,553 @@
           "trashed",
           "delete_queued",
           "deleted"
+        ],
+        "type": "string"
+      },
+      "MediaOperationAggregateDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "oldestCreatedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "count",
+          "destination",
+          "kind",
+          "oldestCreatedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MediaOperationCheckpointDto": {
+        "properties": {
+          "chunkKey": {
+            "description": "Digest over every input to this chunk; the reuse key",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "endTicks": {
+            "description": "Chunk end, in ticks of the timebase",
+            "type": "string"
+          },
+          "id": {
+            "description": "Checkpoint ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "requiresSequentialContext": {
+            "description": "A render may not start inside this chunk",
+            "type": "boolean"
+          },
+          "sequence": {
+            "description": "Chunk order within the render",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "sizeInBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "startTicks": {
+            "description": "Chunk start, in ticks of the timebase",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MediaOperationCheckpointState"
+          },
+          "timebase": {
+            "description": "Rational timebase for the tick range, e.g. 30000/1001",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey",
+          "completedAt",
+          "endTicks",
+          "id",
+          "requiresSequentialContext",
+          "sequence",
+          "sizeInBytes",
+          "startTicks",
+          "state",
+          "timebase"
+        ],
+        "type": "object"
+      },
+      "MediaOperationCheckpointState": {
+        "description": "Media operation checkpoint state",
+        "enum": [
+          "pending",
+          "complete",
+          "invalid"
+        ],
+        "type": "string"
+      },
+      "MediaOperationDestination": {
+        "description": "Media operation destination",
+        "enum": [
+          "local",
+          "lan",
+          "runpod"
+        ],
+        "type": "string"
+      },
+      "MediaOperationDetailDto": {
+        "properties": {
+          "assetId": {
+            "description": "Source asset, when the workload has exactly one",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "cancelAcknowledgedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "cancelRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationCheckpointDto"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "destinationDetail": {
+            "description": "Which worker or endpoint the destination resolved to",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "description": "Operator detail about a failure",
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable code the client turns into a message",
+            "nullable": true,
+            "type": "string"
+          },
+          "estimate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationEstimateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "label": {
+            "description": "What the person sees in Activity",
+            "type": "string"
+          },
+          "maxAttempts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "processedUnits": {
+            "type": "string"
+          },
+          "progress": {
+            "description": "Percent complete, from counted work",
+            "format": "double",
+            "type": "number"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "resultAssetId": {
+            "description": "The asset a completed job published",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "retryOfId": {
+            "description": "The job this one retries",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revisionId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {},
+            "description": "User-visible render settings",
+            "type": "object"
+          },
+          "snapshot": {
+            "additionalProperties": {},
+            "description": "The immutable binding the render was bound to",
+            "type": "object"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempt",
+          "cancelAcknowledgedAt",
+          "cancelRequestedAt",
+          "checkpoints",
+          "createdAt",
+          "destination",
+          "destinationDetail",
+          "error",
+          "errorCode",
+          "estimate",
+          "finishedAt",
+          "id",
+          "kind",
+          "label",
+          "maxAttempts",
+          "processedUnits",
+          "progress",
+          "projectId",
+          "resultAssetId",
+          "retryOfId",
+          "revisionId",
+          "settings",
+          "snapshot",
+          "startedAt",
+          "status",
+          "totalUnits",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaOperationDto": {
+        "properties": {
+          "assetId": {
+            "description": "Source asset, when the workload has exactly one",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "cancelAcknowledgedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "cancelRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "destinationDetail": {
+            "description": "Which worker or endpoint the destination resolved to",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "description": "Operator detail about a failure",
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable code the client turns into a message",
+            "nullable": true,
+            "type": "string"
+          },
+          "estimate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationEstimateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "label": {
+            "description": "What the person sees in Activity",
+            "type": "string"
+          },
+          "maxAttempts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "processedUnits": {
+            "type": "string"
+          },
+          "progress": {
+            "description": "Percent complete, from counted work",
+            "format": "double",
+            "type": "number"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "resultAssetId": {
+            "description": "The asset a completed job published",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "retryOfId": {
+            "description": "The job this one retries",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revisionId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {},
+            "description": "User-visible render settings",
+            "type": "object"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempt",
+          "cancelAcknowledgedAt",
+          "cancelRequestedAt",
+          "createdAt",
+          "destination",
+          "destinationDetail",
+          "error",
+          "errorCode",
+          "estimate",
+          "finishedAt",
+          "id",
+          "kind",
+          "label",
+          "maxAttempts",
+          "processedUnits",
+          "progress",
+          "projectId",
+          "resultAssetId",
+          "retryOfId",
+          "revisionId",
+          "settings",
+          "startedAt",
+          "status",
+          "totalUnits",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaOperationEstimateDto": {
+        "properties": {
+          "cloudCost": {
+            "additionalProperties": {},
+            "description": "Configured cloud rate detail, when one applies",
+            "nullable": true,
+            "type": "object"
+          },
+          "seconds": {
+            "description": "Measured estimate of remaining work",
+            "format": "double",
+            "type": "number"
+          },
+          "sizeBytes": {
+            "description": "Estimated output size",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudCost",
+          "seconds",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
+      "MediaOperationKind": {
+        "description": "Media operation kind",
+        "enum": [
+          "studio_export",
+          "studio_preview",
+          "restoration",
+          "restoration_preview",
+          "quick_edit"
+        ],
+        "type": "string"
+      },
+      "MediaOperationListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Matching jobs, before paging",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "MediaOperationStatisticsDto": {
+        "properties": {
+          "active": {
+            "description": "Jobs the server is still working on",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationAggregateDto"
+            },
+            "type": "array"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unreleasedRemote": {
+            "description": "Remote jobs whose cleanup has not been acknowledged",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "buckets",
+          "failed",
+          "unreleasedRemote"
+        ],
+        "type": "object"
+      },
+      "MediaOperationStatus": {
+        "description": "Media operation status",
+        "enum": [
+          "queued",
+          "preparing",
+          "rendering",
+          "validating",
+          "completed",
+          "cancelling",
+          "cancelled",
+          "failed"
         ],
         "type": "string"
       },
