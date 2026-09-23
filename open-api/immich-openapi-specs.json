@@ -14592,7 +14592,7 @@
     "/ml-destinations": {
       "get": {
         "description": "Every configured destination with its consent state, cost controls and last probe.",
-        "operationId": "list",
+        "operationId": "listMlDestinations",
         "parameters": [],
         "responses": {
           "200": {
@@ -14640,7 +14640,7 @@
       },
       "post": {
         "description": "Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.",
-        "operationId": "create",
+        "operationId": "createMlDestination",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -14697,7 +14697,7 @@
     "/ml-destinations/capabilities": {
       "get": {
         "description": "What this deployment can run right now, per workload and destination, from the last health probes. Includes the Studio capability row the Studio host reads.",
-        "operationId": "getCapabilities",
+        "operationId": "getMlCapabilities",
         "parameters": [],
         "responses": {
           "200": {
@@ -14742,7 +14742,7 @@
     "/ml-destinations/routes": {
       "get": {
         "description": "The destination each workload is routed to. A workload without a route is refused, never sent anywhere.",
-        "operationId": "getRoutes",
+        "operationId": "getMlWorkloadRoutes",
         "parameters": [],
         "responses": {
           "200": {
@@ -14789,7 +14789,7 @@
     "/ml-destinations/routes/{workload}": {
       "put": {
         "description": "Route a workload to one destination, or remove its route with a null destination. Routing to a cloud destination requires its consent to be recorded first.",
-        "operationId": "setRoute",
+        "operationId": "setMlWorkloadRoute",
         "parameters": [
           {
             "name": "workload",
@@ -14855,7 +14855,7 @@
     "/ml-destinations/{id}": {
       "delete": {
         "description": "Removes the destination and every route to it; the affected workloads are refused until routed again.",
-        "operationId": "delete",
+        "operationId": "deleteMlDestination",
         "parameters": [
           {
             "name": "id",
@@ -14903,7 +14903,7 @@
         "x-immich-state": "Alpha"
       },
       "get": {
-        "operationId": "get",
+        "operationId": "getMlDestination",
         "parameters": [
           {
             "name": "id",
@@ -14958,7 +14958,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "operationId": "update",
+        "operationId": "updateMlDestination",
         "parameters": [
           {
             "name": "id",
@@ -15026,7 +15026,7 @@
     "/ml-destinations/{id}/admission": {
       "post": {
         "description": "Per-request selection: checks that exactly this destination can run the workload now (enabled, allowed, consented, within budget, healthy, serving it) and returns the measured estimate. A refusal is a 4xx error naming the reason; the server never answers with a different destination.",
-        "operationId": "admit",
+        "operationId": "admitMlDestination",
         "parameters": [
           {
             "name": "id",
@@ -15092,7 +15092,7 @@
     "/ml-destinations/{id}/consent": {
       "delete": {
         "description": "Every workload routed to the destination is refused from the next request on.",
-        "operationId": "revokeConsent",
+        "operationId": "revokeMlDestinationConsent",
         "parameters": [
           {
             "name": "id",
@@ -15148,7 +15148,7 @@
       },
       "put": {
         "description": "Records that an administrator accepts media leaving the network for this destination.",
-        "operationId": "grantConsent",
+        "operationId": "grantMlDestinationConsent",
         "parameters": [
           {
             "name": "id",
@@ -15216,7 +15216,7 @@
     "/ml-destinations/{id}/probe": {
       "post": {
         "description": "Check reachability, served workloads and hardware now, and record the result.",
-        "operationId": "probe",
+        "operationId": "probeMlDestination",
         "parameters": [
           {
             "name": "id",
