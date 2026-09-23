@@ -1356,7 +1356,7 @@ export const isStudioCommandEnvelope = (value: unknown): value is StudioCommandE
     !!candidate.payload &&
     typeof candidate.payload === 'object' &&
     typeof candidate.revision === 'number' &&
-    Number.isInteger(candidate.revision) &&
+    Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     typeof candidate.idempotencyKey === 'string' &&
     candidate.idempotencyKey.length > 0 &&

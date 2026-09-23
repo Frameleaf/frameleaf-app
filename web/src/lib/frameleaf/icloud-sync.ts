@@ -287,7 +287,7 @@ export const toggleAlbum = (draft: ICloudDraft, id: string): ICloudDraft => ({
 
 const integerIn = (value: string, min: number, max: number) => {
   const number = Number(value);
-  return value.trim() !== '' && Number.isInteger(number) && number >= min && number <= max;
+  return value.trim() !== '' && Number.isSafeInteger(number) && number >= min && number <= max;
 };
 
 export type ICloudDraftProblem = 'label' | 'libraries' | 'interval' | 'concurrency' | 'staging';

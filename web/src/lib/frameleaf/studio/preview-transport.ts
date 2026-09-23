@@ -63,7 +63,7 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
         return {
           kind: 'stale-revision',
           currentRevision:
-            typeof body.currentRevision === 'number' && Number.isInteger(body.currentRevision)
+            typeof body.currentRevision === 'number' && Number.isSafeInteger(body.currentRevision)
               ? body.currentRevision
               : null,
         };

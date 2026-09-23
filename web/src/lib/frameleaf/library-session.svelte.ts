@@ -236,7 +236,7 @@ export class LibrarySessionStore {
     if (revision !== this.#session.revision) {
       return false;
     }
-    this.#total = Number.isInteger(total) && (total as number) >= 0 ? total : null;
+    this.#total = Number.isSafeInteger(total) && (total as number) >= 0 ? total : null;
     this.#totalRevision = revision;
     return true;
   }
