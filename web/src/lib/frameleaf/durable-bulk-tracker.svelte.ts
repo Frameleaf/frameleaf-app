@@ -1,7 +1,12 @@
 import { getMediaOperation, MediaOperationStatus, type MediaOperationDetailDto } from '@immich/sdk';
 import { SvelteMap } from 'svelte/reactivity';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
-import { durableItemStates, removesFromView, type DurableItemState } from '$lib/frameleaf/bulk-operations';
+import {
+  durableItemStates,
+  removesFromView,
+  type BulkView,
+  type DurableItemState,
+} from '$lib/frameleaf/bulk-operations';
 
 /**
  * Durable bulk jobs on the page they were started from (FL-32, owner decision September 22, 2026).
@@ -33,6 +38,8 @@ type TrackedJob = {
   ids: string[];
   /** Items already settled, so a later poll never flips them back. */
   settled: Set<string>;
+  /** The view the job was submitted from, for what leaves it (FL-34). */
+  view?: BulkView;
 };
 
 type Fetch = (operationId: string) => Promise<MediaOperationDetailDto>;
@@ -79,12 +86,12 @@ export class DurableBulkTracker {
    * Follow a job this tab just submitted. `ids` must be the part of the frozen set that job holds,
    * in order — `durableBulkParts` gives exactly that.
    */
-  track(action: BulkActionId, operationId: string, ids: readonly string[]) {
+  track(action: BulkActionId, operationId: string, ids: readonly string[], view?: BulkView) {
     if (ids.length === 0) {
       return;
     }
 
-    this.#jobs.set(operationId, { operationId, action, ids: [...ids], settled: new Set() });
+    this.#jobs.set(operationId, { operationId, action, ids: [...ids], settled: new Set(), view });
     for (const id of ids) {
       this.items.set(id, { state: 'pending' });
     }
@@ -152,7 +159,7 @@ export class DurableBulkTracker {
         case 'done': {
           job.settled.add(id);
           this.items.delete(id);
-          if (removesFromView(job.action)) {
+          if (removesFromView(job.action, job.view)) {
             removed.push(id);
           }
           break;

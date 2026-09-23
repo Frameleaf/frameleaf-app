@@ -7,6 +7,7 @@ import {
 } from '@immich/sdk';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getTimelineMonthByDate } from '$lib/managers/timeline-manager/internal/search-support.svelte';
 import { AbortError } from '$lib/utils';
@@ -690,6 +691,29 @@ describe('TimelineManager', () => {
 
       expect(timelineManager.isExcluded(revealed)).toBe(false);
       expect(timelineManager.isExcluded(fromOldFolder)).toBe(true);
+    });
+
+    it("keeps a newly marked asset in an unlocked session's timeline, which reveals it (FL-34)", async () => {
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
+      const asset = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({
+          fileCreatedAt: fromISODateTimeUTCToObject('2024-01-20T12:00:00.000Z'),
+          visibility: AssetVisibility.Timeline,
+        }),
+      );
+      timelineManager.upsertAssets([asset]);
+      sessionAccess.isElevated = true;
+
+      try {
+        eventManager.emit('AssetsMarkNsfw', [asset.id]);
+        expect(timelineManager.assetCount).toEqual(1);
+
+        // the server's update after the lock carries visibility locked and keeps it in view
+        timelineManager.upsertAssets([{ ...asset, visibility: AssetVisibility.Locked }]);
+        expect(timelineManager.assetCount).toEqual(1);
+      } finally {
+        sessionAccess.isElevated = false;
+      }
     });
 
     it('keeps a newly locked asset in the Locked view, where it now lives (FL-34)', async () => {

@@ -90,9 +90,16 @@ export class BulkController {
    */
   #follow(action: BulkActionId, ids: readonly string[], created: readonly MediaOperationDto[]) {
     const parts = durableBulkParts(ids);
+    const view = this.#context().view;
     for (const [index, operation] of created.entries()) {
       const part = parts[index];
-      if (operation?.id && part) {
+      if (!operation?.id || !part) {
+        continue;
+      }
+      // the view decides what leaves it when an item finishes (FL-34)
+      if (view) {
+        this.#tracker.track(action, operation.id, part, view);
+      } else {
         this.#tracker.track(action, operation.id, part);
       }
     }
@@ -110,7 +117,7 @@ export class BulkController {
 
   /** Assets that left the page, so the session can drop its references to them. */
   #removed(action: BulkActionId, result: BulkResult): string[] {
-    return removesFromView(action) ? result.succeeded : [];
+    return removesFromView(action, this.#context().view) ? result.succeeded : [];
   }
 
   async #report(action: BulkActionId, result: BulkResult) {
