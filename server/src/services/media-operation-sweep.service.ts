@@ -60,7 +60,8 @@ export class MediaOperationSweepService {
     return (this.active ??= this.sweep()
       .catch((error) => {
         this.logger.warn(`Media operation recovery failed: ${error}`);
-        return;
+        // eslint-disable-next-line unicorn/no-useless-undefined -- preserve the Promise result type
+        return undefined;
       })
       .finally(() => {
         this.active = undefined;

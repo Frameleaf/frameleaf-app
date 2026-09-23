@@ -60,10 +60,10 @@ export const mlDestinationKindLabelKey = (kind: MlDestinationKind): string => {
     case MlDestinationKind.Lan: {
       return 'admin.frameleaf_ml_destination_kind_lan';
     }
-    case MlDestinationKind.RunPod: {
+    case MlDestinationKind.Runpod: {
       return 'admin.frameleaf_ml_destination_kind_runpod';
     }
-    case MlDestinationKind.RunPodVideo: {
+    case MlDestinationKind.RunpodVideo: {
       return 'admin.frameleaf_ml_destination_kind_runpod_video';
     }
   }
@@ -157,10 +157,10 @@ export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKL
  */
 export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] => {
   switch (kind) {
-    case MlDestinationKind.RunPod: {
+    case MlDestinationKind.Runpod: {
       return ML_WORKLOAD_ORDER.filter((workload) => !isRestorationWorkload(workload));
     }
-    case MlDestinationKind.RunPodVideo: {
+    case MlDestinationKind.RunpodVideo: {
       return [...RESTORATION_WORKLOADS];
     }
     default: {
@@ -215,7 +215,7 @@ export const canRouteTo = (
   // library analysis. (The server additionally refuses an endpoint a library route uses.)
   !(
     isRestorationWorkload(workload) &&
-    (destination.kind === MlDestinationKind.RunPod || destination.role === MlWorkerRole.Mixed)
+    (destination.kind === MlDestinationKind.Runpod || destination.role === MlWorkerRole.Mixed)
   );
 
 /** Destinations that may currently be routed to for `workload`, in the order the server listed them. */

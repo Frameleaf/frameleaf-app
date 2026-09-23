@@ -320,7 +320,7 @@ export const workerTypeLabelKey = (entry: Pick<WorkerInventoryEntryDto, 'source'
     return 'admin.frameleaf_workers_type_render';
   }
   if (entry.role === MlWorkerRole.Restoration) {
-    return entry.kind === MlDestinationKind.RunPodVideo
+    return entry.kind === MlDestinationKind.RunpodVideo
       ? 'admin.frameleaf_workers_type_persistent_video'
       : 'admin.frameleaf_workers_type_restoration';
   }

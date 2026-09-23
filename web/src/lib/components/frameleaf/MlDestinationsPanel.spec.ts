@@ -45,7 +45,7 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
 
 const runPod = destination({
   id: '22222222-2222-4222-8222-222222222222',
-  kind: MlDestinationKind.RunPod,
+  kind: MlDestinationKind.Runpod,
   name: 'RunPod',
   url: null,
   // FL-72: the managed pod runs library analysis only.
@@ -166,7 +166,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     sdkMock.createMlDestination.mockResolvedValue(
       destination({
         id: '44444444-4444-4444-8444-444444444444',
-        kind: MlDestinationKind.RunPodVideo,
+        kind: MlDestinationKind.RunpodVideo,
         name: 'RunPod video worker',
         url: 'https://video-worker.proxy.runpod.net',
         workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
@@ -189,7 +189,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
     await waitFor(() =>
       expect(sdkMock.createMlDestination).toHaveBeenCalledWith({
         mlDestinationCreateDto: expect.objectContaining({
-          kind: MlDestinationKind.RunPodVideo,
+          kind: MlDestinationKind.RunpodVideo,
           url: 'https://video-worker.proxy.runpod.net',
           workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
           sharesLibraryHardware: false,

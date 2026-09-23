@@ -16,7 +16,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     id: '0195e2a0-0000-7000-8000-000000000001',
     kind: MediaOperationKind.StudioExport,
     status: MediaOperationStatus.Rendering,
-    destination: MediaOperationDestination.RunPod,
+    destination: MediaOperationDestination.Runpod,
     destinationDetail: null,
     label: 'Summer in the Rockies',
     assetId: null,

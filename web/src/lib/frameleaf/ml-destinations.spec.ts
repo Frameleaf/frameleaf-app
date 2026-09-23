@@ -50,7 +50,7 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
 const runPod = (acknowledgedAt: string | null) =>
   destination({
     id: 'runpod',
-    kind: MlDestinationKind.RunPod,
+    kind: MlDestinationKind.Runpod,
     name: 'RunPod',
     url: null,
     workloads: [MlWorkload.Face, MlWorkload.Enrichment],
@@ -61,7 +61,7 @@ const runPod = (acknowledgedAt: string | null) =>
 const runPodVideo = (acknowledgedAt: string | null) =>
   destination({
     id: 'runpod-video',
-    kind: MlDestinationKind.RunPodVideo,
+    kind: MlDestinationKind.RunpodVideo,
     name: 'RunPod video worker',
     url: 'https://video-worker.proxy.runpod.net',
     workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
@@ -166,9 +166,9 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
   });
 
   it('offers each kind only the work it may run', () => {
-    expect(workloadsForKind(MlDestinationKind.RunPod)).not.toContain(MlWorkload.RestorationFaithful);
-    expect(workloadsForKind(MlDestinationKind.RunPod)).toContain(MlWorkload.Enrichment);
-    expect(workloadsForKind(MlDestinationKind.RunPodVideo)).toEqual([
+    expect(workloadsForKind(MlDestinationKind.Runpod)).not.toContain(MlWorkload.RestorationFaithful);
+    expect(workloadsForKind(MlDestinationKind.Runpod)).toContain(MlWorkload.Enrichment);
+    expect(workloadsForKind(MlDestinationKind.RunpodVideo)).toEqual([
       MlWorkload.RestorationFaithful,
       MlWorkload.RestorationCreative,
     ]);
@@ -185,6 +185,6 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(
       workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful),
     ).toBe(false);
-    expect(workloadBlockedInDraft(MlDestinationKind.RunPod, [], MlWorkload.RestorationCreative)).toBe(true);
+    expect(workloadBlockedInDraft(MlDestinationKind.Runpod, [], MlWorkload.RestorationCreative)).toBe(true);
   });
 });

@@ -195,14 +195,14 @@
       id: null,
       kind,
       name:
-        kind === MlDestinationKind.RunPod
+        kind === MlDestinationKind.Runpod
           ? 'RunPod'
-          : kind === MlDestinationKind.RunPodVideo
+          : kind === MlDestinationKind.RunpodVideo
             ? $t('admin.frameleaf_ml_destinations_runpod_video_default_name')
             : '',
       url: '',
       authToken: '',
-      workloads: kind === MlDestinationKind.RunPodVideo ? workloadsForKind(kind) : [],
+      workloads: kind === MlDestinationKind.RunpodVideo ? workloadsForKind(kind) : [],
       budgetLimitUsd: '',
       maxRuntimeMinutes: '',
       maxUploadMb: '',
@@ -217,7 +217,7 @@
       id: destination.id,
       kind: destination.kind,
       name: destination.name,
-      url: destination.kind === MlDestinationKind.RunPod ? '' : (destination.url ?? ''),
+      url: destination.kind === MlDestinationKind.Runpod ? '' : (destination.url ?? ''),
       authToken: '',
       // A RunPod pod saved before FL-72 may still allow restoration, which it can no longer run
       // and the form cannot show; leave it out so saving the form clears it instead of failing.
@@ -264,7 +264,7 @@
       return;
     }
     if (
-      (current.kind === MlDestinationKind.Lan || current.kind === MlDestinationKind.RunPodVideo) &&
+      (current.kind === MlDestinationKind.Lan || current.kind === MlDestinationKind.RunpodVideo) &&
       current.url.trim() === ''
     ) {
       draftError = $t('admin.frameleaf_ml_destinations_error_url');
@@ -280,7 +280,7 @@
       maxRuntimeMinutes: maxRuntimeMinutes === null ? null : Math.round(maxRuntimeMinutes),
       maxUploadBytes: maxUploadMb === null ? null : Math.round(maxUploadMb * 1_000_000),
     };
-    const isRunPod = current.kind === MlDestinationKind.RunPod;
+    const isRunPod = current.kind === MlDestinationKind.Runpod;
     const sharesLibraryHardware = canShareHardware(current) && current.sharesLibraryHardware;
 
     await run(
@@ -343,12 +343,12 @@
     </div>
     <div class="head-actions">
       <Button onclick={() => openCreate(MlDestinationKind.Lan)}>{$t('admin.frameleaf_ml_destinations_add_lan')}</Button>
-      {#if destinations.every((destination) => destination.kind !== MlDestinationKind.RunPod)}
-        <Button onclick={() => openCreate(MlDestinationKind.RunPod)}>
+      {#if destinations.every((destination) => destination.kind !== MlDestinationKind.Runpod)}
+        <Button onclick={() => openCreate(MlDestinationKind.Runpod)}>
           {$t('admin.frameleaf_ml_destinations_add_runpod')}
         </Button>
       {/if}
-      <Button onclick={() => openCreate(MlDestinationKind.RunPodVideo)}>
+      <Button onclick={() => openCreate(MlDestinationKind.RunpodVideo)}>
         {$t('admin.frameleaf_ml_destinations_add_runpod_video')}
       </Button>
     </div>
@@ -410,7 +410,7 @@
           <p class="endpoint">
             {#if destination.url}
               <code>{destination.url}</code>
-            {:else if destination.kind === MlDestinationKind.RunPod}
+            {:else if destination.kind === MlDestinationKind.Runpod}
               {$t('admin.frameleaf_ml_destinations_runpod_not_ready')}
             {:else}
               {$t('admin.frameleaf_ml_destinations_no_url')}
@@ -655,16 +655,16 @@
         {$t('name')}
         <input type="text" bind:value={draft.name} maxlength="80" required />
       </label>
-      {#if draft.kind !== MlDestinationKind.RunPod}
+      {#if draft.kind !== MlDestinationKind.Runpod}
         <label>
           {$t('url')}
           <input
             type="url"
             bind:value={draft.url}
-            placeholder={draft.kind === MlDestinationKind.RunPodVideo
+            placeholder={draft.kind === MlDestinationKind.RunpodVideo
               ? 'https://pod-id-3004.proxy.runpod.net'
               : 'http://machine-learning:3003'}
-            required={draft.kind === MlDestinationKind.Lan || draft.kind === MlDestinationKind.RunPodVideo}
+            required={draft.kind === MlDestinationKind.Lan || draft.kind === MlDestinationKind.RunpodVideo}
           />
         </label>
         <label>
@@ -672,7 +672,7 @@
           <input type="password" bind:value={draft.authToken} autocomplete="off" />
           <small class="muted">{$t('admin.frameleaf_ml_destinations_auth_token_hint')}</small>
         </label>
-        {#if draft.kind === MlDestinationKind.RunPodVideo}
+        {#if draft.kind === MlDestinationKind.RunpodVideo}
           <p class="muted">{$t('admin.frameleaf_ml_destinations_runpod_video_hint')}</p>
         {/if}
       {:else}

@@ -102,7 +102,7 @@ describe('restoration presentation rules (FL-115)', () => {
   it('orders destinations admissible first, local before cloud, and never hides a refused one', () => {
     const runPod = destination({
       id: 'runpod',
-      kind: MlDestinationKind.RunPod,
+      kind: MlDestinationKind.Runpod,
       name: 'RunPod',
       available: false,
       leavesNetwork: true,
@@ -119,7 +119,7 @@ describe('restoration presentation rules (FL-115)', () => {
   it('defaults to a destination that keeps media on the network, keeping a still-admissible previous choice', () => {
     const runPod = destination({
       id: 'runpod',
-      kind: MlDestinationKind.RunPod,
+      kind: MlDestinationKind.Runpod,
       leavesNetwork: true,
       consentRequired: true,
     });

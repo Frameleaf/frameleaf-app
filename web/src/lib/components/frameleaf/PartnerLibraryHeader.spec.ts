@@ -61,7 +61,7 @@ describe('PartnerLibraryHeader', () => {
   });
 
   it('stops sharing through removePartner after confirmation and notifies the caller', async () => {
-    vi.mocked(removePartner).mockResolvedValue('');
+    vi.mocked(removePartner).mockImplementation(() => Promise.resolve());
     const onStopped = vi.fn();
     render(PartnerLibraryHeader, { partner: { ...partner }, onStopped });
 
