@@ -25,6 +25,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { Route } from '$lib/route';
 import { memoryLaneTitle } from '$lib/utils';
+import { handleError } from '$lib/utils/handle-error';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 
 type MemoriesSearchDto = Parameters<typeof searchMemories>[0];
@@ -254,7 +255,10 @@ class MemoryManager {
     // Captured before the item disappears, since `current` is derived from the loaded assets.
     const { nextHref, previousHref } = current;
     const asset = memory.assets[assetIndex];
-    await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    const removed = await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!removed.some((result) => result.id === asset.id && result.success)) {
+      throw new Error('Unable to remove the item from this memory');
+    }
     memory.assets.splice(assetIndex, 1);
     const memoryIndex = this.memories.indexOf(memory);
     const emptied = memory.assets.length === 0;
@@ -276,7 +280,9 @@ class MemoryManager {
               return;
             }
             undone = true;
-            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied);
+            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied).catch((error) =>
+              handleError(error, translate('errors.something_went_wrong')),
+            );
           },
         }),
       },
@@ -291,7 +297,10 @@ class MemoryManager {
     assetIndex: number,
     emptied: boolean,
   ) {
-    await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    const restored = await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!restored.some((result) => result.id === asset.id && result.success)) {
+      throw new Error('Unable to restore the item to this memory');
+    }
     memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
     if (emptied && !this.memories.includes(memory)) {
       this.memories.splice(Math.min(memoryIndex, this.memories.length), 0, memory);
