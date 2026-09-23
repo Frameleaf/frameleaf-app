@@ -28,7 +28,14 @@ where
   and "asset"."deletedAt" is null
   and (
     "asset"."id" is null
-    or "asset"."visibility" != 'locked'
+    or not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
   )
   and not (
     case
@@ -167,7 +174,14 @@ where
   and (
     (
       "asset"."deletedAt" is null
-      and "asset"."visibility" != 'locked'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
     )
     or "asset"."id" is null
   )
