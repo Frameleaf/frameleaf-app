@@ -55,8 +55,9 @@ const STATUS_TONE: Record<MediaOperationStatus, ActivityTone> = {
   [MediaOperationStatus.Completed]: 'success',
   [MediaOperationStatus.Cancelled]: 'neutral',
   [MediaOperationStatus.Failed]: 'danger',
-  // Held by its owner (FL-104): nothing is wrong, nothing is happening.
-  [MediaOperationStatus.Paused]: 'neutral',
+  // Held by its owner (FL-104). The prototype's Activity reads a pause in the warning tone: nothing
+  // is wrong, but nothing will happen until somebody resumes it.
+  [MediaOperationStatus.Paused]: 'warning',
 };
 
 /** Statuses a pause may be asked for from; the server refuses the rest (FL-104). */
@@ -272,7 +273,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       : retrying
         ? 'frameleaf_activity_status_retrying'
         : `frameleaf_activity_status_${status}`,
-    tone: retrying ? 'warning' : STATUS_TONE[status],
+    tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
@@ -345,7 +346,7 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
         : BULK_WORKING.includes(status)
           ? 'frameleaf_activity_bulk_running'
           : `frameleaf_activity_status_${status}`,
-    tone: failed ? 'danger' : retrying ? 'warning' : STATUS_TONE[status],
+    tone: failed ? 'danger' : retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(bulk ? { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` } : {}),
     progress:

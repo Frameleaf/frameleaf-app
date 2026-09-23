@@ -1,4 +1,4 @@
-import { fromMediaOperation } from '$lib/frameleaf/activity';
+import { fromMediaOperation, type ActivityTone } from '$lib/frameleaf/activity';
 import { Route } from '$lib/route';
 import {
   MemoryExportStatus,
@@ -49,8 +49,12 @@ export type RunningJobRow = {
   queueName?: QueueName;
   /** i18n key for the kind of work, shown under the title. */
   kindKey: string;
-  /** i18n key for the state. */
+  /** i18n key for the state, shown as a chip as on the prototype's Activity rows. */
   statusKey: string;
+  /** The chip's and the bar's tone: info while working, warning while paused or pausing. */
+  tone: ActivityTone;
+  /** Work is moving right now: the chip carries the prototype's pulsing dot. */
+  live: boolean;
   /** Units done and in total, or null when the server does not count them yet. */
   done: number | null;
   total: number | null;
@@ -103,6 +107,8 @@ export const operationRow = (operation: RunningJobsResponseDto['operations'][num
     ...(item.titleKey ? { titleKey: item.titleKey } : {}),
     kindKey: item.kindKey,
     statusKey: item.statusKey,
+    tone: item.tone,
+    live: item.running && item.tone === 'info',
     done: item.done,
     total: item.total,
     percent: item.total === null ? item.progress : percentOf(item.done, item.total),
@@ -121,6 +127,12 @@ const MEMORY_EXPORT_STATUS_KEY: Partial<Record<MemoryExportStatus, string>> = {
   [MemoryExportStatus.Cancelling]: 'frameleaf_activity_status_cancelling',
 };
 
+const MEMORY_EXPORT_TONE: Partial<Record<MemoryExportStatus, ActivityTone>> = {
+  [MemoryExportStatus.Pending]: 'neutral',
+  [MemoryExportStatus.Running]: 'info',
+  [MemoryExportStatus.Cancelling]: 'warning',
+};
+
 /** One of the viewer's highlight exports still being written. */
 export const memoryExportRow = (run: MemoryExportResponseDto): RunningJobRow => {
   const total = run.assetCount > 0 ? run.assetCount : null;
@@ -132,6 +144,8 @@ export const memoryExportRow = (run: MemoryExportResponseDto): RunningJobRow => 
     title: run.title,
     kindKey: 'frameleaf_running_kind_memory_export',
     statusKey: MEMORY_EXPORT_STATUS_KEY[run.status] ?? 'frameleaf_activity_bulk_running',
+    tone: MEMORY_EXPORT_TONE[run.status] ?? 'info',
+    live: run.status === MemoryExportStatus.Running,
     done,
     total,
     percent: percentOf(done, total),
@@ -159,6 +173,8 @@ export const queueRow = (queue: QueueRunDto): RunningJobRow => {
       : queue.active > 0
         ? 'frameleaf_activity_bulk_running'
         : 'frameleaf_activity_status_queued',
+    tone: queue.isPaused ? 'warning' : queue.active > 0 ? 'info' : 'neutral',
+    live: !queue.isPaused && queue.active > 0,
     done: total > 0 ? done : null,
     total: total > 0 ? total : null,
     percent: percentOf(done, total),
