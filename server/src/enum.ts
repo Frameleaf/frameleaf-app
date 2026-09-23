@@ -931,6 +931,8 @@ export enum RenderWorkerRefusalReason {
   OutputBytesExceeded = 'output_bytes_exceeded',
   /** The chosen destination reports itself unavailable. */
   DestinationUnavailable = 'destination_unavailable',
+  /** FL-90 refused at least one graph resource; a render needs a complete manifest. */
+  ManifestIncomplete = 'manifest_incomplete',
 }
 
 export const RenderWorkerRefusalReasonSchema = z
