@@ -18,7 +18,14 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
 }));
 
 const user = (id: string, name: string): UserResponseDto =>
-  ({ id, name, email: `${id}@example.com`, profileImagePath: '', avatarColor: 'primary', profileChangedAt: '' }) as unknown as UserResponseDto;
+  ({
+    id,
+    name,
+    email: `${id}@example.com`,
+    profileImagePath: '',
+    avatarColor: 'primary',
+    profileChangedAt: '',
+  }) as unknown as UserResponseDto;
 
 const invitation = (overrides: Partial<SharedSpacePreviewResponseDto> = {}): SharedSpacePreviewResponseDto => ({
   id: 'space-1',
