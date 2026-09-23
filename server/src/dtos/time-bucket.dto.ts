@@ -138,7 +138,9 @@ const TimeBucketAssetResponseSchema = z
     lockReason: z
       .array(AssetLockReasonSchema.nullable())
       .optional()
-      .describe('With visibility LOCKED only: why each asset is locked'),
+      .describe(
+        'Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items',
+      ),
     city: z.array(z.string().nullable()).optional().describe('Array of city names extracted from EXIF GPS data'),
     country: z.array(z.string().nullable()).optional().describe('Array of country names extracted from EXIF GPS data'),
     latitude: z

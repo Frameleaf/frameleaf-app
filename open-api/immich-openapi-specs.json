@@ -23789,7 +23789,7 @@
             "type": "array"
           },
           "lockReason": {
-            "description": "With visibility LOCKED only: why each asset is locked",
+            "description": "Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items",
             "items": {
               "allOf": [
                 {
