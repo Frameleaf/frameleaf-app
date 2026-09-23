@@ -163,9 +163,9 @@ export const queueReleasedPersonThumbnails = async (
   }
 
   await repositories.job.queueAll(
-    [...unique.values()].map(({ ownerId, personGroupId }) => ({
-      name: JobName.PersonGenerateThumbnail,
-      data: { ownerId, personGroupId },
-    })),
+    [...unique.values()].map(
+      ({ ownerId, personGroupId }) =>
+        ({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } }) as const,
+    ),
   );
 };
