@@ -56,12 +56,25 @@ export class TrashRepository {
   /**
    * The owner's items in one lifecycle state, as far as this session may see them. The hidden video
    * part of a live photo follows its photo and is never listed or changed on its own.
+   *
+   * `listed` is what the trash shows, as the trash timeline always has: everything with a deletion
+   * date that is not yet permanently deleted. That includes external-library originals that went
+   * missing (`isOffline`), which the library scan put there and brings back; they are listed but no
+   * action here changes them, because every action starts from `trashed`.
    */
-  private scope(db: Kysely<DB>, userId: string, status: AssetStatus, { lockedOwnerId, privacy }: TrashScopeOptions) {
+  private scope(
+    db: Kysely<DB>,
+    userId: string,
+    status: AssetStatus | 'listed',
+    { lockedOwnerId, privacy }: TrashScopeOptions,
+  ) {
     return db
       .selectFrom('asset')
       .where('asset.ownerId', '=', asUuid(userId))
-      .where('asset.status', '=', status)
+      .$if(status === 'listed', (qb) =>
+        qb.where('asset.deletedAt', 'is not', null).where('asset.status', '!=', AssetStatus.Deleted),
+      )
+      .$if(status !== 'listed', (qb) => qb.where('asset.status', '=', status as AssetStatus))
       .where('asset.visibility', '!=', AssetVisibility.Hidden)
       .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
       .$call((qb) => withHiddenContentFilter(qb, privacy));
@@ -69,10 +82,11 @@ export class TrashRepository {
 
   /** The trash counts the page shows: what is in it, and what is still being removed from storage. */
   async getSummary(userId: string, options: TrashScopeOptions = {}) {
-    const trashed = await this.scope(this.db, userId, AssetStatus.Trashed, options)
+    const listed = await this.scope(this.db, userId, 'listed', options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select((eb) => [
         eb.fn.countAll<number>().as('count'),
+        sql<string>`count(*) filter (where asset."isOffline")`.as('offline'),
         sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
       ])
       .executeTakeFirstOrThrow();
@@ -82,15 +96,16 @@ export class TrashRepository {
       .executeTakeFirstOrThrow();
 
     return {
-      count: Number(trashed.count),
-      bytes: toByteCount(trashed.bytes),
+      count: Number(listed.count),
+      offline: Number(listed.offline),
+      bytes: toByteCount(listed.bytes),
       pendingDeletion: Number(deleted.count),
     };
   }
 
   /** One page of the owner's trash, filtered and ordered as the page asks, with the matching total. */
   async getItems(userId: string, options: TrashItemsOptions) {
-    const filtered = this.scope(this.db, userId, AssetStatus.Trashed, options)
+    const filtered = this.scope(this.db, userId, 'listed', options)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type as AssetType))
       .$call((qb) => {
