@@ -50,6 +50,12 @@ export type BulkActionId =
   | 'unstack'
   | 'link-live-photo'
   | 'unlink-live-photo'
+  /**
+   * The Live Photo Utilities candidate review page's batch relink (FL-70). Distinct from
+   * `link-live-photo`, which links exactly the one pair the selection bar has selected: this one
+   * carries any number of reviewed pairs and is the action that goes durable above the threshold.
+   */
+  | 'relink-live-photo'
   | 'tag'
   /** Undo-only: reverses a tag. It has no descriptor row, so it never appears in the bar. */
   | 'untag'
