@@ -92,6 +92,18 @@ for (const name of ["server", "machine-learning"])
     ["changes", "integration", "certification"],
     "Both quality gates must precede publishing",
   );
+for (const name of [
+  "server",
+  "machine-learning",
+  "retag-server",
+  "retag-machine-learning",
+])
+  assert(
+    ["integration", "certification"].every((gate) =>
+      docker.jobs[name].needs.includes(gate),
+    ),
+    `${name}: both quality gates must precede publishing`,
+  );
 assert.equal(
   docker.jobs.integration.uses,
   "./.github/workflows/fork-integration.yml",

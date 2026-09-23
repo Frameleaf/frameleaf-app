@@ -86,10 +86,10 @@ test("library and administration preservation contracts match source and canonic
     dirtyOnlyRouteCount: 11,
     libraryEpicCount: 8,
     libraryStoryCount: 45,
-    personalSettingsCount: 15,
+    personalSettingsCount: 16,
     productionRouteCount: 83,
     sourceCitationCount: 42,
-    systemSettingsCount: 21,
+    systemSettingsCount: 22,
   });
 });
 
