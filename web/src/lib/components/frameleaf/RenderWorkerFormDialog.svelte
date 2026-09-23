@@ -48,16 +48,17 @@
   const kinds = RENDER_WORKER_KINDS;
   const destinations = Object.values(MediaOperationDestination);
 
-  const nameId = $props.id();
-  const destinationId = $props.id();
-  const kindsId = $props.id();
-  const digestId = $props.id();
-  const conformanceId = $props.id();
-  const gpuId = $props.id();
-  const concurrencyId = $props.id();
-  const wallClockId = $props.id();
-  const outputId = $props.id();
-  const errorId = $props.id();
+  const idPrefix = $props.id();
+  const nameId = `${idPrefix}-name`;
+  const destinationId = `${idPrefix}-destination`;
+  const kindsId = `${idPrefix}-kinds`;
+  const digestId = `${idPrefix}-digest`;
+  const conformanceId = `${idPrefix}-conformance`;
+  const gpuId = `${idPrefix}-gpu`;
+  const concurrencyId = `${idPrefix}-concurrency`;
+  const wallClockId = `${idPrefix}-wall-clock`;
+  const outputId = `${idPrefix}-output`;
+  const errorId = `${idPrefix}-error`;
 
   const toggleKind = (kind: MediaOperationKind) => {
     form.kinds = form.kinds.includes(kind) ? form.kinds.filter((item) => item !== kind) : [...form.kinds, kind];
