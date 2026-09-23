@@ -9,15 +9,39 @@ import {
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid } from 'src/utils/database.js';
-import { CLAIMED_MEDIA_OPERATION_STATUSES, TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+import {
+  CLAIMED_MEDIA_OPERATION_STATUSES,
+  MEDIA_OPERATION_AUTO_RETRIES,
+  MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+  TERMINAL_MEDIA_OPERATION_STATUSES,
+} from 'src/utils/media-operation.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
 export type MediaOperationCheckpoint = Selectable<MediaOperationCheckpointTable>;
 
 export type MediaOperationCreate = Omit<
   Insertable<MediaOperationTable>,
-  'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt'
+  'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt' | 'autoRetries' | 'retryAt'
 >;
+
+/**
+ * What a worker's failure report did (FL-104).
+ *
+ * - `retrying`: the job had its automatic retry left, so it went back to the queue instead.
+ * - `failed`: it had used it (or a cancel was requested), so the failure is what the owner sees.
+ * - `false`: the claim was not ours any more, or the job had already finished; nothing changed.
+ */
+export type MediaOperationFailOutcome = 'retrying' | 'failed' | false;
+
+/** The statuses a live claim may report from. `cancelling` is left out: a cancel is never retried. */
+const WORKING_STATUSES = [
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+];
+
+/** `now() + ms`, for leases and retry delays. */
+const nowPlus = (ms: number) => sql<Date>`now() + ${sql.lit(ms)} * interval '1 millisecond'`;
 
 export type MediaOperationListOptions = {
   ownerId: string;
@@ -59,6 +83,8 @@ const LIST_COLUMNS = [
   'totalUnits',
   'attempt',
   'maxAttempts',
+  'autoRetries',
+  'retryAt',
   'claimToken',
   'claimedBy',
   'claimExpiresAt',
@@ -255,6 +281,7 @@ export class MediaOperationRepository {
         heartbeatAt: sql<Date>`now()`,
         startedAt: sql<Date>`coalesce("startedAt", now())`,
         attempt: sql<number>`"attempt" + 1`,
+        retryAt: null,
       })
       .where(
         'id',
@@ -265,6 +292,8 @@ export class MediaOperationRepository {
           .where('status', '=', MediaOperationStatus.Queued)
           .where('kind', 'in', [...options.kinds])
           .where('cancelRequestedAt', 'is', null)
+          // A requeued job waits out its retry delay before anybody may take it.
+          .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
           .orderBy('createdAt', 'asc')
           .limit(1)
           .forUpdate()
@@ -415,8 +444,47 @@ export class MediaOperationRepository {
     return Number(result.numUpdatedRows) === 1;
   }
 
-  /** Fail a claimed job. A job that has already finished is not reopened by a late report. */
-  async fail(id: string, claimToken: string, failure: { error: string; errorCode: string }): Promise<boolean> {
+  /**
+   * Report a claimed job's failure.
+   *
+   * Every job gets one automatic retry before a failure is reported (FL-104, owner decision
+   * September 22, 2026). While it has one left, a failure puts the job back in the queue instead:
+   * the claim is released, `autoRetries` goes up and `retryAt` holds it back for
+   * `MEDIA_OPERATION_AUTO_RETRY_DELAY_MS`. The error stays on the row so Activity can say why the
+   * job is being retried. A job whose cancellation was requested is never retried.
+   *
+   * Both writes are guarded by the claim token, so a stale worker changes nothing, and a job that
+   * has already finished is not reopened by a late report. The retry resumes from whatever the job
+   * recorded, which is why every runner must make a repeated step harmless.
+   */
+  async fail(
+    id: string,
+    claimToken: string,
+    failure: { error: string; errorCode: string },
+  ): Promise<MediaOperationFailOutcome> {
+    const requeued = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Queued,
+        error: failure.error,
+        errorCode: failure.errorCode,
+        autoRetries: sql<number>`"autoRetries" + 1`,
+        retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', WORKING_STATUSES)
+      .where('cancelRequestedAt', 'is', null)
+      .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
+      .executeTakeFirst();
+
+    if (Number(requeued.numUpdatedRows) === 1) {
+      return 'retrying';
+    }
+
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -424,12 +492,40 @@ export class MediaOperationRepository {
         error: failure.error,
         errorCode: failure.errorCode,
         finishedAt: sql<Date>`now()`,
+        retryAt: null,
         claimToken: null,
         claimExpiresAt: null,
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1 ? 'failed' : false;
+  }
+
+  /**
+   * Hand a claimed job back to the queue on purpose, keeping everything it has recorded (FL-32).
+   *
+   * A bulk job does this when its pass is over and some items failed: the automatic retry of those
+   * items runs on the next claim, after `delayMs`, from what the result says. It is not a retry of
+   * the job itself and does not use `autoRetries`. Returns false when the claim is gone or a cancel
+   * was requested; the caller then settles the cancel instead.
+   */
+  async requeue(id: string, claimToken: string, options: { delayMs: number }): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Queued,
+        retryAt: nowPlus(options.delayMs),
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', WORKING_STATUSES)
+      .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows) === 1;
@@ -552,10 +648,12 @@ export class MediaOperationRepository {
   /**
    * Reclaim jobs whose lease expired: the worker died, the server restarted, the network went.
    *
-   * Three outcomes, in order of how the row should honestly read afterwards:
+   * Four outcomes, in order of how the row should honestly read afterwards:
    *
    * - A job with attempts left returns to the queue and resumes from its checkpoints.
-   * - One that has exhausted them fails with a stable code rather than looping forever.
+   * - One that has exhausted them has failed, and a failure gets its one automatic retry first
+   *   (FL-104): it returns to the queue after the retry delay with the error recorded.
+   * - One that has also used its automatic retry fails with a stable code rather than looping.
    * - One the owner had already asked to cancel becomes `cancelled`, because it plainly stopped —
    *   but `cancelAcknowledgedAt` stays null, so a remote job whose cleanup nobody confirmed is
    *   still an open obligation for the cleanup pass.
@@ -568,7 +666,7 @@ export class MediaOperationRepository {
     error: string;
     /** Limit recovery to the kinds the caller runs. Omitted, every kind is recovered. */
     kinds?: readonly MediaOperationKind[];
-  }): Promise<{ requeued: number; failed: number; abandonedCancels: number }> {
+  }): Promise<{ requeued: number; retried: number; failed: number; abandonedCancels: number }> {
     const kinds = options.kinds?.length ? [...options.kinds] : undefined;
 
     const requeued = await this.db
@@ -580,6 +678,28 @@ export class MediaOperationRepository {
       .where('claimExpiresAt', '<', sql<Date>`now()`)
       .where(sql<boolean>`"attempt" < "maxAttempts"`)
       // A cancel already requested must not be resurrected as a queued job.
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
+
+    // Out of attempts is a failure, and every failure gets its one automatic retry first (FL-104).
+    const retried = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Queued,
+        error: options.error,
+        errorCode: options.errorCode,
+        autoRetries: sql<number>`"autoRetries" + 1`,
+        retryAt: nowPlus(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS),
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimExpiresAt', 'is not', null)
+      .where('claimExpiresAt', '<', sql<Date>`now()`)
+      .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
@@ -599,6 +719,7 @@ export class MediaOperationRepository {
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
       .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .where('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
@@ -620,6 +741,7 @@ export class MediaOperationRepository {
 
     return {
       requeued: Number(requeued.numUpdatedRows),
+      retried: Number(retried.numUpdatedRows),
       failed: Number(failed.numUpdatedRows),
       abandonedCancels: Number(abandonedCancels.numUpdatedRows),
     };

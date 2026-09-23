@@ -159,14 +159,120 @@ describe(MediaOperationRepository.name, () => {
     });
   });
 
+  describe('automatic retry (FL-104)', () => {
+    const claimExport = (sut: MediaOperationRepository) =>
+      sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
+
+    const releaseDelay = (ctx: { database: Kysely<DB> }, id: string) =>
+      ctx.database
+        .updateTable('media_operation')
+        .set({ retryAt: new Date(Date.now() - 1000) })
+        .where('id', '=', id)
+        .execute();
+
+    it('retries a failed job once, after the delay, and reports the second failure', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const first = await claimExport(sut);
+
+      await expect(
+        sut.fail(operation.id, first!.claimToken, { error: 'The encoder crashed', errorCode: 'encoder_crashed' }),
+      ).resolves.toBe('retrying');
+
+      const waiting = await sut.getForOwner(operation.id, user.id);
+      expect(waiting).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        claimToken: null,
+        errorCode: 'encoder_crashed',
+        finishedAt: null,
+      });
+      expect(waiting!.retryAt).not.toBeNull();
+
+      // Not before the delay has passed.
+      await expect(claimExport(sut)).resolves.toBeUndefined();
+
+      await releaseDelay(ctx, operation.id);
+      const second = await claimExport(sut);
+      expect(second!.operation).toMatchObject({ id: operation.id, attempt: 2, autoRetries: 1, retryAt: null });
+
+      await expect(
+        sut.fail(operation.id, second!.claimToken, { error: 'The encoder crashed again', errorCode: 'encoder_crashed' }),
+      ).resolves.toBe('failed');
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Failed,
+        autoRetries: 1,
+        error: 'The encoder crashed again',
+      });
+    });
+
+    it('clears the retried failure once the retry succeeds', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const first = await claimExport(sut);
+      await sut.fail(operation.id, first!.claimToken, { error: 'gone', errorCode: 'worker_lost' });
+      await releaseDelay(ctx, operation.id);
+      const second = await claimExport(sut);
+
+      await sut.beginValidation(operation.id, second!.claimToken);
+      await expect(sut.complete(operation.id, second!.claimToken, { resultAssetId: null })).resolves.toBe(true);
+
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Completed,
+        error: null,
+        errorCode: null,
+        autoRetries: 1,
+      });
+    });
+
+    it('never retries a job the owner asked to cancel', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestCancel(operation.id, user.id);
+
+      await expect(sut.fail(operation.id, claim!.claimToken, { error: 'x', errorCode: 'x' })).resolves.toBe('failed');
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({ autoRetries: 0 });
+    });
+
+    it('requeues on purpose without using the automatic retry, keeping what was recorded', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, { result: { succeeded: 3 } });
+      const claim = await claimExport(sut);
+
+      await expect(sut.requeue(operation.id, claim!.claimToken, { delayMs: 30_000 })).resolves.toBe(true);
+      // The old claim is spent.
+      await expect(sut.requeue(operation.id, claim!.claimToken, { delayMs: 30_000 })).resolves.toBe(false);
+
+      const row = await sut.getForOwner(operation.id, user.id);
+      expect(row).toMatchObject({ status: MediaOperationStatus.Queued, autoRetries: 0, result: { succeeded: 3 } });
+      expect(row!.retryAt).not.toBeNull();
+    });
+
+    it('refuses a planned requeue once a cancel was requested', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestCancel(operation.id, user.id);
+
+      await expect(sut.requeue(operation.id, claim!.claimToken, { delayMs: 0 })).resolves.toBe(false);
+    });
+  });
+
   describe('recoverExpiredClaims', () => {
-    it('requeues a job with attempts left and fails one without', async () => {
+    it('requeues a job with attempts left, retries one without once, and fails one that already retried', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const resumable = await newOperation(sut, user.id, { maxAttempts: 3 });
       const exhausted = await newOperation(sut, user.id, { maxAttempts: 1 });
+      const retriedAlready = await newOperation(sut, user.id, { maxAttempts: 1 });
 
-      for (const id of [resumable.id, exhausted.id]) {
+      for (const id of [resumable.id, exhausted.id, retriedAlready.id]) {
         await ctx.database
           .updateTable('media_operation')
           .set({
@@ -175,6 +281,7 @@ describe(MediaOperationRepository.name, () => {
             claimedBy: 'worker-gone',
             claimExpiresAt: new Date(Date.now() - 60_000),
             attempt: 1,
+            autoRetries: id === retriedAlready.id ? 1 : 0,
           })
           .where('id', '=', id)
           .execute();
@@ -185,12 +292,22 @@ describe(MediaOperationRepository.name, () => {
         error: 'The worker stopped responding',
       });
 
-      expect(result).toEqual({ requeued: 1, failed: 1, abandonedCancels: 0 });
+      expect(result).toEqual({ requeued: 1, retried: 1, failed: 1, abandonedCancels: 0 });
       await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Queued,
         claimToken: null,
+        autoRetries: 0,
+        retryAt: null,
       });
-      await expect(sut.getForOwner(exhausted.id, user.id)).resolves.toMatchObject({
+      const retrying = await sut.getForOwner(exhausted.id, user.id);
+      expect(retrying).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        claimToken: null,
+        autoRetries: 1,
+        errorCode: 'worker_lost',
+      });
+      expect(retrying!.retryAt).not.toBeNull();
+      await expect(sut.getForOwner(retriedAlready.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Failed,
         errorCode: 'worker_lost',
       });

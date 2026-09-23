@@ -9470,6 +9470,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "autoRetries": {
+            "description": "Automatic retries this job has used; every job gets one before a failure is reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "bulk": {
             "allOf": [
               {
@@ -9513,7 +9519,7 @@
             "type": "string"
           },
           "error": {
-            "description": "Operator detail about a failure",
+            "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
             "nullable": true,
             "type": "string"
           },
@@ -9570,6 +9576,12 @@
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "retryAt": {
+            "description": "When a job waiting for its automatic retry may run again",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "retryOfId": {
@@ -9613,6 +9625,7 @@
         "required": [
           "assetId",
           "attempt",
+          "autoRetries",
           "bulk",
           "bulkItems",
           "cancelAcknowledgedAt",
@@ -9633,6 +9646,7 @@
           "progress",
           "projectId",
           "resultAssetId",
+          "retryAt",
           "retryOfId",
           "revisionId",
           "settings",
@@ -9654,6 +9668,12 @@
             "type": "string"
           },
           "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "autoRetries": {
+            "description": "Automatic retries this job has used; every job gets one before a failure is reported",
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
@@ -9689,7 +9709,7 @@
             "type": "string"
           },
           "error": {
-            "description": "Operator detail about a failure",
+            "description": "Operator detail about a failure; on a queued job, the failure it is being retried after",
             "nullable": true,
             "type": "string"
           },
@@ -9748,6 +9768,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "retryAt": {
+            "description": "When a job waiting for its automatic retry may run again",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "retryOfId": {
             "description": "The job this one retries",
             "format": "uuid",
@@ -9784,6 +9810,7 @@
         "required": [
           "assetId",
           "attempt",
+          "autoRetries",
           "bulk",
           "cancelAcknowledgedAt",
           "cancelRequestedAt",
@@ -9802,6 +9829,7 @@
           "progress",
           "projectId",
           "resultAssetId",
+          "retryAt",
           "retryOfId",
           "revisionId",
           "settings",

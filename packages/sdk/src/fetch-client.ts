@@ -2777,6 +2777,8 @@ export type MediaOperationDto = {
     /** Source asset, when the workload has exactly one */
     assetId: string | null;
     attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
     bulk: (MediaOperationBulkSummaryDto) | null;
     cancelAcknowledgedAt: string | null;
     cancelRequestedAt: string | null;
@@ -2784,7 +2786,7 @@ export type MediaOperationDto = {
     destination: MediaOperationDestination;
     /** Which worker or endpoint the destination resolved to */
     destinationDetail: string | null;
-    /** Operator detail about a failure */
+    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
     error: string | null;
     /** Stable code the client turns into a message */
     errorCode: string | null;
@@ -2802,6 +2804,8 @@ export type MediaOperationDto = {
     projectId: string | null;
     /** The asset a completed job published */
     resultAssetId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
     /** The job this one retries */
     retryOfId: string | null;
     revisionId: string | null;
