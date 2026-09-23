@@ -5,7 +5,6 @@
    * workflows. Everything shown is the server's; a workflow the server can no longer run is marked
    * Blocked with the reason, and an import arrives paused.
    */
-  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import WorkflowDesigner from '$lib/components/frameleaf/WorkflowDesigner.svelte';
   import type { ReferenceOption } from '$lib/components/frameleaf/WorkflowParameter.svelte';
@@ -18,20 +17,47 @@
     workflowStatus,
     type WorkflowDraft,
   } from '$lib/frameleaf/workflows';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { pluginManager } from '$lib/managers/plugin-manager.svelte';
-  import { Route } from '$lib/route';
   import { downloadJson } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { getAllAlbums, getAllTags, getWorkflowForShare, updateWorkflow, type WorkflowResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiDownload, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
-  let { initial, openId }: { initial: WorkflowResponseDto[]; openId?: string } = $props();
+  let {
+    initial,
+    openId,
+    onOpenClosed,
+  }: {
+    /** Workflows a page already loaded; without them the section loads its own. */
+    initial?: WorkflowResponseDto[];
+    /** A workflow to open once, for a deep link. */
+    openId?: string;
+    /** Called when the deep-linked workflow is closed, so the host can drop it from its address. */
+    onOpenClosed?: () => void;
+  } = $props();
 
   // svelte-ignore state_referenced_locally
-  let workflows = $state<WorkflowResponseDto[]>(initial);
+  let workflows = $state<WorkflowResponseDto[]>(initial ?? []);
+  // svelte-ignore state_referenced_locally
+  let loaded = $state(initial !== undefined);
+  // the section is mounted wherever the utilities area puts it, so it loads what it needs itself
+  onMount(async () => {
+    try {
+      const [list] = await Promise.all([
+        loaded ? Promise.resolve(workflows) : searchWorkflows({}),
+        pluginManager.ready(),
+      ]);
+      workflows = list;
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+    } finally {
+      loaded = true;
+    }
+  });
   let editing = $state<{ workflow?: WorkflowResponseDto; draft: WorkflowDraft } | null>(null);
   let designerOpen = $state(false);
   let notice = $state('');
@@ -84,14 +110,14 @@
   });
 
   $effect(() => {
-    // the address follows the open workflow, so a reload reopens it
+    // closing a deep-linked workflow lets the host return its address to the list
     if (designerOpen || !editing) {
       return;
     }
 
     editing = null;
     if (openId) {
-      void goto(Route.workflows(), { replaceState: true, noScroll: true });
+      onOpenClosed?.();
     }
   });
 
@@ -158,7 +184,7 @@
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if notice}<p role="status" class="notice">{notice}</p>{/if}
 
-  {#if workflows.length === 0}
+  {#if loaded && workflows.length === 0}
     <p class="empty">{$t('frameleaf_workflows.empty')}</p>
   {:else}
     <div class="list">
@@ -169,7 +195,7 @@
           <div>
             <strong>{workflow.name || $t('frameleaf_workflows.new_workflow')}</strong>
             <p>
-              {triggerLabel(workflow.trigger)} · {$t('frameleaf_workflows.steps_count', {
+              {authManager.user.name} · {triggerLabel(workflow.trigger)} · {$t('frameleaf_workflows.steps_count', {
                 values: { count: workflow.steps.length },
               })}
             </p>
@@ -179,7 +205,7 @@
             </small>
             {#if workflow.issues.length > 0}<small class="issue">{workflow.issues[0].message}</small>{/if}
           </div>
-          <Button onclick={() => void goto(Route.viewWorkflow({ id: workflow.id }), { noScroll: true })}>
+          <Button onclick={() => openDesigner(workflow)}>
             {$t('frameleaf_workflows.open')}
           </Button>
           <Button disabled={!workflow.enabled && workflow.issues.length > 0} onclick={() => void toggle(workflow)}>
