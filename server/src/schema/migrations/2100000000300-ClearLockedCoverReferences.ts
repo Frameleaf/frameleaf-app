@@ -1,4 +1,5 @@
-import { Kysely, RawBuilder, sql } from 'kysely';
+import { sql } from 'kysely';
+import type { Kysely, RawBuilder } from 'kysely';
 
 /**
  * Locked photos are never covers, featured photos or face thumbnails (owner decisions, September 22,
