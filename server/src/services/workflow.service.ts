@@ -202,8 +202,11 @@ export class WorkflowService extends BaseService {
           ? {
               ...step,
               config: restoreCredentials(step.config, previous.config),
-              // additional fields left out are replaced as before; sent ones keep their stored credentials
-              extra: step.extra ? (restoreCredentials(step.extra, previous.extra) ?? undefined) : step.extra,
+              // additional fields left out are kept as stored; sent ones keep the stored credentials they omit
+              extra:
+                step.extra === undefined
+                  ? previous.extra
+                  : (restoreCredentials(step.extra, previous.extra) ?? undefined),
             }
           : step;
       } catch (error) {
