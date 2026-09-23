@@ -11,9 +11,11 @@
     onUploadClick?: () => void;
     // TODO: remove once this is only used in <AppShellHeader>
     noBorder?: boolean;
+    /** False on pages without the library rail (Studio), so the phone menu button is not offered. */
+    hasRail?: boolean;
   };
 
-  let { onUploadClick, noBorder = false }: Props = $props();
+  let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
 </script>
 
-<TopBar {onUploadClick} {noBorder} />
+<TopBar {onUploadClick} {noBorder} {hasRail} />

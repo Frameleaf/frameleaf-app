@@ -311,7 +311,8 @@
   .fl-item[aria-checked='true'] {
     color: var(--fl-accent);
   }
-  @media (min-width: 850px) {
+  /* The prototype hides the name at 1000px and below. */
+  @media (min-width: 1001px) {
     .fl-account-name {
       display: inline;
     }

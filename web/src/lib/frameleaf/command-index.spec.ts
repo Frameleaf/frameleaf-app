@@ -50,7 +50,28 @@ describe('buildPageCommands', () => {
     expect(withAll).toContain('rail:people');
     expect(withNone).not.toContain('rail:people');
     // Destinations that are not behind a preference stay in both.
-    expect(withNone).toContain('rail:library');
+    expect(withNone).toContain('rail:favorites');
+    expect(withNone).toContain('primary:library');
+  });
+
+  it('offers the top bar destinations: Library home, Studio projects and Activity', () => {
+    const pages = buildPageCommands($t, context());
+    const hrefOf = (id: string) => pages.find((page) => page.id === id)?.href;
+
+    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:studio', 'primary:activity']);
+    expect(hrefOf('primary:library')).toBe('/photos');
+    expect(hrefOf('primary:studio')).toBe('/studio/projects');
+    expect(hrefOf('primary:activity')).toBe('/activity');
+  });
+
+  it('offers Library once and no Studio rail entry', () => {
+    const pages = buildPageCommands($t, everything());
+    const ids = pages.map((page) => page.id);
+
+    expect(pages.filter((page) => page.href === '/photos')).toHaveLength(1);
+    expect(ids).not.toContain('rail:library');
+    expect(ids).not.toContain('rail:studio');
+    expect(pages.filter((page) => page.href === '/studio/projects')).toHaveLength(1);
   });
 
   it('adds the admin pages only for an administrator', () => {
