@@ -257,6 +257,7 @@ describe(RenderWorkerService.name, () => {
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
+      isPublishableResult: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
 
     studioResources = {
@@ -930,6 +931,38 @@ describe(RenderWorkerService.name, () => {
       expect(operations.reportProgress).not.toHaveBeenCalled();
     });
 
+    it("fails the job instead of publishing a result that is not the owner's asset (FL-43)", async () => {
+      const foreign = '0195e2a0-0000-4000-8000-0000000000f1';
+      vi.mocked(operations.isPublishableResult).mockResolvedValue(false);
+
+      const result = await sut.complete(SESSION_A, claimedByA.id, {
+        claimToken: 'claim-1',
+        resultAssetId: foreign,
+      } as never);
+
+      expect(result).toEqual({ accepted: false, refusal: null });
+      expect(operations.isPublishableResult).toHaveBeenCalledWith(claimedByA.ownerId, foreign);
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        claimedByA.id,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'result_not_owned' }),
+      );
+    });
+
+    it("publishes a result that is the owner's own asset (FL-43)", async () => {
+      const mine = '0195e2a0-0000-4000-8000-0000000000f2';
+
+      const result = await sut.complete(SESSION_A, claimedByA.id, {
+        claimToken: 'claim-1',
+        resultAssetId: mine,
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+      expect(operations.complete).toHaveBeenCalledWith(claimedByA.id, 'claim-1', { resultAssetId: mine });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
     it('refuses every write without a live session', async () => {
       const body = { claimToken: 'claim-1' } as never;
       await expect(sut.heartbeat(undefined, claimedByA.id, body)).rejects.toBeInstanceOf(UnauthorizedException);
@@ -1103,12 +1136,12 @@ describe(RenderWorkerService.name, () => {
       });
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
 
+      // Still only for worker A and its token: the repository answers nothing to anybody else.
       const cancelling = operationStub({
         ...claimedByA,
         status: MediaOperationStatus.Cancelling,
         cancelRequestedAt: new Date(),
       });
-      // the same contract as above: only this worker's claim is found
       vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
         Promise.resolve(
           id === claimedByA.id && workerId === workerA.id && claimToken === 'claim-1'
@@ -1122,7 +1155,7 @@ describe(RenderWorkerService.name, () => {
         accepted: true,
         refusal: null,
       });
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(claimedByA.id, { released: true });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(claimedByA.id, 'claim-1', { released: true });
 
       await expect(
         sut.acknowledgeCancel(SESSION_B, claimedByA.id, { claimToken: 'claim-1', released: true } as never),

@@ -3,16 +3,23 @@ import { toastManager, type ActionItem } from '@immich/ui';
 import { mdiContentCopy, mdiDownload, mdiUpload } from '@mdi/js';
 import { isEqual } from 'lodash-es';
 import type { MessageFormatter } from 'svelte-i18n';
-import { forConfigSave, hasCredentialValues, withoutCredentialValues } from '$lib/frameleaf/credentials';
+import { forConfigSave } from '$lib/frameleaf/credentials';
+import { redactConfigForExport } from '$lib/frameleaf/system-config-draft';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { copyToClipboard, downloadJson } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
+/**
+ * Copy, export and import for the settings page. Copies and exports are of the saved settings
+ * with secrets emptied and credentials removed from URLs (FL-66); an import goes into the settings
+ * draft for review through `onImport` and is never saved directly.
+ */
 export const getSystemConfigActions = (
   $t: MessageFormatter,
   featureFlags: ServerFeaturesDto,
   config: AdminConfigDto,
+  { onImport }: { onImport: (text: string) => void },
 ) => {
   // FL-67: copies and exports never carry a credential value. The server already returns them
   // empty; this keeps it true for a value typed into a form that has not been saved.
@@ -20,7 +27,7 @@ export const getSystemConfigActions = (
     title: $t('copy_to_clipboard'),
     description: $t('admin.copy_config_to_clipboard_description'),
     icon: mdiContentCopy,
-    onAction: () => copyToClipboard(withoutCredentialValues(config)),
+    onAction: () => copyToClipboard(redactConfigForExport(config)),
     shortcuts: { shift: true, key: 'c' },
   };
 
@@ -28,7 +35,7 @@ export const getSystemConfigActions = (
     title: $t('export_as_json'),
     description: $t('admin.export_config_as_json_description'),
     icon: mdiDownload,
-    onAction: () => downloadJson(withoutCredentialValues(config), 'immich-config.json'),
+    onAction: () => downloadJson(redactConfigForExport(config), 'immich-config.json'),
     shortcuts: [
       { shift: true, key: 's' },
       { shift: true, key: 'd' },
@@ -40,7 +47,7 @@ export const getSystemConfigActions = (
     description: $t('admin.import_config_from_json_description'),
     icon: mdiUpload,
     $if: () => !featureFlags.configFile,
-    onAction: () => handleUploadConfig(),
+    onAction: () => pickConfigFile(onImport),
     shortcuts: { shift: true, key: 'u' },
   };
 
@@ -72,7 +79,7 @@ export const handleSystemConfigSave = async (update: Partial<AdminConfigDto>) =>
   }
 };
 
-export const handleUploadConfig = () => {
+const pickConfigFile = (onImport: (text: string) => void) => {
   const input = document.createElement('input');
   input.setAttribute('type', 'file');
   input.setAttribute('accept', '.json');
@@ -83,19 +90,10 @@ export const handleUploadConfig = () => {
     if (!file) {
       return;
     }
-    const reader = async () => {
-      const text = await file.text();
-      const newConfig = JSON.parse(text) as Partial<AdminConfigDto>;
-      // FL-67: a file may carry credentials exported by an older server. They are not applied
-      // from a file; the settings say which ones to replace.
-      if (hasCredentialValues(newConfig)) {
-        const $t = await getFormatter();
-        toastManager.warning($t('frameleaf_credentials_import_skipped'));
-      }
-      await handleSystemConfigSave(newConfig);
-    };
-    reader()
-      .catch((error) => console.error('Error handling JSON config upload', error))
+    file
+      .text()
+      .then((text) => onImport(text))
+      .catch((error) => console.error('Error reading the settings file', error))
       .finally(() => input.remove());
   });
   document.body.append(input);
