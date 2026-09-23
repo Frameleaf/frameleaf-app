@@ -103,6 +103,16 @@ export class DuplicateReviewSession {
   loading = $state(false);
 
   #jobs = new Map<string, TrackedJob>();
+
+  /** Whether a tracked job is running `action`. */
+  #hasJob(action: MediaOperationBulkAction) {
+    for (const job of this.#jobs.values()) {
+      if (job.action === action) {
+        return true;
+      }
+    }
+    return false;
+  }
   #timer: ReturnType<typeof setTimeout> | null = null;
   #polling: Promise<void> | null = null;
   #gateway: DuplicateReviewGateway;
@@ -290,7 +300,7 @@ export class DuplicateReviewSession {
       }
     }
     if (finished) {
-      if ([...this.#jobs.values()].every((job) => job.action !== MediaOperationBulkAction.UndoDuplicates)) {
+      if (!this.#hasJob(MediaOperationBulkAction.UndoDuplicates)) {
         this.undoing = false;
       }
       try {

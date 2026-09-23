@@ -23,7 +23,7 @@ describe('the durable bulk tracker', () => {
     fetch = vi.fn<(operationId: string) => Promise<MediaOperationDetailDto>>();
     tracker = new DurableBulkTracker({ fetch, pollMs: 1000 });
     removed = [];
-    tracker.onRemoved((ids) => removed.push(ids));
+    tracker.onRemoved((ids) => void removed.push(ids));
   });
 
   afterEach(() => {

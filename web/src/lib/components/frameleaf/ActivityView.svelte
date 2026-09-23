@@ -229,7 +229,13 @@
         <div class="body">
           <div class="row">
             <h3>{item.titleKey ? $t(item.titleKey) : item.title}</h3>
-            <span class="chip chip-{item.tone}">{$t(item.statusKey)}</span>
+            <span
+              class="chip"
+              class:chip-info={item.tone === 'info'}
+              class:chip-success={item.tone === 'success'}
+              class:chip-warning={item.tone === 'warning'}
+              class:chip-danger={item.tone === 'danger'}>{$t(item.statusKey)}</span
+            >
           </div>
 
           <p class="meta">

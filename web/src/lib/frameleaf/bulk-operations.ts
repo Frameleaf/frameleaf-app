@@ -514,10 +514,11 @@ export const resolveMatchingIds = async (
     if (signal?.aborted) {
       return { ids: [...found], total, truncated: false, cancelled: true };
     }
+    const page: { cursor: string } | undefined = cursor ? { cursor } : undefined;
     const { assets }: SearchResponseDto =
       search.kind === 'smart'
         ? await gateway.searchSmart({ smartSearchDto: search.dto })
-        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor ? { cursor } : {}) } });
+        : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...page } });
     total = typeof assets.total === 'number' ? assets.total : total;
     for (const asset of assets.items) {
       if (found.size >= limit) {
@@ -550,7 +551,7 @@ const requirePayload = <K extends keyof BulkPayload>(
   key: K,
 ): NonNullable<BulkPayload[K]> => {
   const value = payload?.[key];
-  if (value === undefined || value === null || value === '') {
+  if ((value ?? '') === '') {
     throw new Error(`Missing ${key} for this action`);
   }
   return value as NonNullable<BulkPayload[K]>;
@@ -1154,10 +1155,9 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
  * the Locked view and a view that reveals the owner's marks, where it stays; unmarking only takes it
  * out of the Locked view.
  */
-export const removesFromView = (
-  action: BulkActionId,
-  view: BulkView = { isLocked: false, revealsLocks: false },
-): boolean => {
+const ORDINARY_VIEW: BulkView = { isLocked: false, revealsLocks: false };
+
+export const removesFromView = (action: BulkActionId, view: BulkView = ORDINARY_VIEW): boolean => {
   if (action === 'mark-sensitive') {
     return !view.isLocked && !view.revealsLocks;
   }
