@@ -9,6 +9,9 @@ import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 export type DuplicateDecision = Selectable<DuplicateDecisionTable>;
 
+/** A value for a `jsonb` column. Arrays in particular: the driver would otherwise send a Postgres array. */
+const toJson = <T>(value: T) => sql<T>`${JSON.stringify(value)}::jsonb`;
+
 /** One member of a duplicate group, as the review reads it: who owns it and nothing else. */
 export type DuplicateGroupMember = { id: string; duplicateId: string; ownerId: string };
 
@@ -199,7 +202,13 @@ export class DuplicateDecisionRepository {
   async create(values: Insertable<DuplicateDecisionTable>): Promise<DuplicateDecision> {
     const created = await this.db
       .insertInto('duplicate_decision')
-      .values(values)
+      .values({
+        ...values,
+        memberIds: toJson(values.memberIds),
+        keepAssetIds: toJson(values.keepAssetIds),
+        trashAssetIds: toJson(values.trashAssetIds),
+        state: toJson(values.state ?? {}),
+      })
       .onConflict((oc) => oc.columns(['operationId', 'duplicateId']).doNothing())
       .returningAll()
       .executeTakeFirst();
@@ -268,14 +277,9 @@ export class DuplicateDecisionRepository {
   async markApplied(id: string, values: { stackId: string | null; state: Record<string, unknown> }): Promise<void> {
     await this.db
       .updateTable('duplicate_decision')
-      .set({ appliedAt: new Date(), stackId: values.stackId, state: values.state })
+      .set({ appliedAt: new Date(), stackId: values.stackId, state: toJson(values.state) })
       .where('id', '=', id)
       .execute();
-  }
-
-  /** Record what the keepers looked like before the decision changed them. Written once. */
-  async recordBefore(id: string, state: Record<string, unknown>): Promise<void> {
-    await this.db.updateTable('duplicate_decision').set({ state }).where('id', '=', id).execute();
   }
 
   /**
