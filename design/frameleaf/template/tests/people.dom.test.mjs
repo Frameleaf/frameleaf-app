@@ -77,16 +77,27 @@ const button = (name) => {
   return match;
 };
 const click = async (name) => act(async () => button(name).click());
+// react-dom is imported before the happy-dom globals exist, so React watches
+// text inputs through its focus and key polyfill rather than native input
+// events; emit the sequence both paths understand, as the other DOM tests do.
 const type = async (input, value) => {
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
     "value",
   ).set;
   await act(async () => {
+    input.focus();
     setter.call(input, value);
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new window.KeyboardEvent("keyup", { key: value.at(-1) || "", bubbles: true }),
+    );
   });
 };
+// Compare presence as booleans: a failing assert.equal on a happy-dom node
+// makes node:assert inspect the whole window graph, which stalls the run.
+const absent = (selector, message) =>
+  assert.ok(!document.querySelector(selector), message || `${selector} is still present`);
 const text = () => document.body.textContent;
 
 test("People grid shows unnamed clusters, a merge suggestion and names inline", async () => {
@@ -114,13 +125,13 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   assert.ok(document.querySelector('[role="listbox"]'), "suggestions listed");
   assert.match(document.querySelector('[role="listbox"]').textContent, /Emma/);
   await type(input, "Sam");
-  assert.equal(document.querySelector('[role="listbox"]'), null);
+  absent('[role="listbox"]', "no suggestions for a new name");
   await click("Save name");
   assert.equal(changes.length, 2);
   const named = Object.entries(changes[1]).find(([, entry]) => entry.name === "Sam");
   assert.ok(named, "name saved through onChange");
   assert.match(named[0], /^cluster-unnamed-/);
-  assert.equal(document.querySelector('input[role="combobox"]'), null);
+  absent('input[role="combobox"]', "name editor closed");
 
   // Picking a suggestion commits that name for the other cluster.
   await click("Add a name");
@@ -132,7 +143,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   );
   assert.equal(changes.length, 3);
   assert.ok(Object.values(changes[2]).some((entry) => entry.name === "Emma"));
-  assert.equal(document.querySelector('input[role="combobox"]'), null);
+  absent('input[role="combobox"]', "name editor closed");
   // Cancel renaming leaves overrides untouched.
   await click("Rename Jamie");
   await click("Cancel renaming");
@@ -174,7 +185,7 @@ test("Card menu hides a person and the hidden toggle brings them back", async ()
       .click(),
   );
   assert.equal(overrides.Jamie?.hidden, true);
-  assert.equal(document.querySelector('[role="menu"]'), null);
+  absent('[role="menu"]', "menu closed after choosing Hide");
   await rerender();
   assert.equal(document.querySelectorAll(".pl-card").length, 4);
   assert.match(text(), /1 hidden person/);
@@ -254,7 +265,7 @@ test("Person header renders facts and the fix-match panel routes face actions", 
   await click("Fix incorrect match");
   const panel = document.querySelector(".pd-fix");
   assert.ok(panel, "fix panel opened");
-  assert.equal(document.activeElement, panel.querySelector("h2"));
+  assert.ok(document.activeElement === panel.querySelector("h2"), "focus moves to the panel heading");
   assert.equal(panel.querySelectorAll(".pd-fix-row").length, assets.length);
   assert.ok(panel.querySelector(".pp-face-crop"), "tagged face uses a crop");
   await act(async () => panel.querySelector(".pd-fix-menu-button").click());
@@ -272,5 +283,5 @@ test("Person header renders facts and the fix-match panel routes face actions", 
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     ),
   );
-  assert.equal(document.querySelector(".pd-fix"), null);
+  absent(".pd-fix", "Escape closes the fix panel");
 });
