@@ -1830,6 +1830,8 @@
   "frameleaf_albums_space_description": "A shared space is a top-level library that everyone you invite adds to. Invite people from its page once it exists.",
   "frameleaf_albums_space_mark": "Shared space",
   "frameleaf_albums_spaces": "Shared spaces",
+  "frameleaf_albums_spaces_invitations": "{count, plural, one {# invitation} other {# invitations}} waiting",
+  "frameleaf_albums_spaces_open_sharing": "Open Sharing",
   "frameleaf_albums_upload": "Upload photos",
   "frameleaf_albums_view_grid": "Grid view",
   "frameleaf_albums_view_list": "List view",
