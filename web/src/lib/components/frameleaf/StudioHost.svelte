@@ -5,7 +5,7 @@
    * This component owns the Studio chrome from the prototype
    * (`design/frameleaf/template/src/Studio.jsx`, `studio.css`), which fills the page below the
    * Frameleaf top bar: the header with the way back to the project library, the project name, the
-   * save indicator, who is editing, and the link to Activity
+   * save indicator, who is editing, the project bundle export (FL-91) and the link to Activity
    * where an export or restoration job is followed. Everything below the header is
    * one element handed to the engine, which owns the workspace tabs, the media bin, the
    * program monitor, the inspector and the timeline.
@@ -30,6 +30,7 @@
     mdiArrowLeft,
     mdiCheckCircle,
     mdiCloudOffOutline,
+    mdiExportVariant,
     mdiHistory,
     mdiLockOutline,
     mdiProgressClock,
@@ -74,6 +75,7 @@
     services,
     onBack,
     onOpenActivity,
+    onExportBundle,
     accessLost = false,
     dirty = false,
     queuedJobs = 0,
@@ -106,6 +108,11 @@
      * When it is absent the host renders no link rather than a control that goes nowhere.
      */
     onOpenActivity?: () => void;
+    /**
+     * Opens the host's project bundle export dialog (FL-91). The route passes it only while the
+     * person owns a saved project, the one case the server exports; otherwise there is no button.
+     */
+    onExportBundle?: () => void;
     /** The session lost the project: sign-out, session delete or relock. */
     accessLost?: boolean;
     /** The engine reports a draft it has not persisted. */
@@ -368,6 +375,13 @@
       <Button variant="quiet" onclick={onOpenActivity}>
         <Icon icon={mdiProgressClock} size="16" />
         {$t('frameleaf_studio_queued_open_activity', { values: { count: queuedJobs } })}
+      </Button>
+    {/if}
+
+    {#if onExportBundle && !accessLost}
+      <Button variant="quiet" onclick={onExportBundle}>
+        <Icon icon={mdiExportVariant} size="16" />
+        {$t('frameleaf_studio_bundle_export_action')}
       </Button>
     {/if}
 

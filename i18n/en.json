@@ -3055,6 +3055,7 @@
   "frameleaf_studio_bundle_error_too_large": "This bundle is larger than Frameleaf can accept.",
   "frameleaf_studio_bundle_error_unsafe": "This file contains something a project bundle never should, so it was refused.",
   "frameleaf_studio_bundle_expired": "This bundle has expired. Export the project again to get a new one.",
+  "frameleaf_studio_bundle_export_action": "Export bundle",
   "frameleaf_studio_bundle_export_body": "A bundle holds \"{name}\" as it is now, with every version detail needed to open it again here or on another Frameleaf server.",
   "frameleaf_studio_bundle_export_done": "{embedded, plural, one {# copy} other {# copies}} included, {referenced, plural, one {# item} other {# items}} referenced from your library.",
   "frameleaf_studio_bundle_export_failed": "The export could not be started.",
