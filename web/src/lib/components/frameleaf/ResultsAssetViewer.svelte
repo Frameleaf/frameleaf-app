@@ -69,24 +69,36 @@
     }
   };
 
-  const handleAction = async (action: Action) => {
+  const removalTarget = (action: Action) => {
     switch (action.type) {
-      // Each of these leaves the list; an item moved to Locked leaves every list but Locked's own.
       case AssetAction.ARCHIVE:
       case AssetAction.DELETE:
       case AssetAction.TRASH:
       case AssetAction.SET_VISIBILITY_LOCKED: {
-        const nextAsset = cursor.nextAsset ?? cursor.previousAsset;
-        onRemove?.(action.asset.id);
-        if (assets.length <= 1) {
-          return await goto(emptyRoute);
-        }
-        if (nextAsset) {
-          await navigateToAsset(nextAsset);
-        }
-        break;
+        return action.asset;
       }
       // no default
+    }
+  };
+
+  const handlePreAction = async (action: Action) => {
+    const target = removalTarget(action);
+    if (!target || assetViewerManager.asset?.id !== target.id) {
+      return;
+    }
+    // Resolve the neighbor before the mutation's event can retire the current cursor.
+    const nextAsset = cursor.nextAsset ?? cursor.previousAsset;
+    if (nextAsset) {
+      await navigateToAsset(nextAsset);
+    } else {
+      await goto(emptyRoute);
+    }
+  };
+
+  const handleAction = (action: Action) => {
+    const target = removalTarget(action);
+    if (target) {
+      onRemove?.(target.id);
     }
   };
 </script>
@@ -96,6 +108,7 @@
     {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
       <AssetViewer
         {cursor}
+        preAction={handlePreAction}
         onAction={handleAction}
         onRandom={handleRandom}
         onAssetChange={(asset) => onAssetChange?.(asset)}
