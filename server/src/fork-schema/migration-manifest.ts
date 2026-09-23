@@ -52,6 +52,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000080-AddAlbumKind',
   '2100000000090-AddPartnerShareLocation',
   '2100000000100-AddAssetFaceCorrectedAt',
+  '2100000000150-AddPetIdentities',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
