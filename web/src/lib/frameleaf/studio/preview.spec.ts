@@ -174,7 +174,7 @@ describe('StudioPreviewCache', () => {
 
     cache.dropRevision(1);
 
-    expect(release.mock.calls.map(([url]) => url).sort()).toEqual(['blob:a', 'blob:b']);
+    expect(release.mock.calls.map(([url]) => url).sort((a, b) => a.localeCompare(b))).toEqual(['blob:a', 'blob:b']);
     expect(cache.size).toBe(0);
   });
 
@@ -233,7 +233,7 @@ describe('createStudioPreviewClient', () => {
     const phases: string[] = [];
     const client = createStudioPreviewClient({
       ...clientOptions(transport),
-      onChange: (view) => phases.push(view.phase),
+      onChange: (view) => void phases.push(view.phase),
     });
 
     client.request(intent());

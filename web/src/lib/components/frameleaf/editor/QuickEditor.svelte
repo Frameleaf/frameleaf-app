@@ -269,23 +269,27 @@
     previewFailed = false;
     const controller = new AbortController();
     previewAbort = controller;
-    previewTimer = setTimeout(async () => {
-      try {
-        const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal);
-        if (!result || controller.signal.aborted) {
-          return;
-        }
-        serverPreview?.revoke();
-        serverPreview = { ...result, key };
-        previewPending = false;
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          previewPending = false;
-          previewFailed = true;
-          handleError(error, $t('frameleaf_editor_preview_error'));
-        }
-      }
-    }, PREVIEW_DEBOUNCE_MS);
+    previewTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal);
+            if (!result || controller.signal.aborted) {
+              return;
+            }
+            serverPreview?.revoke();
+            serverPreview = { ...result, key };
+            previewPending = false;
+          } catch (error) {
+            if (!controller.signal.aborted) {
+              previewPending = false;
+              previewFailed = true;
+              handleError(error, $t('frameleaf_editor_preview_error'));
+            }
+          }
+        })(),
+      PREVIEW_DEBOUNCE_MS,
+    );
   });
 
   /* Stage ---------------------------------------------------------------- */
@@ -326,9 +330,9 @@
       }
     };
     update();
+    // Every supported browser has ResizeObserver; without one the first measurement stands.
     if (typeof ResizeObserver === 'undefined') {
-      addEventListener('resize', update);
-      return () => removeEventListener('resize', update);
+      return;
     }
     const observer = new ResizeObserver(update);
     observer.observe(element);
@@ -595,21 +599,29 @@
   };
   const railKey = (event: KeyboardEvent) => {
     const index = tools.findIndex((item) => item.id === tool);
-    let next: number | null = null;
-    if (['ArrowDown', 'ArrowRight'].includes(event.key)) {
-      next = index + 1;
-    }
-    if (['ArrowUp', 'ArrowLeft'].includes(event.key)) {
-      next = index - 1;
-    }
-    if (event.key === 'Home') {
-      next = 0;
-    }
-    if (event.key === 'End') {
-      next = tools.length - 1;
-    }
-    if (next === null) {
-      return;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowRight': {
+        next = index + 1;
+        break;
+      }
+      case 'ArrowUp':
+      case 'ArrowLeft': {
+        next = index - 1;
+        break;
+      }
+      case 'Home': {
+        next = 0;
+        break;
+      }
+      case 'End': {
+        next = tools.length - 1;
+        break;
+      }
+      default: {
+        return;
+      }
     }
     event.preventDefault();
     const target = tools[(next + tools.length) % tools.length];
@@ -911,8 +923,7 @@
                   onkeydown={(event) => {
                     if (event.key === 'ArrowLeft') {
                       splitAt = Math.max(0.04, splitAt - 0.02);
-                    }
-                    if (event.key === 'ArrowRight') {
+                    } else if (event.key === 'ArrowRight') {
                       splitAt = Math.min(0.96, splitAt + 0.02);
                     }
                   }}
