@@ -129,6 +129,17 @@ const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
     const { assetIds, requestKey: _requestKey, ...rest } = snapshot;
     return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
   }
+  if (operation.kind === MediaOperationKind.PhysicalDeduplication) {
+    // FL-73: the frozen plan names other accounts' copies, Locked ones included; the detail view
+    // carries the plan's name and how many copies and groups it covers
+    const { items, retained, excludedRetainedAssetIds, reviewToken: _reviewToken, ...rest } = snapshot;
+    return {
+      ...rest,
+      copyCount: Array.isArray(items) ? items.length : 0,
+      retainedCount: Array.isArray(retained) ? retained.length : 0,
+      excludedCount: Array.isArray(excludedRetainedAssetIds) ? excludedRetainedAssetIds.length : 0,
+    };
+  }
   if (operation.kind === MediaOperationKind.MediaHealth) {
     // FL-69: a search names its findings; the detail view carries how many.
     const { findingIds, ...rest } = snapshot;
