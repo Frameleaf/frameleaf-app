@@ -167,13 +167,17 @@
 
   const schedulePoll = () => {
     clearTimeout(pollTimer);
-    pollTimer = setTimeout(async () => {
-      try {
-        await loadList();
-      } catch (error) {
-        handleError(error, $t('frameleaf_restoration_load_error'));
-      }
-    }, RESTORATION_POLL_MS);
+    pollTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            await loadList();
+          } catch (error) {
+            handleError(error, $t('frameleaf_restoration_load_error'));
+          }
+        })(),
+      RESTORATION_POLL_MS,
+    );
   };
 
   onMount(async () => {

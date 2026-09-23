@@ -556,6 +556,10 @@ export class JobRepository {
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }
+      case JobName.AssetDevelopRender: {
+        // The automatic retry of a failed render waits before it is claimed (FL-64).
+        return item.data.delay ? { delay: item.data.delay } : null;
+      }
       case JobName.PersonGenerateThumbnail: {
         return { priority: 1 };
       }

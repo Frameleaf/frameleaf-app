@@ -25,7 +25,7 @@ const viewState = (overrides: Partial<LibraryViewState> = {}): LibraryViewState 
 
 /** The same state as a reducer patch; `version` is the reducer's to set. */
 const viewPatch = (overrides: Partial<LibraryViewState> = {}) => {
-  const { version: _version, ...patch } = viewState(overrides);
+  const { version: _, ...patch } = viewState(overrides);
   return patch;
 };
 

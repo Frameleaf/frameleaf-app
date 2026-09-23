@@ -115,7 +115,8 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-font-micro')).toBe('11px');
     const sizes = [...base]
       .filter(([name]) => name.startsWith('--fl-font-'))
-      .map(([, value]) => Number.parseFloat(value));
+      // Every size in the scale is in px; anything else reads as NaN and fails the check below.
+      .map(([, value]) => Number(value.replace(/px$/, '')));
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11);
     // The scope raises its own base size rather than inheriting the host application's.
     expect(css).toContain('font-size: var(--fl-font-size)');

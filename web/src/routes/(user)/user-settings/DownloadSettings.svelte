@@ -31,7 +31,7 @@
   });
 
   const setArchiveGib = (value: number | string | null | undefined) => {
-    const gib = value === '' || value === null || value === undefined ? null : Number(value);
+    const gib = (value ?? '') === '' ? null : Number(value);
     archiveGib = gib;
     store.set('download.archiveSize', gibToArchiveSize(gib));
   };

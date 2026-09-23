@@ -37,7 +37,7 @@
   const filterId = $props.id();
 
   const workerName = $derived(new Map(workers.map((worker) => [worker.id, worker.name])));
-  const userName = $derived(new Map(users.map((user) => [user.id, user.name])));
+  const nameOfUser = $derived(new Map(users.map((user) => [user.id, user.name])));
 
   const at = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
 </script>
@@ -86,7 +86,7 @@
             {#if entry.actorId}
               <span class="muted">
                 {$t('frameleaf_render_workers_audit_by', {
-                  values: { name: userName.get(entry.actorId) ?? $t('frameleaf_render_workers_limits_unknown_user') },
+                  values: { name: nameOfUser.get(entry.actorId) ?? $t('frameleaf_render_workers_limits_unknown_user') },
                 })}
               </span>
             {/if}

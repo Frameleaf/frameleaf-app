@@ -133,13 +133,13 @@
         <small>
           {#if isEventStory(memory)}
             {formatLocalDateRange(memory.data.startDate, memory.data.endDate, $locale)}
-            {' · '}
+            ·
             {$t('frameleaf_memories_story_days', { values: { count: memory.data.dayCount } })}
-            {' · '}
+            ·
           {/if}
           {$t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
           {#if memory.isSaved}
-            {' · '}<Icon icon={mdiHeart} size={12} aria-hidden="true" /> {$t('favorite')}
+            · <Icon icon={mdiHeart} size={12} aria-hidden="true" /> {$t('favorite')}
           {/if}
         </small>
       </span>

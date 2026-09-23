@@ -25,6 +25,7 @@
     mdiAccountGroupOutline,
     mdiAccountOutline,
     mdiApi,
+    mdiArchiveLockOutline,
     mdiBellOutline,
     mdiCogOutline,
     mdiDevices,
@@ -39,6 +40,7 @@
     mdiTwoFactorAuthentication,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
@@ -118,6 +120,17 @@
   subtitle={$t('download_settings_description')}
 >
   <DownloadSettings />
+</SettingGroup>
+
+<!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
+<SettingGroup
+  icon={mdiArchiveLockOutline}
+  key={OpenQueryParam.PRESERVATION}
+  title={$t('frameleaf_preservation_section_title')}
+  subtitle={$t('frameleaf_preservation_section_description')}
+  autoScrollTo={true}
+>
+  <PreservationPanel />
 </SettingGroup>
 
 <SettingGroup

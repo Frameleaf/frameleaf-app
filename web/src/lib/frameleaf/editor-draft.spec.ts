@@ -1,4 +1,9 @@
-import { AssetDevelopPreset, AssetDevelopRevisionStatus, type AssetDevelopRevisionResponseDto } from '@immich/sdk';
+import {
+  AssetDevelopPreset,
+  AssetDevelopRevisionKind,
+  AssetDevelopRevisionStatus,
+  type AssetDevelopRevisionResponseDto,
+} from '@immich/sdk';
 import {
   anyRevisionBusy,
   changeDraft,
@@ -34,6 +39,13 @@ const revision = (overrides: Partial<AssetDevelopRevisionResponseDto> = {}): Ass
   createdAt: '2026-09-22T10:00:00.000Z',
   updatedAt: '2026-09-22T10:00:00.000Z',
   renderedAt: '2026-09-22T10:00:00.000Z',
+  kind: AssetDevelopRevisionKind.Recipe,
+  attempts: 1,
+  exportId: null,
+  fileName: null,
+  software: null,
+  sourceChecksum: null,
+  renditionChecksum: null,
   ...overrides,
 });
 

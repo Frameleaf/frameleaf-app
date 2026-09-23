@@ -9,7 +9,9 @@
    * Locked media is never counted, and the reader's own only in an unlocked session.
    *
    * Missing media and Damaged media stay administrator tools, as the prototype marks them.
+   * Preservation verification (FL-74) is every account's own, like the prototype's Library Care row.
    */
+  import { OpenQueryParam } from '$lib/constants';
   import { careQueues, CARE_TOOL_GROUPS, type CareQueue, type CareToolGroup } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AppDownloadModal from '$lib/modals/AppDownloadModal.svelte';
@@ -18,6 +20,7 @@
   import type { MediaHealthSummaryResponseDto } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
+    mdiArchiveLockOutline,
     mdiChevronRight,
     mdiCloudOutline,
     mdiCompare,
@@ -105,6 +108,16 @@
       titleKey: 'library_care_tool_icloud',
       descriptionKey: 'library_care_tool_icloud_description',
       href: Route.icloudSyncUtility(),
+    },
+    {
+      // FL-74: the prototype's Library Care row "Preservation verification". Packages live in
+      // Settings → Import & protection → Originals & preservation, where this opens.
+      id: 'preservation',
+      group: 'import',
+      icon: mdiArchiveLockOutline,
+      titleKey: 'frameleaf_preservation_care_link',
+      descriptionKey: 'library_care_tool_preservation_description',
+      href: Route.userSettings({ isOpen: OpenQueryParam.PRESERVATION }),
     },
     {
       id: 'workflows',

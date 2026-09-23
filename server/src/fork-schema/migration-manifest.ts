@@ -80,7 +80,9 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000460-AddTakeoutImport',
   '2100000000490-SeparateRestorationWorkers',
   '2100000000500-AddVideoMomentFrameVectorIndex',
+  '2100000000510-AddPreservationPackages',
   '2100000000530-ReconcileFrameleafSchemaSnapshots',
+  '2100000000540-AddPhotoToolsPresetsAndExports',
   '2100000000590-HardenMediaOperationRetryAndCheckpoints',
 ]);
 
