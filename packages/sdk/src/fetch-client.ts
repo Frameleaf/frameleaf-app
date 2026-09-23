@@ -1702,6 +1702,122 @@ export type SpeedParameters = {
     /** Speed segment start time in milliseconds */
     startMs?: number;
 };
+export type AssetDevelopCrop = {
+    /** Crop height as a fraction of the frame */
+    h: number;
+    /** Crop width as a fraction of the frame */
+    w: number;
+    /** Left edge of the crop as a fraction of the oriented frame width */
+    x: number;
+    /** Top edge of the crop as a fraction of the oriented frame height */
+    y: number;
+};
+export type AssetDevelopRecipeDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: AssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Recipe contract version */
+    version: 1;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type AssetDevelopRevisionResponseDto = {
+    /** Asset this revision belongs to */
+    assetId: string;
+    /** When the version was saved */
+    createdAt: string;
+    /** Why the last render failed, when it did */
+    error: string | null;
+    /** True once the edited master file exists */
+    hasMaster: boolean;
+    /** True once the preview file exists */
+    hasPreview: boolean;
+    /** Height of the edited master in pixels */
+    height: number | null;
+    /** Develop revision ID */
+    id: string;
+    /** True for the version the asset currently shows */
+    isCurrent: boolean;
+    /** Name given when the version was saved */
+    label: string | null;
+    /** Render progress as a percentage */
+    progress: number;
+    recipe: AssetDevelopRecipeDto;
+    /** When the render finished */
+    renderedAt: string | null;
+    /** Identity of the renderer that produced the files, for lineage */
+    rendererVersion: string | null;
+    /** Per-asset sequence number, 1 for the first saved version */
+    revision: number;
+    status: AssetDevelopRevisionStatus;
+    /** When the revision last changed */
+    updatedAt: string;
+    /** Width of the edited master in pixels */
+    width: number | null;
+};
+export type AssetDevelopResponseDto = {
+    /** Asset ID these revisions belong to */
+    assetId: string;
+    /** The revision the asset currently shows; null means the original */
+    currentRevisionId: string | null;
+    /** Every saved version of the recipe, newest first */
+    revisions: AssetDevelopRevisionResponseDto[];
+};
+export type AssetDevelopSaveDto = {
+    /** Optional name for the saved version */
+    label?: string;
+    recipe: AssetDevelopRecipeDto;
+    /** Queue the edited master render immediately after saving the recipe */
+    render?: boolean;
+};
+export type AssetDevelopPreviewDto = {
+    recipe: AssetDevelopRecipeDto;
+    /** Longest edge of the preview in pixels; the original is never upscaled */
+    size?: number;
+};
+export type AssetDevelopRevertDto = {
+    /** Rendered revision to make current again; omitted, the original becomes current */
+    revisionId?: string;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -5772,6 +5888,114 @@ export function updateAsset({ id, updateAssetDto }: {
     })));
 }
 /**
+ * List develop versions of an asset
+ */
+export function getAssetDevelop({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop`, {
+        ...opts
+    }));
+}
+/**
+ * Save a develop recipe as a new version
+ */
+export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
+    id: string;
+    assetDevelopSaveDto: AssetDevelopSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetDevelopSaveDto
+    })));
+}
+/**
+ * Render a develop preview
+ */
+export function previewAssetDevelop({ id, assetDevelopPreviewDto }: {
+    id: string;
+    assetDevelopPreviewDto: AssetDevelopPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/develop/preview`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopPreviewDto
+    })));
+}
+/**
+ * Revert to the original or an earlier develop version
+ */
+export function revertAssetDevelop({ id, assetDevelopRevertDto }: {
+    id: string;
+    assetDevelopRevertDto: AssetDevelopRevertDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revert`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopRevertDto
+    })));
+}
+/**
+ * View a rendered develop file
+ */
+export function viewAssetDevelopFile({ id, kind, revisionId }: {
+    id: string;
+    kind?: AssetDevelopFileKind;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel a develop render
+ */
+export function cancelAssetDevelopRender({ id, revisionId }: {
+    id: string;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/render`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Render a develop version
+ */
+export function renderAssetDevelopRevision({ id, revisionId }: {
+    id: string;
+    revisionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/render`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Remove edits from an existing asset
  */
 export function removeAssetEdits({ id }: {
@@ -9646,6 +9870,29 @@ export enum AssetTypeEnum {
     Video = "VIDEO",
     Audio = "AUDIO",
     Other = "OTHER"
+}
+export enum AssetDevelopRevisionStatus {
+    Saved = "saved",
+    Queued = "queued",
+    Rendering = "rendering",
+    Rendered = "rendered",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
+export enum AssetDevelopPreset {
+    Original = "Original",
+    Vivid = "Vivid",
+    Natural = "Natural",
+    Warm = "Warm",
+    Cool = "Cool",
+    Mono = "Mono",
+    Silvertone = "Silvertone",
+    Noir = "Noir",
+    Fade = "Fade"
+}
+export enum AssetDevelopFileKind {
+    Master = "master",
+    Preview = "preview"
 }
 export enum AssetEditAction {
     Crop = "crop",
