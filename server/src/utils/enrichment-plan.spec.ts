@@ -24,7 +24,9 @@ import {
 const ids = ['a1', 'a2', 'a3'];
 
 const completed = (stage: EnrichmentStage) => ({ [stage]: { state: EnrichmentItemState.Completed } });
-const failed = (stage: EnrichmentStage) => ({ [stage]: { state: EnrichmentItemState.Failed, reasonKey: 'model-error' } });
+const failed = (stage: EnrichmentStage) => ({
+  [stage]: { state: EnrichmentItemState.Failed, reasonKey: 'model-error' },
+});
 
 const pinnedConfig = {
   description: { modelName: 'm', fallbackModelName: 'f', device: 'AUTO', acceleration: 'auto', prompt: {} },
@@ -45,7 +47,12 @@ describe('resolveEnrichmentStages', () => {
     expect(
       resolveEnrichmentStages([EnrichmentStage.Description, EnrichmentStage.MomentIndex, EnrichmentStage.LockedCheck])
         .stages,
-    ).toEqual([EnrichmentStage.Frames, EnrichmentStage.LockedCheck, EnrichmentStage.Description, EnrichmentStage.MomentIndex]);
+    ).toEqual([
+      EnrichmentStage.Frames,
+      EnrichmentStage.LockedCheck,
+      EnrichmentStage.Description,
+      EnrichmentStage.MomentIndex,
+    ]);
   });
 
   it('never includes moment captions by default', () => {
@@ -125,7 +132,10 @@ describe('plan result', () => {
   });
 
   it('plans the automatic retry once, over the failed assets only', () => {
-    let result = mergeEnrichmentItem(emptyEnrichmentPlanResult(), { id: 'a1', stages: completed(EnrichmentStage.Description) });
+    let result = mergeEnrichmentItem(emptyEnrichmentPlanResult(), {
+      id: 'a1',
+      stages: completed(EnrichmentStage.Description),
+    });
     result = mergeEnrichmentItem(result, { id: 'a2', stages: failed(EnrichmentStage.Description) });
     const planned = planEnrichmentRetryPass({ assetIds: ids }, result);
     expect(planned?.retry).toEqual({ ids: ['a2'], processed: 0 });
@@ -134,9 +144,8 @@ describe('plan result', () => {
 
   it('parses a damaged result as nothing reached', () => {
     expect(parseEnrichmentPlanResult('nonsense')).toEqual(emptyEnrichmentPlanResult());
-    expect(parseEnrichmentPlanResult({ items: [{ id: 'a1', stages: { description: { state: 'bogus' } } }] }).items).toEqual([
-      { id: 'a1', stages: {} },
-    ]);
+    const damaged = { items: [{ id: 'a1', stages: { description: { state: 'bogus' } } }] };
+    expect(parseEnrichmentPlanResult(damaged).items).toEqual([{ id: 'a1', stages: {} }]);
   });
 });
 
@@ -172,6 +181,15 @@ describe('enrichmentItemStates', () => {
     expect(states[1].stages.description?.state).toBe(EnrichmentItemState.Failed);
   });
 
+  it('shows assets a manual retry carried over as queued until the cursor reaches them', () => {
+    const states = enrichmentItemStates({ assetIds: ['a2'] }, result, {
+      status: MediaOperationStatus.Queued,
+      processedUnits: '0',
+    });
+    expect(states[0]).toMatchObject({ state: EnrichmentItemState.Queued });
+    expect(states[0].stages.description?.state).toBe(EnrichmentItemState.Failed);
+  });
+
   it('resumes a manual retry from failed, unreached and retry-pending assets only', () => {
     expect(enrichmentResumeIds({ assetIds: ids }, result, 2)).toEqual(['a2', 'a3']);
   });
@@ -184,17 +202,17 @@ describe('provenance', () => {
   });
 
   it('changes the source fingerprint when the original is replaced', () => {
-    const before = sourceFingerprint({
-      checksum: Buffer.from('aa', 'hex'),
-      originalPath: '/a.mp4',
-      fileModifiedAt: new Date('2026-01-01T00:00:00Z'),
-    });
-    const after = sourceFingerprint({
-      checksum: Buffer.from('bb', 'hex'),
-      originalPath: '/a.mp4',
-      fileModifiedAt: new Date('2026-01-01T00:00:00Z'),
-    });
+    const fileModifiedAt = new Date('2026-01-01T00:00:00Z');
+    const before = sourceFingerprint({ checksum: Buffer.from('aa', 'hex'), fileModifiedAt });
+    const after = sourceFingerprint({ checksum: Buffer.from('bb', 'hex'), fileModifiedAt });
     expect(before).not.toBe(after);
+  });
+
+  it('keeps the source fingerprint when the original only moves', () => {
+    const fileModifiedAt = new Date('2026-01-01T00:00:00Z');
+    const atOldPath = { checksum: Buffer.from('aa', 'hex'), originalPath: '/library/a.mp4', fileModifiedAt };
+    const atNewPath = { checksum: Buffer.from('aa', 'hex'), originalPath: '/library/2026/a.mp4', fileModifiedAt };
+    expect(sourceFingerprint(atOldPath)).toBe(sourceFingerprint(atNewPath));
   });
 
   it('digests names without regard to order or repetition', () => {

@@ -1466,6 +1466,7 @@ describe(ImageEnrichmentService.name, () => {
           .mockResolvedValue({ sourceFingerprint: fingerprint, extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION }),
         getFrames: vi.fn().mockResolvedValue(frames),
         replaceFrames: vi.fn(),
+        withFrameLock: vi.fn((_assetId: string, callback: () => Promise<unknown>) => callback()),
       };
       sut.useVideoMomentRepository(moments as never);
     });
@@ -1591,6 +1592,32 @@ describe(ImageEnrichmentService.name, () => {
         previewFile,
         expect.objectContaining({ threshold: 0.5 }),
       );
+    });
+
+    it('leaves the description embedding alone when the plan pinned no search destination', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+      });
+      mocks.machineLearning.describeImage.mockResolvedValue({
+        description: 'A bright kitchen.',
+        people: [],
+        environment: 'indoors',
+        objects: [],
+        visible_text: [],
+        context: '',
+        tags: [],
+      });
+
+      await expect(
+        sut.describeAsset(assetId, {
+          planRun: true,
+          enrichmentDestinationId: mlDestinationStub.local.id,
+          searchDestinationId: null,
+        }),
+      ).resolves.toEqual({ status: JobStatus.Success });
+
+      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
     });
 
     it('reports a refused destination as a failed stage with the reason', async () => {
