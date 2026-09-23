@@ -130,6 +130,86 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_revision.assetId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.asset_develop_revision.cancelRequested"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.asset_develop_revision.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.error"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.height"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.asset_develop_revision.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.asset_develop_revision.isCurrent"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.label"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.masterPath"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_revision.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.previewPath"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.asset_develop_revision.progress"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.asset_develop_revision.recipe"
+    },
+    {
+      "definition": "integer|not null|1||",
+      "identity": "immich_fork.asset_develop_revision.recipeVersion"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.renderedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.rendererVersion"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.asset_develop_revision.revision"
+    },
+    {
+      "definition": "text|not null|'saved'::text||",
+      "identity": "immich_fork.asset_develop_revision.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.asset_develop_revision.updatedAt"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.width"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.asset_enrichment.assetId"
     },
     {
@@ -1097,6 +1177,38 @@
       "identity": "public.activity.userId"
     },
     {
+      "definition": "character varying|not null|||",
+      "identity": "public.admin_audit_event.action"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.admin_audit_event.actorId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.admin_audit_event.createdAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.admin_audit_event.detail"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.admin_audit_event.id"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.admin_audit_event.libraryId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.admin_audit_event.subject"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.admin_audit_event.userId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.album_asset_audit.albumId"
     },
@@ -1397,6 +1509,78 @@
       "identity": "public.asset_best_photo_score.updatedAt"
     },
     {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_document_edit.action"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_document_edit.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_document_edit.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_document_edit.editedById"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.asset_document_edit.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_document_edit.key"
+    },
+    {
+      "definition": "integer|not null|1||",
+      "identity": "public.asset_document_edit.revision"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_document_edit.sourceText"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_document_edit.updatedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_document_edit.value"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.x1"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.x2"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.x3"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.x4"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.y1"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.y2"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.y3"
+    },
+    {
+      "definition": "real|nullable|||",
+      "identity": "public.asset_document_edit.y4"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.asset_edit_audit.assetId"
     },
@@ -1607,6 +1791,10 @@
     {
       "definition": "integer|not null|0||",
       "identity": "public.asset_face.boundingBoxY2"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_face.correctedAt"
     },
     {
       "definition": "timestamp with time zone|nullable|||",
@@ -1878,6 +2066,26 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "public.asset_lock.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_lock.lockedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_lock.lockedBy"
+    },
+    {
+      "definition": "asset_visibility_enum|nullable|||",
+      "identity": "public.asset_lock.previousVisibility"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_lock.reason"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "public.asset_metadata_audit.assetId"
     },
     {
@@ -1987,6 +2195,166 @@
     {
       "definition": "real|not null|||",
       "identity": "public.asset_ocr.y4"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_restoration.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_restoration.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_restoration.destinationId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_restoration.destinationKind"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_restoration.destinationName"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_restoration.error"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.asset_restoration.estimate"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_restoration.fullOperationId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.asset_restoration.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.asset_restoration.isCurrent"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.asset_restoration.keepGrain"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_restoration.mode"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.modelName"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.modelVersion"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.asset_restoration.outputHeight"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.asset_restoration.outputWidth"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_restoration.ownerId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.previewAfterPath"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.previewBeforePath"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_restoration.previewExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_restoration.previewOperationId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_restoration.previewReadyAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.asset_restoration.previewRegion"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "public.asset_restoration.provenance"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_restoration.restoredAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_restoration.resultExpiresAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.resultPath"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.asset_restoration.resultPreviewPath"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_restoration.reviewedAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.asset_restoration.revision"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.asset_restoration.sourceChecksum"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "public.asset_restoration.sourceDurationSeconds"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.asset_restoration.sourceHeight"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_restoration.sourceType"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.asset_restoration.sourceWidth"
+    },
+    {
+      "definition": "character varying|not null|'preview_queued'::character varying||",
+      "identity": "public.asset_restoration.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_restoration.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.asset_restoration.updateId"
+    },
+    {
+      "definition": "integer|not null|1||",
+      "identity": "public.asset_restoration.upscale"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.asset_restoration.workload"
     },
     {
       "definition": "uuid|not null|||",
@@ -2241,6 +2609,62 @@
       "identity": "public.cluster_group.updateId"
     },
     {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.duplicate_decision.appliedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.duplicate_decision.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.duplicate_decision.decision"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.duplicate_decision.duplicateId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.duplicate_decision.id"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.duplicate_decision.keepAssetIds"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.duplicate_decision.memberIds"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.duplicate_decision.operationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.duplicate_decision.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.duplicate_decision.stackId"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "public.duplicate_decision.state"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.duplicate_decision.trashAssetIds"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.duplicate_decision.undoneAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.duplicate_decision.undoOperationId"
+    },
+    {
       "definition": "vector(512)|not null|||",
       "identity": "public.face_search.embedding"
     },
@@ -2373,6 +2797,274 @@
       "identity": "public.library.updateId"
     },
     {
+      "definition": "integer|not null|0||",
+      "identity": "public.media_operation_checkpoint.attempt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation_checkpoint.chunkKey"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.media_operation_checkpoint.claimToken"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation_checkpoint.completedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation_checkpoint.configDigest"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.media_operation_checkpoint.createdAt"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.media_operation_checkpoint.endTicks"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation_checkpoint.historyDigest"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.media_operation_checkpoint.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation_checkpoint.inputDigest"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.media_operation_checkpoint.operationId"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.media_operation_checkpoint.outputChecksum"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation_checkpoint.outputPath"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.media_operation_checkpoint.prerollTicks"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.media_operation_checkpoint.requiresSequentialContext"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation_checkpoint.seed"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.media_operation_checkpoint.sequence"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.media_operation_checkpoint.sizeInBytes"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.media_operation_checkpoint.startTicks"
+    },
+    {
+      "definition": "character varying|not null|'pending'::character varying||",
+      "identity": "public.media_operation_checkpoint.state"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation_checkpoint.timebase"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.media_operation_checkpoint.updatedAt"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.media_operation.admissionRefusals"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.media_operation.assetId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.media_operation.attempt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.attemptStartedAt"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.media_operation.autoRetries"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.cancelAcknowledgedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.cancelRequestedAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.claimedBy"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.claimExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.media_operation.claimToken"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.media_operation.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation.destination"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.destinationDetail"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.dismissedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.media_operation.error"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.errorCode"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.media_operation.estimate"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.finishedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.heartbeatAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.media_operation.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation.kind"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.media_operation.label"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.lastAdmissionRefusalReason"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.lastAdmissionRefusedAt"
+    },
+    {
+      "definition": "integer|not null|3||",
+      "identity": "public.media_operation.maxAttempts"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.media_operation.outputBytes"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.media_operation.ownerId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.pauseRequestedAt"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.media_operation.processedUnits"
+    },
+    {
+      "definition": "double precision|not null|0||",
+      "identity": "public.media_operation.progress"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.projectId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.remoteJobId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.remoteReleasedAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.media_operation.result"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.media_operation.resultAssetId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.retryAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.media_operation.retryOfId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.media_operation.revisionId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.media_operation.settings"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.media_operation.snapshot"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.media_operation.startedAt"
+    },
+    {
+      "definition": "character varying|not null|'queued'::character varying||",
+      "identity": "public.media_operation.status"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.media_operation.totalUnits"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.media_operation.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.media_operation.updateId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.memory_asset_audit.assetId"
     },
@@ -2423,6 +3115,78 @@
     {
       "definition": "uuid|not null|||",
       "identity": "public.memory_audit.userId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.memory_export.assetCount"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.memory_export.assetIds"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.memory_export.cancelRequestedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.memory_export.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.memory_export.error"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.memory_export.expiresAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.memory_export.finishedAt"
+    },
+    {
+      "definition": "character varying|not null|'archive'::character varying||",
+      "identity": "public.memory_export.format"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.memory_export.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.memory_export.memoryId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.memory_export.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.memory_export.path"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.memory_export.processedAssets"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.memory_export.sizeInBytes"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.memory_export.startedAt"
+    },
+    {
+      "definition": "character varying|not null|'pending'::character varying||",
+      "identity": "public.memory_export.status"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.memory_export.title"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.memory_export.updatedAt"
     },
     {
       "definition": "timestamp with time zone|not null|now()||",
@@ -2483,6 +3247,158 @@
     {
       "definition": "jsonb|not null|||",
       "identity": "public.migration_overrides.value"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_destination.authToken"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "public.ml_destination.budgetLimitUsd"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.ml_destination.consentAcknowledgedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.ml_destination.consentAcknowledgedBy"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.ml_destination.createdAt"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "public.ml_destination.enabled"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.ml_destination.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_destination.kind"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.ml_destination.lastProbeAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.ml_destination.lastProbeHardware"
+    },
+    {
+      "definition": "text|not null|'unknown'::text||",
+      "identity": "public.ml_destination.lastProbeHealth"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.ml_destination.lastProbeLatencyMs"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_destination.lastProbeSummary"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.ml_destination.lastProbeWorkloads"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.ml_destination.maxRuntimeMinutes"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.ml_destination.maxUploadBytes"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_destination.name"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.ml_destination.sharesLibraryHardware"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.ml_destination.updatedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_destination.url"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "public.ml_destination.workloads"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.ml_workload_accounting.bytesReceived"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.ml_workload_accounting.bytesSent"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "public.ml_workload_accounting.costUsd"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.ml_workload_accounting.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.ml_workload_accounting.destinationId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_workload_accounting.destinationKind"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.ml_workload_accounting.durationMs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.ml_workload_accounting.finishedAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.ml_workload_accounting.id"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_workload_accounting.jobId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.ml_workload_accounting.jobName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_workload_accounting.outcome"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.ml_workload_accounting.startedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_workload_accounting.workload"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.ml_workload_route.destinationId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.ml_workload_route.updatedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.ml_workload_route.workload"
     },
     {
       "definition": "uuid|not null|||",
@@ -2733,6 +3649,170 @@
       "identity": "public.person.updateId"
     },
     {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet_candidate.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_candidate.detectionId"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.pet_candidate.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_candidate.petId"
+    },
+    {
+      "definition": "double precision|not null|0||",
+      "identity": "public.pet_candidate.score"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_detection.assetId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.boundingBoxX1"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.boundingBoxX2"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.boundingBoxY1"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.boundingBoxY2"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet_detection.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.pet_detection.id"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.imageHeight"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.pet_detection.imageWidth"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.pet_detection.modelName"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.pet_detection.modelRevision"
+    },
+    {
+      "definition": "double precision|not null|0||",
+      "identity": "public.pet_detection.score"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.pet_detection.species"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation.assetId"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.boundingBoxX1"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.boundingBoxX2"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.boundingBoxY1"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.boundingBoxY2"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet_observation.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.pet_observation.id"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.imageHeight"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.pet_observation.imageWidth"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation.petId"
+    },
+    {
+      "definition": "character varying|not null|'manual'::character varying||",
+      "identity": "public.pet_observation.source"
+    },
+    {
+      "definition": "character varying|not null|'confirmed'::character varying||",
+      "identity": "public.pet_observation.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet_observation.updatedAt"
+    },
+    {
+      "definition": "date|nullable|||",
+      "identity": "public.pet.birthDate"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.pet.featuredAssetId"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.pet.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.pet.isFavorite"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.pet.isHidden"
+    },
+    {
+      "definition": "character varying|not null|''::character varying||",
+      "identity": "public.pet.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet.ownerId"
+    },
+    {
+      "definition": "character varying|not null|'other'::character varying||",
+      "identity": "public.pet.species"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.pet.updatedAt"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "public.physical_file.canonicalAssetId"
     },
@@ -2855,6 +3935,194 @@
     {
       "definition": "bytea|not null|||",
       "identity": "public.plugin.wasmBytes"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.render_worker_audit.actorId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker_audit.createdAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.render_worker_audit.detail"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.render_worker_audit.event"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker_audit.id"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.render_worker_audit.operationId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.render_worker_audit.reason"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.render_worker_audit.workerId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker_limit.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker_limit.id"
+    },
+    {
+      "definition": "integer|not null|2||",
+      "identity": "public.render_worker_limit.maxConcurrentOperations"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker_limit.maxOutputBytes"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker_limit.maxWallClockMs"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.render_worker_limit.subject"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker_limit.updatedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.render_worker_limit.userId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.render_worker_session.conformanceReportedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker_session.createdAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.render_worker_session.engineDigest"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.render_worker_session.expiresAt"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker_session.gpuMemoryBytes"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker_session.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker_session.lastUsedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker_session.revokedAt"
+    },
+    {
+      "definition": "character varying[]|not null|||",
+      "identity": "public.render_worker_session.scopes"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.render_worker_session.token"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.render_worker_session.workerId"
+    },
+    {
+      "definition": "integer|not null|604800000||",
+      "identity": "public.render_worker.conformanceMaxAgeMs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.render_worker.createdBy"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.render_worker.destination"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.render_worker.engineDigest"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.render_worker.enrolmentSecret"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker.gpuMemoryBytes"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker.id"
+    },
+    {
+      "definition": "character varying[]|not null|||",
+      "identity": "public.render_worker.kinds"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker.lastAdmittedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker.lastConformanceReportedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker.lastSeenAt"
+    },
+    {
+      "definition": "integer|not null|1||",
+      "identity": "public.render_worker.maxConcurrentOperations"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker.maxOutputBytes"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.render_worker.maxWallClockMs"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.render_worker.name"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.render_worker.revokedAt"
+    },
+    {
+      "definition": "character varying|not null|'active'::character varying||",
+      "identity": "public.render_worker.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.render_worker.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker.updateId"
     },
     {
       "definition": "character varying|not null|||",
@@ -3001,6 +4269,142 @@
       "identity": "public.shared_link.userId"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_album.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.shared_space_album.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_album.linkedAlbumId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_album.linkedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_comment_thread.activityId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_comment_thread.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.shared_space_comment_thread.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_comment_thread.parentActivityId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_event.activityId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_event.actorId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_event.albumId"
+    },
+    {
+      "definition": "uuid[]|not null|'{}'::uuid[]||",
+      "identity": "public.shared_space_event.assetIds"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.shared_space_event.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.shared_space_event.id"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.shared_space_event.subject"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_event.targetUserId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.shared_space_event.type"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_invite.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.shared_space_invite.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_invite.invitedById"
+    },
+    {
+      "definition": "album_user_role_enum|not null|'editor'::album_user_role_enum||",
+      "identity": "public.shared_space_invite.role"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_invite.userId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_mention.activityId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_mention.userId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_person.albumId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.shared_space_person.coverAssetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.shared_space_person.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.shared_space_person.id"
+    },
+    {
+      "definition": "character varying|not null|''::character varying||",
+      "identity": "public.shared_space_person.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_person.personGroupId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_person.personOwnerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_visit.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.shared_space_visit.lastSeenAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.shared_space_visit.userId"
+    },
+    {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.smart_album_asset.addedAt"
     },
@@ -3101,6 +4505,338 @@
       "identity": "public.stack.updateId"
     },
     {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_bundle_upload.consumedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_bundle_upload.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_bundle_upload.digest"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.studio_bundle_upload.expiresAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_bundle_upload.id"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.studio_bundle_upload.manifest"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_bundle_upload.originalFileName"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_bundle_upload.ownerId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_bundle_upload.path"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.studio_bundle_upload.sizeBytes"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_preview_frame.cacheKey"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_preview_frame.contentType"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_preview_frame.createdAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_preview_frame.errorCode"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_preview_frame.expiresAt"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.studio_preview_frame.frameChecksum"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_preview_frame.framePath"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.studio_preview_frame.framePts"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_preview_frame.framePtsTimebase"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_preview_frame.grantSessionId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.studio_preview_frame.grantToken"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_preview_frame.id"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_preview_frame.lastAccessedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_preview_frame.operationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_preview_frame.ownerId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_preview_frame.projectId"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.studio_preview_frame.projectRevision"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_preview_frame.quality"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_preview_frame.readyAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_preview_frame.requestedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_preview_frame.revisionDigest"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.studio_preview_frame.seekGeneration"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.studio_preview_frame.sizeInBytes"
+    },
+    {
+      "definition": "character varying|not null|'pending'::character varying||",
+      "identity": "public.studio_preview_frame.status"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.studio_preview_frame.timeDenominator"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.studio_preview_frame.timeNumerator"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.studio_preview_frame.toneMapped"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_preview_frame.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_preview_frame.updateId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_preview_frame.viewportHeight"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_preview_frame.viewportWidth"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_project_comment.authorId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_project_comment.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project_comment.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_project_comment.projectId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_project_comment.requestKey"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project_comment.resolvedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project_comment.resolvedById"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_project_comment.revision"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.studio_project_comment.text"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.studio_project_comment.timeDen"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.studio_project_comment.timeNum"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_project_comment.updatedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project_revision.authorId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_project_revision.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_project_revision.digest"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.studio_project_revision.envelope"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_project_revision.graphBytes"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project_revision.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_project_revision.projectId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_project_revision.requestKey"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.studio_project_revision.restoredFromRevision"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_project_revision.revision"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.studio_project_revision.summary"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project.archivedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_project.createdAt"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.studio_project.currentRevision"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project.deletedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project.duplicatedFromId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project.id"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_project.importedFromDigest"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project.importOperationId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project.lastOpenedAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_project.leaseClientId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project.leaseExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project.leaseHolderId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_project.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_project.ownerId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_project.purgeAfter"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project.spaceId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_project.thumbnailAssetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_project.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project.updateId"
+    },
+    {
       "definition": "character varying|not null|||",
       "identity": "public.system_metadata.key"
     },
@@ -3155,6 +4891,234 @@
     {
       "definition": "character varying|not null|||",
       "identity": "public.tag.value"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_album.albumId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_album.folder"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.takeout_album.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_album.ownerId"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.takeout_file.checksum"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.entryName"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.folder"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_file.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_file.importId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.kind"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.takeout_file.legacyChecksum"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.takeout_file.metadata"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.takeout_file.modifiedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.name"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.path"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_file.relativePath"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.takeout_file.size"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_file.sourceId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.takeout_import.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.takeout_import.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_import.name"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.takeout_import.options"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_import.ownerId"
+    },
+    {
+      "definition": "character varying|not null|'sources'::character varying||",
+      "identity": "public.takeout_import.phase"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.takeout_import.runOperationId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.takeout_import.updatedAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.takeout_item.albums"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.takeout_item.assetId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.takeout_item.candidates"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.takeout_item.createPath"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.takeout_item.error"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_item.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_item.importId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.takeout_item.locked"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.takeout_item.metadata"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.takeout_item.resultKind"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.takeout_item.sidecarId"
+    },
+    {
+      "definition": "character varying|not null|'ready'::character varying||",
+      "identity": "public.takeout_item.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.takeout_item.updatedAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.takeout_item.warnings"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.takeout_pair.error"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.takeout_pair.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_pair.importId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_pair.photoItemId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_pair.reason"
+    },
+    {
+      "definition": "character varying|not null|'suggested'::character varying||",
+      "identity": "public.takeout_pair.state"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_pair.videoItemId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.takeout_source.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.takeout_source.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.takeout_source.importId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_source.kind"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_source.name"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.takeout_source.path"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.takeout_source.received"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.takeout_source.rejected"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.takeout_source.scanned"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.takeout_source.size"
     },
     {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
@@ -3253,6 +5217,10 @@
       "identity": "public.user.profileChangedAt"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "public.user.profileImageAssetId"
+    },
+    {
       "definition": "character varying|not null|''::character varying||",
       "identity": "public.user.profileImagePath"
     },
@@ -3295,6 +5263,182 @@
     {
       "definition": "character varying|not null|||",
       "identity": "public.version_history.version"
+    },
+    {
+      "definition": "vector(512)|not null|||",
+      "identity": "public.video_moment_frame_embedding.embedding"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.video_moment_frame_embedding.frameId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.video_moment_frame_embedding.modelName"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.video_moment_frame.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment_frame.createdAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.video_moment_frame.frameIndex"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.video_moment_frame.height"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment_frame.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.video_moment_frame.path"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.video_moment_frame.rank"
+    },
+    {
+      "definition": "double precision|not null|||",
+      "identity": "public.video_moment_frame.score"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.video_moment_frame.timestampMs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment_frame.updatedAt"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.video_moment_frame.width"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.video_moment_index.assetId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.video_moment_index.captionConfigHash"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.video_moment_index.captionDestinationId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.video_moment_index.captionedAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.video_moment_index.captionIdentityHash"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.video_moment_index.captionModel"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.video_moment_index.coverSetAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.video_moment_index.coverSetById"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.video_moment_index.coverTimestampMs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment_index.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.video_moment_index.embeddingDestinationId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.video_moment_index.embeddingModel"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.video_moment_index.extractorVersion"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.video_moment_index.frameCount"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.video_moment_index.framesExtractedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.video_moment_index.indexedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.video_moment_index.sourceFingerprint"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment_index.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.video_moment.assetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.video_moment.caption"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.video_moment.createdById"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.video_moment.endMs"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.video_moment.frameId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment.id"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.video_moment.provenance"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.video_moment.source"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.video_moment.timestampMs"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.video_moment.transcript"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.video_moment.updatedAt"
     },
     {
       "definition": "integer|not null|||",
@@ -3465,6 +5609,34 @@
     {
       "definition": "PRIMARY KEY (\"assetId\")",
       "identity": "immich_fork.asset_checksum.asset_checksum_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"assetId\", revision)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_assetId_revision_key"
+    },
+    {
+      "definition": "CHECK (label IS NULL OR length(label) >= 1 AND length(label) <= 120)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_label_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_pkey"
+    },
+    {
+      "definition": "CHECK (progress >= 0 AND progress <= 100)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_progress_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(recipe) = 'object'::text)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_recipe_check"
+    },
+    {
+      "definition": "CHECK (revision >= 1)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_revision_check"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text]))",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_status_check"
     },
     {
       "definition": "PRIMARY KEY (\"assetId\")",
@@ -3803,6 +5975,22 @@
       "identity": "public.activity.activity_userId_fkey"
     },
     {
+      "definition": "FOREIGN KEY (\"actorId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.admin_audit_event.admin_audit_event_actorId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"libraryId\") REFERENCES library(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.admin_audit_event.admin_audit_event_libraryId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.admin_audit_event.admin_audit_event_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.admin_audit_event.admin_audit_event_userId_fkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.album_asset_audit.album_asset_audit_albumId_fkey"
     },
@@ -3901,6 +6089,22 @@
     {
       "definition": "PRIMARY KEY (\"assetId\")",
       "identity": "public.asset_best_photo_score.asset_best_photo_score_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_document_edit.asset_document_edit_assetId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"assetId\", key)",
+      "identity": "public.asset_document_edit.asset_document_edit_assetId_key_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"editedById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_document_edit.asset_document_edit_editedById_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_document_edit.asset_document_edit_pkey"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -4011,6 +6215,18 @@
       "identity": "public.asset_keyframe.asset_keyframe_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_lock.asset_lock_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"lockedBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_lock.asset_lock_lockedBy_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "public.asset_lock.asset_lock_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.asset_metadata_audit.asset_metadata_audit_pkey"
     },
@@ -4033,6 +6249,34 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.asset_ocr.asset_ocr_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_restoration.asset_restoration_assetId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"assetId\", revision)",
+      "identity": "public.asset_restoration.asset_restoration_assetId_revision_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"destinationId\") REFERENCES ml_destination(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_restoration.asset_restoration_destinationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"fullOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_restoration.asset_restoration_fullOperationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_restoration.asset_restoration_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_restoration.asset_restoration_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"previewOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_restoration.asset_restoration_previewOperationId_fkey"
     },
     {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -4095,6 +6339,26 @@
       "identity": "public.cluster_group.cluster_group_pkey"
     },
     {
+      "definition": "UNIQUE (\"operationId\", \"duplicateId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_operationId_duplicateId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"operationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.duplicate_decision.duplicate_decision_operationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.duplicate_decision.duplicate_decision_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.duplicate_decision.duplicate_decision_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"undoOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.duplicate_decision.duplicate_decision_undoOperationId_fkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"faceId\") REFERENCES asset_face(id) ON DELETE CASCADE",
       "identity": "public.face_search.face_search_faceId_fkey"
     },
@@ -4139,6 +6403,38 @@
       "identity": "public.library.library_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"operationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_operationId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"operationId\", sequence)",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_operationId_sequence_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.media_operation.media_operation_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.media_operation.media_operation_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.media_operation.media_operation_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"resultAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.media_operation.media_operation_resultAssetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"retryOfId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.media_operation.media_operation_retryOfId_fkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"memoryId\") REFERENCES memory(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.memory_asset_audit.memory_asset_audit_memoryId_fkey"
     },
@@ -4163,6 +6459,18 @@
       "identity": "public.memory_audit.memory_audit_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"memoryId\") REFERENCES memory(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.memory_export.memory_export_memoryId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.memory_export.memory_export_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.memory_export.memory_export_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.memory.memory_ownerId_fkey"
     },
@@ -4173,6 +6481,34 @@
     {
       "definition": "PRIMARY KEY (name)",
       "identity": "public.migration_overrides.migration_overrides_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"consentAcknowledgedBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.ml_destination.ml_destination_consentAcknowledgedBy_fkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text, 'runpod-video'::text]))",
+      "identity": "public.ml_destination.ml_destination_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.ml_destination.ml_destination_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"destinationId\") REFERENCES ml_destination(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"destinationId\") REFERENCES ml_destination(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.ml_workload_route.ml_workload_route_destinationId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (workload)",
+      "identity": "public.ml_workload_route.ml_workload_route_pkey"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -4259,6 +6595,58 @@
       "identity": "public.person.person_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"detectionId\") REFERENCES pet_detection(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet_candidate.pet_candidate_detectionId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"detectionId\", \"petId\")",
+      "identity": "public.pet_candidate.pet_candidate_detectionId_petId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"petId\") REFERENCES pet(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet_candidate.pet_candidate_petId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_candidate.pet_candidate_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet_detection.pet_detection_assetId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_detection.pet_detection_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet_observation.pet_observation_assetId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"petId\", \"assetId\")",
+      "identity": "public.pet_observation.pet_observation_petId_assetId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"petId\") REFERENCES pet(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet_observation.pet_observation_petId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_observation.pet_observation_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"featuredAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.pet.pet_featuredAssetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.pet.pet_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet.pet_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"canonicalAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
       "identity": "public.physical_file.physical_file_canonicalAssetId_fkey"
     },
@@ -4293,6 +6681,38 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.plugin.plugin_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.render_worker_audit.render_worker_audit_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.render_worker_limit.render_worker_limit_pkey"
+    },
+    {
+      "definition": "UNIQUE (subject)",
+      "identity": "public.render_worker_limit.render_worker_limit_subject_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.render_worker_limit.render_worker_limit_userId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.render_worker_session.render_worker_session_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workerId\") REFERENCES render_worker(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.render_worker_session.render_worker_session_workerId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"createdBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.render_worker.render_worker_createdBy_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.render_worker.render_worker_pkey"
     },
     {
       "definition": "PRIMARY KEY (\"sessionId\", type)",
@@ -4345,6 +6765,122 @@
     {
       "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.shared_link.shared_link_userId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_album.shared_space_album_albumId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"linkedAlbumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_album.shared_space_album_linkedAlbumId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"linkedById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_album.shared_space_album_linkedById_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"albumId\", \"linkedAlbumId\")",
+      "identity": "public.shared_space_album.shared_space_album_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"activityId\") REFERENCES activity(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_activityId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_albumId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"parentActivityId\") REFERENCES activity(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_parentActivityId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"activityId\")",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"activityId\") REFERENCES activity(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_event.shared_space_event_activityId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"actorId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.shared_space_event.shared_space_event_actorId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_event.shared_space_event_albumId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.shared_space_event.shared_space_event_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"targetUserId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.shared_space_event.shared_space_event_targetUserId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_invite.shared_space_invite_albumId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"invitedById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_invite.shared_space_invite_invitedById_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"albumId\", \"userId\")",
+      "identity": "public.shared_space_invite.shared_space_invite_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_invite.shared_space_invite_userId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"activityId\") REFERENCES activity(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_mention.shared_space_mention_activityId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"activityId\", \"userId\")",
+      "identity": "public.shared_space_mention.shared_space_mention_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_mention.shared_space_mention_userId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_person.shared_space_person_albumId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"albumId\", \"personOwnerId\", \"personGroupId\")",
+      "identity": "public.shared_space_person.shared_space_person_albumId_personOwnerId_personGroupId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"coverAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.shared_space_person.shared_space_person_coverAssetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"personGroupId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_person.shared_space_person_personGroupId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"personOwnerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_person.shared_space_person_personOwnerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.shared_space_person.shared_space_person_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_visit.shared_space_visit_albumId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"albumId\", \"userId\")",
+      "identity": "public.shared_space_visit.shared_space_visit_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.shared_space_visit.shared_space_visit_userId_fkey"
     },
     {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
@@ -4427,6 +6963,98 @@
       "identity": "public.stack.stack_primaryAssetId_uq"
     },
     {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_bundle_upload.studio_bundle_upload_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_bundle_upload.studio_bundle_upload_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"cacheKey\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_cacheKey_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"operationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_preview_frame.studio_preview_frame_operationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_preview_frame.studio_preview_frame_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_preview_frame.studio_preview_frame_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"authorId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_project_comment.studio_project_comment_authorId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_project_comment.studio_project_comment_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"projectId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_project_comment.studio_project_comment_projectId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"projectId\", \"requestKey\")",
+      "identity": "public.studio_project_comment.studio_project_comment_projectId_requestKey_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"resolvedById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project_comment.studio_project_comment_resolvedById_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"authorId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project_revision.studio_project_revision_authorId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_project_revision.studio_project_revision_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"projectId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"projectId\", \"requestKey\")",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_requestKey_uq"
+    },
+    {
+      "definition": "UNIQUE (\"projectId\", revision)",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_revision_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"duplicatedFromId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project.studio_project_duplicatedFromId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"importOperationId\")",
+      "identity": "public.studio_project.studio_project_importOperationId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"leaseHolderId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project.studio_project_leaseHolderId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_project.studio_project_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_project.studio_project_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"spaceId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project.studio_project_spaceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"thumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_project.studio_project_thumbnailAssetId_fkey"
+    },
+    {
       "definition": "PRIMARY KEY (key)",
       "identity": "public.system_metadata.system_metadata_pkey"
     },
@@ -4471,6 +7099,86 @@
       "identity": "public.tag.tag_userId_value_uq"
     },
     {
+      "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_album.takeout_album_albumId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_album.takeout_album_ownerId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", folder)",
+      "identity": "public.takeout_album.takeout_album_ownerId_folder_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_album.takeout_album_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"importId\") REFERENCES takeout_import(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_file.takeout_file_importId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_file.takeout_file_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"sourceId\", \"entryName\")",
+      "identity": "public.takeout_file.takeout_file_sourceId_entryName_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"sourceId\") REFERENCES takeout_source(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_file.takeout_file_sourceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_import.takeout_import_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_import.takeout_import_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"runOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.takeout_import.takeout_import_runOperationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.takeout_item.takeout_item_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (id) REFERENCES takeout_file(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_item.takeout_item_id_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_item.takeout_item_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"photoItemId\") REFERENCES takeout_item(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_pair.takeout_pair_photoItemId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"photoItemId\", \"videoItemId\")",
+      "identity": "public.takeout_pair.takeout_pair_photoItemId_videoItemId_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_pair.takeout_pair_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"videoItemId\") REFERENCES takeout_item(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_pair.takeout_pair_videoItemId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"importId\") REFERENCES takeout_import(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.takeout_source.takeout_source_importId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.takeout_source.takeout_source_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.user_audit.user_audit_pkey"
     },
@@ -4499,12 +7207,64 @@
       "identity": "public.user.user_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"profileImageAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.user.user_profileImageAssetId_fkey"
+    },
+    {
       "definition": "UNIQUE (\"storageLabel\")",
       "identity": "public.user.user_storageLabel_uq"
     },
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.version_history.version_history_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"frameId\") REFERENCES video_moment_frame(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.video_moment_frame_embedding.video_moment_frame_embedding_frameId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"frameId\")",
+      "identity": "public.video_moment_frame_embedding.video_moment_frame_embedding_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.video_moment_frame.video_moment_frame_assetId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"assetId\", \"frameIndex\")",
+      "identity": "public.video_moment_frame.video_moment_frame_assetId_frameIndex_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.video_moment_frame.video_moment_frame_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.video_moment_index.video_moment_index_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"coverSetById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.video_moment_index.video_moment_index_coverSetById_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "public.video_moment_index.video_moment_index_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.video_moment.video_moment_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"createdById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.video_moment.video_moment_createdById_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"frameId\") REFERENCES video_moment_frame(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.video_moment.video_moment_frameId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.video_moment.video_moment_pkey"
     },
     {
       "definition": "PRIMARY KEY (\"variantId\", index)",
@@ -5775,6 +8535,26 @@
       "identity": "immich_fork.asset_checksum.asset_checksum_sha256_idx"
     },
     {
+      "definition": "CREATE INDEX asset_develop_revision_asset_idx ON immich_fork.asset_develop_revision USING btree (\"assetId\", revision DESC)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"asset_develop_revision_assetId_revision_key\" ON immich_fork.asset_develop_revision USING btree (\"assetId\", revision)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_assetId_revision_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON immich_fork.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_current_idx"
+    },
+    {
+      "definition": "CREATE INDEX asset_develop_revision_owner_idx ON immich_fork.asset_develop_revision USING btree (\"ownerId\")",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_revision_pkey ON immich_fork.asset_develop_revision USING btree (id)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX asset_enrichment_pkey ON immich_fork.asset_enrichment USING btree (\"assetId\")",
       "identity": "immich_fork.asset_enrichment.asset_enrichment_pkey"
     },
@@ -6071,6 +8851,26 @@
       "identity": "public.activity.activity_userId_idx"
     },
     {
+      "definition": "CREATE INDEX \"admin_audit_event_actorId_idx\" ON public.admin_audit_event USING btree (\"actorId\")",
+      "identity": "public.admin_audit_event.admin_audit_event_actorId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"admin_audit_event_libraryId_idx\" ON public.admin_audit_event USING btree (\"libraryId\")",
+      "identity": "public.admin_audit_event.admin_audit_event_libraryId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX admin_audit_event_pkey ON public.admin_audit_event USING btree (id)",
+      "identity": "public.admin_audit_event.admin_audit_event_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"admin_audit_event_userId_createdAt_idx\" ON public.admin_audit_event USING btree (\"userId\", \"createdAt\")",
+      "identity": "public.admin_audit_event.admin_audit_event_userId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"admin_audit_event_userId_idx\" ON public.admin_audit_event USING btree (\"userId\")",
+      "identity": "public.admin_audit_event.admin_audit_event_userId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"album_asset_audit_albumId_idx\" ON public.album_asset_audit USING btree (\"albumId\")",
       "identity": "public.album_asset_audit.album_asset_audit_albumId_idx"
     },
@@ -6251,6 +9051,18 @@
       "identity": "public.asset_best_photo_score.asset_best_photo_score_scoreVersion_computedAt_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX \"asset_document_edit_assetId_key_uq\" ON public.asset_document_edit USING btree (\"assetId\", key)",
+      "identity": "public.asset_document_edit.asset_document_edit_assetId_key_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_document_edit_editedById_idx\" ON public.asset_document_edit USING btree (\"editedById\")",
+      "identity": "public.asset_document_edit.asset_document_edit_editedById_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_document_edit_pkey ON public.asset_document_edit USING btree (id)",
+      "identity": "public.asset_document_edit.asset_document_edit_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"asset_edit_audit_assetId_idx\" ON public.asset_edit_audit USING btree (\"assetId\")",
       "identity": "public.asset_edit_audit.asset_edit_audit_assetId_idx"
     },
@@ -6325,6 +9137,10 @@
     {
       "definition": "CREATE INDEX \"asset_face_assetId_personGroupId_idx\" ON public.asset_face USING btree (\"assetId\", \"personGroupId\")",
       "identity": "public.asset_face.asset_face_assetId_personGroupId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_face_correctedAt_idx\" ON public.asset_face USING btree (\"correctedAt\")",
+      "identity": "public.asset_face.asset_face_correctedAt_idx"
     },
     {
       "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\")",
@@ -6415,6 +9231,14 @@
       "identity": "public.asset_keyframe.asset_keyframe_pkey"
     },
     {
+      "definition": "CREATE INDEX \"asset_lock_lockedBy_idx\" ON public.asset_lock USING btree (\"lockedBy\")",
+      "identity": "public.asset_lock.asset_lock_lockedBy_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_lock_pkey ON public.asset_lock USING btree (\"assetId\")",
+      "identity": "public.asset_lock.asset_lock_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"asset_metadata_audit_assetId_idx\" ON public.asset_metadata_audit USING btree (\"assetId\")",
       "identity": "public.asset_metadata_audit.asset_metadata_audit_assetId_idx"
     },
@@ -6465,6 +9289,50 @@
     {
       "definition": "CREATE INDEX \"asset_ocr_updateId_idx\" ON public.asset_ocr USING btree (\"updateId\")",
       "identity": "public.asset_ocr.asset_ocr_updateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_assetId_idx\" ON public.asset_restoration USING btree (\"assetId\")",
+      "identity": "public.asset_restoration.asset_restoration_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"asset_restoration_assetId_isCurrent_uq\" ON public.asset_restoration USING btree (\"assetId\") WHERE \"isCurrent\"",
+      "identity": "public.asset_restoration.asset_restoration_assetId_isCurrent_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"asset_restoration_assetId_revision_uq\" ON public.asset_restoration USING btree (\"assetId\", revision)",
+      "identity": "public.asset_restoration.asset_restoration_assetId_revision_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_destinationId_idx\" ON public.asset_restoration USING btree (\"destinationId\")",
+      "identity": "public.asset_restoration.asset_restoration_destinationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_fullOperationId_idx\" ON public.asset_restoration USING btree (\"fullOperationId\")",
+      "identity": "public.asset_restoration.asset_restoration_fullOperationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_ownerId_createdAt_idx\" ON public.asset_restoration USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.asset_restoration.asset_restoration_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_ownerId_idx\" ON public.asset_restoration USING btree (\"ownerId\")",
+      "identity": "public.asset_restoration.asset_restoration_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_restoration_pkey ON public.asset_restoration USING btree (id)",
+      "identity": "public.asset_restoration.asset_restoration_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_previewOperationId_idx\" ON public.asset_restoration USING btree (\"previewOperationId\")",
+      "identity": "public.asset_restoration.asset_restoration_previewOperationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_resultExpiresAt_idx\" ON public.asset_restoration USING btree (\"resultExpiresAt\")",
+      "identity": "public.asset_restoration.asset_restoration_resultExpiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_restoration_status_previewExpiresAt_idx\" ON public.asset_restoration USING btree (status, \"previewExpiresAt\")",
+      "identity": "public.asset_restoration.asset_restoration_status_previewExpiresAt_idx"
     },
     {
       "definition": "CREATE INDEX \"asset_video_duplicate_frame_assetId_idx\" ON public.asset_video_duplicate_frame USING btree (\"assetId\")",
@@ -6587,6 +9455,34 @@
       "identity": "public.cluster_group.cluster_group_updateId_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX \"duplicate_decision_operationId_duplicateId_uq\" ON public.duplicate_decision USING btree (\"operationId\", \"duplicateId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_operationId_duplicateId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"duplicate_decision_operationId_idx\" ON public.duplicate_decision USING btree (\"operationId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_operationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"duplicate_decision_ownerId_createdAt_idx\" ON public.duplicate_decision USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.duplicate_decision.duplicate_decision_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"duplicate_decision_ownerId_duplicateId_idx\" ON public.duplicate_decision USING btree (\"ownerId\", \"duplicateId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_ownerId_duplicateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"duplicate_decision_ownerId_idx\" ON public.duplicate_decision USING btree (\"ownerId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX duplicate_decision_pkey ON public.duplicate_decision USING btree (id)",
+      "identity": "public.duplicate_decision.duplicate_decision_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"duplicate_decision_undoOperationId_idx\" ON public.duplicate_decision USING btree (\"undoOperationId\")",
+      "identity": "public.duplicate_decision.duplicate_decision_undoOperationId_idx"
+    },
+    {
       "definition": "CREATE INDEX face_index ON public.face_search USING vchordrq (embedding vector_cosine_ops) WITH (options='\n        residual_quantization = false\n        [build.internal]\n        lists = [1]\n        spherical_centroids = true\n        build_threads = 4\n        sampling_factor = 1024\n        ')",
       "identity": "public.face_search.face_index"
     },
@@ -6655,6 +9551,58 @@
       "identity": "public.library.library_updateId_idx"
     },
     {
+      "definition": "CREATE INDEX \"media_operation_checkpoint_operationId_chunkKey_idx\" ON public.media_operation_checkpoint USING btree (\"operationId\", \"chunkKey\")",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_operationId_chunkKey_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_checkpoint_operationId_idx\" ON public.media_operation_checkpoint USING btree (\"operationId\")",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_operationId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"media_operation_checkpoint_operationId_sequence_uq\" ON public.media_operation_checkpoint USING btree (\"operationId\", sequence)",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_operationId_sequence_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX media_operation_checkpoint_pkey ON public.media_operation_checkpoint USING btree (id)",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_assetId_idx\" ON public.media_operation USING btree (\"assetId\")",
+      "identity": "public.media_operation.media_operation_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"media_operation_enrichment_plan_requestKey_uq\" ON public.media_operation USING btree (\"ownerId\", ((snapshot ->> 'requestKey'::text))) WHERE (((kind)::text = 'enrichment_plan'::text) AND ((snapshot ->> 'requestKey'::text) IS NOT NULL))",
+      "identity": "public.media_operation.media_operation_enrichment_plan_requestKey_uq"
+    },
+    {
+      "definition": "CREATE INDEX media_operation_kind_status_idx ON public.media_operation USING btree (kind, status)",
+      "identity": "public.media_operation.media_operation_kind_status_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_ownerId_createdAt_idx\" ON public.media_operation USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.media_operation.media_operation_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_ownerId_idx\" ON public.media_operation USING btree (\"ownerId\")",
+      "identity": "public.media_operation.media_operation_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX media_operation_pkey ON public.media_operation USING btree (id)",
+      "identity": "public.media_operation.media_operation_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_resultAssetId_idx\" ON public.media_operation USING btree (\"resultAssetId\")",
+      "identity": "public.media_operation.media_operation_resultAssetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_retryOfId_idx\" ON public.media_operation USING btree (\"retryOfId\")",
+      "identity": "public.media_operation.media_operation_retryOfId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"media_operation_status_claimExpiresAt_idx\" ON public.media_operation USING btree (status, \"claimExpiresAt\")",
+      "identity": "public.media_operation.media_operation_status_claimExpiresAt_idx"
+    },
+    {
       "definition": "CREATE INDEX \"memory_asset_audit_assetId_idx\" ON public.memory_asset_audit USING btree (\"assetId\")",
       "identity": "public.memory_asset_audit.memory_asset_audit_assetId_idx"
     },
@@ -6703,6 +9651,26 @@
       "identity": "public.memory_audit.memory_audit_userId_idx"
     },
     {
+      "definition": "CREATE INDEX \"memory_export_memoryId_idx\" ON public.memory_export USING btree (\"memoryId\")",
+      "identity": "public.memory_export.memory_export_memoryId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"memory_export_ownerId_createdAt_idx\" ON public.memory_export USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.memory_export.memory_export_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"memory_export_ownerId_idx\" ON public.memory_export USING btree (\"ownerId\")",
+      "identity": "public.memory_export.memory_export_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX memory_export_pkey ON public.memory_export USING btree (id)",
+      "identity": "public.memory_export.memory_export_pkey"
+    },
+    {
+      "definition": "CREATE INDEX memory_export_status_idx ON public.memory_export USING btree (status)",
+      "identity": "public.memory_export.memory_export_status_idx"
+    },
+    {
       "definition": "CREATE INDEX \"memory_ownerId_idx\" ON public.memory USING btree (\"ownerId\")",
       "identity": "public.memory.memory_ownerId_idx"
     },
@@ -6717,6 +9685,34 @@
     {
       "definition": "CREATE UNIQUE INDEX migration_overrides_pkey ON public.migration_overrides USING btree (name)",
       "identity": "public.migration_overrides.migration_overrides_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_destination_consentAcknowledgedBy_idx\" ON public.ml_destination USING btree (\"consentAcknowledgedBy\")",
+      "identity": "public.ml_destination.ml_destination_consentAcknowledgedBy_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX ml_destination_pkey ON public.ml_destination USING btree (id)",
+      "identity": "public.ml_destination.ml_destination_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\")",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\", \"startedAt\")",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_startedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX ml_workload_accounting_pkey ON public.ml_workload_accounting USING btree (id)",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_route_destinationId_idx\" ON public.ml_workload_route USING btree (\"destinationId\")",
+      "identity": "public.ml_workload_route.ml_workload_route_destinationId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX ml_workload_route_pkey ON public.ml_workload_route USING btree (workload)",
+      "identity": "public.ml_workload_route.ml_workload_route_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX move_history_pkey ON public.move_history USING btree (id)",
@@ -6855,6 +9851,58 @@
       "identity": "public.person.person_updateId_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX \"pet_candidate_detectionId_petId_uq\" ON public.pet_candidate USING btree (\"detectionId\", \"petId\")",
+      "identity": "public.pet_candidate.pet_candidate_detectionId_petId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_candidate_petId_idx\" ON public.pet_candidate USING btree (\"petId\")",
+      "identity": "public.pet_candidate.pet_candidate_petId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_candidate_pkey ON public.pet_candidate USING btree (id)",
+      "identity": "public.pet_candidate.pet_candidate_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_detection_assetId_idx\" ON public.pet_detection USING btree (\"assetId\")",
+      "identity": "public.pet_detection.pet_detection_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_detection_modelName_modelRevision_idx\" ON public.pet_detection USING btree (\"modelName\", \"modelRevision\")",
+      "identity": "public.pet_detection.pet_detection_modelName_modelRevision_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_detection_pkey ON public.pet_detection USING btree (id)",
+      "identity": "public.pet_detection.pet_detection_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_assetId_idx\" ON public.pet_observation USING btree (\"assetId\")",
+      "identity": "public.pet_observation.pet_observation_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"pet_observation_petId_assetId_uq\" ON public.pet_observation USING btree (\"petId\", \"assetId\")",
+      "identity": "public.pet_observation.pet_observation_petId_assetId_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_observation_pkey ON public.pet_observation USING btree (id)",
+      "identity": "public.pet_observation.pet_observation_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_featuredAssetId_idx\" ON public.pet USING btree (\"featuredAssetId\")",
+      "identity": "public.pet.pet_featuredAssetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_ownerId_idx\" ON public.pet USING btree (\"ownerId\")",
+      "identity": "public.pet.pet_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_ownerId_isHidden_idx\" ON public.pet USING btree (\"ownerId\", \"isHidden\")",
+      "identity": "public.pet.pet_ownerId_isHidden_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_pkey ON public.pet USING btree (id)",
+      "identity": "public.pet.pet_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"physical_file_canonicalAssetId_idx\" ON public.physical_file USING btree (\"canonicalAssetId\")",
       "identity": "public.physical_file.physical_file_canonicalAssetId_idx"
     },
@@ -6905,6 +9953,62 @@
     {
       "definition": "CREATE UNIQUE INDEX plugin_pkey ON public.plugin USING btree (id)",
       "identity": "public.plugin.plugin_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_audit_operationId_idx\" ON public.render_worker_audit USING btree (\"operationId\")",
+      "identity": "public.render_worker_audit.render_worker_audit_operationId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_audit_pkey ON public.render_worker_audit USING btree (id)",
+      "identity": "public.render_worker_audit.render_worker_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_audit_workerId_createdAt_idx\" ON public.render_worker_audit USING btree (\"workerId\", \"createdAt\")",
+      "identity": "public.render_worker_audit.render_worker_audit_workerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_limit_pkey ON public.render_worker_limit USING btree (id)",
+      "identity": "public.render_worker_limit.render_worker_limit_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_limit_subject_uq ON public.render_worker_limit USING btree (subject)",
+      "identity": "public.render_worker_limit.render_worker_limit_subject_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_limit_userId_idx\" ON public.render_worker_limit USING btree (\"userId\")",
+      "identity": "public.render_worker_limit.render_worker_limit_userId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_session_pkey ON public.render_worker_session USING btree (id)",
+      "identity": "public.render_worker_session.render_worker_session_pkey"
+    },
+    {
+      "definition": "CREATE INDEX render_worker_session_token_idx ON public.render_worker_session USING btree (token)",
+      "identity": "public.render_worker_session.render_worker_session_token_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_session_workerId_expiresAt_idx\" ON public.render_worker_session USING btree (\"workerId\", \"expiresAt\")",
+      "identity": "public.render_worker_session.render_worker_session_workerId_expiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_session_workerId_idx\" ON public.render_worker_session USING btree (\"workerId\")",
+      "identity": "public.render_worker_session.render_worker_session_workerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_createdBy_idx\" ON public.render_worker USING btree (\"createdBy\")",
+      "identity": "public.render_worker.render_worker_createdBy_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"render_worker_enrolmentSecret_idx\" ON public.render_worker USING btree (\"enrolmentSecret\")",
+      "identity": "public.render_worker.render_worker_enrolmentSecret_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX render_worker_pkey ON public.render_worker USING btree (id)",
+      "identity": "public.render_worker.render_worker_pkey"
+    },
+    {
+      "definition": "CREATE INDEX render_worker_status_destination_idx ON public.render_worker USING btree (status, destination)",
+      "identity": "public.render_worker.render_worker_status_destination_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX session_sync_checkpoint_pkey ON public.session_sync_checkpoint USING btree (\"sessionId\", type)",
@@ -6977,6 +10081,122 @@
     {
       "definition": "CREATE INDEX \"shared_link_userId_idx\" ON public.shared_link USING btree (\"userId\")",
       "identity": "public.shared_link.shared_link_userId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_album_albumId_idx\" ON public.shared_space_album USING btree (\"albumId\")",
+      "identity": "public.shared_space_album.shared_space_album_albumId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_album_linkedAlbumId_idx\" ON public.shared_space_album USING btree (\"linkedAlbumId\")",
+      "identity": "public.shared_space_album.shared_space_album_linkedAlbumId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_album_linkedById_idx\" ON public.shared_space_album USING btree (\"linkedById\")",
+      "identity": "public.shared_space_album.shared_space_album_linkedById_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_album_pkey ON public.shared_space_album USING btree (\"albumId\", \"linkedAlbumId\")",
+      "identity": "public.shared_space_album.shared_space_album_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_comment_thread_albumId_idx\" ON public.shared_space_comment_thread USING btree (\"albumId\")",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_albumId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_comment_thread_parentActivityId_idx\" ON public.shared_space_comment_thread USING btree (\"parentActivityId\")",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_parentActivityId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_comment_thread_pkey ON public.shared_space_comment_thread USING btree (\"activityId\")",
+      "identity": "public.shared_space_comment_thread.shared_space_comment_thread_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_event_activityId_idx\" ON public.shared_space_event USING btree (\"activityId\")",
+      "identity": "public.shared_space_event.shared_space_event_activityId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_event_actorId_idx\" ON public.shared_space_event USING btree (\"actorId\")",
+      "identity": "public.shared_space_event.shared_space_event_actorId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_event_albumId_createdAt_idx\" ON public.shared_space_event USING btree (\"albumId\", \"createdAt\")",
+      "identity": "public.shared_space_event.shared_space_event_albumId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_event_albumId_idx\" ON public.shared_space_event USING btree (\"albumId\")",
+      "identity": "public.shared_space_event.shared_space_event_albumId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_event_pkey ON public.shared_space_event USING btree (id)",
+      "identity": "public.shared_space_event.shared_space_event_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_event_targetUserId_idx\" ON public.shared_space_event USING btree (\"targetUserId\")",
+      "identity": "public.shared_space_event.shared_space_event_targetUserId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_invite_albumId_idx\" ON public.shared_space_invite USING btree (\"albumId\")",
+      "identity": "public.shared_space_invite.shared_space_invite_albumId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_invite_invitedById_idx\" ON public.shared_space_invite USING btree (\"invitedById\")",
+      "identity": "public.shared_space_invite.shared_space_invite_invitedById_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_invite_pkey ON public.shared_space_invite USING btree (\"albumId\", \"userId\")",
+      "identity": "public.shared_space_invite.shared_space_invite_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_invite_userId_idx\" ON public.shared_space_invite USING btree (\"userId\")",
+      "identity": "public.shared_space_invite.shared_space_invite_userId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_mention_activityId_idx\" ON public.shared_space_mention USING btree (\"activityId\")",
+      "identity": "public.shared_space_mention.shared_space_mention_activityId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_mention_pkey ON public.shared_space_mention USING btree (\"activityId\", \"userId\")",
+      "identity": "public.shared_space_mention.shared_space_mention_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_mention_userId_idx\" ON public.shared_space_mention USING btree (\"userId\")",
+      "identity": "public.shared_space_mention.shared_space_mention_userId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_person_albumId_idx\" ON public.shared_space_person USING btree (\"albumId\")",
+      "identity": "public.shared_space_person.shared_space_person_albumId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"shared_space_person_albumId_personOwnerId_personGroupId_uq\" ON public.shared_space_person USING btree (\"albumId\", \"personOwnerId\", \"personGroupId\")",
+      "identity": "public.shared_space_person.shared_space_person_albumId_personOwnerId_personGroupId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_person_coverAssetId_idx\" ON public.shared_space_person USING btree (\"coverAssetId\")",
+      "identity": "public.shared_space_person.shared_space_person_coverAssetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_person_personGroupId_idx\" ON public.shared_space_person USING btree (\"personGroupId\")",
+      "identity": "public.shared_space_person.shared_space_person_personGroupId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_person_personOwnerId_idx\" ON public.shared_space_person USING btree (\"personOwnerId\")",
+      "identity": "public.shared_space_person.shared_space_person_personOwnerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_person_pkey ON public.shared_space_person USING btree (id)",
+      "identity": "public.shared_space_person.shared_space_person_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_visit_albumId_idx\" ON public.shared_space_visit USING btree (\"albumId\")",
+      "identity": "public.shared_space_visit.shared_space_visit_albumId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX shared_space_visit_pkey ON public.shared_space_visit USING btree (\"albumId\", \"userId\")",
+      "identity": "public.shared_space_visit.shared_space_visit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"shared_space_visit_userId_idx\" ON public.shared_space_visit USING btree (\"userId\")",
+      "identity": "public.shared_space_visit.shared_space_visit_userId_idx"
     },
     {
       "definition": "CREATE INDEX \"smart_album_asset_assetId_idx\" ON public.smart_album_asset USING btree (\"assetId\")",
@@ -7059,6 +10279,126 @@
       "identity": "public.stack.stack_primaryAssetId_uq"
     },
     {
+      "definition": "CREATE INDEX \"studio_bundle_upload_ownerId_expiresAt_idx\" ON public.studio_bundle_upload USING btree (\"ownerId\", \"expiresAt\")",
+      "identity": "public.studio_bundle_upload.studio_bundle_upload_ownerId_expiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_bundle_upload_ownerId_idx\" ON public.studio_bundle_upload USING btree (\"ownerId\")",
+      "identity": "public.studio_bundle_upload.studio_bundle_upload_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_bundle_upload_pkey ON public.studio_bundle_upload USING btree (id)",
+      "identity": "public.studio_bundle_upload.studio_bundle_upload_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_preview_frame_cacheKey_uq\" ON public.studio_preview_frame USING btree (\"cacheKey\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_cacheKey_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_preview_frame_operationId_idx\" ON public.studio_preview_frame USING btree (\"operationId\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_operationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_preview_frame_ownerId_idx\" ON public.studio_preview_frame USING btree (\"ownerId\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_preview_frame_ownerId_projectId_revisionDigest_idx\" ON public.studio_preview_frame USING btree (\"ownerId\", \"projectId\", \"revisionDigest\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_ownerId_projectId_revisionDigest_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_preview_frame_pkey ON public.studio_preview_frame USING btree (id)",
+      "identity": "public.studio_preview_frame.studio_preview_frame_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_preview_frame_projectId_requestedAt_idx\" ON public.studio_preview_frame USING btree (\"projectId\", \"requestedAt\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_projectId_requestedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_preview_frame_status_expiresAt_idx\" ON public.studio_preview_frame USING btree (status, \"expiresAt\")",
+      "identity": "public.studio_preview_frame.studio_preview_frame_status_expiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_comment_authorId_idx\" ON public.studio_project_comment USING btree (\"authorId\")",
+      "identity": "public.studio_project_comment.studio_project_comment_authorId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_project_comment_pkey ON public.studio_project_comment USING btree (id)",
+      "identity": "public.studio_project_comment.studio_project_comment_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_comment_projectId_createdAt_idx\" ON public.studio_project_comment USING btree (\"projectId\", \"createdAt\")",
+      "identity": "public.studio_project_comment.studio_project_comment_projectId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_comment_projectId_idx\" ON public.studio_project_comment USING btree (\"projectId\")",
+      "identity": "public.studio_project_comment.studio_project_comment_projectId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_project_comment_projectId_requestKey_uq\" ON public.studio_project_comment USING btree (\"projectId\", \"requestKey\")",
+      "identity": "public.studio_project_comment.studio_project_comment_projectId_requestKey_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_comment_resolvedById_idx\" ON public.studio_project_comment USING btree (\"resolvedById\")",
+      "identity": "public.studio_project_comment.studio_project_comment_resolvedById_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_revision_authorId_idx\" ON public.studio_project_revision USING btree (\"authorId\")",
+      "identity": "public.studio_project_revision.studio_project_revision_authorId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_project_revision_pkey ON public.studio_project_revision USING btree (id)",
+      "identity": "public.studio_project_revision.studio_project_revision_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_revision_projectId_idx\" ON public.studio_project_revision USING btree (\"projectId\")",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_project_revision_projectId_requestKey_uq\" ON public.studio_project_revision USING btree (\"projectId\", \"requestKey\")",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_requestKey_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_project_revision_projectId_revision_uq\" ON public.studio_project_revision USING btree (\"projectId\", revision)",
+      "identity": "public.studio_project_revision.studio_project_revision_projectId_revision_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_duplicatedFromId_idx\" ON public.studio_project USING btree (\"duplicatedFromId\")",
+      "identity": "public.studio_project.studio_project_duplicatedFromId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_project_importOperationId_uq\" ON public.studio_project USING btree (\"importOperationId\")",
+      "identity": "public.studio_project.studio_project_importOperationId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_leaseHolderId_idx\" ON public.studio_project USING btree (\"leaseHolderId\")",
+      "identity": "public.studio_project.studio_project_leaseHolderId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_ownerId_idx\" ON public.studio_project USING btree (\"ownerId\")",
+      "identity": "public.studio_project.studio_project_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_ownerId_updatedAt_idx\" ON public.studio_project USING btree (\"ownerId\", \"updatedAt\")",
+      "identity": "public.studio_project.studio_project_ownerId_updatedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_project_pkey ON public.studio_project USING btree (id)",
+      "identity": "public.studio_project.studio_project_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_purgeAfter_idx\" ON public.studio_project USING btree (\"purgeAfter\")",
+      "identity": "public.studio_project.studio_project_purgeAfter_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_spaceId_idx\" ON public.studio_project USING btree (\"spaceId\")",
+      "identity": "public.studio_project.studio_project_spaceId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_project_thumbnailAssetId_idx\" ON public.studio_project USING btree (\"thumbnailAssetId\")",
+      "identity": "public.studio_project.studio_project_thumbnailAssetId_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX system_metadata_pkey ON public.system_metadata USING btree (key)",
       "identity": "public.system_metadata.system_metadata_pkey"
     },
@@ -7105,6 +10445,98 @@
     {
       "definition": "CREATE UNIQUE INDEX \"tag_userId_value_uq\" ON public.tag USING btree (\"userId\", value)",
       "identity": "public.tag.tag_userId_value_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_album_albumId_idx\" ON public.takeout_album USING btree (\"albumId\")",
+      "identity": "public.takeout_album.takeout_album_albumId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"takeout_album_ownerId_folder_uq\" ON public.takeout_album USING btree (\"ownerId\", folder)",
+      "identity": "public.takeout_album.takeout_album_ownerId_folder_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_album_ownerId_idx\" ON public.takeout_album USING btree (\"ownerId\")",
+      "identity": "public.takeout_album.takeout_album_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_album_pkey ON public.takeout_album USING btree (id)",
+      "identity": "public.takeout_album.takeout_album_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_file_importId_folder_idx\" ON public.takeout_file USING btree (\"importId\", folder)",
+      "identity": "public.takeout_file.takeout_file_importId_folder_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_file_importId_idx\" ON public.takeout_file USING btree (\"importId\")",
+      "identity": "public.takeout_file.takeout_file_importId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_file_pkey ON public.takeout_file USING btree (id)",
+      "identity": "public.takeout_file.takeout_file_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"takeout_file_sourceId_entryName_uq\" ON public.takeout_file USING btree (\"sourceId\", \"entryName\")",
+      "identity": "public.takeout_file.takeout_file_sourceId_entryName_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_file_sourceId_idx\" ON public.takeout_file USING btree (\"sourceId\")",
+      "identity": "public.takeout_file.takeout_file_sourceId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_import_ownerId_createdAt_idx\" ON public.takeout_import USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.takeout_import.takeout_import_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_import_ownerId_idx\" ON public.takeout_import USING btree (\"ownerId\")",
+      "identity": "public.takeout_import.takeout_import_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_import_pkey ON public.takeout_import USING btree (id)",
+      "identity": "public.takeout_import.takeout_import_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_import_runOperationId_idx\" ON public.takeout_import USING btree (\"runOperationId\")",
+      "identity": "public.takeout_import.takeout_import_runOperationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_item_assetId_idx\" ON public.takeout_item USING btree (\"assetId\")",
+      "identity": "public.takeout_item.takeout_item_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_item_importId_state_idx\" ON public.takeout_item USING btree (\"importId\", state)",
+      "identity": "public.takeout_item.takeout_item_importId_state_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_item_pkey ON public.takeout_item USING btree (id)",
+      "identity": "public.takeout_item.takeout_item_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_pair_importId_state_idx\" ON public.takeout_pair USING btree (\"importId\", state)",
+      "identity": "public.takeout_pair.takeout_pair_importId_state_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_pair_photoItemId_idx\" ON public.takeout_pair USING btree (\"photoItemId\")",
+      "identity": "public.takeout_pair.takeout_pair_photoItemId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"takeout_pair_photoItemId_videoItemId_uq\" ON public.takeout_pair USING btree (\"photoItemId\", \"videoItemId\")",
+      "identity": "public.takeout_pair.takeout_pair_photoItemId_videoItemId_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_pair_pkey ON public.takeout_pair USING btree (id)",
+      "identity": "public.takeout_pair.takeout_pair_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_pair_videoItemId_idx\" ON public.takeout_pair USING btree (\"videoItemId\")",
+      "identity": "public.takeout_pair.takeout_pair_videoItemId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"takeout_source_importId_idx\" ON public.takeout_source USING btree (\"importId\")",
+      "identity": "public.takeout_source.takeout_source_importId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX takeout_source_pkey ON public.takeout_source USING btree (id)",
+      "identity": "public.takeout_source.takeout_source_pkey"
     },
     {
       "definition": "CREATE INDEX \"user_audit_deletedAt_idx\" ON public.user_audit USING btree (\"deletedAt\")",
@@ -7155,6 +10587,10 @@
       "identity": "public.user.user_pkey"
     },
     {
+      "definition": "CREATE INDEX \"user_profileImageAssetId_idx\" ON public.\"user\" USING btree (\"profileImageAssetId\")",
+      "identity": "public.user.user_profileImageAssetId_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX \"user_storageLabel_uq\" ON public.\"user\" USING btree (\"storageLabel\")",
       "identity": "public.user.user_storageLabel_uq"
     },
@@ -7169,6 +10605,54 @@
     {
       "definition": "CREATE UNIQUE INDEX version_history_pkey ON public.version_history USING btree (id)",
       "identity": "public.version_history.version_history_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_moment_frame_embedding_pkey ON public.video_moment_frame_embedding USING btree (\"frameId\")",
+      "identity": "public.video_moment_frame_embedding.video_moment_frame_embedding_pkey"
+    },
+    {
+      "definition": "CREATE INDEX video_moment_frame_index ON public.video_moment_frame_embedding USING vchordrq (embedding vector_cosine_ops) WITH (options='\n        residual_quantization = false\n        [build.internal]\n        lists = [1]\n        spherical_centroids = true\n        build_threads = 4\n        sampling_factor = 1024\n        ')",
+      "identity": "public.video_moment_frame_embedding.video_moment_frame_index"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"video_moment_frame_assetId_frameIndex_uq\" ON public.video_moment_frame USING btree (\"assetId\", \"frameIndex\")",
+      "identity": "public.video_moment_frame.video_moment_frame_assetId_frameIndex_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_frame_assetId_idx\" ON public.video_moment_frame USING btree (\"assetId\")",
+      "identity": "public.video_moment_frame.video_moment_frame_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_moment_frame_pkey ON public.video_moment_frame USING btree (id)",
+      "identity": "public.video_moment_frame.video_moment_frame_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_index_coverSetById_idx\" ON public.video_moment_index USING btree (\"coverSetById\")",
+      "identity": "public.video_moment_index.video_moment_index_coverSetById_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_moment_index_pkey ON public.video_moment_index USING btree (\"assetId\")",
+      "identity": "public.video_moment_index.video_moment_index_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_assetId_idx\" ON public.video_moment USING btree (\"assetId\")",
+      "identity": "public.video_moment.video_moment_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_assetId_timestampMs_idx\" ON public.video_moment USING btree (\"assetId\", \"timestampMs\")",
+      "identity": "public.video_moment.video_moment_assetId_timestampMs_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_createdById_idx\" ON public.video_moment USING btree (\"createdById\")",
+      "identity": "public.video_moment.video_moment_createdById_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"video_moment_frameId_idx\" ON public.video_moment USING btree (\"frameId\")",
+      "identity": "public.video_moment.video_moment_frameId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_moment_pkey ON public.video_moment USING btree (id)",
+      "identity": "public.video_moment.video_moment_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX video_stream_segment_pkey ON public.video_stream_segment USING btree (\"variantId\", index)",
@@ -7268,6 +10752,7 @@
     "index_asset_localDateTime_month_idx",
     "index_asset_originalFilename_trigram_idx",
     "index_asset_ownerId_libraryId_checksum_idx",
+    "index_asset_restoration_assetId_isCurrent_uq",
     "index_face_index",
     "index_idx_asset_exif_description_trigram",
     "index_idx_asset_is_nsfw",
@@ -7302,10 +10787,13 @@
     "trigger_asset_metadata_updated_at",
     "trigger_asset_ocr_delete_audit",
     "trigger_asset_ocr_updatedAt",
+    "trigger_asset_restoration_updatedAt",
     "trigger_asset_updatedAt",
     "trigger_asset_video_duplicate_frame_updatedAt",
     "trigger_cluster_group_updatedAt",
     "trigger_library_updatedAt",
+    "trigger_media_operation_checkpoint_updatedAt",
+    "trigger_media_operation_updatedAt",
     "trigger_memory_asset_delete_audit",
     "trigger_memory_asset_updatedAt",
     "trigger_memory_delete_audit",
@@ -7318,15 +10806,23 @@
     "trigger_person_group_updatedAt",
     "trigger_person_updatedAt",
     "trigger_physical_file_updatedAt",
+    "trigger_render_worker_limit_updatedAt",
+    "trigger_render_worker_updatedAt",
     "trigger_session_sync_checkpoint_updatedAt",
     "trigger_session_updatedAt",
     "trigger_stack_delete_audit",
     "trigger_stack_updatedAt",
+    "trigger_studio_preview_frame_updatedAt",
+    "trigger_studio_project_comment_updatedAt",
+    "trigger_studio_project_updatedAt",
     "trigger_tag_updatedAt",
     "trigger_user_delete_audit",
     "trigger_user_metadata_audit",
     "trigger_user_metadata_updated_at",
     "trigger_user_updatedAt",
+    "trigger_video_moment_frame_updatedAt",
+    "trigger_video_moment_index_updatedAt",
+    "trigger_video_moment_updatedAt",
     "trigger_workflow_updatedAt"
   ],
   "schemas": [
@@ -7356,6 +10852,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.asset_checksum"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.asset_develop_revision"
     },
     {
       "definition": "table",
@@ -7475,6 +10975,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.admin_audit_event"
+    },
+    {
+      "definition": "table",
       "identity": "public.album"
     },
     {
@@ -7523,6 +11027,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_document_edit"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_edit"
     },
     {
@@ -7567,6 +11075,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_lock"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_metadata"
     },
     {
@@ -7583,6 +11095,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_restoration"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_video"
     },
     {
@@ -7596,6 +11112,10 @@
     {
       "definition": "table",
       "identity": "public.cluster_group_request"
+    },
+    {
+      "definition": "table",
+      "identity": "public.duplicate_decision"
     },
     {
       "definition": "table",
@@ -7623,6 +11143,14 @@
     },
     {
       "definition": "table",
+      "identity": "public.media_operation"
+    },
+    {
+      "definition": "table",
+      "identity": "public.media_operation_checkpoint"
+    },
+    {
+      "definition": "table",
       "identity": "public.memory"
     },
     {
@@ -7639,7 +11167,23 @@
     },
     {
       "definition": "table",
+      "identity": "public.memory_export"
+    },
+    {
+      "definition": "table",
       "identity": "public.migration_overrides"
+    },
+    {
+      "definition": "table",
+      "identity": "public.ml_destination"
+    },
+    {
+      "definition": "table",
+      "identity": "public.ml_workload_accounting"
+    },
+    {
+      "definition": "table",
+      "identity": "public.ml_workload_route"
     },
     {
       "definition": "table",
@@ -7683,6 +11227,22 @@
     },
     {
       "definition": "table",
+      "identity": "public.pet"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_candidate"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_detection"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_observation"
+    },
+    {
+      "definition": "table",
       "identity": "public.physical_file"
     },
     {
@@ -7692,6 +11252,22 @@
     {
       "definition": "table",
       "identity": "public.plugin_method"
+    },
+    {
+      "definition": "table",
+      "identity": "public.render_worker"
+    },
+    {
+      "definition": "table",
+      "identity": "public.render_worker_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.render_worker_limit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.render_worker_session"
     },
     {
       "definition": "table",
@@ -7708,6 +11284,34 @@
     {
       "definition": "table",
       "identity": "public.shared_link_asset"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_album"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_comment_thread"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_event"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_invite"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_mention"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_person"
+    },
+    {
+      "definition": "table",
+      "identity": "public.shared_space_visit"
     },
     {
       "definition": "table",
@@ -7739,6 +11343,26 @@
     },
     {
       "definition": "table",
+      "identity": "public.studio_bundle_upload"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_preview_frame"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_project"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_project_comment"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_project_revision"
+    },
+    {
+      "definition": "table",
       "identity": "public.system_metadata"
     },
     {
@@ -7752,6 +11376,30 @@
     {
       "definition": "table",
       "identity": "public.tag_closure"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_album"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_file"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_import"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_item"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_pair"
+    },
+    {
+      "definition": "table",
+      "identity": "public.takeout_source"
     },
     {
       "definition": "table",
@@ -7772,6 +11420,22 @@
     {
       "definition": "table",
       "identity": "public.version_history"
+    },
+    {
+      "definition": "table",
+      "identity": "public.video_moment"
+    },
+    {
+      "definition": "table",
+      "identity": "public.video_moment_frame"
+    },
+    {
+      "definition": "table",
+      "identity": "public.video_moment_frame_embedding"
+    },
+    {
+      "definition": "table",
+      "identity": "public.video_moment_index"
     },
     {
       "definition": "table",
@@ -7912,6 +11576,10 @@
       "identity": "public.asset_ocr.asset_ocr_updatedAt"
     },
     {
+      "definition": "CREATE TRIGGER \"asset_restoration_updatedAt\" BEFORE UPDATE ON asset_restoration FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.asset_restoration.asset_restoration_updatedAt"
+    },
+    {
       "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_updatedAt"
     },
@@ -7930,6 +11598,14 @@
     {
       "definition": "CREATE TRIGGER \"library_updatedAt\" BEFORE UPDATE ON library FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.library.library_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"media_operation_checkpoint_updatedAt\" BEFORE UPDATE ON media_operation_checkpoint FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.media_operation_checkpoint.media_operation_checkpoint_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"media_operation_updatedAt\" BEFORE UPDATE ON media_operation FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.media_operation.media_operation_updatedAt"
     },
     {
       "definition": "CREATE TRIGGER memory_asset_delete_audit AFTER DELETE ON memory_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN (pg_trigger_depth() <= 1) EXECUTE FUNCTION memory_asset_delete_audit()",
@@ -7980,6 +11656,14 @@
       "identity": "public.physical_file.physical_file_updatedAt"
     },
     {
+      "definition": "CREATE TRIGGER \"render_worker_limit_updatedAt\" BEFORE UPDATE ON render_worker_limit FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.render_worker_limit.render_worker_limit_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"render_worker_updatedAt\" BEFORE UPDATE ON render_worker FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.render_worker.render_worker_updatedAt"
+    },
+    {
       "definition": "CREATE TRIGGER \"session_sync_checkpoint_updatedAt\" BEFORE UPDATE ON session_sync_checkpoint FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.session_sync_checkpoint.session_sync_checkpoint_updatedAt"
     },
@@ -7994,6 +11678,18 @@
     {
       "definition": "CREATE TRIGGER \"stack_updatedAt\" BEFORE UPDATE ON stack FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.stack.stack_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"studio_preview_frame_updatedAt\" BEFORE UPDATE ON studio_preview_frame FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.studio_preview_frame.studio_preview_frame_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"studio_project_comment_updatedAt\" BEFORE UPDATE ON studio_project_comment FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.studio_project_comment.studio_project_comment_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"studio_project_updatedAt\" BEFORE UPDATE ON studio_project FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.studio_project.studio_project_updatedAt"
     },
     {
       "definition": "CREATE TRIGGER \"tag_updatedAt\" BEFORE UPDATE ON tag FOR EACH ROW EXECUTE FUNCTION updated_at()",
@@ -8014,6 +11710,18 @@
     {
       "definition": "CREATE TRIGGER \"user_updatedAt\" BEFORE UPDATE ON \"user\" FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.user.user_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"video_moment_frame_updatedAt\" BEFORE UPDATE ON video_moment_frame FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.video_moment_frame.video_moment_frame_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"video_moment_index_updatedAt\" BEFORE UPDATE ON video_moment_index FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.video_moment_index.video_moment_index_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"video_moment_updatedAt\" BEFORE UPDATE ON video_moment FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.video_moment.video_moment_updatedAt"
     },
     {
       "definition": "CREATE TRIGGER \"workflow_updatedAt\" BEFORE UPDATE ON workflow FOR EACH ROW EXECUTE FUNCTION updated_at()",

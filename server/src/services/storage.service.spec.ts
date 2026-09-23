@@ -24,6 +24,7 @@ describe(StorageService.name, () => {
         mockEnvData({
           storage: {
             ignoreMountCheckErrors: false,
+            importRoots: [],
             mediaLocation: '/data',
           },
         }),
@@ -89,6 +90,7 @@ describe(StorageService.name, () => {
         mockEnvData({
           storage: {
             ignoreMountCheckErrors: false,
+            importRoots: [],
             mediaLocation: '/data',
           },
         }),
@@ -165,7 +167,7 @@ describe(StorageService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
       mocks.config.getEnv.mockReturnValue(
         mockEnvData({
-          storage: { ignoreMountCheckErrors: true },
+          storage: { ignoreMountCheckErrors: true, importRoots: [] },
         }),
       );
       mocks.asset.getFileSamples.mockResolvedValue([]);

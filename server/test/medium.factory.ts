@@ -63,6 +63,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -105,6 +106,8 @@ type MediumTestOptions = {
 };
 
 type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
+// Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
+type MediumRepositoryKey = BaseServiceDeps[number] | typeof MediaOperationRepository | typeof StudioProjectRepository;
 
 export const newMediumService = <S extends ClassConstructor<typeof BaseService>>(
   Service: S,
@@ -155,7 +158,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
   }
 
-  get<T extends BaseServiceDeps[number]>(key: T): InstanceType<T> {
+  get<T extends MediumRepositoryKey>(key: T): InstanceType<T> {
     if (!Object.hasOwn(this.repoCache, key.name)) {
       const real = newRealRepository(key, this.options.database);
       this.repoCache[key.name] = real;
@@ -482,7 +485,7 @@ export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
   }
 }
 
-const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely<DB>): InstanceType<T> => {
+const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
     case AdminAuditRepository:
@@ -513,6 +516,7 @@ const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely
     case SharedLinkAssetRepository:
     case SmartAlbumRepository:
     case StackRepository:
+    case StudioProjectRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
     case SystemMetadataRepository:

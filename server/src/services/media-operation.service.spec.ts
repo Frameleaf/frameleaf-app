@@ -676,8 +676,8 @@ describe(MediaOperationService.name, () => {
           itemsTruncated: false,
           inFlight: null,
         },
-        processedUnits: '2',
-        totalUnits: '4',
+        processedUnits: 2,
+        totalUnits: 4,
         ...overrides,
       });
 
@@ -714,7 +714,7 @@ describe(MediaOperationService.name, () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         bulkStub({
           status: MediaOperationStatus.Queued,
-          processedUnits: '4',
+          processedUnits: 4,
           result: {
             requested: 4,
             succeeded: 2,
@@ -861,7 +861,7 @@ describe(MediaOperationService.name, () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         bulkStub({
           status: MediaOperationStatus.Failed,
-          processedUnits: '2',
+          processedUnits: 2,
           result: {
             requested: 4,
             succeeded: 1,
@@ -896,7 +896,7 @@ describe(MediaOperationService.name, () => {
             payload: { dateMode: 'shift', minutes: 60 },
             truncated: false,
           },
-          processedUnits: '2',
+          processedUnits: 2,
           result: {
             requested: 4,
             succeeded: 2,
@@ -926,7 +926,7 @@ describe(MediaOperationService.name, () => {
 
     it('retries a completed job that had failures inside it', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
-        bulkStub({ status: MediaOperationStatus.Completed, processedUnits: '4' }),
+        bulkStub({ status: MediaOperationStatus.Completed, processedUnits: 4 }),
       );
       vi.mocked(repository.create).mockImplementation((value) =>
         Promise.resolve(operationStub({ ...value, status: MediaOperationStatus.Queued } as never)),
@@ -954,7 +954,7 @@ describe(MediaOperationService.name, () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         bulkStub({
           status: MediaOperationStatus.Completed,
-          processedUnits: '4',
+          processedUnits: 4,
           result: { requested: 4, succeeded: 4, failed: 0, skipped: 0, items: [], itemsTruncated: false },
         }),
       );
