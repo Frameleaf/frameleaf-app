@@ -68,7 +68,7 @@ export const filterLargeFiles = (
       const searchable = `${asset.originalFileName} ${describe(asset)}`.toLocaleLowerCase();
       return terms.every((term) => searchable.includes(term));
     })
-    .toSorted((a, b) => largeFileSize(b) - largeFileSize(a));
+    .sort((a, b) => largeFileSize(b) - largeFileSize(a));
 };
 
 /** The owners present in the list, the signed-in account first, for the Account select. */

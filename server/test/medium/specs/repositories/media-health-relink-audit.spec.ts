@@ -1,4 +1,3 @@
-/* eslint-disable unicorn/no-await-expression-member -- Readback stays beside each transactional assertion. */
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ChecksumAlgorithm } from 'src/enum.js';

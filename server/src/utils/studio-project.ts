@@ -230,8 +230,8 @@ export const normalizeStudioTime = (value: unknown): StudioRationalTime | null =
   if (
     typeof num !== 'number' ||
     typeof den !== 'number' ||
-    !Number.isInteger(num) ||
-    !Number.isInteger(den) ||
+    !Number.isSafeInteger(num) ||
+    !Number.isSafeInteger(den) ||
     den === 0 ||
     Math.abs(num) > MAX_SAFE_TICKS ||
     Math.abs(den) > MAX_SAFE_TICKS
@@ -286,7 +286,7 @@ export const normalizeCommandSummary = (value: unknown): StudioCommandSummary =>
     if (typeof id !== 'string' || id.length === 0 || id.length > MAX_COMMAND_ID_LENGTH) {
       continue;
     }
-    if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0 || count > 100_000) {
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0 || count > 100_000) {
       continue;
     }
     counts[id] = count;

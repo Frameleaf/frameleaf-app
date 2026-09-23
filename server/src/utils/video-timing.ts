@@ -83,7 +83,7 @@ export const resolveSourceTimeBase = (
   }
 
   const denominator = videoStream.timeBase;
-  if (denominator && Number.isInteger(denominator) && denominator > 0) {
+  if (denominator && Number.isSafeInteger(denominator) && denominator > 0) {
     return rational(1, denominator);
   }
 

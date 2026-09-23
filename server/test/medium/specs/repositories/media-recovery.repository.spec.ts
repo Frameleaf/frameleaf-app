@@ -1,4 +1,3 @@
-/* eslint-disable unicorn/no-await-expression-member -- Keep short PostgreSQL readback assertions beside the mutation they verify. */
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

@@ -365,7 +365,7 @@ export const snapToFrame = (time: Rational, frameRate: Rational): Rational =>
  * `'0.13'` (1/8 = 0.125, the tie rounds up); `toDecimalString(rational(-1, 8), 2)` is `'-0.13'`.
  */
 export const toDecimalString = (value: Rational, decimals: number): string => {
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 15) {
+  if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 15) {
     throw new RationalError(`Decimal places must be an integer in 0..15, got ${decimals}.`);
   }
 
