@@ -1,11 +1,11 @@
 <script lang="ts">
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import { buildAlbumTree } from '$lib/frameleaf/album-tree';
+  import { flattenAlbumTargets, loadAlbumTargets } from '$lib/frameleaf/album-targets';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { uploadManager } from '$lib/managers/upload-manager.svelte';
   import { fileUploadHandler, openFilePicker } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllAlbums } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiFolderOutline, mdiImageMultipleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -35,12 +35,11 @@
 
   onMount(async () => {
     try {
-      const albums = await getAllAlbums({});
-      // A collection groups albums and is not itself a place to add photos (see
-      // BulkAlbumDialog); only real albums and shared spaces are valid upload targets.
-      const tree = buildAlbumTree(albums);
-      targets = [...tree.albums, ...tree.spaces, ...tree.collections.flatMap((collection) => collection.children)]
-        .map((node) => ({ id: node.id, name: node.name }))
+      // A collection groups albums and is not itself a place to add photos; only albums and shared
+      // spaces the person may add to are valid upload targets (the same list "Add to album" offers).
+      const directory = await loadAlbumTargets(authManager.user.id, $t('unnamed_album'));
+      targets = flattenAlbumTargets(directory)
+        .map(({ id, name }) => ({ id, name }))
         .sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
