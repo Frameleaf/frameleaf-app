@@ -313,6 +313,10 @@ export class MetadataService extends BaseService {
             index: audio.index,
             profile: audio.profile,
             codecName: audio.codecName,
+            // FL-102: channel-aware audio. Null stays null; it means "not probed", not "stereo".
+            channels: audio.channels ?? null,
+            channelLayout: audio.channelLayout ?? null,
+            sampleRate: audio.sampleRate ?? null,
           }
         : undefined;
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingSelect from './SettingSelect.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { LogLevel } from '@immich/sdk';
@@ -16,8 +16,8 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+      <div class="flex flex-col gap-4">
+        <SettingToggle
           title={$t('admin.logging_enable_description')}
           {disabled}
           bind:checked={configToEdit.logging.enabled}
@@ -39,7 +39,7 @@
           disabled={disabled || !configToEdit.logging.enabled}
         />
 
-        <SettingButtonsRow bind:configToEdit keys={['logging']} {disabled} />
+        <SettingActions bind:configToEdit keys={['logging']} {disabled} />
       </div>
     </form>
   </div>

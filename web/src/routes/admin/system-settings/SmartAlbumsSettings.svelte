@@ -1,9 +1,9 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingTextarea from './SettingTextarea.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -66,8 +66,8 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+      <div class="flex flex-col gap-4">
+        <SettingToggle
           title={$t('admin.smart_albums_enabled')}
           subtitle={$t('admin.smart_albums_enabled_description')}
           {disabled}
@@ -82,16 +82,16 @@
           {@const savedKindConfig = getSavedKind(kind)}
           {@const kindToggleDisabled = disabled || !smartAlbums.enabled}
           {@const kindFieldsDisabled = disabled || !smartAlbums.enabled || !kindConfig.enabled}
-          <SettingAccordion key={`smart-albums-${kind}`} title={kindTitle(kind)} subtitle="">
-            <div class="ms-4 mt-4 flex flex-col gap-4">
-              <SettingSwitch
+          <SettingGroup key={`smart-albums-${kind}`} title={kindTitle(kind)} subtitle="">
+            <div class="flex flex-col gap-4">
+              <SettingToggle
                 title={$t('admin.smart_albums_kind_enabled')}
                 disabled={kindToggleDisabled}
                 bind:checked={kindConfig.enabled}
                 isEdited={kindConfig.enabled !== savedKindConfig.enabled}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.smart_albums_kind_name')}
                 description={$t('admin.smart_albums_kind_name_description')}
@@ -118,7 +118,7 @@
                 onChange={(text) => (kindConfig.clipQueries = parseLines(text))}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.NUMBER}
                 label={$t('admin.smart_albums_kind_threshold')}
                 description={$t('admin.smart_albums_kind_threshold_description')}
@@ -143,7 +143,7 @@
                 </Button>
               </div>
             </div>
-          </SettingAccordion>
+          </SettingGroup>
         {/each}
 
         <hr />
@@ -161,7 +161,7 @@
           </Button>
         </div>
 
-        <SettingButtonsRow bind:configToEdit keys={['smartAlbums']} {disabled} />
+        <SettingActions bind:configToEdit keys={['smartAlbums']} {disabled} />
       </div>
     </form>
   </div>

@@ -30,7 +30,7 @@
 
 <style>
   .head h2 {
-    font-size: var(--fl-font-body);
+    font-size: var(--fl-font-size);
     margin: 0 0 0.25rem;
   }
   .head p {

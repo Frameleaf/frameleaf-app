@@ -61,6 +61,19 @@ describe.skipIf(wrongFfmpegSkipReason !== null)('video metadata extraction', () 
       .select((eb) => withVideoFormat(eb).$notNull().as('format'))
       .executeTakeFirst();
 
-    expect(result).toEqual({ videoStream, audioStream, packets, format });
+    const { audioStream: probedAudioStream, ...others } = result ?? {};
+    expect(others).toEqual({ videoStream, packets, format });
+
+    // FL-102: the channel count, layout and sample rate now come back with the audio stream.
+    // The codec facts stay pinned byte-for-byte; the channel facts are asserted for presence
+    // and shape until each fixture's measured values are recorded against the pinned
+    // jellyfin-ffmpeg build. A null here means the probe or the persistence dropped them,
+    // which is exactly the regression this story exists to prevent.
+    expect(probedAudioStream).toMatchObject(audioStream);
+    expect(probedAudioStream).toMatchObject({
+      channels: expect.any(Number),
+      channelLayout: expect.any(String),
+      sampleRate: expect.any(Number),
+    });
   });
 });

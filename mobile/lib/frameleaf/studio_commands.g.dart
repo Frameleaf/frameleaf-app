@@ -43,6 +43,42 @@ enum FrameleafStudioCapability {
   transcriptionWorker,
 }
 
+/// An exact rational: a reduced fraction of two integers, never a float.
+///
+/// A `time`, `duration` or `rate` field carries one of these (FL-93). On the wire it is
+/// the pair the web host and the server use, `{"num": .., "den": ..}`; here the two
+/// integers are named, so native code cannot mistake it for a double.
+class FrameleafStudioRational {
+  const FrameleafStudioRational(this.numerator, this.denominator);
+
+  factory FrameleafStudioRational.fromJson(Map<String, dynamic> json) {
+    final Object? numerator = json['num'];
+    final Object? denominator = json['den'];
+    if (numerator is! int || denominator is! int || denominator <= 0) {
+      throw const FormatException('a rational needs integer num and positive den');
+    }
+    return FrameleafStudioRational(numerator, denominator);
+  }
+
+  final int numerator;
+  final int denominator;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'num': numerator,
+    'den': denominator,
+  };
+
+  @override
+  String toString() => '$numerator/$denominator';
+}
+
+/// The field types that carry a [FrameleafStudioRational].
+const Set<String> frameleafStudioRationalFieldTypes = <String>{
+  'time',
+  'duration',
+  'rate',
+};
+
 /// One payload field: its name, its declared type and whether it must be present.
 class FrameleafStudioField {
   const FrameleafStudioField(this.name, this.type, this.required);
@@ -95,7 +131,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     payload: <FrameleafStudioField>[
       FrameleafStudioField('assetId', 'string', true),
       FrameleafStudioField('at', 'time', true),
-      FrameleafStudioField('durationSeconds', 'number', false),
+      FrameleafStudioField('duration', 'duration', false),
       FrameleafStudioField('kind', 'string', false),
       FrameleafStudioField('trackId', 'string', true),
     ],
@@ -203,8 +239,8 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipId', 'string', true),
       FrameleafStudioField('eq', 'object', false),
-      FrameleafStudioField('fadeInSeconds', 'number', false),
-      FrameleafStudioField('fadeOutSeconds', 'number', false),
+      FrameleafStudioField('fadeIn', 'duration', false),
+      FrameleafStudioField('fadeOut', 'duration', false),
       FrameleafStudioField('muted', 'boolean', false),
       FrameleafStudioField('pitchCents', 'number', false),
       FrameleafStudioField('pitchSemitones', 'number', false),
@@ -294,7 +330,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipId', 'string', true),
-      FrameleafStudioField('speed', 'number', true),
+      FrameleafStudioField('speed', 'rate', true),
     ],
   ),
   FrameleafStudioCommand(
@@ -342,7 +378,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipId', 'string', true),
-      FrameleafStudioField('delta', 'time', true),
+      FrameleafStudioField('delta', 'duration', true),
     ],
   ),
   FrameleafStudioCommand(
@@ -354,7 +390,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipId', 'string', true),
-      FrameleafStudioField('delta', 'time', true),
+      FrameleafStudioField('delta', 'duration', true),
     ],
   ),
   FrameleafStudioCommand(
@@ -551,7 +587,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipIds', 'string[]', false),
       FrameleafStudioField('destinationId', 'string', true),
-      FrameleafStudioField('sampleCadenceSeconds', 'number', false),
+      FrameleafStudioField('sampleCadence', 'duration', false),
       FrameleafStudioField('sequenceId', 'string', true),
     ],
   ),
@@ -598,7 +634,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     payload: <FrameleafStudioField>[
       FrameleafStudioField('clipId', 'string', true),
       FrameleafStudioField('destinationId', 'string', true),
-      FrameleafStudioField('targetFps', 'number', true),
+      FrameleafStudioField('targetFps', 'rate', true),
     ],
   ),
   FrameleafStudioCommand(
@@ -610,7 +646,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-111',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('destinationId', 'string', true),
-      FrameleafStudioField('durationSeconds', 'number', true),
+      FrameleafStudioField('duration', 'duration', true),
       FrameleafStudioField('preset', 'string', false),
       FrameleafStudioField('prompt', 'string', true),
     ],
@@ -676,7 +712,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-103',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('destinationId', 'string', true),
-      FrameleafStudioField('minimumSilenceSeconds', 'number', false),
+      FrameleafStudioField('minimumSilence', 'duration', false),
       FrameleafStudioField('sequenceId', 'string', true),
       FrameleafStudioField('thresholdDb', 'number', false),
     ],
@@ -872,7 +908,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('at', 'time', true),
-      FrameleafStudioField('durationSeconds', 'number', false),
+      FrameleafStudioField('duration', 'duration', false),
       FrameleafStudioField('musicId', 'string', true),
       FrameleafStudioField('volume', 'number', false),
     ],
@@ -1027,7 +1063,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     capability: null,
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
-      FrameleafStudioField('fps', 'number', false),
+      FrameleafStudioField('fps', 'rate', false),
       FrameleafStudioField('height', 'number', false),
       FrameleafStudioField('name', 'string', true),
       FrameleafStudioField('width', 'number', false),
@@ -1088,7 +1124,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     capability: null,
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
-      FrameleafStudioField('fps', 'number', false),
+      FrameleafStudioField('fps', 'rate', false),
       FrameleafStudioField('height', 'number', false),
       FrameleafStudioField('sequenceId', 'string', true),
       FrameleafStudioField('width', 'number', false),
@@ -1116,7 +1152,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     payload: <FrameleafStudioField>[
       FrameleafStudioField('animation', 'string', false),
       FrameleafStudioField('at', 'time', true),
-      FrameleafStudioField('durationSeconds', 'number', false),
+      FrameleafStudioField('duration', 'duration', false),
       FrameleafStudioField('position', 'string', false),
       FrameleafStudioField('style', 'string', false),
       FrameleafStudioField('text', 'string', true),
@@ -1193,7 +1229,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
     owner: 'FL-94',
     payload: <FrameleafStudioField>[
       FrameleafStudioField('at', 'time', true),
-      FrameleafStudioField('durationSeconds', 'number', true),
+      FrameleafStudioField('duration', 'duration', true),
       FrameleafStudioField('uploadId', 'string', true),
     ],
   ),

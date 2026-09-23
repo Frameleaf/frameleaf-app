@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import ClusterGroupUserSelectionModal from '$lib/modals/ClusterGroupUserSelectionModal.svelte';
@@ -387,7 +387,7 @@
 
             <!-- location sharing is on by default; the sharer turns it off per partner -->
             <div class="mt-3">
-              <SettingSwitch
+              <SettingToggle
                 title={$t('frameleaf_sharing.share_location_title')}
                 subtitle={$t('frameleaf_sharing.share_location_description', { values: { name: partner.user.name } })}
                 bind:checked={partner.shareLocation}
@@ -408,7 +408,7 @@
               {$t('shared_from_partner', { values: { partner: partner.user.name } })}
             </Text>
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('show_in_timeline')}
               subtitle={$t('show_in_timeline_setting_description')}
               bind:checked={partner.inTimeline}

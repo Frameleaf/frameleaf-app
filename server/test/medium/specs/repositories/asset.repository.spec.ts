@@ -31,6 +31,10 @@ const audioRow = (assetId: string, n: number) => ({
   index: n,
   profile: n,
   codecName: `codec-${n}`,
+  // FL-102: channel-aware audio is persisted alongside the codec facts.
+  channels: 2 * n,
+  channelLayout: n === 1 ? 'stereo' : '5.1',
+  sampleRate: 48_000 * n,
 });
 
 const videoRow = (assetId: string, n: number) => ({
