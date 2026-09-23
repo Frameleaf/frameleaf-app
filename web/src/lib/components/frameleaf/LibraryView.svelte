@@ -21,11 +21,13 @@
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import { withArchiveDetail } from '$lib/frameleaf/archive-name';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
+  import { describeFilterFields } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import {
     assetMultiSelectManager,
@@ -37,6 +39,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
   import { onDestroy, type Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
 
   type Props = {
     /** Timeline source options (visibility, album, person, partners). */
@@ -265,10 +268,27 @@
     dispatchBulk(id, payload);
   };
 
+  /**
+   * FL-45: an active structured filter (a folder path, a city, a date range, ...) makes a download
+   * more specific than the destination's own name alone — most usefully for Photos, which a tag or
+   * folder "view in library" link narrows without a route of its own to name the download after.
+   * Reuses the same `describeFilterFields`/`chipFields` the results toolbar draws its chips from, so
+   * a download is distinguished by exactly the filters the user can see are active. A chip with no
+   * literal detail (an id-list condition, e.g. tags or people) still contributes its translated
+   * field name, which is honest about what narrowed the results without inventing a name this route
+   * cannot resolve.
+   */
+  const filterDetailSegments = $derived(
+    describeFilterFields(session.query, session.chipFields).map((chip) => chip.detail ?? $t(chip.labelKey)),
+  );
+
+  const effectiveDownloadName = () =>
+    downloadFileName ? withArchiveDetail(downloadFileName, ...filterDetailSegments) : undefined;
+
   const dispatchBulk = (id: BulkActionId, payload?: BulkPayload) => {
     const withFileName =
-      id === 'download' && downloadFileName && !payload?.fileName
-        ? { ...payload, fileName: downloadFileName }
+      id === 'download' && !payload?.fileName
+        ? { ...payload, fileName: effectiveDownloadName() }
         : payload;
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.

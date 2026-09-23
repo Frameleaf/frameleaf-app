@@ -5,6 +5,7 @@
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -41,6 +42,7 @@
     bind:timelineManager
     {options}
     destination={{ kind: 'library' }}
+    downloadFileName={brandedArchiveName($t('frameleaf_archive_name_recently_added'))}
     enableRouting
     syncUrl={false}
     selectAll="loaded"
