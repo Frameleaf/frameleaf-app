@@ -6869,18 +6869,27 @@
       },
       "CastResponse": {
         "properties": {
+          "adminDisabled": {
+            "description": "Whether an administrator has turned casting off for this user",
+            "type": "boolean"
+          },
           "gCastEnabled": {
-            "description": "Whether Google Cast is enabled",
+            "description": "Whether Google Cast is enabled (always false while an administrator has turned casting off)",
             "type": "boolean"
           }
         },
         "required": [
+          "adminDisabled",
           "gCastEnabled"
         ],
         "type": "object"
       },
       "CastUpdate": {
         "properties": {
+          "adminDisabled": {
+            "description": "Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences",
+            "type": "boolean"
+          },
           "gCastEnabled": {
             "description": "Whether Google Cast is enabled",
             "type": "boolean"
@@ -10171,6 +10180,16 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "pausable": {
+            "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
+            "type": "boolean"
+          },
+          "pauseRequestedAt": {
+            "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "processedUnits": {
             "type": "string"
           },
@@ -10255,6 +10274,8 @@
           "kind",
           "label",
           "maxAttempts",
+          "pausable",
+          "pauseRequestedAt",
           "processedUnits",
           "progress",
           "projectId",
@@ -10362,6 +10383,16 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "pausable": {
+            "description": "Whether this kind of job can pause and carry on later; one-shot kinds cannot",
+            "type": "boolean"
+          },
+          "pauseRequestedAt": {
+            "description": "When the owner asked to pause; a running job keeps working until its next checkpoint",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "processedUnits": {
             "type": "string"
           },
@@ -10438,6 +10469,8 @@
           "kind",
           "label",
           "maxAttempts",
+          "pausable",
+          "pauseRequestedAt",
           "processedUnits",
           "progress",
           "projectId",
@@ -10567,7 +10600,8 @@
           "completed",
           "cancelling",
           "cancelled",
-          "failed"
+          "failed",
+          "paused"
         ],
         "type": "string"
       },
@@ -14987,6 +15021,62 @@
         ],
         "type": "object"
       },
+      "QueueRunDto": {
+        "properties": {
+          "active": {
+            "description": "Jobs running now",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "canPause": {
+            "description": "Whether this queue can be paused; background tasks cannot",
+            "type": "boolean"
+          },
+          "isPaused": {
+            "description": "Whether the queue is paused",
+            "type": "boolean"
+          },
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          },
+          "processed": {
+            "description": "Jobs finished, completed or failed, since this run started",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "startedAt": {
+            "description": "When this run was first seen with work",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "total": {
+            "description": "processed + active + waiting",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Jobs waiting to start, including those held by a paused queue",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "canPause",
+          "isPaused",
+          "name",
+          "processed",
+          "startedAt",
+          "total",
+          "waiting"
+        ],
+        "type": "object"
+      },
       "QueueStatisticsDto": {
         "properties": {
           "active": {
@@ -16558,6 +16648,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "pauseRequested": {
+            "description": "The owner paused the job and its claim has been handed back; stop without reporting a failure",
+            "type": "boolean"
+          },
           "refusal": {
             "allOf": [
               {
@@ -16572,6 +16666,7 @@
           "cancelRequested",
           "leaseExtended",
           "leaseMs",
+          "pauseRequested",
           "refusal"
         ],
         "type": "object"
@@ -17293,6 +17388,40 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "RunningJobsResponseDto": {
+        "properties": {
+          "canManageQueues": {
+            "description": "Whether the viewer may see and pause the server job queues",
+            "type": "boolean"
+          },
+          "memoryExports": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryExportResponseDto"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationDto"
+            },
+            "type": "array"
+          },
+          "queues": {
+            "description": "Server job queues with work; always empty for non-administrators",
+            "items": {
+              "$ref": "#/components/schemas/QueueRunDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "canManageQueues",
+          "memoryExports",
+          "operations",
+          "queues"
         ],
         "type": "object"
       },
@@ -36622,6 +36751,51 @@
         "x-immich-state": "Stable"
       }
     },
+    "/jobs/running": {
+      "get": {
+        "description": "Everything running in the background that the signed-in account may see, in one answer: its own unfinished media operations (paused ones included) and highlight exports, and for administrators every server job queue that has work, with the progress of its current run. Non-administrators always receive an empty queue list.",
+        "operationId": "getRunningJobs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunningJobsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get running jobs",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/jobs/{name}": {
       "put": {
         "deprecated": true,
@@ -38193,6 +38367,118 @@
           }
         ],
         "summary": "Cancel a media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/{id}/pause": {
+      "post": {
+        "description": "Holds a bulk operation, Studio export or restoration. A queued job is paused at once; a running job stops at its next checkpoint and reports `pauseRequestedAt` until then. Other kinds cannot be paused.",
+        "operationId": "pauseMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause a media operation",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/{id}/resume": {
+      "post": {
+        "description": "Returns a paused job to the queue, where it carries on from what it recorded, or withdraws a pause its worker has not reached yet.",
+        "operationId": "resumeMediaOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume a media operation",
         "tags": [
           "Media operations"
         ],

@@ -328,8 +328,9 @@ export class ImageEnrichmentService extends BaseService {
   async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     requireElevatedPermission(auth);
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const unlocked = await this.assetRepository.unlock(dto.ids);
-    await this.recordOwnerUnlock(auth, unlocked.map(({ assetId }) => assetId));
+    const unlocked = (await this.assetRepository.unlock(dto.ids)).map(({ assetId }) => assetId);
+    await this.recordOwnerUnlock(auth, unlocked);
+    await this.notifyAssetsUpdated(unlocked, auth.user.id);
   }
 
   /**

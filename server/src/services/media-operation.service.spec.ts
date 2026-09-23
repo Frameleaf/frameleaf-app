@@ -44,6 +44,7 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     heartbeatAt: new Date('2026-09-22T09:59:00.000Z'),
     cancelRequestedAt: null,
     cancelAcknowledgedAt: null,
+    pauseRequestedAt: null,
     remoteJobId: null,
     remoteReleasedAt: null,
     error: null,
@@ -71,6 +72,8 @@ describe(MediaOperationService.name, () => {
       getCheckpoints: vi.fn().mockResolvedValue([]),
       dismiss: vi.fn().mockResolvedValue(true),
       requestCancel: vi.fn(),
+      requestPause: vi.fn(),
+      resume: vi.fn(),
       getAggregates: vi.fn().mockResolvedValue([]),
       getUnreleasedRemoteOperations: vi.fn().mockResolvedValue([]),
       getBulkByRequestId: vi.fn().mockResolvedValue(undefined),
@@ -232,6 +235,18 @@ describe(MediaOperationService.name, () => {
       expect(result.cancelAcknowledgedAt).toBeNull();
     });
 
+    it('cancels a paused job, which has no worker to wait for (FL-104)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(operationStub({ status: MediaOperationStatus.Paused }));
+      vi.mocked(repository.requestCancel).mockResolvedValue(
+        operationStub({ status: MediaOperationStatus.Cancelled, cancelRequestedAt: new Date() }),
+      );
+
+      const result = await sut.cancel(authStub.user1, operationStub().id);
+
+      expect(repository.requestCancel).toHaveBeenCalledWith(operationStub().id, authStub.user1.user.id);
+      expect(result.status).toBe(MediaOperationStatus.Cancelled);
+    });
+
     it('reports the settled state when the job finished mid-request', async () => {
       vi.mocked(repository.getForOwner)
         .mockResolvedValueOnce(operationStub())
@@ -241,6 +256,137 @@ describe(MediaOperationService.name, () => {
       const result = await sut.cancel(authStub.user1, operationStub().id);
 
       expect(result.status).toBe(MediaOperationStatus.Completed);
+    });
+  });
+
+  describe('pause (FL-104)', () => {
+    it('says which kinds can pause on every job it returns', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [operationStub(), operationStub({ kind: MediaOperationKind.StudioPreview })],
+        total: 2,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items.map((item) => item.pausable)).toEqual([true, false]);
+      expect(items[0].pauseRequestedAt).toBeNull();
+    });
+
+    it('refuses a kind that cannot carry on where it stopped', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({ kind: MediaOperationKind.StudioPreview, status: MediaOperationStatus.Queued }),
+      );
+
+      await expect(sut.pause(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.requestPause).not.toHaveBeenCalled();
+    });
+
+    it('answers not found for another account’s job', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(undefined);
+
+      await expect(sut.pause(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.requestPause).not.toHaveBeenCalled();
+    });
+
+    it('holds a queued bulk job at once', async () => {
+      const queued = operationStub({ kind: MediaOperationKind.Bulk, status: MediaOperationStatus.Queued });
+      vi.mocked(repository.getForOwner).mockResolvedValue(queued);
+      vi.mocked(repository.requestPause).mockResolvedValue({
+        ...queued,
+        status: MediaOperationStatus.Paused,
+        pauseRequestedAt: new Date('2026-09-23T10:00:00.000Z'),
+      } as never);
+
+      const result = await sut.pause(authStub.user1, queued.id);
+
+      expect(repository.requestPause).toHaveBeenCalledWith(
+        queued.id,
+        authStub.user1.user.id,
+        expect.arrayContaining([MediaOperationKind.Bulk]),
+      );
+      expect(result.status).toBe(MediaOperationStatus.Paused);
+      expect(result.pauseRequestedAt).toBe('2026-09-23T10:00:00.000Z');
+    });
+
+    it('reports a running export as still running, with the pause pending, until its worker stops', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
+      vi.mocked(repository.requestPause).mockResolvedValue(
+        operationStub({ pauseRequestedAt: new Date('2026-09-23T10:00:00.000Z') as never }),
+      );
+
+      const result = await sut.pause(authStub.user1, operationStub().id);
+
+      expect(result.status).toBe(MediaOperationStatus.Rendering);
+      expect(result.pauseRequestedAt).toBe('2026-09-23T10:00:00.000Z');
+    });
+
+    it('answers an already paused job without writing again', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(operationStub({ status: MediaOperationStatus.Paused }));
+
+      const result = await sut.pause(authStub.user1, operationStub().id);
+
+      expect(result.status).toBe(MediaOperationStatus.Paused);
+      expect(repository.requestPause).not.toHaveBeenCalled();
+    });
+
+    it('refuses a job that is validating, stopping or finished', async () => {
+      for (const status of [
+        MediaOperationStatus.Validating,
+        MediaOperationStatus.Cancelling,
+        MediaOperationStatus.Completed,
+        MediaOperationStatus.Failed,
+      ]) {
+        vi.mocked(repository.getForOwner).mockResolvedValue(operationStub({ status }));
+        await expect(sut.pause(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(repository.requestPause).not.toHaveBeenCalled();
+    });
+
+    it('reports the settled state when the job moved on mid-request', async () => {
+      vi.mocked(repository.getForOwner)
+        .mockResolvedValueOnce(operationStub())
+        .mockResolvedValueOnce(operationStub({ status: MediaOperationStatus.Validating }));
+      vi.mocked(repository.requestPause).mockResolvedValue(undefined);
+
+      const result = await sut.pause(authStub.user1, operationStub().id);
+
+      expect(result.status).toBe(MediaOperationStatus.Validating);
+    });
+  });
+
+  describe('resume (FL-104)', () => {
+    it('puts a paused job back in the queue', async () => {
+      const paused = operationStub({ status: MediaOperationStatus.Paused, pauseRequestedAt: new Date() as never });
+      vi.mocked(repository.getForOwner).mockResolvedValue(paused);
+      vi.mocked(repository.resume).mockResolvedValue({
+        ...paused,
+        status: MediaOperationStatus.Queued,
+        pauseRequestedAt: null,
+      } as never);
+
+      const result = await sut.resume(authStub.user1, paused.id);
+
+      expect(repository.resume).toHaveBeenCalledWith(paused.id, authStub.user1.user.id);
+      expect(result.status).toBe(MediaOperationStatus.Queued);
+      expect(result.pauseRequestedAt).toBeNull();
+    });
+
+    it('withdraws a pause the worker has not reached yet', async () => {
+      const pending = operationStub({ pauseRequestedAt: new Date() as never });
+      vi.mocked(repository.getForOwner).mockResolvedValue(pending);
+      vi.mocked(repository.resume).mockResolvedValue({ ...pending, pauseRequestedAt: null } as never);
+
+      const result = await sut.resume(authStub.user1, pending.id);
+
+      expect(result.status).toBe(MediaOperationStatus.Rendering);
+      expect(result.pauseRequestedAt).toBeNull();
+    });
+
+    it('refuses a job that is not paused', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
+
+      await expect(sut.resume(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.resume).not.toHaveBeenCalled();
     });
   });
 

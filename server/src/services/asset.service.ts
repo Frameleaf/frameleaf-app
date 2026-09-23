@@ -201,6 +201,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
+    // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
+    // open session reflects the move at once.
+    if (visibility !== undefined) {
+      const siblingIds = asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
+      await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+
     return this.get(auth, id) as Promise<AssetResponseDto>;
   }
 
@@ -257,6 +265,14 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
+    // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
+    // push the same real-time update to `ids` and to every one of them, so every open session reflects
+    // the change at once.
+    if (visibility !== undefined) {
+      const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
+      await this.notifyAssetsUpdated([...ids, ...siblingIds], auth.user.id);
+    }
+
     // Locking keeps album membership (owner decision, September 22, 2026): the asset stays in its albums
     // and every album read hides it from everyone but its owner's elevated session, so it is back in
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
@@ -308,6 +324,7 @@ export class AssetService extends BaseService {
     const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
+      await this.notifyAssetsUpdated(locked, auth.user.id);
     }
   }
 

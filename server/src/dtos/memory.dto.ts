@@ -151,7 +151,7 @@ const MemoryExportSearchSchema = z
   })
   .meta({ id: 'MemoryExportSearchDto' });
 
-const MemoryExportResponseSchema = z
+export const MemoryExportResponseSchema = z
   .object({
     id: z.uuidv4().describe('Export ID'),
     memoryId: z.uuidv4().describe('Memory the export was requested for'),

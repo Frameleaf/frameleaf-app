@@ -83,7 +83,7 @@ import {
   lockedForReason,
   visibilityIs,
 } from 'src/utils/locked.js';
-import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -1128,6 +1128,21 @@ export class AssetRepository {
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
+  }
+
+  /**
+   * The ids of every other member of the stacks `assetIds` belong to (FL-53). Call it after `update` or
+   * `updateAll` moves `assetIds` into or out of the Locked folder, so the caller can give every stack
+   * sibling the same real-time update the moved assets get: the cascade in `locked-stacks.ts` moves the
+   * whole stack in the same transaction, so by the time this reads, every sibling already reflects it.
+   */
+  async getStackSiblingIds(assetIds: string[]): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    const rows = await otherStackMembers(this.db, assetIds).execute();
+    return rows.map(({ id }) => id);
   }
 
   async update(input: Updateable<AssetTable> & { id: string }) {

@@ -14,6 +14,7 @@
     type CommandCatalogue,
   } from '$lib/frameleaf/command-index';
   import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
+  import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -45,6 +46,8 @@
 
   let showSearch = $state(false);
   let paletteQuery = $state<string | null>(null);
+  /** Which entries the open palette offers: everything, or just the settings group (admin/settings routes). */
+  let paletteScope = $state<'all' | 'settings'>('all');
   let catalogue = $state<CommandCatalogue>(emptyCommandCatalogue());
 
   let catalogueController: AbortController | undefined;
@@ -97,8 +100,19 @@
     }),
   );
 
+  const settingsCommandIndex = $derived(commandIndex.filter((item) => item.group === 'settings'));
+  const paletteIndex = $derived(paletteScope === 'settings' ? settingsCommandIndex : commandIndex);
+
   /** The query the dialog opens on: whatever the current route already implies. */
   const currentQuery = $derived(contextDiscoveryQuery(page.url));
+
+  /**
+   * The prototype's `screen === "admin"` branch (App.jsx): the top bar's one search entry hides
+   * the library search dialog and searches settings instead, on every settings/administration
+   * page, not only server administration (`openSettings()` sets the same screen for account
+   * preferences too).
+   */
+  const isSettings = $derived(isSettingsRoute(page.url.pathname));
 
   const refreshCatalogue = (term: string) => {
     catalogueController?.abort();
@@ -125,15 +139,36 @@
     refreshCatalogue('');
   };
 
-  const openPalette = (text = '') => {
+  const openPalette = (text = '', scope: 'all' | 'settings' = 'all') => {
     showSearch = false;
+    paletteScope = scope;
     paletteQuery = text;
     refreshCatalogue('');
   };
 
+  /**
+   * Settings/administration routes: focus the settings page's own inline search
+   * (`#settings-search` in SettingsHost.svelte, the production match for the prototype's
+   * `CommandCenter.jsx` search, which `screen === "admin"` always focuses in App.jsx) when the
+   * current page has one. Not every admin page does yet, so where it is missing this opens the
+   * command palette filtered to the settings-only entries `buildSettingsCommands` already
+   * contributes to the index, rather than the library search dialog.
+   */
+  const openSettingsSearch = () => {
+    const input = document.getElementById('settings-search');
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      return;
+    }
+    openPalette('', 'settings');
+  };
+
+  const openEntry = () => (isSettings ? openSettingsSearch() : openSearch());
+
   const closeAll = () => {
     showSearch = false;
     paletteQuery = null;
+    paletteScope = 'all';
     catalogueController?.abort();
   };
 
@@ -150,16 +185,16 @@
 
 <svelte:document
   use:shortcuts={[
-    { shortcut: { ctrl: true, key: 'k' }, onShortcut: openSearch },
-    { shortcut: { meta: true, key: 'k' }, onShortcut: openSearch },
+    { shortcut: { ctrl: true, key: 'k' }, onShortcut: openEntry },
+    { shortcut: { meta: true, key: 'k' }, onShortcut: openEntry },
     { shortcut: { ctrl: true, shift: true, key: 'p' }, onShortcut: () => openPalette() },
     { shortcut: { meta: true, shift: true, key: 'p' }, onShortcut: () => openPalette() },
   ]}
 />
 
-<button type="button" class="search-entry" data-testid="search-entry" onclick={openSearch}>
+<button type="button" class="search-entry" data-testid="search-entry" onclick={openEntry}>
   <Icon icon={mdiMagnify} size="1.25em" aria-hidden={true} />
-  <span class="label">{currentQuery.text || $t('search_your_photos')}</span>
+  <span class="label">{isSettings ? $t('search_settings') : currentQuery.text || $t('frameleaf_search_title')}</span>
   <kbd aria-hidden="true">{$t('frameleaf_search_shortcut_hint')}</kbd>
 </button>
 
@@ -175,7 +210,7 @@
 {/if}
 
 {#if paletteQuery !== null}
-  <CommandPalette index={commandIndex} initialQuery={paletteQuery} onRun={runCommand} onClose={closeAll} />
+  <CommandPalette index={paletteIndex} initialQuery={paletteQuery} onRun={runCommand} onClose={closeAll} />
 {/if}
 
 <style>
@@ -191,7 +226,10 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-pill);
+    /* The prototype's `.global-search` (styles.css) hardcodes 8px rather than one of the shared
+       radius tokens (control is 6px, card is 10px; neither matches), so this matches the
+       prototype's literal value instead of picking the nearest token. */
+    border-radius: 8px;
     transition: border-color var(--fl-motion-fast) var(--fl-ease);
   }
   .search-entry:hover {

@@ -53,13 +53,15 @@ describe(BulkOperationService.name, () => {
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
 
-  const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null };
+  const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
   beforeEach(() => {
     mocks = getMocks();
     operations = {
       claimNext: vi.fn().mockResolvedValue(undefined),
-      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
+      recoverExpiredClaims: vi
+        .fn()
+        .mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0, paused: 0 }),
       setBulkResult: vi.fn().mockResolvedValue(running),
       reportProgress: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
@@ -67,6 +69,7 @@ describe(BulkOperationService.name, () => {
       fail: vi.fn().mockResolvedValue('failed'),
       requeue: vi.fn().mockResolvedValue(true),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      settlePause: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
     } as unknown as MediaOperationRepository;
     assets = {
@@ -283,7 +286,11 @@ describe(BulkOperationService.name, () => {
       vi.mocked(operations.setBulkResult)
         .mockResolvedValueOnce(running)
         .mockResolvedValueOnce(running)
-        .mockResolvedValueOnce({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() });
+        .mockResolvedValueOnce({
+          status: MediaOperationStatus.Cancelling,
+          cancelRequestedAt: new Date(),
+          pauseRequestedAt: null,
+        });
 
       await sut.run(operationOf(snapshot), 'claim');
 
@@ -294,6 +301,51 @@ describe(BulkOperationService.name, () => {
       );
       expect(operations.acknowledgeCancel).toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('pauses at the batch boundary, keeping what it changed, and hands the claim back (FL-104)', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).toHaveBeenCalledTimes(1);
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ processedUnits: 3, result: expect.objectContaining({ succeeded: 3 }) }),
+      );
+      expect(operations.settlePause).toHaveBeenCalledWith(expect.any(String), 'claim');
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('stops before a batch it has not sent when a pause is already waiting', async () => {
+      const snapshot = snapshotOf();
+      vi.mocked(operations.setBulkResult).mockResolvedValue({ ...running, pauseRequestedAt: new Date() });
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.settlePause).toHaveBeenCalledTimes(1);
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('carries on when the owner resumed before the worker reached the boundary', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult).mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).toHaveBeenCalledTimes(1);
+      expect(operations.complete).toHaveBeenCalled();
     });
 
     it('stops writing the moment its claim is taken away', async () => {

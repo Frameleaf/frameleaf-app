@@ -5,6 +5,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StackService } from 'src/services/stack.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -14,11 +15,15 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(StackService, {
+  const { sut, ctx } = newMediumService(StackService, {
     database: db || defaultDatabase,
     real: [AccessRepository, AssetRepository, StackRepository],
-    mock: [EventRepository, LoggingRepository],
+    mock: [EventRepository, LoggingRepository, WebsocketRepository],
   });
+
+  ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+
+  return { sut, ctx };
 };
 
 beforeAll(async () => {
@@ -93,6 +98,35 @@ describe(StackService.name, () => {
       await expect(
         memberIds(factory.auth({ user, session: { hasElevatedPermission: true } })),
       ).resolves.toEqual([primary.id, lockedMember.id]);
+    });
+  });
+
+  describe('notifying a new stack that carries Locked media (FL-53)', () => {
+    it('pushes a real-time update for a plain photo a new stack carries into the Locked folder', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: plain } = await ctx.newAsset({ ownerId: user.id });
+      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+      await sut.create(elevated, { assetIds: [locked.id, plain.id] });
+
+      expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        user.id,
+        expect.objectContaining({ id: plain.id, visibility: AssetVisibility.Locked }),
+      );
+    });
+
+    it('pushes nothing when the new stack holds no Locked media', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.create(factory.auth({ user }), { assetIds: [first.id, second.id] });
+
+      expect(ctx.getMock(WebsocketRepository).clientSend).not.toHaveBeenCalled();
     });
   });
 });
