@@ -113,7 +113,7 @@ export const previewETagMatches = (header: string | undefined, etag: string): bo
   return header
     .split(',')
     .map((candidate) => candidate.trim())
-    .some((candidate) => candidate === '*' || candidate === etag || candidate === `W/${etag}`);
+    .some((candidate) => ['*', etag, `W/${etag}`].includes(candidate));
 };
 
 /* ------------------------------------------------------------------ */

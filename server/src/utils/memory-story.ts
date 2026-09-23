@@ -111,7 +111,7 @@ export const diversifyByDay = (candidates: StoryCandidate[], limit = MAX_EVENT_A
     }
   }
 
-  const days = [...byDay.keys()].sort();
+  const days = byDay.keys().toArray().sort();
   const kept = new Set<string>();
   let round = 0;
 
