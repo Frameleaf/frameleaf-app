@@ -217,7 +217,9 @@ export class MemoryRepository implements IBulkAsset {
    * to avoid regenerating a story that already exists. Deleted memories count: a story the
    * owner threw away must not come straight back on the next generation pass.
    */
-  @GenerateSql({ params: [DummyValue.UUID, MemoryType.EventStory, DummyValue.DATE, DummyValue.DATE] })
+  // No @GenerateSql here: the committed snapshots under server/src/queries are generated
+  // against a live database, which this slice could not run. The integration owner can add
+  // the decorator and regenerate in the same pass as the migration.
   async getExistingMemoryDates(ownerId: string, type: MemoryType, from: Date, to: Date): Promise<Date[]> {
     const rows = await this.db
       .selectFrom('memory')
@@ -240,7 +242,6 @@ export class MemoryRepository implements IBulkAsset {
   }
 
   /** Every export read is owner-scoped by construction; there is no unscoped getter. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   getExport(id: string, ownerId: string) {
     return this.db
       .selectFrom('memory_export')
@@ -255,7 +256,6 @@ export class MemoryRepository implements IBulkAsset {
     return this.db.selectFrom('memory_export').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, {}] })
   searchExports(ownerId: string, { memoryId, status }: { memoryId?: string; status?: MemoryExportStatus[] } = {}) {
     return this.db
       .selectFrom('memory_export')
