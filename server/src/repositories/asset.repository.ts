@@ -598,11 +598,18 @@ export class AssetRepository {
     });
   }
 
-  async create(asset: Insertable<AssetTable>) {
+  /**
+   * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
+   * in the same transaction, so the asset is never listed unlocked, not even for a moment.
+   */
+  async create(asset: Insertable<AssetTable>, lock?: { reason: AssetLockReason; lockedBy: string | null }) {
     return this.db.transaction().execute(async (tx) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       await this.forkPrivacy.mirrorFromLegacy(result.id, tx);
       await this.forkEnrichment.initialize([result.id], tx);
+      if (lock) {
+        await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
+      }
       return result;
     });
   }
@@ -829,27 +836,35 @@ export class AssetRepository {
       return [];
     }
 
-    return this.inTransaction(async (tx) => {
-      const targetIds = await this.getLockGroupIds(tx, ids);
-      if (targetIds.length === 0) {
-        return [];
-      }
+    return this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
+  }
 
-      const { rows } = await sql<{ assetId: string }>`
-        insert into asset_lock ("assetId", "reason", "lockedBy")
-        select target.id, ${reason}, ${lockedBy}::uuid
-        from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
-        on conflict ("assetId") do nothing
-        returning "assetId"
-      `.execute(tx);
-      const lockedIds = rows.map(({ assetId }) => assetId);
-      if (lockedIds.length > 0) {
-        await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
-        await releaseLockedCoverReferences(tx, lockedIds);
-      }
+  /** `lock` inside the caller's transaction `tx`. */
+  private async lockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reason: AssetLockReason,
+    lockedBy: string | null,
+  ): Promise<string[]> {
+    const targetIds = await this.getLockGroupIds(tx, ids);
+    if (targetIds.length === 0) {
+      return [];
+    }
 
-      return lockedIds;
-    });
+    const { rows } = await sql<{ assetId: string }>`
+      insert into asset_lock ("assetId", "reason", "lockedBy")
+      select target.id, ${reason}, ${lockedBy}::uuid
+      from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
+      on conflict ("assetId") do nothing
+      returning "assetId"
+    `.execute(tx);
+    const lockedIds = rows.map(({ assetId }) => assetId);
+    if (lockedIds.length > 0) {
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
+      await releaseLockedCoverReferences(tx, lockedIds);
+    }
+
+    return lockedIds;
   }
 
   /**

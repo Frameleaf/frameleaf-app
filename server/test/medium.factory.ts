@@ -202,8 +202,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     // gets one on the timeline with a lock, and sees `locked` as every response reports it.
     if (dto.visibility === AssetVisibility.Locked) {
       const asset = mediumFactory.assetInsert({ ...dto, visibility: AssetVisibility.Timeline });
-      const result = await this.get(AssetRepository).create(asset);
-      await this.get(AssetRepository).lock([result.id], AssetLockReason.Marked, null);
+      const result = await this.get(AssetRepository).create(asset, { reason: AssetLockReason.Marked, lockedBy: null });
       return { asset: { ...asset, visibility: AssetVisibility.Locked }, result };
     }
 

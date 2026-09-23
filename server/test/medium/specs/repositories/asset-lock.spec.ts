@@ -6,7 +6,7 @@ import { DB } from 'src/schema/index.js';
 import { up as addAssetLock } from 'src/schema/migrations/2100000000320-AddAssetLock.js';
 import { BaseService } from 'src/services/base.service.js';
 import { effectiveVisibility } from 'src/utils/locked.js';
-import { newMediumService } from 'test/medium.factory.js';
+import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -216,6 +216,25 @@ describe('asset lock (FL-34)', () => {
       // locking again keeps the lock and its reason
       await expect(sut.lock([member.id], AssetLockReason.Detected, null)).resolves.toEqual([]);
       await expect(locksOf(ctx.database, [member.id])).resolves.toEqual({ [member.id]: AssetLockReason.Marked });
+    });
+
+    it('creates an asset already locked, together with the video part of its live photo', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: motion } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Hidden });
+
+      const created = await sut.create(mediumFactory.assetInsert({ ownerId: user.id, livePhotoVideoId: motion.id }), {
+        reason: AssetLockReason.Marked,
+        lockedBy: user.id,
+      });
+
+      await expect(locksOf(ctx.database, [created.id, motion.id])).resolves.toEqual({
+        [created.id]: AssetLockReason.Marked,
+        [motion.id]: AssetLockReason.Marked,
+      });
+      await expect(storedVisibilityOf(ctx.database, [created.id])).resolves.toEqual({
+        [created.id]: AssetVisibility.Timeline,
+      });
     });
 
     it('never stores visibility locked, whoever asks for it', async () => {
