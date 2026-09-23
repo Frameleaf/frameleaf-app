@@ -14,6 +14,7 @@
   import { AlbumPageViewMode } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { canEdit } from '$lib/frameleaf/album-directory';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession, LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
@@ -86,6 +87,13 @@
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
   const isCollection = $derived(album.kind === AlbumKind.Collection);
+  // FL-45: the kind-aware fallback only matters if `album.albumName` itself sanitizes away.
+  const albumDownloadFileName = $derived(
+    namedArchiveName(
+      album.albumName,
+      $t(isCollection ? 'frameleaf_album_kind_collection' : 'frameleaf_album_kind_album'),
+    ),
+  );
   // A shared space's photos are one of its panels, so leaving them goes back to the space's own page.
   const backRoute = $derived(
     album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums(),
@@ -425,7 +433,7 @@
             <ResultsView
               assets={collectionTimelineAssets}
               {bulkContext}
-              downloadFileName={album.albumName}
+              downloadFileName={albumDownloadFileName}
               {tagOptions}
               {albumOptions}
               onEndReached={loadMoreCollectionAssets}
@@ -456,7 +464,7 @@
           {options}
           destination={{ kind: 'album', id: albumId }}
           {bulkContext}
-          downloadFileName={album.albumName}
+          downloadFileName={albumDownloadFileName}
           {tagOptions}
           {albumOptions}
           onMutated={handleMutated}
