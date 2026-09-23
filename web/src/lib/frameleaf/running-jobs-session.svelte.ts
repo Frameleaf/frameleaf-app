@@ -157,10 +157,14 @@ export class RunningJobsSession {
         void this.refresh().then(() => this.#schedule());
       }
     };
+    // Back online: ask at once, so the panel shows where every job got to meanwhile (FL-43).
+    const onOnline = () => void this.refresh().then(() => this.#schedule());
     document.addEventListener('visibilitychange', onVisibility);
+    addEventListener('online', onOnline);
     this.#unlisten = () => {
       offAuth();
       document.removeEventListener('visibilitychange', onVisibility);
+      removeEventListener('online', onOnline);
     };
   }
 

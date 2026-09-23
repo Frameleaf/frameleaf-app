@@ -381,7 +381,7 @@ export class PhysicalDeduplicationPlanService {
     });
     if (!running) {
       // Cancelled between the claim and this write, or the claim is gone.
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -436,7 +436,7 @@ export class PhysicalDeduplicationPlanService {
         this.logger.log(`Physical deduplication job ${id}: retrying ${planned.retry?.ids.length ?? 0} copies once`);
         return;
       }
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -465,7 +465,11 @@ export class PhysicalDeduplicationPlanService {
       if (result.summary.applied + result.summary.alreadyApplied > 0) {
         await this.recordApplied(snapshot, result);
       }
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+      if (!(await this.operations.complete(id, claimToken, { resultAssetId: null }))) {
+        // Cancelled after the last copy (FL-43): what was applied is recorded above; settle the cancel.
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return;
+      }
       const { applied, alreadyApplied, skipped, failed, reclaimedBytes } = result.summary;
       this.logger.log(
         `Physical deduplication plan ${snapshot.planId} finished: ${applied} applied, ${alreadyApplied} already, ` +
@@ -474,7 +478,7 @@ export class PhysicalDeduplicationPlanService {
       return;
     }
 
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
   }
 
   private recordApplied(snapshot: PhysicalDeduplicationApplySnapshot, result: PhysicalDeduplicationApplyResult) {
@@ -531,7 +535,7 @@ export class PhysicalDeduplicationPlanService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       this.logger.log(`Physical deduplication job ${id} cancelled`);
       return false;
     }

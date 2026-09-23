@@ -50,6 +50,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
@@ -68,6 +69,7 @@ import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repos
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -92,6 +94,7 @@ import { MetadataService } from 'src/services/metadata.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
 import { automock, wait } from 'test/utils.js';
@@ -131,6 +134,31 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     this.sutDeps = this.makeDeps(options);
     this.sut = new Service(...this.sutDeps) as InstanceType<S>;
     this.database = options.database;
+    this.setMockDefaults();
+  }
+
+  /** The defaults the unit tests use too: library workloads go to a healthy local destination (FL-110). */
+  private setMockDefaults() {
+    if (this.options.mock.includes(MlDestinationRepository)) {
+      const mlDestination = this.getMock(MlDestinationRepository);
+      mlDestination.getRoute.mockImplementation((workload) =>
+        Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
+      );
+      mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      mlDestination.getRoutes.mockResolvedValue([]);
+      mlDestination.getSpend.mockResolvedValue(0);
+      mlDestination.recordProbe.mockResolvedValue();
+      mlDestination.recordAccounting.mockResolvedValue();
+    }
+    if (this.options.mock.includes(WebsocketRepository)) {
+      // an asset change is pushed to the owner's other sessions (FL-53)
+      this.getMock(WebsocketRepository).clientSend.mockReturnValue();
+    }
+    if (this.options.mock.includes(MachineLearningRepository)) {
+      const machineLearning = this.getMock(MachineLearningRepository);
+      machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+      machineLearning.getRunPodEndpoint.mockReturnValue(null);
+    }
   }
 
   private makeDeps(options: MediumTestOptions) {
@@ -386,7 +414,7 @@ export class SyncTestContext extends MediumTestContext<typeof SyncService> {
   constructor(database: Kysely<DB>) {
     super(SyncService, {
       database,
-      real: [SyncRepository, SyncCheckpointRepository, SessionRepository],
+      real: [SyncRepository, SyncCheckpointRepository, SessionRepository, PartnerRepository],
       mock: [LoggingRepository],
     });
   }
@@ -517,6 +545,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case SmartAlbumRepository:
     case StackRepository:
     case StudioProjectRepository:
+    case TrashRepository:
     case SyncRepository:
     case SyncCheckpointRepository:
     case SystemMetadataRepository:
@@ -649,6 +678,10 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case MachineLearningRepository: {
       return automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+    }
+
+    case MlDestinationRepository: {
+      return automock(MlDestinationRepository);
     }
 
     case PluginRepository: {

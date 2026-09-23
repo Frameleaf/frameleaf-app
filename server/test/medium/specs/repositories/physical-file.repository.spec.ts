@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AssetFileType, PhysicalFileType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -92,6 +92,35 @@ describe(PhysicalFileRepository.name, () => {
 
       expect(second.id).toBe(first.id);
       expect(second.sizeInBytes).toBe(200);
+    });
+  });
+
+  describe('withLockedNormalizationAsset', () => {
+    it('records the checksum evidence as a JSON object, not as JSON text', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const asset = await newAssetWithSize(ctx, user.id);
+      await sut.ensureOriginalPhysicalFile(asset.id);
+      const evidence = { sourcePath: asset.originalPath, upstreamPath: asset.originalPath, sizeInBytes: 1000 };
+
+      await sut.withLockedNormalizationAsset(asset.id, randomUUID(), ({ commit }) =>
+        commit({
+          evidence,
+          linkCount: 1,
+          sha1: randomBytes(20),
+          sha256: randomBytes(32),
+          sizeInBytes: 1000,
+          upstreamPath: asset.originalPath,
+          verifiedPaths: [asset.originalPath],
+        }),
+      );
+
+      const { rows } = await sql<{ type: string; evidence: unknown }>`
+        SELECT jsonb_typeof(evidence) AS type, evidence
+        FROM immich_fork.asset_checksum
+        WHERE "assetId" = ${asset.id}::uuid
+      `.execute(defaultDatabase);
+      expect(rows).toEqual([{ type: 'object', evidence }]);
     });
   });
 

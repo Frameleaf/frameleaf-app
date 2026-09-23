@@ -15,8 +15,13 @@ import {
  * FL-32 adds background bulk operations to the session FL-31 defined. These tests cover only the
  * additions; the selection semantics themselves are covered by `library-session.spec.ts`.
  */
-const run = (session: LibrarySession, ...actions: LibrarySessionAction[]) =>
-  actions.reduce((current, action) => reduceLibrarySession(current, action), session);
+const run = (session: LibrarySession, ...actions: LibrarySessionAction[]) => {
+  let current = session;
+  for (const action of actions) {
+    current = reduceLibrarySession(current, action);
+  }
+  return current;
+};
 
 const favoriteQuery = () => ({ ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } });
 
@@ -152,11 +157,10 @@ describe('background bulk operations', () => {
     expect(session.operations[0].failures).toHaveLength(100);
     expect(session.operations[0].failed).toBe(250);
 
-    const many = Array.from({ length: 25 }, (_, index) => index).reduce(
-      (current, index) =>
-        reduceLibrarySession(current, { type: 'operation-start', requestId: `r${index}`, action: 'favorite' }),
-      createLibrarySession(),
-    );
+    let many = createLibrarySession();
+    for (let index = 0; index < 25; index++) {
+      many = reduceLibrarySession(many, { type: 'operation-start', requestId: `r${index}`, action: 'favorite' });
+    }
     expect(many.operations).toHaveLength(20);
     expect(many.operations[0].requestId).toBe('r24');
   });

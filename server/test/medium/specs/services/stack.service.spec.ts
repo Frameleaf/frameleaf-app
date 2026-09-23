@@ -1,10 +1,13 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StackService } from 'src/services/stack.service.js';
@@ -17,11 +20,13 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(StackService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, AssetRepository, StackRepository],
-    mock: [EventRepository, LoggingRepository, WebsocketRepository],
+    real: [AccessRepository, AssetRepository, PersonRepository, StackRepository, UserRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
   });
 
   ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
 
   return { sut, ctx };
 };
@@ -54,6 +59,10 @@ describe(StackService.name, () => {
       const { user } = await ctx.newUser();
       const { asset: lockedPrimary } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
       const { asset: member } = await ctx.newAsset({ ownerId: user.id });
+      // a stack lists only members with metadata, as every uploaded photo has
+      for (const { id } of [lockedPrimary, member]) {
+        await ctx.newExif({ assetId: id, make: 'Canon' });
+      }
       const { stack } = await ctx.newStack({ ownerId: user.id }, [lockedPrimary.id, member.id]);
 
       const ordinary = factory.auth({ user });
@@ -86,8 +95,17 @@ describe(StackService.name, () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: lockedMember } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: lockedMember } = await ctx.newAsset({ ownerId: user.id });
+      for (const { id } of [primary, lockedMember]) {
+        await ctx.newExif({ assetId: id, make: 'Canon' });
+      }
       const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, lockedMember.id]);
+      // A stack created with a Locked photo is Locked as a whole (FL-53); a member locked on its own
+      // (a record saved before that rule) must still stay out of an ordinary session's listing.
+      await ctx.database
+        .insertInto('asset_lock')
+        .values({ assetId: lockedMember.id, reason: AssetLockReason.Marked, lockedBy: user.id })
+        .execute();
 
       const memberIds = async (auth: ReturnType<typeof factory.auth>) => {
         const { assets } = await sut.get(auth, stack.id);

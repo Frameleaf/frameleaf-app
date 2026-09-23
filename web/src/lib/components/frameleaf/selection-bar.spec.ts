@@ -54,7 +54,8 @@ describe('Frameleaf selection bar', () => {
     const { rerender } = render(SelectionBar, {
       props: { count: 2, assets: [photo('a'), photo('b')], total: 2, onAction, onClear, onSelectAllMatching },
     });
-    expect(screen.queryByRole('button', { name: /Select all/i })).not.toBeInTheDocument();
+    // Anchored: "Deselect All" is always there and must not satisfy this.
+    expect(screen.queryByRole('button', { name: /^Select all/i })).not.toBeInTheDocument();
 
     await rerender({ total: 4200 });
     await fireEvent.click(screen.getByRole('button', { name: 'Select all 4,200' }));
@@ -80,12 +81,27 @@ describe('Frameleaf selection bar', () => {
   });
 
   it('groups the rest of the bulk set in the More menu, including both sensitive actions', async () => {
-    mount();
+    const { unmount } = mount();
     await fireEvent.click(screen.getByRole('button', { name: 'More' }));
-    const expected = ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Unmark Sensitive'];
-    for (const name of [...expected, 'Refresh metadata']) {
+    for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Refresh metadata']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
+    unmount();
+
+    // As in the prototype's selection.mjs, Unmark Sensitive is offered only when a selected item is
+    // marked, so a selection mixing a marked and an unmarked item offers both.
+    mount({ assets: [photo('a'), photo('b', { isLocked: true })] });
+    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    for (const name of ['Mark Sensitive', 'Unmark Sensitive']) {
+      expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('offers no Unmark Sensitive when nothing selected is marked', async () => {
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.getByRole('menuitem', { name: 'Mark Sensitive' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Unmark Sensitive' })).not.toBeInTheDocument();
   });
 
   it('carries the stack ids Unstack needs, which only the bar knows', async () => {

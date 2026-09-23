@@ -16,6 +16,7 @@ import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
@@ -46,7 +47,7 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         UserRepository,
         WorkflowRepository,
       ],
-      mock: [ConfigRepository, EventRepository, SystemMetadataRepository],
+      mock: [ConfigRepository, EventRepository, SystemMetadataRepository, WebsocketRepository],
     });
   }
 

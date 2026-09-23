@@ -1,9 +1,14 @@
 <script lang="ts">
   /**
    * Admin settings (FL-71) on the Frameleaf settings host. Each section below is an existing
-   * system-config form bound to the same endpoints as before; the host groups them into the
-   * template's areas and carries the search. The header actions and command palette entries
-   * are unchanged.
+   * system-config form; the host groups them into the template's areas and carries the search.
+   *
+   * FL-66: the sections edit one settings draft, created here from the saved settings and their
+   * revision. The settings bar saves every page together and the server refuses a save made
+   * against settings another administrator changed since (the draft is kept for review). The
+   * page follows other administrators' saves as they happen, recovers an unsaved draft after a
+   * reload from this tab's session storage (never secrets), copies and exports the saved settings
+   * without secrets, and imports a settings file into the draft for review instead of saving it.
    */
   import AuthSettings from './AuthSettings.svelte';
   import BackupSettings from './BackupSettings.svelte';
@@ -16,6 +21,7 @@
   import MachineLearningSettings from './MachineLearningSettings.svelte';
   import MapSettings from './MapSettings.svelte';
   import MetadataSettings from './MetadataSettings.svelte';
+  import MigrationSettingsSection from '$lib/components/frameleaf/settings/MigrationSettingsSection.svelte';
   import NewVersionCheckSettings from './NewVersionCheckSettings.svelte';
   import NightlyTasksSettings from './NightlyTasksSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
@@ -26,16 +32,37 @@
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
+  import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
+  import { forConfigSave } from '$lib/frameleaf/credentials';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
+  import { cloneConfig, SYSTEM_CONFIG_JOURNAL_PREFIX } from '$lib/frameleaf/system-config-draft';
+  import {
+    setSystemConfigDraft,
+    SystemConfigDraftStore,
+    type SystemConfigDraftStorage,
+  } from '$lib/frameleaf/system-config-draft.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+  import AuthDisableLoginConfirmModal from '$lib/modals/AuthDisableLoginConfirmModal.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
-  import { Alert, CommandPaletteDefaultProvider, Container, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { websocketEvents } from '$lib/stores/websocket';
+  import { getAdminConfigWithRevision, updateAdminConfigWithRevision } from '@immich/sdk';
+  import {
+    Alert,
+    CommandPaletteDefaultProvider,
+    Container,
+    modalManager,
+    Theme as AppTheme,
+    themeManager,
+  } from '@immich/ui';
   import {
     mdiAccountOutline,
+    mdiArchiveLockOutline,
     mdiBackupRestore,
     mdiBellOutline,
     mdiBookshelf,
@@ -54,11 +81,14 @@
     mdiServerOutline,
     mdiSync,
     mdiTrashCanOutline,
+    mdiTruckOutline,
     mdiUpdate,
     mdiVideoOutline,
   } from '@mdi/js';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import { clampEnhancedVideoFrames } from './machine-learning/machine-learning-helpers';
 
   type Props = {
     data: PageData;
@@ -66,6 +96,68 @@
 
   const { data }: Props = $props();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+
+  // The reload journal is per tab and per administrator, and holds no secrets or credentials.
+  const journalKey = `${SYSTEM_CONFIG_JOURNAL_PREFIX}${authManager.user.id}`;
+  const journal: SystemConfigDraftStorage = {
+    read: () => sessionStorage.getItem(journalKey),
+    write: (value) => sessionStorage.setItem(journalKey, value),
+    remove: () => sessionStorage.removeItem(journalKey),
+  };
+
+  const settingsDraft = untrack(
+    () =>
+      new SystemConfigDraftStore(data.current, {
+        defaults: data.defaultConfig,
+        load: () => getAdminConfigWithRevision(),
+        // A draft never carries a credential value (FL-67): they are sent empty ("keep the stored
+        // credential") and change only through their own dialogs.
+        save: ({ config, expectedRevision }) =>
+          updateAdminConfigWithRevision({
+            adminConfigRevisionUpdateDto: { config: forConfigSave(config), expectedRevision },
+          }),
+        // Feature flags, the server config and every "saved" comparison follow the new baseline.
+        onUpdated: (config) => eventManager.emit('SystemConfigUpdate', config),
+        storage: journal,
+      }),
+  );
+  setSystemConfigDraft(settingsDraft);
+  systemConfigManager.value = cloneConfig(settingsDraft.baseline);
+  // A draft left by a reload of this tab comes back before anything writes the journal again.
+  settingsDraft.recover();
+
+  // Checks before a save, registered here so they run whichever settings area is open (a draft
+  // can change any page, including through an imported file).
+  settingsDraft.registerGuard({
+    keys: ['passwordLogin', 'oauth'],
+    beforeSave: async () => {
+      const { oauth, passwordLogin } = settingsDraft.draft;
+      if (oauth.enabled || passwordLogin.enabled) {
+        return true;
+      }
+      return Boolean(await modalManager.show(AuthDisableLoginConfirmModal));
+    },
+  });
+  settingsDraft.registerGuard({
+    keys: ['machineLearning'],
+    beforeSave: () => {
+      clampEnhancedVideoFrames(settingsDraft.draft.machineLearning);
+      return true;
+    },
+  });
+
+  // Keep the journal in step with the draft so a reload can recover it.
+  $effect(() => {
+    void settingsDraft.changes;
+    void settingsDraft.revision;
+    untrack(() => settingsDraft.persistJournal());
+  });
+
+  onMount(() => {
+    // Another administrator (or another tab) saved settings: follow them. An unsaved draft is
+    // carried onto them, or marked stale when it changes the same settings.
+    return websocketEvents.on('on_config_update', () => void settingsDraft.refresh());
+  });
 
   const sections: SettingsHostSection[] = $derived([
     {
@@ -139,6 +231,13 @@
       icon: mdiDatabaseOutline,
     },
     {
+      component: MigrationSettingsSection,
+      title: $t('admin.frameleaf_migration_settings_title'),
+      subtitle: $t('admin.frameleaf_migration_settings_subtitle'),
+      key: 'migration',
+      icon: mdiTruckOutline,
+    },
+    {
       component: NightlyTasksSettings,
       title: $t('admin.nightly_tasks_settings'),
       subtitle: $t('admin.nightly_tasks_settings_description'),
@@ -151,6 +250,14 @@
       subtitle: $t('admin.notification_settings_description'),
       key: 'notifications',
       icon: mdiBellOutline,
+    },
+    {
+      // FL-74: the design's "Originals & preservation" section of Import & protection.
+      component: PreservationPanel,
+      title: $t('frameleaf_preservation_section_title'),
+      subtitle: $t('frameleaf_preservation_section_description'),
+      key: 'preservation',
+      icon: mdiArchiveLockOutline,
     },
     {
       component: ServerSettings,
@@ -218,7 +325,9 @@
   ]);
 
   const { CopyToClipboard, Upload, Download } = $derived(
-    getSystemConfigActions($t, featureFlagsManager.value, systemConfigManager.value),
+    getSystemConfigActions($t, featureFlagsManager.value, settingsDraft.baseline, {
+      onImport: (text) => settingsDraft.importFile(text),
+    }),
   );
 </script>
 
@@ -230,7 +339,7 @@
       {#if featureFlagsManager.value.configFile}
         <Alert color="warning" class="mb-4 text-dark" title={$t('admin.config_set_by_file')} />
       {/if}
-      <SettingsHost {sections} />
+      <SettingsHost {sections} disabled={featureFlagsManager.value.configFile} />
     </Theme>
   </Container>
 </AdminPageLayout>

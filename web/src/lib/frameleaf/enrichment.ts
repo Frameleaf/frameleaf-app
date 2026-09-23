@@ -106,10 +106,13 @@ export const staleReasonKey: Readonly<Record<EnrichmentStaleReason, Translations
 
 /** The chosen stages in running order, with everything a chosen stage needs. */
 export const withRequiredStages = (chosen: Iterable<EnrichmentStage>): EnrichmentStage[] => {
-  const all = new Set(chosen);
-  for (const stage of all) {
-    for (const required of ENRICHMENT_STAGE_REQUIRES[stage]) {
-      all.add(required);
+  const all = new Set<EnrichmentStage>();
+  const pending = [...chosen];
+  while (pending.length > 0) {
+    const stage = pending.pop()!;
+    if (!all.has(stage)) {
+      all.add(stage);
+      pending.push(...ENRICHMENT_STAGE_REQUIRES[stage]);
     }
   }
   return ENRICHMENT_STAGE_ORDER.filter((stage) => all.has(stage));
