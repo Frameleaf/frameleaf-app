@@ -128,6 +128,23 @@ describe('SharedSpaceLinkedAlbums', () => {
     expect(updateAlbumInfo).not.toHaveBeenCalled();
   });
 
+  it("opens a linked album's picture, an item already in the space, in the space's viewer", async () => {
+    const onOpenAsset = vi.fn();
+    render(SharedSpaceLinkedAlbums, {
+      space,
+      albums: [linked({ thumbnailAssetId: 'asset-in-space' }), linked({ id: 'album-empty', albumName: 'Empty' })],
+      library,
+      onChanged: vi.fn(),
+      onOpenAsset,
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open a photo from Summer in this shared space' }));
+
+    expect(onOpenAsset).toHaveBeenCalledWith('asset-in-space');
+    // Without a picture in the space there is nothing to open.
+    expect(screen.queryByRole('button', { name: 'Open a photo from Empty in this shared space' })).toBeNull();
+  });
+
   it('unlinks only where the server allows it, and removes no photos', async () => {
     render(SharedSpaceLinkedAlbums, {
       space,
