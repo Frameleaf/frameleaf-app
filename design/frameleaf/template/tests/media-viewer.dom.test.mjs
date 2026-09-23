@@ -247,6 +247,8 @@ test("information panel edits description, tags, and people faces through the ca
   const panel = $(".mv-info");
   assert.ok(panel);
   assert.equal($(".mv-badge").textContent, "Generated");
+  assert.match($(".mv-enrichment").textContent, /Generated · Local model · 90% confidence/);
+  assert.ok($$(".mv-enrich-actions button").some((b) => b.textContent === "Accept"));
   const area = $(".mv-description-input");
   assert.equal(area.value, "A quiet lake");
   await act(async () => area.focus());
@@ -257,7 +259,10 @@ test("information panel edits description, tags, and people faces through the ca
   await flush();
   assert.equal($(".mv-badge").textContent, "Manual");
 
-  assert.match($(".mv-enrichment").textContent, /Local model · 90% confidence/);
+  // A manual description replaces the generated one, so its model evidence and Accept go away.
+  assert.match($(".mv-enrichment").textContent, /DescriptionManual/);
+  assert.doesNotMatch($(".mv-enrichment").textContent, /Local model|confidence/);
+  assert.ok(!$$(".mv-enrich-actions button").some((b) => b.textContent === "Accept"));
   assert.match($(".mv-enrichment").textContent, /Reviewed/);
   await click($$(".mv-enrich-actions button").find((b) => b.textContent === "Mark sensitive"));
   assert.deepEqual(actions().at(-1), ["lock", "a", undefined]);
