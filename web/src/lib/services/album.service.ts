@@ -4,15 +4,19 @@ import {
   addUsersToAlbum,
   AlbumUserRole,
   BulkIdErrorReason,
+  createAlbum,
   deleteAlbum,
   getAlbumDescendantCount,
+  moveAlbumToCollection,
   removeUserFromAlbum,
   updateAlbumInfo,
   updateAlbumUser,
   type AlbumResponseDto,
   type AlbumsAddAssetsResponseDto,
+  type AlbumUserCreateDto,
   type AssetResponseDto,
   type BulkIdResponseDto,
+  type CreateAlbumDto,
   type UpdateAlbumDto,
   type UserResponseDto,
 } from '@immich/sdk';
@@ -206,6 +210,27 @@ export const handleAddUsersToAlbum = async (album: AlbumResponseDto, users: User
   }
 };
 
+/**
+ * Invite people to an album, a collection or a shared space with an explicit role (FL-53).
+ *
+ * `handleAddUsersToAlbum` above is the picker's call and lets the server apply its default
+ * role; the Frameleaf share dialog chooses Editor or Viewer at invitation time, so it sends
+ * the role with each member. The grant is the album membership the server stores — never a
+ * local recipient list.
+ */
+export const handleInviteAlbumUsers = async (album: AlbumResponseDto, albumUsers: AlbumUserCreateDto[]) => {
+  const $t = await getFormatter();
+
+  try {
+    await addUsersToAlbum({ id: album.id, addUsersDto: { albumUsers } });
+    eventManager.emit('AlbumShare');
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.error_adding_users_to_album'));
+    return false;
+  }
+};
+
 export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
   const $t = await getFormatter();
 
@@ -227,6 +252,26 @@ export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUs
   }
 };
 
+/**
+ * Leave an album, a collection or a shared space you are a member of (FL-53).
+ *
+ * `DELETE /albums/{id}/user/me` is the server's own "remove myself" form, so the caller can
+ * never be tricked into removing someone else. The confirmation is the Frameleaf dialog's
+ * job; this only performs the removal and announces it so the page can navigate away.
+ */
+export const handleLeaveAlbum = async (album: AlbumResponseDto) => {
+  const $t = await getFormatter();
+
+  try {
+    await removeUserFromAlbum({ id: album.id, userId: 'me' });
+    eventManager.emit('AlbumUserDelete', { albumId: album.id, userId: authManager.user.id });
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_remove_album_users'));
+    return false;
+  }
+};
+
 const handleUpdateThumbnail = async (album: AlbumResponseDto, assetId: string) => {
   const $t = await getFormatter();
 
@@ -244,6 +289,27 @@ const handleUpdateThumbnail = async (album: AlbumResponseDto, assetId: string) =
   }
 };
 
+/**
+ * Write album details from the album detail page (FL-53) and return what the server stored,
+ * so the page renders the saved album rather than an optimistic guess. `handleUpdateAlbum`
+ * below is the one the album list uses: it reports success with a "view album" button,
+ * which is wrong when you are already on the album.
+ */
+export const handleUpdateAlbumInfo = async (id: string, dto: UpdateAlbumDto, options?: { message?: string }) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await updateAlbumInfo({ id, updateAlbumDto: dto });
+    eventManager.emit('AlbumUpdate', response);
+    if (options?.message) {
+      toastManager.primary(options.message);
+    }
+    return response;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
 export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbumDto) => {
   const $t = await getFormatter();
 
@@ -258,6 +324,36 @@ export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbum
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/**
+ * Move an album into a collection, or out of one (`collectionId: null`) so it
+ * stands on its own. The server enforces the one-level rule and ownership; the
+ * caller decides whether to refresh the directory.
+ */
+export const handleMoveAlbumToCollection = async (album: AlbumResponseDto, collectionId: string | null) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId } });
+    eventManager.emit('AlbumUpdate', response);
+    return response;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/** Create an album, a collection or a shared space from the Albums page. */
+export const handleCreateAlbumEntry = async (dto: CreateAlbumDto) => {
+  const $t = await getFormatter();
+
+  try {
+    const album = await createAlbum({ createAlbumDto: dto });
+    eventManager.emit('AlbumCreate', album);
+    return album;
+  } catch (error) {
+    handleError(error, $t('errors.failed_to_create_album'));
   }
 };
 

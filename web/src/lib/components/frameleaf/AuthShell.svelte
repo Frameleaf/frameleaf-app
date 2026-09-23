@@ -2,14 +2,10 @@
   /**
    * The Frameleaf auth/onboarding shell (FL-80).
    *
-   * Restyles the card the legacy `AuthPageLayout` renders for every public/auth route
-   * (login, register, forced password change, the PIN prompt, the maintenance splash) and
-   * the onboarding card, without changing what any of them do: this component only ever
-   * wraps children the route already produces from its own load function and form
-   * handlers. It follows the same gating pattern as `LibraryRail`/`TopBar` (FL-30): callers
-   * check `$frameleafShell` themselves and render this in place of the legacy layout, so
-   * there is exactly one rollout flag for the whole shell rather than a second, auth-only
-   * one.
+   * The card `AuthPageLayout` renders for every public/auth route (login, register, forced
+   * password change, the PIN prompt, the maintenance splash) and the onboarding card,
+   * without changing what any of them do: this component only ever wraps children the
+   * route already produces from its own load function and form handlers.
    *
    * Theme follows the shell theme (`themeManager`), the same signal `LibraryRail`/`TopBar`
    * read, so a PIN prompt reached mid-session matches the rest of the app rather than

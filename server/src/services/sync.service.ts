@@ -19,6 +19,7 @@ import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.ta
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
@@ -460,8 +461,13 @@ export class SyncService extends BaseService {
           partner.sharedById,
         );
 
+        // FL-54: a sharer who hides locations from this user never streams coordinates or place names
         for await (const { updateId, ...data } of backfill) {
-          await send(response, { type: backfillType, ids: [partner.createId, updateId], data });
+          await send(response, {
+            type: backfillType,
+            ids: [partner.createId, updateId],
+            data: partner.shareLocation ? data : hideLocation(data),
+          });
         }
 
         await sendEntityBackfillCompleteAck(response, backfillType, partner.createId);
@@ -474,9 +480,17 @@ export class SyncService extends BaseService {
       });
     }
 
+    const locationHiddenOwnerIds = await getLocationHiddenPartnerIds({
+      userId: options.userId,
+      repository: this.partnerRepository,
+    });
     const upserts = this.syncRepository.partnerAssetExif.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
+    for await (const { updateId, ownerId, ...data } of upserts) {
+      await send(response, {
+        type: upsertType,
+        ids: [updateId],
+        data: locationHiddenOwnerIds.has(ownerId) ? hideLocation(data) : data,
+      });
     }
   }
 

@@ -1,6 +1,7 @@
 import { persisted } from 'svelte-persisted-store';
 import { browser } from '$app/environment';
 import { defaultLang } from '$lib/constants';
+import { defaultAlbumDirectoryView, type AlbumDirectoryView } from '$lib/frameleaf/album-directory';
 import { convertBCP47, getPreferredLocale } from '$lib/utils/i18n';
 
 // Locale to use for formatting dates, numbers, etc.
@@ -120,6 +121,15 @@ export const albumViewSettings = persisted<AlbumViewSettings>('album-view-settin
   collapsedGroups: {},
 });
 
+/**
+ * Frameleaf Albums page view (FL-52): filter pill, sort, grid or list, and the
+ * collapsed collection shelves. A per-device convenience, never authority; the
+ * page repairs a stale or edited value with `normalizeAlbumDirectoryView`.
+ */
+export const albumDirectoryView = persisted<AlbumDirectoryView>('frameleaf-album-directory', {
+  ...defaultAlbumDirectoryView,
+});
+
 export enum PlacesGroupBy {
   None = 'None',
   Country = 'Country',
@@ -145,8 +155,6 @@ export const loopVideo = persisted<boolean>('loop-video', true, {});
 export const autoPlayVideo = persisted<boolean>('auto-play-video', true, {});
 
 export const alwaysLoadOriginalVideo = persisted<boolean>('always-load-original-video', false, {});
-
-export const recentAlbumsDropdown = persisted<boolean>('recent-albums-open', true, {});
 
 export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {});
 

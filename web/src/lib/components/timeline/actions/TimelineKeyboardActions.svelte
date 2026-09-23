@@ -5,6 +5,7 @@
     setFocusToAsset as setFocusAssetInit,
     setFocusTo as setFocusToInit,
   } from '$lib/components/timeline/actions/focus-actions';
+  import { libraryShortcutGroups } from '$lib/frameleaf/library-shortcuts';
   import type { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -23,6 +24,7 @@
   import { archiveAssets, selectAllAssets, stackAssets } from '$lib/utils/asset-utils';
   import { AssetVisibility } from '@immich/sdk';
   import { isModalOpen, modalManager } from '@immich/ui';
+  import { t } from 'svelte-i18n';
 
   type Props = {
     timelineManager: TimelineManager;
@@ -89,7 +91,8 @@
     }
 
     isShortcutModalOpen = true;
-    await modalManager.show(ShortcutsModal, {});
+    // FL-33: the help is generated from the one library key map, so it cannot drift from the keys.
+    await modalManager.show(ShortcutsModal, { shortcuts: libraryShortcutGroups($t, { surface: 'timeline' }) });
     isShortcutModalOpen = false;
   };
 

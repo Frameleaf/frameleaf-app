@@ -5,10 +5,17 @@
  *
  * This machine (the operator's Mac, 7 GB RAM) has no SVG rasterizer and this repository's
  * policy forbids running Node builds/installs here, so this script is written but not run
- * as part of FL-135; run it on GitHub Actions (or any machine with `pnpm --dir web install`
- * already done) after review:
+ * as part of FL-135; run it on GitHub Actions (or any machine with `pnpm install` already
+ * done) after review:
  *
  *   node scripts/frameleaf-generate-web-icons.mjs
+ *
+ * `sharp` is not a `web` dependency (its lockfile can't be regenerated on the operator's
+ * machine, and CI installs with `--frozen-lockfile`, so adding it there would fail the
+ * install). `server` already depends on it, so this script resolves `sharp` from
+ * `server/node_modules` via `createRequire` pointed at `server/package.json` — run it from
+ * a checkout where `server`'s dependencies are installed (any normal CI job that also runs
+ * `pnpm --dir server ...` already has this).
  *
  * Sources (never modified by this script):
  *   - design/frameleaf/brand-kit/frameleaf-symbol.svg   -> favicon PNG set + favicon.ico
@@ -27,11 +34,17 @@
 
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 const brandKit = resolve(root, "design/frameleaf/brand-kit");
 const staticDir = resolve(root, "web/static");
+
+// Resolves against `server/node_modules` (where `sharp` is actually installed) rather than
+// this script's own location, exactly like requiring `sharp` from inside the server package.
+const requireFromServer = createRequire(resolve(root, "server/package.json"));
 
 const SYMBOL_SVG = resolve(brandKit, "frameleaf-symbol.svg");
 const APP_ICON_SVG = resolve(brandKit, "frameleaf-app-icon.svg");
@@ -45,8 +58,10 @@ async function sha256(path) {
 
 async function main() {
   // Imported lazily so reading/printing the plan above doesn't require `sharp` to be
-  // installed; only running the actual generation does.
-  const sharp = (await import("sharp")).default;
+  // installed; only running the actual generation does. Resolved from the server
+  // workspace's node_modules (see the module header) rather than a `web`/root dependency.
+  const sharpEntry = requireFromServer.resolve("sharp");
+  const sharp = (await import(pathToFileURL(sharpEntry).href)).default;
 
   console.log(`Source: ${SYMBOL_SVG}`);
   console.log(`  sha256 ${await sha256(SYMBOL_SVG)}`);

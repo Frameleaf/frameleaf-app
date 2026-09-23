@@ -27,7 +27,6 @@
   import FrameleafMenu from '$lib/components/frameleaf/Menu.svelte';
   import FrameleafMenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import FrameleafPersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -394,18 +393,7 @@
                   title={$t('edit_name')}
                   onclick={() => (isEditingName = true)}
                 >
-                  {#if $frameleafShell}
-                    <FrameleafPersonAvatar {person} size={72} />
-                  {:else}
-                    <ImageThumbnail
-                      circle
-                      shadow
-                      url={thumbnailData}
-                      altText={person.name}
-                      widthStyle="3.375rem"
-                      heightStyle="3.375rem"
-                    />
-                  {/if}
+                  <FrameleafPersonAvatar {person} size={72} />
                   <div class="flex flex-col justify-center px-4 text-start text-primary">
                     <p class="w-40 truncate font-medium sm:w-72">{person.name || $t('add_a_name')}</p>
                     <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -432,7 +420,7 @@
               </div>
             {/if}
           </section>
-          {#if $frameleafShell && !isEditingName}
+          {#if !isEditingName}
             <div class="frameleaf-person-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name: person.name || $t('add_a_name') } })}>
               <FrameleafMenu label={$t('show_person_options')} align="start">
                 {#snippet trigger()}

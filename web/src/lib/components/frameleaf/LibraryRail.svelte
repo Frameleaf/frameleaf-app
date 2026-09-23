@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
-  import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
+  import { buildAlbumTree, emptyAlbumTree, type FrameleafAlbumNode, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
   import { buildRailSections, isDestinationCurrent, type RailDestination } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -14,7 +14,7 @@
   import { albumIconPath } from '$lib/utils/album-icons';
   import { createAlbumAndRedirect } from '$lib/utils/album-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+  import { getAlbumTree } from '@immich/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiChevronDown, mdiChevronRight, mdiPlus } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
@@ -24,8 +24,8 @@
   /**
    * Frameleaf library rail (FL-30).
    *
-   * Replaces the navigation in `UserSidebar` while the Frameleaf shell rollout flag is
-   * on. It reuses the production sidebar container, so the mobile overlay, the focus
+   * The navigation `UserSidebar` renders. It reuses the production sidebar container, so
+   * the mobile overlay, the focus
    * trap, the resize handle and the remembered collapse preference keep working; only
    * the contents are the Frameleaf ones. Destinations come from
    * `$lib/frameleaf/navigation`, the album and collection shape from
@@ -39,15 +39,16 @@
 
   let { children }: Props = $props();
 
-  let albums = $state<AlbumResponseDto[]>([]);
+  let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
   /** Collections whose open state the user has flipped away from the saved default. */
   const flipped = new SvelteSet<string>();
 
   const refreshAlbums = async () => {
     try {
-      // No ownership filter: the response carries the account's own albums and the ones
-      // shared with it, which is what the Albums and Shared spaces groups need.
-      albums = await getAllAlbums({});
+      // The real album directory (FL-52): collections with their albums, standalone
+      // albums and top-level shared spaces, already scoped to the account's own albums
+      // plus the ones shared with it.
+      tree = buildAlbumTree(await getAlbumTree());
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
     }
@@ -83,7 +84,6 @@
     }),
   );
 
-  const tree = $derived(buildAlbumTree(albums));
   const pathname = $derived(page.url.pathname);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The icon-only rail applies on desktop only; the mobile sidebar is a full overlay.
