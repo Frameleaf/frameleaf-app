@@ -65,6 +65,7 @@ describe(StudioProjectService.name, () => {
       issuedAt: new Date().toISOString(),
       expiresAt: future().toISOString(),
       digest: complete ? 'complete' : 'partial',
+      entries: [],
       ...overrides,
     } as StudioAuthorizedManifest,
     refused: [],
@@ -429,7 +430,7 @@ describe(StudioProjectService.name, () => {
 
     it('refuses a live lease held elsewhere with its expiry, and takes over only explicitly', async () => {
       repository.acquireLease.mockResolvedValueOnce(undefined);
-      repository.getById.mockResolvedValue(projectStub({ leaseClientId: 'tab-b' }));
+      repository.getById.mockResolvedValue(projectStub({ id: project.id, leaseClientId: 'tab-b' }));
 
       const body = await conflictOf(sut.acquireLease(owner, project.id, { clientId: 'tab-a' }));
       expect(body).toMatchObject({ reason: 'lease-held', lease: { heldByAnother: true } });
