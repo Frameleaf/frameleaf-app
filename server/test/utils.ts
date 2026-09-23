@@ -409,6 +409,8 @@ export const getMocks = () => {
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
+  mocks.mlDestination.getRoutes.mockResolvedValue([]);
   mocks.mlDestination.getSpend.mockResolvedValue(0);
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
