@@ -6,12 +6,13 @@ import {
   groupCandidatesByAsset,
   isUnnamedPet,
   petAgeInYears,
+  petPhotosFilter,
   petSpeciesOptions,
   reviewEmptyState,
   sortPets,
   speciesLabelKey,
 } from '$lib/frameleaf/pets';
-import { PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
+import { AssetVisibility, PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
 
 const pet = (overrides: Partial<PetResponseDto> = {}): PetResponseDto =>
   ({
@@ -144,5 +145,25 @@ describe('findPet', () => {
     const pets = [pet({ id: 'a' }), pet({ id: 'b' })];
     expect(findPet(pets, 'b')?.id).toBe('b');
     expect(findPet(pets, 'c')).toBeUndefined();
+  });
+});
+
+describe(petPhotosFilter.name, () => {
+  it('narrows to the pet and keeps to what the library timeline shows', () => {
+    expect(petPhotosFilter('pet-1')).toEqual({
+      petIds: { any: ['pet-1'] },
+      visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
+      trashedAt: { eq: null },
+    });
+  });
+
+  it('never asks for Locked or hidden media, so no elevated session is needed', () => {
+    const { visibility } = petPhotosFilter('pet-1');
+    expect(visibility?.in).not.toContain(AssetVisibility.Locked);
+    expect(visibility?.in).not.toContain(AssetVisibility.Hidden);
+  });
+
+  it('returns a fresh filter each time, so a caller cannot mutate the next page', () => {
+    expect(petPhotosFilter('pet-1')).not.toBe(petPhotosFilter('pet-1'));
   });
 });
