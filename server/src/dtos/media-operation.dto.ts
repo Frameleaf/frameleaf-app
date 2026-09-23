@@ -126,7 +126,7 @@ const MediaOperationBulkCreateSchema = z
  * Deliberately absent: the claim token, the worker identity and the remote job handle. They are
  * how the server keeps the job honest, not something a browser needs or should be able to read.
  */
-const MediaOperationSchema = z
+export const MediaOperationSchema = z
   .object({
     id: z.uuidv7().describe('Media operation ID'),
     kind: MediaOperationKindSchema,
