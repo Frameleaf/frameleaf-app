@@ -701,6 +701,50 @@ export const MediaHealthStatusSchema = z
   .describe('Media health status')
   .meta({ id: 'MediaHealthStatus' });
 
+/**
+ * Pet identity model (FL-58).
+ *
+ * `PetSpecies` is what the owner says the animal is. A detector may guess a species on
+ * a `pet_detection` row, but that guess never becomes the identity's species.
+ */
+export enum PetSpecies {
+  Cat = 'cat',
+  Dog = 'dog',
+  Bird = 'bird',
+  Rabbit = 'rabbit',
+  Horse = 'horse',
+  Reptile = 'reptile',
+  Fish = 'fish',
+  SmallMammal = 'small_mammal',
+  Other = 'other',
+}
+
+export const PetSpeciesSchema = z.enum(PetSpecies).describe('Pet species').meta({ id: 'PetSpecies' });
+
+/** Whether the owner said the pet is in an asset, or said it is not. Both are durable. */
+export enum PetObservationState {
+  Confirmed = 'confirmed',
+  Rejected = 'rejected',
+}
+
+export const PetObservationStateSchema = z
+  .enum(PetObservationState)
+  .describe('Pet observation state')
+  .meta({ id: 'PetObservationState' });
+
+/** How the durable decision was made. Neither value makes it less durable. */
+export enum PetObservationSource {
+  /** The owner drew or named it directly. */
+  Manual = 'manual',
+  /** The owner accepted, reassigned or rejected a recognition proposal. */
+  Review = 'review',
+}
+
+export const PetObservationSourceSchema = z
+  .enum(PetObservationSource)
+  .describe('How a pet observation was recorded')
+  .meta({ id: 'PetObservationSource' });
+
 export enum LogLevel {
   Verbose = 'verbose',
   Debug = 'debug',
@@ -1389,6 +1433,7 @@ export enum ApiTag {
   ClusterGroups = 'Cluster groups',
   Partners = 'Partners',
   People = 'People',
+  Pets = 'Pets',
   Plugins = 'Plugins',
   Queues = 'Queues',
   RunPod = 'RunPod (admin)',

@@ -11795,6 +11795,700 @@
         "x-immich-state": "Stable"
       }
     },
+    "/pets": {
+      "get": {
+        "description": "Retrieve the signed-in account’s pet identities.",
+        "operationId": "getAllPets",
+        "parameters": [
+          {
+            "name": "withHidden",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PetResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve pets",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Create a durable pet identity with a name, species and optional birthday.",
+        "operationId": "createPet",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a pet",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/candidates": {
+      "get": {
+        "description": "Retrieve recognition proposals awaiting review, with whether a recognition model is available at all.",
+        "operationId": "getPetCandidates",
+        "parameters": [
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetCandidateListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve pet recognition candidates",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/candidates/{id}/accept": {
+      "post": {
+        "description": "Record a durable confirmed observation for the proposed pet, or for a different pet when one is supplied.",
+        "operationId": "acceptPetCandidate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetCandidateReviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetObservationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a pet recognition candidate",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/candidates/{id}/reject": {
+      "post": {
+        "description": "Record a durable rejection so the proposal does not return after the model is rerun.",
+        "operationId": "rejectPetCandidate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetObservationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reject a pet recognition candidate",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/observations/{id}": {
+      "delete": {
+        "description": "Undo a durable observation, whether it was drawn by hand or made in review.",
+        "operationId": "deletePetObservation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a pet observation",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/{id}": {
+      "get": {
+        "description": "Retrieve a single pet identity.",
+        "operationId": "getPet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a pet",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Update a pet’s name, species, birthday, featured photo, hidden or favorite state.",
+        "operationId": "updatePet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a pet",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Delete a pet identity and every observation recorded for it.",
+        "operationId": "deletePet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a pet",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/{id}/merge": {
+      "post": {
+        "description": "Merge other pet identities into this one, keeping every durable observation.",
+        "operationId": "mergePets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetMergeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Merge pets",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/{id}/observations": {
+      "get": {
+        "description": "Retrieve the durable observations recorded for a pet.",
+        "operationId": "getPetObservations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PetObservationResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve pet observations",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Record by hand that a pet appears in an asset, optionally with a drawn region.",
+        "operationId": "createPetObservation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetObservationCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetObservationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a pet observation",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/plugins": {
       "get": {
         "description": "Retrieve a list of plugins available to the authenticated user.",
@@ -20299,6 +20993,10 @@
     {
       "name": "People",
       "description": "A person is a collection of faces, which can be favorited and named. A person can also be merged into another person. People are automatically created via the face recognition job."
+    },
+    {
+      "name": "Pets",
+      "description": "A pet is a durable named animal identity. Pets carry a species, an optional birthday and a featured photo, and collect observations: the owner's own record of which photos the animal appears in. Recognition proposals are reviewed against those identities and never overwrite them."
     },
     {
       "name": "Plugins",
@@ -31203,6 +31901,472 @@
           "name": {
             "description": "Person name",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PetCandidateListResponseDto": {
+        "properties": {
+          "candidates": {
+            "description": "Proposals awaiting review",
+            "items": {
+              "$ref": "#/components/schemas/PetCandidateResponseDto"
+            },
+            "type": "array"
+          },
+          "recognitionAvailable": {
+            "description": "Whether a pet recognition model is configured and available",
+            "type": "boolean"
+          },
+          "recognitionUnavailableReason": {
+            "description": "Why recognition is unavailable, for display; null when it is available",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidates",
+          "recognitionAvailable",
+          "recognitionUnavailableReason"
+        ],
+        "type": "object"
+      },
+      "PetCandidateResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset the proposal is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "detectedSpecies": {
+            "description": "The detector’s species guess, which is never the pet’s species",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Candidate ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "imageHeight": {
+            "description": "Height of the image the region was found on",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "imageWidth": {
+            "description": "Width of the image the region was found on",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "modelName": {
+            "description": "Model that produced the detection",
+            "type": "string"
+          },
+          "modelRevision": {
+            "description": "Revision of the model that produced the detection",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Proposed pet ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "score": {
+            "description": "Model confidence, 0 to 1",
+            "type": "number"
+          },
+          "boundingBoxX1": {
+            "description": "Region X1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "boundingBoxX2": {
+            "description": "Region X2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "boundingBoxY1": {
+            "description": "Region Y1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "boundingBoxY2": {
+            "description": "Region Y2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "boundingBoxX1",
+          "boundingBoxX2",
+          "boundingBoxY1",
+          "boundingBoxY2",
+          "detectedSpecies",
+          "id",
+          "imageHeight",
+          "imageWidth",
+          "modelName",
+          "modelRevision",
+          "petId",
+          "score"
+        ],
+        "type": "object"
+      },
+      "PetCandidateReviewDto": {
+        "properties": {
+          "petId": {
+            "description": "Pet to assign instead of the proposed one",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PetCreateDto": {
+        "properties": {
+          "birthDate": {
+            "description": "Pet date of birth",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "featuredAssetId": {
+            "description": "Asset used as the pet thumbnail",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isFavorite": {
+            "description": "Mark as favorite",
+            "type": "boolean"
+          },
+          "isHidden": {
+            "description": "Pet visibility (hidden)",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Pet name",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "species": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PetSpecies"
+              }
+            ],
+            "default": "other"
+          }
+        },
+        "required": [
+          "species"
+        ],
+        "type": "object"
+      },
+      "PetMergeDto": {
+        "properties": {
+          "ids": {
+            "description": "Pet IDs to merge into this pet",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "PetObservationCreateDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset the pet appears in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "boundingBoxX1": {
+            "description": "Region X1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "boundingBoxX2": {
+            "description": "Region X2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "boundingBoxY1": {
+            "description": "Region Y1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "boundingBoxY2": {
+            "description": "Region Y2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "imageHeight": {
+            "description": "Height of the image the region was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "imageWidth": {
+            "description": "Width of the image the region was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
+      "PetObservationResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Observation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "imageHeight": {
+            "description": "Height of the image the region was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "imageWidth": {
+            "description": "Width of the image the region was drawn on",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "petId": {
+            "description": "Pet ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PetObservationSource"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PetObservationState"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "boundingBoxX1": {
+            "description": "Region X1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "boundingBoxX2": {
+            "description": "Region X2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "boundingBoxY1": {
+            "description": "Region Y1, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "boundingBoxY2": {
+            "description": "Region Y2, in source pixels",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "boundingBoxX1",
+          "boundingBoxX2",
+          "boundingBoxY1",
+          "boundingBoxY2",
+          "createdAt",
+          "id",
+          "imageHeight",
+          "imageWidth",
+          "petId",
+          "source",
+          "state",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PetObservationSource": {
+        "description": "How a pet observation was recorded",
+        "enum": [
+          "manual",
+          "review"
+        ],
+        "type": "string"
+      },
+      "PetObservationState": {
+        "description": "Pet observation state",
+        "enum": [
+          "confirmed",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "PetResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets with a confirmed observation of this pet",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "birthDate": {
+            "description": "Pet date of birth",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "featuredAssetId": {
+            "description": "Asset used as the pet thumbnail",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Pet ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isFavorite": {
+            "description": "Is favorite",
+            "type": "boolean"
+          },
+          "isHidden": {
+            "description": "Is hidden",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Pet name",
+            "type": "string"
+          },
+          "species": {
+            "$ref": "#/components/schemas/PetSpecies"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "birthDate",
+          "createdAt",
+          "featuredAssetId",
+          "id",
+          "isFavorite",
+          "isHidden",
+          "name",
+          "species",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PetSpecies": {
+        "description": "Pet species",
+        "enum": [
+          "cat",
+          "dog",
+          "bird",
+          "rabbit",
+          "horse",
+          "reptile",
+          "fish",
+          "small_mammal",
+          "other"
+        ],
+        "type": "string"
+      },
+      "PetUpdateDto": {
+        "properties": {
+          "birthDate": {
+            "description": "Pet date of birth",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "featuredAssetId": {
+            "description": "Asset used as the pet thumbnail",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isFavorite": {
+            "description": "Mark as favorite",
+            "type": "boolean"
+          },
+          "isHidden": {
+            "description": "Pet visibility (hidden)",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Pet name",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "species": {
+            "$ref": "#/components/schemas/PetSpecies"
           }
         },
         "type": "object"
