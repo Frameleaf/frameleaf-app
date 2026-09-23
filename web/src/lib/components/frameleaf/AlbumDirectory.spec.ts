@@ -1,8 +1,11 @@
 import { AlbumKind, AlbumUserRole, type AlbumTreeResponseDto } from '@immich/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import { albumDirectoryView } from '$lib/stores/preferences.store';
+import { renderWithTooltips } from '$tests/helpers';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AlbumDirectory from './AlbumDirectory.svelte';
@@ -60,10 +63,12 @@ describe('AlbumDirectory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // The view (filter pill, grid or list) is a persisted store that outlives a single mount.
+    albumDirectoryView.set({ ...defaultAlbumDirectoryView });
   });
 
   it('renders one shelf per collection with its albums, then other albums, then shared spaces', () => {
-    render(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
     const shelf = screen.getByRole('region', { name: 'Family' });
     expect(shelf).toHaveTextContent('2 albums');
@@ -79,7 +84,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('offers the filter pills, and the Smart pill keeps only smart albums', async () => {
-    render(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent?.trim());
     expect(tabs).toEqual(['All', 'My albums', 'Shared', 'Smart']);
@@ -92,7 +97,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('searches by name and keeps the list view on shelves', async () => {
-    render(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
     await fireEvent.click(screen.getByRole('button', { name: 'List view' }));
     expect(screen.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
@@ -106,7 +111,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('shows the empty state with a create action when there is nothing', () => {
-    render(AlbumDirectory, { tree: { collections: [], albums: [], spaces: [] }, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [], spaces: [] }, onRefresh: vi.fn() });
     expect(screen.getByRole('heading', { level: 2, name: 'No albums yet' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create album' })).toBeInTheDocument();
   });
@@ -115,7 +120,7 @@ describe('AlbumDirectory', () => {
     const onRefresh = vi.fn();
     const moved = { ...rockies, parentId: null };
     sdkMock.moveAlbumToCollection.mockResolvedValue(moved);
-    render(AlbumDirectory, { tree, onRefresh });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh });
 
     const rootDrop = document.querySelector('.root-drop') as HTMLElement;
     const dataTransfer = {
@@ -141,7 +146,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('keeps shared spaces top level, opening on their own page, with a way to Sharing and its invitations', () => {
-    render(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
     const tile = shelf.querySelector('article[aria-label="Family Space"]') as HTMLElement;
@@ -156,7 +161,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('offers to make the first shared space when there are albums but no spaces', () => {
-    render(AlbumDirectory, { tree: { ...tree, spaces: [] }, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree: { ...tree, spaces: [] }, onRefresh: vi.fn() });
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
     expect(shelf).toHaveTextContent('No shared spaces yet');
@@ -165,7 +170,7 @@ describe('AlbumDirectory', () => {
   });
 
   it('never lets a viewer drag someone else’s album', () => {
-    render(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     expect(screen.getByRole('article', { name: 'Trail camera' })).toHaveAttribute('draggable', 'false');
     expect(screen.getByRole('article', { name: 'Summer in the Rockies' })).toHaveAttribute('draggable', 'true');
   });

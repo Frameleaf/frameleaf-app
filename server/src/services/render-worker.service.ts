@@ -735,7 +735,7 @@ export class RenderWorkerService {
     operationId: string,
     dto: RenderWorkerHeartbeatDto,
   ): Promise<RenderWorkerHeartbeatResponseDto> {
-    const { worker, session } = await this.authenticate(sessionToken);
+    const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
 
     if (dto.outputBytes !== undefined) {
@@ -1026,14 +1026,14 @@ export class RenderWorkerService {
           graph: source.graph,
           imports: Array.isArray(studio.imports) ? (studio.imports as never) : undefined,
           generated: Array.isArray(studio.generated) ? (studio.generated as never) : undefined,
-          catalog: studio.catalog ? (studio.catalog as never) : undefined,
+          catalog: (studio.catalog as never) || undefined,
           destination: destination as StudioDestination,
           cloudConsent: studio.cloudConsent === true,
           backgroundRunner: true,
         });
       } catch (error: Error | any) {
         // Consent missing, graph oversized, destination unknown: FL-90 refuses to enumerate at all.
-        return { complete: false, refused: [{ key: 'graph', reason: `${error?.message ?? error}` }] };
+        return { complete: false, refused: [{ key: 'graph', reason: String(error?.message ?? error) }] };
       }
 
       if (!resolution.manifest.complete) {
