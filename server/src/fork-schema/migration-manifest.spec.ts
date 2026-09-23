@@ -24,6 +24,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000080-AddAlbumKind')).toBe('legacy-fork');
     expect(classifyMigration('2100000000090-AddPartnerShareLocation')).toBe('legacy-fork');
     expect(classifyMigration('2100000000100-AddAssetFaceCorrectedAt')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000110-AddMemoryExport')).toBe('legacy-fork');
     expect(classifyMigration('2100000000150-AddPetIdentities')).toBe('legacy-fork');
     expect(classifyMigration('2100000000160-AddMediaOperationTables')).toBe('legacy-fork');
     expect(classifyMigration('2100000000190-AddSharedSpaceInvite')).toBe('legacy-fork');
