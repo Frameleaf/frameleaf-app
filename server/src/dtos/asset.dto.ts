@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetType, AssetVisibilitySchema } from 'src/enum.js';
+import { AssetType, AssetVisibilitySchema, EnrichmentStaleReasonSchema } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
@@ -66,6 +66,8 @@ export const AssetIdsSchema = z
 export enum AssetJobName {
   REFRESH_FACES = 'refresh-faces',
   REFRESH_METADATA = 'refresh-metadata',
+  /** FL-63: read the photo's text again, through the routed text recognition destination */
+  REFRESH_OCR = 'refresh-ocr',
   REGENERATE_THUMBNAIL = 'regenerate-thumbnail',
   TRANSCODE_VIDEO = 'transcode-video',
 }
@@ -131,6 +133,10 @@ const ImageDescriptionEnrichmentResponseSchema = z
     context: z.string().optional(),
     appliedDescription: z.boolean(),
     appliedTags: z.boolean(),
+    destinationId: z.string().optional().describe('The processing destination that generated the description'),
+    staleReason: EnrichmentStaleReasonSchema.optional().describe(
+      'Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed',
+    ),
   })
   .meta({ id: 'ImageDescriptionEnrichmentResponseDto' });
 

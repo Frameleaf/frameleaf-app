@@ -7,7 +7,7 @@ import {
   type SmartSearchDto,
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
-import { OpenQueryParam, type SharedLinkTab } from '$lib/constants';
+import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 
 const asQueueSlug = (name: QueueName) => {
@@ -103,6 +103,10 @@ export const Route = {
   viewPerson: ({ id }: { id: string }, params?: { previousRoute?: string; action?: 'merge' }) =>
     `/people/${id}` + asQueryString(params),
 
+  // documents (FL-63)
+  documents: (params?: { query?: string }) => '/documents' + asQueryString(params),
+  viewDocumentAsset: ({ id }: { id: string }) => `/documents/photos/${id}`,
+
   // pets
   pets: () => '/pets',
   viewPet: ({ id }: { id: string }) => `/pets/${id}`,
@@ -152,12 +156,26 @@ export const Route = {
   userSettings: (params?: { isOpen?: OpenQueryParam }) => '/user-settings' + asQueryString(params),
 
   // system
-  systemSettings: (params?: { isOpen?: OpenQueryParam }) => '/admin/system-settings' + asQueryString(params),
+  /**
+   * `openSetting` drills past the section a plain `isOpen` scrolls to, into a control within it
+   * (e.g. the enrichment workbench trigger inside the machine-learning section) that reads the
+   * same-named query param on mount. See the Jobs manager's "Enrichment tasks" entry (FL-59).
+   */
+  systemSettings: (params?: { isOpen?: OpenQueryParam; openSetting?: string }) =>
+    '/admin/system-settings' +
+    asQueryString(
+      params && {
+        isOpen: params.isOpen,
+        [QueryParameter.OPEN_SETTING]: params.openSetting,
+      },
+    ),
   systemStatistics: () => '/admin/server-status',
   physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
   systemProcessingDestinations: () => '/admin/processing-destinations',
+  /** Workers & endpoints (FL-72): the worker inventory at the top of the same page. */
+  systemWorkers: () => '/admin/processing-destinations#workers',
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
 

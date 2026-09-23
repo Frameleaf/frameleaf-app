@@ -326,6 +326,7 @@
           {space}
           {photos}
           filter={timelineFilter}
+          isViewer={!contributor}
           onOpen={(asset) => void openAsset(asset.id)}
           onChanged={onRefresh}
         />

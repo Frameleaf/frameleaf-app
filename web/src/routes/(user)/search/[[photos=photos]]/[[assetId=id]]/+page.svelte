@@ -5,6 +5,7 @@
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import {
     DISCOVERY_QUERY_PARAMETER,
@@ -774,6 +775,10 @@
             : 'frameleaf_search_bridge_link_damaged',
         )}
       </p>
+    {/if}
+    {#if typeof terms.query === 'string' && terms.query.trim()}
+      <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
+      <VideoMomentResults query={terms.query} />
     {/if}
     {#if !hasSearchQuery && canUseAskSearch}
       <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">

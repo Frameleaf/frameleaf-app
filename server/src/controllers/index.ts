@@ -15,8 +15,11 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
+import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
+import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
@@ -33,6 +36,7 @@ import {
 } from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
+import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
@@ -84,8 +88,11 @@ export const controllers = [
   ConfigAdminController,
   ConfigPublicController,
   DatabaseBackupController,
+  DocumentController,
   DownloadController,
   DuplicateController,
+  DuplicateReviewController,
+  EnrichmentController,
   FaceController,
   IntegrityAdminController,
   JobController,
@@ -99,6 +106,7 @@ export const controllers = [
   RenderWorkerController,
   MemoryController,
   MlDestinationController,
+  WorkerInventoryController,
   NotificationController,
   NotificationAdminController,
   OAuthController,

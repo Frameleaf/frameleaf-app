@@ -22,8 +22,10 @@ import {
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -37,10 +39,14 @@ import {
   BulkOperationResult,
   BulkOperationSnapshot,
   bulkAssetUpdate,
+  bulkBatchLength,
   bulkErrorMessage,
+  bulkGroupIndex,
   bulkProgress,
   classifyBulkError,
   fromBulkIdResponse,
+  isDuplicateDecisionAction,
+  isMediaHealthBulkAction,
   isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
@@ -49,6 +55,7 @@ import {
   pruneShiftOrigins,
   recordShiftOrigins,
 } from 'src/utils/bulk-operation.js';
+import { parseDuplicateGroups } from 'src/utils/duplicate-review.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 
 /** How often the worker looks for queued bulk jobs. */
@@ -57,6 +64,8 @@ export const BULK_TICK_MS = 5000;
 export const BULK_LEASE_MS = 2 * 60_000;
 /** Parallel calls for the actions the server only accepts one item at a time. */
 export const BULK_ITEM_CONCURRENCY = 5;
+/** Items per batch for Library Care relinks, recoveries and trash (FL-69). */
+export const MEDIA_HEALTH_BULK_BATCH_SIZE = 5;
 
 /** A failure of the whole job rather than of an item: the job stops and a retry resumes it. */
 class BulkJobError extends Error {
@@ -78,6 +87,8 @@ type BulkRun = {
   auth: AuthDto;
   snapshot: BulkOperationSnapshot;
   total: number;
+  /** For a duplicate decision job, which group each asset belongs to: batches end on a group boundary. */
+  groupIndex: ReadonlyMap<string, string> | null;
 };
 
 /** The result with neither pass marked in flight. */
@@ -170,6 +181,8 @@ export class BulkOperationService {
     private stacks: StackService,
     private enrichment: ImageEnrichmentService,
     private livePhoto: LivePhotoService,
+    private duplicateDecisions: DuplicateDecisionService,
+    private mediaHealth: MediaHealthService,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -293,10 +306,14 @@ export class BulkOperationService {
       return;
     }
 
-    const job: BulkRun = { id, claimToken, ownerId: operation.ownerId, auth, snapshot, total };
+    const groupIndex = bulkGroupIndex(snapshot);
+    const job: BulkRun = { id, claimToken, ownerId: operation.ownerId, auth, snapshot, total, groupIndex };
     // A stack is one call over every member, and unstacking works on stack ids: neither is batched.
     const whole =
       snapshot.action === MediaOperationBulkAction.Stack || snapshot.action === MediaOperationBulkAction.Unstack;
+    // Library Care reads, hashes and may copy whole originals per item (FL-69): small batches keep the
+    // lease, renewed after every batch, well ahead of the work.
+    const batchSize = isMediaHealthBulkAction(snapshot.action) ? MEDIA_HEALTH_BULK_BATCH_SIZE : BULK_BATCH_SIZE;
 
     // The first pass: the frozen set, in order. The count of answered items is the cursor.
     while (processed < total) {
@@ -305,7 +322,9 @@ export class BulkOperationService {
         return;
       }
 
-      const batch = snapshot.assetIds.slice(processed, processed + (whole ? total : BULK_BATCH_SIZE));
+      // a duplicate decision job never splits a group across two batches (FL-61)
+      const size = whole ? total : bulkBatchLength(snapshot.assetIds, processed, batchSize, groupIndex);
+      const batch = snapshot.assetIds.slice(processed, processed + size);
       result = await this.withShiftOrigins(job, result, batch);
       const marked = { ...result, inFlight: { start: processed, size: batch.length } };
       const outcomes = await this.step(job, marked, processed, batch);
@@ -350,7 +369,8 @@ export class BulkOperationService {
       }
 
       const pass = result.retry;
-      const batch = pass.ids.slice(pass.processed, pass.processed + (whole ? pass.ids.length : BULK_BATCH_SIZE));
+      const size = whole ? pass.ids.length : bulkBatchLength(pass.ids, pass.processed, batchSize, groupIndex);
+      const batch = pass.ids.slice(pass.processed, pass.processed + size);
       result = await this.withShiftOrigins(job, result, batch);
       const outcomes = await this.step(
         job,
@@ -402,9 +422,17 @@ export class BulkOperationService {
       return null;
     }
 
+    // Library Care reads, hashes and may copy whole originals (FL-69): one item can outlast the
+    // lease, so the claim is kept alive while the batch is in hand. A lost claim still stops the job
+    // at the next write.
+    const keepAlive = isMediaHealthBulkAction(job.snapshot.action)
+      ? setInterval(() => {
+          this.operations.heartbeat(job.id, job.claimToken, BULK_LEASE_MS).catch(() => false);
+        }, BULK_LEASE_MS / 4)
+      : undefined;
     try {
       await this.requireCredentials(job.ownerId, job.snapshot);
-      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom));
+      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom, job.id));
     } catch (error) {
       if (error instanceof BulkJobError) {
         await this.write(job.id, job.claimToken, withoutInFlight(marked), processed, job.total);
@@ -412,6 +440,8 @@ export class BulkOperationService {
         return null;
       }
       throw error;
+    } finally {
+      clearInterval(keepAlive);
     }
   }
 
@@ -574,14 +604,20 @@ export class BulkOperationService {
    * them and only the rest is sent.
    *
    * `shiftFrom` is the recorded starting date of each item, for a relative date shift only.
+   * `operationId` is the job's own id, which a duplicate decision is recorded against (FL-61).
    */
   async applyBatch(
     auth: AuthDto,
     snapshot: BulkOperationSnapshot,
     batch: string[],
     shiftFrom: BulkOperationResult['shiftFrom'] = {},
+    operationId?: string,
   ): Promise<Outcome[]> {
     await this.requireTarget(auth, snapshot);
+
+    if (isDuplicateDecisionAction(snapshot.action)) {
+      return this.applyDuplicateBatch(auth, snapshot, batch, operationId);
+    }
 
     const { action, payload } = snapshot;
     const outcomes: Outcome[] = [];
@@ -607,7 +643,7 @@ export class BulkOperationService {
     // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
     // locked stack or live photo) is only changed by a job submitted from an unlocked session.
     if (!snapshot.elevated && allowed.length > 0) {
-      const locked = await this.operations.getLockedAssetIds(allowed);
+      const locked = await this.operations.getLockedIds(allowed);
       if (locked.size > 0) {
         for (const id of allowed) {
           if (locked.has(id)) {
@@ -733,9 +769,79 @@ export class BulkOperationService {
         break;
       }
 
+      case MediaOperationBulkAction.RelinkMissingMedia:
+      case MediaOperationBulkAction.RecoverDamagedMedia:
+      case MediaOperationBulkAction.TrashDamagedMedia: {
+        // Library Care (FL-69): one reviewed finding per item, re-read and re-verified now. The
+        // service holds each item to its owner and Locked rules itself (`BULK_ITEM_PERMISSION` is null).
+        const entries = new Map((payload.mediaHealth ?? []).map((entry) => [entry.assetId, entry]));
+        for (const assetId of allowed) {
+          const entry = entries.get(assetId);
+          outcomes.push(
+            entry
+              ? await this.mediaHealth.applyBulkEntry(auth, action, entry)
+              : { id: assetId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+          );
+        }
+        break;
+      }
+
       default: {
         // Every action is handled above; an unknown one is refused rather than guessed at.
         outcomes.push(...allowed.map((id) => refused(id, new Error(`Unsupported bulk action: ${String(action)}`))));
+      }
+    }
+
+    return outcomes;
+  }
+
+  /**
+   * Duplicate review decisions and their undo (FL-61), one complete group at a time.
+   *
+   * A group is decided whole or not at all, so everything about it is answered for the whole group:
+   * a group holding an item locked since a job submitted without the PIN is skipped entirely rather
+   * than decided without that item, and a group's outcome is every member's outcome.
+   */
+  private async applyDuplicateBatch(
+    auth: AuthDto,
+    snapshot: BulkOperationSnapshot,
+    batch: string[],
+    operationId?: string,
+  ): Promise<Outcome[]> {
+    if (!operationId) {
+      return batch.map((id) => refused(id, new Error('A duplicate decision needs the job it belongs to')));
+    }
+
+    const inBatch = new Set(batch);
+    const locked = snapshot.elevated ? new Set<string>() : await this.duplicateDecisions.getLockedIds(batch);
+    const undo = snapshot.action === MediaOperationBulkAction.UndoDuplicates;
+    const outcomes: Outcome[] = [];
+
+    for (const group of parseDuplicateGroups(snapshot.payload.duplicateGroups)) {
+      const ids = group.memberIds.filter((id) => inBatch.has(id));
+      if (ids.length === 0) {
+        continue;
+      }
+
+      if (ids.some((id) => locked.has(id))) {
+        outcomes.push(
+          ...ids.map((id) => ({
+            id,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_locked',
+          })),
+        );
+        continue;
+      }
+
+      try {
+        const answers = undo
+          ? await this.duplicateDecisions.undoGroup(auth, operationId, group)
+          : await this.duplicateDecisions.applyGroup(auth, operationId, group);
+        const byId = new Map(answers.map((answer) => [answer.id, answer]));
+        outcomes.push(...ids.map((id) => byId.get(id) ?? refused(id, new Error('The group did not answer'))));
+      } catch (error) {
+        outcomes.push(...ids.map((id) => refused(id, error)));
       }
     }
 

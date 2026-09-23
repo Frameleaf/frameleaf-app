@@ -15,8 +15,11 @@ import { CliService } from 'src/services/cli.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
+import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
@@ -34,6 +37,7 @@ import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
+import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaOperationSweepService } from 'src/services/media-operation-sweep.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
@@ -44,6 +48,7 @@ import { MediaService } from 'src/services/media.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import { WorkerInventoryService } from 'src/services/worker-inventory.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
@@ -82,6 +87,7 @@ import { TrashService } from 'src/services/trash.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { VersionService } from 'src/services/version.service.js';
+import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { ViewService } from 'src/services/view.service.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
@@ -111,8 +117,11 @@ export const services = [
   CliService,
   DatabaseBackupService,
   DatabaseService,
+  DocumentService,
   DownloadService,
+  DuplicateDecisionService,
   DuplicateService,
+  EnrichmentPlanService,
   ForkCutoverVerificationService,
   ForkHandoffService,
   ForkSchemaCutoverService,
@@ -125,6 +134,7 @@ export const services = [
   LivePhotoService,
   MaintenanceService,
   MapService,
+  MediaHealthOperationService,
   MediaHealthService,
   MediaOperationService,
   MediaOperationSweepService,
@@ -132,6 +142,7 @@ export const services = [
   MediaService,
   MemoryService,
   MlDestinationService,
+  WorkerInventoryService,
   MetadataService,
   NotificationService,
   NotificationAdminService,
@@ -173,6 +184,7 @@ export const services = [
   UserAdminService,
   UserService,
   VersionService,
+  VideoMomentIndexService,
   ViewService,
   WorkflowExecutionService,
   WorkflowService,
