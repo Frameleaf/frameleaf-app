@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import TopBar from '$lib/components/frameleaf/TopBar.svelte';
   import ElevatedSessionToggle from '$lib/components/shared-components/navigation-bar/ElevatedSessionToggle.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
@@ -21,7 +22,7 @@
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
-  import { ActionButton, Button, IconButton, Logo, modalManager } from '@immich/ui';
+  import { ActionButton, Button, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiBellBadge, mdiBellOutline, mdiMagnify, mdiMenu, mdiTrayArrowUp, mdiTune } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -71,6 +72,7 @@
   };
 
   const { Cast } = $derived(getGlobalActions($t));
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <svelte:window bind:innerWidth />
@@ -108,7 +110,12 @@
           class="sidebar:hidden"
         />
         <a data-sveltekit-preload-data="hover" href={Route.photos()}>
-          <Logo variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'} class="max-md:h-12" />
+          <FrameleafLogo
+            variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'}
+            theme={appTheme}
+            size="medium"
+            class="max-md:h-12"
+          />
         </a>
       </div>
       <div class="flex justify-between gap-4 pe-6 lg:gap-8">
