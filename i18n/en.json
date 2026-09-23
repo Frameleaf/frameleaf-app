@@ -1838,6 +1838,7 @@
   "frameleaf_albums_view_grid": "Grid view",
   "frameleaf_albums_view_list": "List view",
   "frameleaf_archive_name_album": "Album",
+  "frameleaf_archive_name_and_n_more": "and {count, number} more",
   "frameleaf_archive_name_archive": "Archive",
   "frameleaf_archive_name_best_photos": "Best photos",
   "frameleaf_archive_name_favorites": "Favorites",
