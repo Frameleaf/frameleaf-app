@@ -47768,6 +47768,10 @@
             "description": "User password",
             "example": "password",
             "type": "string"
+          },
+          "rememberMe": {
+            "description": "Persist authentication cookies across browser sessions (default true)",
+            "type": "boolean"
           }
         },
         "required": [
@@ -52422,6 +52426,10 @@
           "codeVerifier": {
             "description": "OAuth code verifier (PKCE)",
             "type": "string"
+          },
+          "rememberMe": {
+            "description": "Persist authentication cookies across browser sessions (default true)",
+            "type": "boolean"
           },
           "state": {
             "description": "OAuth state parameter",
