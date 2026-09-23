@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
-import { UserPreferences } from 'src/types.js';
+import type { FrameleafUserPreferences } from 'src/utils/preferences.js';
 
 const AlbumsUpdateSchema = z
   .object({
@@ -95,6 +95,12 @@ const PurchaseUpdateSchema = z
 const CastUpdateSchema = z
   .object({
     gCastEnabled: z.boolean().optional().describe('Whether Google Cast is enabled'),
+    adminDisabled: z
+      .boolean()
+      .optional()
+      .describe(
+        'Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences',
+      ),
   })
   .optional()
   .meta({ id: 'CastUpdate' });
@@ -219,7 +225,10 @@ const PurchaseResponseSchema = z
 
 const CastResponseSchema = z
   .object({
-    gCastEnabled: z.boolean().describe('Whether Google Cast is enabled'),
+    gCastEnabled: z
+      .boolean()
+      .describe('Whether Google Cast is enabled (always false while an administrator has turned casting off)'),
+    adminDisabled: z.boolean().describe('Whether an administrator has turned casting off for this user'),
   })
   .meta({ id: 'CastResponse' });
 
@@ -265,6 +274,12 @@ const UserPreferencesResponseSchema = z
 export class UserPreferencesUpdateDto extends createZodDto(UserPreferencesUpdateSchema) {}
 export class UserPreferencesResponseDto extends createZodDto(UserPreferencesResponseSchema) {}
 
-export const mapPreferences = (preferences: UserPreferences): UserPreferencesResponseDto => {
-  return preferences;
+export const mapPreferences = (preferences: FrameleafUserPreferences): UserPreferencesResponseDto => {
+  // FL-77: an administrator's decision wins over the user's own casting choice, which stays
+  // stored so it applies again once casting is allowed.
+  const { gCastEnabled, adminDisabled } = preferences.cast;
+  return {
+    ...preferences,
+    cast: { gCastEnabled: gCastEnabled && !adminDisabled, adminDisabled },
+  };
 };

@@ -931,7 +931,9 @@ export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
 };
 export type CastResponse = {
-    /** Whether Google Cast is enabled */
+    /** Whether an administrator has turned casting off for this user */
+    adminDisabled: boolean;
+    /** Whether Google Cast is enabled (always false while an administrator has turned casting off) */
     gCastEnabled: boolean;
 };
 export type DownloadResponse = {
@@ -1031,6 +1033,8 @@ export type AvatarUpdate = {
     color?: UserAvatarColor;
 };
 export type CastUpdate = {
+    /** Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences */
+    adminDisabled?: boolean;
     /** Whether Google Cast is enabled */
     gCastEnabled?: boolean;
 };
