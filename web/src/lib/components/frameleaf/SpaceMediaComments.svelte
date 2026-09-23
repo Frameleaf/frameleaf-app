@@ -23,7 +23,16 @@
     type SharedSpaceMemberResponseDto,
   } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
-  import { mdiChevronDown, mdiChevronUp, mdiClose, mdiDeleteOutline, mdiPencilOutline, mdiReply } from '@mdi/js';
+  import {
+    mdiChevronDown,
+    mdiChevronUp,
+    mdiClose,
+    mdiDeleteOutline,
+    mdiHeart,
+    mdiHeartOutline,
+    mdiPencilOutline,
+    mdiReply,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -48,10 +57,16 @@
     assetId?: string;
     /** False when the owner has turned comments off; what is there stays readable. */
     canComment?: boolean;
+    /**
+     * Likes on the same thing, when the host has them to offer (the album view of a space likes the
+     * space itself; the viewer keeps its own like button in its top bar).
+     */
+    likes?: { count: number; liked: boolean; onToggle: () => void | Promise<void> };
+    /** Closes the panel; Escape inside the panel does the same. */
     onClose?: () => void;
   }
 
-  let { spaceId, assetId, canComment = true, onClose }: Props = $props();
+  let { spaceId, assetId, canComment = true, likes, onClose }: Props = $props();
 
   let comments = $state<SharedSpaceCommentResponseDto[]>([]);
   let members = $state<SharedSpaceMemberResponseDto[]>([]);
@@ -315,7 +330,18 @@
   </div>
 {/snippet}
 
-<aside class="comments" aria-label={$t('frameleaf_spaces_comments_title')} aria-busy={loading}>
+<aside
+  class="comments"
+  aria-label={$t('frameleaf_spaces_comments_title')}
+  aria-busy={loading}
+  onkeydown={(event) => {
+    // A composer that is replying or editing handles Escape itself first.
+    if (event.key === 'Escape' && onClose) {
+      event.stopPropagation();
+      onClose();
+    }
+  }}
+>
   <header>
     <h2>{$t('frameleaf_spaces_comments_title')}</h2>
     {#if onClose}
@@ -324,6 +350,27 @@
       </button>
     {/if}
   </header>
+
+  {#if likes}
+    <div class="likes">
+      <button
+        type="button"
+        class="like"
+        class:on={likes.liked}
+        aria-pressed={likes.liked}
+        disabled={!canComment}
+        onclick={() => void likes?.onToggle()}
+      >
+        <Icon icon={likes.liked ? mdiHeart : mdiHeartOutline} size="18" aria-hidden={true} />
+        <span>{likes.liked ? $t('frameleaf_album_activity_liked_label') : $t('frameleaf_album_activity_like')}</span>
+      </button>
+      <span class="count">
+        {likes.count === 0
+          ? $t('frameleaf_album_activity_no_likes')
+          : $t('frameleaf_album_activity_like_count', { values: { count: likes.count } })}
+      </span>
+    </div>
+  {/if}
 
   {#if failed}
     <p class="muted">{$t('frameleaf_spaces_comments_error')}</p>
@@ -433,6 +480,37 @@
     border-radius: 999px;
     background: transparent;
     color: var(--fl-text);
+  }
+  .likes {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-block-end: 1px solid var(--fl-border);
+  }
+  .like {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0 0.75rem;
+    min-height: 36px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .like.on {
+    border-color: var(--fl-accent);
+    color: var(--fl-accent);
+  }
+  .like:disabled {
+    opacity: 0.6;
+  }
+  .likes .count {
+    color: var(--fl-muted);
+    font-size: 0.8125rem;
   }
   ol {
     margin: 0;
