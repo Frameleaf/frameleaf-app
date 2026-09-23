@@ -386,7 +386,10 @@ export class PreservationService {
   /** The manifest alone, for a person who wants to read what a package holds before downloading it. */
   async downloadManifest(auth: AuthDto, id: string): Promise<ImmichReadStream> {
     const found = await this.findDownloadable(auth, id);
-    const stream = await this.storage.createReadStream(`${found.path}/${PRESERVATION_MANIFEST_ENTRY}`, 'application/json');
+    const stream = await this.storage.createReadStream(
+      `${found.path}/${PRESERVATION_MANIFEST_ENTRY}`,
+      'application/json',
+    );
     return { ...stream, disposition: 'attachment; filename="manifest.json"' };
   }
 
@@ -430,7 +433,9 @@ export class PreservationService {
       this.repository.latestOperations(auth.user.id, 'packageId', ids),
     ]);
     return Promise.all(
-      packages.map((item) => this.mapPackage(auth, item, { counts: counts.get(item.id), operation: operations.get(item.id) })),
+      packages.map((item) =>
+        this.mapPackage(auth, item, { counts: counts.get(item.id), operation: operations.get(item.id) }),
+      ),
     );
   }
 
@@ -439,7 +444,11 @@ export class PreservationService {
   }
 
   /** The item report. A Locked item is counted and shown by state, never named, until the session is unlocked. */
-  async getPackageItems(auth: AuthDto, id: string, dto: PreservationItemsQueryDto): Promise<PreservationItemsResponseDto> {
+  async getPackageItems(
+    auth: AuthDto,
+    id: string,
+    dto: PreservationItemsQueryDto,
+  ): Promise<PreservationItemsResponseDto> {
     const found = await this.findPackage(auth, id);
     const { items, total } = await this.repository.listItems(found.id, {
       state: dto.state,
@@ -566,7 +575,11 @@ export class PreservationService {
     }
 
     const found = await this.findPackage(auth, dto.packageId);
-    if (found.removedAt || found.status === 'unreadable' || (found.origin === 'export' && found.status === 'building')) {
+    if (
+      found.removedAt ||
+      found.status === 'unreadable' ||
+      (found.origin === 'export' && found.status === 'building')
+    ) {
       throw new BadRequestException('This package cannot be restored; verify it first');
     }
     if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) {
@@ -643,7 +656,11 @@ export class PreservationService {
    * keeps what was done with it, and anything changed on it since. A Locked item's choices can only
    * be made from an unlocked session, as it could only be seen from one.
    */
-  async updateDecisions(auth: AuthDto, id: string, dto: PreservationDecisionsUpdateDto): Promise<PreservationRestoreDto> {
+  async updateDecisions(
+    auth: AuthDto,
+    id: string,
+    dto: PreservationDecisionsUpdateDto,
+  ): Promise<PreservationRestoreDto> {
     const found = await this.findRestore(auth, id);
     if (found.status === 'reviewing' || found.status === 'unreadable') {
       throw new BadRequestException('Wait for the review to finish');
@@ -840,11 +857,10 @@ export class PreservationService {
       operation?: MediaOperation;
     },
   ): Promise<PreservationPackageDto> {
-    const counts =
-      preloaded?.counts ?? (preloaded ? undefined : (await this.repository.countItems([item.id])).get(item.id));
-    const operation =
-      preloaded?.operation ??
-      (preloaded ? undefined : (await this.repository.latestOperations(auth.user.id, 'packageId', [item.id])).get(item.id));
+    const counts = preloaded ? preloaded.counts : (await this.repository.countItems([item.id])).get(item.id);
+    const operation = preloaded
+      ? preloaded.operation
+      : (await this.repository.latestOperations(auth.user.id, 'packageId', [item.id])).get(item.id);
     const states = counts?.states ?? {};
     const manifest = asRecord(item.manifest);
     const manifestCounts = asRecord(manifest.counts);

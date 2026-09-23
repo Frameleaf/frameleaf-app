@@ -24,7 +24,10 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { PreservationFileRepository, PreservationPackageSource } from 'src/repositories/preservation-files.repository.js';
+import {
+  PreservationFileRepository,
+  PreservationPackageSource,
+} from 'src/repositories/preservation-files.repository.js';
 import {
   PreservationItem,
   PreservationPackage,
@@ -384,7 +387,10 @@ export class PreservationWorkerService {
       throw new PreservationPackageError('package_unavailable', 'The package is gone');
     }
     if (!(await this.users.get(found.ownerId, { withDeleted: false }))) {
-      throw new PreservationPackageError('owner_unavailable', 'The account that asked for this package no longer exists');
+      throw new PreservationPackageError(
+        'owner_unavailable',
+        'The account that asked for this package no longer exists',
+      );
     }
 
     const result = { phase: 'copying', packageId: found.id, copied: 0, failed: 0, skipped: 0 };
@@ -401,7 +407,12 @@ export class PreservationWorkerService {
       }
       let after: string | null = null;
       for (;;) {
-        const page: PreservationItem[] = await this.repository.exportWork(found.id, after, PAGE, PRESERVATION_ITEM_ATTEMPTS);
+        const page: PreservationItem[] = await this.repository.exportWork(
+          found.id,
+          after,
+          PAGE,
+          PRESERVATION_ITEM_ATTEMPTS,
+        );
         if (page.length === 0) {
           break;
         }
@@ -543,7 +554,10 @@ export class PreservationWorkerService {
           ? { reason: lock.reason as NonNullable<PreservationSidecar['lock']>['reason'], lockedAt: iso(lock.lockedAt) }
           : null,
       location:
-        asset.latitude === null || asset.longitude === null || asset.latitude === undefined || asset.longitude === undefined
+        asset.latitude === null ||
+        asset.longitude === null ||
+        asset.latitude === undefined ||
+        asset.longitude === undefined
           ? null
           : {
               latitude: asset.latitude,
@@ -552,7 +566,9 @@ export class PreservationWorkerService {
               state: asset.state?.slice(0, 1024) ?? null,
               country: asset.country?.slice(0, 1024) ?? null,
             },
-      description: enrichment.manual ? { text: enrichment.manual.slice(0, 65_536), source: 'manual', model: null } : null,
+      description: enrichment.manual
+        ? { text: enrichment.manual.slice(0, 65_536), source: 'manual', model: null }
+        : null,
       rating: asset.rating ?? null,
       camera: {
         make: asset.make?.slice(0, 1024) ?? null,
@@ -645,7 +661,9 @@ export class PreservationWorkerService {
       const sidecar = await this.enrichment.get(assetId);
       metadata = sidecar ? asRecord(sidecar.provenance) : null;
       manual = sidecar?.userDescription?.trim() ? sidecar.userDescription : splitDescription(description).manual;
-      generated = sidecar?.generatedDescription ? [sidecar.generatedDescription] : splitDescription(description).generated;
+      generated = sidecar?.generatedDescription
+        ? [sidecar.generatedDescription]
+        : splitDescription(description).generated;
     } else {
       const row = await this.repository.getEnrichmentMetadata(assetId);
       metadata = row ? asRecord(row.value) : null;
@@ -854,7 +872,7 @@ export class PreservationWorkerService {
     const seen = new Set<string>();
     const expectedNames = new Set<string>([PRESERVATION_MANIFEST_ENTRY, ...Object.keys(manifest.files)]);
     let batch: PreservationEntry[] = [];
-    const digest = await this.files.readLines(source, PRESERVATION_INDEX_ENTRY, PRESERVATION_MAX_INDEX_LINE_BYTES, async (line) => {
+    const each = async (line: string) => {
       if (!line.trim()) {
         return;
       }
@@ -877,7 +895,13 @@ export class PreservationWorkerService {
         batch = [];
         await onBatch(full);
       }
-    });
+    };
+    const digest = await this.files.readLines(
+      source,
+      PRESERVATION_INDEX_ENTRY,
+      PRESERVATION_MAX_INDEX_LINE_BYTES,
+      each,
+    );
     if (batch.length > 0) {
       await onBatch(batch);
     }
@@ -891,7 +915,10 @@ export class PreservationWorkerService {
   }
 
   /** Check one original (and its sidecar) against the index. */
-  private async checkItem(source: PreservationPackageSource, entry: PreservationEntry): Promise<'ok' | 'missing' | 'changed'> {
+  private async checkItem(
+    source: PreservationPackageSource,
+    entry: PreservationEntry,
+  ): Promise<'ok' | 'missing' | 'changed'> {
     try {
       const digests = await source.stream(entry.original.path);
       if (
@@ -996,7 +1023,12 @@ export class PreservationWorkerService {
         } catch (error) {
           if (error instanceof PreservationPackageError) {
             await this.recordUnreadable(found, operation.id, error.code);
-            await this.finish(operation.id, claimToken, { ...result, phase: 'done', status: 'unreadable', reasonKey: error.code }, 0);
+            await this.finish(
+              operation.id,
+              claimToken,
+              { ...result, phase: 'done', status: 'unreadable', reasonKey: error.code },
+              0,
+            );
             return;
           }
           throw error;
@@ -1110,10 +1142,13 @@ export class PreservationWorkerService {
         }
         try {
           const manifest = await this.readManifest(source);
-          const albums = (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
+          const albums =
+            (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
           orderPreservationAlbums(albums);
-          const people = (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
-          const tags = (await this.readCollection(source, manifest, PRESERVATION_TAGS_ENTRY, PreservationTagsSchema)) ?? [];
+          const people =
+            (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
+          const tags =
+            (await this.readCollection(source, manifest, PRESERVATION_TAGS_ENTRY, PreservationTagsSchema)) ?? [];
           await this.readIndex(source, manifest, (entries) =>
             this.repository.addRestoreItems(
               restore.id,
@@ -1255,7 +1290,10 @@ export class PreservationWorkerService {
     }
     const auth = await this.ownerAuth(restore.ownerId);
     if (!auth) {
-      throw new PreservationPackageError('owner_unavailable', 'The account that asked for this restoration no longer exists');
+      throw new PreservationPackageError(
+        'owner_unavailable',
+        'The account that asked for this restoration no longer exists',
+      );
     }
     await this.repository.updateRestore(restore.id, { status: 'restoring' });
 
@@ -1278,8 +1316,10 @@ export class PreservationWorkerService {
       if (identity !== manifest.packageId) {
         throw new PreservationPackageError('package_changed', 'The package is not the one that was reviewed');
       }
-      const albums = (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
-      const people = (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
+      const albums =
+        (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
+      const people =
+        (await this.readCollection(source, manifest, PRESERVATION_PEOPLE_ENTRY, PreservationPeopleSchema)) ?? [];
 
       const context: RestoreContext = {
         auth,
@@ -1342,7 +1382,10 @@ export class PreservationWorkerService {
           progress: preservationProgress(done, total),
           leaseMs: PRESERVATION_LEASE_MS,
         });
-        if (written && (await this.operations.requeue(operation.id, claimToken, { delayMs: PRESERVATION_EDIT_WAIT_MS }))) {
+        if (
+          written &&
+          (await this.operations.requeue(operation.id, claimToken, { delayMs: PRESERVATION_EDIT_WAIT_MS }))
+        ) {
           return;
         }
         if (written && (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt)) {
@@ -1371,7 +1414,10 @@ export class PreservationWorkerService {
    * intent to add is recorded before the upload, so a retry after a crash recognizes the asset it
    * made instead of treating it as one the owner already had.
    */
-  private async restoreItem(context: RestoreContext, item: PreservationRestoreItem): Promise<'restored' | 'matched' | 'failed'> {
+  private async restoreItem(
+    context: RestoreContext,
+    item: PreservationRestoreItem,
+  ): Promise<'restored' | 'matched' | 'failed'> {
     await this.repository.updateRestoreItem(item.id, { attempt: true });
     try {
       const entry = PreservationEntrySchema.parse(item.entry);
@@ -1388,7 +1434,10 @@ export class PreservationWorkerService {
         created =
           !!item.creatingAt && new Date(live.createdAt).getTime() >= new Date(item.creatingAt).getTime() - 1000;
       } else if (rows.some((row) => row.deletedAt)) {
-        throw new PreservationPackageError('asset_in_trash', 'The library holds this original in the trash; restore it from the trash first');
+        throw new PreservationPackageError(
+          'asset_in_trash',
+          'The library holds this original in the trash; restore it from the trash first',
+        );
       }
 
       if (!assetId) {
@@ -1427,7 +1476,10 @@ export class PreservationWorkerService {
           },
         );
         if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(response.id)) {
-          throw new PreservationPackageError('asset_hidden', 'The library holds this original where it cannot be matched');
+          throw new PreservationPackageError(
+            'asset_hidden',
+            'The library holds this original where it cannot be matched',
+          );
         }
         assetId = response.id;
         created = response.status === AssetMediaStatus.CREATED;
@@ -1473,7 +1525,9 @@ export class PreservationWorkerService {
     if (!library) {
       throw new PreservationPackageError('asset_unavailable', 'The restored original is gone');
     }
-    const comparison = created ? null : compareWithLibrary(sidecar, library, { restoreEditRecipes: context.restoreEditRecipes });
+    const comparison = created
+      ? null
+      : compareWithLibrary(sidecar, library, { restoreEditRecipes: context.restoreEditRecipes });
     const fields = fieldsToRestore({
       created,
       comparison,
@@ -1489,7 +1543,9 @@ export class PreservationWorkerService {
     const description = manualDescription(sidecar);
     if (fields.has('description') && description) {
       // The library's own generated paragraphs stay: they were not the package's to replace.
-      const kept = splitDescription(library.description).generated.map((text) => `${GENERATED_DESCRIPTION_MARK} ${text}`);
+      const kept = splitDescription(library.description).generated.map(
+        (text) => `${GENERATED_DESCRIPTION_MARK} ${text}`,
+      );
       patch.description = [description, ...kept].join('\n\n');
     }
     if (fields.has('location') && sidecar.location) {
@@ -1600,7 +1656,10 @@ export class PreservationWorkerService {
       return 'edit_recipe_unsupported';
     }
     const current = await this.repository.getEditRecipe(assetId);
-    if (canonicalJson(current.map(({ action, parameters }) => ({ action, parameters }))) === canonicalJson(sidecar.edits.recipe)) {
+    if (
+      canonicalJson(current.map(({ action, parameters }) => ({ action, parameters }))) ===
+      canonicalJson(sidecar.edits.recipe)
+    ) {
       return 'applied';
     }
     try {
@@ -1631,7 +1690,14 @@ export class PreservationWorkerService {
         findings.add('person_not_restored');
         continue;
       }
-      const region = { x1: face.x1, y1: face.y1, x2: face.x2, y2: face.y2, width: face.imageWidth, height: face.imageHeight };
+      const region = {
+        x1: face.x1,
+        y1: face.y1,
+        x2: face.x2,
+        y2: face.y2,
+        width: face.imageWidth,
+        height: face.imageHeight,
+      };
       const match = existing.find(
         (candidate) =>
           candidate.imageWidth > 0 &&
@@ -1704,12 +1770,19 @@ export class PreservationWorkerService {
       try {
         await this.stacks.create(context.auth, { assetIds: ordered });
       } catch (error) {
-        this.logger.warn(`Preservation restore ${context.restore.id}: a stack could not be restored: ${describe(error)}`);
+        this.logger.warn(
+          `Preservation restore ${context.restore.id}: a stack could not be restored: ${describe(error)}`,
+        );
       }
     }
   }
 
-  private async linkLivePhoto(context: RestoreContext, item: PreservationRestoreItem, photoId: string, sourceMotionId: string) {
+  private async linkLivePhoto(
+    context: RestoreContext,
+    item: PreservationRestoreItem,
+    photoId: string,
+    sourceMotionId: string,
+  ) {
     const motion = await this.repository.getRestoreItemBySource(context.restore.id, sourceMotionId);
     const photo = await this.repository.getOwnedAsset(photoId, context.ownerId);
     if (!photo || !motion?.assetId || !motion.appliedAt) {
@@ -1726,7 +1799,9 @@ export class PreservationWorkerService {
     try {
       await this.assets.update(context.auth, photoId, { livePhotoVideoId: motion.assetId });
     } catch (error) {
-      this.logger.warn(`Preservation restore ${context.restore.id}: a Live Photo could not be paired: ${describe(error)}`);
+      this.logger.warn(
+        `Preservation restore ${context.restore.id}: a Live Photo could not be paired: ${describe(error)}`,
+      );
       await this.addFinding(item, 'live_photo_incomplete');
     }
   }
@@ -1767,7 +1842,10 @@ export class PreservationWorkerService {
           waiting++;
           continue;
         }
-        const next = outcome === 'applied' ? others : [...others, outcome === FINDING_EDIT_WAITING ? 'edit_recipe_not_applied' : outcome];
+        const next =
+          outcome === 'applied'
+            ? others
+            : [...others, outcome === FINDING_EDIT_WAITING ? 'edit_recipe_not_applied' : outcome];
         await this.repository.updateRestoreItem(item.id, { findings: next });
       }
     }
@@ -1780,7 +1858,11 @@ export class PreservationWorkerService {
    * package created, then the owner's only album with the same name in the same place. Only then a
    * new one, with an id derived from the package, so a retry finds it.
    */
-  private async ensureAlbums(ownerId: string, identity: string, albums: PreservationAlbum[]): Promise<Map<string, string>> {
+  private async ensureAlbums(
+    ownerId: string,
+    identity: string,
+    albums: PreservationAlbum[],
+  ): Promise<Map<string, string>> {
     const mapped = new Map<string, string>();
     const byId = new Map(albums.map((album) => [album.id, album]));
     for (const album of orderPreservationAlbums(albums)) {
@@ -1826,7 +1908,11 @@ export class PreservationWorkerService {
   }
 
   /** People for a restoration, found or created the same way as albums. */
-  private async ensurePeople(ownerId: string, identity: string, people: PreservationPerson[]): Promise<Map<string, string>> {
+  private async ensurePeople(
+    ownerId: string,
+    identity: string,
+    people: PreservationPerson[],
+  ): Promise<Map<string, string>> {
     const mapped = new Map<string, string>();
     for (const person of people) {
       if (await this.repository.getOwnedPerson(ownerId, person.id)) {

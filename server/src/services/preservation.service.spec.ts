@@ -156,7 +156,9 @@ describe(PreservationService.name, () => {
     };
     files = {
       freeBytes: vi.fn().mockResolvedValue(5000),
-      ownerFolders: vi.fn().mockReturnValue(['/media/exports/owner/preservation', '/media/exports/owner/preservation-uploads']),
+      ownerFolders: vi
+        .fn()
+        .mockReturnValue(['/media/exports/owner/preservation', '/media/exports/owner/preservation-uploads']),
       exportFolder: vi.fn((ownerId: string, id: string) => `/media/exports/${ownerId}/preservation/${id}`),
       removeDirectory: vi.fn(),
       removeFile: vi.fn(),
@@ -185,7 +187,13 @@ describe(PreservationService.name, () => {
   describe('preview', () => {
     it('never tells an ordinary session how much of its library is Locked', async () => {
       const preview = await sut.preview(owner, { includeLocked: true });
-      expect(preview).toMatchObject({ items: 10, lockedItems: 0, lockedBytes: '0', includedItems: 10, lockedAllowed: false });
+      expect(preview).toMatchObject({
+        items: 10,
+        lockedItems: 0,
+        lockedBytes: '0',
+        includedItems: 10,
+        lockedAllowed: false,
+      });
     });
 
     it('counts Locked items for an unlocked session that includes them', async () => {
@@ -220,7 +228,12 @@ describe(PreservationService.name, () => {
       });
 
       const [input, pathFor, selection, includeLocked, maxItems] = repository.createExport.mock.calls[0];
-      expect(input).toMatchObject({ ownerId: owner.user.id, origin: 'export', includeLocked: true, includeMetadata: true });
+      expect(input).toMatchObject({
+        ownerId: owner.user.id,
+        origin: 'export',
+        includeLocked: true,
+        includeMetadata: true,
+      });
       expect(pathFor('package-1')).toBe(`/media/exports/${owner.user.id}/preservation/package-1`);
       expect(selection).toEqual({ filter: { isFavorite: { eq: true } } });
       expect(includeLocked).toBe(true);
@@ -284,7 +297,13 @@ describe(PreservationService.name, () => {
       const report = await sut.getPackageItems(owner, found.id, {});
 
       expect(report.total).toBe(1);
-      expect(report.items[0]).toMatchObject({ name: null, sourceAssetId: null, sha256: null, locked: true, state: 'copied' });
+      expect(report.items[0]).toMatchObject({
+        name: null,
+        sourceAssetId: null,
+        sha256: null,
+        locked: true,
+        state: 'copied',
+      });
 
       const revealed = await sut.getPackageItems(unlocked, found.id, {});
       expect(revealed.items[0].name).toBe('private.jpg');
@@ -293,9 +312,8 @@ describe(PreservationService.name, () => {
     it('states the restoration support of a package without metadata as originals only', () => {
       const support = preservationSupportFor(false);
       expect(support.find((item) => item.category === 'originals')?.level).toBe('restored');
-      expect(support.filter((item) => item.category !== 'originals').every((item) => item.level === 'not-included')).toBe(
-        true,
-      );
+      const others = support.filter((item) => item.category !== 'originals');
+      expect(others.every((item) => item.level === 'not-included')).toBe(true);
     });
   });
 
@@ -427,7 +445,10 @@ describe(PreservationService.name, () => {
     it('answers a second restore request with the job already running', async () => {
       const restore = restoreOf();
       repository.getRestore.mockResolvedValue(restore);
-      const running = operationOf({ kind: MediaOperationKind.PreservationRestore, status: MediaOperationStatus.Rendering });
+      const running = operationOf({
+        kind: MediaOperationKind.PreservationRestore,
+        status: MediaOperationStatus.Rendering,
+      });
       repository.activeOperation.mockResolvedValue(running);
 
       const result = await sut.applyRestore(owner, restore.id);
@@ -447,8 +468,9 @@ describe(PreservationService.name, () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(repository.setDecisions).not.toHaveBeenCalled();
 
-      await sut.updateDecisions(unlocked, restore.id, { items: [{ id: itemId, decisions: { description: 'replace' } }] });
-      expect(repository.setDecisions).toHaveBeenCalledWith(restore.id, [{ id: itemId, decisions: { description: 'replace' } }]);
+      const items = [{ id: itemId, decisions: { description: 'replace' as const } }];
+      await sut.updateDecisions(unlocked, restore.id, { items });
+      expect(repository.setDecisions).toHaveBeenCalledWith(restore.id, items);
     });
 
     it('keeps choices while a restore runs, and accepts them while it is paused', async () => {

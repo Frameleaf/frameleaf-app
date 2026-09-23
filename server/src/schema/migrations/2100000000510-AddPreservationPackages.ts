@@ -131,7 +131,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   CONSTRAINT "preservation_restore_item_restoreId_sourceAssetId_uq" UNIQUE ("restoreId", "sourceAssetId"),
   CONSTRAINT "preservation_restore_item_pkey" PRIMARY KEY ("id")
 );`.execute(db);
-  await sql`CREATE INDEX "preservation_restore_item_assetId_idx" ON "preservation_restore_item" ("assetId");`.execute(db);
+  await sql`CREATE INDEX "preservation_restore_item_assetId_idx" ON "preservation_restore_item" ("assetId");`.execute(
+    db,
+  );
   await sql`CREATE INDEX "preservation_restore_item_restoreId_state_idx" ON "preservation_restore_item" ("restoreId", "state");`.execute(
     db,
   );
