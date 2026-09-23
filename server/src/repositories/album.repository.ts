@@ -669,16 +669,29 @@ export class AlbumRepository {
 
   /**
    * Get per-user asset contribution counts for a single album.
-   * Excludes deleted assets and, like every album read, media the viewer may not see; orders by count desc.
+   * Excludes deleted assets; orders by count desc.
+   *
+   * Hidden items (such as the video half of a Live Photo) still count toward the person who added
+   * them (owner decision, September 22, 2026), so this does not use `withAlbumVisibility`. Locked
+   * media counts only for its owner in an elevated session (`lockedOwnerId`); anyone else's Locked
+   * media never counts, so the numbers never reveal it.
    */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getContributorCounts(id: string, options: AlbumReadOptions = {}) {
+    const { lockedOwnerId } = options;
     return this.db
       .selectFrom('album_asset')
       .innerJoin('asset', 'asset.id', 'assetId')
       .where('asset.deletedAt', 'is', sql.lit(null))
       .where('album_asset.albumId', '=', id)
-      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+      .where((eb) =>
+        lockedOwnerId
+          ? eb.or([
+              eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+              eb('asset.ownerId', '=', lockedOwnerId),
+            ])
+          : eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+      )
       .$call((qb) => withHiddenContentFilter(qb, options))
       .select('asset.ownerId as userId')
       .select((eb) => eb.fn.countAll<number>().as('assetCount'))
