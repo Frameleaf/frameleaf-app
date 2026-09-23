@@ -22,7 +22,6 @@
   import { canEdit, defaultIconFor, isOwner, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import MapModal from '$lib/modals/MapModal.svelte';
   import { Route } from '$lib/route';
   import {
     handleCreateAlbumEntry,
@@ -33,7 +32,6 @@
   } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { navigate } from '$lib/utils/navigation';
   import {
     AlbumKind,
     getAlbumMapMarkers,
@@ -46,7 +44,7 @@
     type CreateAlbumDto,
     type MapMarkerResponseDto,
   } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
     mdiAccountCircleOutline,
     mdiAccountMultipleOutline,
@@ -246,12 +244,9 @@
     return true;
   };
 
-  const openMap = async () => {
-    const assetIds = await modalManager.show(MapModal, { mapMarkers });
-    if (assetIds?.[0]) {
-      await navigate({ targetRoute: 'current', assetId: assetIds[0] });
-    }
-  };
+  // The prototype opens the Map screen scoped to this album (App.jsx `setMapScope("collection")`),
+  // not a dialog over the album.
+  const openMap = () => goto(Route.mapAlbum({ id: album.id }));
 
   const createChildAlbum = async (dto: CreateAlbumDto) => {
     const created = await handleCreateAlbumEntry(dto);
@@ -442,11 +437,11 @@
         {/snippet}
         <MenuItem onSelect={() => onAddPhotos?.()}>
           <Icon icon={mdiImageMultipleOutline} size="18" />
-          {$t('select_photos')}
+          {$t('frameleaf_album_select_from_library')}
         </MenuItem>
         <MenuItem onSelect={() => void upload()}>
           <Icon icon={mdiUpload} size="18" />
-          {$t('select_from_computer')}
+          {$t('frameleaf_album_upload_from_computer')}
         </MenuItem>
       </Menu>
     {/if}

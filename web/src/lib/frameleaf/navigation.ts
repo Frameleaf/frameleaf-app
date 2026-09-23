@@ -98,6 +98,8 @@ const LIBRARY_ROOTS = [
   Route.bestPhotos(),
   Route.archive(),
   Route.locked(),
+  // Unlinked (FL-83): the rule-suppressed listing stays reachable by URL, PIN-guarded, until the
+  // Locked view becomes the prototype's union of lock records and rule matches (FL-34).
   Route.suppressed(),
   Route.pets(),
   Route.documents(),
@@ -266,10 +268,9 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
         destination('recentlyAdded', 'recently_added', mdiClockOutline, Route.recentlyAdded()),
         destination('bestPhotos', 'best_photos', mdiStarOutline, Route.bestPhotos()),
         destination('archive', 'archive', mdiArchiveArrowDownOutline, Route.archive()),
-        // Frameleaf "Locked" is the filtered timeline of media marked sensitive, backed
-        // by the elevated session. It is not the upstream move-to-Locked folder, which
-        // relocates assets and stays reachable on its own route.
-        destination('locked', 'frameleaf_locked', mdiShieldLockOutline, Route.suppressed()),
+        // The one Locked view (FL-34): every item its owner locked, whatever locked it, behind
+        // the PIN. Locking is metadata; nothing is relocated.
+        destination('locked', 'frameleaf_locked', mdiShieldLockOutline, Route.locked()),
       ],
     },
     {

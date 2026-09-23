@@ -1,7 +1,6 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { getPagesProvider, getSettingsProvider } from '$lib/commands';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
@@ -18,19 +17,12 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
+  import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
   import { getServerConfig } from '@immich/sdk';
   import {
-    CommandPaletteProvider,
-    CORE_PAGE_COMMANDS,
-    defaultProvider,
-    MOBILE_APP_COMMANDS,
     modalManager,
-    OTHER_SITE_COMMANDS,
-    PROJECT_SUPPORT_COMMANDS,
-    ScreencastOverlay,
     setLocale,
     setTranslations,
-    SOCIAL_COMMANDS,
     Theme,
     themeManager,
     toastManager,
@@ -173,7 +165,8 @@
   onMount(() => {
     const element = document.querySelector('#stencil');
     element?.remove();
-    // if the browser theme changes, changes the Frameleaf theme too
+    // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
+    return installSearchShortcuts();
   });
 
   eventManager.emit('AppInit');
@@ -272,17 +265,4 @@
     <DownloadPanel />
     <UploadPanel />
   </PanelDock>
-  <ScreencastOverlay />
-
-  <CommandPaletteProvider
-    providers={[
-      getPagesProvider($t),
-      getSettingsProvider($t),
-      defaultProvider({ name: $t('documentation'), types: ['doc', 'documentation'], actions: CORE_PAGE_COMMANDS }),
-      defaultProvider({ name: $t('support'), actions: PROJECT_SUPPORT_COMMANDS }),
-      defaultProvider({ name: 'Socials', types: ['social', 'socials'], actions: SOCIAL_COMMANDS }),
-      defaultProvider({ name: $t('mobile_app'), actions: MOBILE_APP_COMMANDS }),
-      defaultProvider({ name: 'Sites', types: ['site', 'sites'], actions: OTHER_SITE_COMMANDS }),
-    ]}
-  />
 </TooltipProvider>
