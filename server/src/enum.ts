@@ -1958,6 +1958,45 @@ export const SharedSpaceEventTypeSchema = z
   .describe('Shared space event type')
   .meta({ id: 'SharedSpaceEventType' });
 
+/**
+ * What an administrator did to an account or to one of its libraries (FL-76). Recorded in
+ * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
+ */
+export enum AdminAuditAction {
+  AccountCreated = 'account-created',
+  /** Name, email, avatar colour or the require-password-change flag. */
+  AccountUpdated = 'account-updated',
+  AdminGranted = 'admin-granted',
+  AdminRevoked = 'admin-revoked',
+  /** `detail` is the new quota in bytes, or null for unlimited. */
+  QuotaChanged = 'quota-changed',
+  /** `detail` is the new storage label, or null for automatic. */
+  StorageLabelChanged = 'storage-label-changed',
+  /** `detail` is `change-required` when the account must choose a new password at sign-in. */
+  PasswordReset = 'password-reset',
+  PinSet = 'pin-set',
+  PinReset = 'pin-reset',
+  /** `detail` is the signed-out device, as the session list names it. */
+  SessionRevoked = 'session-revoked',
+  /** `detail` is the changed preference sections, comma separated. */
+  PreferencesUpdated = 'preferences-updated',
+  CastingDisabled = 'casting-disabled',
+  CastingAllowed = 'casting-allowed',
+  /** `detail` is the recovery period in days. */
+  AccountDeleted = 'account-deleted',
+  AccountRemovalScheduled = 'account-removal-scheduled',
+  AccountRestored = 'account-restored',
+  LibraryCreated = 'library-created',
+  LibraryUpdated = 'library-updated',
+  LibraryScanQueued = 'library-scan-queued',
+  LibraryDeleted = 'library-deleted',
+}
+
+export const AdminAuditActionSchema = z
+  .enum(AdminAuditAction)
+  .describe('What an administrator did to an account or one of its libraries')
+  .meta({ id: 'AdminAuditAction' });
+
 export enum OAuthTokenEndpointAuthMethod {
   ClientSecretPost = 'client_secret_post',
   ClientSecretBasic = 'client_secret_basic',

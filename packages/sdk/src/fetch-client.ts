@@ -929,6 +929,29 @@ export type CalendarHeatmapResponseDto = {
     /** Total activity count over the period */
     totalCount: number;
 };
+export type UserAdminHistoryEventResponseDto = {
+    action: AdminAuditAction;
+    /** The administrator who did it; null once that account is gone */
+    actorId: string | null;
+    /** That administrator's name; null once that account is gone */
+    actorName: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise */
+    detail: string | null;
+    /** Event ID */
+    id: string;
+    /** The library a library event is about; null for account events and once the library is gone */
+    libraryId: string | null;
+    /** The account's or library's name at the time */
+    subject: string;
+};
+export type UserAdminHistoryResponseDto = {
+    /** Newest first */
+    events: UserAdminHistoryEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+};
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
 };
@@ -7305,6 +7328,24 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
+ * Retrieve user history
+ */
+export function getUserHistoryAdmin({ before, id, take }: {
+    before?: string;
+    id: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminHistoryResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/history${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve user preferences
  */
 export function getUserPreferencesAdmin({ id }: {
@@ -13600,6 +13641,28 @@ export enum UserStatus {
 export enum CalendarHeatmapType {
     Upload = "Upload",
     Taken = "Taken"
+}
+export enum AdminAuditAction {
+    AccountCreated = "account-created",
+    AccountUpdated = "account-updated",
+    AdminGranted = "admin-granted",
+    AdminRevoked = "admin-revoked",
+    QuotaChanged = "quota-changed",
+    StorageLabelChanged = "storage-label-changed",
+    PasswordReset = "password-reset",
+    PinSet = "pin-set",
+    PinReset = "pin-reset",
+    SessionRevoked = "session-revoked",
+    PreferencesUpdated = "preferences-updated",
+    CastingDisabled = "casting-disabled",
+    CastingAllowed = "casting-allowed",
+    AccountDeleted = "account-deleted",
+    AccountRemovalScheduled = "account-removal-scheduled",
+    AccountRestored = "account-restored",
+    LibraryCreated = "library-created",
+    LibraryUpdated = "library-updated",
+    LibraryScanQueued = "library-scan-queued",
+    LibraryDeleted = "library-deleted"
 }
 export enum AssetOrder {
     Asc = "asc",

@@ -1,4 +1,11 @@
-import type { AssetStatsResponseDto, CalendarHeatmapResponseDto, LibraryResponseDto, ServerConfigDto } from '@immich/sdk';
+import {
+  AdminAuditAction,
+  type AssetStatsResponseDto,
+  type LibraryResponseDto,
+  type LibraryStatsResponseDto,
+  type ServerConfigDto,
+  type UserAdminHistoryEventResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
@@ -24,7 +31,7 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
 
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
-  getUserCalendarHeatmapAdmin: vi.fn(),
+  getUserHistoryAdmin: vi.fn(),
   deleteUserSessionAdmin: vi.fn(),
 }));
 
@@ -60,13 +67,17 @@ const library = (overrides: Partial<LibraryResponseDto>): LibraryResponseDto => 
 
 const preferences = preferencesFactory.build({ revision: 'revision-1' });
 
-const renderTabs = (libraries: LibraryResponseDto[] = []) =>
+const renderTabs = (
+  libraries: LibraryResponseDto[] = [],
+  libraryStatistics: Record<string, LibraryStatsResponseDto> = {},
+) =>
   render(AccountDetailTabs, {
     user,
     preferences,
     statistics,
     sessions: [],
     libraries,
+    libraryStatistics,
     preferencesEditable: true,
     savePreferences: vi.fn(),
     loadPreferences: vi.fn(),
@@ -74,14 +85,23 @@ const renderTabs = (libraries: LibraryResponseDto[] = []) =>
 
 const tab = (name: string) => screen.getByRole('button', { name });
 
+const event = (overrides: Partial<UserAdminHistoryEventResponseDto>): UserAdminHistoryEventResponseDto => ({
+  id: 'event-1',
+  action: AdminAuditAction.AccountCreated,
+  subject: user.name,
+  detail: null,
+  libraryId: null,
+  actorId: 'admin-id',
+  actorName: 'Ada',
+  createdAt: '2026-09-23T12:00:00.000Z',
+  ...overrides,
+});
+
 beforeEach(async () => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  const { getUserCalendarHeatmapAdmin } = await import('@immich/sdk');
-  vi.mocked(getUserCalendarHeatmapAdmin).mockResolvedValue({
-    from: '2026-01-01',
-    series: [],
-  } as CalendarHeatmapResponseDto);
+  const { getUserHistoryAdmin } = await import('@immich/sdk');
+  vi.mocked(getUserHistoryAdmin).mockResolvedValue({ events: [], hasMore: false });
 });
 
 describe('AccountDetailTabs (FL-76)', () => {
@@ -113,24 +133,51 @@ describe('AccountDetailTabs (FL-76)', () => {
     expect(screen.queryByRole('navigation', { name: en.frameleaf_account_prefs_tabs_label })).toBeNull();
   });
 
-  it("lists only the account's own libraries, never another account's", async () => {
-    renderTabs([
-      library({ id: 'lib-1', name: 'Trip photos', ownerId: user.id, assetCount: 42 }),
-      library({ id: 'lib-2', name: "Someone else's library", ownerId: 'other-id' }),
-    ]);
+  describe('Libraries', () => {
+    it("lists the account's managed uploads first, with the template's wording", async () => {
+      renderTabs();
 
-    await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
 
-    expect(screen.getByText('Trip photos')).toBeInTheDocument();
-    expect(screen.queryByText("Someone else's library")).toBeNull();
-  });
+      expect(screen.getByText('Grace Hopper’s uploads')).toBeInTheDocument();
+      expect(screen.getByText(/Managed uploads · active/)).toBeInTheDocument();
+      expect(screen.getByText(en.frameleaf_account_detail_uploads_note)).toBeInTheDocument();
+      // everything the account owns when it has no external library
+      expect(screen.getByText('124 items')).toBeInTheDocument();
+    });
 
-  it('shows an account with no libraries as empty, not an error', async () => {
-    renderTabs([]);
+    it("lists only the account's own external libraries, never another account's", async () => {
+      renderTabs([
+        library({ id: 'lib-1', name: 'Trip photos', ownerId: user.id }),
+        library({ id: 'lib-2', name: "Someone else's library", ownerId: 'other-id' }),
+      ]);
 
-    await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
 
-    expect(screen.getByText(en.frameleaf_account_detail_libraries_empty)).toBeInTheDocument();
+      expect(screen.getByText('Trip photos')).toBeInTheDocument();
+      expect(screen.getByText(/External folders · active/)).toBeInTheDocument();
+      expect(screen.queryByText("Someone else's library")).toBeNull();
+    });
+
+    it("counts uploads as the account's items less its external libraries' items", async () => {
+      renderTabs([library({ id: 'lib-1', name: 'Trip photos' })], {
+        'lib-1': { photos: 40, videos: 2, total: 42, usage: 0 },
+      });
+
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
+
+      expect(screen.getByText('42 items')).toBeInTheDocument();
+      expect(screen.getByText('82 items')).toBeInTheDocument();
+    });
+
+    it("sends the uploads row's storage action to the account's storage allowance", async () => {
+      renderTabs();
+
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_account_detail_uploads_storage }));
+
+      expect(screen.getByText(en.frameleaf_account_detail_quota_footnote)).toBeInTheDocument();
+    });
   });
 
   it("Overview's quick actions jump straight to Features and Security", async () => {
@@ -141,19 +188,81 @@ describe('AccountDetailTabs (FL-76)', () => {
     expect(screen.getByText(en.frameleaf_users_devices_none)).toBeInTheDocument();
   });
 
-  it('fetches the upload calendar once, only when the Activity tab is first shown', async () => {
-    const { getUserCalendarHeatmapAdmin } = await import('@immich/sdk');
-    renderTabs();
+  describe('Activity', () => {
+    it("lists the account's administrator history in the template's wording, newest first", async () => {
+      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      vi.mocked(getUserHistoryAdmin).mockResolvedValue({
+        events: [
+          event({ id: 'e3', action: AdminAuditAction.SessionRevoked, detail: 'iOS · iPhone' }),
+          event({ id: 'e2', action: AdminAuditAction.PasswordReset, detail: 'change-required' }),
+          event({ id: 'e1', action: AdminAuditAction.LibraryScanQueued, subject: 'Trip photos', libraryId: 'lib-1' }),
+        ],
+        hasMore: false,
+      });
+      renderTabs();
 
-    expect(getUserCalendarHeatmapAdmin).not.toHaveBeenCalled();
+      expect(getUserHistoryAdmin).not.toHaveBeenCalled();
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
 
-    await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
-    await waitFor(() => expect(getUserCalendarHeatmapAdmin).toHaveBeenCalledTimes(1));
-    expect(getUserCalendarHeatmapAdmin).toHaveBeenCalledWith(expect.objectContaining({ id: user.id }));
+      const items = await screen.findAllByRole('listitem');
+      expect(items.map((item) => item.querySelector('strong')?.textContent)).toEqual([
+        'Device signed out: iOS · iPhone',
+        en.frameleaf_account_history_password_reset_change_required,
+        en.frameleaf_account_history_library_scan_queued,
+      ]);
+      expect(items[2].querySelector('span')?.textContent).toMatch(/^Trip photos · /);
+      expect(getUserHistoryAdmin).toHaveBeenCalledWith({ id: user.id, before: undefined, take: 50 });
+    });
 
-    await fireEvent.click(tab(en.frameleaf_account_detail_tab_overview));
-    await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+    it('fetches the history again each time the tab opens', async () => {
+      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      renderTabs();
 
-    expect(getUserCalendarHeatmapAdmin).toHaveBeenCalledTimes(1);
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_overview));
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+
+      await waitFor(() => expect(getUserHistoryAdmin).toHaveBeenCalledTimes(2));
+    });
+
+    it("shows the template's empty state for an account with no history", async () => {
+      renderTabs();
+
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+
+      expect(await screen.findByText(en.frameleaf_account_history_empty)).toBeInTheDocument();
+    });
+
+    it('loads older events after the last one shown', async () => {
+      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      vi.mocked(getUserHistoryAdmin)
+        .mockResolvedValueOnce({ events: [event({ id: 'e2', action: AdminAuditAction.PinReset })], hasMore: true })
+        .mockResolvedValueOnce({
+          events: [event({ id: 'e1', action: AdminAuditAction.AccountCreated })],
+          hasMore: false,
+        });
+      renderTabs();
+
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+      await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_account_history_show_more }));
+
+      await screen.findByText(en.frameleaf_account_history_account_created);
+      expect(getUserHistoryAdmin).toHaveBeenLastCalledWith({ id: user.id, before: 'e2', take: 50 });
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.queryByRole('button', { name: en.frameleaf_account_history_show_more })).toBeNull();
+    });
+
+    it('says when the history cannot be loaded and offers a retry', async () => {
+      const { getUserHistoryAdmin } = await import('@immich/sdk');
+      vi.mocked(getUserHistoryAdmin).mockRejectedValueOnce(new Error('offline'));
+      renderTabs();
+
+      await fireEvent.click(tab(en.frameleaf_account_detail_tab_activity));
+      expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_account_history_error);
+
+      await fireEvent.click(screen.getByRole('button', { name: en.retry }));
+
+      expect(await screen.findByText(en.frameleaf_account_history_empty)).toBeInTheDocument();
+    });
   });
 });
