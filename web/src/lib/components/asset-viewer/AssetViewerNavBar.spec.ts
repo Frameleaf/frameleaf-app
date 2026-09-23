@@ -70,7 +70,9 @@ describe('AssetViewerNavBar component', () => {
       expect(getByLabelText('delete')).toBeInTheDocument();
     });
 
-    it('shows NSFW review actions for a full-size owned image', () => {
+    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // `lock`); the separate NSFW review entries were removed with the old mark.
+    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned image', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
@@ -79,12 +81,15 @@ describe('AssetViewerNavBar component', () => {
       const preferences = preferencesFactory.build({ cast: { gCastEnabled: false } });
       authManager.setPreferences(preferences);
 
-      const { getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(getByRole('menuitem', { name: 'mark_nsfw' })).toBeInTheDocument();
-      expect(getByRole('menuitem', { name: 'mark_safe' })).toBeInTheDocument();
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(getByRole('menuitem', { name: 'frameleaf_bulk_mark_sensitive' })).toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'mark_nsfw' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'mark_safe' })).not.toBeInTheDocument();
     });
 
-    it('shows NSFW review actions for a full-size owned video', () => {
+    // FL-34: sensitivity is the one lock, offered as a single Mark Sensitive entry (the prototype's
+    // `lock`); the separate NSFW review entries were removed with the old mark.
+    it('offers Mark Sensitive, and no separate NSFW review entries, for a full-size owned video', () => {
       const ownerId = 'id-of-the-user';
       const user = userAdminFactory.build({ id: ownerId });
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });
@@ -93,9 +98,10 @@ describe('AssetViewerNavBar component', () => {
       const preferences = preferencesFactory.build({ cast: { gCastEnabled: false } });
       authManager.setPreferences(preferences);
 
-      const { getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-      expect(getByRole('menuitem', { name: 'mark_nsfw' })).toBeInTheDocument();
-      expect(getByRole('menuitem', { name: 'mark_safe' })).toBeInTheDocument();
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(getByRole('menuitem', { name: 'frameleaf_bulk_mark_sensitive' })).toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'mark_nsfw' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'mark_safe' })).not.toBeInTheDocument();
     });
 
     it('shows the editor action for a full-size owned video even when client metadata is missing', async () => {

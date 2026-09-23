@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationFileKind,
   AssetRestorationMode,
   AssetRestorationStatus,
+  DEFAULT_RESTORATION_REGION,
 } from 'src/dtos/asset-restoration.dto.js';
 import {
   AssetType,
@@ -23,14 +24,17 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
+// eslint-friendly alias: a mock whose implementation may return anything, promises included.
+type AnyMock = Mock<(...args: any[]) => any>;
+
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
 
 describe(AssetRestorationService.name, () => {
   let sut: AssetRestorationService;
   let mocks: ServiceMocks;
-  let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
-  let operations: Pick<{ [K in keyof MediaOperationRepository]: ReturnType<typeof vi.fn> }, 'create' | 'requestCancel'>;
+  let restorations: { [K in keyof AssetRestorationRepository]: AnyMock };
+  let operations: Pick<{ [K in keyof MediaOperationRepository]: AnyMock }, 'create' | 'requestCancel'>;
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
     .exif({ exifImageWidth: 6000, exifImageHeight: 4000, orientation: '1', fileSizeInByte: 12_000_000 })
@@ -149,6 +153,7 @@ describe(AssetRestorationService.name, () => {
         upscale: 2 as const,
         keepGrain: false,
         destinationId: mlDestinationStub.lan.id,
+        region: DEFAULT_RESTORATION_REGION,
       };
       await expect(sut.list(authStub.user1, asset.id)).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut.getOptions(authStub.user1, asset.id, {})).rejects.toBeInstanceOf(BadRequestException);
@@ -242,6 +247,7 @@ describe(AssetRestorationService.name, () => {
       upscale: 2 as const,
       keepGrain: false,
       destinationId: mlDestinationStub.lan.id,
+      region: DEFAULT_RESTORATION_REGION,
     };
 
     it('refuses restoration on the library-analysis pod up front and creates nothing (FL-72)', async () => {

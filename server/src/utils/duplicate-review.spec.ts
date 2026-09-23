@@ -11,14 +11,16 @@ import {
   parseDuplicateGroups,
 } from 'src/utils/duplicate-review.js';
 
+const rawImage = (id: string, dateTimeOriginal: string | null, exif: Record<string, unknown> = {}) => ({
+  id,
+  type: AssetType.Image,
+  localDateTime: dateTimeOriginal ?? '2026-09-06T16:24:12.000Z',
+  originalFileName: `${id}.jpg`,
+  exifInfo: { dateTimeOriginal, ...exif },
+});
+
 const image = (id: string, dateTimeOriginal: string | null, exif: Record<string, unknown> = {}) =>
-  ({
-    id,
-    type: AssetType.Image,
-    localDateTime: dateTimeOriginal ?? '2026-09-06T16:24:12.000Z',
-    originalFileName: `${id}.jpg`,
-    exifInfo: { dateTimeOriginal, ...exif },
-  }) as never;
+  rawImage(id, dateTimeOriginal, exif) as never;
 
 const group = (overrides: Partial<DuplicateGroupDecision> = {}): DuplicateGroupDecision => ({
   duplicateId: 'g1',
@@ -51,7 +53,7 @@ describe('duplicate review rules', () => {
           image('c', '2026-09-06T16:24:12.100Z'),
         ]),
       ).toBe(DuplicateGroupKind.Duplicates);
-      const undated = { ...image('b', null), localDateTime: '' } as never;
+      const undated = { ...rawImage('b', null), localDateTime: '' } as never;
       expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), undated])).toBe(
         DuplicateGroupKind.Duplicates,
       );
@@ -62,7 +64,7 @@ describe('duplicate review rules', () => {
     });
 
     it('never reads videos as a burst', () => {
-      const clip = { ...image('b', '2026-09-06T16:24:13.000Z'), type: AssetType.Video } as never;
+      const clip = { ...rawImage('b', '2026-09-06T16:24:13.000Z'), type: AssetType.Video } as never;
       expect(classifyDuplicateGroup([image('a', '2026-09-06T16:24:12.000Z'), clip])).toBe(
         DuplicateGroupKind.Duplicates,
       );
@@ -72,7 +74,7 @@ describe('duplicate review rules', () => {
   describe('duplicateQualityReasons', () => {
     it('explains the original against the compressed, smaller copy', () => {
       const raw = {
-        ...image('raw', '2026-09-06T16:24:12.000Z', {
+        ...rawImage('raw', '2026-09-06T16:24:12.000Z', {
           exifImageWidth: 6000,
           exifImageHeight: 4000,
           fileSizeInByte: 48_600_000,

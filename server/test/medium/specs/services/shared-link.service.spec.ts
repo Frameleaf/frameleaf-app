@@ -646,8 +646,9 @@ describe(SharedLinkService.name, () => {
         type: SharedLinkType.Album,
       });
 
-      const response = await sut.get(auth, sharedLink.id);
-      expect(response.album?.assets.map(({ id }) => id)).toEqual([plain.id]);
+      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({ album: { id: album.id } });
+      const stored = await ctx.get(SharedLinkRepository).get(user.id, sharedLink.id);
+      expect(stored?.album?.assets.map(({ id }) => id)).toEqual([plain.id]);
 
       const access = ctx.get(AccessRepository);
       await expect(access.asset.checkSharedLinkAccess(sharedLink.id, new Set([plain.id, locked.id]))).resolves.toEqual(

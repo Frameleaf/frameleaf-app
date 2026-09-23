@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import multer from 'multer';
+import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -36,7 +36,7 @@ import { UUIDv7ParamDto } from 'src/validation.js';
  * Where an uploaded bundle is written: the uploading account's own private exports folder, under a
  * random name. Never a path the client chose, never memory — a bundle can be gigabytes.
  */
-const bundleUploadStorage = multer.diskStorage({
+const bundleUploadStorage = diskStorage({
   destination: (request, _file, callback) => {
     const ownerId = (request as unknown as AuthRequest).user?.user.id;
     if (!ownerId) {

@@ -100,6 +100,7 @@ describe('SharedSpaceMembers', () => {
   });
 
   it('changes a role through the album endpoint', async () => {
+    vi.mocked(updateAlbumUser).mockResolvedValue(undefined as never);
     const onChanged = vi.fn();
     render(SharedSpaceMembers, { space, members, onChanged });
 
