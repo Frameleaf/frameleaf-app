@@ -5,6 +5,7 @@ import {
   AudioCodec,
   CQMode,
   Colorspace,
+  ConfigCredential,
   HlsVideoResolution,
   ImageFormat,
   LogLevel,
@@ -20,6 +21,7 @@ import {
 } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1024,6 +1026,142 @@ describe(SystemConfigService.name, () => {
       const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
       const partial = persisted![0] as { machineLearning?: { runpod?: { apiKey?: string } } };
       expect(partial.machineLearning?.runpod?.apiKey).toBe('rp_NEW_value');
+    });
+  });
+
+  describe('write-only credentials (FL-67)', () => {
+    type PersistedSecrets = {
+      notifications?: { smtp?: { transport?: { password?: string } } };
+      oauth?: { clientSecret?: string };
+      machineLearning?: { runpod?: { apiKey?: string } };
+    };
+    const lastPersisted = () => mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as PersistedSecrets | undefined;
+    const storedSecrets = {
+      notifications: { smtp: { transport: { password: 'smtp-secret' } } },
+      oauth: { clientSecret: 'oauth-secret' },
+    };
+
+    it('should never return the SMTP password or the OAuth client secret, only that they are stored', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+
+      const config = await sut.getAdminConfig();
+
+      expect(config.notifications.smtp.transport).toMatchObject({ password: '', passwordConfigured: true });
+      expect(config.oauth).toMatchObject({ clientSecret: '', clientSecretConfigured: true });
+      expect(JSON.stringify(config)).not.toContain('smtp-secret');
+      expect(JSON.stringify(config)).not.toContain('oauth-secret');
+    });
+
+    it('should report secrets that are not stored as not configured', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({});
+
+      const config = await sut.getAdminConfig();
+
+      expect(config.notifications.smtp.transport.passwordConfigured).toBe(false);
+      expect(config.oauth.clientSecretConfigured).toBe(false);
+    });
+
+    it('should keep the stored SMTP password and OAuth secret when a redacted configuration is saved back', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+      const redacted = await sut.getAdminConfig();
+
+      await sut.updateAdminConfig({ ...redacted, trash: { ...redacted.trash, days: 12 } });
+
+      expect(lastPersisted()?.notifications?.smtp?.transport?.password).toBe('smtp-secret');
+      expect(lastPersisted()?.oauth?.clientSecret).toBe('oauth-secret');
+    });
+
+    it('should list whether each credential is stored without returning a value', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+
+      await expect(sut.getCredentials()).resolves.toEqual([
+        { name: ConfigCredential.SmtpPassword, configured: true },
+        { name: ConfigCredential.OAuthClientSecret, configured: true },
+        { name: ConfigCredential.RunPodApiKey, configured: false },
+        { name: ConfigCredential.HuggingFaceToken, configured: false },
+      ]);
+    });
+
+    it('should replace one credential through the validation and update events', async () => {
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ oauth: { clientSecret: 'replacement' } });
+
+      await expect(
+        sut.setCredential(authStub.admin, ConfigCredential.OAuthClientSecret, { value: 'replacement' }),
+      ).resolves.toEqual({ name: ConfigCredential.OAuthClientSecret, configured: true });
+
+      expect(lastPersisted()?.oauth?.clientSecret).toBe('replacement');
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigValidate', expect.any(Object));
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.any(Object));
+    });
+
+    it('should clear one credential and report it as no longer stored', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce(storedSecrets).mockResolvedValueOnce({
+        oauth: { clientSecret: 'oauth-secret' },
+      });
+
+      await expect(sut.clearCredential(authStub.admin, ConfigCredential.SmtpPassword)).resolves.toEqual({
+        name: ConfigCredential.SmtpPassword,
+        configured: false,
+      });
+
+      expect(lastPersisted()?.notifications?.smtp?.transport?.password).toBeUndefined();
+      expect(lastPersisted()?.oauth?.clientSecret).toBe('oauth-secret');
+    });
+
+    it('should not write anything when the credential already has that value', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({});
+
+      await expect(sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken)).resolves.toEqual({
+        name: ConfigCredential.HuggingFaceToken,
+        configured: false,
+      });
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to clear the RunPod key while RunPod is on', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { runpod: { apiKey: 'rp_secret_value', enabled: true, mode: 'pod' } },
+      });
+
+      await expect(sut.clearCredential(authStub.admin, ConfigCredential.RunPodApiKey)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a credential the validation rejects and keep the stored one', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(storedSecrets);
+      mocks.event.emit.mockRejectedValueOnce(new Error('Failed to validate SMTP configuration'));
+
+      await expect(
+        sut.setCredential(authStub.admin, ConfigCredential.SmtpPassword, { value: 'wrong' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+    });
+
+    it('should refuse credential changes while a configuration file is in use', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+
+      await expect(
+        sut.setCredential(authStub.admin, ConfigCredential.SmtpPassword, { value: 'secret' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.clearCredential(authStub.admin, ConfigCredential.SmtpPassword)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('should never write a credential value to the log', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      await sut.setCredential(authStub.admin, ConfigCredential.SmtpPassword, { value: 'do-not-log-me' });
+
+      for (const method of ['log', 'warn', 'error', 'debug', 'verbose'] as const) {
+        for (const call of mocks.logger[method].mock.calls) {
+          expect(JSON.stringify(call)).not.toContain('do-not-log-me');
+        }
+      }
     });
   });
 
