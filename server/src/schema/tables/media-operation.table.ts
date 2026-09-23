@@ -43,6 +43,15 @@ import { UserTable } from 'src/schema/tables/user.table.js';
   where: `"kind" = 'enrichment_plan' AND ("snapshot" ->> 'requestKey') IS NOT NULL`,
   synchronize: false,
 })
+// FL-43: at most one unfinished retry per job, so two retry requests racing queue one retry
+// (migration 2100000000590).
+@Index({
+  name: 'media_operation_retryOfId_active_uq',
+  columns: ['retryOfId'],
+  unique: true,
+  where: `"retryOfId" IS NOT NULL AND "status" NOT IN ('completed', 'cancelled', 'failed')`,
+  synchronize: false,
+})
 @Table('media_operation')
 @UpdatedAtTrigger('media_operation_updatedAt')
 export class MediaOperationTable {
@@ -329,4 +338,11 @@ export class MediaOperationCheckpointTable {
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
+
+  /**
+   * Written by the shared `updated_at()` trigger on every update. Without it the trigger fails and
+   * no chunk could ever be completed or re-planned (FL-43, migration 2100000000590).
+   */
+  @UpdateIdColumn()
+  updateId!: Generated<string>;
 }
