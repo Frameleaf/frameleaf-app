@@ -600,10 +600,14 @@ export class SearchService extends BaseService {
       warnings.push('Document categories are approximated with OCR until Document Intelligence is enabled.');
     }
 
-    const personIds = await this.resolveAskSearchPeople(auth, normalizedQuery);
+    const { personIds, petIds } = await this.resolveAskSearchNames(auth, normalizedQuery);
     if (personIds.length > 0) {
       filters.personIds = personIds;
-    } else if (this.hasAskSearchPeoplePhrase(normalizedQuery)) {
+    }
+    if (petIds.length > 0) {
+      filters.petIds = petIds;
+    }
+    if (personIds.length === 0 && petIds.length === 0 && this.hasAskSearchPeoplePhrase(normalizedQuery)) {
       warnings.push('People names are searched semantically until Ask Search can resolve names to person IDs.');
     }
 
@@ -748,32 +752,70 @@ export class SearchService extends BaseService {
     return !auth.apiKey || isGranted({ requested: [Permission.PersonRead], current: auth.apiKey.permissions });
   }
 
-  private async resolveAskSearchPeople(auth: AuthDto, query: string): Promise<string[]> {
-    if (!this.canResolveAskSearchPeople(auth)) {
-      return [];
+  /**
+   * FL-58 pets: pets are the caller's own, so no API-key person permission is involved, but a shared
+   * link may never filter by the owner's pet (see `requirePetFilterAllowed`).
+   */
+  private canResolveAskSearchPets(auth: AuthDto) {
+    return !auth.sharedLink;
+  }
+
+  /**
+   * Resolve the names after "with" / "of" to people and, since FL-49 follows FL-58, to the caller's
+   * own pets. Both lookups use the same fuzzy rule and the same session privacy (hidden people and
+   * pets never match, and in a session that is not unlocked neither do suppressed ones). For each
+   * name an exact, case-insensitive name wins, a person before a pet; otherwise the closest person,
+   * then the closest pet.
+   */
+  private async resolveAskSearchNames(
+    auth: AuthDto,
+    query: string,
+  ): Promise<{ personIds: string[]; petIds: string[] }> {
+    const canResolvePeople = this.canResolveAskSearchPeople(auth);
+    const canResolvePets = this.canResolveAskSearchPets(auth);
+    if (!canResolvePeople && !canResolvePets) {
+      return { personIds: [], petIds: [] };
     }
 
     const match = query.match(
       /\b(?:with|of)\s+([A-Za-z][\w'-]*(?:\s+(?:and\s+)?[A-Za-z][\w'-]*)*?)(?=\s+(?:in|near|around|at|last|this|from|during|before|after|since)\b|$)/,
     );
     if (!match?.[1]) {
-      return [];
+      return { personIds: [], petIds: [] };
     }
 
     const names = match[1]
       .split(/\s+(?:and|&)\s+|,\s*/)
       .map((name) => name.trim())
       .filter(Boolean);
-    const people = await Promise.all(
-      names.map(async (name) => {
-        const matches = await this.personRepository.getByName(auth.user.id, name, {
-          ...getHiddenContentQueryOptions(auth),
-          withHidden: false,
-        });
-        return matches.find((person) => person.name.toLowerCase() === name.toLowerCase()) ?? matches[0];
+    const privacy = getHiddenContentQueryOptions(auth);
+    const resolved = await Promise.all(
+      names.map(async (name): Promise<{ personId?: string; petId?: string }> => {
+        const [people, pets] = await Promise.all([
+          canResolvePeople
+            ? this.personRepository.getByName(auth.user.id, name, { ...privacy, withHidden: false })
+            : Promise.resolve([]),
+          canResolvePets ? this.searchRepository.searchPetsByName(auth.user.id, name, privacy) : Promise.resolve([]),
+        ]);
+        const isExact = (candidate: { name: string }) => candidate.name.toLowerCase() === name.toLowerCase();
+        const exactPerson = people.find((person) => isExact(person));
+        const exactPet = pets.find((pet) => isExact(pet));
+        if (exactPerson) {
+          return { personId: exactPerson.personGroupId };
+        }
+        if (exactPet) {
+          return { petId: exactPet.id };
+        }
+        if (people[0]) {
+          return { personId: people[0].personGroupId };
+        }
+        return pets[0] ? { petId: pets[0].id } : {};
       }),
     );
 
-    return people.flatMap((person) => (person ? [person.personGroupId] : []));
+    return {
+      personIds: resolved.flatMap(({ personId }) => (personId ? [personId] : [])),
+      petIds: [...new Set(resolved.flatMap(({ petId }) => (petId ? [petId] : [])))],
+    };
   }
 }
