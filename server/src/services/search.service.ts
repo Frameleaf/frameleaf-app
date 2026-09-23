@@ -38,6 +38,7 @@ import {
   applyLockedVisibilityPolicy,
   collectFilterIds,
   filterUsesLocation,
+  requirePetFilterAllowed,
   usesLocationFilter,
 } from 'src/utils/search-filter.js';
 
@@ -123,6 +124,8 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+
+    requirePetFilterAllowed(auth, dto.petIds);
 
     let checksum: Buffer | undefined;
     if (dto.checksum) {
@@ -411,6 +414,8 @@ export class SearchService extends BaseService {
     if (auth.sharedLink && !fullyConfined) {
       throw new BadRequestException('Shared link access is only allowed in combination with an albumIds filter');
     }
+
+    requirePetFilterAllowed(auth, collectFilterIds(filter, 'petIds'));
 
     const albumIds = collectFilterIds(filter, 'albumIds');
     const [userIds] = await Promise.all([

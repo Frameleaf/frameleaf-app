@@ -361,6 +361,37 @@ describe(SearchService.name, () => {
       ).resolves.toBeDefined();
       expect(mocks.search.searchMetadataV3).toHaveBeenCalled();
     });
+
+    it('should reject a pet filter through a shared link even inside a covered album', async () => {
+      const auth = AuthFactory.from().sharedLink().build();
+      const albumId = newUuid();
+      const petId = newUuid();
+
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+
+      await expect(
+        sut.searchMetadata(auth, { size: 250, filter: { albumIds: { any: [albumId] }, petIds: { any: [petId] } } }),
+      ).rejects.toThrowError(new BadRequestException('Pet filters are not available through a shared link'));
+      await expect(sut.searchMetadata(auth, { albumIds: [albumId], petIds: [petId] })).rejects.toThrowError(
+        new BadRequestException('Pet filters are not available through a shared link'),
+      );
+      expect(mocks.search.searchMetadataV3).not.toHaveBeenCalled();
+      expect(mocks.search.searchMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should hand a pet filter to the repository with the caller as the viewer', async () => {
+      const auth = AuthFactory.create();
+      const petId = newUuid();
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250, filter: { petIds: { all: [petId] } } });
+
+      expect(mocks.search.searchMetadataV3).toHaveBeenCalledWith(
+        { take: 250, skip: 0 },
+        expect.objectContaining({ filter: expect.objectContaining({ petIds: { all: [petId] } }) }),
+        expect.objectContaining({ lockedOwnerId: auth.user.id, viewingUserId: auth.user.id }),
+      );
+    });
   });
 
   describe('searchSmart', () => {
