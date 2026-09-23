@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetStatus, AssetVisibility, JobName, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -923,6 +923,64 @@ describe(AssetService.name, () => {
         expect.objectContaining({ isEdited: true }),
       );
       await expect(ctx.get(AssetEditRepository).getAll(asset.id)).resolves.toEqual([editResponse]);
+    });
+  });
+
+  describe('moving an album cover into the Locked folder (FL-53)', () => {
+    const older = new Date('2024-01-01T00:00:00.000Z');
+    const newer = new Date('2024-06-01T00:00:00.000Z');
+
+    const coverSetup = async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const auth = factory.auth({ user, session: { id: factory.uuid(), hasElevatedPermission: true } });
+      const { asset: cover } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: newer });
+      const { asset: fallback } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: older });
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: cover.id }, [
+        cover.id,
+        fallback.id,
+      ]);
+      // another person's album the owner added the photo to, where it is the only member
+      const { album: sharedAlbum } = await ctx.newAlbum({ ownerId: member.id, albumThumbnailAssetId: cover.id }, [
+        cover.id,
+      ]);
+      const coverOf = (albumId: string) =>
+        ctx.database
+          .selectFrom('album')
+          .select('albumThumbnailAssetId')
+          .where('id', '=', albumId)
+          .executeTakeFirstOrThrow()
+          .then(({ albumThumbnailAssetId }) => albumThumbnailAssetId);
+      return { sut, auth, cover, fallback, album, sharedAlbum, coverOf };
+    };
+
+    it('releases the cover when one asset is moved', async () => {
+      const { sut, auth, cover, fallback, album, sharedAlbum, coverOf } = await coverSetup();
+
+      await sut.update(auth, cover.id, { visibility: AssetVisibility.Locked });
+
+      await expect(coverOf(album.id)).resolves.toBe(fallback.id);
+      await expect(coverOf(sharedAlbum.id)).resolves.toBeNull();
+    });
+
+    it('releases the cover when assets are moved in bulk', async () => {
+      const { sut, auth, cover, fallback, album, sharedAlbum, coverOf } = await coverSetup();
+
+      await sut.updateAll(auth, { ids: [cover.id], visibility: AssetVisibility.Locked });
+
+      await expect(coverOf(album.id)).resolves.toBe(fallback.id);
+      await expect(coverOf(sharedAlbum.id)).resolves.toBeNull();
+    });
+
+    it('keeps the cover when an asset is only archived', async () => {
+      const { sut, auth, cover, album, coverOf } = await coverSetup();
+
+      await sut.updateAll(auth, { ids: [cover.id], visibility: AssetVisibility.Archive });
+
+      await expect(coverOf(album.id)).resolves.toBe(cover.id);
     });
   });
 });
