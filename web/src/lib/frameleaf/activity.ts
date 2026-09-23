@@ -121,7 +121,7 @@ export const mediaOperationPauseState = (
 
 /** A count the server sends as a string; null when absent or not a real number. */
 const asCount = (value: string | number | null | undefined): number | null => {
-  if (value === null || value === undefined || value === '') {
+  if ((value ?? '') === '') {
     return null;
   }
   const number = Number(value);
@@ -419,18 +419,16 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
-    ...(bulk
-      ? {
-          bulk: {
-            requested,
-            succeeded: bulk.succeeded,
-            failed: bulk.failed,
-            skipped: bulk.skipped,
-            // Failed items get one automatic retry before they count as failed (FL-104).
-            retried: bulk.retried ?? 0,
-          },
-        }
-      : {}),
+    ...(bulk && {
+      bulk: {
+        requested,
+        succeeded: bulk.succeeded,
+        failed: bulk.failed,
+        skipped: bulk.skipped,
+        // Failed items get one automatic retry before they count as failed (FL-104).
+        retried: bulk.retried ?? 0,
+      },
+    }),
   };
 };
 

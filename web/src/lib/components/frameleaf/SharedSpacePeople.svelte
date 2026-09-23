@@ -54,16 +54,14 @@
   const offered = $derived(spacePersonCandidates(candidates));
 
   let choice = $state('');
-  let name = $state('');
   let busy = $state(false);
   let status = $state('');
 
   const chosen = $derived(offered.find((person) => person.id === choice));
 
-  // Offering the member's own name is a convenience; the space stores its own copy.
-  $effect(() => {
-    name = chosen ? defaultSpacePersonName(chosen) : '';
-  });
+  // Offering the member's own name is a convenience; the space stores its own copy. Choosing another
+  // person offers their name again; typing overrides it.
+  let name = $derived(chosen ? defaultSpacePersonName(chosen) : '');
 
   const link = async () => {
     if (!choice) {

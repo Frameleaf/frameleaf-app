@@ -82,7 +82,7 @@ export function normalizeRecipe(candidate: unknown): EditorRecipe {
 
 /** The wire shape: the recipe without the client-only aspect. */
 export function toServerRecipe(recipe: EditorRecipe): AssetDevelopRecipeDto {
-  const { aspect: _aspect, ...rest } = normalizeRecipe(recipe);
+  const { aspect: _, ...rest } = normalizeRecipe(recipe);
   return rest;
 }
 
