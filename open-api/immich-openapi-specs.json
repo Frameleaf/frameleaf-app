@@ -9577,6 +9577,257 @@
         "x-immich-state": "Stable"
       }
     },
+    "/memories/exports": {
+      "get": {
+        "description": "Retrieve the caller's own private highlight exports, newest first, optionally limited to a single memory. This is the durable job state the Activity page reads.",
+        "operationId": "getMemoryExports",
+        "parameters": [
+          {
+            "name": "memoryId",
+            "required": false,
+            "in": "query",
+            "description": "Only return exports of this memory",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryExportResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve memory exports",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}": {
+      "delete": {
+        "description": "Cancel the export if it is still running, then delete the run and its archive.",
+        "operationId": "deleteMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      },
+      "get": {
+        "description": "Retrieve the current state of one of the caller's own private highlight exports.",
+        "operationId": "getMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}/cancel": {
+      "post": {
+        "description": "Ask for a running export to stop. A queued export is cancelled immediately; a running one stops at its next asset. Cancelling a finished export returns its final state unchanged.",
+        "operationId": "cancelMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}/download": {
+      "get": {
+        "description": "Download the finished archive for one of the caller's own exports. The archive is not reachable by any other route and is deleted when it expires.",
+        "operationId": "downloadMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/memories/statistics": {
       "get": {
         "description": "Retrieve statistics about memories, such as total count and other relevant metrics.",
@@ -10049,6 +10300,67 @@
         ],
         "x-immich-permission": "memoryAsset.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/memories/{id}/exports": {
+      "post": {
+        "description": "Start a private highlight export of a memory's assets as a durable, cancellable background job. The asset list is snapshotted when the export starts, and a second request while one is already running returns the export in flight.",
+        "operationId": "createMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryExportCreateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export a memory",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/notifications": {
@@ -26862,6 +27174,59 @@
         },
         "type": "object"
       },
+      "EventStoryDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets the event held before the diversity pass",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "dayCount": {
+            "description": "Number of distinct local days the event covers",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "endDate": {
+            "description": "Last local day of the event, 'yyyy-MM-dd'",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Discriminator for an event story",
+            "enum": [
+              "event_story"
+            ],
+            "type": "string"
+          },
+          "place": {
+            "$ref": "#/components/schemas/MemoryStoryPlaceDto"
+          },
+          "startDate": {
+            "description": "First local day of the event, 'yyyy-MM-dd'",
+            "type": "string"
+          },
+          "title": {
+            "description": "Place label for the event, when it has one",
+            "type": "string"
+          },
+          "year": {
+            "description": "Year the event started",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "dayCount",
+          "endDate",
+          "kind",
+          "startDate",
+          "year"
+        ],
+        "type": "object"
+      },
       "ExifResponseDto": {
         "description": "EXIF response",
         "properties": {
@@ -28967,7 +29332,7 @@
             "type": "array"
           },
           "data": {
-            "$ref": "#/components/schemas/OnThisDayDto"
+            "$ref": "#/components/schemas/MemoryData"
           },
           "hideAt": {
             "description": "Date when memory should be hidden",
@@ -29034,6 +29399,164 @@
         ],
         "type": "object"
       },
+      "MemoryData": {
+        "description": "Memory data",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/EventStoryDto"
+          },
+          {
+            "$ref": "#/components/schemas/YearInReviewDto"
+          },
+          {
+            "$ref": "#/components/schemas/OnThisDayDto"
+          }
+        ]
+      },
+      "MemoryExportCreateDto": {
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/MemoryExportFormat"
+          }
+        },
+        "type": "object"
+      },
+      "MemoryExportFormat": {
+        "description": "Memory export format",
+        "enum": [
+          "archive"
+        ],
+        "type": "string"
+      },
+      "MemoryExportResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets in the export",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the export was requested",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "error": {
+            "description": "Failure reason, when the export failed",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the archive is deleted",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "finishedAt": {
+            "description": "When the export reached a terminal state",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "format": {
+            "$ref": "#/components/schemas/MemoryExportFormat"
+          },
+          "id": {
+            "description": "Export ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isDownloadable": {
+            "description": "Whether the archive can be downloaded right now",
+            "type": "boolean"
+          },
+          "memoryId": {
+            "description": "Memory the export was requested for",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Owner user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "processedAssets": {
+            "description": "Number of assets written so far",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "sizeInBytes": {
+            "description": "Size of the finished archive",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "startedAt": {
+            "description": "When the worker picked the export up",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemoryExportStatus"
+          },
+          "title": {
+            "description": "The memory's title when the export was requested",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "createdAt",
+          "error",
+          "expiresAt",
+          "finishedAt",
+          "format",
+          "id",
+          "isDownloadable",
+          "memoryId",
+          "ownerId",
+          "processedAssets",
+          "sizeInBytes",
+          "startedAt",
+          "status",
+          "title",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MemoryExportStatus": {
+        "description": "Memory export status",
+        "enum": [
+          "pending",
+          "running",
+          "ready",
+          "failed",
+          "cancelling",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "MemoryResponseDto": {
         "properties": {
           "assets": {
@@ -29050,7 +29573,7 @@
             "type": "string"
           },
           "data": {
-            "$ref": "#/components/schemas/OnThisDayDto"
+            "$ref": "#/components/schemas/MemoryData"
           },
           "deletedAt": {
             "description": "Deletion date",
@@ -29150,10 +29673,37 @@
         ],
         "type": "object"
       },
+      "MemoryStoryPlaceDto": {
+        "properties": {
+          "city": {
+            "description": "City",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "description": "State or region",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "state"
+        ],
+        "type": "object"
+      },
       "MemoryType": {
         "description": "Memory type",
         "enum": [
-          "on_this_day"
+          "on_this_day",
+          "event_story",
+          "year_in_review"
         ],
         "type": "string"
       },
@@ -35744,7 +36294,8 @@
           "upload",
           "profile",
           "thumbs",
-          "backups"
+          "backups",
+          "exports"
         ],
         "type": "string"
       },
@@ -39920,6 +40471,42 @@
             "description": "Workflow trigger type"
           }
         },
+        "type": "object"
+      },
+      "YearInReviewDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets captured that year",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "Discriminator for a year in review recap",
+            "enum": [
+              "year_in_review"
+            ],
+            "type": "string"
+          },
+          "monthCount": {
+            "description": "Number of distinct months represented",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "year": {
+            "description": "Calendar year being recapped",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "kind",
+          "monthCount",
+          "year"
+        ],
         "type": "object"
       }
     }
