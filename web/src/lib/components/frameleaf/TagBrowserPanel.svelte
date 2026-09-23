@@ -253,7 +253,7 @@
       <p>{$t('frameleaf_tags_subtitle', { values: { count: tags.length } })}</p>
     </div>
     <Button variant="primary" onclick={() => openCreate(null)}>
-      <Icon icon={mdiPlus} size={16} aria-hidden="true" />
+      <Icon icon={mdiPlus} size="16" aria-hidden="true" />
       {$t('frameleaf_tags_new')}
     </Button>
   </header>
@@ -266,7 +266,7 @@
         <TreeItems tree={navTree} icons={{ default: mdiTagOutline, active: mdiTag }} active={navNode.path} {getLink} />
       {:else}
         <p class="tag-browser-empty">
-          <Icon icon={mdiTagOutline} size={28} aria-hidden="true" />
+          <Icon icon={mdiTagOutline} size="28" aria-hidden="true" />
           <strong>{$t('frameleaf_tags_empty_title')}</strong>
           <span>{$t('frameleaf_tags_empty_description')}</span>
         </p>
@@ -287,7 +287,7 @@
           </div>
           <div class="tag-browser-detail-actions">
             <Button onclick={openRename}>
-              <Icon icon={mdiPencilOutline} size={16} aria-hidden="true" />
+              <Icon icon={mdiPencilOutline} size="16" aria-hidden="true" />
               {$t('frameleaf_tags_rename')}
             </Button>
             <Menu label={$t('frameleaf_tags_color')}>
@@ -304,11 +304,11 @@
               {/each}
             </Menu>
             <Button onclick={() => openCreate(selected!.id)}>
-              <Icon icon={mdiPlus} size={16} aria-hidden="true" />
+              <Icon icon={mdiPlus} size="16" aria-hidden="true" />
               {$t('frameleaf_tags_new_subtag')}
             </Button>
             <Button onclick={openDelete}>
-              <Icon icon={mdiDeleteOutline} size={16} aria-hidden="true" />
+              <Icon icon={mdiDeleteOutline} size="16" aria-hidden="true" />
               {$t('delete_tag')}
             </Button>
           </div>
@@ -329,7 +329,7 @@
 
         <div class="tag-browser-cta">
           <Button variant="primary" disabled={coverTotal === 0} onclick={viewInLibrary}>
-            <Icon icon={mdiImageMultipleOutline} size={16} aria-hidden="true" />
+            <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden="true" />
             {$t('frameleaf_tags_show_all', { values: { count: coverTotal } })}
           </Button>
         </div>

@@ -5,18 +5,19 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Button, modalManager, toastManager } from '@immich/ui';
   import { mdiRefresh } from '@mdi/js';
-  import { Kind, type AdminConfigSmartAlbumKindDto } from '@immich/sdk';
+  import { Kind3 as SmartAlbumKind, type AdminConfigSmartAlbumKindDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   const smartAlbums = $derived(configToEdit.smartAlbums!);
   const savedSmartAlbums = $derived(config.smartAlbums!);
@@ -29,7 +30,15 @@
       .map((l) => l.trim())
       .filter(Boolean);
 
-  const kindKeys = [Kind.Travel, Kind.Documents, Kind.Screenshots, Kind.Food, Kind.Pets, Kind.Nature] as const;
+  // The generated client names the built-in smart-album kind enum `Kind3`.
+  const kindKeys = [
+    SmartAlbumKind.Travel,
+    SmartAlbumKind.Documents,
+    SmartAlbumKind.Screenshots,
+    SmartAlbumKind.Food,
+    SmartAlbumKind.Pets,
+    SmartAlbumKind.Nature,
+  ] as const;
   type KindKey = (typeof kindKeys)[number];
 
   const kindTitle = (kind: KindKey): string => {
@@ -161,7 +170,7 @@
           </Button>
         </div>
 
-        <SettingActions bind:configToEdit keys={['smartAlbums']} {disabled} />
+        <SettingActions keys={['smartAlbums']} {disabled} />
       </div>
     </form>
   </div>

@@ -64,6 +64,8 @@ describe(MediaRecoveryRepository.name, () => {
       `CREATE FUNCTION public.bump_generation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW."updateId" = gen_random_uuid(); RETURN NEW; END $$`,
       'CREATE TRIGGER generation BEFORE UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION public.bump_generation()',
       'CREATE TABLE public.asset_exif ("assetId" uuid PRIMARY KEY REFERENCES public.asset, "fileSizeInByte" bigint)',
+      `CREATE TABLE public.asset_lock ("assetId" uuid PRIMARY KEY REFERENCES public.asset ON DELETE CASCADE,
+        reason text NOT NULL, "lockedAt" timestamptz NOT NULL DEFAULT now(), "lockedBy" uuid, "previousVisibility" text)`,
       'CREATE TABLE public.user_metadata ("userId" uuid, key text, value jsonb)',
       'CREATE TABLE public.asset_metadata ("assetId" uuid, key text, value jsonb)',
       'CREATE TABLE public.album_asset ("assetId" uuid, "albumId" uuid)',
@@ -537,17 +539,28 @@ describe(MediaRecoveryRepository.name, () => {
     const context = await arrange(false);
     const result = await sut.commit({ ...context.commitInput, includeHidden: true, sourceHidden: true });
     expect(result.outcome).toBe('imported');
+    // Locked is a lock record on a timeline asset, never a stored visibility (FL-34)
     expect(
       await db.selectFrom('asset').select('visibility').where('id', '=', result.assetId!).executeTakeFirst(),
-    ).toEqual({ visibility: 'locked' });
+    ).toEqual({ visibility: 'timeline' });
+    const lock = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM public.asset_lock WHERE "assetId" = ${result.assetId!}::uuid
+    `.execute(db);
+    expect(lock.rows[0]!.count).toBe(1);
   });
   it.each(['hidden', 'locked'])(
     'distinguishes native motion visibility %s from private content',
     async (visibility) => {
       const context = await arrange();
       await sut.commit(context.commitInput);
-      await sql`UPDATE public.asset SET visibility = ${visibility}, type = 'VIDEO', "originalFileName" = 'motion.mov'
-      WHERE id = ${context.assetId}::uuid`.execute(db);
+      // Locked is a lock record (FL-34); hidden is the native motion part's visibility
+      await sql`UPDATE public.asset SET visibility = ${visibility === 'locked' ? 'timeline' : visibility}, type = 'VIDEO',
+        "originalFileName" = 'motion.mov' WHERE id = ${context.assetId}::uuid`.execute(db);
+      if (visibility === 'locked') {
+        await sql`INSERT INTO public.asset_lock ("assetId", reason) VALUES (${context.assetId}::uuid, 'marked')`.execute(
+          db,
+        );
+      }
       const candidate = (await sut.findCandidates(context.authority.ownerId, verified))[0];
       expect(candidate.hidden).toBe(visibility === 'locked');
       const integrity = { validate: vi.fn().mockResolvedValue(verified) };

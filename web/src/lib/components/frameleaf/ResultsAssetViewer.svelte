@@ -71,10 +71,10 @@
 
   const handleAction = async (action: Action) => {
     switch (action.type) {
+      // Each of these leaves the list; an item moved to Locked leaves every list but Locked's own.
       case AssetAction.ARCHIVE:
       case AssetAction.DELETE:
       case AssetAction.TRASH:
-      // An item moved to Locked leaves every list but Locked's own.
       case AssetAction.SET_VISIBILITY_LOCKED: {
         const nextAsset = cursor.nextAsset ?? cursor.previousAsset;
         onRemove?.(action.asset.id);

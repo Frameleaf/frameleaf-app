@@ -269,7 +269,7 @@ export class MediaHealthOperationService {
     });
     if (!running) {
       // Cancelled between the claim and this write, or the claim is gone.
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
     }
     return running;
   }
@@ -282,12 +282,17 @@ export class MediaHealthOperationService {
   ) {
     if (await this.operations.beginValidation(id, claimToken)) {
       await this.mediaHealth.setRunState(snapshot, 'completed', counts);
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+      if (!(await this.operations.complete(id, claimToken, { resultAssetId: null }))) {
+        // Cancelled after the last batch was checked (FL-43): the run did finish, so its record says
+        // so, and the cancel is acknowledged now rather than when the lease lapses.
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return;
+      }
       this.logger.log(`Library Care ${snapshot.mode} ${id} finished (${counts.checked} checked)`);
       return;
     }
 
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
     await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
   }
 
@@ -308,7 +313,7 @@ export class MediaHealthOperationService {
     }
 
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
       this.logger.log(`Library Care job ${id} cancelled by its owner`);
       return false;

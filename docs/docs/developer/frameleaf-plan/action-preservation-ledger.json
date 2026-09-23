@@ -25237,7 +25237,10 @@
       "kinds": ["setting"],
       "title": "Server migration",
       "sourceRowIds": ["settings:roadmap:migration"],
-      "entrypoints": ["Existing production route:storage/migration", "README.md"],
+      "entrypoints": [
+        "README.md",
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
+      ],
       "owners": {
         "primary": { "planId": "IMP-007", "jiraKey": "FL-75", "url": "https://heroit.atlassian.net/browse/FL-75" },
         "secondary": [
@@ -25245,7 +25248,7 @@
           { "planId": "QA-104", "jiraKey": "FL-140", "url": "https://heroit.atlassian.net/browse/FL-140" }
         ]
       },
-      "disposition": { "kind": "not-yet-designed", "legacyFallback": true },
+      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": false },
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
@@ -56645,24 +56648,32 @@
       "inventoryId": "roadmap:migration",
       "kind": "setting",
       "title": "Server migration",
-      "entrypoints": ["README.md", "Existing production route:storage/migration"],
+      "entrypoints": [
+        "README.md",
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
+      ],
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": { "status": "accepted-main", "paths": ["README.md"], "evidence": ["README.md"] },
         "newUi": {
-          "status": "not-yet-built",
-          "target": { "area": "storage", "section": "migration", "module": "Existing production route" },
-          "evidence": ["none-qualified"]
+          "status": "mapped-unqualified",
+          "target": {
+            "module": "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte",
+            "area": "storage",
+            "section": "migration"
+          },
+          "evidence": [
+            "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.spec.ts",
+            "web/src/lib/frameleaf/migration-report.spec.ts",
+            "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
+            "docs/docs/administration/server-migration.md"
+          ]
         },
         "api": { "status": "not-connected", "evidence": ["none-qualified"] },
         "native": { "status": "planned-not-qualified", "evidence": ["MOB-107"] },
         "tests": { "status": "explicit-evidence-required", "evidence": ["none-qualified"] }
       },
-      "auditGap": {
-        "mapped": true,
-        "issue": { "planId": "IMP-007", "jiraKey": "FL-75", "url": "https://heroit.atlassian.net/browse/FL-75" },
-        "boundary": "Settings provide an entry point and policy controls; full source manifest/report/repair workflow is not recreated in this settings prototype."
-      }
+      "auditGap": null
     },
     {
       "sourceRowId": "settings:roadmap:preservation",
@@ -78585,8 +78596,10 @@
     ],
     "Existing production route:backup/takeout": ["setting:roadmap:takeout"],
     "server/src/controllers/takeout.controller.ts": ["setting:roadmap:takeout"],
-    "Existing production route:storage/migration": ["setting:roadmap:migration"],
     "README.md": ["setting:roadmap:migration"],
+    "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration": [
+      "setting:roadmap:migration"
+    ],
     "Existing production route:backup/preservation": ["setting:roadmap:preservation"],
     "server/src/controllers/preservation.controller.ts": ["setting:roadmap:preservation"],
     "Existing production route:care/enrichment-care": ["setting:roadmap:enrichment"],

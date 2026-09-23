@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { DB } from 'src/schema/index.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { anyUuid } from 'src/utils/database.js';
+import { lockDerivedResults } from 'src/utils/derivative-locks.js';
 
 /**
  * A stack is Locked as a whole (owner decision 3, September 22, 2026, FL-53), and so is a live photo
@@ -91,6 +92,8 @@ export const onStacksJoined = async (db: Kysely<DB>, stackIds: string[]): Promis
 
   // with the video part of every live photo in the stack, and the reason of the stack's own lock
   const moved = await lockRestOfStacks(db, stackIds);
+  // A photo newly locked with its stack locks what was published from it, too (FL-106).
+  moved.push(...(await lockDerivedResults(db, moved)));
   await releaseLockedCoverReferences(db, moved);
   return moved;
 };

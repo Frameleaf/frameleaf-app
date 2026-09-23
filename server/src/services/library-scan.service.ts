@@ -422,7 +422,7 @@ export class LibraryScanService {
     const fingerprint = libraryPathsFingerprint(library);
     if (result.fingerprint && result.fingerprint !== fingerprint) {
       // The folders changed while this scan waited; it was asked about the old ones.
-      await this.stopSelf(operation, result, 'paths_changed');
+      await this.stopSelf(operation, claimToken, result, 'paths_changed');
       return;
     }
     result = { ...result, fingerprint };
@@ -432,7 +432,7 @@ export class LibraryScanService {
 
     if (!(await this.start(id, claimToken, result))) {
       // cancelled between the claim and this write, or the claim is gone
-      await this.settleCancel(operation, result);
+      await this.settleCancel(operation, claimToken, result);
       return;
     }
 
@@ -474,7 +474,7 @@ export class LibraryScanService {
       return;
     }
 
-    await this.settleCancel(operation, result);
+    await this.settleCancel(operation, claimToken, result);
   }
 
   /** Walk the folders and import every file the library does not have yet. */
@@ -758,7 +758,7 @@ export class LibraryScanService {
     }
 
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.settleCancel(operation, result);
+      await this.settleCancel(operation, claimToken, result);
       return false;
     }
 
@@ -771,8 +771,8 @@ export class LibraryScanService {
   }
 
   /** A cancel reached this scan: acknowledge it and say why, when the server asked for it. */
-  private async settleCancel(operation: MediaOperation, result: LibraryScanResult) {
-    if (!(await this.operations.acknowledgeCancel(operation.id, { released: false }))) {
+  private async settleCancel(operation: MediaOperation, claimToken: string, result: LibraryScanResult) {
+    if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) {
       // not cancelling after all: the claim was simply lost, and recovery will judge the job
       return;
     }
@@ -782,9 +782,16 @@ export class LibraryScanService {
   }
 
   /** The folders changed under a claimed scan: stop it the way an administrator's change would. */
-  private async stopSelf(operation: MediaOperation, result: LibraryScanResult, reason: LibraryScanStopReason) {
+  private async stopSelf(
+    operation: MediaOperation,
+    claimToken: string,
+    result: LibraryScanResult,
+    reason: LibraryScanStopReason,
+  ) {
     await this.operations.requestCancel(operation.id, operation.ownerId);
-    await this.operations.acknowledgeCancel(operation.id, { released: false });
+    if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) {
+      return;
+    }
     await this.operations.setFinishedResult(operation.id, { ...result, stopReason: reason } as Record<string, unknown>);
     this.logger.log(`Scan ${operation.id} stopped (${reason})`);
   }

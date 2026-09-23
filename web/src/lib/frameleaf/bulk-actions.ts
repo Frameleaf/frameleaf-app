@@ -1,4 +1,5 @@
 import { AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * Bulk action descriptors for the Frameleaf selection bar.
@@ -26,7 +27,7 @@ export const BULK_ACTION_GROUP_ORDER: readonly BulkActionGroupId[] = [
   'jobs',
 ];
 
-export type BulkActionGroup = { id: BulkActionGroupId; titleKey: string };
+export type BulkActionGroup = { id: BulkActionGroupId; titleKey: Translations };
 
 /** Menu section headings, in the prototype's order. */
 export const bulkActionGroups: readonly BulkActionGroup[] = [
@@ -152,7 +153,7 @@ const SPACE_VIEWER_MATCHING_ACTIONS: ReadonlySet<BulkActionId> = new Set<BulkAct
 
 export type BulkAction = {
   id: BulkActionId;
-  labelKey: string;
+  labelKey: Translations;
   icon: string;
   group: BulkActionGroupId;
   available: boolean;
@@ -503,3 +504,7 @@ export const menuBulkActions = (actions: BulkAction[], trash: boolean, locked = 
     }))
     .filter((group) => group.items.length > 0);
 };
+
+/** The name of a bulk action as the page shows it (`add-to-album` → `frameleaf_bulk_add_to_album`). */
+export const bulkActionTitleKey = (action: string): Translations =>
+  `frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations;

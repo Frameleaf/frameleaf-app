@@ -129,7 +129,11 @@ describe(AlbumService.name, () => {
 
       expect(result[0].albumThumbnailAssetId).toEqual(suppressedThumbnailId);
       expect(mocks.asset.getHiddenContentAssetIds).not.toHaveBeenCalled();
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { onlyHiddenContent: suppressedContent });
+      // An elevated session also sees its own Locked media, so it passes lockedOwnerId (FL-32).
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {
+        onlyHiddenContent: suppressedContent,
+        lockedOwnerId: owner.id,
+      });
     });
 
     it('gets list of albums that have a specific asset', async () => {
@@ -870,11 +874,23 @@ describe(AlbumService.name, () => {
 
     it('moves an owned album into a collection and returns the refreshed album', async () => {
       const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
-      const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-      const album = AlbumFactory.from().owner(owner).build();
-      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id, collection.id]));
+      // The factory always adds an owner, so `.owner()` would give the album a second one.
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      // The access check answers only for the ids it is asked about, as the real one does.
+      mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === album.id || id === collection.id))),
+      );
+      // The album stands alone until reparent moves it; the refreshed read then shows the new parent.
+      let moved = false;
+      mocks.album.reparent.mockImplementation(() => {
+        moved = true;
+        return Promise.resolve();
+      });
       mocks.album.getById.mockImplementation((id: string) =>
-        Promise.resolve(getForAlbum(id === collection.id ? collection : { ...album, parentId: collection.id })),
+        Promise.resolve(
+          getForAlbum(id === collection.id ? collection : { ...album, parentId: moved ? collection.id : null }),
+        ),
       );
       mocks.album.getMetadataForIds.mockResolvedValue([emptyMetadata(album.id)]);
 
@@ -940,9 +956,13 @@ describe(AlbumService.name, () => {
 
     it('refuses a destination that is not a collection', async () => {
       const destination = AlbumFactory.create();
-      const { user: owner } = destination.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-      const album = AlbumFactory.from().owner(owner).build();
-      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id, destination.id]));
+      // The factory always adds an owner, so `.owner()` would give the album a second one.
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      // The access check answers only for the ids it is asked about, as the real one does.
+      mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === album.id || id === destination.id))),
+      );
       mocks.album.getById.mockImplementation((id: string) =>
         Promise.resolve(getForAlbum(id === destination.id ? destination : album)),
       );
@@ -1823,12 +1843,15 @@ describe(AlbumService.name, () => {
   describe('hierarchy', () => {
     describe('create', () => {
       it('passes parentId through to the repository when it is set', async () => {
-        const parentId = newUuid();
+        // Albums nest only inside a collection, so the parent here is one.
+        const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
+        const parentId = collection.id;
         const album = AlbumFactory.from({ parentId }).albumUser().build();
         const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
         const auth = AuthFactory.create(owner);
 
         mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([parentId]));
+        mocks.album.getById.mockResolvedValue(getForAlbum(collection));
         mocks.album.create.mockResolvedValue(getForAlbum(album));
         mocks.user.getMetadata.mockResolvedValue([]);
 
@@ -1858,11 +1881,15 @@ describe(AlbumService.name, () => {
       it('reparents an album when parentId changes to a new uuid', async () => {
         const album = AlbumFactory.from().albumUser().build();
         const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-        const newParentId = newUuid();
+        // Albums nest only inside a collection, so the new parent is one.
+        const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
+        const newParentId = collection.id;
         const auth = AuthFactory.create(owner);
 
         mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
-        mocks.album.getById.mockResolvedValue(getForAlbum(album));
+        mocks.album.getById.mockImplementation((id: string) =>
+          Promise.resolve(getForAlbum(id === collection.id ? collection : album)),
+        );
         mocks.album.update.mockResolvedValue(getForAlbum(album));
 
         await sut.update(auth, album.id, { parentId: newParentId });
@@ -1902,11 +1929,15 @@ describe(AlbumService.name, () => {
         // The service delegates to reparent and surfaces its BadRequestException.
         const album = AlbumFactory.from().albumUser().build();
         const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-        const descendantId = newUuid();
+        // Albums nest only inside a collection; the cycle is what the repository refuses.
+        const descendant = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
+        const descendantId = descendant.id;
         const auth = AuthFactory.create(owner);
 
         mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
-        mocks.album.getById.mockResolvedValue(getForAlbum(album));
+        mocks.album.getById.mockImplementation((id: string) =>
+          Promise.resolve(getForAlbum(id === descendant.id ? descendant : album)),
+        );
         mocks.album.reparent.mockRejectedValue(
           new BadRequestException('Cannot move an album under one of its own descendants'),
         );
@@ -1950,6 +1981,26 @@ describe(AlbumService.name, () => {
   });
 
   describe('shared space membership (FL-55)', () => {
+    beforeEach(() => {
+      // The album-user repository mock is strict. These are the membership writes the paths
+      // below make; each test asserts which of them ran.
+      mocks.albumUser.createInvite.mockImplementation(({ albumId, userId, role, invitedById }) =>
+        Promise.resolve({
+          albumId,
+          userId,
+          role: role ?? AlbumUserRole.Viewer,
+          invitedById: invitedById ?? null,
+          createdAt: new Date(),
+        }),
+      );
+      mocks.albumUser.create.mockImplementation(({ albumId, userId, role }) =>
+        Promise.resolve({ albumId, userId, role: role ?? AlbumUserRole.Editor }),
+      );
+      mocks.albumUser.update.mockResolvedValue();
+      mocks.albumUser.delete.mockResolvedValue();
+      mocks.albumUser.createSpaceEvent.mockResolvedValue();
+    });
+
     it('invites rather than adds, so nobody is put into a space without agreeing', async () => {
       const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
       const { user: owner } = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
@@ -2120,7 +2171,9 @@ describe(AlbumService.name, () => {
     });
 
     it('never offers Locked media as a cover choice, even to the elevated owner', async () => {
-      const album = AlbumFactory.from().asset().build();
+      const album = AlbumFactory.from()
+        .asset({}, (builder) => builder.exif())
+        .build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));

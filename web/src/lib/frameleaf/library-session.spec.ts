@@ -25,8 +25,13 @@ import {
   type LibraryViewState,
 } from '$lib/frameleaf/library-session';
 
-const run = (session: LibrarySession, ...actions: LibrarySessionAction[]) =>
-  actions.reduce((current, action) => reduceLibrarySession(current, action), session);
+const run = (session: LibrarySession, ...actions: LibrarySessionAction[]) => {
+  let current = session;
+  for (const action of actions) {
+    current = reduceLibrarySession(current, action);
+  }
+  return current;
+};
 
 const day = ['a', 'b', 'c', 'd', 'e'];
 

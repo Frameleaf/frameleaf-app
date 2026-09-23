@@ -644,6 +644,43 @@ export type ConfigCredentialUpdateDto = {
     /** The new secret. Stored as sent and never returned */
     value: string;
 };
+export type SystemConfigHistoryChangeDto = {
+    /** The value after the change, JSON encoded; null for a credential */
+    after: string | null;
+    /** The value before the change, JSON encoded; null for a credential */
+    before: string | null;
+    credential?: SystemConfigHistoryCredentialChange;
+    /** The changed setting, as a dotted path such as trash.days */
+    path: string;
+};
+export type SystemConfigHistoryEntryDto = {
+    /** The administrator who saved the change */
+    actorId: string | null;
+    /** The administrator's name when the change was saved */
+    actorName: string | null;
+    /** Every changed setting */
+    changes: SystemConfigHistoryChangeDto[];
+    /** When the change was saved (ISO 8601) */
+    createdAt: string;
+    /** Entry ID */
+    id: string;
+    /** Changed settings left out because the entry reached its limit */
+    omittedChanges: number;
+};
+export type SystemConfigHistoryResponseDto = {
+    /** The newest settings changes first */
+    entries: SystemConfigHistoryEntryDto[];
+};
+export type AdminConfigRevisionResponseDto = {
+    config: AdminConfigDto;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
+export type AdminConfigRevisionUpdateDto = {
+    config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
 export type DatabaseBackupDeleteDto = {
     /** Backup filenames to delete */
     backups: string[];
@@ -815,7 +852,7 @@ export type MediaOperationDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -841,6 +878,8 @@ export type MediaOperationDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type PhysicalDeduplicationReviewRequestDto = {
     /** Retained originals whose group the administrator decided to leave as they are */
@@ -2097,6 +2136,58 @@ export type AssetDevelopCrop = {
     /** Top edge of the crop as a fraction of the oriented frame height */
     y: number;
 };
+export type AssetDevelopMaskAdjustments = {
+    /** Black point inside the mask */
+    blacks?: number;
+    /** Contrast inside the mask */
+    contrast?: number;
+    /** Dehaze inside the mask */
+    dehaze?: number;
+    /** Exposure in EV inside the mask */
+    exposure?: number;
+    /** Highlights inside the mask */
+    highlights?: number;
+    /** Saturation inside the mask */
+    saturation?: number;
+    /** Shadows inside the mask */
+    shadows?: number;
+    /** White balance shift inside the mask */
+    temperature?: number;
+    /** Tint inside the mask */
+    tint?: number;
+    /** Vibrance inside the mask */
+    vibrance?: number;
+    /** White point inside the mask */
+    whites?: number;
+};
+export type AssetDevelopMask = {
+    adjustments?: AssetDevelopMaskAdjustments;
+    /** How much of the adjustment is applied, as a percentage */
+    amount?: number;
+    /** A disabled mask is kept but not rendered */
+    enabled?: boolean;
+    /** Where a linear mask has faded out, across the frame */
+    endX?: number;
+    /** Where a linear mask has faded out, down the frame */
+    endY?: number;
+    /** Softness of a radial edge as a percentage of the radius */
+    feather?: number;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    /** Apply the adjustment outside the shape instead of inside */
+    invert?: boolean;
+    kind: AssetDevelopMaskKind;
+    /** Optional name shown in the editor */
+    name?: string | null;
+    /** Horizontal radius of a radial mask as a fraction of the frame width */
+    radiusX?: number;
+    /** Vertical radius of a radial mask as a fraction of the frame height */
+    radiusY?: number;
+    /** Centre (radial) or start (linear) across the oriented frame */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame */
+    y: number;
+};
 export type AssetDevelopRecipeDto = {
     /** Black point */
     blacks?: number;
@@ -2117,6 +2208,8 @@ export type AssetDevelopRecipeDto = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -2148,10 +2241,16 @@ export type AssetDevelopRecipeDto = {
 export type AssetDevelopRevisionResponseDto = {
     /** Asset this revision belongs to */
     assetId: string;
+    /** Render attempts so far; one automatic retry follows a first failure */
+    attempts: number;
     /** When the version was saved */
     createdAt: string;
     /** Why the last render failed, when it did */
     error: string | null;
+    /** The export of the original an imported version was developed from */
+    exportId: string | null;
+    /** Name of the imported file, for a version developed elsewhere */
+    fileName: string | null;
     /** True once the edited master file exists */
     hasMaster: boolean;
     /** True once the preview file exists */
@@ -2162,6 +2261,7 @@ export type AssetDevelopRevisionResponseDto = {
     id: string;
     /** True for the version the asset currently shows */
     isCurrent: boolean;
+    kind: AssetDevelopRevisionKind;
     /** Name given when the version was saved */
     label: string | null;
     /** Render progress as a percentage */
@@ -2171,8 +2271,14 @@ export type AssetDevelopRevisionResponseDto = {
     renderedAt: string | null;
     /** Identity of the renderer that produced the files, for lineage */
     rendererVersion: string | null;
+    /** SHA-256 (hex) of the edited master file, once it exists */
+    renditionChecksum: string | null;
     /** Per-asset sequence number, 1 for the first saved version */
     revision: number;
+    /** Application an imported version was developed with, when known */
+    software: string | null;
+    /** SHA-256 (hex) of the original this version was rendered or developed from */
+    sourceChecksum: string | null;
     status: AssetDevelopRevisionStatus;
     /** When the revision last changed */
     updatedAt: string;
@@ -2193,6 +2299,34 @@ export type AssetDevelopSaveDto = {
     recipe: AssetDevelopRecipeDto;
     /** Queue the edited master render immediately after saving the recipe */
     render?: boolean;
+};
+export type DevelopExportResponseDto = {
+    /** Asset whose original was exported */
+    assetId: string;
+    /** When the original was exported */
+    createdAt: string;
+    /** File name of the exported original */
+    fileName: string;
+    /** Export ID; quote it when bringing the developed file back */
+    id: string;
+    /** False once the asset original no longer matches the exported bytes; a return is then refused */
+    isCurrentOriginal: boolean;
+    /** SHA-256 (hex) of the original when it was exported */
+    sourceChecksum: string;
+};
+export type AssetDevelopImportDto = {
+    /** The export this file was developed from */
+    exportId?: string;
+    /** The developed file: JPEG, PNG, TIFF, WebP or HEIF */
+    file: Blob;
+    /** Optional name for the new version */
+    label?: string;
+    /** SHA-256 (hex) of the file as the client sent it; a transfer that does not match is refused */
+    renditionChecksum?: string;
+    /** Application the file was developed with */
+    software?: string;
+    /** SHA-256 (hex) of the original the file was developed from */
+    sourceChecksum?: string;
 };
 export type AssetDevelopPreviewDto = {
     recipe: AssetDevelopRecipeDto;
@@ -2825,6 +2959,67 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type DevelopPresetSettingsDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type DevelopPresetResponseDto = {
+    /** When the preset was saved */
+    createdAt: string;
+    /** Preset ID */
+    id: string;
+    /** Preset name */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+    /** When the preset last changed */
+    updatedAt: string;
+};
+export type DevelopPresetCreateDto = {
+    /** Name shown in the presets list; unique per account */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+};
+export type DevelopPresetUpdateDto = {
+    /** Name shown in the presets list; unique per account */
+    name?: string;
+    /** Replaces every stored setting of the preset */
+    settings?: DevelopPresetSettingsDto;
 };
 export type DocumentSearchResponseDto = {
     items: AssetResponseDto[];
@@ -4039,7 +4234,7 @@ export type MediaOperationDetailDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -4068,6 +4263,8 @@ export type MediaOperationDetailDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type MemoryStoryPlaceDto = {
     /** City */
@@ -4724,257 +4921,71 @@ export type PluginTemplateResponseDto = {
     /** Ui hints, for example "smart-album" */
     uiHints: string[];
 };
-export type PublicConfigOAuthDto = {
-    /** Auto launch */
-    autoLaunch: boolean;
-    /** Button text */
-    buttonText: string;
-    /** Enabled */
-    enabled: boolean;
+export type PreservationPackageCountsDto = {
+    copied: number;
+    failed: number;
+    listed: number;
+    locked: number;
+    pending: number;
+    skipped: number;
+    total: number;
 };
-export type PublicConfigPasswordLoginDto = {
-    /** Enabled */
-    enabled: boolean;
+export type PreservationManifestSummaryDto = {
+    /** Every selected item was written; a complete package can still be damaged later */
+    complete: boolean;
+    createdAt: string;
+    exported: number;
+    failed: number;
+    includeLocked: boolean;
+    includeMetadata: boolean;
+    locked: number;
+    /** The package’s own identity, from its manifest */
+    packageId: string;
+    producerVersion: string;
+    scopeDescription: string;
+    skipped: number;
 };
-export type PublicConfigServerDto = {
-    /** Login page message */
-    loginPageMessage: string;
+export type PreservationSupportDto = {
+    category: PreservationSupportCategory;
+    level: PreservationSupportLevel;
 };
-export type PublicConfigThemeDto = {
-    /** Custom CSS for theming */
-    customCss: string;
+export type PreservationVerificationDto = {
+    changed: number;
+    checked: number;
+    /** Index documents whose digest no longer matches */
+    documentsChanged: string[];
+    finishedAt: string;
+    missing: number;
+    ok: number;
+    reasonKey: string | null;
+    status: PreservationVerificationStatus;
+    /** Files in the package its manifest does not account for */
+    unexpected: number;
 };
-export type PublicConfigDto = {
-    oauth: PublicConfigOAuthDto;
-    passwordLogin: PublicConfigPasswordLoginDto;
-    server: PublicConfigServerDto;
-    theme: PublicConfigThemeDto;
-};
-export type QueueResponseDto = {
-    /** Whether the queue is paused */
-    isPaused: boolean;
-    name: QueueName;
-    statistics: QueueStatisticsDto;
-};
-export type QueueUpdateDto = {
-    /** Whether to pause the queue */
-    isPaused?: boolean;
-};
-export type QueueDeleteDto = {
-    /** If true, will also remove failed jobs from the queue. */
-    failed?: boolean;
-};
-export type QueueJobResponseDto = {
-    /** Job data payload */
-    data: {
-        [key: string]: any;
-    };
-    /** Job ID */
-    id?: string;
-    name: JobName;
-    /** Job creation timestamp */
-    timestamp: number;
-};
-export type RenderWorkerAdmissionDto = {
-    /** Encoder and decoder names the check verified */
-    codecs?: string[];
-    /** When the conformance check ran */
-    conformanceReportedAt: string;
-    /** Digest of the engine and patches actually loaded */
-    engineDigest: string;
-    enrolmentSecret: string;
-    /** GPU memory measured by the conformance check */
-    gpuMemoryBytes: string | null;
-    /** True when the renderer is a software or fallback device */
-    softwareRenderer: boolean;
-    workerId: string;
-};
-export type RenderWorkerSessionDto = {
-    expiresAt: string;
-    /** How often the worker should heartbeat a held claim */
-    heartbeatIntervalMs: number;
-    /** How long a claim lasts without a heartbeat */
-    leaseMs: number;
-    scopes: MediaOperationKind[];
-    /** Present as the x-frameleaf-worker-session header on every worker call */
-    sessionToken: string;
-    workerId: string;
-};
-export type RenderWorkerClaimRequestDto = {
-    /** Narrow the claim to these kinds */
-    kinds?: MediaOperationKind[];
-};
-export type RenderWorkerInputGrantDto = {
-    /** Digest the manifest was resolved against, when known */
-    checksum: string | null;
-    expiresAt: string;
-    /** FL-90 resource key, or `source` for a single-asset workload */
-    inputId: string;
-    /** Resource class: library-asset, edited-master, font, lut, … */
-    kind: string;
-    /** Asset or resource id. Never a path */
-    resourceId: string;
-    /** Relative URL, valid for this claim only and only until expiresAt */
-    url: string;
-};
-export type RenderWorkerClaimLimitsDto = {
-    maxOutputBytes: string | null;
-    maxWallClockMs: string | null;
-};
-export type RenderWorkerClaimDto = {
-    attempt: number;
-    checkpoints: MediaOperationCheckpointDto[];
-    /** Required on every write to this operation */
-    claimToken: string;
-    inputs: RenderWorkerInputGrantDto[];
-    kind: MediaOperationKind;
-    leaseMs: number;
-    limits: RenderWorkerClaimLimitsDto;
-    operationId: string;
-    projectId: string | null;
-    revisionId: string | null;
-    settings: {
-        [key: string]: any;
-    };
-    snapshot: {
-        [key: string]: any;
-    };
-};
-export type RenderWorkerCancelAckDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** True when remote resources are confirmed gone */
-    released: boolean;
-};
-export type RenderWorkerWriteResultDto = {
-    accepted: boolean;
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerCheckpointPlanDto = {
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    configDigest: string;
-    endTicks: string;
-    historyDigest: string;
-    inputDigest: string;
-    prerollTicks?: string;
-    requiresSequentialContext?: boolean;
-    seed: string | null;
-    sequence: number;
-    startTicks: string;
-    timebase: string;
-};
-export type RenderWorkerCheckpointCompleteDto = {
-    /** Must match the planned chunk; a re-planned chunk cannot be completed */
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputChecksum: string;
-    outputPath: string;
-    sizeInBytes: string;
-};
-export type RenderWorkerCompleteDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    resultAssetId: string | null;
-};
-export type RenderWorkerFailDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    error: string;
-    errorCode: string;
-};
-export type RenderWorkerHeartbeatDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** Total output bytes produced so far */
-    outputBytes?: string;
-};
-export type RenderWorkerHeartbeatResponseDto = {
-    /** The owner asked to stop; acknowledge with cancel-ack */
-    cancelRequested: boolean;
-    leaseExtended: boolean;
-    leaseMs: number;
-    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
-    pauseRequested: boolean;
-    /** Set when a limit stopped the operation */
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerProgressDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputBytes?: string;
-    processedUnits: number;
-    status: Status3;
-    totalUnits: number | null;
-};
-export type RunPodBackfillResultDto = {
-    enqueued: string[];
-    skipped: string[];
-};
-export type RunPodConnectionTestDto = {
-    /** API key to verify (overrides the stored key for the test) */
-    apiKey?: string;
-};
-export type RunPodConnectionResultDto = {
-    message?: string;
-    ok: boolean;
-};
-export type RunPodStateDto = {
-    endpointId?: string;
-    endpointUrl?: string;
-    errorMessage?: string;
-    estimatedCostUsd?: number;
-    gpuTypeId?: string;
-    /** Serverless idle timeout; may be null when not yet provisioned. */
-    idleTimeoutSeconds?: number | null;
-    imageName?: string;
-    instanceTag?: string;
-    lastBusyAt?: string;
-    maxRuntimeHours?: number;
-    mlUrl?: string;
-    podCreatedAt?: string;
-    podId?: string;
-    pricePerHour?: number;
-    runningSince?: string;
-    status: Status4;
-    stoppedAt?: string;
-    templateId?: string;
-    unhealthySince?: string;
-    workerReady?: boolean;
-    /** Serverless workersMax; may be null when not yet provisioned. */
-    workersMax?: number | null;
-    /** Serverless workersMin; may be null when not yet provisioned. */
-    workersMin?: number | null;
-};
-export type RunPodGpuTypeDto = {
-    communityCloud?: boolean;
-    displayName: string;
+export type PreservationPackageDto = {
+    counts: PreservationPackageCountsDto;
+    createdAt: string;
+    downloadable: boolean;
+    /** When an uploaded package is discarded */
+    expiresAt: string | null;
+    format: PreservationPackageFormat;
     id: string;
-    memoryInGb: number;
-    pricePerHour?: number | null;
-    secureCloud?: boolean;
-};
-export type RunPodProvisionDto = {
-    /** User confirms image previews will be sent to RunPod (must be true to launch) */
-    acknowledgeDataPrivacy: true;
-    gpuCount?: number;
-    /** RunPod GPU type ID, e.g. "NVIDIA RTX A5000" */
-    gpuTypeId: string;
-    /** Override the configured image */
-    imageName?: string;
-    maxRuntimeHours?: number;
-};
-export type AskSearchDto = {
-    /** Search language code */
-    language?: string;
-    /** Page number */
-    page?: number;
-    /** Natural language Ask Search query */
-    query: string;
-    /** Number of results to return */
-    size?: number;
+    includeLocked: boolean;
+    includeMetadata: boolean;
+    /** It holds Locked items: downloading it needs an unlocked session */
+    lockedContent: boolean;
+    manifest: (PreservationManifestSummaryDto) | null;
+    name: string;
+    /** The newest job on this package */
+    operation: (MediaOperationDto) | null;
+    origin: PreservationPackageOrigin;
+    restorable: boolean;
+    scopeDescription: string | null;
+    sizeBytes: string | null;
+    status: PreservationPackageStatus;
+    support: PreservationSupportDto[];
+    updatedAt: string;
+    verification: (PreservationVerificationDto) | null;
 };
 export type IdsFilter = {
     all?: string[];
@@ -5135,6 +5146,433 @@ export type SearchFilter = {
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;
     visibility?: EnumFilterAssetVisibility;
+};
+export type PreservationScopeDto = {
+    /** Exactly these items of yours, instead of a filter */
+    assetIds?: string[];
+    /** Your items matching these conditions; the whole library when empty */
+    filter?: SearchFilter;
+};
+export type PreservationExportCreateDto = {
+    /** Include your Locked items. Needs an unlocked session; they are restored Locked. */
+    includeLocked?: boolean;
+    /** Include metadata sidecars, albums, people, tags and edit recipes. Checksums are always included. */
+    includeMetadata?: boolean;
+    name: string;
+    /** Idempotency key; a repeated submit answers with the first package */
+    requestKey?: string;
+    scope?: PreservationScopeDto;
+};
+export type PreservationItemDto = {
+    assetId: string | null;
+    error: string | null;
+    id: string;
+    locked: boolean;
+    name: string | null;
+    reasonKey: string | null;
+    sha256: string | null;
+    sizeBytes: string | null;
+    sourceAssetId: string | null;
+    state: PreservationItemState;
+    verifyState: (PreservationVerifyState) | null;
+};
+export type PreservationItemsResponseDto = {
+    items: PreservationItemDto[];
+    total: number;
+};
+export type PreservationPreviewDto = {
+    /** Count Locked items as included; needs an unlocked session */
+    includeLocked?: boolean;
+    scope?: PreservationScopeDto;
+};
+export type PreservationPreviewResponseDto = {
+    bytes: string;
+    /** Free space where the package would be written */
+    freeBytes: string | null;
+    includedBytes: string;
+    /** Items the export would include */
+    includedItems: number;
+    /** Items matching, Locked ones not counted */
+    items: number;
+    /** This session is unlocked, so Locked items may be included */
+    lockedAllowed: boolean;
+    lockedBytes: string;
+    /** Locked items matching */
+    lockedItems: number;
+    maxItems: number;
+    support: PreservationSupportDto[];
+    withinLimit: boolean;
+};
+export type PreservationRestoreCountsDto = {
+    conflicts: number;
+    /** Originals the library already holds; they are matched, never copied again */
+    existing: number;
+    failed: number;
+    findings: number;
+    locked: number;
+    matched: number;
+    /** Originals the library does not hold */
+    "new": number;
+    pending: number;
+    ready: number;
+    restored: number;
+    skipped: number;
+    total: number;
+    /** Originals the library holds in the trash; restore them from the trash first */
+    trashed: number;
+};
+export type PreservationRestoreDto = {
+    /** Albums and collections in the package */
+    albums: number;
+    conflictDefault: PreservationDecision;
+    counts: PreservationRestoreCountsDto;
+    createdAt: string;
+    id: string;
+    name: string;
+    /** The newest job on this restoration */
+    operation: (MediaOperationDto) | null;
+    packageId: string | null;
+    /** Named people in the package */
+    people: number;
+    reasonKey: string | null;
+    restoreEditRecipes: boolean;
+    status: PreservationRestoreStatus;
+    support: PreservationSupportDto[];
+    updatedAt: string;
+};
+export type PreservationRestoreCreateDto = {
+    /** What to do where the package and the library disagree and you have not chosen; `keep` when omitted */
+    conflictDefault?: PreservationDecision;
+    name?: string;
+    packageId: string;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    /** Restore edit recipes; edited versions are rendered again */
+    restoreEditRecipes?: boolean;
+};
+export type PreservationItemDecisionsDto = {
+    decisions: {
+        [key: string]: PreservationDecision;
+    };
+    id: string;
+};
+export type PreservationDecisionsUpdateDto = {
+    conflictDefault?: PreservationDecision;
+    items?: PreservationItemDecisionsDto[];
+    restoreEditRecipes?: boolean;
+};
+export type PreservationConflictDto = {
+    /** The package’s value */
+    archived: string | null;
+    /** The library’s value */
+    current: string | null;
+    /** Your choice; the restoration default applies when null */
+    decision: (PreservationDecision) | null;
+    field: PreservationConflictField;
+};
+export type PreservationRestoreItemDto = {
+    applied: boolean;
+    assetId: string | null;
+    conflicts: PreservationConflictDto[];
+    error: string | null;
+    /** Translation keys for what the restore left for you to look at */
+    findings: string[];
+    id: string;
+    /** Locked in the package or in your library; listed only to an unlocked session */
+    locked: boolean;
+    match: (PreservationRestoreMatch) | null;
+    name: string | null;
+    reasonKey: string | null;
+    sourceAssetId: string | null;
+    state: PreservationRestoreItemState;
+};
+export type PreservationRestoreItemsResponseDto = {
+    items: PreservationRestoreItemDto[];
+    total: number;
+};
+export type PreservationServerPackageCreateDto = {
+    name?: string;
+    /** A package directory or ZIP file on this server, outside its media storage */
+    path: string;
+};
+export type PreservationUploadCreateDto = {
+    /** A `.frameleaf-preservation.zip` package */
+    file: Blob;
+};
+export type PublicConfigOAuthDto = {
+    /** Auto launch */
+    autoLaunch: boolean;
+    /** Button text */
+    buttonText: string;
+    /** Enabled */
+    enabled: boolean;
+};
+export type PublicConfigPasswordLoginDto = {
+    /** Enabled */
+    enabled: boolean;
+};
+export type PublicConfigServerDto = {
+    /** Login page message */
+    loginPageMessage: string;
+};
+export type PublicConfigThemeDto = {
+    /** Custom CSS for theming */
+    customCss: string;
+};
+export type PublicConfigDto = {
+    oauth: PublicConfigOAuthDto;
+    passwordLogin: PublicConfigPasswordLoginDto;
+    server: PublicConfigServerDto;
+    theme: PublicConfigThemeDto;
+};
+export type QueueResponseDto = {
+    /** Whether the queue is paused */
+    isPaused: boolean;
+    name: QueueName;
+    statistics: QueueStatisticsDto;
+};
+export type QueueUpdateDto = {
+    /** Whether to pause the queue */
+    isPaused?: boolean;
+};
+export type QueueDeleteDto = {
+    /** If true, will also remove failed jobs from the queue. */
+    failed?: boolean;
+};
+export type QueueJobResponseDto = {
+    /** Job data payload */
+    data: {
+        [key: string]: any;
+    };
+    /** Job ID */
+    id?: string;
+    name: JobName;
+    /** Job creation timestamp */
+    timestamp: number;
+};
+export type RenderWorkerAdmissionDto = {
+    /** Encoder and decoder names the check verified */
+    codecs?: string[];
+    /** When the conformance check ran */
+    conformanceReportedAt: string;
+    /** Digest of the engine and patches actually loaded */
+    engineDigest: string;
+    enrolmentSecret: string;
+    /** GPU memory measured by the conformance check */
+    gpuMemoryBytes: string | null;
+    /** True when the renderer is a software or fallback device */
+    softwareRenderer: boolean;
+    workerId: string;
+};
+export type RenderWorkerSessionDto = {
+    expiresAt: string;
+    /** How often the worker should heartbeat a held claim */
+    heartbeatIntervalMs: number;
+    /** How long a claim lasts without a heartbeat */
+    leaseMs: number;
+    scopes: MediaOperationKind[];
+    /** Present as the x-frameleaf-worker-session header on every worker call */
+    sessionToken: string;
+    workerId: string;
+};
+export type RenderWorkerClaimRequestDto = {
+    /** Narrow the claim to these kinds */
+    kinds?: MediaOperationKind[];
+};
+export type RenderWorkerInputGrantDto = {
+    /** Digest the manifest was resolved against, when known */
+    checksum: string | null;
+    expiresAt: string;
+    /** FL-90 resource key, or `source` for a single-asset workload */
+    inputId: string;
+    /** Resource class: library-asset, edited-master, font, lut, … */
+    kind: string;
+    /** Asset or resource id. Never a path */
+    resourceId: string;
+    /** Relative URL, valid for this claim only and only until expiresAt */
+    url: string;
+};
+export type RenderWorkerClaimLimitsDto = {
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+};
+export type RenderWorkerClaimDto = {
+    attempt: number;
+    checkpoints: MediaOperationCheckpointDto[];
+    /** Required on every write to this operation */
+    claimToken: string;
+    inputs: RenderWorkerInputGrantDto[];
+    kind: MediaOperationKind;
+    leaseMs: number;
+    limits: RenderWorkerClaimLimitsDto;
+    operationId: string;
+    projectId: string | null;
+    revisionId: string | null;
+    settings: {
+        [key: string]: any;
+    };
+    snapshot: {
+        [key: string]: any;
+    };
+};
+export type RenderWorkerCancelAckDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** True when remote resources are confirmed gone */
+    released: boolean;
+};
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerCheckpointPlanDto = {
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    configDigest: string;
+    endTicks: string;
+    historyDigest: string;
+    inputDigest: string;
+    prerollTicks?: string;
+    requiresSequentialContext?: boolean;
+    seed: string | null;
+    sequence: number;
+    startTicks: string;
+    timebase: string;
+};
+export type RenderWorkerCheckpointCompleteDto = {
+    /** Must match the planned chunk; a re-planned chunk cannot be completed */
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputChecksum: string;
+    outputPath: string;
+    sizeInBytes: string;
+};
+export type RenderWorkerOutputDto = {
+    /** SHA-256 of the whole file */
+    checksum: string;
+    /** `video/mp4`, `video/webm` or `video/quicktime` */
+    contentType: string;
+    /** Absolute path inside the render directory the claim named */
+    path: string;
+    /** What the worker calls a copy it kept; it is asked to delete it until it acknowledges */
+    remoteRef?: string | null;
+    sizeInBytes: string;
+};
+export type RenderWorkerCompleteDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Required for a Studio export */
+    output?: RenderWorkerOutputDto;
+    /** Must be null for a Studio export: its result is adopted by publication, never named by a worker */
+    resultAssetId: string | null;
+};
+export type RenderWorkerFailDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    error: string;
+    errorCode: string;
+};
+export type RenderWorkerHeartbeatDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Total output bytes produced so far */
+    outputBytes?: string;
+};
+export type RenderWorkerHeartbeatResponseDto = {
+    /** The owner asked to stop; acknowledge with cancel-ack */
+    cancelRequested: boolean;
+    leaseExtended: boolean;
+    leaseMs: number;
+    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
+    pauseRequested: boolean;
+    /** Set when a limit stopped the operation */
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerProgressDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputBytes?: string;
+    processedUnits: number;
+    status: Status3;
+    totalUnits: number | null;
+};
+export type RenderWorkerRemoteReferenceDto = {
+    id: string;
+    /** The render job */
+    operationId: string;
+    reason: StudioExportRemoteReason;
+    /** The copy to delete, for a `delete` reference */
+    remoteRef: string | null;
+    requestedAt: string;
+};
+export type RunPodBackfillResultDto = {
+    enqueued: string[];
+    skipped: string[];
+};
+export type RunPodConnectionTestDto = {
+    /** API key to verify (overrides the stored key for the test) */
+    apiKey?: string;
+};
+export type RunPodConnectionResultDto = {
+    message?: string;
+    ok: boolean;
+};
+export type RunPodStateDto = {
+    endpointId?: string;
+    endpointUrl?: string;
+    errorMessage?: string;
+    estimatedCostUsd?: number;
+    gpuTypeId?: string;
+    /** Serverless idle timeout; may be null when not yet provisioned. */
+    idleTimeoutSeconds?: number | null;
+    imageName?: string;
+    instanceTag?: string;
+    lastBusyAt?: string;
+    maxRuntimeHours?: number;
+    mlUrl?: string;
+    podCreatedAt?: string;
+    podId?: string;
+    pricePerHour?: number;
+    runningSince?: string;
+    status: Status4;
+    stoppedAt?: string;
+    templateId?: string;
+    unhealthySince?: string;
+    workerReady?: boolean;
+    /** Serverless workersMax; may be null when not yet provisioned. */
+    workersMax?: number | null;
+    /** Serverless workersMin; may be null when not yet provisioned. */
+    workersMin?: number | null;
+};
+export type RunPodGpuTypeDto = {
+    communityCloud?: boolean;
+    displayName: string;
+    id: string;
+    memoryInGb: number;
+    pricePerHour?: number | null;
+    secureCloud?: boolean;
+};
+export type RunPodProvisionDto = {
+    /** User confirms image previews will be sent to RunPod (must be true to launch) */
+    acknowledgeDataPrivacy: true;
+    gpuCount?: number;
+    /** RunPod GPU type ID, e.g. "NVIDIA RTX A5000" */
+    gpuTypeId: string;
+    /** Override the configured image */
+    imageName?: string;
+    maxRuntimeHours?: number;
+};
+export type AskSearchDto = {
+    /** Search language code */
+    language?: string;
+    /** Page number */
+    page?: number;
+    /** Natural language Ask Search query */
+    query: string;
+    /** Number of results to return */
+    size?: number;
 };
 export type SearchOrder = {
     direction?: AssetOrder;
@@ -6224,6 +6662,45 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioExportSettingsDto = {
+    color: StudioExportColor;
+    format: StudioExportFormat;
+    resolution: StudioExportResolution;
+};
+export type StudioExportVersionDto = {
+    cancelledAt: string | null;
+    contentType: string | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    error: string | null;
+    errorCode: string | null;
+    /** Export version ID */
+    id: string;
+    /** At least one source is shared with you rather than yours */
+    includesSharedSources: boolean;
+    /** The result inherited a lock from a Locked or sensitive source */
+    locked: boolean;
+    /** Null once the project was deleted for good */
+    projectId: string | null;
+    publishOperationId: string | null;
+    publishedAt: string | null;
+    renderOperationId: string | null;
+    /** The asset a `library` result became */
+    resultAssetId: string | null;
+    /** The project revision that was rendered */
+    revision: number;
+    /** Where the published result lives */
+    scope: (StudioExportScope) | null;
+    /** The result inherited sensitive evidence from a source */
+    sensitive: boolean;
+    settings: StudioExportSettingsDto;
+    sizeInBytes: string | null;
+    /** Library sources the result was made from */
+    sourceCount: number;
+    state: StudioExportVersionState;
+    /** The version number, once published */
+    version: number | null;
+};
 export type StudioPreviewTimeDto = {
     /** Time denominator; must be positive */
     denominator: string;
@@ -6453,6 +6930,29 @@ export type StudioCommentUpdateDto = {
 export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
+};
+export type StudioExportListResponseDto = {
+    items: StudioExportVersionDto[];
+    /** Matching versions, before paging */
+    total: number;
+};
+export type StudioExportCreateDto = {
+    /** You agree to the media leaving your network for this export */
+    cloudConsent?: boolean;
+    color: StudioExportColor;
+    /** Where it renders. A cloud destination needs `cloudConsent` */
+    destination: MediaOperationDestination;
+    /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
+    expectedRevision?: number;
+    format: StudioExportFormat;
+    /** Idempotency key; a repeated submit answers with the first export */
+    requestKey?: string;
+    resolution: StudioExportResolution;
+};
+export type StudioExportCreateResponseDto = {
+    /** The render job; follow it in Activity */
+    operation: MediaOperationDto;
+    version: StudioExportVersionDto;
 };
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
@@ -7805,6 +8305,45 @@ export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the settings change history
+ */
+export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SystemConfigHistoryResponseDto;
+    }>("/admin/config/history", {
+        ...opts
+    }));
+}
+/**
+ * Get the admin configuration with its revision
+ */
+export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    }>("/admin/config/revision", {
+        ...opts
+    }));
+}
+/**
+ * Update the system configuration if it is unchanged
+ */
+export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: {
+    adminConfigRevisionUpdateDto: AdminConfigRevisionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    } | {
+        status: 409;
+    }>("/admin/config/revision", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: adminConfigRevisionUpdateDto
+    })));
+}
+/**
  * Delete database backup
  */
 export function deleteDatabaseBackup({ databaseBackupDeleteDto }: {
@@ -9044,6 +9583,49 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     })));
 }
 /**
+ * List exports of an original for editing elsewhere
+ */
+export function getAssetDevelopExports({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopExportResponseDto[];
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts
+    }));
+}
+/**
+ * Export an original for editing elsewhere
+ */
+export function createAssetDevelopExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopExportResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Bring back a file developed elsewhere
+ */
+export function importAssetDevelopRendition({ id, assetDevelopImportDto }: {
+    id: string;
+    assetDevelopImportDto: AssetDevelopImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/imports`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: assetDevelopImportDto
+    })));
+}
+/**
  * Render a develop preview
  */
 export function previewAssetDevelop({ id, assetDevelopPreviewDto }: {
@@ -9801,6 +10383,59 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }>("/config/defaults", {
         ...opts
     }));
+}
+/**
+ * List develop presets
+ */
+export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto[];
+    }>("/develop-presets", {
+        ...opts
+    }));
+}
+/**
+ * Save a develop preset
+ */
+export function createDevelopPreset({ developPresetCreateDto }: {
+    developPresetCreateDto: DevelopPresetCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopPresetResponseDto;
+    }>("/develop-presets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developPresetCreateDto
+    })));
+}
+/**
+ * Delete a develop preset
+ */
+export function deleteDevelopPreset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/develop-presets/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a develop preset
+ */
+export function updateDevelopPreset({ id, developPresetUpdateDto }: {
+    id: string;
+    developPresetUpdateDto: DevelopPresetUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto;
+    }>(`/develop-presets/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: developPresetUpdateDto
+    })));
 }
 /**
  * Search documents
@@ -11977,6 +12612,266 @@ export function getPlugin({ id }: {
     }));
 }
 /**
+ * List preservation packages
+ */
+export function getPreservationPackages(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPackageDto[];
+    }>("/preservation/packages", {
+        ...opts
+    }));
+}
+/**
+ * Create a preservation package
+ */
+export function createPreservationPackage({ preservationExportCreateDto }: {
+    preservationExportCreateDto: PreservationExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/packages", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationExportCreateDto
+    })));
+}
+/**
+ * Remove a preservation package
+ */
+export function removePreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/preservation/packages/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a preservation package
+ */
+export function getPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPackageDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a preservation package
+ */
+export function downloadPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Get a preservation package item report
+ */
+export function getPreservationPackageItems({ id, skip, state, take, verifyState }: {
+    id: string;
+    skip?: number;
+    state?: PreservationItemState;
+    take?: number;
+    verifyState?: PreservationVerifyState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationItemsResponseDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        skip,
+        state,
+        take,
+        verifyState
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a preservation manifest
+ */
+export function downloadPreservationManifest({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/manifest`, {
+        ...opts
+    }));
+}
+/**
+ * Retry a preservation export
+ */
+export function retryPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Verify a preservation package
+ */
+export function verifyPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/verify`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Preview a preservation export
+ */
+export function previewPreservationExport({ preservationPreviewDto }: {
+    preservationPreviewDto: PreservationPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPreviewResponseDto;
+    }>("/preservation/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationPreviewDto
+    })));
+}
+/**
+ * List restorations
+ */
+export function getPreservationRestores(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto[];
+    }>("/preservation/restores", {
+        ...opts
+    }));
+}
+/**
+ * Start a restoration
+ */
+export function createPreservationRestore({ preservationRestoreCreateDto }: {
+    preservationRestoreCreateDto: PreservationRestoreCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationRestoreDto;
+    }>("/preservation/restores", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationRestoreCreateDto
+    })));
+}
+/**
+ * Get a restoration
+ */
+export function getPreservationRestore({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a reviewed package
+ */
+export function applyPreservationRestore({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/apply`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Record restoration choices
+ */
+export function updatePreservationRestoreDecisions({ id, preservationDecisionsUpdateDto }: {
+    id: string;
+    preservationDecisionsUpdateDto: PreservationDecisionsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/decisions`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: preservationDecisionsUpdateDto
+    })));
+}
+/**
+ * Get restoration items
+ */
+export function getPreservationRestoreItems({ filter, id, skip, take }: {
+    filter?: PreservationRestoreItemFilter;
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreItemsResponseDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        filter,
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Register a preservation package on the server
+ */
+export function registerPreservationServerPackage({ preservationServerPackageCreateDto }: {
+    preservationServerPackageCreateDto: PreservationServerPackageCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/server-packages", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationServerPackageCreateDto
+    })));
+}
+/**
+ * Upload a preservation package
+ */
+export function uploadPreservationPackage({ preservationUploadCreateDto }: {
+    preservationUploadCreateDto: PreservationUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/uploads", oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: preservationUploadCreateDto
+    })));
+}
+/**
  * Get the public configuration
  */
 export function getPublicConfig(opts?: Oazapfts.RequestOpts) {
@@ -12279,6 +13174,40 @@ export function validateRenderOperation({ id, xFrameleafWorkerSession, renderWor
             "x-frameleaf-worker-session": xFrameleafWorkerSession
         })
     })));
+}
+/**
+ * List what this worker must stop or delete
+ */
+export function getRenderRemoteReferences({ xFrameleafWorkerSession }: {
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerRemoteReferenceDto[];
+    }>("/render-workers/remote-references", {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Acknowledge a remote reference
+ */
+export function acknowledgeRenderRemoteReference({ id, xFrameleafWorkerSession }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/remote-references/${encodeURIComponent(id)}/acknowledge`, {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
 }
 /**
  * Enqueue all ML backfill jobs
@@ -13455,6 +14384,32 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Get a Studio export
+ */
+export function getStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportVersionDto;
+    }>(`/studio/exports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a Studio export kept with its project
+ */
+export function downloadStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
  * Request a Studio preview frame
  */
 export function requestStudioPreview({ studioPreviewRequestDto }: {
@@ -13695,6 +14650,40 @@ export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
         ...opts,
         method: "POST",
         body: studioProjectDuplicateDto
+    })));
+}
+/**
+ * List a Studio project’s exports
+ */
+export function getStudioExports({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportListResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Export a Studio project
+ */
+export function createStudioExport({ id, studioExportCreateDto }: {
+    id: string;
+    studioExportCreateDto: StudioExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioExportCreateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioExportCreateDto
     })));
 }
 /**
@@ -15091,6 +16080,10 @@ export enum ConfigCredential {
     RunpodApiKey = "runpod-api-key",
     HuggingfaceToken = "huggingface-token"
 }
+export enum SystemConfigHistoryCredentialChange {
+    Replaced = "replaced",
+    Cleared = "cleared"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
@@ -15177,7 +16170,12 @@ export enum MediaOperationKind {
     IcloudSync = "icloud_sync",
     TakeoutImport = "takeout_import",
     PhysicalDeduplication = "physical_deduplication",
-    LibraryScan = "library_scan"
+    LibraryScan = "library_scan",
+    PreservationExport = "preservation_export",
+    PreservationVerify = "preservation_verify",
+    PreservationReview = "preservation_review",
+    PreservationRestore = "preservation_restore",
+    StudioExportPublish = "studio_export_publish"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -15579,6 +16577,14 @@ export enum AssetJobName {
     RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum AssetDevelopRevisionKind {
+    Recipe = "recipe",
+    External = "external"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear"
 }
 export enum AssetDevelopPreset {
     Original = "Original",
@@ -15996,6 +17002,109 @@ export enum WorkflowTrigger {
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
+export enum PreservationPackageFormat {
+    Directory = "directory",
+    Zip = "zip"
+}
+export enum PreservationPackageOrigin {
+    Export = "export",
+    Upload = "upload",
+    Server = "server"
+}
+export enum PreservationPackageStatus {
+    Building = "building",
+    Ready = "ready",
+    Incomplete = "incomplete",
+    Unreadable = "unreadable",
+    Removed = "removed"
+}
+export enum PreservationSupportCategory {
+    Originals = "originals",
+    Dates = "dates",
+    Places = "places",
+    Descriptions = "descriptions",
+    Ratings = "ratings",
+    Favorites = "favorites",
+    Archive = "archive",
+    Locked = "locked",
+    Albums = "albums",
+    Tags = "tags",
+    People = "people",
+    EditRecipes = "editRecipes",
+    LivePhotos = "livePhotos",
+    Stacks = "stacks",
+    DocumentCorrections = "documentCorrections",
+    MomentNotes = "momentNotes",
+    GeneratedDescriptions = "generatedDescriptions",
+    GeneratedMoments = "generatedMoments",
+    CameraDetails = "cameraDetails",
+    Sharing = "sharing",
+    Pets = "pets",
+    StudioProjects = "studioProjects",
+    Memories = "memories"
+}
+export enum PreservationSupportLevel {
+    Restored = "restored",
+    RestoredWhenEmpty = "restored-when-empty",
+    ProvenanceOnly = "provenance-only",
+    NotIncluded = "not-included"
+}
+export enum PreservationVerificationStatus {
+    Verified = "verified",
+    Problems = "problems",
+    Unreadable = "unreadable"
+}
+export enum PreservationItemState {
+    Pending = "pending",
+    Copied = "copied",
+    Failed = "failed",
+    Skipped = "skipped",
+    Listed = "listed"
+}
+export enum PreservationVerifyState {
+    Ok = "ok",
+    Missing = "missing",
+    Changed = "changed"
+}
+export enum PreservationDecision {
+    Keep = "keep",
+    Replace = "replace"
+}
+export enum PreservationRestoreStatus {
+    Reviewing = "reviewing",
+    Ready = "ready",
+    Restoring = "restoring",
+    Completed = "completed",
+    Unreadable = "unreadable"
+}
+export enum PreservationRestoreItemFilter {
+    Conflicts = "conflicts",
+    Failed = "failed",
+    Findings = "findings"
+}
+export enum PreservationConflictField {
+    Date = "date",
+    Description = "description",
+    Location = "location",
+    Rating = "rating",
+    Favorite = "favorite",
+    Archive = "archive",
+    EditRecipe = "editRecipe"
+}
+export enum PreservationRestoreMatch {
+    New = "new",
+    Existing = "existing",
+    Trashed = "trashed"
+}
+export enum PreservationRestoreItemState {
+    Pending = "pending",
+    Ready = "ready",
+    Failed = "failed",
+    Creating = "creating",
+    Restored = "restored",
+    Matched = "matched",
+    Skipped = "skipped"
+}
 export enum QueueJobStatus {
     Active = "active",
     Failed = "failed",
@@ -16097,6 +17206,10 @@ export enum Status3 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
+export enum StudioExportRemoteReason {
+    Cancel = "cancel",
+    Delete = "delete"
+}
 export enum Status4 {
     Idle = "idle",
     Provisioning = "provisioning",
@@ -16168,6 +17281,34 @@ export enum StudioBundleSourceResolution {
     Kept = "kept",
     Suggested = "suggested",
     Missing = "missing"
+}
+export enum StudioExportScope {
+    Library = "library",
+    Project = "project"
+}
+export enum StudioExportColor {
+    Preserve = "preserve",
+    Hdr10 = "hdr10",
+    DolbyVision = "dolby-vision"
+}
+export enum StudioExportFormat {
+    Mp4HevcMain10 = "mp4-hevc-main10",
+    Mp4H264 = "mp4-h264",
+    WebmAv1 = "webm-av1",
+    Prores422Hq = "prores-422-hq"
+}
+export enum StudioExportResolution {
+    $720P = "720p",
+    $1080P = "1080p",
+    $1440P = "1440p",
+    $2160P = "2160p"
+}
+export enum StudioExportVersionState {
+    Rendering = "rendering",
+    Staged = "staged",
+    Published = "published",
+    Failed = "failed",
+    Cancelled = "cancelled"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",

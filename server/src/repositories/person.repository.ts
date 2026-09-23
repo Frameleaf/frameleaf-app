@@ -416,7 +416,7 @@ export class PersonRepository {
       .where('asset_face.id', '=', assetFaceId)
       .executeTakeFirst();
 
-    return Number(result.numChangedRows ?? 0);
+    return Number(result.numUpdatedRows);
   }
 
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })

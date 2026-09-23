@@ -48,6 +48,16 @@
   },
   "pages": [
     {
+      "bytes": 10523,
+      "category": "reference",
+      "id": "63111169",
+      "source": "docs/docs/administration/server-migration.md",
+      "sourceSha256": "b8db949967c3235c75eefcc2011bf949e164549c8b5673223b82747fd1a0ae61",
+      "title": "Administration Reference — Server-to-server migration",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63111169/Administration+Reference+Server-to-server+migration",
+      "version": 1
+    },
+    {
       "bytes": 12350,
       "category": "audits",
       "id": "61407287",
@@ -469,14 +479,14 @@
       "version": 2
     },
     {
-      "bytes": 7066,
+      "bytes": 9297,
       "category": "features",
       "id": "61374992",
       "source": "docs/docs/features/preservation.md",
-      "sourceSha256": "f2e650f9cfef0a19806545da5a474715397abc29b5096cfe42b7e022f40eedaa",
+      "sourceSha256": "5e0f8a3cb00193ebe5a5698e9ae5d3d71b6d6f9ecd8858e9b21eec52c9b43512",
       "title": "Feature Reference — Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 4197,

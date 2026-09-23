@@ -67,7 +67,8 @@ export type MlThroughputSample = {
   spentUsd: number;
 };
 
-const toJson = (value: unknown) => sql`${JSON.stringify(value)}::jsonb`;
+/** Through text: a parameter typed `jsonb` is JSON-encoded again by the driver, storing a JSON string. */
+const toJson = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`;
 
 /**
  * Storage for machine-learning destinations, workload routes and per-request accounting

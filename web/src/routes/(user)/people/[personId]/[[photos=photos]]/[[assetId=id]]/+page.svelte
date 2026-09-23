@@ -408,24 +408,36 @@
                 {#snippet trigger()}
                   <Icon icon={mdiDotsVertical} size="18" />
                 {/snippet}
-                <FrameleafMenuItem onSelect={SelectFeaturePhoto.onAction}
+                <FrameleafMenuItem onSelect={() => void SelectFeaturePhoto.onAction(SelectFeaturePhoto)}
                   >{$t('select_featured_photo')}</FrameleafMenuItem
                 >
-                <FrameleafMenuItem onSelect={Merge.onAction}>{$t('merge_people')}</FrameleafMenuItem>
-                <FrameleafMenuItem onSelect={FixIncorrectMatch.onAction}>{$t('fix_incorrect_match')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={() => void Merge.onAction(Merge)}>{$t('merge_people')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={() => void FixIncorrectMatch.onAction(FixIncorrectMatch)}
+                  >{$t('fix_incorrect_match')}</FrameleafMenuItem
+                >
                 <FrameleafMenuItem onSelect={() => (showCorrectionHistory = true)}
                   >{$t('frameleaf_people_correction_history')}</FrameleafMenuItem
                 >
-                <FrameleafMenuItem onSelect={SetDateOfBirth.onAction}>{$t('set_date_of_birth')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={() => void SetDateOfBirth.onAction(SetDateOfBirth)}
+                  >{$t('set_date_of_birth')}</FrameleafMenuItem
+                >
                 {#if person.isHidden}
-                  <FrameleafMenuItem onSelect={ShowPerson.onAction}>{$t('unhide_person')}</FrameleafMenuItem>
+                  <FrameleafMenuItem onSelect={() => void ShowPerson.onAction(ShowPerson)}
+                    >{$t('unhide_person')}</FrameleafMenuItem
+                  >
                 {:else}
-                  <FrameleafMenuItem onSelect={HidePerson.onAction}>{$t('hide_person')}</FrameleafMenuItem>
+                  <FrameleafMenuItem onSelect={() => void HidePerson.onAction(HidePerson)}
+                    >{$t('hide_person')}</FrameleafMenuItem
+                  >
                 {/if}
                 {#if person.isFavorite}
-                  <FrameleafMenuItem onSelect={Unfavorite.onAction}>{$t('unfavorite')}</FrameleafMenuItem>
+                  <FrameleafMenuItem onSelect={() => void Unfavorite.onAction(Unfavorite)}
+                    >{$t('unfavorite')}</FrameleafMenuItem
+                  >
                 {:else}
-                  <FrameleafMenuItem onSelect={Favorite.onAction}>{$t('to_favorite')}</FrameleafMenuItem>
+                  <FrameleafMenuItem onSelect={() => void Favorite.onAction(Favorite)}
+                    >{$t('to_favorite')}</FrameleafMenuItem
+                  >
                 {/if}
               </FrameleafMenu>
             </div>

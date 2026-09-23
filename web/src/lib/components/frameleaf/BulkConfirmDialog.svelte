@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import { t } from 'svelte-i18n';
 
@@ -18,8 +19,8 @@
   }: {
     count: number;
     open?: boolean;
-    labelKey?: string;
-    messageKey?: string;
+    labelKey?: Translations;
+    messageKey?: Translations;
     danger?: boolean;
     onConfirm: () => void;
   } = $props();

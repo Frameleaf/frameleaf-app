@@ -1,4 +1,5 @@
 import type { SearchFilter } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 
 /**
@@ -9,7 +10,7 @@ import type { DiscoveryQuery } from '$lib/components/discovery/query';
  * the whole condition, so this module turns a field and its condition into a short name and an
  * optional detail. It is pure: the caller translates the name and formats nothing else.
  */
-const FIELD_LABEL_KEYS: Record<string, string> = {
+const FIELD_LABEL_KEYS: Record<string, Translations> = {
   personIds: 'people',
   hasPeople: 'people',
   petIds: 'frameleaf_pets_title',
@@ -63,7 +64,7 @@ const scalar = (value: unknown): string | null => {
 export type FilterChipDescription = {
   field: string;
   /** i18n key for the field's name. */
-  labelKey: string;
+  labelKey: Translations;
   /** A short rendering of the condition, or null when the name says it all. */
   detail: string | null;
   /** How many values a list condition holds; 0 when it is not a list. */
