@@ -126,8 +126,8 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const revision = await this.requireRevision(assetId, revisionId);
     if (revision.status === AssetDevelopRevisionStatus.Queued) {
-      // Not started: no worker holds it, so it can be finished here without racing the renderer.
-      await this.jobRepository.removeJob(JobName.AssetDevelopRender, revision.id).catch(() => undefined);
+      // Not started: the row is finished here and the flag makes the worker skip the job when
+      // it eventually dequeues it, so no render ever starts for a cancelled version.
       const updated = await this.assetDevelopRepository.update(revision.id, {
         status: AssetDevelopRevisionStatus.Cancelled,
         cancelRequested: true,
