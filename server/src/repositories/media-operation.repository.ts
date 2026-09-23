@@ -1,0 +1,570 @@
+import { Injectable } from '@nestjs/common';
+import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
+import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import {
+  MediaOperationCheckpointTable,
+  MediaOperationTable,
+} from 'src/schema/tables/media-operation.table.js';
+import { CLAIMED_MEDIA_OPERATION_STATUSES, TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+
+export type MediaOperation = Selectable<MediaOperationTable>;
+export type MediaOperationCheckpoint = Selectable<MediaOperationCheckpointTable>;
+
+export type MediaOperationCreate = Omit<
+  Insertable<MediaOperationTable>,
+  'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt'
+>;
+
+export type MediaOperationListOptions = {
+  ownerId: string;
+  kind?: MediaOperationKind;
+  statuses?: readonly MediaOperationStatus[];
+  /** Finished jobs the owner cleared from Activity are hidden unless explicitly asked for. */
+  includeDismissed?: boolean;
+  take: number;
+  skip: number;
+};
+
+/** What the admin aggregate may contain: counts, ages and destinations. Never media, never names. */
+export type MediaOperationAggregateRow = {
+  kind: MediaOperationKind;
+  status: MediaOperationStatus;
+  destination: string;
+  count: number;
+  oldestQueuedAt: Date | null;
+};
+
+/**
+ * Durable media operations (FL-43, FL-104).
+ *
+ * Every worker-facing write is a conditional UPDATE guarded by the claim token. That is the whole
+ * defence against a resurrected worker: the guard is in the WHERE clause, so two workers racing
+ * for the same job resolve in Postgres rather than in application code, and a stale token updates
+ * zero rows and is reported as such rather than silently succeeding.
+ */
+@Injectable()
+export class MediaOperationRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  create(operation: MediaOperationCreate): Promise<MediaOperation> {
+    return this.db
+      .insertInto('media_operation')
+      .values(operation)
+      .returningAll()
+      .executeTakeFirstOrThrow() as Promise<MediaOperation>;
+  }
+
+  /** Owner-scoped read. Anything that answers a request goes through this or `list`. */
+  async getForOwner(id: string, ownerId: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst()) as MediaOperation | undefined;
+  }
+
+  async list(options: MediaOperationListOptions): Promise<{ items: MediaOperation[]; total: number }> {
+    let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
+
+    if (options.kind) {
+      query = query.where('kind', '=', options.kind);
+    }
+
+    if (options.statuses?.length) {
+      query = query.where('status', 'in', [...options.statuses]);
+    }
+
+    if (!options.includeDismissed) {
+      query = query.where('dismissedAt', 'is', null);
+    }
+
+    const [items, total] = await Promise.all([
+      query
+        .selectAll()
+        // Newest first; the id is a v7 uuid so it orders by creation without a second column.
+        .orderBy('createdAt', 'desc')
+        .orderBy('id', 'desc')
+        .limit(options.take)
+        .offset(options.skip)
+        .execute(),
+      query
+        .select((eb) => eb.fn.countAll<string>().as('count'))
+        .executeTakeFirst()
+        .then((row) => Number(row?.count ?? 0)),
+    ]);
+
+    return { items: items as MediaOperation[], total };
+  }
+
+  getCheckpoints(operationId: string): Promise<MediaOperationCheckpoint[]> {
+    return this.db
+      .selectFrom('media_operation_checkpoint')
+      .selectAll()
+      .where('operationId', '=', operationId)
+      .orderBy('sequence', 'asc')
+      .execute() as Promise<MediaOperationCheckpoint[]>;
+  }
+
+  /**
+   * Clear a finished job out of the owner's Activity list.
+   *
+   * The row stays: lineage still points at it and an unreleased remote job still has to be
+   * cleaned up. Only the owner's view of it changes.
+   */
+  async dismiss(id: string, ownerId: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({ dismissedAt: sql<Date>`now()` })
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .where('dismissedAt', 'is', null)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Claim lifecycle                                                     */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Take the oldest queued job of a kind, atomically.
+   *
+   * `FOR UPDATE SKIP LOCKED` is what makes two workers asking at the same time pick two different
+   * jobs instead of both picking the oldest. The returned token is the only way to write to the
+   * job afterwards.
+   */
+  async claimNext(options: {
+    kinds: readonly MediaOperationKind[];
+    workerId: string;
+    leaseMs: number;
+  }): Promise<{ operation: MediaOperation; claimToken: string } | undefined> {
+    const claimToken = randomUUID();
+
+    const row = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Preparing,
+        claimToken,
+        claimedBy: options.workerId,
+        claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
+        heartbeatAt: sql<Date>`now()`,
+        startedAt: sql<Date>`coalesce("startedAt", now())`,
+        attempt: sql<number>`"attempt" + 1`,
+      })
+      .where(
+        'id',
+        '=',
+        this.db
+          .selectFrom('media_operation')
+          .select('id')
+          .where('status', '=', MediaOperationStatus.Queued)
+          .where('kind', 'in', [...options.kinds])
+          .where('cancelRequestedAt', 'is', null)
+          .orderBy('createdAt', 'asc')
+          .limit(1)
+          .forUpdate()
+          .skipLocked(),
+      )
+      .returningAll()
+      .executeTakeFirst();
+
+    return row ? { operation: row as MediaOperation, claimToken } : undefined;
+  }
+
+  /** Extend the lease. Returns false when the claim has already been taken away. */
+  async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        heartbeatAt: sql<Date>`now()`,
+        claimExpiresAt: sql<Date>`now() + ${sql.lit(leaseMs)} * interval '1 millisecond'`,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /**
+   * Record real progress.
+   *
+   * The status is part of the guarded write so a worker cannot report `rendering` on a job the
+   * owner has already asked to cancel: `cancelling` is not in the allowed set, so the update
+   * matches nothing and the worker learns its claim no longer authorizes it.
+   */
+  async reportProgress(
+    id: string,
+    claimToken: string,
+    patch: { status: MediaOperationStatus; processedUnits: number; totalUnits: number | null; progress: number },
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: patch.status,
+        processedUnits: String(patch.processedUnits),
+        totalUnits: patch.totalUnits === null ? null : String(patch.totalUnits),
+        progress: patch.progress,
+        heartbeatAt: sql<Date>`now()`,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [
+        MediaOperationStatus.Preparing,
+        MediaOperationStatus.Rendering,
+        MediaOperationStatus.Validating,
+      ])
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /**
+   * Publish a validated result.
+   *
+   * Guarded by the claim and by `status = validating`: an output may only be adopted by the claim
+   * that produced it, and only after validation. A previous valid result stays where it is until
+   * this succeeds, so a failed attempt never destroys the last good version.
+   */
+  async complete(
+    id: string,
+    claimToken: string,
+    result: { resultAssetId: string | null; progress?: number },
+  ): Promise<boolean> {
+    const updated = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Completed,
+        resultAssetId: result.resultAssetId,
+        progress: result.progress ?? 100,
+        finishedAt: sql<Date>`now()`,
+        claimToken: null,
+        claimExpiresAt: null,
+        error: null,
+        errorCode: null,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', '=', MediaOperationStatus.Validating)
+      .executeTakeFirst();
+
+    return Number(updated.numUpdatedRows) === 1;
+  }
+
+  /** Move a claimed job to `validating`. The last gate before anything is published. */
+  async beginValidation(id: string, claimToken: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({ status: MediaOperationStatus.Validating, heartbeatAt: sql<Date>`now()` })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /** Fail a claimed job. A job that has already finished is not reopened by a late report. */
+  async fail(id: string, claimToken: string, failure: { error: string; errorCode: string }): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Failed,
+        error: failure.error,
+        errorCode: failure.errorCode,
+        finishedAt: sql<Date>`now()`,
+        claimToken: null,
+        claimExpiresAt: null,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Cancellation                                                        */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Record the owner's cancellation.
+   *
+   * A queued job has no worker to tell, so it is cancelled outright. Anything already claimed
+   * goes to `cancelling` and stays there until the remote acknowledges: an unacknowledged cancel
+   * is an open obligation, not a finished one.
+   */
+  async requestCancel(id: string, ownerId: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .updateTable('media_operation')
+      .set((eb) => ({
+        status: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Queued)
+          .then(MediaOperationStatus.Cancelled)
+          .else(MediaOperationStatus.Cancelling)
+          .end(),
+        cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
+        cancelAcknowledgedAt: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Queued)
+          .then(sql<Date>`now()`)
+          .else(eb.ref('cancelAcknowledgedAt'))
+          .end(),
+        finishedAt: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Queued)
+          .then(sql<Date>`now()`)
+          .else(eb.ref('finishedAt'))
+          .end(),
+        claimToken: null,
+        claimExpiresAt: null,
+      }))
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .returningAll()
+      .executeTakeFirst()) as MediaOperation | undefined;
+  }
+
+  /**
+   * The remote confirmed the work stopped.
+   *
+   * Only then does the job become `cancelled`. `remoteReleasedAt` is recorded separately so an
+   * acknowledged cancel whose resources are still being torn down stays visible to the cleanup
+   * pass instead of looking finished.
+   */
+  async acknowledgeCancel(id: string, options: { released: boolean }): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Cancelled,
+        cancelAcknowledgedAt: sql<Date>`now()`,
+        ...(options.released ? { remoteReleasedAt: sql<Date>`now()` } : {}),
+        finishedAt: sql<Date>`coalesce("finishedAt", now())`,
+        claimToken: null,
+        claimExpiresAt: null,
+      })
+      .where('id', '=', id)
+      .where('status', '=', MediaOperationStatus.Cancelling)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /**
+   * Cancelled or failed jobs on a remote destination whose cleanup has not been confirmed.
+   *
+   * These survive owner dismissal on purpose: a RunPod job nobody is watching still costs money
+   * and still holds data, so the record is kept until the remote says it is gone.
+   */
+  getUnreleasedRemoteOperations(limit: number): Promise<MediaOperation[]> {
+    return this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('remoteJobId', 'is not', null)
+      .where('remoteReleasedAt', 'is', null)
+      .where((eb) =>
+        eb.or([
+          eb('status', 'in', [MediaOperationStatus.Cancelling, MediaOperationStatus.Cancelled]),
+          eb('status', '=', MediaOperationStatus.Failed),
+        ]),
+      )
+      .orderBy('createdAt', 'asc')
+      .limit(limit)
+      .execute() as Promise<MediaOperation[]>;
+  }
+
+  async markRemoteReleased(id: string): Promise<void> {
+    await this.db
+      .updateTable('media_operation')
+      .set({ remoteReleasedAt: sql<Date>`now()` })
+      .where('id', '=', id)
+      .execute();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Recovery                                                            */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Reclaim jobs whose lease expired: the worker died, the server restarted, the network went.
+   *
+   * A job with attempts left returns to the queue and resumes from its checkpoints. One that has
+   * exhausted them fails with a stable code rather than looping forever. Clearing the claim token
+   * is the important part: if the old worker comes back, none of its writes match any more.
+   */
+  async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<{ requeued: number; failed: number }> {
+    const requeued = await this.db
+      .updateTable('media_operation')
+      .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimExpiresAt', 'is not', null)
+      .where('claimExpiresAt', '<', sql<Date>`now()`)
+      .where(sql<boolean>`"attempt" < "maxAttempts"`)
+      // A cancel already requested must not be resurrected as a queued job.
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
+
+    const failed = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Failed,
+        error: options.error,
+        errorCode: options.errorCode,
+        finishedAt: sql<Date>`now()`,
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimExpiresAt', 'is not', null)
+      .where('claimExpiresAt', '<', sql<Date>`now()`)
+      .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .executeTakeFirst();
+
+    return { requeued: Number(requeued.numUpdatedRows), failed: Number(failed.numUpdatedRows) };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Checkpoints                                                         */
+  /* ------------------------------------------------------------------ */
+
+  /** Record a planned chunk. Re-planning the same sequence replaces its identity and clears it. */
+  async upsertCheckpoint(
+    operationId: string,
+    claimToken: string,
+    chunk: Insertable<MediaOperationCheckpointTable>,
+  ): Promise<boolean> {
+    const claimed = await this.hasClaim(operationId, claimToken);
+    if (!claimed) {
+      return false;
+    }
+
+    await this.db
+      .insertInto('media_operation_checkpoint')
+      .values({ ...chunk, operationId, claimToken })
+      .onConflict((oc) =>
+        oc.columns(['operationId', 'sequence']).doUpdateSet({
+          state: MediaOperationCheckpointState.Pending,
+          chunkKey: chunk.chunkKey,
+          inputDigest: chunk.inputDigest,
+          historyDigest: chunk.historyDigest,
+          configDigest: chunk.configDigest,
+          seed: chunk.seed ?? null,
+          timebase: chunk.timebase,
+          startTicks: chunk.startTicks,
+          endTicks: chunk.endTicks,
+          prerollTicks: chunk.prerollTicks ?? '0',
+          requiresSequentialContext: chunk.requiresSequentialContext ?? false,
+          outputPath: null,
+          outputChecksum: null,
+          sizeInBytes: null,
+          completedAt: null,
+          claimToken,
+          attempt: sql<number>`"media_operation_checkpoint"."attempt" + 1`,
+        }),
+      )
+      .execute();
+
+    return true;
+  }
+
+  /**
+   * Mark a chunk finished.
+   *
+   * Guarded twice: the job's claim must still be ours, and the chunk row itself must still carry
+   * the same key we claim to have rendered. A worker whose lease lapsed while it was encoding
+   * cannot come back and declare a chunk complete that the replacement has since re-planned.
+   */
+  async completeCheckpoint(
+    operationId: string,
+    claimToken: string,
+    chunk: { sequence: number; chunkKey: string; outputPath: string; outputChecksum: Buffer; sizeInBytes: number },
+  ): Promise<boolean> {
+    const claimed = await this.hasClaim(operationId, claimToken);
+    if (!claimed) {
+      return false;
+    }
+
+    const result = await this.db
+      .updateTable('media_operation_checkpoint')
+      .set({
+        state: MediaOperationCheckpointState.Complete,
+        outputPath: chunk.outputPath,
+        outputChecksum: chunk.outputChecksum,
+        sizeInBytes: String(chunk.sizeInBytes),
+        completedAt: sql<Date>`now()`,
+      })
+      .where('operationId', '=', operationId)
+      .where('sequence', '=', chunk.sequence)
+      .where('chunkKey', '=', chunk.chunkKey)
+      .where('claimToken', '=', claimToken)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /** Retire chunks that can no longer describe the work. Invalid chunks are never reused. */
+  async invalidateCheckpointsFrom(operationId: string, sequence: number): Promise<void> {
+    await this.db
+      .updateTable('media_operation_checkpoint')
+      .set({ state: MediaOperationCheckpointState.Invalid })
+      .where('operationId', '=', operationId)
+      .where('sequence', '>=', sequence)
+      .execute();
+  }
+
+  private async hasClaim(operationId: string, claimToken: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', operationId)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+
+    return !!row;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Operational aggregates                                              */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Counts for the administrator's operational view.
+   *
+   * Grouped by kind, status and destination and nothing else. No owner, no label, no asset, no
+   * path: an administrator can see that eleven renders are queued on RunPod without learning
+   * whose media they are.
+   */
+  async getAggregates(): Promise<MediaOperationAggregateRow[]> {
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select((eb) => [
+        'kind',
+        'status',
+        'destination',
+        eb.fn.countAll<string>().as('count'),
+        eb.fn.min<Date | null>('createdAt').as('oldestQueuedAt'),
+      ])
+      .groupBy(['kind', 'status', 'destination'])
+      .execute();
+
+    return rows.map((row) => ({
+      kind: row.kind as MediaOperationKind,
+      status: row.status as MediaOperationStatus,
+      destination: row.destination as string,
+      count: Number(row.count),
+      oldestQueuedAt: row.oldestQueuedAt ?? null,
+    }));
+  }
+}
