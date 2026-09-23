@@ -29,10 +29,10 @@ test.describe('User Administration', () => {
     await page.goto('/admin/users');
     await page.getByRole('button', { name: 'Create user' }).click();
     await page.getByLabel('Email').fill('user@immich.cloud');
-    await page.getByLabel('Password', { exact: true }).fill('password');
-    await page.getByLabel('Confirm Password').fill('password');
-    await page.getByLabel('Name').fill('Immich User');
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.getByLabel('Initial password', { exact: true }).fill('password');
+    await page.getByLabel('Confirm password').fill('password');
+    await page.getByLabel('Name', { exact: true }).fill('Immich User');
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
 
     // Verify the user exists in the user list
     await page.getByRole('row', { name: 'user@immich.cloud' });
@@ -52,11 +52,11 @@ test.describe('User Administration', () => {
 
     await page.goto(`/admin/users/${user.userId}`);
 
+    // FL-76: the Frameleaf account form carries the role as a select, not a switch.
     await page.getByRole('button', { name: 'Edit' }).click();
-    await expect(page.getByLabel('Admin User')).not.toBeChecked();
-    await page.getByLabel('Admin User').click();
-    await expect(page.getByLabel('Admin User')).toBeChecked();
-    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByLabel('Role')).toHaveValue('user');
+    await page.getByLabel('Role').selectOption('admin');
+    await page.getByRole('button', { name: 'Save account' }).click();
 
     await expect
       .poll(async () => {
@@ -82,10 +82,9 @@ test.describe('User Administration', () => {
     await page.goto(`/admin/users/${user.userId}`);
 
     await page.getByRole('button', { name: 'Edit' }).click();
-    await expect(page.getByLabel('Admin User')).toBeChecked();
-    await page.getByLabel('Admin User').click();
-    await expect(page.getByLabel('Admin User')).not.toBeChecked();
-    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByLabel('Role')).toHaveValue('admin');
+    await page.getByLabel('Role').selectOption('user');
+    await page.getByRole('button', { name: 'Save account' }).click();
 
     await expect
       .poll(async () => {
