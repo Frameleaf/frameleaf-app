@@ -44,10 +44,18 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
+  import AuthDisableLoginConfirmModal from '$lib/modals/AuthDisableLoginConfirmModal.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
   import { websocketEvents } from '$lib/stores/websocket';
   import { getAdminConfigWithRevision, updateAdminConfigWithRevision } from '@immich/sdk';
-  import { Alert, CommandPaletteDefaultProvider, Container, Theme as AppTheme, themeManager } from '@immich/ui';
+  import {
+    Alert,
+    CommandPaletteDefaultProvider,
+    Container,
+    modalManager,
+    Theme as AppTheme,
+    themeManager,
+  } from '@immich/ui';
   import {
     mdiAccountOutline,
     mdiBackupRestore,
@@ -73,6 +81,7 @@
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import { clampEnhancedVideoFrames } from './machine-learning/machine-learning-helpers';
 
   type Props = {
     data: PageData;
@@ -105,17 +114,31 @@
   // A draft left by a reload of this tab comes back before anything writes the journal again.
   settingsDraft.recover();
 
+  // Checks before a save, registered here so they run whichever settings area is open (a draft
+  // can change any page, including through an imported file).
+  settingsDraft.registerGuard({
+    keys: ['passwordLogin', 'oauth'],
+    beforeSave: async () => {
+      const { oauth, passwordLogin } = settingsDraft.draft;
+      if (oauth.enabled || passwordLogin.enabled) {
+        return true;
+      }
+      return Boolean(await modalManager.show(AuthDisableLoginConfirmModal));
+    },
+  });
+  settingsDraft.registerGuard({
+    keys: ['machineLearning'],
+    beforeSave: () => {
+      clampEnhancedVideoFrames(settingsDraft.draft.machineLearning);
+      return true;
+    },
+  });
+
   // Keep the journal in step with the draft so a reload can recover it.
   $effect(() => {
     void settingsDraft.changes;
     void settingsDraft.revision;
     untrack(() => settingsDraft.persistJournal());
-  });
-
-  // The page loads the saved settings again when its URL changes (switching areas): follow them.
-  $effect(() => {
-    const latest = data.current;
-    untrack(() => settingsDraft.follow(latest));
   });
 
   onMount(() => {

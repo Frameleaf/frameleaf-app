@@ -7,7 +7,6 @@
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import AuthDisableLoginConfirmModal from '$lib/modals/AuthDisableLoginConfirmModal.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
   import { Button, Link, modalManager, Text, toastManager } from '@immich/ui';
@@ -27,19 +26,6 @@
     if (!previouslyEnabled && !configToEdit.oauth.mobileRedirectUri) {
       configToEdit.oauth.mobileRedirectUri = location.origin + '/api/oauth/mobile-redirect';
     }
-  };
-
-  const onBeforeSave = async () => {
-    const allMethodsDisabled = !configToEdit.oauth.enabled && !configToEdit.passwordLogin.enabled;
-
-    if (allMethodsDisabled) {
-      const confirmed = await modalManager.show(AuthDisableLoginConfirmModal);
-      if (!confirmed) {
-        return false;
-      }
-    }
-
-    return true;
   };
 
   const handleUnlinkAllOAuthAccounts = async () => {
@@ -316,7 +302,7 @@
           </div>
         </SettingGroup>
 
-        <SettingActions keys={['passwordLogin', 'oauth']} {onBeforeSave} {disabled} />
+        <SettingActions keys={['passwordLogin', 'oauth']} {disabled} />
       </div>
     </form>
   </div>

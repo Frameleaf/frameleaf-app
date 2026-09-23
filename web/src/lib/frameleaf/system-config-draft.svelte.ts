@@ -110,6 +110,9 @@ export class SystemConfigDraftStore {
   readonly defaults: AdminConfigDto;
   #options: SystemConfigDraftOptions;
   #guards = new Set<SystemConfigSaveGuard>();
+  /** Bumped by every save and load, so an answer overtaken by a newer one is never followed. */
+  #generation = 0;
+  #refreshAgain = false;
 
   constructor(current: AdminConfigRevisionResponseDto, options: SystemConfigDraftOptions) {
     this.#options = options;
@@ -220,7 +223,17 @@ export class SystemConfigDraftStore {
       return;
     }
 
-    const { draft, conflicts } = rebaseDraft(this.baseline, this.#snapshot(), cloneConfig(latest.config));
+    const snapshot = this.#snapshot();
+    const latestConfig = cloneConfig(latest.config);
+    const { draft, conflicts } = rebaseDraft(this.baseline, snapshot, latestConfig);
+    // Conflicts found earlier (for example after a reload) stay until the administrator settles them.
+    for (const earlier of this.conflicts) {
+      const theirs = get(latestConfig, earlier.path) as unknown;
+      const mine = get(snapshot, earlier.path) as unknown;
+      if (!conflicts.some(({ path }) => path === earlier.path) && !isEqual(theirs, mine)) {
+        conflicts.push({ ...earlier, mine, theirs });
+      }
+    }
     if (conflicts.length > 0) {
       this.latest = latest;
       this.conflicts = conflicts;
@@ -236,16 +249,29 @@ export class SystemConfigDraftStore {
     this.#updated();
   }
 
-  /** Loads the saved settings and follows them. */
+  /**
+   * Loads the saved settings and follows them. A request made while one is running loads again
+   * once it finishes; an answer overtaken by a save or a newer load is dropped.
+   */
   async refresh(): Promise<boolean> {
     if (this.loading) {
+      this.#refreshAgain = true;
       return false;
     }
 
     this.loading = true;
     try {
-      this.follow(await this.#options.load());
-      return true;
+      let followed = false;
+      do {
+        this.#refreshAgain = false;
+        const generation = ++this.#generation;
+        const latest = await this.#options.load();
+        if (generation === this.#generation) {
+          this.follow(latest);
+          followed = true;
+        }
+      } while (this.#refreshAgain);
+      return followed;
     } catch (error) {
       this.error = { code: 'load_failed', detail: getServerErrorMessage(error) };
       return false;
@@ -280,6 +306,7 @@ export class SystemConfigDraftStore {
 
     this.loading = true;
     try {
+      this.#generation++;
       this.#adopt(await this.#options.load());
       this.error = null;
       this.notice = { code: 'latest_loaded' };
@@ -327,10 +354,21 @@ export class SystemConfigDraftStore {
       if (!(await this.#runGuards())) {
         return false;
       }
-      const response = await this.#options.save({ config: this.#snapshot(), expectedRevision: this.revision });
-      this.#adopt(response);
+      const sent = this.#snapshot();
+      this.#generation++;
+      const response = await this.#options.save({ config: sent, expectedRevision: this.revision });
+      this.#generation++;
+      // Edits made while the save was on its way stay in the draft, on top of what was saved.
+      const { draft } = rebaseDraft(sent, this.#snapshot(), cloneConfig(response.config), { force: true });
+      this.baseline = cloneConfig(response.config);
+      this.draft = draft;
+      this.revision = response.revision;
+      this.latest = null;
+      this.conflicts = [];
       this.notice = { code: 'saved' };
-      this.clearJournal();
+      if (!this.dirty) {
+        this.clearJournal();
+      }
       this.#updated();
       return true;
     } catch (error) {
@@ -358,7 +396,9 @@ export class SystemConfigDraftStore {
     this.#clearMessages();
     this.saving = true;
     try {
+      this.#generation++;
       const response = await this.#options.save({ config: payload, expectedRevision: this.revision });
+      this.#generation++;
       // The saved groups are no longer pending; the rest of the draft is carried onto the result.
       const { draft } = rebaseDraft(payload, this.#snapshot(), cloneConfig(response.config), { force: true });
       this.baseline = cloneConfig(response.config);
@@ -420,7 +460,13 @@ export class SystemConfigDraftStore {
         this.unjournaled = 0;
         return;
       }
-      const { journal, skipped } = createJournal(this.revision, this.changes);
+      // A conflicting change keeps the value it was first made against, so a later reload still
+      // finds the conflict instead of quietly taking the draft's value.
+      const changes = this.changes.map((change) => {
+        const conflict = this.conflicts.find(({ path }) => path === change.path);
+        return conflict ? { ...change, before: conflict.before } : change;
+      });
+      const { journal, skipped } = createJournal(this.revision, changes);
       this.unjournaled = skipped;
       if (journal.changes.length === 0) {
         storage.remove();
