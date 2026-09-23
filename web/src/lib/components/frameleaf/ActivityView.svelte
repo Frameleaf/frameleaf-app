@@ -28,7 +28,7 @@
    * Retry are requests to the server, and the row only changes when the server says it has.
    *
    * Four kinds of work share the list. Renders and bulk operations belong to the account and keep
-   * going when this page is closed. Uploads and downloads belong to this browser tab, and the page
+   * going when this page is closed; a bulk job can be cancelled and retried here like a render. Uploads and downloads belong to this browser tab, and the page
    * says so on the row rather than letting somebody assume otherwise.
    */
 
@@ -191,6 +191,11 @@
               .filter(Boolean)
               .join(' · ')}
           </p>
+
+          {#if item.bulk}
+            <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
+            <p class="meta">{$t('frameleaf_activity_bulk_counts', { values: item.bulk })}</p>
+          {/if}
 
           {#if item.running || item.progress !== null}
             <progress

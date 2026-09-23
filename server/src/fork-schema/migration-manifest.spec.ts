@@ -32,6 +32,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000180-AddStudioPreviewFrames')).toBe('legacy-fork');
     expect(classifyMigration('2100000000190-AddSharedSpaceInvite')).toBe('legacy-fork');
     expect(classifyMigration('2100000000200-AddSharedSpacePanels')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000210-AddMediaOperationBulkResult')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
