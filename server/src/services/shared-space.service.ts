@@ -2,8 +2,16 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumResponseDto, mapAlbum } from 'src/dtos/album.dto.js';
 import {
+  SharedSpaceActivityResponseDto,
+  SharedSpaceActivitySearchDto,
   SharedSpaceAlbumResponseDto,
   SharedSpaceAlbumsResponseDto,
+  SharedSpaceCommentCreateDto,
+  SharedSpaceCommentResponseDto,
+  SharedSpaceCommentSearchDto,
+  SharedSpaceCommentsResponseDto,
+  SharedSpaceCommentUpdateDto,
+  SharedSpaceEventResponseDto,
   SharedSpaceMemberResponseDto,
   SharedSpaceMembersResponseDto,
   SharedSpaceNewResponseDto,
@@ -12,22 +20,31 @@ import {
   SharedSpacePersonResponseDto,
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
-import { mapUser } from 'src/dtos/user.dto.js';
-import { AlbumUserRole, Permission } from 'src/enum.js';
-import { SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
+import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
+import { AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
+  canDeleteSpaceComment,
+  canEditSpaceComment,
   canUnlink,
+  isNewSpaceEvent,
   isSpaceMember,
+  narrowSpaceEvent,
+  parseMentions,
+  requireCommentDeleteRights,
+  requireCommentEditRights,
   requireLinkableAlbum,
+  requireMentionableMembers,
   requireSharedSpace,
   requireSpaceContributor,
   requireSpaceMember,
   requireSpaceOwner,
   requireUnlinkRights,
   spaceOwnerId,
+  type SpaceLike,
 } from 'src/utils/shared-space.js';
 
 /**
@@ -46,6 +63,36 @@ const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true };
 
 /** How many "new since your last visit" ids the client is given to filter a timeline with. */
 const NEW_ASSET_LIMIT = 500;
+
+/** How many feed events a page carries by default, and the most the unread count will inspect. */
+const ACTIVITY_PAGE = 50;
+const UNREAD_EVENT_LIMIT = 500;
+
+/**
+ * What one member may see of a space's media, for the feed and the comments.
+ *
+ * Their own hidden-content settings apply, and on top of them the space's
+ * stricter reading: media marked sensitive is excluded even for a member who
+ * has turned that off for their own library, exactly as the other panels do
+ * with `SPACE_CONTENT_OPTIONS`. Locked media is excluded by the default
+ * visibility filter the same queries apply.
+ */
+const spaceViewerOptions = (auth: AuthDto): HiddenContentQueryOptions =>
+  auth.hiddenContent ? { hiddenContent: { ...auth.hiddenContent, includeNsfw: true } } : SPACE_CONTENT_OPTIONS;
+
+/** A per-request cache of user lookups, so a feed page names each person once. */
+type UserMemo = { get: (userId: string | null) => Promise<UserResponseDto | null> };
+
+/** What the comment endpoints need of an `activity` row. */
+type CommentRow = {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+  user: Parameters<typeof mapUser>[0];
+  assetId: string | null;
+  comment: string | null;
+};
 
 /**
  * Shared spaces (FL-55).
@@ -121,6 +168,12 @@ export class SharedSpaceService extends BaseService {
 
     if (!isSpaceMember(album, auth.user.id)) {
       await this.albumUserRepository.create({ albumId: id, userId: auth.user.id, role: invite.role });
+      await this.albumUserRepository.createSpaceEvent({
+        albumId: id,
+        actorId: auth.user.id,
+        type: SharedSpaceEventType.MemberJoined,
+        targetUserId: auth.user.id,
+      });
     }
     await this.albumUserRepository.deleteInvite({ albumId: id, userId: auth.user.id });
 
@@ -255,6 +308,12 @@ export class SharedSpaceService extends BaseService {
     requireLinkableAlbum(space, album);
 
     await this.albumUserRepository.createLinkedAlbum({ albumId: id, linkedAlbumId: albumId, linkedById: auth.user.id });
+    await this.albumUserRepository.createSpaceEvent({
+      albumId: id,
+      actorId: auth.user.id,
+      type: SharedSpaceEventType.AlbumLinked,
+      subject: album.albumName,
+    });
 
     return this.getLinkedAlbums(auth, id);
   }
@@ -270,6 +329,12 @@ export class SharedSpaceService extends BaseService {
     requireUnlinkRights(space, auth.user.id, link.linkedById);
 
     await this.albumUserRepository.deleteLinkedAlbum(id, albumId);
+    await this.albumUserRepository.createSpaceEvent({
+      albumId: id,
+      actorId: auth.user.id,
+      type: SharedSpaceEventType.AlbumUnlinked,
+      subject: link.linkedAlbumName,
+    });
   }
 
   /**
@@ -366,12 +431,20 @@ export class SharedSpaceService extends BaseService {
       SPACE_CONTENT_OPTIONS,
     );
 
+    const name = dto.name?.trim() || person.name;
     await this.albumUserRepository.createLinkedPerson({
       albumId: id,
       personOwnerId: auth.user.id,
       personGroupId: dto.personId,
-      name: dto.name?.trim() || person.name,
+      name,
       coverAssetId,
+    });
+    // The feed carries the space's own name for them, never the person's id or private name.
+    await this.albumUserRepository.createSpaceEvent({
+      albumId: id,
+      actorId: auth.user.id,
+      type: SharedSpaceEventType.PersonLinked,
+      subject: name,
     });
 
     return this.getPeople(auth, id);
@@ -394,6 +467,12 @@ export class SharedSpaceService extends BaseService {
     requireUnlinkRights(space, auth.user.id, link.personOwnerId);
 
     await this.albumUserRepository.deleteLinkedPerson(linkId);
+    await this.albumUserRepository.createSpaceEvent({
+      albumId: id,
+      actorId: auth.user.id,
+      type: SharedSpaceEventType.PersonUnlinked,
+      subject: link.name,
+    });
   }
 
   /** What other members have added since this member last marked the space seen. */
@@ -427,6 +506,302 @@ export class SharedSpaceService extends BaseService {
     await this.requireSpaceMembership(auth, id);
     await this.albumUserRepository.setSpaceVisit({ albumId: id, userId: auth.user.id }, new Date());
     return this.getNew(auth, id);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The activity feed (FL-55)                                           */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * What happened in the space, newest first, as this member may see it.
+   *
+   * Every stored event is narrowed to the caller before it leaves: an asset
+   * event keeps only the items they may see and that are still in the space,
+   * a comment or like on an item they cannot see is dropped whole, and an
+   * event with nothing visible left is not sent at all — so nothing about
+   * Locked or sensitive media reaches a member through the feed, not even a
+   * count. The unread count is computed the same way, over the events since
+   * the caller's own last-seen marker, so it never counts what it would not
+   * show.
+   */
+  async getActivity(auth: AuthDto, id: string, dto: SharedSpaceActivitySearchDto): Promise<SharedSpaceActivityResponseDto> {
+    await this.requireSpaceMembership(auth, id);
+
+    const take = dto.take ?? ACTIVITY_PAGE;
+    const before = dto.before ? new Date(dto.before) : undefined;
+    const visit = await this.albumUserRepository.getSpaceVisit({ albumId: id, userId: auth.user.id });
+    const lastSeenAt = visit?.lastSeenAt;
+
+    const [page, sinceVisit] = await Promise.all([
+      this.albumUserRepository.getSpaceEvents(id, { before, take: take + 1 }),
+      this.albumUserRepository.getSpaceEvents(id, { since: lastSeenAt, take: UNREAD_EVENT_LIMIT }),
+    ]);
+
+    const [visible, unread] = await Promise.all([
+      this.narrowEvents(auth, id, page.slice(0, take)),
+      this.narrowEvents(auth, id, sinceVisit),
+    ]);
+
+    const users = this.userMemo();
+    const mentions = await this.mentionsByActivity(
+      visible.filter(({ type }) => type === SharedSpaceEventType.Comment).map(({ activityId }) => activityId!),
+    );
+    const events: SharedSpaceEventResponseDto[] = [];
+    for (const event of visible) {
+      events.push({
+        id: event.id,
+        type: event.type,
+        createdAt: asDateTimeString(event.createdAt),
+        actor: await users.get(event.actorId),
+        targetUser: await users.get(event.targetUserId),
+        subject: event.subject,
+        assetIds: event.assetIds,
+        assetCount: event.assetCount,
+        activityId: event.activityId,
+        comment: event.type === SharedSpaceEventType.Comment ? event.activityComment : null,
+        mentions: await this.mapMentions(mentions.get(event.activityId ?? '') ?? [], users),
+      });
+    }
+
+    return {
+      events,
+      lastVisitedAt: visit ? asDateTimeString(visit.lastSeenAt) : null,
+      unreadCount: unread.filter((event) => isNewSpaceEvent(event, auth.user.id, lastSeenAt)).length,
+      hasMore: page.length > take,
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Comments on the space and its items (FL-55)                         */
+  /* ------------------------------------------------------------------ */
+
+  /** The comments on one item in the space, or on the space itself. Oldest first. */
+  async getComments(auth: AuthDto, id: string, dto: SharedSpaceCommentSearchDto): Promise<SharedSpaceCommentsResponseDto> {
+    const space = await this.requireSpaceMembership(auth, id);
+    if (dto.assetId) {
+      await this.requireVisibleSpaceAsset(auth, id, dto.assetId);
+    }
+
+    const rows = await this.activityRepository.search({
+      albumId: id,
+      assetId: dto.assetId ?? null,
+      isLiked: false,
+      ...spaceViewerOptions(auth),
+    });
+    const mentions = await this.mentionsByActivity(rows.map(({ id }) => id));
+    const users = this.userMemo();
+
+    const comments: SharedSpaceCommentResponseDto[] = [];
+    for (const row of rows) {
+      comments.push(await this.mapComment(space, auth, row, mentions.get(row.id) ?? [], users));
+    }
+    return { comments };
+  }
+
+  /**
+   * Write a comment, on an item or on the space.
+   *
+   * The comment is an `activity` row, so the album's own rule applies too:
+   * commenting must be enabled on the space. The item, if any, must be one
+   * the caller can see and that is in the space. Mentions are parsed from
+   * `@{userId}` tokens, every one must name a current member, and each
+   * mentioned member other than the author gets a notification through the
+   * ordinary notification system.
+   */
+  async createComment(auth: AuthDto, id: string, dto: SharedSpaceCommentCreateDto): Promise<SharedSpaceCommentResponseDto> {
+    const space = await this.requireSpaceMembership(auth, id);
+    await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [id] });
+    if (dto.assetId) {
+      await this.requireVisibleSpaceAsset(auth, id, dto.assetId);
+    }
+
+    const mentioned = parseMentions(dto.comment);
+    requireMentionableMembers(space, mentioned);
+
+    const activity = await this.activityRepository.create({
+      userId: auth.user.id,
+      albumId: id,
+      assetId: dto.assetId ?? null,
+      isLiked: false,
+      comment: dto.comment,
+    });
+    await this.albumUserRepository.createMentions(activity.id, mentioned);
+    await this.albumUserRepository.createSpaceEvent({
+      albumId: id,
+      actorId: auth.user.id,
+      type: SharedSpaceEventType.Comment,
+      activityId: activity.id,
+    });
+    await this.notifyMentioned(auth, id, dto.assetId ?? null, activity.id, mentioned, []);
+
+    return this.mapComment(space, auth, activity, mentioned, this.userMemo());
+  }
+
+  /** Change what a comment says. Only its author may; newly mentioned members are told. */
+  async updateComment(
+    auth: AuthDto,
+    id: string,
+    commentId: string,
+    dto: SharedSpaceCommentUpdateDto,
+  ): Promise<SharedSpaceCommentResponseDto> {
+    const space = await this.requireSpaceMembership(auth, id);
+    const existing = await this.requireSpaceComment(id, commentId);
+    requireCommentEditRights(existing, auth.user.id);
+
+    const mentioned = parseMentions(dto.comment);
+    requireMentionableMembers(space, mentioned);
+
+    const previous = (await this.albumUserRepository.getMentions([commentId])).map(({ userId }) => userId);
+    const updated = await this.activityRepository.update(commentId, { comment: dto.comment });
+    await this.albumUserRepository.deleteMentions(commentId);
+    await this.albumUserRepository.createMentions(commentId, mentioned);
+    await this.notifyMentioned(auth, id, updated.assetId, commentId, mentioned, previous);
+
+    return this.mapComment(space, auth, updated, mentioned, this.userMemo());
+  }
+
+  /**
+   * Remove a comment. Its author may, and so may a space owner or editor —
+   * that is moderation. The mentions and the feed entry go with it.
+   */
+  async deleteComment(auth: AuthDto, id: string, commentId: string): Promise<void> {
+    const space = await this.requireSpaceMembership(auth, id);
+    const existing = await this.requireSpaceComment(id, commentId);
+    requireCommentDeleteRights(space, existing, auth.user.id);
+
+    await this.activityRepository.delete(commentId);
+  }
+
+  /** Narrow a page of stored events to what this member may see, dropping what they may not. */
+  private async narrowEvents(auth: AuthDto, spaceId: string, events: SharedSpaceEvent[]) {
+    const options = spaceViewerOptions(auth);
+    const inSpace = new Set<string>();
+    const anywhere = new Set<string>();
+    for (const event of events) {
+      if (event.type === SharedSpaceEventType.AssetsRemoved) {
+        for (const assetId of event.assetIds) {
+          anywhere.add(assetId);
+        }
+      } else if (event.type === SharedSpaceEventType.AssetsAdded) {
+        for (const assetId of event.assetIds) {
+          inSpace.add(assetId);
+        }
+      } else if (event.activityAssetId) {
+        inSpace.add(event.activityAssetId);
+      }
+    }
+
+    const [visibleInSpace, visibleAnywhere] = await Promise.all([
+      this.albumUserRepository.filterVisibleSpaceAssetIds(spaceId, [...inSpace], options, { inSpace: true }),
+      this.albumUserRepository.filterVisibleSpaceAssetIds(spaceId, [...anywhere], options, { inSpace: false }),
+    ]);
+
+    return events
+      .map((event) =>
+        narrowSpaceEvent(event, event.type === SharedSpaceEventType.AssetsRemoved ? visibleAnywhere : visibleInSpace),
+      )
+      .filter((event): event is NonNullable<typeof event> => event !== null);
+  }
+
+  /** The item must be in the space and visible to this member, or it is not there as far as they know. */
+  private async requireVisibleSpaceAsset(auth: AuthDto, spaceId: string, assetId: string) {
+    const visible = await this.albumUserRepository.filterVisibleSpaceAssetIds(
+      spaceId,
+      [assetId],
+      spaceViewerOptions(auth),
+      { inSpace: true },
+    );
+    if (!visible.has(assetId)) {
+      throw new NotFoundException('That item is not in this shared space');
+    }
+  }
+
+  /** A comment of this space's, or 404: a like, or another album's comment, is not one. */
+  private async requireSpaceComment(spaceId: string, commentId: string) {
+    const activity = await this.activityRepository.getById(commentId);
+    if (!activity || activity.albumId !== spaceId || activity.isLiked) {
+      throw new NotFoundException('Comment not found');
+    }
+    return activity;
+  }
+
+  /** Tell the members newly named in a comment, never the author about themselves. */
+  private async notifyMentioned(
+    auth: AuthDto,
+    spaceId: string,
+    assetId: string | null,
+    activityId: string,
+    mentioned: string[],
+    alreadyMentioned: string[],
+  ) {
+    const userIds = mentioned.filter((userId) => userId !== auth.user.id && !alreadyMentioned.includes(userId));
+    if (userIds.length === 0) {
+      return;
+    }
+    await this.eventRepository.emit('SharedSpaceMention', {
+      id: spaceId,
+      assetId,
+      activityId,
+      userIds,
+      senderName: auth.user.name,
+    });
+  }
+
+  private async mentionsByActivity(activityIds: string[]): Promise<Map<string, string[]>> {
+    const byActivity = new Map<string, string[]>();
+    for (const { activityId, userId } of await this.albumUserRepository.getMentions(activityIds)) {
+      byActivity.set(activityId, [...(byActivity.get(activityId) ?? []), userId]);
+    }
+    return byActivity;
+  }
+
+  private async mapMentions(userIds: string[], users: UserMemo): Promise<UserResponseDto[]> {
+    const mentions: UserResponseDto[] = [];
+    for (const userId of userIds) {
+      const user = await users.get(userId);
+      if (user) {
+        mentions.push(user);
+      }
+    }
+    return mentions;
+  }
+
+  private async mapComment(
+    space: SpaceLike,
+    auth: AuthDto,
+    row: CommentRow,
+    mentionIds: string[],
+    users: UserMemo,
+  ): Promise<SharedSpaceCommentResponseDto> {
+    return {
+      id: row.id,
+      createdAt: asDateTimeString(row.createdAt),
+      updatedAt: asDateTimeString(row.updatedAt),
+      user: mapUser(row.user),
+      assetId: row.assetId,
+      comment: row.comment ?? '',
+      mentions: await this.mapMentions(mentionIds, users),
+      canEdit: canEditSpaceComment(row, auth.user.id),
+      canDelete: canDeleteSpaceComment(space, row, auth.user.id),
+    };
+  }
+
+  private userMemo(): UserMemo {
+    const cache = new Map<string, Promise<UserResponseDto | null>>();
+    return {
+      get: (userId) => {
+        if (!userId) {
+          return Promise.resolve(null);
+        }
+        if (!cache.has(userId)) {
+          cache.set(
+            userId,
+            this.userRepository.get(userId, {}).then((user) => (user ? mapUser(user) : null)),
+          );
+        }
+        return cache.get(userId)!;
+      },
+    };
   }
 
   /**

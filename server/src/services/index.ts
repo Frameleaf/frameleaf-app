@@ -5,6 +5,7 @@ import { ApiService } from 'src/services/api.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -35,6 +36,7 @@ import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { MediaService } from 'src/services/media.service.js';
@@ -51,6 +53,7 @@ import { PhysicalDeduplicationService } from 'src/services/physical-deduplicatio
 import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RunPodService } from 'src/services/runpod.service.js';
+import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -62,6 +65,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
+import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
@@ -93,6 +97,7 @@ export const services = [
   AssetDevelopService,
   AssetFileService,
   AssetMediaService,
+  AssetRestorationService,
   AssetService,
   AuthService,
   AuthAdminService,
@@ -117,6 +122,7 @@ export const services = [
   MapService,
   MediaHealthService,
   MediaOperationService,
+  RenderWorkerService,
   MediaService,
   MemoryService,
   MlDestinationService,
@@ -132,6 +138,7 @@ export const services = [
   PluginService,
   QueueService,
   RunPodService,
+  RestorationWorkerService,
   SearchService,
   ServerService,
   SessionService,
@@ -144,6 +151,7 @@ export const services = [
   StudioPreviewService,
   StorageService,
   StorageTemplateService,
+  StudioProjectService,
   StudioResourceService,
   SyncService,
   SystemConfigService,

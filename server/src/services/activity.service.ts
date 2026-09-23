@@ -12,9 +12,10 @@ import {
   ReactionType,
   mapActivity,
 } from 'src/dtos/activity.dto.js';
-import { Permission } from 'src/enum.js';
+import { Permission, SharedSpaceEventType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isSharedSpace } from 'src/utils/shared-space.js';
 
 @Injectable()
 export class ActivityService extends BaseService {
@@ -73,6 +74,7 @@ export class ActivityService extends BaseService {
         isLiked: dto.type === ReactionType.LIKE,
         comment: dto.comment,
       });
+      await this.recordSpaceEvent(auth, dto.albumId, activity);
     }
 
     return { duplicate: isDuplicate, value: mapActivity(activity) };
@@ -81,6 +83,27 @@ export class ActivityService extends BaseService {
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ActivityDelete, ids: [id] });
     await this.activityRepository.delete(id);
+  }
+
+  /**
+   * A like or comment on a shared space is also an entry in the space's
+   * activity feed (FL-55). The event row points at the activity and cascades
+   * with it, so deleting the reaction takes it out of the feed too. Nothing
+   * here reads the asset: what members see of the event is filtered when the
+   * feed is read, per viewer.
+   */
+  private async recordSpaceEvent(auth: AuthDto, albumId: string, activity: Activity) {
+    const album = await this.albumRepository.getById(albumId, { withAssets: false });
+    if (!album || !isSharedSpace(album)) {
+      return;
+    }
+
+    await this.albumUserRepository.createSpaceEvent({
+      albumId,
+      actorId: auth.user.id,
+      type: activity.isLiked ? SharedSpaceEventType.Like : SharedSpaceEventType.Comment,
+      activityId: activity.id,
+    });
   }
 
   private nsfwOptions(auth: AuthDto) {
