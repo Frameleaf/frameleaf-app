@@ -5,10 +5,9 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
-  import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { handleError } from '$lib/utils/handle-error';
   import { sendTestEmailAdmin } from '@immich/sdk';
   import { Button, toastManager } from '@immich/ui';
@@ -16,8 +15,9 @@
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   let isSending = $state(false);
 
@@ -49,8 +49,10 @@
         $t('admin.notification_email_test_email_sent', { values: { email: authManager.user.email } }),
       );
 
+      // FL-66: a successful delivery test saves the email settings only, against the draft's
+      // revision; every other pending change stays in the draft for review.
       if (!disabled) {
-        await handleSystemConfigSave({ notifications: configToEdit.notifications });
+        await settingsDraft.saveKeys(['notifications']);
       }
     } catch (error) {
       handleError(error, $t('admin.notification_email_test_email_failed'));
@@ -155,12 +157,24 @@
                 {/if}
               </Button>
             </div>
+            {#if !disabled}
+              <p class="test-note">{$t('frameleaf_settings_draft_email_test_note')}</p>
+            {/if}
           </div>
         </SettingGroup>
       </div>
     </form>
   </div>
-  <TemplateSettings bind:config={configToEdit} />
+  <TemplateSettings config={configToEdit} />
 
-  <SettingActions bind:configToEdit keys={['notifications', 'templates']} {disabled} />
+  <SettingActions keys={['notifications', 'templates']} {disabled} />
 </div>
+
+<style>
+  .test-note {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+</style>
