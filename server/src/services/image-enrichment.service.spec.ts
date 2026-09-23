@@ -9,6 +9,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -801,6 +802,57 @@ describe(ImageEnrichmentService.name, () => {
 
       expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
       expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: false,
+      });
+    });
+
+    it('locks unreviewed detections on start when hiding is on and was not before', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.asset.getUnlockedDetectionIds.mockResolvedValue([assetId]);
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      const newConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigInit({ newConfig });
+
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState);
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: true,
+      });
+    });
+
+    it('locks nothing on start when hiding was already on', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ hideFromLibrary: true });
+      const newConfig = {
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      };
+
+      await sut.onConfigInit({ newConfig });
+
+      expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('only remembers the setting on start when hiding is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      await sut.onConfigInit({ newConfig: defaults });
+
+      expect(mocks.asset.getUnlockedDetectionIds).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.LockedDetectionsState, {
+        hideFromLibrary: false,
+      });
     });
   });
 
