@@ -1,11 +1,12 @@
 import { Kysely, sql } from 'kysely';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   AssetLockReason,
   AssetType,
   AssetVisibility,
   MediaOperationDestination,
   MediaOperationKind,
+  MediaOperationStatus,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
@@ -107,8 +108,15 @@ const stagedExport = async (
     })),
   });
   const checksum = randomBytes(32);
+  const claimToken = randomUUID();
+  await defaultDatabase
+    .updateTable('media_operation')
+    .set({ claimToken, status: MediaOperationStatus.Validating })
+    .where('id', '=', operation.id)
+    .execute();
   const staged = await sut.stage(
     operation.id,
+    claimToken,
     {
       path: `/data/exports/${ownerId}/out.mp4`,
       checksum,
@@ -133,16 +141,29 @@ const stagedExport = async (
       maxAttempts: 1,
     }),
   );
-  return { projectId, render: operation, version: staged!.version, publishId: staged!.operation.id, checksum };
+  await defaultDatabase
+    .updateTable('media_operation')
+    .set({ claimToken, status: MediaOperationStatus.Validating })
+    .where('id', '=', staged!.operation.id)
+    .execute();
+  return {
+    projectId,
+    render: operation,
+    version: staged!.version,
+    publishId: staged!.operation.id,
+    claimToken,
+    checksum,
+  };
 };
 
 const publication = (
-  staged: { version: StudioExportVersion; publishId: string; checksum: Buffer },
+  staged: { version: StudioExportVersion; publishId: string; claimToken: string; checksum: Buffer },
   sources: Source[],
   overrides: Partial<StudioExportPublication> = {},
 ): StudioExportPublication => ({
   versionId: staged.version.id,
   operationId: staged.publishId,
+  claimToken: staged.claimToken,
   ownerId: staged.version.ownerId,
   sources: sources.map((source) => ({
     key: `library-asset:${source.id}`,
@@ -181,6 +202,77 @@ const expectRefusal = async (promise: Promise<unknown>, code: string) => {
 };
 
 describe(StudioExportRepository.name, () => {
+  describe('claim fencing', () => {
+    const claims = [
+      { name: 'cancelled', status: MediaOperationStatus.Cancelled, stale: false },
+      { name: 'cancelling', status: MediaOperationStatus.Cancelling, stale: false },
+      { name: 'stale token', status: MediaOperationStatus.Validating, stale: true },
+    ];
+    it.each(claims)('does not stage a $name render', async ({ status, stale }) => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const staged = await stagedExport(context, user.id, []);
+      await defaultDatabase
+        .updateTable('studio_export_version')
+        .set({ state: StudioExportVersionState.Rendering, publishOperationId: null })
+        .where('id', '=', staged.version.id)
+        .execute();
+      await defaultDatabase.deleteFrom('media_operation').where('id', '=', staged.publishId).execute();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ status, claimToken: stale ? randomUUID() : staged.claimToken })
+        .where('id', '=', staged.render.id)
+        .execute();
+      const publish = vi.fn(() => {
+        throw new Error('must not queue a publication');
+      });
+      await expect(
+        context.sut.stage(
+          staged.render.id,
+          staged.claimToken,
+          {
+            path: '/out.mp4',
+            checksum: staged.checksum,
+            sizeInBytes: 1024,
+            contentType: 'video/mp4',
+            remoteRef: null,
+          },
+          publish,
+        ),
+      ).resolves.toBeUndefined();
+      expect(publish).not.toHaveBeenCalled();
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({
+        state: StudioExportVersionState.Rendering,
+        publishOperationId: null,
+      });
+    });
+    it.each(claims)('does not publish a $name operation', async ({ status, stale }) => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const sources = [await ownSource(context.ctx, user.id)];
+      const staged = await stagedExport(context, user.id, sources);
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ status, claimToken: stale ? randomUUID() : staged.claimToken })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await expectRefusal(context.sut.publish(publication(staged, sources)), 'claim-lost');
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({
+        state: StudioExportVersionState.Staged,
+        resultAssetId: null,
+        version: null,
+      });
+      expect(
+        await defaultDatabase
+          .selectFrom('asset')
+          .select('id')
+          .where('ownerId', '=', user.id)
+          .where('checksum', '=', staged.checksum)
+          .execute(),
+      ).toEqual([]);
+    });
+  });
+
   describe('publish: inherited privacy', () => {
     it('locks the result when a later clip is Locked, as a lock record and never a stored visibility', async () => {
       const context = setup();
@@ -633,6 +725,45 @@ describe(StudioExportRepository.name, () => {
       expect(version!.privacy).toEqual(expect.objectContaining({ lockReason: AssetLockReason.Marked }));
     });
 
+    it('locks descendants beyond eight generations, crossing existing locks and stopping cycles', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const root = await ownSource(context.ctx, user.id);
+      let source = root;
+      const descendants: { assetId: string; versionId: string }[] = [];
+      for (let depth = 0; depth < 10; depth++) {
+        const staged = await stagedExport(context, user.id, [source]);
+        const published = await context.sut.publish(publication(staged, [source]));
+        source = { id: published.createdAssetId!, ownerId: user.id, checksum: staged.checksum, access: 'owner' };
+        descendants.push({ assetId: source.id, versionId: staged.version.id });
+      }
+      // Existing locks must not stop traversal; a reused result can form a cycle.
+      await defaultDatabase
+        .insertInto('asset_lock')
+        .values({ assetId: descendants[0].assetId, reason: AssetLockReason.Marked, lockedBy: user.id })
+        .execute();
+      await defaultDatabase
+        .insertInto('studio_export_version_source')
+        .values({
+          versionId: descendants[0].versionId,
+          key: 'cycle',
+          kind: 'library-asset',
+          resourceId: source.id,
+          assetId: source.id,
+          ownerId: user.id,
+          checksum: source.checksum.toString('base64'),
+          sourceAccess: 'owner',
+        })
+        .execute();
+      await context.assets.lock([root.id], AssetLockReason.Marked, user.id);
+      for (const descendant of descendants) {
+        expect(await lockOf(descendant.assetId)).toBe(AssetLockReason.Marked);
+        expect((await context.sut.getById(descendant.versionId))!.privacy).toMatchObject({
+          lockReason: AssetLockReason.Marked,
+        });
+      }
+    });
+
     it('locks a project result too, which its download then refuses outside an unlocked session', async () => {
       const context = setup();
       const { user: owner } = await context.ctx.newUser();
@@ -713,9 +844,16 @@ describe(StudioExportRepository.name, () => {
         },
       );
       await context.sut.cancel(version.id, { errorCode: 'c', error: 'c' });
+      const claimToken = randomUUID();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ status: MediaOperationStatus.Validating, claimToken })
+        .where('id', '=', operation.id)
+        .execute();
 
       const staged = await context.sut.stage(
         operation.id,
+        claimToken,
         { path: '/x', checksum: randomBytes(32), sizeInBytes: 1, contentType: 'video/mp4', remoteRef: null },
         () => {
           throw new Error('must not queue a publication');

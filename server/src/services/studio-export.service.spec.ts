@@ -120,6 +120,7 @@ const operation = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
     ownerId: OWNER,
     kind: MediaOperationKind.StudioExport,
     status: MediaOperationStatus.Validating,
+    claimToken: 'render-claim',
     destination: MediaOperationDestination.Lan,
     label: 'Lake trip',
     projectId: PROJECT,
@@ -271,6 +272,17 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it('hides a Locked export on request-key replay after the session locks', async () => {
+      const version = versionRow({ privacy: { lockReason: AssetLockReason.Marked } });
+      operations.getByRequestKey.mockResolvedValue(operation());
+      repository.getByRenderOperation.mockResolvedValue(version);
+      repository.getForOwner.mockResolvedValue(version);
+      const replay = { ...(dto as object), requestKey: 'export-request' } as never;
+      await expect(sut.create(elevated(), PROJECT, replay)).resolves.toHaveProperty('version.id', VERSION);
+      await expect(sut.create(auth(), PROJECT, replay)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('queues a render bound to the stored revision, with no graph in the job', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       repository.createWithRender.mockResolvedValue({
@@ -351,10 +363,12 @@ describe(StudioExportService.name, () => {
     });
 
     it('stages a good output, queues its publication and keeps a remote copy on record for deletion', async () => {
-      repository.stage = vi.fn((_id: string, _output: unknown, publish: (version: StudioExportVersion) => object) => {
-        const job = publish(versionRow({ state: StudioExportVersionState.Rendering }));
-        return Promise.resolve({ version: versionRow(), operation: { id: PUBLISH, ...job } });
-      });
+      repository.stage = vi.fn(
+        (_id: string, _claimToken: string, _output: unknown, publish: (version: StudioExportVersion) => object) => {
+          const job = publish(versionRow({ state: StudioExportVersionState.Rendering }));
+          return Promise.resolve({ version: versionRow(), operation: { id: PUBLISH, ...job } });
+        },
+      );
 
       const result = await sut.onRenderCompleted(operation(), 'worker-1', {
         path: staged,
@@ -365,7 +379,7 @@ describe(StudioExportService.name, () => {
       });
 
       expect(result).toEqual({ accepted: true });
-      const publish = repository.stage.mock.calls[0][2](versionRow());
+      const publish = repository.stage.mock.calls[0][3](versionRow());
       expect(publish).toEqual(
         expect.objectContaining({
           kind: MediaOperationKind.StudioExportPublish,
@@ -422,6 +436,22 @@ describe(StudioExportService.name, () => {
       repository.getById.mockResolvedValue(versionRow({ outputPath: staged }));
     });
 
+    it('does not prepare or publish after losing the validation gate', async () => {
+      operations.beginValidation.mockResolvedValue(false);
+      await sut.run(job());
+      expect(storage.rename).not.toHaveBeenCalled();
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('does not cancel a replacement claim when publication rejects a stale token', async () => {
+      repository.publish.mockRejectedValue(new StudioExportRefusal('claim-lost', 'stale token'));
+      await sut.run(job());
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockResolvedValue(published());
 
@@ -433,6 +463,7 @@ describe(StudioExportService.name, () => {
         expect.objectContaining({
           versionId: VERSION,
           operationId: PUBLISH,
+          claimToken: 'claim-p',
           expectedScope: StudioExportScope.Library,
           nsfwHiding: true,
           assetType: AssetType.Video,
