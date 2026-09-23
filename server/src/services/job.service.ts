@@ -46,7 +46,8 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
     }
 
     case ManualJobName.PhysicalDeduplicationApply: {
-      return { name: JobName.PhysicalDeduplicationMigrationApply };
+      // FL-73: applying needs one specific reviewed plan, never a whole-server queue button.
+      throw new BadRequestException('Apply a reviewed plan from the Physical deduplication page');
     }
 
     case ManualJobName.IntegrityMissingFiles: {

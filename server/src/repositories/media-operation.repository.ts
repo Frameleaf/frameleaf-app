@@ -238,6 +238,42 @@ export class MediaOperationRepository {
   }
 
   /**
+   * The newest jobs of one kind across every account (FL-73).
+   *
+   * Only for work an administrator runs for the whole server — applying a reviewed physical
+   * deduplication plan — which every administrator's page shows so nobody applies a second plan on
+   * top of a running one. The copy list in the snapshot and the per-copy outcomes in the result
+   * name other accounts' media, so neither leaves the database here; the counts do.
+   */
+  listRecentOfKind(kind: MediaOperationKind, take: number): Promise<MediaOperation[]> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(LIST_COLUMNS)
+      .select(
+        sql<Record<string, unknown>>`"snapshot" - 'items' - 'retained' - 'excludedRetainedAssetIds'`.as('snapshot'),
+      )
+      .select(sql<Record<string, unknown> | null>`("result" - 'items' - 'inFlight') #- '{retry,ids}'`.as('result'))
+      .where('kind', '=', kind)
+      .orderBy('createdAt', 'desc')
+      .orderBy('id', 'desc')
+      .limit(take)
+      .execute() as unknown as Promise<MediaOperation[]>;
+  }
+
+  /** Any unfinished job of one kind, whoever owns it (FL-73), with the plan it is applying. */
+  async getActiveOfKind(kind: MediaOperationKind): Promise<{ id: string; fingerprint: string | null } | undefined> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id'])
+      .select(sql<string | null>`"snapshot"->>'fingerprint'`.as('fingerprint'))
+      .where('kind', '=', kind)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .orderBy('createdAt', 'asc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /**
    * Finished bundle exports whose file is past its expiry and has not been swept yet (FL-91).
    * The row stays for lineage; the sweep removes the file and records `expiredAt` in the result.
    */

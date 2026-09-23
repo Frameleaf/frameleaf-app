@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import {
   AssetTypeSchema,
+  MediaOperationStatusSchema,
   PhysicalDeduplicationDecisionSchema,
   PhysicalDeduplicationPlanModeSchema,
   PhysicalDeduplicationSkipReasonSchema,
@@ -93,15 +94,61 @@ const PhysicalDeduplicationPlanResponseSchema = z
     copiesTruncated: z
       .boolean()
       .describe('True when more copies were reviewed than the stored preview keeps; totals still cover all of them'),
+    planId: z.string().describe('Short name of this plan, typed to confirm applying it (FL-73)'),
+    fingerprint: z.string().describe('Digest over the plan evidence; changes with every preview (FL-73)'),
+    applicableCopies: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe(
+        'Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan',
+      ),
+    hiddenCopies: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Copies left out of the rows because they are Locked media of another account; counted, never named'),
   })
   .meta({ id: 'PhysicalDeduplicationPlanDto' });
+
+/**
+ * One applied plan (FL-73): the durable job's progress and outcome, for every administrator. Counts
+ * and names only; the copies it covers are never listed here.
+ */
+const PhysicalDeduplicationApplySchema = z
+  .object({
+    operationId: z.string().describe('The media operation applying the plan'),
+    planId: z.string(),
+    fingerprint: z.string(),
+    status: MediaOperationStatusSchema,
+    requestedById: z.string().describe('Administrator who applied the plan; the job is theirs to pause or cancel'),
+    requestedByName: z.string(),
+    mine: z.boolean().describe('Whether the requesting administrator applied it'),
+    retrying: z.boolean().describe('Waiting for its one automatic retry'),
+    pauseRequested: z.boolean(),
+    total: z.number().int().nonnegative().describe('Copies in the reviewed plan'),
+    processed: z.number().int().nonnegative(),
+    progress: z.number(),
+    applied: z.number().int().nonnegative(),
+    alreadyApplied: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative().describe('Copies left alone because their evidence changed'),
+    failed: z.number().int().nonnegative(),
+    estimatedBytes: z.number().int().nonnegative(),
+    reclaimedBytes: z.number().int().nonnegative().describe('Bytes actually removed from disk so far'),
+    error: z.string().nullable(),
+    createdAt: z.iso.datetime(),
+    finishedAt: z.iso.datetime().nullable(),
+  })
+  .meta({ id: 'PhysicalDeduplicationApplyDto' });
 
 const PhysicalDeduplicationPreviewResponseSchema = z
   .object({
     plan: PhysicalDeduplicationPlanResponseSchema.nullable().describe('The latest plan, or null when none has run'),
     savedMasterUserId: z.string().nullable().describe('The saved `physicalDeduplication.masterUserId`'),
     enabled: z.boolean().describe('The saved `physicalDeduplication.enabled`'),
-    running: z.boolean().describe('Whether a deduplication preview or apply job is queued or active'),
+    running: z.boolean().describe('Whether a deduplication preview is queued or active'),
+    applying: z.boolean().describe('Whether a reviewed plan is being applied (FL-73)'),
+    applies: z.array(PhysicalDeduplicationApplySchema).describe('Recently applied plans, newest first (FL-73)'),
   })
   .meta({ id: 'PhysicalDeduplicationPreviewResponseDto' });
 
@@ -115,7 +162,53 @@ const PhysicalDeduplicationPreviewRequestSchema = z
   })
   .meta({ id: 'PhysicalDeduplicationPreviewRequestDto' });
 
+const fingerprint = z
+  .string()
+  .regex(/^[\da-f]{64}$/)
+  .describe('The fingerprint of the plan on screen, from the preview');
+const excludedRetainedAssetIds = z
+  .array(z.uuidv4())
+  .max(PHYSICAL_DEDUPLICATION_PREVIEW_LIMIT)
+  .optional()
+  .describe('Retained originals whose group the administrator decided to leave as they are');
+
+const PhysicalDeduplicationReviewRequestSchema = z
+  .object({ fingerprint, excludedRetainedAssetIds })
+  .meta({ id: 'PhysicalDeduplicationReviewRequestDto' });
+
+const PhysicalDeduplicationReviewResponseSchema = z
+  .object({
+    planId: z.string(),
+    fingerprint: z.string(),
+    reviewToken: z.string().describe('Binds the plan to these per-group decisions; applying must present it'),
+    confirmation: z.string().describe('The phrase to type to apply this plan'),
+    excludedRetainedAssetIds: z.array(z.string()),
+    copies: z.number().int().nonnegative().describe('Copies the reviewed plan will share'),
+    retainedOriginals: z.number().int().nonnegative(),
+    estimatedBytes: z.number().int().nonnegative(),
+    hiddenCopies: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Copies in the reviewed plan that are Locked media of another account; counted, never named'),
+    reviewedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'PhysicalDeduplicationReviewResponseDto' });
+
+const PhysicalDeduplicationApplyRequestSchema = z
+  .object({
+    fingerprint,
+    excludedRetainedAssetIds,
+    reviewToken: z.string().regex(/^[\da-f]{64}$/).describe('From the review of this plan'),
+    confirmation: z.string().max(90).describe('`APPLY <planId>`, typed by the administrator'),
+  })
+  .meta({ id: 'PhysicalDeduplicationApplyRequestDto' });
+
 export class PhysicalDeduplicationPlanDto extends createZodDto(PhysicalDeduplicationPlanResponseSchema) {}
+export class PhysicalDeduplicationApplyDto extends createZodDto(PhysicalDeduplicationApplySchema) {}
+export class PhysicalDeduplicationReviewRequestDto extends createZodDto(PhysicalDeduplicationReviewRequestSchema) {}
+export class PhysicalDeduplicationReviewResponseDto extends createZodDto(PhysicalDeduplicationReviewResponseSchema) {}
+export class PhysicalDeduplicationApplyRequestDto extends createZodDto(PhysicalDeduplicationApplyRequestSchema) {}
 export class PhysicalDeduplicationPreviewResponseDto extends createZodDto(
   PhysicalDeduplicationPreviewResponseSchema,
 ) {}

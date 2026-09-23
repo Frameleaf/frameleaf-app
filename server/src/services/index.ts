@@ -54,6 +54,7 @@ import { OcrService } from 'src/services/ocr.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
@@ -147,6 +148,7 @@ export const services = [
   PartnerService,
   PersonService,
   PetService,
+  PhysicalDeduplicationPlanService,
   PhysicalDeduplicationService,
   PluginService,
   QueueService,
