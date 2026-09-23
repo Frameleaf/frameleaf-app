@@ -72,9 +72,18 @@
     nextAsset: undefined,
   });
 
+  let cursorVersion = 0;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
+    const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
 
+    if (
+      version !== cursorVersion ||
+      assetViewerManager.asset?.id !== currentAsset.id ||
+      !assetViewerManager.isViewing
+    ) {
+      return;
+    }
     assetCursor = {
       current: currentAsset,
       nextAsset,
@@ -163,6 +172,10 @@
           break;
         }
         timelineManager.removeAssets([action.asset.id]);
+        // A delayed confirmation for A must not navigate using the current B cursor.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
         (await navigateToAsset(assetCursor?.nextAsset)) ||
           (await navigateToAsset(assetCursor?.previousAsset)) ||
@@ -176,6 +189,10 @@
       case AssetAction.ARCHIVE: {
         // must update manager before performing any navigation
         timelineManager.removeAssets([action.asset.id]);
+        // A delayed confirmation for A must not navigate using the current B cursor.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
 
         // find the next asset to show or close the viewer
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -275,6 +292,7 @@
   });
 
   onDestroy(() => {
+    cursorVersion++;
     assetCacheManager.invalidate();
   });
 </script>
