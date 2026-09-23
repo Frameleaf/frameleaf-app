@@ -612,7 +612,7 @@ export class RenderWorkerService {
         // Resolve what the job may read *before* taking it. FL-90 walks the graph against the
         // owner's current access; a source that went missing, was trashed, relocked or unshared
         // since submit makes the manifest incomplete, and an incomplete manifest is not rendered.
-        const resolved = await this.resolveManifest(candidate as unknown as MediaOperation);
+        const resolved = await this.resolveManifest(candidate as unknown as MediaOperation, session.id);
         if (!resolved.complete) {
           await this.repository.recordAudit({
             workerId: worker.id,
@@ -642,6 +642,7 @@ export class RenderWorkerService {
         const manifest = resolved.studio
           ? this.studioInputs(operation, resolved.studio, worker.id, now)
           : resolved.manifest;
+        // Locked and sensitive sources are rendered like any other: the owner submitted this job.
         const effective = tightestLimits(workerLimits, ownerLimits.get(candidate.ownerId));
 
         this.logger.log(`Render worker ${worker.id} claimed media operation ${operation.id} (${operation.kind})`);
@@ -879,7 +880,8 @@ export class RenderWorkerService {
    * FL-90's `verifyReadGrant`, run as the operation owner, which re-checks live access and the
    * checksum on every open. For a single-asset workload it is the owner access check. The manifest
    * is resolved again rather than trusted from the grant, so nothing the owner lost access to since
-   * the claim is served even while the grant is unexpired.
+   * the claim is served even while the grant is unexpired. Locked is not "lost access": a
+   * background task reads every asset the owner's job names (owner decision, September 22, 2026).
    */
   async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<ImmichFileResponse> {
     const { worker, session } = await this.authenticate(sessionToken);
@@ -901,8 +903,8 @@ export class RenderWorkerService {
     }
 
     const path = decision.payload.token
-      ? await this.studioInputPath(operation, worker.id, decision.payload)
-      : await this.assetInputPath(operation, decision.payload);
+      ? await this.studioInputPath(operation, worker.id, session.id, decision.payload)
+      : await this.assetInputPath(operation, session.id, decision.payload);
 
     return new ImmichFileResponse({
       path,
@@ -920,10 +922,13 @@ export class RenderWorkerService {
    *
    * Studio kinds go through FL-90: the graph in the immutable snapshot is re-resolved against the
    * owner's current access and the result must be complete. Single-asset workloads (restoration,
-   * quick edit) have one source: the operation's asset, re-checked for owner access with Locked
-   * media excluded, because the render runs without the owner's elevated session.
+   * quick edit) have one source: the operation's asset, re-checked for owner access. Both run as a
+   * background task for the owner, so Locked, sensitive and hidden sources the job names resolve
+   * like any other: the owner chose them when they submitted the job, and a renderer that cannot
+   * read them would silently produce the wrong output. User-facing exposure is unchanged; only
+   * the worker, under this claim, reads them.
    */
-  private async resolveManifest(operation: MediaOperation): Promise<ResolvedManifest> {
+  private async resolveManifest(operation: MediaOperation, workerSessionId: string): Promise<ResolvedManifest> {
     const studio = studioContextOf(operation);
 
     if (studio) {
@@ -932,7 +937,7 @@ export class RenderWorkerService {
         return { complete: false, refused: [{ key: 'destination', reason: 'unknown-destination' }] };
       }
 
-      const auth = await this.ownerAuth(operation.ownerId);
+      const auth = await this.ownerAuth(operation.ownerId, workerSessionId);
       if (!auth) {
         return { complete: false, refused: [{ key: 'owner', reason: 'owner-unavailable' }] };
       }
@@ -949,6 +954,7 @@ export class RenderWorkerService {
           catalog: studio.catalog ? (studio.catalog as never) : undefined,
           destination: destination as StudioDestination,
           cloudConsent: studio.cloudConsent === true,
+          backgroundRunner: true,
         });
       } catch (error: Error | any) {
         // Consent missing, graph oversized, destination unknown: FL-90 refuses to enumerate at all.
@@ -983,10 +989,11 @@ export class RenderWorkerService {
 
     const inputs: AuthorizedManifest['inputs'] = [];
     if (operation.assetId) {
+      // Elevated: a Locked source is still the owner's source. No hidden-content filter either.
       const allowed = await this.accessRepository.asset.checkOwnerAccess(
         operation.ownerId,
         new Set([operation.assetId]),
-        false,
+        true,
       );
       if (allowed.has(operation.assetId)) {
         inputs.push({
@@ -1041,14 +1048,19 @@ export class RenderWorkerService {
   private async studioInputPath(
     operation: MediaOperation,
     workerId: string,
+    workerSessionId: string,
     payload: { inputId: string; resourceId: string; token: string | null },
   ): Promise<string> {
-    const auth = await this.ownerAuth(operation.ownerId);
+    const auth = await this.ownerAuth(operation.ownerId, workerSessionId);
     if (!auth) {
       throw new NotFoundException('Input not available');
     }
 
-    const verification = await this.studioResources.verifyReadGrant(payload.token!, { workerId, auth });
+    const verification = await this.studioResources.verifyReadGrant(payload.token!, {
+      workerId,
+      auth,
+      backgroundRunner: true,
+    });
     if (!verification.valid) {
       this.logger.warn(`Input grant refused on media operation ${operation.id}: ${verification.reason}`);
       throw new ForbiddenException('Input grant invalid');
@@ -1070,7 +1082,7 @@ export class RenderWorkerService {
 
     // Project-owned and deployment-owned files: FL-90 bound their access at resolve time; the path
     // comes from a fresh resolution so a re-declared or removed resource is not served from memory.
-    const resolved = await this.resolveManifest(operation);
+    const resolved = await this.resolveManifest(operation, workerSessionId);
     const entry = resolved.complete
       ? resolved.studio?.entries.find((candidate) => candidate.key === payload.inputId && candidate.grant === 'render')
       : undefined;
@@ -1084,9 +1096,10 @@ export class RenderWorkerService {
   /** Redeem a single-asset input: the owner must still be able to read the asset, and own it. */
   private async assetInputPath(
     operation: MediaOperation,
+    workerSessionId: string,
     payload: { inputId: string; resourceId: string },
   ): Promise<string> {
-    const resolved = await this.resolveManifest(operation);
+    const resolved = await this.resolveManifest(operation, workerSessionId);
     const input = resolved.complete
       ? resolved.manifest.inputs.find(
           (candidate) => candidate.inputId === payload.inputId && candidate.resourceId === payload.resourceId,
@@ -1105,11 +1118,13 @@ export class RenderWorkerService {
   }
 
   /**
-   * The operation owner as an `AuthDto`, for FL-90's resolver and verifier. Plain session, no
-   * elevated permission and no shared link: a render reads what the owner could read signed in
-   * normally, and a deleted owner resolves to nothing.
+   * The operation owner as an `AuthDto`, for FL-90's resolver and verifier. The acting session is
+   * the worker's, carried as an elevated session and with no hidden-content filter, so the access
+   * checks include the owner's Locked, sensitive and hidden assets: a background task reads every
+   * asset the owner's job names (owner decision, September 22, 2026). No shared link, so FL-90's
+   * shared-link refusal never applies, and a deleted owner resolves to nothing.
    */
-  private async ownerAuth(ownerId: string): Promise<AuthDto | null> {
+  private async ownerAuth(ownerId: string, workerSessionId: string): Promise<AuthDto | null> {
     const user = await this.userRepository.get(ownerId, {});
     if (!user) {
       return null;
@@ -1124,6 +1139,7 @@ export class RenderWorkerService {
         quotaSizeInBytes: user.quotaSizeInBytes,
         quotaUsageInBytes: user.quotaUsageInBytes,
       },
+      session: { id: workerSessionId, hasElevatedPermission: true },
     };
   }
 
