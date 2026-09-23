@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -13,15 +14,20 @@ import {
   type AssetDevelopRecipe,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
+  AssetDevelopRevisionKind,
   AssetDevelopRevisionResponseDto,
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
 } from 'src/dtos/asset-develop.dto.js';
+import { AssetDevelopImportDto, DevelopExportResponseDto } from 'src/dtos/photo-tools.dto.js';
 import {
   AssetType,
+  AssetVisibility,
   CacheControl,
+  ChecksumAlgorithm,
   Colorspace,
   ImageFormat,
+  ImmichWorker,
   JobName,
   JobStatus,
   Permission,
@@ -33,9 +39,11 @@ import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositor
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { requireAccess } from 'src/utils/access.js';
@@ -43,17 +51,40 @@ import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
   DEVELOP_RENDERER_VERSION,
+  applyDevelopMasks,
   applyDevelopTone,
+  defaultDevelopRecipe,
   effectiveDevelop,
+  maskMappingFor,
   normalizeDevelopRecipe,
   planDevelopDetail,
   planDevelopGeometry,
 } from 'src/utils/develop-recipe.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /** The edited master keeps the source resolution and is encoded well above the playback previews. */
 const MASTER_MIN_QUALITY = 92;
+
+/** Largest developed file accepted back from another application (FL-64). */
+export const DEVELOP_IMPORT_MAX_BYTES = 2 * 1024 ** 3;
+
+/** Finished formats a developed file may come back in. RAW is what goes out, never what comes back. */
+export const DEVELOP_IMPORT_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.heic', '.heif']);
+
+/**
+ * A render claimed longer ago than this without a progress write is presumed lost (its worker
+ * died or the queue dropped it) and may be claimed again. Progress is written between stages, so
+ * a live render refreshes it well inside this window.
+ */
+export const DEVELOP_RENDER_LEASE_MS = 10 * 60 * 1000;
+
+/** Where uploaded developed files wait while they are checked; never a library or upload folder. */
+export const developImportStagingFolder = (ownerId: string) =>
+  path.join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'develop-imports');
+
+type ImportedFile = { path: string; originalname?: string; size: number };
 
 type DevelopSource = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
 
@@ -62,6 +93,9 @@ class DevelopRenderCancelled extends Error {
     super('Develop render cancelled');
   }
 }
+
+/** The original or the imported file is no longer what the version was made from; retrying cannot help. */
+class DevelopSourceChanged extends Error {}
 
 /**
  * Still-image quick edits (FL-113): recipes are saved as revisions against an asset and
@@ -78,8 +112,10 @@ export class AssetDevelopService {
     private assetJobRepository: AssetJobRepository,
     private assetDevelopRepository: AssetDevelopRepository,
     private configRepository: ConfigRepository,
+    private cryptoRepository: CryptoRepository,
     private jobRepository: JobRepository,
     private mediaRepository: MediaRepository,
+    private photoToolsRepository: PhotoToolsRepository,
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
   ) {
@@ -207,23 +243,34 @@ export class AssetDevelopService {
     });
   }
 
+  /**
+   * Renders one version. A recipe is rendered from the original into an edited master and a
+   * preview; a file developed elsewhere already is the master, so only its preview is made. The
+   * files are published atomically and only then does the version become current, so a failed
+   * or cancelled render always leaves the previous working version in place. A failure gets
+   * exactly one automatic retry (owner decision, September 22, 2026); after that it waits for a
+   * person to retry it.
+   */
   @OnJob({ name: JobName.AssetDevelopRender, queue: QueueName.Editor })
   async handleRender({ id }: JobOf<JobName.AssetDevelopRender>): Promise<JobStatus> {
-    const revision = await this.assetDevelopRepository.get(id);
-    if (!revision) {
+    const existing = await this.assetDevelopRepository.get(id);
+    if (!existing) {
       this.logger.warn(`Develop render skipped: revision ${id} no longer exists`);
       return JobStatus.Skipped;
     }
-    if (revision.cancelRequested) {
-      await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
+    if (existing.cancelRequested) {
+      if (existing.status !== AssetDevelopRevisionStatus.Cancelled) {
+        await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
+      }
       return JobStatus.Skipped;
     }
-    if (revision.status === AssetDevelopRevisionStatus.Rendered) {
-      // A stale duplicate of an already finished job must never replace valid files.
+    if (!this.isClaimable(existing)) {
+      // Finished, failed, or a live render already holds it: a stale or duplicate delivery must
+      // never replace valid files or race the render in progress.
       return JobStatus.Skipped;
     }
 
-    const source = await this.assetJobRepository.getForGenerateThumbnailJob(revision.assetId);
+    const source = await this.assetJobRepository.getForGenerateThumbnailJob(existing.assetId);
     if (!source || source.type !== AssetType.Image) {
       await this.assetDevelopRepository.update(id, {
         status: AssetDevelopRevisionStatus.Failed,
@@ -232,83 +279,187 @@ export class AssetDevelopService {
       return JobStatus.Failed;
     }
 
+    const revision = await this.assetDevelopRepository.beginAttempt(id, DEVELOP_RENDERER_VERSION);
+    if (!revision) {
+      return JobStatus.Skipped;
+    }
+
     const { image } = await this.getConfig();
     const outputs = this.getOutputPaths(source, revision, image);
+    const external = revision.kind === AssetDevelopRevisionKind.External;
     const tmp = { master: `${outputs.master}.tmp`, preview: `${outputs.preview}.tmp` };
     try {
-      await this.assetDevelopRepository.update(id, {
-        status: AssetDevelopRevisionStatus.Rendering,
-        progress: 5,
-        error: null,
-        rendererVersion: DEVELOP_RENDERER_VERSION,
-      });
-      const recipe = normalizeDevelopRecipe(revision.recipe);
-
-      const decoded = await this.decodeSource(source, image);
-      await this.progress(id, 25);
-
-      const rendered = await this.renderRecipe(decoded, recipe, revision.revision);
-      await this.progress(id, 60);
-
-      this.storageRepository.mkdirSync(path.dirname(outputs.master));
-      const masterFormat = image.fullsize.format;
-      await this.mediaRepository.encodeDevelopOutput(
-        rendered.data,
-        rendered.info,
-        {
-          detail: rendered.detail,
-          colorspace: decoded.colorspace,
-          format: masterFormat,
-          quality: Math.max(image.fullsize.quality, MASTER_MIN_QUALITY),
-          progressive: image.fullsize.progressive,
-        },
-        tmp.master,
-      );
-      await this.progress(id, 85);
-
-      await this.mediaRepository.encodeDevelopOutput(
-        rendered.data,
-        rendered.info,
-        {
-          detail: rendered.detail,
-          colorspace: decoded.colorspace,
-          format: image.preview.format,
-          quality: image.preview.quality,
-          size: image.preview.size,
-        },
-        tmp.preview,
-      );
-      await this.progress(id, 95);
-
-      // Atomic publish: both files exist before either path is recorded.
-      await this.storageRepository.rename(tmp.master, outputs.master);
-      await this.storageRepository.rename(tmp.preview, outputs.preview);
-      await this.assetDevelopRepository.update(id, {
-        status: AssetDevelopRevisionStatus.Rendered,
-        progress: 100,
-        error: null,
-        masterPath: outputs.master,
-        previewPath: outputs.preview,
-        width: rendered.info.width,
-        height: rendered.info.height,
-        renderedAt: new Date(),
-      });
-      // Saving a version makes it the working version; Revert walks back through history.
+      const sourceChecksum = await this.currentSourceChecksum(revision.assetId);
+      if (external) {
+        await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image);
+      } else {
+        await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
+      }
+      // Rendering a version makes it the working version; Revert walks back through history.
       await this.assetDevelopRepository.setCurrent(revision.assetId, id);
       return JobStatus.Success;
     } catch (error) {
-      await this.discard([tmp.master, tmp.preview]);
+      await this.discard(external ? [tmp.preview] : [tmp.master, tmp.preview]);
       if (error instanceof DevelopRenderCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         return JobStatus.Skipped;
       }
-      const message = error instanceof Error ? error.message : String(error);
+      const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      const permanent = error instanceof DevelopSourceChanged;
+      if (!permanent && revision.attempts <= MEDIA_OPERATION_AUTO_RETRIES) {
+        this.logger.warn(`Develop render of revision ${id} failed, retrying once: ${message}`);
+        await this.assetDevelopRepository.update(id, {
+          status: AssetDevelopRevisionStatus.Queued,
+          progress: 0,
+          error: message,
+        });
+        await this.jobRepository.queue({
+          name: JobName.AssetDevelopRender,
+          data: { id, delay: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS },
+        });
+        return JobStatus.Failed;
+      }
       this.logger.error(`Develop render failed for revision ${id}: ${message}`);
-      await this.assetDevelopRepository.update(id, {
-        status: AssetDevelopRevisionStatus.Failed,
-        error: message.slice(0, 500),
-      });
+      await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
       return JobStatus.Failed;
+    }
+  }
+
+  /**
+   * Puts renders the queue lost back on it: a restart or a flushed queue leaves rows queued, or
+   * rendering with a lapsed lease, that no job will ever pick up. The render claim itself
+   * refuses a live one, so requeueing is safe to repeat.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  async onBootstrap() {
+    const unfinished = await this.assetDevelopRepository.listUnfinished();
+    const lost = unfinished.filter((revision) => this.isClaimable(revision));
+    if (lost.length === 0) {
+      return;
+    }
+    this.logger.log(`Requeueing ${lost.length} develop render(s) left unfinished`);
+    await this.jobRepository.queueAll(lost.map(({ id }) => ({ name: JobName.AssetDevelopRender, data: { id } })));
+  }
+
+  /* External development round trip (FL-64) ---------------------------------------------------- */
+
+  async listExports(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto[]> {
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
+    const exports = await this.photoToolsRepository.listExports(assetId);
+    if (exports.length === 0) {
+      return [];
+    }
+    const current = await this.currentSourceChecksum(assetId);
+    return exports.map((item) => this.toExportDto(item, current));
+  }
+
+  /**
+   * Records that the original is going out for development elsewhere, with the SHA-256 of its
+   * bytes now. The client then downloads the original through the ordinary download route.
+   */
+  async createExport(auth: AuthDto, assetId: string): Promise<DevelopExportResponseDto> {
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    const asset = await this.requireEditableStill(assetId);
+    const checksum = await this.currentSourceChecksum(assetId);
+    const created = await this.photoToolsRepository.createExport({
+      assetId,
+      ownerId: asset.ownerId,
+      sourceChecksum: checksum,
+      fileName: asset.originalFileName,
+    });
+    return this.toExportDto(created, checksum);
+  }
+
+  /**
+   * Brings a file developed in another application back as a new version of the photo. Nothing
+   * is kept unless every check passes: the photo may be edited by this session (a Locked photo
+   * only in an unlocked session), the file is a finished image that arrived intact, and it was
+   * developed from the original this photo has now. The original is never touched; the new
+   * version becomes the working version only once its preview has rendered.
+   */
+  async importRendition(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetDevelopImportDto,
+    file: ImportedFile | undefined,
+  ): Promise<AssetDevelopRevisionResponseDto> {
+    if (!file?.path) {
+      throw new BadRequestException('Choose the developed file to bring back');
+    }
+    let kept: string | undefined;
+    try {
+      await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+      const asset = await this.requireEditableStill(assetId);
+
+      const fileName = path.basename(file.originalname || 'developed').slice(0, 255);
+      const extension = path.extname(fileName).toLowerCase();
+      if (mimeTypes.isRaw(fileName)) {
+        throw new BadRequestException('Bring back the developed file (JPEG, TIFF, PNG, WebP or HEIF), not a RAW');
+      }
+      if (!DEVELOP_IMPORT_EXTENSIONS.has(extension)) {
+        throw new BadRequestException('Bring back a JPEG, TIFF, PNG, WebP or HEIF file');
+      }
+      if (file.size <= 0) {
+        throw new BadRequestException('The file is empty');
+      }
+      if (file.size > DEVELOP_IMPORT_MAX_BYTES) {
+        throw new BadRequestException('The file is larger than a developed version may be');
+      }
+
+      const exported = dto.exportId ? await this.photoToolsRepository.getExport(dto.exportId) : undefined;
+      if (dto.exportId && exported?.assetId !== assetId) {
+        // Unknown and someone else's exports answer the same, so no export id leaks.
+        throw new BadRequestException('That export was not made from this photo');
+      }
+      const claimed = dto.sourceChecksum ? Buffer.from(dto.sourceChecksum, 'hex') : undefined;
+      if (exported && claimed && !exported.sourceChecksum.equals(claimed)) {
+        throw new BadRequestException('The original checksum does not match the export');
+      }
+      const expected = exported?.sourceChecksum ?? claimed;
+      if (!expected) {
+        throw new BadRequestException('Say which export or original checksum the file was developed from');
+      }
+      const current = await this.currentSourceChecksum(assetId);
+      if (!current.equals(expected)) {
+        throw new ConflictException(
+          'This file was developed from a different original than the photo has now; nothing was changed',
+        );
+      }
+
+      const received = await this.cryptoRepository.hashFile(file.path, 'sha256');
+      if (dto.renditionChecksum && received.toString('hex') !== dto.renditionChecksum) {
+        throw new BadRequestException('The file did not arrive intact; nothing was changed, try again');
+      }
+
+      const master = path.join(
+        StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
+        `${asset.id}_develop_import_${randomUUID()}${extension}`,
+      );
+      this.storageRepository.mkdirSync(path.dirname(master));
+      await this.storageRepository.rename(file.path, master);
+      kept = master;
+
+      const revision = await this.assetDevelopRepository.create({
+        assetId,
+        ownerId: asset.ownerId,
+        recipe: defaultDevelopRecipe(),
+        recipeVersion: ASSET_DEVELOP_RECIPE_VERSION,
+        label: dto.label ?? null,
+        status: AssetDevelopRevisionStatus.Saved,
+        kind: AssetDevelopRevisionKind.External,
+        sourceChecksum: current,
+        renditionChecksum: received,
+        exportId: exported?.id ?? null,
+        fileName,
+        software: dto.software ?? null,
+        masterPath: master,
+      });
+      kept = undefined;
+      this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
+      return await this.queueRender(revision);
+    } finally {
+      // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
+      await this.discard([file.path, ...(kept ? [kept] : [])]);
     }
   }
 
@@ -323,11 +474,13 @@ export class AssetDevelopService {
   }
 
   private async queueRender(revision: AssetDevelopRevision): Promise<AssetDevelopRevisionResponseDto> {
+    // A person asking for a render starts afresh: it gets its own automatic retry.
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
       progress: 0,
       error: null,
       cancelRequested: false,
+      attempts: 0,
     });
     await this.jobRepository.queue({ name: JobName.AssetDevelopRender, data: { id: revision.id } });
     return this.toRevisionDto(queued ?? revision);
@@ -340,6 +493,14 @@ export class AssetDevelopService {
     }
     if (asset.type !== AssetType.Image) {
       throw new BadRequestException('Develop recipes apply to images; videos use the video editor');
+    }
+    if (asset.deletedAt) {
+      throw new BadRequestException('Restore the photo from the trash before editing it');
+    }
+    if (asset.visibility === AssetVisibility.Hidden) {
+      // The still half of a pair or another item the library keeps out of view: it is edited
+      // through the item people see, never on its own.
+      throw new BadRequestException('This item is not shown in the library and cannot be edited on its own');
     }
     if (asset.isOffline) {
       throw new BadRequestException('The original file is offline and cannot be rendered');
@@ -403,8 +564,165 @@ export class AssetDevelopService {
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
     applyDevelopTone(shaped.data, shaped.info, params, look, seed + 1);
+    applyDevelopMasks(shaped.data, shaped.info, recipe.masks, maskMappingFor(geometry));
     const detail = planDevelopDetail(params, { width: shaped.info.width, height: shaped.info.height });
     return { data: shaped.data, info: shaped.info, detail };
+  }
+
+  /** Queued, or rendering under a lease that has lapsed. */
+  private isClaimable(revision: Pick<AssetDevelopRevision, 'status' | 'updatedAt'>) {
+    if (revision.status === AssetDevelopRevisionStatus.Queued) {
+      return true;
+    }
+    return (
+      revision.status === AssetDevelopRevisionStatus.Rendering &&
+      Date.now() - new Date(revision.updatedAt).getTime() > DEVELOP_RENDER_LEASE_MS
+    );
+  }
+
+  /**
+   * SHA-256 of the asset's original bytes now. New uploads already store it; older rows (SHA-1,
+   * or the path-based checksum of external libraries) are hashed from the file.
+   */
+  private async currentSourceChecksum(assetId: string): Promise<Buffer> {
+    const asset = await this.assetRepository.getById(assetId);
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
+    }
+    if (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File) {
+      return asset.checksum;
+    }
+    return this.cryptoRepository.hashFile(asset.originalPath, 'sha256');
+  }
+
+  private async renderRecipeRevision(
+    revision: AssetDevelopRevision,
+    source: DevelopSource,
+    sourceChecksum: Buffer,
+    outputs: { master: string; preview: string },
+    tmp: { master: string; preview: string },
+    image: SystemConfig['image'],
+  ) {
+    const recipe = normalizeDevelopRecipe(revision.recipe);
+    const decoded = await this.decodeSource(source, image);
+    await this.progress(revision.id, 25);
+
+    const rendered = await this.renderRecipe(decoded, recipe, revision.revision);
+    await this.progress(revision.id, 60);
+
+    this.storageRepository.mkdirSync(path.dirname(outputs.master));
+    await this.mediaRepository.encodeDevelopOutput(
+      rendered.data,
+      rendered.info,
+      {
+        detail: rendered.detail,
+        colorspace: decoded.colorspace,
+        format: image.fullsize.format,
+        quality: Math.max(image.fullsize.quality, MASTER_MIN_QUALITY),
+        progressive: image.fullsize.progressive,
+      },
+      tmp.master,
+    );
+    await this.progress(revision.id, 85);
+
+    await this.mediaRepository.encodeDevelopOutput(
+      rendered.data,
+      rendered.info,
+      {
+        detail: rendered.detail,
+        colorspace: decoded.colorspace,
+        format: image.preview.format,
+        quality: image.preview.quality,
+        size: image.preview.size,
+      },
+      tmp.preview,
+    );
+    await this.progress(revision.id, 95);
+    const renditionChecksum = await this.cryptoRepository.hashFile(tmp.master, 'sha256');
+
+    // Atomic publish: both files exist before either path is recorded.
+    await this.storageRepository.rename(tmp.master, outputs.master);
+    await this.storageRepository.rename(tmp.preview, outputs.preview);
+    await this.assetDevelopRepository.update(revision.id, {
+      status: AssetDevelopRevisionStatus.Rendered,
+      progress: 100,
+      error: null,
+      masterPath: outputs.master,
+      previewPath: outputs.preview,
+      width: rendered.info.width,
+      height: rendered.info.height,
+      renderedAt: new Date(),
+      sourceChecksum,
+      renditionChecksum,
+    });
+  }
+
+  /**
+   * A developed file brought back is already the master: check it is still the file and the
+   * original it was accepted against, then make its preview.
+   */
+  private async renderExternal(
+    revision: AssetDevelopRevision,
+    sourceChecksum: Buffer,
+    previewPath: string,
+    tmpPreview: string,
+    image: SystemConfig['image'],
+  ) {
+    if (!revision.masterPath || !revision.renditionChecksum) {
+      throw new DevelopSourceChanged('The developed file of this version is missing');
+    }
+    if (revision.sourceChecksum && !revision.sourceChecksum.equals(sourceChecksum)) {
+      throw new DevelopSourceChanged('The original changed after this file was brought back');
+    }
+    const onDisk = await this.cryptoRepository.hashFile(revision.masterPath, 'sha256').catch(() => null);
+    if (!onDisk?.equals(revision.renditionChecksum)) {
+      throw new DevelopSourceChanged('The developed file is missing or no longer matches what was brought back');
+    }
+    await this.progress(revision.id, 25);
+
+    const { data, info } = await this.mediaRepository.decodeImage(revision.masterPath, {
+      colorspace: image.colorspace,
+      processInvalidImages: false,
+      size: image.preview.size * 2,
+    });
+    await this.progress(revision.id, 60);
+    const full = await this.mediaRepository.getOrientedSize(revision.masterPath);
+
+    this.storageRepository.mkdirSync(path.dirname(previewPath));
+    await this.mediaRepository.encodeDevelopOutput(
+      data,
+      info as RawImageInfo,
+      {
+        detail: { median: 0 },
+        colorspace: image.colorspace,
+        format: image.preview.format,
+        quality: image.preview.quality,
+        size: image.preview.size,
+      },
+      tmpPreview,
+    );
+    await this.progress(revision.id, 95);
+    await this.storageRepository.rename(tmpPreview, previewPath);
+    await this.assetDevelopRepository.update(revision.id, {
+      status: AssetDevelopRevisionStatus.Rendered,
+      progress: 100,
+      error: null,
+      previewPath,
+      width: full.width,
+      height: full.height,
+      renderedAt: new Date(),
+    });
+  }
+
+  private toExportDto(item: DevelopExport, current: Buffer): DevelopExportResponseDto {
+    return {
+      id: item.id,
+      assetId: item.assetId,
+      fileName: item.fileName,
+      sourceChecksum: item.sourceChecksum.toString('hex'),
+      isCurrentOriginal: item.sourceChecksum.equals(current),
+      createdAt: asDateTimeString(item.createdAt),
+    };
   }
 
   private async progress(id: string, progress: number) {
@@ -461,6 +779,13 @@ export class AssetDevelopService {
       progress: revision.progress,
       error: revision.error,
       recipe: normalizeDevelopRecipe(revision.recipe),
+      kind: revision.kind ?? AssetDevelopRevisionKind.Recipe,
+      sourceChecksum: revision.sourceChecksum ? revision.sourceChecksum.toString('hex') : null,
+      renditionChecksum: revision.renditionChecksum ? revision.renditionChecksum.toString('hex') : null,
+      exportId: revision.exportId ?? null,
+      fileName: revision.fileName ?? null,
+      software: revision.software ?? null,
+      attempts: revision.attempts ?? 0,
       rendererVersion: revision.rendererVersion,
       width: revision.width,
       height: revision.height,
