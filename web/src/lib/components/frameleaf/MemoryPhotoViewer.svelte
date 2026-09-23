@@ -11,9 +11,17 @@
   interface Props {
     asset: TimelineAsset;
     onImageLoad: () => void;
+    /**
+     * Extra class applied to the rendered `<img>`, on top of the base sizing/rounding
+     * classes. Used by the Frameleaf memory player (FL-62) to apply its Ken Burns pan/zoom
+     * animation without this component needing to know about that presentation.
+     */
+    motionClass?: string;
+    /** Inline style forwarded to the same `<img>`, e.g. to set the animation's duration. */
+    motionStyle?: string;
   }
 
-  const { asset, onImageLoad }: Props = $props();
+  const { asset, onImageLoad, motionClass = '', motionStyle = '' }: Props = $props();
 
   let assetFileUrl: string = $state('');
   let imageLoaded: boolean = $state(false);
@@ -48,7 +56,8 @@
 {:else if imageLoaded}
   <div transition:fade={{ duration: assetViewerFadeDuration }} class="size-full">
     <img
-      class="size-full rounded-2xl object-contain transition-all"
+      class="size-full rounded-2xl object-contain transition-all {motionClass}"
+      style={motionStyle}
       src={assetFileUrl}
       alt={$getAltText(asset)}
       draggable="false"
