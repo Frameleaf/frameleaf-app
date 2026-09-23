@@ -143,6 +143,7 @@ export const Route = {
   // system
   systemSettings: (params?: { isOpen?: OpenQueryParam }) => '/admin/system-settings' + asQueryString(params),
   systemStatistics: () => '/admin/server-status',
+  physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
