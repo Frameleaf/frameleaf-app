@@ -348,6 +348,34 @@ export class SmartAlbumRepository {
     });
   }
 
+  /**
+   * The owner took items out of a built-in smart album by hand (FL-60): exclude them, so no later
+   * evaluation puts them back. Does nothing for an album that is not a built-in smart album.
+   */
+  async excludeFromAlbum(albumId: string, assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+    const ruleId = await this.getRuleIdForAlbum(albumId);
+    if (!ruleId) {
+      return;
+    }
+    for (const assetId of assetIds) {
+      await this.excludeAsset(ruleId, assetId);
+    }
+  }
+
+  private async getRuleIdForAlbum(albumId: string): Promise<string | undefined> {
+    if (await this.shouldReadSidecar()) {
+      const result = await sql<{
+        id: string;
+      }>`SELECT id::text AS id FROM immich_fork.smart_album_rule WHERE "albumId" = ${albumId}::uuid`.execute(this.db);
+      return result.rows[0]?.id;
+    }
+    const row = await this.db.selectFrom('smart_album').select('id').where('albumId', '=', albumId).executeTakeFirst();
+    return row?.id;
+  }
+
   async backfillAutomation(albumIds: string[]): Promise<{ count: number; digest: string }> {
     return this.db.transaction().execute(async (trx) => {
       const rules = await sql<{

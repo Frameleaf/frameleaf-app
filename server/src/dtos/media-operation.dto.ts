@@ -138,6 +138,10 @@ const MediaOperationBulkPayloadSchema = z
       .optional()
       .describe('Duplicate review decisions, one complete group each (FL-61)'),
     mediaHealth: z.array(MediaOperationMediaHealthEntrySchema).max(1000).optional(),
+    classificationRuleId: z
+      .uuidv7()
+      .optional()
+      .describe('For `apply-classification-rule`: the rule to apply to the items (FL-60)'),
   })
   .meta({ id: 'MediaOperationBulkPayloadDto' });
 

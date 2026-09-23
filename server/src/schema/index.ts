@@ -61,6 +61,8 @@ import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
+import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
@@ -204,6 +206,8 @@ export class ImmichDatabase {
     AssetHealthCandidateTable,
     AssetExifTable,
     AssetVideoDuplicateFrameTable,
+    ClassificationRuleTable,
+    ClassificationMatchTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
     DuplicateDecisionTable,
@@ -419,6 +423,8 @@ export interface DB {
   pet_detection: PetDetectionTable;
   pet_candidate: PetCandidateTable;
 
+  classification_match: ClassificationMatchTable;
+  classification_rule: ClassificationRuleTable;
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 

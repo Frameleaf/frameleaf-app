@@ -89,9 +89,9 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 133 public tables, including FL-64 photo tools, FL-74 preservation, FL-79 metrics and FL-106 Studio exports,
+    // 135 public tables, including preservation, classification, analytics and Studio exports,
     // plus 33 fork tables, including seven iCloud tables and asset_develop_revision.
-    expect(getCatalogTableLocks(fork)).toHaveLength(166);
+    expect(getCatalogTableLocks(fork)).toHaveLength(168);
     // 66 v3.1.0 public + the 33 fork tables
     expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
   });
