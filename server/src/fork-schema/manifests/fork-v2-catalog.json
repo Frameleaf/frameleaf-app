@@ -3577,6 +3577,42 @@
       "identity": "public.ocr_search.text"
     },
     {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.operational_metric_sample.bucketStart"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.operational_metric_sample.grain"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.operational_metric_sample.id"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.operational_metric_sample.libraryId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.operational_metric_sample.observedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.operational_metric_sample.scopeKey"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.operational_metric_sample.series"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.operational_metric_sample.userId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.operational_metric_sample.value"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "public.partner_audit.deletedAt"
     },
@@ -7143,6 +7179,22 @@
       "identity": "public.ocr_search.ocr_search_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"libraryId\") REFERENCES library(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.operational_metric_sample.operational_metric_sample_libraryId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.operational_metric_sample.operational_metric_sample_pkey"
+    },
+    {
+      "definition": "UNIQUE (series, \"scopeKey\", grain, \"bucketStart\")",
+      "identity": "public.operational_metric_sample.operational_metric_sample_series_scopeKey_grain_bucketStart_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.operational_metric_sample.operational_metric_sample_userId_fkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.partner_audit.partner_audit_pkey"
     },
@@ -10483,6 +10535,22 @@
       "identity": "public.ocr_search.ocr_search_pkey"
     },
     {
+      "definition": "CREATE INDEX \"operational_metric_sample_libraryId_idx\" ON public.operational_metric_sample USING btree (\"libraryId\")",
+      "identity": "public.operational_metric_sample.operational_metric_sample_libraryId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX operational_metric_sample_pkey ON public.operational_metric_sample USING btree (id)",
+      "identity": "public.operational_metric_sample.operational_metric_sample_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"operational_metric_sample_series_scopeKey_grain_bucketStart_uq\" ON public.operational_metric_sample USING btree (series, \"scopeKey\", grain, \"bucketStart\")",
+      "identity": "public.operational_metric_sample.operational_metric_sample_series_scopeKey_grain_bucketStart_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"operational_metric_sample_userId_idx\" ON public.operational_metric_sample USING btree (\"userId\")",
+      "identity": "public.operational_metric_sample.operational_metric_sample_userId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"partner_audit_deletedAt_idx\" ON public.partner_audit USING btree (\"deletedAt\")",
       "identity": "public.partner_audit.partner_audit_deletedAt_idx"
     },
@@ -12072,6 +12140,10 @@
     {
       "definition": "table",
       "identity": "public.ocr_search"
+    },
+    {
+      "definition": "table",
+      "identity": "public.operational_metric_sample"
     },
     {
       "definition": "table",
