@@ -105,7 +105,11 @@
 
   const invite = (user: UserResponseDto) =>
     run(
-      () => addUsersToAlbum({ id: space.id, addUsersDto: { albumUsers: [{ userId: user.id, role: inviteRole }] } }).then(() => {}),
+      () =>
+        addUsersToAlbum({
+          id: space.id,
+          addUsersDto: { albumUsers: [{ userId: user.id, role: inviteRole }] },
+        }).then(() => {}),
       $t('frameleaf_spaces_invite_sent', { values: { name: user.name } }),
     );
 
@@ -161,7 +165,9 @@
 
         {#if owner && member.role !== AlbumUserRole.Owner}
           <label class="role-select">
-            <span class="visually-hidden">{$t('frameleaf_spaces_role_for', { values: { name: member.user.name } })}</span>
+            <span class="visually-hidden">
+              {$t('frameleaf_spaces_role_for', { values: { name: member.user.name } })}
+            </span>
             <select
               value={member.role}
               disabled={busy}

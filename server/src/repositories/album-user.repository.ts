@@ -64,7 +64,10 @@ export class AlbumUserRepository {
       .insertInto('shared_space_invite')
       .values(invite)
       .onConflict((oc) =>
-        oc.columns(['albumId', 'userId']).doUpdateSet({ role: invite.role, invitedById: invite.invitedById ?? null }),
+        oc.columns(['albumId', 'userId']).doUpdateSet({
+          role: invite.role ?? AlbumUserRole.Editor,
+          invitedById: invite.invitedById ?? null,
+        }),
       )
       .returning(['albumId', 'userId', 'role', 'invitedById', 'createdAt'])
       .executeTakeFirstOrThrow();

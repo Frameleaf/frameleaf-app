@@ -10,7 +10,13 @@
     type SharedSpacePreviewResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAccountMultipleOutline, mdiCheck, mdiClose, mdiImageMultipleOutline, mdiShieldLockOutline } from '@mdi/js';
+  import {
+    mdiAccountMultipleOutline,
+    mdiCheck,
+    mdiClose,
+    mdiImageMultipleOutline,
+    mdiShieldLockOutline,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -91,7 +97,10 @@
 
             <dl class="facts">
               <div>
-                <dt><Icon icon={mdiImageMultipleOutline} size="14" aria-hidden={true} />{$t('frameleaf_spaces_items_label')}</dt>
+                <dt>
+                  <Icon icon={mdiImageMultipleOutline} size="14" aria-hidden={true} />
+                  {$t('frameleaf_spaces_items_label')}
+                </dt>
                 <dd>{invitation.assetCount}</dd>
               </div>
               <div>
