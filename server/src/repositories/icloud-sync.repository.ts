@@ -143,14 +143,28 @@ export class ICloudSyncRepository {
       .then((result) => result.rows[0]);
   }
 
-  async create(ownerId: string, label: string, config: ICloudConfig): Promise<ICloudConnection> {
-    return this.active(
-      async (db) =>
-        await sql<ICloudConnection>`INSERT INTO immich_fork.icloud_connection ("ownerId", label, config)
+  /**
+   * Add a connection, or answer undefined when the owner already has `limit` (FL-68). The count and
+   * the insert share one per-owner lock, so two requests at once cannot both take the last place.
+   */
+  async create(
+    ownerId: string,
+    label: string,
+    config: ICloudConfig,
+    limit: number = Number.MAX_SAFE_INTEGER,
+  ): Promise<ICloudConnection | undefined> {
+    return this.active(async (db) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`icloud-connections:${ownerId}`}, 0))`.execute(db);
+      const { rows } = await sql<{ count: number }>`SELECT count(*)::int AS count FROM immich_fork.icloud_connection
+        WHERE "ownerId" = ${ownerId}::uuid`.execute(db);
+      if ((rows[0]?.count ?? 0) >= limit) {
+        return undefined;
+      }
+      return await sql<ICloudConnection>`INSERT INTO immich_fork.icloud_connection ("ownerId", label, config)
       VALUES (${ownerId}::uuid, ${label}, ${config}::jsonb) RETURNING *`
-          .execute(db)
-          .then((result) => result.rows[0]),
-    );
+        .execute(db)
+        .then((result) => result.rows[0]);
+    });
   }
 
   async update(
@@ -561,9 +575,10 @@ export class ICloudSyncRepository {
 
   /**
    * Connections a scheduled run is due for (FL-68): signed in, past any provider back-off, with no
-   * unfinished run and none queued within the connection's interval. Counting from the last run
-   * rather than from a stored time is what keeps a run cancelled from Activity from being queued
-   * again five minutes later. `queueOperation` checks all of it again under the connection's lock.
+   * unfinished run and none started or finished within the connection's interval. Counting from the
+   * last run's end rather than from a stored time is what keeps a run cancelled from Activity, or one
+   * that failed, from being queued again five minutes later. `queueOperation` checks all of it again
+   * under the connection's lock.
    */
   async dueConnections(): Promise<Array<{ id: string; ownerId: string }>> {
     return sql<{ id: string; ownerId: string }>`SELECT c.id, c."ownerId" FROM immich_fork.icloud_connection c
@@ -572,7 +587,7 @@ export class ICloudSyncRepository {
         AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
           AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text
           AND (o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])
-            OR o."createdAt" > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
+            OR coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
       ORDER BY c."nextRunAt" NULLS FIRST, c.id LIMIT 100`
       .execute(this.db)
       .then((result) => result.rows);
@@ -635,7 +650,8 @@ export class ICloudSyncRepository {
       if (options.trigger === 'schedule') {
         const recent = await sql`SELECT 1 FROM media_operation WHERE "ownerId" = ${ownerId}::uuid
           AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId}
-          AND "createdAt" > now() - make_interval(hours => ${connection.config.intervalHours}::int) LIMIT 1`.execute(db);
+          AND coalesce("finishedAt", "createdAt") > now() - make_interval(hours => ${connection.config.intervalHours}::int)
+          LIMIT 1`.execute(db);
         if (recent.rows.length > 0 || (connection.nextRunAt && new Date(connection.nextRunAt).getTime() > Date.now())) {
           return { outcome: 'not-due' };
         }
@@ -678,7 +694,7 @@ export class ICloudSyncRepository {
     });
   }
 
-  /** Close the connection's open run record without counting it complete (a cancel, FL-68). */
+  /** Close the connection's open run record without counting it complete: a cancel or a failure (FL-68). */
   async endRun(connectionId: string, status: 'cancelled' | 'failed'): Promise<void> {
     await this.active(async (db) => {
       await sql`UPDATE immich_fork.icloud_run SET status = ${status}, "finishedAt" = now()

@@ -266,7 +266,8 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   stagingGiB: '20',
 });
 
-export const isLibrarySelected =(draft: ICloudDraft, id: string) => draft.librariesAll || draft.libraries.includes(id);
+export const isLibrarySelected = (draft: ICloudDraft, id: string) =>
+  draft.librariesAll || draft.libraries.includes(id);
 
 /**
  * Toggle one library. Unchecking one of "all" makes the rest explicit; checking the last missing one
@@ -498,6 +499,7 @@ const ERROR_KEYS: Record<string, string> = {
   icloud_remove_in_flight: 'remove_in_flight',
   icloud_disconnect_first: 'disconnect_first',
   icloud_connection_unavailable: 'connection_unavailable',
+  icloud_sync_stalled: 'stalled',
 };
 
 /** A stable server code as a translated message; anything unknown reads as a general failure. */

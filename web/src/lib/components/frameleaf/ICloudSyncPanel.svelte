@@ -94,6 +94,14 @@
   let signInAgain = $state(false);
 
   let consentOpen = $state(false);
+  /** Consent already given for the draft restored after unlocking; saving does not ask twice. */
+  let consentGiven = $state(false);
+
+  /**
+   * The draft and its consent, kept for this tab only across the unlock detour that saving hidden
+   * photos needs. Preferences only; a password or code is never written here.
+   */
+  const PENDING_SAVE_KEY = 'frameleaf.icloud.pending-save';
 
   const selected = $derived(connections.find(({ id }) => id === selectedId));
   const status = $derived(selected ? icloudStatus(selected) : undefined);
@@ -198,6 +206,7 @@
     albumSearch = '';
     authOpen = false;
     consentOpen = false;
+    consentGiven = false;
     signInAgain = false;
     authError = '';
     clearSecrets();
@@ -243,7 +252,29 @@
     return () => clearInterval(handle);
   });
 
+  /** Take back a draft left before the unlock detour, once. */
+  const takePendingSave = (): { connectionId: string; draft: Partial<ICloudDraft> } | undefined => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_SAVE_KEY);
+      sessionStorage.removeItem(PENDING_SAVE_KEY);
+      const parsed = raw ? JSON.parse(raw) : undefined;
+      return parsed && typeof parsed.connectionId === 'string' && parsed.draft && typeof parsed.draft === 'object'
+        ? parsed
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   onMount(() => {
+    const pending = takePendingSave();
+    if (pending && connections.some(({ id }) => id === pending.connectionId)) {
+      select(pending.connectionId);
+      draft = { ...icloudBlankDraft(), ...pending.draft };
+      consentGiven = true;
+      notice = $t('frameleaf_icloud_notice_unlocked');
+      return;
+    }
     if (selectedId) {
       void loadInventory();
     }
@@ -331,6 +362,14 @@
       if (draft.includeHidden) {
         const auth = await getAuthStatus();
         if (!auth.isElevated) {
+          try {
+            sessionStorage.setItem(
+              PENDING_SAVE_KEY,
+              JSON.stringify({ connectionId: selected.id, draft: $state.snapshot(draft) }),
+            );
+          } catch {
+            // Without storage the draft is typed again after unlocking; nothing else depends on it.
+          }
           await goto(Route.pinPrompt({ continue: page.url.pathname }));
           return;
         }
@@ -341,6 +380,7 @@
       });
       accept(connection);
       draft = icloudDraft(connection);
+      consentGiven = false;
       notice = $t('frameleaf_icloud_notice_saved');
     });
 
@@ -348,7 +388,7 @@
     if (!selected || problems.length > 0) {
       return;
     }
-    if (consent.hidden || consent.external) {
+    if ((consent.hidden || consent.external) && !consentGiven) {
       consentOpen = true;
       return;
     }
