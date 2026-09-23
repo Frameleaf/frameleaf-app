@@ -94,7 +94,10 @@ import { PluginTable } from 'src/schema/tables/plugin.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
+import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
+import { SharedSpaceVisitTable } from 'src/schema/tables/shared-space-visit.table.js';
 import { SmartAlbumAssetTable } from 'src/schema/tables/smart-album-asset.table.js';
 import { SmartAlbumExclusionTable } from 'src/schema/tables/smart-album-exclusion.table.js';
 import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
@@ -184,7 +187,10 @@ export class ImmichDatabase {
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
+    SharedSpaceAlbumTable,
     SharedSpaceInviteTable,
+    SharedSpacePersonTable,
+    SharedSpaceVisitTable,
     SmartAlbumTable,
     SmartAlbumAssetTable,
     SmartAlbumExclusionTable,
@@ -330,7 +336,10 @@ export interface DB {
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
+  shared_space_album: SharedSpaceAlbumTable;
   shared_space_invite: SharedSpaceInviteTable;
+  shared_space_person: SharedSpacePersonTable;
+  shared_space_visit: SharedSpaceVisitTable;
 
   smart_album: SmartAlbumTable;
   smart_album_asset: SmartAlbumAssetTable;
