@@ -9,7 +9,7 @@
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
-  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
+  import { buildPrimaryDestinations, currentPrimaryDestination, isSettingsRoute } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -73,7 +73,10 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The prototype's theme control is always present and names the theme it switches to.
   const themeLabel = $derived(appTheme === 'dark' ? $t('light_theme') : $t('dark_theme'));
-  const isAdminRoute = $derived(page.url.pathname.startsWith('/admin'));
+  // The prototype's one "admin" screen covers account preferences and system administration
+  // alike (`openSettings()` in App.jsx always sets `screen("admin")`), so both roots hide
+  // Upload and switch the search entry to settings search.
+  const isAdminRoute = $derived(isSettingsRoute(page.url.pathname));
   const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
   // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
   // page join that album, and uploads made from the Locked area stay locked.
