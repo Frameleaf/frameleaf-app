@@ -11,7 +11,9 @@
    * part. Nothing here downloads an original.
    */
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { ProjectionType } from '$lib/constants';
+  import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
@@ -100,6 +102,16 @@
   // Ratings are chrome, not content: they show on hover or while the item is selected.
   const showRating = $derived(stars !== 0 && (hovered || selected || !!previewMode));
   const title = $derived($getAltText(asset));
+  // A durable bulk job working on this item (owner decision, September 22, 2026): a loader until
+  // the job answers for it, then a failure mark if it did not work.
+  const job = $derived(durableBulkTracker.stateOf(asset.id));
+  const jobLabel = $derived(
+    job
+      ? job.state === 'pending'
+        ? $t('frameleaf_bulk_tile_processing')
+        : $t('frameleaf_bulk_tile_failed', { values: { reason: $t(job.reasonKey) } })
+      : null,
+  );
 
   /** The motion source for a hover scrub or a Live Photo press: always the preview transcode. */
   const previewSource = $derived.by(() => {
@@ -237,6 +249,7 @@
   class:is-selected={selected}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
+  aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
   data-testid="frameleaf-asset-tile"
   style:width="{width}px"
@@ -246,7 +259,7 @@
     type="button"
     class="fl-tile-open"
     {tabindex}
-    aria-label={title}
+    aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
     aria-pressed={selecting ? selected : undefined}
     onclick={activate}
     onfocus={() => onFocus?.(asset)}
@@ -337,6 +350,10 @@
           <Icon icon={mdiHeart} size="12" />
           <span class="fl-sr">{$t('favorite')}</span>
         </span>
+      {/if}
+      <!-- Last, so it sits in the tile's top-right corner. -->
+      {#if job && jobLabel}
+        <TileJobState {job} label={jobLabel} />
       {/if}
     </span>
     {#if showRating}

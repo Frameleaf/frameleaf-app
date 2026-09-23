@@ -509,6 +509,7 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
+  and "asset"."visibility" in ('archive', 'timeline')
   and not (
     case
       when "asset"."id" is null then false

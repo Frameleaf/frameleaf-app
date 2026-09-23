@@ -60,6 +60,7 @@ const MediaOperationBulkSummarySchema = z
     snapshotTruncated: z.boolean(),
     /** More refusals happened than are listed on the detail view; the counts above stay exact. */
     itemsTruncated: z.boolean(),
+    retried: z.int().describe('Items that failed and were given their one automatic retry'),
   })
   .meta({ id: 'MediaOperationBulkSummaryDto' });
 
@@ -147,7 +148,18 @@ const MediaOperationSchema = z
     totalUnits: z.string().nullable(),
     attempt: z.int(),
     maxAttempts: z.int(),
-    error: z.string().nullable().describe('Operator detail about a failure'),
+    autoRetries: z
+      .int()
+      .describe('Automatic retries this job has used; every job gets one before a failure is reported'),
+    retryAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When a job waiting for its automatic retry may run again'),
+    error: z
+      .string()
+      .nullable()
+      .describe('Operator detail about a failure; on a queued job, the failure it is being retried after'),
     errorCode: z.string().nullable().describe('Stable code the client turns into a message'),
     cancelRequestedAt: z.string().meta({ format: 'date-time' }).nullable(),
     cancelAcknowledgedAt: z.string().meta({ format: 'date-time' }).nullable(),
@@ -164,6 +176,11 @@ const MediaOperationDetailSchema = MediaOperationSchema.extend({
   snapshot: JsonObjectSchema,
   /** Recorded per-item refusals for a bulk job, bounded. Empty for every other kind. */
   bulkItems: z.array(MediaOperationBulkItemSchema),
+  /**
+   * Items waiting for their automatic retry that it has not reached yet. With `processedUnits` (the
+   * first pass's cursor over the frozen set) and `bulkItems` this says where every item stands.
+   */
+  bulkRetryPending: z.array(z.uuidv4()).describe('Asset IDs waiting for their automatic retry'),
 }).meta({ id: 'MediaOperationDetailDto' });
 
 const MediaOperationListResponseSchema = z

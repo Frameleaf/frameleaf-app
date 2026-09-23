@@ -115,9 +115,9 @@ describe('viewerMenuGroups', () => {
       expect(ids).not.toContain('set-visibility-locked');
     });
 
-    it('hides add to album and archive for a locked asset', () => {
+    it('keeps add to album but hides archive for a locked asset', () => {
       const ids = idsOf(baseContext({ isLocked: true }));
-      expect(ids).not.toContain('add-to-album');
+      expect(ids).toContain('add-to-album');
       expect(ids).not.toContain('archive');
     });
 

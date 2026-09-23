@@ -26,6 +26,8 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     totalUnits: '1000',
     attempt: 1,
     maxAttempts: 3,
+    autoRetries: 0,
+    retryAt: null,
     error: null,
     errorCode: null,
     cancelRequestedAt: null,

@@ -67,9 +67,17 @@ describe('bulk action descriptors', () => {
     expect(ids).toEqual(
       expect.arrayContaining(['remove-from-locked', 'download', 'change-date', 'change-location', 'delete-permanently']),
     );
-    for (const id of ['favorite', 'add-to-album', 'create-shared-link', 'delete', 'archive', 'move-to-locked', 'tag']) {
+    for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'move-to-locked', 'tag']) {
       expect(ids).not.toContain(id);
     }
+  });
+
+  it('lets the unlocked Locked folder add its items to an album (owner decision, September 22, 2026)', () => {
+    expect(available({ assets: [photo('a')], locked: true })).toContain('add-to-album');
+    expect(available({ assets: [photo('a')], locked: true, readOnly: true })).not.toContain('add-to-album');
+    // Drawn as a button there, since the Locked bar has no album group in its menu.
+    const actions = bulkActions({ assets: [photo('a')], locked: true });
+    expect(primaryBulkActions(actions, false, true).map((action) => action.id)).toContain('add-to-album');
   });
 
   it('offers the move into the Locked folder from the ordinary destinations only', () => {

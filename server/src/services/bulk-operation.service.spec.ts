@@ -10,6 +10,7 @@ import {
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { BulkOperationSnapshot } from 'src/utils/bulk-operation.js';
+import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
@@ -44,7 +45,7 @@ describe(BulkOperationService.name, () => {
   let sut: BulkOperationService;
   let mocks: ServiceMocks;
   let operations: MediaOperationRepository;
-  let assets: { updateAll: any; run: any; deleteAll: any };
+  let assets: { updateAll: any; shiftDateTimeOriginalFrom: any; run: any; deleteAll: any };
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
@@ -59,16 +60,19 @@ describe(BulkOperationService.name, () => {
     mocks = getMocks();
     operations = {
       claimNext: vi.fn().mockResolvedValue(undefined),
-      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, failed: 0, abandonedCancels: 0 }),
+      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       setBulkResult: vi.fn().mockResolvedValue(running),
       reportProgress: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
-      fail: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue('failed'),
+      requeue: vi.fn().mockResolvedValue(true),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
     } as unknown as MediaOperationRepository;
     assets = {
       updateAll: vi.fn().mockResolvedValue(undefined),
+      shiftDateTimeOriginalFrom: vi.fn().mockResolvedValue(undefined),
       run: vi.fn().mockResolvedValue(undefined),
       deleteAll: vi.fn().mockResolvedValue(undefined),
     };
@@ -302,11 +306,13 @@ describe(BulkOperationService.name, () => {
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
-    it('does not shift an interrupted batch twice', async () => {
+    it('applies an interrupted relative shift again from the recorded starting dates, never twice', async () => {
       const snapshot = snapshotOf({
         action: MediaOperationBulkAction.ChangeDate,
         payload: { dateMode: 'shift', minutes: 60 },
       });
+      const [first, second, undated] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
       const operation = operationOf(snapshot, {
         result: {
           requested: 3,
@@ -316,27 +322,195 @@ describe(BulkOperationService.name, () => {
           items: [],
           itemsTruncated: false,
           inFlight: { start: 0, size: 3 },
+          retry: null,
+          // Recorded before the interrupted batch was first sent; the dates may have moved since.
+          shiftFrom: { [first]: '2026-01-01T10:00:00.000Z', [second]: '2026-01-02T10:00:00.000Z', [undated]: null },
         },
       } as never);
 
       await sut.run(operation, 'claim');
 
+      // The dates are not read again: they may already be shifted.
+      expect(operations.getDateTimeOriginals).not.toHaveBeenCalled();
       expect(assets.updateAll).not.toHaveBeenCalled();
-      expect(operations.setBulkResult).toHaveBeenCalledWith(
+      expect(assets.shiftDateTimeOriginalFrom).toHaveBeenCalledWith(
+        expect.anything(),
+        [
+          { id: first, from: new Date('2026-01-01T10:00:00.000Z') },
+          { id: second, from: new Date('2026-01-02T10:00:00.000Z') },
+        ],
+        60,
+      );
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({
+          processedUnits: 3,
+          result: expect.objectContaining({ succeeded: 3, skipped: 0, inFlight: null, shiftFrom: {} }),
+        }),
+      );
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('records each starting date before the shift is sent', async () => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.ChangeDate,
+        payload: { dateMode: 'shift', minutes: -30 },
+      });
+      const [first, second, undated] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.getDateTimeOriginals).mockResolvedValue(
+        new Map<string, Date | null>([
+          [first, new Date('2026-01-01T10:00:00.000Z')],
+          [second, new Date('2026-01-02T10:00:00.000Z')],
+          [undated, null],
+        ]),
+      );
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      const marked = vi
+        .mocked(operations.setBulkResult)
+        .mock.calls.findIndex(([, , patch]) => (patch.result as { inFlight: unknown }).inFlight !== null);
+      expect(vi.mocked(operations.setBulkResult).mock.calls[marked][2].result).toEqual(
+        expect.objectContaining({
+          inFlight: { start: 0, size: 3 },
+          shiftFrom: {
+            [first]: '2026-01-01T10:00:00.000Z',
+            [second]: '2026-01-02T10:00:00.000Z',
+            [undated]: null,
+          },
+        }),
+      );
+      expect(vi.mocked(operations.setBulkResult).mock.invocationCallOrder[marked]).toBeLessThan(
+        vi.mocked(assets.shiftDateTimeOriginalFrom).mock.invocationCallOrder[0],
+      );
+      expect(assets.shiftDateTimeOriginalFrom).toHaveBeenCalledWith(
+        expect.anything(),
+        [
+          { id: first, from: new Date('2026-01-01T10:00:00.000Z') },
+          { id: second, from: new Date('2026-01-02T10:00:00.000Z') },
+        ],
+        -30,
+      );
+    });
+
+    it('refuses to shift an item whose starting date was never recorded', async () => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.ChangeDate,
+        payload: { dateMode: 'shift', minutes: 5 },
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {});
+
+      expect(assets.shiftDateTimeOriginalFrom).not.toHaveBeenCalled();
+      expect(outcomes.every((outcome) => outcome.status === MediaOperationItemStatus.Failed)).toBe(true);
+    });
+
+    it('gives failed items one automatic retry after a pause instead of reporting them', async () => {
+      const snapshot = snapshotOf();
+      const [, flaky] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      assets.updateAll.mockImplementation((_auth: unknown, { ids }: { ids: string[] }) =>
+        ids.includes(flaky) ? Promise.reject(new Error('connection reset')) : Promise.resolve(),
+      );
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'claim', {
+        delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+      });
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
         expect.any(String),
         'claim',
         expect.objectContaining({
           processedUnits: 3,
           result: expect.objectContaining({
-            skipped: 3,
-            items: expect.arrayContaining([
-              expect.objectContaining({ reasonKey: 'frameleaf_bulk_reason_interrupted' }),
-            ]),
+            succeeded: 2,
+            failed: 0,
+            items: [],
+            retry: { ids: [flaky], total: 1, processed: 0, inFlight: null },
           }),
         }),
       );
     });
 
+    it('runs the retry pass on the next claim and reports what happened then', async () => {
+      const snapshot = snapshotOf();
+      const [, flaky] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      const waiting = operationOf(snapshot, {
+        processedUnits: '3',
+        result: {
+          requested: 3,
+          succeeded: 2,
+          failed: 0,
+          skipped: 0,
+          items: [],
+          itemsTruncated: false,
+          inFlight: null,
+          retry: { ids: [flaky], total: 1, processed: 0, inFlight: null },
+          shiftFrom: {},
+        },
+      } as never);
+
+      await sut.run(waiting, 'claim-2');
+
+      expect(assets.updateAll).toHaveBeenCalledTimes(1);
+      expect(assets.updateAll).toHaveBeenCalledWith(expect.anything(), { ids: [flaky], isFavorite: true });
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim-2',
+        expect.objectContaining({
+          result: expect.objectContaining({
+            succeeded: 3,
+            failed: 0,
+            retry: { ids: [flaky], total: 1, processed: 1, inFlight: null },
+          }),
+        }),
+      );
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('reports an item that fails its automatic retry too, and does not retry it again', async () => {
+      const snapshot = snapshotOf();
+      const [, flaky] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      assets.updateAll.mockRejectedValue(new Error('connection reset'));
+      const waiting = operationOf(snapshot, {
+        processedUnits: '3',
+        result: {
+          requested: 3,
+          succeeded: 2,
+          failed: 0,
+          skipped: 0,
+          items: [],
+          itemsTruncated: false,
+          inFlight: null,
+          retry: { ids: [flaky], total: 1, processed: 0, inFlight: null },
+          shiftFrom: {},
+        },
+      } as never);
+
+      await sut.run(waiting, 'claim-2');
+
+      expect(operations.requeue).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim-2',
+        expect.objectContaining({
+          result: expect.objectContaining({
+            succeeded: 2,
+            failed: 1,
+            items: [expect.objectContaining({ id: flaky, status: MediaOperationItemStatus.Failed })],
+          }),
+        }),
+      );
+      expect(operations.complete).toHaveBeenCalled();
+    });
     it('replays an interrupted batch when repeating it is harmless', async () => {
       const snapshot = snapshotOf();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
@@ -405,13 +579,11 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('drain', () => {
-    it('only claims bulk jobs and only recovers bulk claims', async () => {
+    it('only claims bulk jobs and leaves recovery to the one media-operation sweep', async () => {
       await sut.drain();
 
-      expect(operations.recoverExpiredClaims).toHaveBeenCalledWith(
-        expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }),
-      );
       expect(operations.claimNext).toHaveBeenCalledWith(expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }));
+      expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
     });
   });
 });

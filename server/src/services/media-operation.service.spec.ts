@@ -36,6 +36,8 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     totalUnits: '1000',
     attempt: 1,
     maxAttempts: 3,
+    autoRetries: 0,
+    retryAt: null,
     claimToken: 'claim-token',
     claimedBy: 'worker-1',
     claimExpiresAt: new Date('2026-09-22T10:00:00.000Z'),
@@ -108,6 +110,30 @@ describe(MediaOperationService.name, () => {
       expect(items[0]).not.toHaveProperty('claimedBy');
       expect(items[0]).not.toHaveProperty('remoteJobId');
       expect(items[0]).not.toHaveProperty('snapshot');
+    });
+
+    it('shows a job waiting for its automatic retry, with when it runs again (FL-104)', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [
+          operationStub({
+            status: MediaOperationStatus.Queued,
+            autoRetries: 1,
+            retryAt: new Date('2026-09-22T10:00:30.000Z') as never,
+            error: 'The worker stopped responding',
+            errorCode: 'worker_lost',
+          }),
+        ],
+        total: 1,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        retryAt: '2026-09-22T10:00:30.000Z',
+        errorCode: 'worker_lost',
+      });
     });
   });
 
@@ -376,7 +402,47 @@ describe(MediaOperationService.name, () => {
         skipped: 0,
         snapshotTruncated: true,
         itemsTruncated: false,
+        retried: 0,
       });
+    });
+
+    it('counts the items given their automatic retry, from the list’s trimmed result', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        // The list query drops the retry ids and keeps their count.
+        items: [bulkStub({ result: { requested: 4, succeeded: 3, retry: { total: 1, processed: 0 } } })],
+        total: 1,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0].bulk?.retried).toBe(1);
+    });
+
+    it('says which items are still waiting for their automatic retry on the detail view', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          status: MediaOperationStatus.Queued,
+          processedUnits: '4',
+          result: {
+            requested: 4,
+            succeeded: 2,
+            failed: 0,
+            skipped: 0,
+            items: [],
+            retry: { ids: [assetIds[1], assetIds[3]], total: 2, processed: 1 },
+          },
+        }),
+      );
+
+      const result = await sut.get(authStub.user1, bulkStub().id);
+
+      expect(result.bulkRetryPending).toEqual([assetIds[3]]);
+    });
+
+    it('leaves the retry list empty for every other kind', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
+
+      await expect(sut.get(authStub.user1, operationStub().id)).resolves.toMatchObject({ bulkRetryPending: [] });
     });
 
     it('leaves the summary empty for every other kind', async () => {
@@ -419,6 +485,73 @@ describe(MediaOperationService.name, () => {
           retryOfId: cancelled.id,
           totalUnits: '3',
           snapshot: expect.objectContaining({ assetIds: [assetIds[1], assetIds[2], assetIds[3]], requestId: null }),
+        }),
+      );
+    });
+
+    it('includes a batch that was in flight when the job stopped, and items still waiting for their retry', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          status: MediaOperationStatus.Failed,
+          processedUnits: '2',
+          result: {
+            requested: 4,
+            succeeded: 1,
+            failed: 0,
+            skipped: 0,
+            items: [],
+            inFlight: { start: 2, size: 2 },
+            retry: { ids: [assetIds[1]], total: 1, processed: 0 },
+          },
+        }),
+      );
+      vi.mocked(repository.create).mockImplementation((value) =>
+        Promise.resolve(operationStub({ ...value, status: MediaOperationStatus.Queued } as never)),
+      );
+
+      await sut.retry(authStub.user1, bulkStub().id);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: expect.objectContaining({ assetIds: [assetIds[1], assetIds[2], assetIds[3]] }),
+        }),
+      );
+    });
+
+    it('carries a relative shift’s recorded starting dates over to the retry', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          status: MediaOperationStatus.Failed,
+          snapshot: {
+            action: MediaOperationBulkAction.ChangeDate,
+            assetIds,
+            payload: { dateMode: 'shift', minutes: 60 },
+            truncated: false,
+          },
+          processedUnits: '2',
+          result: {
+            requested: 4,
+            succeeded: 2,
+            failed: 0,
+            skipped: 0,
+            items: [],
+            inFlight: { start: 2, size: 2 },
+            shiftFrom: { [assetIds[2]]: '2026-01-01T10:00:00.000Z', [assetIds[3]]: null },
+          },
+        }),
+      );
+      vi.mocked(repository.create).mockImplementation((value) =>
+        Promise.resolve(operationStub({ ...value, status: MediaOperationStatus.Queued } as never)),
+      );
+
+      await sut.retry(authStub.user1, bulkStub().id);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          totalUnits: '2',
+          result: expect.objectContaining({
+            shiftFrom: { [assetIds[2]]: '2026-01-01T10:00:00.000Z', [assetIds[3]]: null },
+          }),
         }),
       );
     });

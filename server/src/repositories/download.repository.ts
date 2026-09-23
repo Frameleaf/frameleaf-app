@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { anyUuid, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
-type DownloadPrivacyOptions = HiddenContentQueryOptions;
+type DownloadPrivacyOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 const builder = (db: Kysely<DB>, options: DownloadPrivacyOptions = {}) =>
   db
@@ -28,10 +29,12 @@ export class DownloadRepository {
     return builder(this.db, options).select(['asset.originalPath']).where('asset.id', '=', anyUuid(ids)).stream();
   }
 
+  /** An album download holds the same media the album shows this viewer (see `withAlbumVisibility`). */
   downloadAlbumId(albumId: string, options?: DownloadPrivacyOptions) {
     return builder(this.db, options)
       .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
       .where('album_asset.albumId', '=', albumId)
+      .$call((qb) => withAlbumVisibility(qb, options?.lockedOwnerId))
       .stream();
   }
 

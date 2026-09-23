@@ -41,6 +41,8 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     totalUnits: '1000',
     attempt: 1,
     maxAttempts: 3,
+    autoRetries: 0,
+    retryAt: null,
     error: null,
     errorCode: null,
     cancelRequestedAt: null,
@@ -124,6 +126,31 @@ describe('fromMediaOperation', () => {
     expect(item.error).toBe('The worker stopped responding');
     expect(item.errorCode).toBe('worker_lost');
   });
+
+  it('reads a job waiting for its automatic retry as retrying, with the failure it retries after (FL-104)', () => {
+    const item = fromMediaOperation(
+      operation({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        retryAt: '2026-09-22T10:00:30.000Z',
+        error: 'The worker stopped responding',
+        errorCode: 'worker_lost',
+      }),
+    );
+
+    expect(item.statusKey).toBe('frameleaf_activity_status_retrying');
+    expect(item.tone).toBe('warning');
+    expect(item.running).toBe(true);
+    expect(item.failed).toBe(false);
+    expect(item.canRetry).toBe(false);
+    expect(item.error).toBe('The worker stopped responding');
+  });
+
+  it('reads a fresh queued job as queued', () => {
+    expect(fromMediaOperation(operation({ status: MediaOperationStatus.Queued })).statusKey).toBe(
+      'frameleaf_activity_status_queued',
+    );
+  });
 });
 
 describe('durable bulk jobs', () => {
@@ -143,6 +170,7 @@ describe('durable bulk jobs', () => {
         skipped: 10,
         snapshotTruncated: false,
         itemsTruncated: false,
+        retried: 0,
       },
       ...overrides,
     });
@@ -161,7 +189,7 @@ describe('durable bulk jobs', () => {
   it('shows counts only, never the items themselves', () => {
     const item = fromMediaOperation(bulkJob());
 
-    expect(item.bulk).toEqual({ requested: 1200, succeeded: 590, failed: 0, skipped: 10 });
+    expect(item.bulk).toEqual({ requested: 1200, succeeded: 590, failed: 0, skipped: 10, retried: 0 });
     expect(item.assetId).toBeUndefined();
     expect(item.details).toEqual([]);
   });
@@ -179,6 +207,7 @@ describe('durable bulk jobs', () => {
           skipped: 10,
           snapshotTruncated: false,
           itemsTruncated: false,
+          retried: 0,
         },
       }),
     );
@@ -203,6 +232,7 @@ describe('durable bulk jobs', () => {
             skipped: 10,
             snapshotTruncated: false,
             itemsTruncated: false,
+            retried: 0,
           },
         }),
       ).canRetry,
