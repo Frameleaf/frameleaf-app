@@ -14,6 +14,10 @@
    */
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
+  import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import { groupSelectionState } from '$lib/frameleaf/library-session';
+  import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
+  import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -21,13 +25,14 @@
   import { isIntersecting } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineMonth } from '$lib/managers/timeline-manager/timeline-month.svelte';
-  import type { TimelineAsset, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
+  import type { TimelineAsset, TimelineGrouping, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
   import { filterIsInOrNearViewport } from '$lib/managers/timeline-manager/utils.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
-  import type { ScrubberListener } from '$lib/utils/timeline-util';
-  import { tick, type Snippet } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
+  import { tick, untrack, type Snippet } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
     timelineManager: TimelineManager;
@@ -36,6 +41,13 @@
     ratingFor?: (asset: TimelineAsset) => number | null;
     /** Browse hides the sticky day headers; Timeline and Work keep them. */
     showDayHeaders?: boolean;
+    /**
+     * Group by day, month, year or everything (prototype `TimelineLibrary.jsx`). Applies where group
+     * headers show; Browse, which has none, keeps its day flow.
+     */
+    grouping?: TimelineGrouping;
+    /** Show the grouping control and accept ⌘/Ctrl+wheel and pinch; called with the new grouping. */
+    onGroupingChange?: (grouping: TimelineGrouping) => void;
     captionFor?: (asset: TimelineAsset) => string | null;
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
@@ -66,6 +78,8 @@
     session,
     ratingFor,
     showDayHeaders = true,
+    grouping = 'days',
+    onGroupingChange,
     captionFor,
     enableRouting = false,
     onOpen,
@@ -128,6 +142,307 @@
     }
     timelineManager.topSectionHeight = measuredTop;
   });
+
+  /* ------------------------------------------------------------------ */
+  /* Grouping                                                            */
+  /* ------------------------------------------------------------------ */
+
+  // Coarse to fine, as the prototype's MODES: ⌘/Ctrl+wheel and pinch step through this list.
+  const MODES: TimelineGrouping[] = ['all', 'years', 'months', 'days'];
+  const CONTROL_ORDER: TimelineGrouping[] = ['years', 'months', 'days', 'all'];
+  const MODE_LABELS: Record<TimelineGrouping, Translations> = {
+    years: 'frameleaf_library_grouping_years',
+    months: 'frameleaf_library_grouping_months',
+    days: 'frameleaf_library_grouping_days',
+    all: 'frameleaf_library_grouping_all',
+  };
+  const ANNOUNCEMENTS: Record<TimelineGrouping, Translations> = {
+    years: 'frameleaf_library_grouped_by_years',
+    months: 'frameleaf_library_grouped_by_months',
+    days: 'frameleaf_library_grouped_by_days',
+    all: 'frameleaf_library_grouped_by_all',
+  };
+  const WHEEL_STEP = 60;
+  const PINCH_STEP = 56;
+
+  let announcement = $state('');
+  let root = $state<HTMLElement>();
+
+  const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders ? grouping : 'days');
+  $effect(() => {
+    timelineManager.grouping = effectiveGrouping;
+  });
+
+  const changeGrouping = (value: TimelineGrouping) => {
+    if (!onGroupingChange || value === grouping) {
+      return;
+    }
+    announcement = $t(ANNOUNCEMENTS[value]);
+    onGroupingChange(value);
+  };
+
+  const stepGrouping = (delta: number) => {
+    const index = MODES.indexOf(grouping);
+    changeGrouping(MODES[Math.min(MODES.length - 1, Math.max(0, index + delta))]);
+  };
+
+  // ⌘/Ctrl + wheel (also a trackpad pinch) and a two-finger pinch step the grouping.
+  $effect(() => {
+    const element = root;
+    if (!element || !onGroupingChange || !showDayHeaders) {
+      return;
+    }
+    let wheelTotal = 0;
+    let cooldown = 0;
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      event.preventDefault();
+      const now = Date.now();
+      if (now < cooldown) {
+        return;
+      }
+      wheelTotal += event.deltaY;
+      if (Math.abs(wheelTotal) < WHEEL_STEP) {
+        return;
+      }
+      stepGrouping(wheelTotal > 0 ? -1 : 1);
+      wheelTotal = 0;
+      cooldown = now + 300;
+    };
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinchStart = 0;
+    const distance = () => {
+      const [a, b] = [...touches.values()];
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') {
+        return;
+      }
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touches.size === 2) {
+        pinchStart = distance();
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (!touches.has(event.pointerId)) {
+        return;
+      }
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touches.size !== 2 || !pinchStart) {
+        return;
+      }
+      const delta = distance() - pinchStart;
+      if (Math.abs(delta) < PINCH_STEP) {
+        return;
+      }
+      stepGrouping(delta > 0 ? 1 : -1);
+      pinchStart = distance();
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      touches.delete(event.pointerId);
+      if (touches.size < 2) {
+        pinchStart = 0;
+      }
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    element.addEventListener('pointerdown', onPointerDown);
+    element.addEventListener('pointermove', onPointerMove);
+    element.addEventListener('pointerup', onPointerEnd);
+    element.addEventListener('pointercancel', onPointerEnd);
+    return () => {
+      element.removeEventListener('wheel', onWheel);
+      element.removeEventListener('pointerdown', onPointerDown);
+      element.removeEventListener('pointermove', onPointerMove);
+      element.removeEventListener('pointerup', onPointerEnd);
+      element.removeEventListener('pointercancel', onPointerEnd);
+    };
+  });
+
+  const monthIds = (month: TimelineMonth) =>
+    month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id));
+
+  /**
+   * A month, year or "all" group: the months it covers, in display order. Prototype
+   * `explore-timeline.mjs` `timelineGroups` keys a group by the capture month, year or "all"; the
+   * manager lays each month out as one flow and reserves the header's space above the group's
+   * first month (`TimelineMonth.startsGroup`).
+   */
+  type DisplayGroup = { key: string; title: string; months: TimelineMonth[] };
+
+  /** Prototype `monthTitle`: the full month name and the year, e.g. "December 2024". */
+  const monthTitle = (month: TimelineMonth) =>
+    fromTimelinePlainYearMonth(month.yearMonth).toLocaleString(
+      { month: 'long', year: 'numeric' },
+      { locale: $locale ?? undefined },
+    );
+
+  const displayGroups = $derived.by<DisplayGroup[]>(() => {
+    if (effectiveGrouping === 'days') {
+      return [];
+    }
+    const groups: DisplayGroup[] = [];
+    for (const month of timelineManager.months) {
+      const { year } = month.yearMonth;
+      const key =
+        effectiveGrouping === 'all'
+          ? 'all'
+          : effectiveGrouping === 'years'
+            ? String(year)
+            : `${year}-${month.yearMonth.month}`;
+      const current = groups.at(-1);
+      if (current?.key === key) {
+        current.months.push(month);
+        continue;
+      }
+      groups.push({
+        key,
+        title:
+          effectiveGrouping === 'all'
+            ? $t('frameleaf_library_group_all')
+            : effectiveGrouping === 'years'
+              ? String(year)
+              : monthTitle(month),
+        months: [month],
+      });
+    }
+    return groups;
+  });
+
+  const groupHeadingId = (group: DisplayGroup) => `fl-group-${group.key}`;
+
+  /** Each month's display group, for the months loop. */
+  const groupOf = $derived(
+    new Map(displayGroups.flatMap((group) => group.months.map((month) => [month.viewId, group] as const))),
+  );
+
+  /**
+   * The loaded month that carries the group's region: one region per group, named by its heading,
+   * so a year does not show up as a dozen regions of the same name.
+   */
+  const regionHosts = $derived.by(() => {
+    const hosts = new Map<string, string>();
+    for (const group of displayGroups) {
+      const host = group.months.find((month) => month.isLoaded && month.isInOrNearViewport);
+      if (host) {
+        hosts.set(group.key, host.viewId);
+      }
+    }
+    return hosts;
+  });
+
+  /** The month each group's header is drawn before: the group's first month within reach. */
+  const bandHosts = $derived.by(() => {
+    const hosts = new Map<string, string>();
+    for (const group of displayGroups) {
+      const host = group.months.find((month) => month.isInOrNearViewport);
+      if (host) {
+        hosts.set(group.key, host.viewId);
+      }
+    }
+    return hosts;
+  });
+
+  const groupIds = (group: DisplayGroup) => group.months.flatMap((month) => monthIds(month));
+
+  /** Months not loaded yet hold ids the timeline has not seen, so such a group is never "all" selected. */
+  const displayGroupState = (group: DisplayGroup) => {
+    const state = groupSelectionState(groupIds(group), selection);
+    return state === 'all' && group.months.some((month) => !month.isLoaded) ? 'some' : state;
+  };
+
+  /**
+   * The newest pending request of each group whose months are loading. A group has at most one:
+   * a newer click on the same group supersedes it, and a click on another group leaves it alone.
+   */
+  const groupRequests = new SvelteMap<string, number>();
+  let nextGroupRequest = 0;
+  /** A group checkbox is loading months; drives `aria-busy` and the loading status with ranges. */
+  const groupPending = $derived(groupRequests.size > 0);
+
+  /**
+   * The prototype's group checkbox selects every item in the group. A year or "all" group can reach
+   * months that are not loaded yet: they are loaded one at a time, cancellably, and the result is
+   * dropped when the view moved on meanwhile (`selectGroupAfterLoading`). "All" takes the same path
+   * rather than select-all-matching: the timeline also serves albums, archive, favorites and the
+   * pickers, where no server-side matching selection exists, and the tiles and group checkboxes
+   * show a selection only through concrete ids.
+   *
+   * Resolves `false` when the click did not take effect (a month did not load, or the view changed),
+   * so the header puts its checkbox back; a click superseded by a newer one on the same group
+   * resolves `true`, since the newer click owns the checkbox now.
+   */
+  const selectDisplayGroup = async (group: DisplayGroup, checked: boolean): Promise<boolean> => {
+    const request = ++nextGroupRequest;
+    const loading = checked && group.months.some((month) => !month.isLoaded);
+    if (loading) {
+      groupRequests.set(group.key, request);
+    } else {
+      // Unchecking, or checking a fully loaded group, supersedes a load still running for it.
+      groupRequests.delete(group.key);
+    }
+    let outcome: GroupLoadOutcome;
+    try {
+      outcome = await selectGroupAfterLoading(session, {
+        months: group.months,
+        checked,
+        isLoaded: (month) => month.isLoaded,
+        load: (month) => timelineManager.loadTimelineMonth(month.yearMonth),
+        idsOf: () => groupIds(group),
+        isLatest: () => !loading || groupRequests.get(group.key) === request,
+      });
+    } catch {
+      outcome = 'incomplete';
+    }
+    const superseded = loading && groupRequests.get(group.key) !== request;
+    if (!superseded) {
+      groupRequests.delete(group.key);
+    }
+    if (outcome === 'done' || superseded) {
+      return true;
+    }
+    announcement = $t('frameleaf_library_group_select_failed', { values: { title: group.title } });
+    return false;
+  };
+
+  /**
+   * The header moves to another month as the group scrolls (`bandHosts`), which draws it anew. A
+   * group checkbox that had keyboard focus keeps it: the new header's checkbox takes it back.
+   */
+  let focusedGroupKey = $state<string | null>(null);
+  $effect(() => {
+    void bandHosts;
+    const key = untrack(() => focusedGroupKey);
+    if (!key) {
+      return;
+    }
+    void tick().then(() => {
+      // Only focus that was lost with the old header is given back, never focus taken elsewhere.
+      const active = document.activeElement;
+      if (active && active !== document.body) {
+        return;
+      }
+      root
+        ?.querySelector<HTMLInputElement>(`[data-group-key="${CSS.escape(key)}"] input[type="checkbox"]`)
+        ?.focus({ preventScroll: true });
+    });
+  });
+
+  // A press anywhere outside the group headers ends the claim, even on something not focusable.
+  $effect(() => {
+    const release = (event: PointerEvent) => {
+      if (!(event.target instanceof Element && event.target.closest('.fl-group-band'))) {
+        focusedGroupKey = null;
+      }
+    };
+    document.addEventListener('pointerdown', release, { capture: true });
+    return () => document.removeEventListener('pointerdown', release, { capture: true });
+  });
+
+  /** The group under the pointer shows its checkbox, as the prototype's `.tl-group:hover`. */
+  let hoveredMonth = $state<string | null>(null);
 
   /* ------------------------------------------------------------------ */
   /* Scroll restoration                                                  */
@@ -388,17 +703,26 @@
 
   /**
    * Shift-click selects a range. The range may reach across months that are not loaded, so the
-   * manager retrieves it — the component never walks the library itself.
+   * manager retrieves it — the component never walks the library itself. As in the prototype
+   * (`App.jsx` toggleSelect), the range leaves the anchor where it was, so a chain of shift-clicks
+   * all range from the same original anchor.
    */
   const selectRange = async (asset: TimelineAsset) => {
     const start = anchorAsset();
     if (!start) {
-      session.select(asset.id);
+      // No anchor: a plain toggle, which sets one. An anchor that is no longer in the timeline adds
+      // just the clicked item and stays the anchor (prototype `selectRange` outside visible order).
+      session.select(asset.id, { range: true, orderedIds: [asset.id] });
       return;
     }
     rangePending = true;
+    // A range retrieved for another scope, query or sort must not land in this view's selection.
+    const revision = session.revision;
     try {
       const range = await timelineManager.retrieveRange(start, asset);
+      if (session.revision !== revision) {
+        return;
+      }
       const ids = range.map((item) => item.id);
       session.dispatch({ type: 'selection', ids: [...new Set([...session.selection, ...ids])] });
     } finally {
@@ -447,7 +771,12 @@
   };
 </script>
 
-<div class="fl-timeline" data-testid="frameleaf-timeline">
+<div
+  class="fl-timeline"
+  class:is-groupable={onGroupingChange && showDayHeaders}
+  data-testid="frameleaf-timeline"
+  bind:this={root}
+>
   <section
     class="fl-timeline-scroll"
     tabindex="-1"
@@ -456,23 +785,85 @@
     bind:clientWidth={measuredWidth}
     style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
     onscroll={handleScroll}
-    aria-busy={rangePending}
+    aria-busy={rangePending || groupPending}
   >
     <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
       <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
         {@render header?.()}
+        {#if onGroupingChange && showDayHeaders}
+          <div class="fl-grouping">
+            <span class="fl-grouping-hint">
+              {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
+            </span>
+            <div class="fl-grouping-modes" role="group" aria-label={$t('frameleaf_library_grouping')}>
+              {#each CONTROL_ORDER as value (value)}
+                <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
+                  {$t(MODE_LABELS[value])}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
         {#if isEmpty}
           {@render empty?.()}
         {/if}
       </div>
 
       {#each timelineManager.months as month (month.viewId)}
+        {@const group = groupOf.get(month.viewId)}
+        <!--
+          A month, year or "all" group's header comes first in the document, before its tiles, as
+          the prototype's header opens its <section>. The band spans every month of the group so the
+          header sticks through all of them; only the header takes the pointer.
+        -->
+        {#if group && bandHosts.get(group.key) === month.viewId}
+          {@const first = group.months[0]}
+          {@const last = group.months.at(-1)!}
+          <div
+            class="fl-group-band"
+            data-testid="frameleaf-group"
+            data-group-key={group.key}
+            onfocusin={() => (focusedGroupKey = group.key)}
+            onfocusout={(event) => {
+              // Focus moving to another element ends the claim; the header being drawn anew does not.
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+                focusedGroupKey = null;
+              }
+            }}
+            style:top="{first.top}px"
+            style:height="{last.top + last.height - first.top}px"
+          >
+            <LibraryGroupHeader
+              id={groupHeadingId(group)}
+              title={group.title}
+              count={group.months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
+              state={displayGroupState(group)}
+              {selecting}
+              hovered={group.months.some((groupMonth) => groupMonth.viewId === hoveredMonth)}
+              width={timelineManager.viewportWidth}
+              height={first.groupHeaderHeight}
+              onSelect={(checked) => selectDisplayGroup(group, checked)}
+            />
+          </div>
+        {/if}
         {#if !month.isLoaded}
           <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
             <Skeleton height={month.height} title={month.title} />
           </div>
         {:else if month.isInOrNearViewport}
-          <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
+          <div
+            class="fl-month"
+            role={group && regionHosts.get(group.key) === month.viewId ? 'region' : undefined}
+            aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
+            style:height="{month.height}px"
+            style:transform={`translate3d(0,${month.top}px,0)`}
+            onpointerenter={() => (hoveredMonth = month.viewId)}
+            onpointerleave={() => {
+              if (hoveredMonth === month.viewId) {
+                hoveredMonth = null;
+              }
+            }}
+          >
             {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
               <LibraryDayGroup
                 {timelineDay}
@@ -481,7 +872,8 @@
                 {ratingFor}
                 {captionFor}
                 showHeader={showDayHeaders}
-                headerHeight={timelineManager.headerHeight}
+                grouped={effectiveGrouping !== 'days'}
+                headerHeight={month.groupHeaderHeight}
                 onOpen={handleOpen}
                 {onToggleSelect}
                 onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
@@ -516,11 +908,14 @@
 </div>
 
 <span class="fl-sr" role="status" aria-live="polite">
-  {#if rangePending}{$t('loading')}{/if}
+  {#if rangePending || groupPending}{$t('loading')}{/if}
 </span>
+<!-- Prototype `.tl-live`: the grouping announcement has a live region of its own. -->
+<span class="fl-sr" role="status" aria-live="polite" data-testid="frameleaf-grouping-status">{announcement}</span>
 
 <style>
   .fl-timeline {
+    container: fl-timeline / inline-size;
     position: relative;
     display: flex;
     height: 100%;
@@ -542,11 +937,71 @@
     position: absolute;
     inset-inline: 0;
   }
+  .fl-timeline.is-groupable {
+    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping, not the page zoom. */
+    touch-action: pan-y;
+  }
+  .fl-group-band {
+    position: absolute;
+    inset-inline: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
   .fl-month {
     position: absolute;
     inset-inline: 0;
     contain: layout size paint;
     backface-visibility: hidden;
+  }
+  /* Prototype `timeline-library.css` .tl-toolbar / .tl-hint / .tl-segmented. */
+  .fl-grouping {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .fl-grouping-hint {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro, 11px);
+  }
+  .fl-grouping-modes {
+    display: flex;
+    padding: 2px;
+    border-radius: var(--fl-radius-control, 6px);
+    background: var(--fl-panel);
+    box-shadow: inset 0 0 0 1px var(--fl-border);
+  }
+  .fl-grouping-modes button {
+    min-height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small, 12px);
+    cursor: pointer;
+  }
+  .fl-grouping-modes button:hover {
+    color: var(--fl-text);
+  }
+  .fl-grouping-modes button[aria-pressed='true'] {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    box-shadow: 0 0 0 1px var(--fl-border);
+  }
+  /* Prototype `timeline-library.css` `@container (max-width: 600px)`. */
+  @container fl-timeline (max-width: 600px) {
+    .fl-grouping {
+      justify-content: flex-end;
+    }
+    .fl-grouping-hint {
+      display: none;
+    }
+    .fl-grouping-modes button {
+      min-height: 36px;
+    }
   }
   .fl-sr {
     position: absolute;

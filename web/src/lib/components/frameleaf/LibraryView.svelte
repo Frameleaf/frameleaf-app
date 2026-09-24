@@ -619,10 +619,7 @@
       case 'group-months':
       case 'group-years': {
         // As in the prototype (`App.jsx` `jump`), D, M and Y show the Timeline layout grouped by
-        // that unit. Grouping is page state: it travels in a link, survives a layout switch and is
-        // what the query bridge reads. The timeline itself always draws day groups inside month
-        // buckets, which is what the manager loads; coarser groupings need bucket support it does
-        // not have.
+        // that unit. Grouping is page state: it travels in a link and survives a layout switch.
         event.preventDefault();
         showTimeline(shortcut.id.replace('group-', '') as LibraryGrouping);
         return;
@@ -659,6 +656,8 @@
         {ratingFor}
         captionFor={gridLayout === 'work' ? captionFor : undefined}
         showDayHeaders={gridLayout !== 'browse'}
+        grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
+        onGroupingChange={gridLayout === 'timeline' ? (grouping) => session.patchView({ grouping }) : undefined}
         {enableRouting}
         {selectionMode}
         {singleSelect}
