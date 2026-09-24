@@ -40,7 +40,8 @@
      */
     anchor: string;
     label: string;
-    options: { value: string; label: string }[];
+    /** `count` is the facet count for the current search (FL-49), when the caller has one. */
+    options: { value: string; label: string; count?: number }[];
     condition: SetCondition;
     /** Supplied for the People section only; each option renders its face thumbnail. */
     people?: PersonResponseDto[];
@@ -128,6 +129,9 @@
           <PersonAvatar person={people.find((person) => person.id === option.value)} size={34} />
         {/if}
         <span>{option.label}</span>
+        {#if option.count !== undefined}
+          <small class="count">{option.count.toLocaleString()}</small>
+        {/if}
       </label>
     {/each}
     {#if matches.length === 0}
@@ -186,6 +190,12 @@
     padding: 0;
     font-size: var(--fl-font-small);
     text-decoration: underline;
+  }
+  .count {
+    margin-inline-start: auto;
+    font-size: var(--fl-font-small);
+    font-variant-numeric: tabular-nums;
+    color: var(--fl-muted);
   }
   .options {
     display: flex;

@@ -219,7 +219,7 @@ export const toggleFlagCondition = (condition: Condition, value: boolean): Condi
 /* -------------------------------------------------------------------------- */
 
 /**
- * The enrichment quick filters from `SearchDialog.jsx`, mapped onto the server's real
+ * The enrichment quick filters from `SearchPalette.jsx`, mapped onto the server's real
  * `ImageEnrichmentFilter` enum. The prototype's three chips (description missing,
  * description failed, needs sensitivity review) are the first three here; the rest of the
  * enum is offered in the filter panel so nothing the server supports is unreachable.
