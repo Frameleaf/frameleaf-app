@@ -35,8 +35,8 @@
     align-items: center;
     justify-content: flex-end;
     gap: 1rem;
-    margin-top: 1.25rem;
-    padding-top: 0.875rem;
+    /* apple-style.css:1031-1034 `.cc-page-tools` */
+    padding: 12px 0;
     border-top: 1px solid var(--fl-border);
   }
   .page-tools :global(button) {

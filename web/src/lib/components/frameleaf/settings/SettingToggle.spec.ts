@@ -39,4 +39,11 @@ describe('SettingToggle component', () => {
     render(SettingToggle, { props: { title: 'Trash', checked: true, isEdited: true } });
     expect(screen.getByText('unsaved_change')).toBeTruthy();
   });
+
+  it('puts the switch after its label and help, in the right-hand control column', () => {
+    const { container } = render(SettingToggle, { props: { title: 'Trash', subtitle: 'Keep deleted items' } });
+    const field = container.querySelector('.field')!;
+    expect(field.lastElementChild).toHaveClass('control');
+    expect(field.lastElementChild!.querySelector('[role="switch"]')).not.toBeNull();
+  });
 });

@@ -78,59 +78,78 @@
 </div>
 
 <style>
+  /*
+   * Sept 24: a group is a disclosure row inside the page's grouped list rather than a card inside
+   * a card (apple-style.css:1014-1045); its settings open underneath with a quiet inset.
+   */
   .group {
-    margin-top: 0.75rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
+    border-top: 1px solid var(--fl-border);
   }
-  .group.open {
-    border-color: color-mix(in srgb, var(--fl-accent) 45%, var(--fl-border));
+  .group:first-child {
+    border-top: 0;
   }
   button {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 16px;
     width: 100%;
-    padding: 0.75rem 1rem;
+    min-height: 48px;
+    padding: 12px 0;
     text-align: start;
     color: var(--fl-text);
     background: transparent;
     border: 0;
-    border-radius: var(--fl-radius-card);
+    border-radius: 0;
+    font: inherit;
   }
-  button:hover {
-    background: color-mix(in srgb, var(--fl-raised), transparent 40%);
+  button:hover .title-line {
+    color: var(--fl-accent);
+  }
+  button:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+    border-radius: var(--fl-radius-control);
   }
   .heading {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 4px;
     min-width: 0;
   }
   .title-line {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
+    font-size: 14px;
     font-weight: 550;
+  }
+  .title-line :global(svg) {
+    color: var(--fl-muted);
   }
   .subtitle {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    line-height: 1.5;
+    font-size: 12.5px;
+    line-height: 1.45;
   }
   .chevron {
     display: grid;
     place-items: center;
     flex-shrink: 0;
     color: var(--fl-muted);
-    transition: transform var(--fl-motion-fast) var(--fl-ease);
+    transition: transform var(--fl-duration, 380ms) var(--fl-spring, ease);
   }
   .open .chevron {
     transform: rotate(180deg);
   }
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
   .panel {
-    padding: 0 1rem 1rem;
+    margin: 0 0 12px;
+    padding: 0 0 0 14px;
+    border-inline-start: 2px solid var(--fl-border);
   }
 </style>
