@@ -566,13 +566,13 @@ describe(AssetController.name, () => {
       expect(service.getVideoEditVersions).toHaveBeenCalledWith(undefined, id);
     });
 
-    it('queues a master export with download permission and a master profile only', async () => {
+    it('queues a master export with edit create permission and a master profile only', async () => {
       const id = factory.uuid();
       const { status } = await request(ctx.getHttpServer())
         .post(`/assets/${id}/edit-versions/export`)
         .send({ profile: 'master' });
       expect(status).toBe(201);
-      expectPermission(Permission.AssetDownload);
+      expectPermission(Permission.AssetEditCreate);
       expect(service.exportVideoEditVersion).toHaveBeenCalledWith(undefined, id);
 
       service.exportVideoEditVersion.mockClear();

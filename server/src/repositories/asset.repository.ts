@@ -1017,7 +1017,8 @@ export class AssetRepository {
       `.execute(tx);
       const assets = locked.rows;
       const ids = assets.map(({ id }) => id);
-      await this.deleteVideoEditVersions(ids, tx);
+      // Retained video versions are left to the nightly orphan release, which queues their files
+      // for deletion; this bulk path returns only the originals it removed.
       await this.forkPrivacy.delete(ids, tx);
       await this.forkEnrichment.delete(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
@@ -1259,15 +1260,17 @@ export class AssetRepository {
     const phase = await sql<{
       phase: ForkSchemaPhase;
     }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`.execute(db);
+    // While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the
+    // asset delete must not fail, and the nightly orphan release reclaims their files later.
+    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) return [];
+    const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
+      AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
+    if (handoff.rows.length > 0) return [];
     const retained = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
       SELECT "masterPath", "proxyPath", files FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])
       UNION ALL SELECT payload->>'masterPath', payload->>'proxyPath', payload->'files' FROM immich_fork.orphaned_records
       WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
     if (retained.rows.length === 0) return [];
-    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) throw new Error('video_version_inactive');
-    const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
-      AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
-    if (handoff.rows.length > 0) throw new Error('video_version_handoff');
     await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
     await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
     await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" IN ('video_edit_selection','video_edit_version')

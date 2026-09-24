@@ -549,6 +549,13 @@ export class AssetService extends BaseService {
       );
     }
 
+    // FL-39: video versions whose asset is gone (left behind while fork writes were disabled, or
+    // archived by a handoff return) release their files here.
+    const orphanedVersionPaths = await this.assetEditRepository.releaseOrphanedVideoVersions();
+    if (orphanedVersionPaths.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: orphanedVersionPaths } });
+    }
+
     return JobStatus.Success;
   }
 
@@ -817,8 +824,16 @@ export class AssetService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
     const asset = await this.assetRepository.getById(id);
     if (!asset) throw new BadRequestException('Asset not found');
-    const originalVideo =
-      asset.type === AssetType.Video ? await this.getOriginalVideoMetadata(asset.originalPath) : undefined;
+    // Best effort: clients that only list edits must not fail because the original cannot be probed.
+    // Saving still requires the original's bounds (see editAsset).
+    let originalVideo: AssetEditsResponseDto['originalVideo'];
+    if (asset.type === AssetType.Video) {
+      try {
+        originalVideo = await this.getOriginalVideoMetadata(asset.originalPath);
+      } catch (error: any) {
+        this.logger.warn(`Original video metadata is unavailable for asset ${id}: ${error?.message ?? error}`);
+      }
+    }
     const edits = await this.assetEditRepository.getAll(id);
 
     return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
@@ -839,7 +854,7 @@ export class AssetService extends BaseService {
     ) {
       throw new BadRequestException('Original video metadata is not available for editing');
     }
-    const rotated = Math.abs(video.rotation) === 90;
+    const rotated = Math.abs(video.rotation) % 180 === 90;
     return { width: rotated ? video.height : video.width, height: rotated ? video.width : video.height, durationMs };
   }
 
@@ -986,12 +1001,13 @@ export class AssetService extends BaseService {
     const version = await this.assetEditRepository.getVideoVersion(id, versionId);
     if (!version || version.ownerId !== auth.user.id || version.status !== 'ready')
       throw new BadRequestException('Video version is unavailable');
-    if (version.recipe.length === 0) await this.removeAssetEdits(auth, id, 'revert');
+    if (version.recipe.length === 0) await this.clearAssetEdits(id, 'revert');
     else await this.editAsset(auth, id, { edits: version.recipe }, 'revert');
   }
 
   async exportVideoEditVersion(auth: AuthDto, id: string): Promise<VideoEditVersionResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+    // An export renders a new master, so it needs the same permission as saving an edit.
+    await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
     const version = await withVideoVersionErrors(() => this.assetEditRepository.createVideoExport(id, auth.user.id));
     await this.jobRepository.queue({ name: JobName.AssetVideoEditGeneration, data: { id, versionId: version.id } });
     return {
@@ -1014,9 +1030,13 @@ export class AssetService extends BaseService {
     if (paths.length > 0) await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } });
   }
 
-  async removeAssetEdits(auth: AuthDto, id: string, purpose: 'save' | 'revert' = 'save'): Promise<void> {
+  async removeAssetEdits(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetEditDelete, ids: [id] });
+    await this.clearAssetEdits(id, 'save');
+  }
 
+  /** Restoring a version with an empty recipe is an edit, not a deletion; callers check access. */
+  private async clearAssetEdits(id: string, purpose: 'save' | 'revert'): Promise<void> {
     const asset = await this.assetRepository.getById(id, { files: true });
     if (!asset) {
       throw new BadRequestException('Asset not found');

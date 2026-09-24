@@ -115,12 +115,50 @@ export class JobService extends BaseService {
         !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
       if (shouldRunFollowUp) {
         await this.onDone(job);
+      } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
+        // FL-39: a failed version render still settles; history views refresh on this event.
+        await this.sendAssetEditReady(job.data.id);
       }
     } catch (error: any) {
       await this.eventRepository.emit('JobError', { job, error });
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);
     }
+  }
+
+  /** Tells the owner's clients that a video edit job settled, whatever its outcome. */
+  private async sendAssetEditReady(id: string) {
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) {
+      return;
+    }
+    const edits = await this.assetEditRepository.getWithSyncInfo(id);
+    this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
+      asset: {
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalFileName: asset.originalFileName,
+        thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+        checksum: hexOrBufferToBase64(asset.checksum),
+        fileCreatedAt: asset.fileCreatedAt,
+        fileModifiedAt: asset.fileModifiedAt,
+        createdAt: asset.createdAt,
+        localDateTime: asset.localDateTime,
+        duration: asset.duration,
+        type: asset.type,
+        deletedAt: asset.deletedAt,
+        isFavorite: asset.isFavorite,
+        visibility: effectiveVisibilityOf(asset),
+        livePhotoVideoId: asset.livePhotoVideoId,
+        stackId: asset.stackId,
+        libraryId: asset.libraryId,
+        width: asset.width,
+        height: asset.height,
+        isEdited: asset.isEdited,
+      },
+      edit: edits,
+    });
+    return asset;
   }
 
   /**
@@ -192,35 +230,8 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetVideoEditGeneration: {
-        const asset = await this.assetRepository.getById(item.data.id);
-        const edits = await this.assetEditRepository.getWithSyncInfo(item.data.id);
-
+        const asset = await this.sendAssetEditReady(item.data.id);
         if (asset) {
-          this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
-            asset: {
-              id: asset.id,
-              ownerId: asset.ownerId,
-              originalFileName: asset.originalFileName,
-              thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-              checksum: hexOrBufferToBase64(asset.checksum),
-              fileCreatedAt: asset.fileCreatedAt,
-              fileModifiedAt: asset.fileModifiedAt,
-              createdAt: asset.createdAt,
-              localDateTime: asset.localDateTime,
-              duration: asset.duration,
-              type: asset.type,
-              deletedAt: asset.deletedAt,
-              isFavorite: asset.isFavorite,
-              visibility: effectiveVisibilityOf(asset),
-              livePhotoVideoId: asset.livePhotoVideoId,
-              stackId: asset.stackId,
-              libraryId: asset.libraryId,
-              width: asset.width,
-              height: asset.height,
-              isEdited: asset.isEdited,
-            },
-            edit: edits,
-          });
           // Export completion updates history only. A ready save/revert also refreshes
           // viewers and caches through the application-wide asset update subscription.
           const version = item.data.versionId
