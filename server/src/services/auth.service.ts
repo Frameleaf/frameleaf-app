@@ -95,6 +95,9 @@ export type ValidateRequest = {
   };
 };
 
+const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
+const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
+
 /**
  * The HTTP address that forwards an OAuth callback to the Frameleaf app, derived from the
  * configured Immich mobile redirect (FL-131).
@@ -102,20 +105,27 @@ export type ValidateRequest = {
  * The override exists because some identity providers only accept `https` callbacks. The Immich
  * app's callback is replaced by the configured `…/oauth/mobile-redirect`; the Frameleaf app's by
  * the sibling `…/oauth/frameleaf-mobile-redirect` on the same server, so the provider hands each
- * app back its own callback and neither app is opened for the other's sign-in. A configured
- * address that is not a mobile-redirect path gets the endpoint at the server's API root.
+ * app back its own callback and neither app is opened for the other's sign-in.
+ *
+ * Only an override that is this server's `…/oauth/mobile-redirect` has a known sibling. Any other
+ * address may not be this server at all, so there is nothing safe to derive, and the Frameleaf
+ * callback is refused with setup guidance instead of being sent somewhere else.
  */
 const frameleafRedirectUri = (mobileRedirectUri: string): string => {
-  let url: URL;
+  let url: URL | undefined;
   try {
     url = new URL(mobileRedirectUri);
   } catch {
-    return mobileRedirectUri;
+    url = undefined;
   }
-  const legacyPath = /\/oauth\/mobile-redirect\/?$/;
-  url.pathname = legacyPath.test(url.pathname)
-    ? url.pathname.replace(legacyPath, () => FRAMELEAF_MOBILE_REDIRECT_PATH)
-    : `/api${FRAMELEAF_MOBILE_REDIRECT_PATH}`;
+  if (!url || !LEGACY_MOBILE_REDIRECT_PATH.test(url.pathname)) {
+    throw new BadRequestException(
+      "Frameleaf app sign-in needs the mobile redirect override to be this server's " +
+        '/api/oauth/mobile-redirect address, with /api/oauth/frameleaf-mobile-redirect also registered ' +
+        'as a redirect URI with the identity provider',
+    );
+  }
+  url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, () => FRAMELEAF_MOBILE_REDIRECT_PATH);
   url.search = '';
   url.hash = '';
   return url.href;
@@ -836,7 +846,7 @@ export class AuthService extends BaseService {
     if (mobileOverrideEnabled && mobileRedirectUri) {
       return url
         .replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri)
-        .replace(/frameleaf-auth:\/+oauth-callback/, () => frameleafRedirectUri(mobileRedirectUri));
+        .replace(FRAMELEAF_CALLBACK, () => frameleafRedirectUri(mobileRedirectUri));
     }
     return url;
   }
