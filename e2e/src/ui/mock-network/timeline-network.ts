@@ -7,6 +7,7 @@ import {
   getAsset,
   getTimeBucket,
   getTimeBuckets,
+  getTimelineHighlights,
   randomPreview,
   randomThumbnail,
   TimelineData,
@@ -39,6 +40,23 @@ export const setupTimelineMockApiRoutes = async (
         status: 200,
         contentType: 'application/json',
         json: getTimeBuckets(timelineRestData, isTrashed, isArchived, isFavorite, albumId, changes),
+      });
+    }
+    if (pathname === '/api/timeline/highlights') {
+      const param = (name: string) => url.searchParams.get(name);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: getTimelineHighlights(
+          timelineRestData,
+          param('grouping') === 'month' ? 'month' : 'year',
+          Number(param('highlightCount') ?? 0),
+          param('isTrashed') ? param('isTrashed') === 'true' : undefined,
+          param('visibility') ? param('visibility') === 'archive' : undefined,
+          param('isFavorite') ? param('isFavorite') === 'true' : undefined,
+          param('albumId') || undefined,
+          changes,
+        ),
       });
     }
     if (pathname === '/api/timeline/bucket') {

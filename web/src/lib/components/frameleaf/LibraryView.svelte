@@ -25,6 +25,7 @@
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
+  import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
@@ -33,6 +34,7 @@
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
   import {
@@ -64,8 +66,8 @@
     timelineManager?: TimelineManager;
     /** Put the portable view state in the URL, so a link reopens what it describes. */
     syncUrl?: boolean;
+    /** Rating override; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
-    captionFor?: (asset: TimelineAsset) => string | null;
     /** Open the existing filter panel at a section. */
     onOpenFilterPanel?: (section: DiscoveryFilterSection) => void;
     /** Load the next page of results. */
@@ -153,7 +155,6 @@
     timelineManager = $bindable(),
     syncUrl = true,
     ratingFor,
-    captionFor,
     onOpenFilterPanel,
     onShowMore,
     onShortcut,
@@ -753,8 +754,11 @@
         timelineManager={manager}
         {session}
         {ratingFor}
-        captionFor={gridLayout === 'work' ? captionFor : undefined}
-        showDayHeaders={gridLayout !== 'browse'}
+        tileLayout={gridLayout}
+        thumbnailSize={libraryGridPreferences.thumbnailSize}
+        showFileNames={libraryGridPreferences.showFileNames}
+        onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
+        showDayHeaders={gridLayout === 'timeline'}
         grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
         onGroupingChange={gridLayout === 'timeline' ? (grouping) => session.patchView({ grouping }) : undefined}
         {enableRouting}
@@ -771,6 +775,10 @@
           {#if !publicView}
             <ResultsToolbar {session} {onOpenFilterPanel}>
               {@render toolbar?.()}
+              <!-- FL-33: Work's file-name toggle. The shell owns this toolbar; merge note for 2e/2g. -->
+              {#if gridLayout === 'work'}
+                <WorkFileNamesToggle />
+              {/if}
               {#if canShowInfoPanel}
                 <IconButton
                   label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}

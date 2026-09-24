@@ -9,6 +9,7 @@
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -29,9 +30,13 @@
      * under the month's group header, so the day draws no header and names no region of its own.
      */
     grouped?: boolean;
-    /** Work shows the capture time under each tile. */
-    captionFor?: (asset: TimelineAsset) => string | null;
-    /** Rating for an asset, supplied by the host; the timeline model does not carry one. */
+    /** The layout the tiles are drawn in (FL-33 tile variants). */
+    layout?: TileLayout;
+    /** Work: the caption row under each tile, included in the tile height. */
+    captionHeight?: number;
+    /** Work: show file names in the captions. */
+    showFileNames?: boolean;
+    /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
@@ -48,7 +53,9 @@
     showHeader = true,
     headerHeight = 48,
     grouped = false,
-    captionFor,
+    layout = 'timeline',
+    captionHeight = 0,
+    showFileNames = false,
     ratingFor,
     onOpen,
     onToggleSelect,
@@ -125,8 +132,10 @@
             height={position.height}
             selected={selected.has(asset.id)}
             {selecting}
-            rating={ratingFor?.(asset) ?? null}
-            caption={captionFor?.(asset) ?? null}
+            {layout}
+            rating={ratingFor?.(asset)}
+            {captionHeight}
+            showFileName={showFileNames}
             {onOpen}
             {onToggleSelect}
             onFocus={onFocusAsset}

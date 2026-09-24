@@ -16,6 +16,7 @@ export {
   getAsset,
   getTimeBucket,
   getTimeBuckets,
+  getTimelineHighlights,
   toAssetResponseDto,
   toColumnarFormat,
 } from './timeline/rest-response';

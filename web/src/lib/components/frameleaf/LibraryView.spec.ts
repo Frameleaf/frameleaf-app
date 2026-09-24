@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import LibraryView from './LibraryView.svelte';
 
@@ -44,6 +45,24 @@ describe('LibraryView', () => {
     expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'work');
     expect(screen.getByTestId('work-panel')).toBeInTheDocument();
+  });
+
+  it('offers Work’s file-name toggle in Work only, and remembers it on this device (FL-33)', async () => {
+    localStorage.removeItem('frameleaf-work-filenames');
+    libraryGridPreferences.reload();
+    await setup(false);
+    const toggle = screen.getByRole('button', { name: 'frameleaf_library_show_file_names' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'frameleaf_library_hide_file_names' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(localStorage.getItem('frameleaf-work-filenames')).toBe('true');
+    librarySession.setLayout('browse');
+    await tick();
+    expect(screen.queryByRole('button', { name: 'frameleaf_library_hide_file_names' })).not.toBeInTheDocument();
+    libraryGridPreferences.showFileNames = false;
   });
 
   it('draws no layout switch, Filter menu or Work panel on a public shared-link page', async () => {
