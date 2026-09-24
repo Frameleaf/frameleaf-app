@@ -181,30 +181,30 @@ from
 -- TagRepository.update
 begin
 select
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select
+  "userId",
   "value",
   "parentId"
 from
   "tag"
 where
   "id" = $1
-update "tag"
-set
-  "value" = $1,
-  "color" = $2
-where
-  "id" = $3
-returning
-  *
 rollback
-
--- TagRepository.isAncestor
-select
-  "id_ancestor"
-from
-  "tag_closure"
-where
-  "id_ancestor" = $1
-  and "id_descendant" = $2
 
 -- TagRepository.delete
 delete from "tag"
