@@ -994,22 +994,37 @@ const actions = {
     },
   ],
   "slideshow-ascending-descending-order": [
-    "partial",
+    "fixed",
     ["V-8"],
-    "Frameleaf slideshow settings",
-    { production: [`${W}/lib/components/asset-viewer/SlideshowBar.svelte`] },
+    "Frameleaf slideshow settings dialog (fixed on codex/FL-62-sept24-slideshow-memories)",
+    {
+      production: [
+        `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+      ],
+    },
   ],
   "slideshow-blurred-background-look-progress-transition-settings": [
     "partial",
     ["V-8", "V-18"],
-    "Frameleaf slideshow settings; inline slideshow",
-    { production: [`${W}/lib/components/asset-viewer/SlideshowBar.svelte`] },
+    "Inline slideshow (V-18); the Frameleaf settings and the five transitions are fixed (V-8)",
+    {
+      production: [
+        `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+      ],
+    },
   ],
   "slideshow-duration-contain-cover-metadata-captions": [
-    "partial",
+    "fixed",
     ["V-8"],
-    "Frameleaf slideshow settings",
-    { production: [`${W}/lib/components/asset-viewer/SlideshowBar.svelte`] },
+    "Frameleaf slideshow settings dialog (fixed on codex/FL-62-sept24-slideshow-memories)",
+    {
+      production: [
+        `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+      ],
+    },
   ],
   "slideshow-play-pause-previous-next-repeat-shuffle": [
     "partial",
@@ -1455,7 +1470,7 @@ const routes = {
   "/memories": [
     "partial",
     ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-    "Memories sections, remove confirm (fix-discovery), settings",
+    "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)",
     [`${P}/Memories.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/memories/+page.svelte`,
@@ -1475,7 +1490,7 @@ const routes = {
       "MPY-8",
       "MPY-9",
     ],
-    "Player P0s (fix-discovery), title/end cards, shortcuts, soundtrack",
+    "Player P0s (fix-discovery), end card (the title card is fixed, MPY-4), shortcuts, soundtrack",
     [`${P}/MemoryPlayer.jsx`],
     [
       `${W}/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
