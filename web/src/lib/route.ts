@@ -122,7 +122,8 @@ export const Route = {
   viewPet: ({ id }: { id: string }) => `/pets/${id}`,
 
   // photos
-  photos: (params?: { at?: string }) => '/photos' + asQueryString(params),
+  /** `area` is a map area (`west,south,east,north`) from the Map screen's "Search this area". */
+  photos: (params?: { at?: string; area?: string }) => '/photos' + asQueryString(params),
   viewAsset: ({ id }: { id: string }) => `/photos/${id}`,
   recentlyAdded: (params?: { at?: string }) => '/recently-added' + asQueryString(params),
   viewRecentlyAddedAsset: ({ id }: { id: string }) => `/recently-added/${id}`,

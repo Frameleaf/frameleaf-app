@@ -26,6 +26,23 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   fileCreatedAfter?: Date;
 }
 
+/**
+ * The settings sheet's filters for an album map (FL-51). Each narrows the album's own markers; favorites
+ * are matched only among `favoriteOwnerId`'s own items, because a favorite is private to its owner.
+ */
+export interface AlbumMapMarkerSearchOptions {
+  isArchived?: boolean;
+  isFavorite?: boolean;
+  fileCreatedBefore?: Date;
+  fileCreatedAfter?: Date;
+  favoriteOwnerId?: string;
+  /**
+   * Whose album items to keep: always the viewer's own, then their partners' and everyone else's
+   * unless the sheet switched those off. Only ever narrows the album.
+   */
+  ownerScope?: { viewerId: string; partnerIds: string[]; withPartners: boolean; withOthers: boolean };
+}
+
 export interface GeoPoint {
   latitude: number;
   longitude: number;
@@ -76,13 +93,47 @@ export class MapRepository {
 
   /** Markers for an album: the same media the album itself shows this viewer (see `withAlbumVisibility`). */
   @GenerateSql({ params: [DummyValue.UUID] })
-  getAlbumMapMarkers(albumId: string, options: HiddenContentQueryOptions & LockedVisibilityOptions = {}) {
-    return this.mapMarkersQuery()
-      .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
-      .where('album_asset.albumId', '=', albumId)
-      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .execute();
+  getAlbumMapMarkers(
+    albumId: string,
+    options: HiddenContentQueryOptions & LockedVisibilityOptions & AlbumMapMarkerSearchOptions = {},
+  ) {
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, favoriteOwnerId, ownerScope } = options;
+    return (
+      this.mapMarkersQuery()
+        .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+        .where('album_asset.albumId', '=', albumId)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        // an album shows archived items, so only an explicit `false` leaves them out
+        .$if(isArchived === false, (qb) => qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Archive)))
+        .$if(isFavorite !== undefined && !!favoriteOwnerId, (qb) =>
+          qb.where((eb) => {
+            const ownFavorite = eb.and([eb('asset.isFavorite', '=', true), eb('asset.ownerId', '=', favoriteOwnerId!)]);
+            return isFavorite ? ownFavorite : eb.not(ownFavorite);
+          }),
+        )
+        .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
+        .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))
+        .$if(!!ownerScope, (qb) =>
+          qb.where((eb) => {
+            const { viewerId, partnerIds, withPartners, withOthers } = ownerScope!;
+            const owners: Expression<SqlBool>[] = [eb('asset.ownerId', '=', viewerId)];
+            if (withPartners && partnerIds.length > 0) {
+              owners.push(eb('asset.ownerId', 'in', partnerIds));
+            }
+            if (withOthers) {
+              owners.push(
+                eb.and([
+                  eb('asset.ownerId', '!=', viewerId),
+                  ...(partnerIds.length > 0 ? [eb('asset.ownerId', 'not in', partnerIds)] : []),
+                ]),
+              );
+            }
+            return eb.or(owners);
+          }),
+        )
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID], [DummyValue.UUID]] })

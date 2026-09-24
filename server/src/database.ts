@@ -213,6 +213,8 @@ export type SharedLink = {
   type: SharedLinkType;
   userId: string;
   slug: string | null;
+  /** Only the link owner's display name is loaded; see `SharedLinkRepository.get`. */
+  owner?: { name: string } | null;
 };
 
 export type Album = Selectable<AlbumTable> & {

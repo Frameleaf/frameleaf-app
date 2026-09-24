@@ -4205,6 +4205,30 @@
         "operationId": "getAlbumMapMarkers",
         "parameters": [
           {
+            "name": "fileCreatedAfter",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created after this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileCreatedBefore",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created before this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -4212,6 +4236,24 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "isArchived",
+            "required": false,
+            "in": "query",
+            "description": "Include archived items (the album default); false leaves them out",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the viewer's own favorites; other members' favorites are never matched",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -4228,6 +4270,24 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "withPartners",
+            "required": false,
+            "in": "query",
+            "description": "Include the album's items owned by your partners (the album default); false leaves them out",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withSharedAlbums",
+            "required": false,
+            "in": "query",
+            "description": "Include the album's items owned by other members who are not your partners (the album default); false leaves them out",
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -59669,6 +59729,19 @@
         ],
         "type": "object"
       },
+      "SharedLinkOwnerResponseDto": {
+        "description": "Public details of the shared link owner",
+        "properties": {
+          "name": {
+            "description": "Display name of the user who created the link",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "SharedLinkResponseDto": {
         "description": "Shared link response",
         "properties": {
@@ -59718,6 +59791,10 @@
           "key": {
             "description": "Encryption key (base64url)",
             "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/SharedLinkOwnerResponseDto",
+            "description": "Display name of the user who created the link, for \"Shared by\" on the public page"
           },
           "password": {
             "description": "Has password",

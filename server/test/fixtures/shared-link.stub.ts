@@ -27,6 +27,7 @@ export const sharedLinkStub = {
     showExif: true,
     albumId: null,
     album: null,
+    owner: null,
     description: null,
     assets: [AssetFactory.create()],
     password: 'password',
@@ -48,6 +49,7 @@ export const sharedLinkStub = {
     password: null,
     assets: [] as MapAsset[],
     album: null,
+    owner: null,
     slug: null,
   }),
   expired: Object.freeze({
@@ -66,6 +68,7 @@ export const sharedLinkStub = {
     albumId: null,
     assets: [] as MapAsset[],
     album: null,
+    owner: null,
     slug: null,
   }),
   passwordRequired: Object.freeze({
@@ -84,5 +87,6 @@ export const sharedLinkStub = {
     assets: [],
     albumId: null,
     album: null,
+    owner: null,
   }),
 };
