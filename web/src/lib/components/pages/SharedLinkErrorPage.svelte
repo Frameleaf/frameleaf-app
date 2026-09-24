@@ -1,26 +1,20 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import '$lib/frameleaf/tokens.css';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
   import { t } from 'svelte-i18n';
 
   // FL-56: both the key and slug shared-link routes render this on an invalid, expired or
   // revoked link (the `getMySharedLink`/`getAssetInfoFromParam` failure in
   // `$lib/utils/shared-links.ts` throws and SvelteKit lands here). Own layout, no
-  // LibraryRail/TopBar/account menu.
-  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  // LibraryRail/TopBar/account menu; the prototype draws this state inside the public frame.
 </script>
 
 <svelte:head>
   <title>{$t('frameleaf_public_unavailable_title')}</title>
 </svelte:head>
 
-<main class="frameleaf pv-error-shell" data-theme={appTheme}>
-  <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-    <Brand />
-  </a>
+<PublicShellFrame hero>
   <div class="pv-error-card" role="status">
     <h1>{$t('frameleaf_public_unavailable_title')}</h1>
     <p>{page.error?.message || $t('frameleaf_public_unavailable_body')}</p>
@@ -28,23 +22,9 @@
       {$t('frameleaf_public_go_home')}
     </Button>
   </div>
-</main>
+</PublicShellFrame>
 
 <style>
-  .pv-error-shell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2rem;
-    min-height: 100dvh;
-    padding: 1.5rem;
-    color: var(--fl-text);
-    background: var(--fl-canvas);
-  }
-  .pv-brand {
-    display: inline-flex;
-  }
   .pv-error-card {
     display: flex;
     flex-direction: column;
