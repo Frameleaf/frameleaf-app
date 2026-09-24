@@ -9,9 +9,15 @@
   import { setSharedLink } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
-  import { sharedLinkLogin, SharedLinkType, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
+  import {
+    isHttpError,
+    sharedLinkLogin,
+    SharedLinkType,
+    type AssetResponseDto,
+    type SharedLinkResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiEyeOutline, mdiLockOutline } from '@mdi/js';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -38,6 +44,8 @@
   let isOwned = $derived(authManager.authenticated && authManager.user.id === sharedLink?.userId);
   let password = $state('');
   let showPassword = $state(false);
+  /** The prototype's inline wrong-password message (`PublicViewer.jsx`), shown instead of a toast. */
+  let passwordError = $state('');
 
   if (passwordRequired) {
     assetViewerManager.showAssetViewer(false);
@@ -58,6 +66,10 @@
         { forceNavigate: true, replaceState: true },
       );
     } catch (error) {
+      if (isHttpError(error) && error.status === 401) {
+        passwordError = $t('frameleaf_public_password_wrong');
+        return;
+      }
       handleError(error, $t('errors.unable_to_get_shared_link'));
     }
   };
@@ -80,6 +92,7 @@
   <!-- FL-56: the prototype draws the password prompt inside the public frame, with no private navigation. -->
   <PublicShellFrame hero>
     <form class="pv-password-card" novalidate {onsubmit}>
+      <Icon icon={mdiLockOutline} size="40" aria-hidden={true} />
       <h1>{$t('frameleaf_public_password_title')}</h1>
       <p>{$t('frameleaf_public_password_body')}</p>
       <div class="pv-password-field">
@@ -88,7 +101,10 @@
           autocomplete="off"
           placeholder={$t('password')}
           aria-label={$t('password')}
+          aria-invalid={!!passwordError}
+          aria-describedby={passwordError ? 'pv-password-error' : undefined}
           bind:value={password}
+          oninput={() => (passwordError = '')}
         />
         <IconButton
           label={showPassword ? $t('hide_password') : $t('show_password')}
@@ -98,6 +114,12 @@
           <Icon icon={showPassword ? mdiEyeOffOutline : mdiEyeOutline} size="1.25em" aria-hidden={true} />
         </IconButton>
       </div>
+      {#if passwordError}
+        <p id="pv-password-error" class="pv-password-error" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+          {passwordError}
+        </p>
+      {/if}
       <Button type="submit" variant="primary">{$t('continue')}</Button>
     </form>
   </PublicShellFrame>
@@ -132,6 +154,22 @@
   .pv-password-card p {
     color: var(--fl-muted);
     font-size: 0.875rem;
+  }
+  /* The template's `.slf-error` (sharing.css). */
+  .pv-password-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0.25rem 0 0;
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--fl-radius-control);
+    background: color-mix(in srgb, var(--fl-danger), transparent 88%);
+    text-align: start;
+  }
+  /* Above `.pv-password-card p`, which mutes the body text. */
+  .pv-password-card .pv-password-error {
+    color: var(--fl-danger);
   }
   .pv-password-field {
     display: flex;

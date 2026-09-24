@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
+  import { Icon } from '@immich/ui';
+  import { mdiLinkOff } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   // FL-56: both the key and slug shared-link routes render this on an invalid, expired or
@@ -16,8 +17,10 @@
 
 <PublicShellFrame hero>
   <div class="pv-error-card" role="status">
+    <Icon icon={mdiLinkOff} size="40" aria-hidden={true} />
     <h1>{$t('frameleaf_public_unavailable_title')}</h1>
-    <p>{page.error?.message || $t('frameleaf_public_unavailable_body')}</p>
+    <!-- The prototype's fixed body, never the raw API message. -->
+    <p>{$t('frameleaf_public_unavailable_body')}</p>
     <Button variant="primary" onclick={() => location.assign('/')}>
       {$t('frameleaf_public_go_home')}
     </Button>

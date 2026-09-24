@@ -111,6 +111,17 @@ test.describe('Shared Links', () => {
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
   });
 
+  test('a wrong password is reported inline, not as a toast', async ({ page }) => {
+    await page.goto(`/share/${sharedLinkPassword.key}`);
+    const input = page.getByPlaceholder('Password');
+    await input.fill('wrong-password');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alert')).toHaveText(
+      'That password does not match. Check with the person who shared the link.',
+    );
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+  });
+
   test('show-password button visible', async ({ page }) => {
     await page.goto(`/share/${sharedLinkPassword.key}`);
     await page.getByPlaceholder('Password').fill('test-password');
@@ -146,6 +157,7 @@ test.describe('Shared Links', () => {
   test('show error for invalid shared link', async ({ page }) => {
     await page.goto('/share/invalid');
     await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
+    await expect(page.getByText('It may have been removed, or the address is incomplete.')).toBeVisible();
   });
 
   test('auth on navigation from shared link to timeline', async ({ context, page }) => {
