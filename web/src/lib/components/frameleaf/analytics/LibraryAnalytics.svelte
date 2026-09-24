@@ -211,7 +211,7 @@
 
   <LibraryHero {report} kicker={heroKicker} />
 
-  <div class="card growth-card">
+  <div class="card growth-card fl-continuous-corners">
     <figure class="growth">
       <figcaption>
         <div>
@@ -286,7 +286,7 @@
   {/if}
 
   <div class="grid">
-    <section class="card">
+    <section class="card fl-continuous-corners">
       {@render cardHeading($t('frameleaf_analytics_arrivals'), $t('frameleaf_analytics_arrivals_caption'))}
       <AnalyticsChart
         title={$t('frameleaf_analytics_arrivals_title')}
@@ -301,7 +301,7 @@
       <AnalyticsDataTable table={table('arrivals')} />
     </section>
 
-    <section class="card">
+    <section class="card fl-continuous-corners">
       {#if report.processing.available}
         {@render cardHeading(
           $t('frameleaf_analytics_processing'),
@@ -346,7 +346,7 @@
       {/if}
     </section>
 
-    <section class="card wide">
+    <section class="card wide fl-continuous-corners">
       {@render cardHeading($t('frameleaf_analytics_metadata'), $t('frameleaf_analytics_metadata_caption'), {
         href: settingsArea('intelligence'),
         label: $t('frameleaf_analytics_intelligence'),
@@ -371,7 +371,7 @@
     </section>
   </div>
 
-  <div class="card">
+  <div class="card fl-continuous-corners">
     <section class="library-views">
       {@render cardHeading($t('frameleaf_analytics_views'), $t('frameleaf_analytics_views_caption'))}
       <AnalyticsDataTable table={table('views')} />
@@ -425,7 +425,7 @@
     </section>
   </div>
 
-  <section class="card">
+  <section class="card fl-continuous-corners">
     {@render cardHeading($t('frameleaf_analytics_under_the_hood'), $t('frameleaf_analytics_under_the_hood_caption'), {
       href: settingsArea('care'),
       label: $t('frameleaf_analytics_library_care'),
@@ -662,7 +662,6 @@
   }
   @supports (corner-shape: squircle) {
     .card {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }

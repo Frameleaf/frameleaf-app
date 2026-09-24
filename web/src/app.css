@@ -216,3 +216,17 @@
   -webkit-mask: var(--fl-squircle) center / 100% 100% no-repeat;
   mask: var(--fl-squircle) center / 100% 100% no-repeat;
 }
+
+/*
+ * Continuous corners (apple-style.css:109-135) for component surfaces that set their own radius:
+ * dialogs, palettes, panels, settings groups and search chips carry `fl-continuous-corners` and
+ * keep only their grown radius in their own `@supports (corner-shape: squircle)` block. The shape
+ * is set here rather than in each component because svelte-check's CSS language service does not
+ * know `corner-shape`. Global rather than in the .frameleaf-scoped base.css, because some of those
+ * surfaces render outside a .frameleaf root (the search results chips, Tags and Folders panes).
+ */
+@supports (corner-shape: squircle) {
+  :where(.fl-continuous-corners) {
+    corner-shape: squircle;
+  }
+}

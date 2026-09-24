@@ -237,9 +237,10 @@
     opacity: 0;
     transition: opacity var(--fl-motion) var(--fl-ease);
   }
+  /* people.css:529-533; the aria-expanded trigger belongs to the Menu child, hence :global. */
   .pl-card:hover .pl-menu,
   .pl-card:focus-within .pl-menu,
-  .pl-menu:has([aria-expanded='true']) {
+  .pl-menu:has(:global([aria-expanded='true'])) {
     opacity: 1;
   }
   @media (hover: none) {
