@@ -9,14 +9,18 @@ import {
   AnalyticsSeriesId,
   AssetType,
   AssetVisibility,
+  ColorTransfer,
+  PetObservationState,
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
+  ANALYTICS_TOP_PEOPLE_LIMIT,
   AnalyticsSampleInsert,
   AnalyticsSampleRow,
   AnalyticsScope,
   assertApprovedSample,
 } from 'src/utils/analytics.js';
+import { anyUuid } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -104,6 +108,48 @@ const scopeCondition = (scope: AnalyticsScope, alias = 'a'): RawBuilder<boolean>
       return sql<boolean>`${sql.ref(`${alias}.libraryId`)} = ${scope.libraryId}`;
     }
   }
+};
+
+/** FL-79: file extensions per photo format; RAW is decided first with the same pattern as `summary.raw` */
+const HEIC_EXTENSION_PATTERN = String.raw`\.(heic|heif|hif)$`;
+const JPEG_EXTENSION_PATTERN = String.raw`\.(jpe?g|jfif)$`;
+const PNG_EXTENSION_PATTERN = String.raw`\.png$`;
+
+export type AnalyticsInsightOptions = {
+  /** the scope's owner, when the reader is that owner: only then are names, people and places read */
+  ownerId: string | null;
+  /** people and pets the owner keeps Locked; never named while the session is locked */
+  suppressedPersonIds: string[];
+  suppressedPetIds: string[];
+};
+
+export type AnalyticsInsightRows = {
+  years: Array<{ year: number; count: number }>;
+  punchcard: Array<{ weekday: number; hour: number; count: number }>;
+  lenses: Array<{ name: string | null; count: number }>;
+  focalLengths: Array<{ bucket: string; count: number }>;
+  photoFormats: Array<{ format: string; count: number }>;
+  videoResolutions: Array<{ resolution: string; count: number }>;
+  orientation: Array<{ orientation: string; count: number }>;
+  livePhotos: number;
+  hdr: { probedVideos: number; hdrVideos: number; dolbyVisionVideos: number };
+  records: {
+    oldest: { localDateTime: Date; name: string } | null;
+    largest: { bytes: number; name: string } | null;
+    longest: { durationMs: number; name: string } | null;
+    videoDurationMs: number;
+  };
+  people: {
+    faces: number;
+    itemsWithFaces: number;
+    namedPeople: number;
+    pets: number;
+    topPeople: Array<{ id: string; name: string; count: number }>;
+    geotagged: number;
+    countries: number;
+    cities: number;
+    places: Array<{ name: string | null; count: number }>;
+  } | null;
 };
 
 const IMAGE = sql.lit(AssetType.Image);
@@ -328,6 +374,205 @@ export class AnalyticsRepository {
       group by 1, 2
     `.execute(this.db);
     return rows.map((row) => ({ make: row.make, model: row.model, items: num(row.items) }));
+  }
+
+  /**
+   * FL-79: the dashboard breakdowns. Every item query reads the same items as `summary.items` (photos
+   * and videos, Trash included, Locked media and Live Photo motion parts excluded), so each
+   * partition adds up to it, or to `summary.photos`/`summary.videos` for the per-type ones. Names
+   * (file names, people, places) are read only for the scope's owner reading their own scope.
+   */
+  async getInsights(scope: AnalyticsScope, options: AnalyticsInsightOptions): Promise<AnalyticsInsightRows> {
+    const items = sql`
+      select
+        a.id, a.type, a."localDateTime", a."originalFileName", a.duration, a."livePhotoVideoId",
+        coalesce(a.width, case when e.orientation in ('5', '6', '7', '8') then e."exifImageHeight" else e."exifImageWidth" end) as width,
+        coalesce(a.height, case when e.orientation in ('5', '6', '7', '8') then e."exifImageWidth" else e."exifImageHeight" end) as height,
+        nullif(trim(e."lensModel"), '') as "lensModel", e."focalLength", nullif(trim(e.city), '') as city,
+        nullif(trim(e.country), '') as country, e.latitude, e.longitude, e."fileSizeInByte"
+      from asset a
+      left join asset_exif e on e."assetId" = a.id
+      where a.type in (${IMAGE}, ${VIDEO}) and a.visibility <> ${HIDDEN} and ${isNotLocked('a')} and ${scopeCondition(scope)}
+    `;
+    const run = async <T>(query: RawBuilder<unknown>) =>
+      (await sql<T>`with items as (${items}) ${query}`.execute(this.db)).rows;
+    const local = sql`(items."localDateTime" at time zone 'UTC')`;
+    const fileName = sql`lower(items."originalFileName")`;
+    const withNames = !!options.ownerId;
+    const name = (column: RawBuilder<unknown>) => (withNames ? column : sql`null::text`);
+
+    const [years, punchcard, lenses, focalLengths, photoFormats, videoResolutions, orientation, counts, records] =
+      await Promise.all([
+        run<{ year: number; count: string }>(sql`
+          select extract(year from ${local})::int as year, count(*) as count from items group by 1 order by 1`),
+        run<{ weekday: number; hour: number; count: string }>(sql`
+          select extract(isodow from ${local})::int as weekday, extract(hour from ${local})::int as hour, count(*) as count
+          from items group by 1, 2`),
+        run<{ name: string | null; count: string }>(sql`
+          select items."lensModel" as name, count(*) as count from items group by 1`),
+        run<{ bucket: string; count: string }>(sql`
+          select
+            case
+              when items."focalLength" is null or items."focalLength" <= 0 then 'unknown'
+              when items."focalLength" <= 16 then '0-16'
+              when items."focalLength" <= 28 then '17-28'
+              when items."focalLength" <= 40 then '29-40'
+              when items."focalLength" <= 70 then '41-70'
+              when items."focalLength" <= 135 then '71-135'
+              when items."focalLength" <= 300 then '136-300'
+              else '301+'
+            end as bucket,
+            count(*) as count
+          from items group by 1`),
+        run<{ format: string; count: string }>(sql`
+          select
+            case
+              when ${fileName} ~ ${RAW_EXTENSION_PATTERN} then 'RAW'
+              when ${fileName} ~ ${HEIC_EXTENSION_PATTERN} then 'HEIC'
+              when ${fileName} ~ ${JPEG_EXTENSION_PATTERN} then 'JPEG'
+              when ${fileName} ~ ${PNG_EXTENSION_PATTERN} then 'PNG'
+              else 'OTHER'
+            end as format,
+            count(*) as count
+          from items where items.type = ${IMAGE} group by 1`),
+        run<{ resolution: string; count: string }>(sql`
+          select
+            case
+              when coalesce(items.width, 0) <= 0 or coalesce(items.height, 0) <= 0 then 'unknown'
+              when greatest(items.width, items.height) >= 3840 or least(items.width, items.height) >= 2160 then '4K'
+              when least(items.width, items.height) >= 1080 then '1080p'
+              when least(items.width, items.height) >= 720 then '720p'
+              else 'SD'
+            end as resolution,
+            count(*) as count
+          from items where items.type = ${VIDEO} group by 1`),
+        run<{ orientation: string; count: string }>(sql`
+          select
+            case
+              when coalesce(items.width, 0) <= 0 or coalesce(items.height, 0) <= 0 then 'unknown'
+              when greatest(items.width, items.height)::float / least(items.width, items.height) >= 2 then 'panorama'
+              when greatest(items.width, items.height)::float / least(items.width, items.height) < 1.05 then 'square'
+              when items.width > items.height then 'landscape'
+              else 'portrait'
+            end as orientation,
+            count(*) as count
+          from items group by 1`),
+        run<{
+          livePhotos: string;
+          probedVideos: string;
+          hdrVideos: string;
+          dolbyVisionVideos: string;
+          videoDurationMs: string;
+        }>(sql`
+          select
+            count(*) filter (where items.type = ${IMAGE} and items."livePhotoVideoId" is not null) as "livePhotos",
+            count(v."assetId") filter (where items.type = ${VIDEO}) as "probedVideos",
+            count(v."assetId") filter (
+              where items.type = ${VIDEO}
+                and (v."colorTransfer" in (${sql.lit(ColorTransfer.Smpte2084)}, ${sql.lit(ColorTransfer.AribStdB67)}) or v."dvProfile" is not null)
+            ) as "hdrVideos",
+            count(v."assetId") filter (where items.type = ${VIDEO} and v."dvProfile" is not null) as "dolbyVisionVideos",
+            coalesce(sum(items.duration) filter (where items.type = ${VIDEO} and items.duration > 0), 0) as "videoDurationMs"
+          from items
+          left join asset_video v on v."assetId" = items.id`),
+        run<{ kind: string; localDateTime: Date | null; name: string | null; value: string | null }>(sql`
+          (select 'oldest' as kind, items."localDateTime", ${name(sql`items."originalFileName"`)} as name, null::bigint as value
+            from items order by items."localDateTime" asc, items.id limit 1)
+          union all
+          (select 'largest', null, ${name(sql`items."originalFileName"`)}, items."fileSizeInByte"
+            from items where items."fileSizeInByte" is not null order by items."fileSizeInByte" desc, items.id limit 1)
+          union all
+          (select 'longest', null, ${name(sql`items."originalFileName"`)}, items.duration
+            from items where items.type = ${VIDEO} and items.duration > 0 order by items.duration desc, items.id limit 1)`),
+      ]);
+
+    const people = options.ownerId ? await this.getOwnerPeopleAndPlaces(run, options) : null;
+    const record = (kind: string) => records.find((row) => row.kind === kind);
+    const oldest = record('oldest');
+    const largest = record('largest');
+    const longest = record('longest');
+    const count = <T extends { count: string | number }>(rows: T[]) =>
+      rows.map((row) => ({ ...row, count: num(row.count) }));
+
+    return {
+      years: count(years),
+      punchcard: count(punchcard),
+      lenses: count(lenses),
+      focalLengths: count(focalLengths),
+      photoFormats: count(photoFormats),
+      videoResolutions: count(videoResolutions),
+      orientation: count(orientation),
+      livePhotos: num(counts[0]?.livePhotos),
+      hdr: {
+        probedVideos: num(counts[0]?.probedVideos),
+        hdrVideos: num(counts[0]?.hdrVideos),
+        dolbyVisionVideos: num(counts[0]?.dolbyVisionVideos),
+      },
+      records: {
+        oldest: oldest?.localDateTime
+          ? { localDateTime: new Date(oldest.localDateTime), name: oldest.name ?? '' }
+          : null,
+        largest: largest ? { bytes: num(largest.value), name: largest.name ?? '' } : null,
+        longest: longest ? { durationMs: num(longest.value), name: longest.name ?? '' } : null,
+        videoDurationMs: num(counts[0]?.videoDurationMs),
+      },
+      people,
+    };
+  }
+
+  private async getOwnerPeopleAndPlaces(
+    run: <T>(query: RawBuilder<unknown>) => Promise<T[]>,
+    { ownerId, suppressedPersonIds, suppressedPetIds }: AnalyticsInsightOptions,
+  ): Promise<NonNullable<AnalyticsInsightRows['people']>> {
+    const notSuppressedPerson =
+      suppressedPersonIds.length > 0 ? sql`not (p."personGroupId" = ${anyUuid(suppressedPersonIds)})` : sql`true`;
+    const notSuppressedPet = suppressedPetIds.length > 0 ? sql`not (pet.id = ${anyUuid(suppressedPetIds)})` : sql`true`;
+    const faces = sql`
+      select f."assetId", f."personGroupId"
+      from asset_face f
+      inner join items on items.id = f."assetId"
+      where f."deletedAt" is null and f."isVisible" is true`;
+    const named = sql`
+      select p."personGroupId" as id, p.name, count(distinct f."assetId") as count
+      from (${faces}) f
+      inner join person p on p."personGroupId" = f."personGroupId" and p."ownerId" = ${ownerId}
+      where not p."isHidden" and p.name <> '' and ${notSuppressedPerson}
+      group by p."personGroupId", p.name`;
+
+    const [faceCounts, topPeople, namedPeople, pets, placeCounts, cities] = await Promise.all([
+      run<{ faces: string; itemsWithFaces: string }>(sql`
+        select count(*) as faces, count(distinct f."assetId") as "itemsWithFaces" from (${faces}) f`),
+      run<{ id: string; name: string; count: string }>(sql`
+        select * from (${named}) n order by n.count desc, n.name asc limit ${ANALYTICS_TOP_PEOPLE_LIMIT}`),
+      run<{ count: string }>(sql`select count(*) as count from (${named}) n`),
+      run<{ count: string }>(sql`
+        select count(distinct pet.id) as count
+        from pet_observation po
+        inner join items on items.id = po."assetId"
+        inner join pet on pet.id = po."petId" and pet."ownerId" = ${ownerId}
+        where po.state = ${sql.lit(PetObservationState.Confirmed)} and not pet."isHidden" and ${notSuppressedPet}`),
+      run<{ geotagged: string; countries: string; cities: string }>(sql`
+        select
+          count(*) filter (where items.latitude is not null and items.longitude is not null) as geotagged,
+          count(distinct items.country) as countries,
+          count(distinct items.city) as cities
+        from items`),
+      run<{ name: string | null; count: string }>(
+        sql`select items.city as name, count(*) as count from items group by 1`,
+      ),
+    ]);
+
+    return {
+      faces: num(faceCounts[0]?.faces),
+      itemsWithFaces: num(faceCounts[0]?.itemsWithFaces),
+      namedPeople: num(namedPeople[0]?.count),
+      pets: num(pets[0]?.count),
+      topPeople: topPeople.map((row) => ({ id: row.id, name: row.name, count: num(row.count) })),
+      geotagged: num(placeCounts[0]?.geotagged),
+      countries: num(placeCounts[0]?.countries),
+      cities: num(placeCounts[0]?.cities),
+      places: cities.map((row) => ({ name: row.name, count: num(row.count) })),
+    };
   }
 
   /**

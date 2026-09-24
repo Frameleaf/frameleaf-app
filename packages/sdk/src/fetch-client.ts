@@ -1862,6 +1862,118 @@ export type AnalyticsHostDto = {
     /** Bytes */
     volumeUsedBytes: number | null;
 };
+export type AnalyticsYearCountDto = {
+    count: number;
+    year: number;
+};
+export type AnalyticsFocalLengthDto = {
+    count: number;
+    key: AnalyticsFocalLengthDtoKey;
+};
+export type AnalyticsHdrDto = {
+    dolbyVisionVideos: number;
+    /** PQ or HLG transfer, or Dolby Vision */
+    hdrVideos: number;
+    /** Videos whose stream metadata has been read; the only ones HDR can be told for */
+    probedVideos: number;
+};
+export type AnalyticsNamedCountDto = {
+    count: number;
+    kind: AnalyticsNamedCountKind;
+    /** Null for the other and unknown rows */
+    name: string | null;
+};
+export type AnalyticsOrientationDto = {
+    count: number;
+    key: AnalyticsOrientationDtoKey;
+};
+export type AnalyticsPersonCountDto = {
+    /** Items showing them */
+    count: number;
+    /** Person id */
+    id: string;
+    name: string;
+};
+export type AnalyticsPeopleAndPlacesDto = {
+    cities: number;
+    countries: number;
+    /** Visible faces on the items */
+    faces: number;
+    geotagged: number;
+    itemsWithFaces: number;
+    /** itemsWithFaces plus itemsWithoutFaces is summary.items */
+    itemsWithoutFaces: number;
+    /** Named, visible people of the owner seen on the items */
+    namedPeople: number;
+    /** The owner's visible pets confirmed on the items */
+    pets: number;
+    /** Items per city, then every other city, then no city */
+    places: AnalyticsNamedCountDto[];
+    /** Most photographed named people; overlapping, as one item can show several */
+    topPeople: AnalyticsPersonCountDto[];
+};
+export type AnalyticsPhotoFormatDto = {
+    count: number;
+    key: AnalyticsPhotoFormatDtoKey;
+};
+export type AnalyticsPunchcardCellDto = {
+    count: number;
+    /** Hour of the local capture time */
+    hour: number;
+    /** ISO weekday of the local capture time, 1 = Monday */
+    weekday: number;
+};
+export type AnalyticsLargestFileDto = {
+    /** Bytes */
+    bytes: number;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsLongestVideoDto = {
+    durationMs: number;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsOldestCaptureDto = {
+    date: string;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsRecordsDto = {
+    largestFile: (AnalyticsLargestFileDto) | null;
+    longestVideo: (AnalyticsLongestVideoDto) | null;
+    oldestCapture: (AnalyticsOldestCaptureDto) | null;
+    /** All videos together */
+    videoDurationMs: number;
+    /** videoDurationMs in hours, one decimal */
+    videoHours: number;
+};
+export type AnalyticsVideoResolutionDto = {
+    count: number;
+    key: AnalyticsVideoResolutionDtoKey;
+};
+export type AnalyticsInsightsDto = {
+    /** Items per local capture year, all time */
+    capturesByYear: AnalyticsYearCountDto[];
+    /** Every bucket, in order; adds up to summary.items */
+    focalLengths: AnalyticsFocalLengthDto[];
+    /** Null when no video stream has been read, so HDR cannot be told */
+    hdr: (AnalyticsHdrDto) | null;
+    /** Items per lens model, then every other lens, then no lens */
+    lenses: AnalyticsNamedCountDto[];
+    /** Photos with a Live Photo motion part */
+    livePhotos: number;
+    /** Every bucket; adds up to summary.items. Panorama is 2:1 or wider */
+    orientation: AnalyticsOrientationDto[];
+    peopleAndPlaces: (AnalyticsPeopleAndPlacesDto) | null;
+    /** Every format; adds up to summary.photos, and RAW equals summary.raw */
+    photoFormats: AnalyticsPhotoFormatDto[];
+    /** All 168 weekday and hour cells of the local capture time */
+    punchcard: AnalyticsPunchcardCellDto[];
+    records: AnalyticsRecordsDto;
+    /** Every bucket; adds up to summary.videos */
+    videoResolutions: AnalyticsVideoResolutionDto[];
+};
 export type AnalyticsMetadataDto = {
     field: AnalyticsMetadataField;
     missing: number;
@@ -1950,6 +2062,8 @@ export type AnalyticsReportResponseDto = {
     generatedAt: string;
     history: AnalyticsHistoryDto;
     host: AnalyticsHostDto;
+    /** Dashboard breakdowns of the same items as summary. People, places and file names are only for the owner reading their own scope */
+    insights?: AnalyticsInsightsDto;
     metadata: AnalyticsMetadataDto[];
     processing: AnalyticsProcessingDto;
     range: AnalyticsRange;
@@ -17805,6 +17919,42 @@ export enum AnalyticsUnit {
 export enum AnalyticsState {
     Measured = "measured",
     Stale = "stale",
+    Unknown = "unknown"
+}
+export enum AnalyticsFocalLengthDtoKey {
+    $016 = "0-16",
+    $1728 = "17-28",
+    $2940 = "29-40",
+    $4170 = "41-70",
+    $71135 = "71-135",
+    $136300 = "136-300",
+    $301 = "301+",
+    Unknown = "unknown"
+}
+export enum AnalyticsNamedCountKind {
+    Named = "named",
+    Other = "other",
+    Unknown = "unknown"
+}
+export enum AnalyticsOrientationDtoKey {
+    Landscape = "landscape",
+    Portrait = "portrait",
+    Square = "square",
+    Panorama = "panorama",
+    Unknown = "unknown"
+}
+export enum AnalyticsPhotoFormatDtoKey {
+    Heic = "HEIC",
+    Jpeg = "JPEG",
+    Raw = "RAW",
+    Png = "PNG",
+    Other = "OTHER"
+}
+export enum AnalyticsVideoResolutionDtoKey {
+    $4K = "4K",
+    $1080P = "1080p",
+    $720P = "720p",
+    Sd = "SD",
     Unknown = "unknown"
 }
 export enum AnalyticsMetadataField {

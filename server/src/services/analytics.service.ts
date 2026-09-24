@@ -4,7 +4,12 @@ import type { IAnalyticsCollectJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import {
+  ANALYTICS_FOCAL_BUCKETS,
+  ANALYTICS_ORIENTATIONS,
+  ANALYTICS_PHOTO_FORMATS,
+  ANALYTICS_VIDEO_RESOLUTIONS,
   AnalyticsBucketDto,
+  AnalyticsInsightsDto,
   AnalyticsQueryDto,
   AnalyticsReportResponseDto,
   AnalyticsScopeOption,
@@ -20,13 +25,19 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
-import { AnalyticsRepository, AnalyticsScopeTargets } from 'src/repositories/analytics.repository.js';
+import {
+  AnalyticsInsightRows,
+  AnalyticsRepository,
+  AnalyticsScopeTargets,
+} from 'src/repositories/analytics.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
   ANALYTICS_AUTO_RETRIES,
   ANALYTICS_DAY_RETENTION_DAYS,
+  ANALYTICS_LENS_LIMIT,
+  ANALYTICS_PLACE_LIMIT,
   ANALYTICS_SERIES,
   ANALYTICS_STALE_AFTER_HOURS,
   ANALYTICS_WEEK_RETENTION_DAYS,
@@ -40,7 +51,9 @@ import {
   bindGrowth,
   cameraName,
   collectedSeriesFor,
+  fixedBuckets,
   groupCameras,
+  groupNamed,
   historyState,
   isoDay,
   parseAnalyticsScope,
@@ -48,6 +61,55 @@ import {
   sumIntoBuckets,
   windowDays,
 } from 'src/utils/analytics.js';
+
+const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
+  const punch = new Map(rows.punchcard.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count]));
+  const keyed = <T extends string>(values: readonly T[], list: Array<{ count: number }>, field: string) =>
+    fixedBuckets(
+      values,
+      list.map((row) => ({ key: (row as Record<string, unknown>)[field] as string, count: row.count })),
+    ) as Array<{ key: T; count: number }>;
+  const { oldest, largest, longest, videoDurationMs } = rows.records;
+  const people = rows.people;
+
+  return {
+    capturesByYear: rows.years,
+    punchcard: Array.from({ length: 7 * 24 }, (_, index) => {
+      const weekday = Math.floor(index / 24) + 1;
+      const hour = index % 24;
+      return { weekday, hour, count: punch.get(`${weekday}:${hour}`) ?? 0 };
+    }),
+    lenses: groupNamed(rows.lenses, ANALYTICS_LENS_LIMIT),
+    focalLengths: keyed(ANALYTICS_FOCAL_BUCKETS, rows.focalLengths, 'bucket'),
+    photoFormats: keyed(ANALYTICS_PHOTO_FORMATS, rows.photoFormats, 'format'),
+    videoResolutions: keyed(ANALYTICS_VIDEO_RESOLUTIONS, rows.videoResolutions, 'resolution'),
+    orientation: keyed(ANALYTICS_ORIENTATIONS, rows.orientation, 'orientation'),
+    livePhotos: rows.livePhotos,
+    // HDR is only known from a read video stream; with none read the breakdown is left out
+    hdr: rows.hdr.probedVideos > 0 ? rows.hdr : null,
+    peopleAndPlaces: people
+      ? {
+          faces: people.faces,
+          itemsWithFaces: people.itemsWithFaces,
+          itemsWithoutFaces: Math.max(0, items - people.itemsWithFaces),
+          namedPeople: people.namedPeople,
+          pets: people.pets,
+          topPeople: people.topPeople,
+          geotagged: people.geotagged,
+          countries: people.countries,
+          cities: people.cities,
+          places: groupNamed(people.places, ANALYTICS_PLACE_LIMIT),
+        }
+      : null,
+    records: {
+      oldestCapture: oldest ? { date: isoDay(oldest.localDateTime), name: oldest.name || null } : null,
+      largestFile: largest ? { bytes: largest.bytes, name: largest.name || null } : null,
+      longestVideo: longest ? { durationMs: longest.durationMs, name: longest.name || null } : null,
+      videoDurationMs,
+      videoHours: Math.round(videoDurationMs / 360_000) / 10,
+    },
+  };
+};
 
 type ResolvedScope = { scope: AnalyticsScope; label: string; ownerId: string | null };
 
@@ -123,19 +185,38 @@ export class AnalyticsService {
     const scopeKey = analyticsScopeKey(scope);
     const isHost = scope.kind === AnalyticsScopeKind.Host;
 
-    const [inventory, physical, arrivals, captures, cameras, albums, processing, samples, lastObservedAt, host] =
-      await Promise.all([
-        this.analyticsRepository.getInventory(scope),
-        this.analyticsRepository.getPhysical(scope),
-        this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
-        this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
-        this.analyticsRepository.getCameras(scope),
-        this.analyticsRepository.getAlbums(scope, auth.user.id),
-        isHost ? this.analyticsRepository.getProcessingByDay(window.from, window.through) : Promise.resolve(null),
-        this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
-        this.analyticsRepository.getLatestObservation(scopeKey),
-        this.readHost(now),
-      ]);
+    // FL-79: people, places and file names are the owner's own; nobody else (an administrator, the
+    // whole server) is told them, and Locked people and pets stay unnamed while the session is locked
+    const readsOwnScope = !!ownerId && ownerId === auth.user.id;
+    const [
+      inventory,
+      physical,
+      arrivals,
+      captures,
+      cameras,
+      albums,
+      processing,
+      samples,
+      lastObservedAt,
+      host,
+      insights,
+    ] = await Promise.all([
+      this.analyticsRepository.getInventory(scope),
+      this.analyticsRepository.getPhysical(scope),
+      this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
+      this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
+      this.analyticsRepository.getCameras(scope),
+      this.analyticsRepository.getAlbums(scope, auth.user.id),
+      isHost ? this.analyticsRepository.getProcessingByDay(window.from, window.through) : Promise.resolve(null),
+      this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
+      this.analyticsRepository.getLatestObservation(scopeKey),
+      this.readHost(now),
+      this.analyticsRepository.getInsights(scope, {
+        ownerId: readsOwnScope ? ownerId : null,
+        suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
+        suppressedPetIds: auth.hiddenContent?.petIds ?? [],
+      }),
+    ]);
 
     const items = inventory.photos + inventory.videos;
     const growth = bindGrowth(window.buckets, samples);
@@ -291,6 +372,7 @@ export class AnalyticsService {
         costedAttempts: costed,
         uncostedAttempts: attempts - costed,
       },
+      insights: mapInsights(insights, items),
     };
   }
 
