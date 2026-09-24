@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page as appPage } from '$app/state';
   import { scrollMemory } from '$lib/actions/scroll-memory';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
@@ -33,9 +33,10 @@
   } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
   import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
+  import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
   import type { PageData } from './$types';
 
   /**
@@ -55,7 +56,7 @@
 
   let people: PeopleListItemDto[] = $state(untrack(() => data.people.people));
   let nextPage: number | null = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
-  let search = $state(untrack(() => $page.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
+  let search = $state(untrack(() => appPage.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
   let sort: PeopleGridSort = $state('name');
   let showHidden = $state(false);
   let editingId: string | undefined = $state();
@@ -79,31 +80,74 @@
       .join(' · '),
   );
 
+  // Sorting and search run over the whole list, so every page is read up front, in the largest
+  // pages the API allows, up to a cap that keeps a very large library responsive.
+  let truncated = $state(false);
+  let loadGeneration = 0;
+  let loadRequest: AbortController | undefined;
+
+  /**
+   * Reads the remaining pages. Each run owns a generation: a reload or leaving the page aborts
+   * the previous run, and a stale run never writes, so pages from two runs are never mixed.
+   */
   const loadAllPages = async () => {
+    loadRequest?.abort();
+    const request = new AbortController();
+    loadRequest = request;
+    const generation = ++loadGeneration;
+    const current = () => generation === loadGeneration && !request.signal.aborted;
     try {
-      while (nextPage) {
-        const page = nextPage;
-        const result = await getAllPeople({ withHidden: true, page });
+      while (nextPage && current()) {
+        if (people.length >= PEOPLE_CAP) {
+          truncated = true;
+          nextPage = null;
+          break;
+        }
+        const pageNumber = nextPage;
+        const result = await getAllPeople(
+          { withHidden: true, page: pageNumber, size: PEOPLE_PAGE_SIZE },
+          { signal: request.signal },
+        );
+        if (!current()) {
+          return;
+        }
         const known = new Set(people.map(({ id }) => id));
-        people = people.concat(result.people.filter(({ id }) => !known.has(id)));
-        nextPage = result.hasNextPage ? page + 1 : null;
+        const added = result.people.filter(({ id }) => !known.has(id));
+        people = people.concat(added);
+        // A page that adds nobody new means the list shifted under us; stop rather than loop.
+        nextPage = result.hasNextPage && added.length > 0 ? pageNumber + 1 : null;
       }
     } catch (error) {
-      nextPage = null;
-      handleError(error, $t('errors.failed_to_load_people'));
+      if (current()) {
+        nextPage = null;
+        handleError(error, $t('errors.failed_to_load_people'));
+      }
     }
   };
 
   const reloadPeople = async () => {
+    loadRequest?.abort();
+    const generation = ++loadGeneration;
     try {
-      const result = await getAllPeople({ withHidden: true });
+      const result = await getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE });
+      if (generation !== loadGeneration) {
+        return;
+      }
       people = result.people;
+      truncated = false;
       nextPage = result.hasNextPage ? 2 : null;
       await loadAllPages();
     } catch (error) {
-      handleError(error, $t('errors.failed_to_load_people'));
+      if (generation === loadGeneration) {
+        handleError(error, $t('errors.failed_to_load_people'));
+      }
     }
   };
+
+  onDestroy(() => {
+    loadGeneration++;
+    loadRequest?.abort();
+  });
 
   const loadLibrarySize = async () => {
     try {
@@ -315,6 +359,9 @@
       />
     {/if}
     <p class="pl-status" role="status" aria-live="polite">{status}</p>
+    {#if truncated}
+      <p class="pl-status" role="status">{$t('frameleaf_people_truncated', { values: { count: people.length } })}</p>
+    {/if}
     {#if cards.length > 0}
       <PeopleInfiniteScroll people={cards} hasNextPage={false} loadNextPage={() => {}}>
         {#snippet children({ person })}

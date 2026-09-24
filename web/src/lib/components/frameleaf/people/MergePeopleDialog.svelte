@@ -4,7 +4,7 @@
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import { isUnnamedPerson, sortMergeCandidates } from '$lib/frameleaf/people';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllPeople, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@immich/sdk';
+  import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAccountOutline, mdiArrowRight, mdiCallMerge, mdiCheck } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -31,12 +31,18 @@
 
   let { person, candidates, initialChoice = null, open = $bindable(false), onMerged }: Props = $props();
 
+  type Candidate = PersonResponseDto & { assetCount?: number };
   let loaded: PeopleListItemDto[] = $state([]);
+  // The preselected person when the list does not include them (a library past the first page).
+  let preselected: Candidate | null = $state(null);
   let query = $state('');
   let choice: string | null = $state(null);
   let busy = $state(false);
 
-  const people = $derived(candidates ?? loaded);
+  const listed = $derived<Candidate[]>(candidates ?? loaded);
+  const people = $derived<Candidate[]>(
+    preselected && listed.every(({ id }) => id !== preselected!.id) ? [preselected, ...listed] : listed,
+  );
   const rows = $derived(sortMergeCandidates(people, person.id, query));
   const target = $derived(people.find((candidate) => candidate.id === choice) ?? null);
   const self = $derived(people.find((candidate) => candidate.id === person.id));
@@ -50,15 +56,19 @@
     }
     query = '';
     choice = initialChoice;
-    if (!candidates) {
-      void (async () => {
-        try {
+    preselected = null;
+    void (async () => {
+      try {
+        if (!candidates) {
           loaded = (await getAllPeople({ withHidden: true, size: 1000 })).people;
-        } catch (error) {
-          handleError(error, $t('errors.failed_to_load_people'));
         }
-      })();
-    }
+        if (initialChoice && (candidates ?? loaded).every(({ id }) => id !== initialChoice)) {
+          preselected = await getPerson({ id: initialChoice });
+        }
+      } catch (error) {
+        handleError(error, $t('errors.failed_to_load_people'));
+      }
+    })();
   });
 
   const merge = async () => {
