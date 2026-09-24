@@ -5,6 +5,8 @@ import {
   getVideoEditVersions,
   removeAssetEdits,
   restoreVideoEditVersion,
+  VideoEditVersionPurpose,
+  VideoEditVersionStatus,
   type VideoEditVersionResponseDto,
 } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
@@ -38,8 +40,8 @@ const version = (overrides: Partial<VideoEditVersionResponseDto> = {}) =>
     assetId: asset.id,
     createdAt: '2026-09-21T00:00:00Z',
     edits: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
-    purpose: 'save',
-    status: 'ready',
+    purpose: VideoEditVersionPurpose.Save,
+    status: VideoEditVersionStatus.Ready,
     isCurrent: true,
     isRequested: true,
     ...overrides,
@@ -64,7 +66,7 @@ it('queues a separate master export and exposes its ready master download', asyn
   await waitFor(() => expect(button).toBeEnabled());
   vi.mocked(getVideoEditVersions).mockResolvedValue([
     version(),
-    version({ id: 'export', purpose: 'export', isCurrent: false, isRequested: false }),
+    version({ id: 'export', purpose: VideoEditVersionPurpose.Export, isCurrent: false, isRequested: false }),
   ]);
   await fireEvent.click(button);
   await waitFor(() =>
@@ -87,7 +89,10 @@ it.each([
   { dirty: true, versions: [version()] },
   { dirty: false, versions: [] },
   { dirty: false, versions: [version({ edits: [] })] },
-  { dirty: false, versions: [version(), version({ id: 'pending', isCurrent: false, status: 'pending' })] },
+  {
+    dirty: false,
+    versions: [version(), version({ id: 'pending', isCurrent: false, status: VideoEditVersionStatus.Pending })],
+  },
 ])('blocks export without a settled saved recipe: %j', async ({ dirty, versions }) => {
   vi.mocked(getVideoEditVersions).mockResolvedValue(versions as VideoEditVersionResponseDto[]);
   const view = render({ hasUnsavedChanges: dirty });
@@ -106,9 +111,9 @@ it('makes an older version current through its original-derived recipe endpoint'
 
 it('never offers a download for a pending, failed or original version', async () => {
   vi.mocked(getVideoEditVersions).mockResolvedValue([
-    version({ id: 'pending', status: 'pending', isCurrent: false }),
-    version({ id: 'failed', status: 'failed', isCurrent: false, isRequested: false }),
-    version({ id: 'reverted', edits: [], purpose: 'revert', isRequested: false }),
+    version({ id: 'pending', status: VideoEditVersionStatus.Pending, isCurrent: false }),
+    version({ id: 'failed', status: VideoEditVersionStatus.Failed, isCurrent: false, isRequested: false }),
+    version({ id: 'reverted', edits: [], purpose: VideoEditVersionPurpose.Revert, isRequested: false }),
   ]);
   const view = render();
   await waitFor(() => expect(view.getAllByText('frameleaf_editor_version_original').length).toBeGreaterThan(1));
