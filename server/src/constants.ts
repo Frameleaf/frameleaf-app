@@ -58,6 +58,13 @@ export const citiesFile = 'cities500.txt';
 export const reverseGeocodeMaxDistance = 25_000;
 
 export const MOBILE_REDIRECT = 'app.immich:///oauth-callback';
+/**
+ * The Frameleaf mobile app's own sign-in callback (FL-131, REL-102). Kept apart from the Immich
+ * app's so both apps can be installed and sign in on one device.
+ */
+export const FRAMELEAF_MOBILE_REDIRECT = 'frameleaf-auth:///oauth-callback';
+/** The HTTP endpoint that forwards an OAuth callback to the Frameleaf app. */
+export const FRAMELEAF_MOBILE_REDIRECT_PATH = '/oauth/frameleaf-mobile-redirect';
 export const LOGIN_URL = '/auth/login?autoLaunch=0';
 
 export const excludePaths = ['/.well-known/immich', '/custom.css', '/favicon.ico'];

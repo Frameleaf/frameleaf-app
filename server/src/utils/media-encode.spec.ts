@@ -41,7 +41,7 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(8);
     expect(plan.filters).toEqual([
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt709:out_range=tv:sws_dither=error_diffusion',
+      'scale=out_color_matrix=bt709:out_range=tv:sws_dither=ed',
       'format=yuv420p',
     ]);
     expect(plan.args).toEqual(['-pix_fmt', 'yuv420p']);
@@ -62,7 +62,7 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(10);
     expect(plan.filters).toEqual([
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=error_diffusion',
+      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
     expect(plan.args).toEqual(['-pix_fmt', 'yuv420p10le']);
@@ -80,7 +80,7 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(8);
     expect(plan.filters).toEqual([
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt709:out_range=tv:sws_dither=error_diffusion',
+      'scale=out_color_matrix=bt709:out_range=tv:sws_dither=ed',
       'format=yuv420p',
     ]);
     expect(plan.args).toEqual(['-pix_fmt', 'yuv420p']);
@@ -96,11 +96,7 @@ describe('selectEncoderPixelFormat', () => {
       colorMatrix: ColorMatrix.Unknown,
     });
 
-    expect(plan.filters).toEqual([
-      'format=gbrpf32le',
-      'scale=out_range=tv:sws_dither=error_diffusion',
-      'format=yuv420p',
-    ]);
+    expect(plan.filters).toEqual(['format=gbrpf32le', 'scale=out_range=tv:sws_dither=ed', 'format=yuv420p']);
   });
 
   it('honours an explicit full-range request', () => {
@@ -113,7 +109,8 @@ describe('selectEncoderPixelFormat', () => {
       range: 'pc',
     });
 
-    expect(plan.filters[1]).toBe('scale=out_color_matrix=bt709:out_range=pc:sws_dither=error_diffusion');
+    expect(plan.filters[1]).toBe('scale=out_color_matrix=bt709:out_range=pc:sws_dither=ed');
+    expect(plan.statedRange).toBe('pc');
   });
 
   it('records the chroma reduction for a 4:4:4 source instead of hiding it', () => {
@@ -150,6 +147,8 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(10);
     expect(plan.filters).toEqual([]);
     expect(plan.args).toEqual([]);
+    // The accelerator's own chain decides the range, so the plan claims none (FL-102).
+    expect(plan.statedRange).toBeNull();
   });
 
   it.each([
@@ -228,7 +227,7 @@ describe('applyFloatEncodePixelFormat', () => {
     expect(applyFloatEncodePixelFormat(['scale=1920:1080', 'format=yuv420p'], softwarePlan)).toEqual([
       'scale=1920:1080',
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=error_diffusion',
+      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
   });
@@ -237,7 +236,7 @@ describe('applyFloatEncodePixelFormat', () => {
     expect(applyFloatEncodePixelFormat(['scale=1920:1080'], softwarePlan)).toEqual([
       'scale=1920:1080',
       'format=gbrpf32le',
-      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=error_diffusion',
+      'scale=out_color_matrix=bt2020nc:out_range=tv:sws_dither=ed',
       'format=yuv420p10le',
     ]);
   });
@@ -281,7 +280,7 @@ describe('requiresFloatIntermediate', () => {
 describe('float intermediate identity', () => {
   it('names a real planar float format and an explicit dither', () => {
     expect(FLOAT_INTERMEDIATE_PIXEL_FORMAT).toBe('gbrpf32le');
-    expect(FLOAT_TO_INTEGER_DITHER).toBe('error_diffusion');
+    expect(FLOAT_TO_INTEGER_DITHER).toBe('ed');
     expect(parseSourcePixelLayout(FLOAT_INTERMEDIATE_PIXEL_FORMAT)).toBeNull();
   });
 

@@ -12986,6 +12986,14 @@ export function finishOAuth({ oAuthCallbackDto }: {
     })));
 }
 /**
+ * Redirect OAuth to the Frameleaf mobile app
+ */
+export function redirectOAuthToFrameleafMobile(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/oauth/frameleaf-mobile-redirect", {
+        ...opts
+    }));
+}
+/**
  * Link OAuth account
  */
 export function linkOAuthAccount({ oAuthCallbackDto }: {

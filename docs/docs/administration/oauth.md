@@ -109,9 +109,18 @@ The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is 
 
 With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
 
-:::info
+::info
 Immich has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
 :::
+
+### Frameleaf mobile app
+
+The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the Immich app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
+
+When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to `/api/oauth/frameleaf-mobile-redirect` on the same server, which forwards to `frameleaf-auth:///oauth-callback`. In that case:
+
+1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://example.immich.app/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
+2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://example.immich.app/api/oauth/frameleaf-mobile-redirect`).
 
 ## Example Configuration
 
