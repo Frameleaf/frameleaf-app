@@ -7,6 +7,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { Route } from '$lib/route';
 import { sidebarCollapsed } from '$lib/stores/preferences.store';
 import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import LibraryRail from './LibraryRail.svelte';
@@ -50,19 +51,27 @@ describe('LibraryRail', () => {
     expect(headings()).toEqual(['Explore', 'Albums', 'Shared spaces', 'Tools']);
   });
 
-  it('lists saved searches in Albums, after the album tree', async () => {
+  it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
+    authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
+    sdkMock.getAlbumTree.mockResolvedValue({
+      collections: [],
+      albums: [{ id: 'album-1', albumName: 'Porto' }],
+      spaces: [],
+    } as never);
     sdkMock.getMyPreferences.mockResolvedValue({
       savedSearches: [{ name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } }],
       revision: 'r1',
     } as never);
-    await savedSearchesStore.load(true); // a singleton; earlier tests loaded none
+    await savedSearchesStore.load(true); // a shared singleton
     render(LibraryRail);
     const albums = screen.getByRole('button', { name: 'Albums' }).getAttribute('aria-controls')!;
     const section = within(document.querySelector<HTMLElement>(`#${albums}`)!);
+    await section.findByRole('link', { name: 'Porto' });
     await section.findByRole('link', { name: 'Lisbon' });
     const names = section.getAllByRole('link').map((link) => link.textContent?.trim());
-    // Shared links (off here) is the next destination, so the saved searches sit between them.
-    expect(names.slice(-2)).toEqual(['All albums', 'Lisbon']);
+    expect(names).toEqual(['All albums', 'Porto', 'Lisbon', 'Shared links']);
+    sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r2' } as never);
+    await savedSearchesStore.load(true);
   });
 
   it('folds a section from its heading and remembers it on this device', async () => {
