@@ -15,6 +15,7 @@ export type VideoEditVersion = {
   id: string;
   assetId: string;
   ownerId: string;
+  /** The asset's current original path. A version is tied to its original by asset and checksum, not path. */
   sourcePath: string;
   sourceChecksum: Buffer;
   recipe: AssetEditActionItem[];
@@ -25,6 +26,29 @@ export type VideoEditVersion = {
   files: Array<{ path: string }>;
   createdAt: Date;
 };
+
+export type VideoVersionPublication = {
+  published: boolean;
+  /** Edited files the publication dropped from the asset that no retained version owns. */
+  releasedPaths: string[];
+};
+
+/**
+ * A retained version belongs to its asset's original by asset, owner and content checksum. The path
+ * is deliberately not part of that identity: physical deduplication and the storage template may
+ * move an original, and a version stays valid across the move. The current path is reported as
+ * `sourcePath`.
+ */
+const versionColumns = sql`v.id, v."assetId", v."ownerId", a."originalPath" AS "sourcePath", v."sourceChecksum",
+  v.recipe, v.purpose, v.status, v."masterPath", v."proxyPath", v.files, v."createdAt"`;
+const sourceJoin = sql`JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND a.checksum=v."sourceChecksum"`;
+
+const versionPaths = (version: Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>) => [
+  version.masterPath,
+  version.masterPath && getEditedMasterLineagePath(version.masterPath),
+  version.proxyPath,
+  ...(version.files ?? []).map((file) => file.path),
+];
 
 @Injectable()
 export class AssetEditRepository {
@@ -37,7 +61,11 @@ export class AssetEditRepository {
     purpose: 'save' | 'revert' = 'save',
   ): Promise<AssetEditActionItemResponseDto[]> {
     return this.db.transaction().execute(async (trx) => {
-      await this.recordVideoVersion(trx, assetId, edits, purpose);
+      // Only video edits are versioned; a photo edit never waits on the fork schema's write phase.
+      const target = await trx.selectFrom('asset').select('type').where('id', '=', assetId).executeTakeFirst();
+      if (target?.type === AssetType.Video) {
+        await this.recordVideoVersion(trx, assetId, edits, purpose);
+      }
       await trx.deleteFrom('asset_edit').where('assetId', '=', assetId).execute();
 
       if (edits.length > 0) {
@@ -81,6 +109,10 @@ export class AssetEditRepository {
       .forUpdate()
       .executeTakeFirst();
     if (!asset || asset.type !== AssetType.Video) return;
+    // A pending save or revert that is superseded before it renders will never be published.
+    await sql`UPDATE immich_fork.video_edit_version v SET status='failed'
+      FROM immich_fork.video_edit_selection s
+      WHERE s."assetId"=${asset.id}::uuid AND v.id=s."requestedVersionId" AND v.status='pending'`.execute(db);
     const { rows } = await sql<VideoEditVersion>`INSERT INTO immich_fork.video_edit_version
       ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose)
       VALUES(${asset.id}::uuid,${asset.ownerId}::uuid,${asset.originalPath},${asset.checksum},${JSON.stringify(recipe)}::text::jsonb,${purpose}) RETURNING *`.execute(
@@ -92,9 +124,9 @@ export class AssetEditRepository {
   }
 
   async getRequestedVideoVersion(assetId: string): Promise<VideoEditVersion | undefined> {
-    const { rows } = await sql<VideoEditVersion>`SELECT v.* FROM immich_fork.video_edit_selection s
+    const { rows } = await sql<VideoEditVersion>`SELECT ${versionColumns} FROM immich_fork.video_edit_selection s
       JOIN immich_fork.video_edit_version v ON v.id=s."requestedVersionId"
-      JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND a."originalPath"=v."sourcePath" AND a.checksum=v."sourceChecksum"
+      ${sourceJoin}
       WHERE s."assetId"=${assetId}::uuid`.execute(this.db);
     if (!rows[0]) {
       const retained =
@@ -121,12 +153,13 @@ export class AssetEditRepository {
       duration: number;
       thumbhash?: Buffer | null;
     },
-  ): Promise<boolean> {
+  ): Promise<VideoVersionPublication> {
+    const refused = { published: false, releasedPaths: [] };
     return this.db.transaction().execute(async (db) => {
-      if (!(await this.lockVersionWrites(db))) return false;
+      if (!(await this.lockVersionWrites(db))) return refused;
       // Match PhysicalFileRepository's advisory keys, before taking the asset row lock.
       // A retained version cannot race the final reference check in FileDelete.
-      const ownedPaths = [version.sourcePath, result.masterPath, ...result.files.map((file) => file.path)].filter(
+      const ownedPaths = [result.masterPath, ...result.files.map((file) => file.path)].filter(
         (path): path is string => path !== null,
       );
       for (const path of [...new Set(ownedPaths)].sort()) {
@@ -139,20 +172,18 @@ export class AssetEditRepository {
         .where('id', '=', version.assetId)
         .forUpdate()
         .executeTakeFirst();
-      if (
-        !asset ||
-        asset.ownerId !== version.ownerId ||
-        asset.originalPath !== version.sourcePath ||
-        !asset.checksum.equals(version.sourceChecksum)
-      )
-        return false;
+      const fail = async () => {
+        await sql`UPDATE immich_fork.video_edit_version SET status='failed'
+          WHERE id=${version.id}::uuid AND status='pending'`.execute(db);
+        return refused;
+      };
+      if (!asset || asset.ownerId !== version.ownerId || !asset.checksum.equals(version.sourceChecksum)) {
+        return fail();
+      }
       const proxyPath = result.files.find((file) => file.type === AssetFileType.EncodedVideo)?.path ?? null;
-      const paths = [result.masterPath, ...result.files.map((file) => file.path)].filter(
-        (value): value is string => value !== null,
-      );
       if (
-        paths.includes(asset.originalPath) ||
-        new Set(paths).size !== paths.length ||
+        ownedPaths.includes(asset.originalPath) ||
+        new Set(ownedPaths).size !== ownedPaths.length ||
         result.files.some((file) => file.assetId !== version.assetId || !file.isEdited)
       )
         throw new Error('video_version_invalid_paths');
@@ -160,17 +191,36 @@ export class AssetEditRepository {
         purpose: VideoEditVersion['purpose'];
       }>`UPDATE immich_fork.video_edit_version v SET status='ready',"masterPath"=${result.masterPath},"proxyPath"=${proxyPath},files=${JSON.stringify(result.files)}::text::jsonb
         FROM immich_fork.video_edit_selection s WHERE v.id=${version.id}::uuid AND v.status IN ('pending','failed')
-        AND v."assetId"=${version.assetId}::uuid AND v."ownerId"=${version.ownerId}::uuid AND v."sourcePath"=${asset.originalPath} AND v."sourceChecksum"=${asset.checksum}
+        AND v."assetId"=${version.assetId}::uuid AND v."ownerId"=${version.ownerId}::uuid AND v."sourceChecksum"=${asset.checksum}
         AND s."assetId"=v."assetId" AND s."ownerId"=v."ownerId" AND (s."requestedVersionId"=v.id OR v.purpose='export') RETURNING v.purpose`.execute(
         db,
       );
-      if (rows.length === 0) return false;
-      if (rows[0].purpose === 'export') return true;
+      // A save or revert that is no longer the requested one is superseded.
+      if (rows.length === 0) return fail();
+      if (rows[0].purpose === 'export') return { published: true, releasedPaths: [] };
       await sql`UPDATE immich_fork.video_edit_selection SET "currentVersionId"=${version.id}::uuid WHERE "assetId"=${version.assetId}::uuid`.execute(
         db,
       );
-      // History owns the old paths; replacing the current projection never deletes them.
-      await db.deleteFrom('asset_file').where('assetId', '=', version.assetId).where('isEdited', '=', true).execute();
+      // History owns the paths of earlier versions; replacing the current projection never deletes
+      // them. Edited files no version owns (a pre-history edit's proxy, thumbnails and lineage) are
+      // released to FileDelete, which checks every remaining reference again under the path lock.
+      const previous = await db
+        .deleteFrom('asset_file')
+        .where('assetId', '=', version.assetId)
+        .where('isEdited', '=', true)
+        .returning(['path', 'type'])
+        .execute();
+      const releasedPaths: string[] = [];
+      for (const { path, type } of previous) {
+        if (ownedPaths.includes(path) || releasedPaths.includes(path)) continue;
+        const owned = await sql`SELECT 1 FROM immich_fork.video_edit_version v
+          WHERE v."masterPath"=${path} OR v."proxyPath"=${path}
+            OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path}) LIMIT 1`.execute(db);
+        if (owned.rows.length > 0) continue;
+        releasedPaths.push(path);
+        // A pre-history edited master carries its lineage sidecar beside it.
+        if (type === AssetFileType.EncodedVideo) releasedPaths.push(getEditedMasterLineagePath(path));
+      }
       if (result.files.length > 0) await db.insertInto('asset_file').values(result.files).execute();
       await db
         .updateTable('asset')
@@ -182,7 +232,7 @@ export class AssetEditRepository {
         })
         .where('id', '=', version.assetId)
         .execute();
-      return true;
+      return { published: true, releasedPaths };
     });
   }
 
@@ -211,8 +261,8 @@ export class AssetEditRepository {
   }
 
   async getVideoVersion(assetId: string, versionId: string): Promise<VideoEditVersion | undefined> {
-    const { rows } = await sql<VideoEditVersion>`SELECT v.* FROM immich_fork.video_edit_version v
-      JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND a."originalPath"=v."sourcePath" AND a.checksum=v."sourceChecksum"
+    const { rows } = await sql<VideoEditVersion>`SELECT ${versionColumns} FROM immich_fork.video_edit_version v
+      ${sourceJoin}
       WHERE v."assetId"=${assetId}::uuid AND v.id=${versionId}::uuid`.execute(this.db);
     return rows[0];
   }
@@ -230,9 +280,9 @@ export class AssetEditRepository {
       if (!asset) throw new Error('video_version_not_found');
       const { rows } = await sql<VideoEditVersion>`INSERT INTO immich_fork.video_edit_version
         ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose)
-        SELECT v."assetId",v."ownerId",v."sourcePath",v."sourceChecksum",v.recipe,'export'
+        SELECT v."assetId",v."ownerId",a."originalPath",v."sourceChecksum",v.recipe,'export'
         FROM immich_fork.video_edit_selection s JOIN immich_fork.video_edit_version v ON v.id=s."currentVersionId"
-        JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId" AND a."originalPath"=v."sourcePath" AND a.checksum=v."sourceChecksum"
+        ${sourceJoin}
         WHERE s."assetId"=${assetId}::uuid AND s."ownerId"=${ownerId}::uuid AND v.status='ready' RETURNING *`.execute(
         db,
       );
@@ -275,6 +325,45 @@ export class AssetEditRepository {
         unreferenced.push(getEditedMasterLineagePath(rows[0].masterPath));
       }
       return unreferenced;
+    });
+  }
+
+  /**
+   * Reclaims versions whose asset no longer exists (FL-39): rows left behind while fork writes were
+   * disabled, and rows archived to `orphaned_records` by a handoff return. Returns every file they
+   * owned, for FileDelete to remove once nothing else references it. Does nothing, and returns
+   * nothing, while fork writes are disabled or a handoff is running.
+   */
+  async releaseOrphanedVideoVersions(): Promise<string[]> {
+    return this.db.transaction().execute(async (db) => {
+      try {
+        if (!(await this.lockVersionWrites(db))) return [];
+      } catch {
+        return [];
+      }
+      // A selection shares its versions' asset and owner (composite foreign keys), so it goes first.
+      await sql`DELETE FROM immich_fork.video_edit_selection s
+        WHERE NOT EXISTS(SELECT 1 FROM public.asset a WHERE a.id=s."assetId" AND a."ownerId"=s."ownerId")`.execute(db);
+      const orphanedVersions = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
+        DELETE FROM immich_fork.video_edit_version v
+        WHERE NOT EXISTS(SELECT 1 FROM public.asset a WHERE a.id=v."assetId" AND a."ownerId"=v."ownerId")
+        RETURNING v."masterPath", v."proxyPath", v.files`.execute(db);
+      const archived = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
+        DELETE FROM immich_fork.orphaned_records o
+        WHERE o."sourceTable"='video_edit_version'
+          AND NOT EXISTS(SELECT 1 FROM public.asset a WHERE a.id::text=o.payload->>'assetId')
+        RETURNING o.payload->>'masterPath' AS "masterPath", o.payload->>'proxyPath' AS "proxyPath",
+          coalesce(o.payload->'files', '[]'::jsonb) AS files`.execute(db);
+      await sql`DELETE FROM immich_fork.orphaned_records o
+        WHERE o."sourceTable"='video_edit_selection'
+          AND NOT EXISTS(SELECT 1 FROM public.asset a WHERE a.id::text=o.payload->>'assetId')`.execute(db);
+      return [
+        ...new Set(
+          [...orphanedVersions.rows, ...archived.rows]
+            .flatMap((version) => versionPaths(version))
+            .filter((path): path is string => !!path),
+        ),
+      ];
     });
   }
 

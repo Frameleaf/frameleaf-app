@@ -333,7 +333,7 @@ export class AssetController {
   }
 
   @Post(':id/edit-versions/export')
-  @Authenticated({ permission: Permission.AssetDownload })
+  @Authenticated({ permission: Permission.AssetEditCreate })
   @Endpoint({
     summary: 'Export the current video version',
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),

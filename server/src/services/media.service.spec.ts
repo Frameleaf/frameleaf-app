@@ -2974,6 +2974,35 @@ describe(MediaService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    it('queues the edited files a first versioned revert released from a pre-history edit', async () => {
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = { ...versionFor(asset, 'revert'), recipe: [] };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({
+        published: true,
+        releasedPaths: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'],
+      });
+      mocks.media.probe.mockResolvedValue({
+        videoStreams: [probeStub.videoStreamH264.videoStream],
+        audioStreams: [],
+        format: asset.format,
+      });
+
+      await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'] },
+      });
+    });
+
     it('publishes an export master and proxy without replacing the current thumbnails', async () => {
       const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
       const asset = {
@@ -2987,7 +3016,7 @@ describe(MediaService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
       mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
       mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
-      mocks.assetEdit.publishVideoVersion.mockResolvedValue(true);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
       mocks.media.transcode.mockResolvedValue(undefined);
       mocks.media.probe.mockResolvedValue({
         videoStreams: [{ ...videoStream, width: 200, height: 100 }],
@@ -3046,7 +3075,7 @@ describe(MediaService.name, () => {
         mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
         mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
         mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
-        mocks.assetEdit.publishVideoVersion.mockResolvedValue(true);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
         mocks.media.probe.mockResolvedValue({
           videoStreams: [videoStream],
           audioStreams: [
@@ -3121,7 +3150,7 @@ describe(MediaService.name, () => {
         };
         mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
         mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
-        mocks.assetEdit.publishVideoVersion.mockResolvedValue(accepted === true);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: accepted === true, releasedPaths: [] });
         mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
         mocks.media.transcode.mockResolvedValue(undefined);
         mocks.media.probe.mockResolvedValue({
