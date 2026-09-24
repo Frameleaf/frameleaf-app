@@ -10,6 +10,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+import { downloadManager } from '$lib/managers/download-manager.svelte';
+import { uploadAssetsStore } from '$lib/stores/upload';
+import { UploadState } from '$lib/types';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -161,9 +164,94 @@ describe('Frameleaf Activity page', () => {
     expect(screen.getByText(/could not be reached/i)).toBeInTheDocument();
   });
 
+  it('draws the prototype job card: status chip, progress bar and status line (FL-43)', async () => {
+    const { container } = await mount([operation()]);
+
+    const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
+    const card = heading.closest('article');
+    expect(card?.classList).toContain('fla-job');
+    expect(card?.getAttribute('aria-labelledby')).toBe(heading.id);
+    const bar = screen.getByRole('progressbar', { name: /summer in the rockies/i });
+    expect(bar.getAttribute('aria-valuenow')).toBe('42');
+    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toMatch(/^Rendering · 42%$/);
+    expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
+    // The prototype's summary names only what is not zero.
+    expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
+    expect(screen.getByRole('button', { name: /^running/i }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /^all/i }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('never draws a thumbnail for a withheld Locked job, only the kind icon (FL-43)', async () => {
+    await mount([
+      operation({
+        kind: MediaOperationKind.Restoration,
+        label: '',
+        withheld: true,
+        assetId: '0195e2a0-0000-7000-8000-0000000000aa',
+      }),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: 'Locked item' });
+    const card = heading.closest('article')!;
+    expect(card.querySelector(':scope .fla-thumb img')).toBeNull();
+    expect(card.querySelector(':scope .fla-thumb svg')).not.toBeNull();
+  });
+
+  it('shows a finished result by thumbnail and clears it with a labelled icon button', async () => {
+    await mount([
+      operation({
+        status: MediaOperationStatus.Completed,
+        progress: 100,
+        resultAssetId: '0195e2a0-0000-7000-8000-0000000000bb',
+        finishedAt: '2026-09-22T10:10:00.000Z',
+      }),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
+    const card = heading.closest('article')!;
+    // The SDK is mocked here, so only the presence of the result's picture is asserted.
+    expect(card.querySelector(':scope .fla-thumb img')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /open result/i })).toBeInTheDocument();
+    const clear = screen.getByRole('button', { name: /summer in the rockies/i });
+    expect(clear.textContent?.trim()).toBe('');
+  });
+
   it('says nothing is processing when there are no tasks', async () => {
     await mount([]);
 
-    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing is processing' })).toBeInTheDocument());
+    // The prototype's words (Activity.jsx).
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing processing' })).toBeInTheDocument());
+    expect(screen.getByText('Nothing running')).toBeInTheDocument();
+    const filters = screen.getByRole('group', { name: 'Filter jobs' });
+    expect(filters.querySelectorAll('button')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: 'Failed' })).toBeInTheDocument();
+  });
+
+  it('declares its own theme scope so the Frameleaf colours resolve', async () => {
+    const { container } = await mount([]);
+
+    expect(container.querySelector('main.frameleaf')?.getAttribute('data-theme')).toMatch(/^(dark|light)$/);
+  });
+
+  it('names a row whose id holds spaces, and never draws an upload picture', async () => {
+    downloadManager.add('Holiday (1/2)', '/download', ['a'], 'Holiday (1/2)', 10);
+    uploadAssetsStore.addItem({
+      id: 'upload-1',
+      file: new File([''], 'private.jpg'),
+      assetId: '0195e2a0-0000-7000-8000-00000000000a',
+      state: UploadState.DONE,
+    });
+    try {
+      await mount([]);
+
+      // The row heading id comes from the list position, so a key with spaces still names the row.
+      expect(await screen.findByRole('article', { name: 'Holiday (1/2)' })).toBeInTheDocument();
+      // An upload row carries no withheld flag, so it never shows its (possibly Locked) picture.
+      const upload = screen.getByRole('article', { name: 'private.jpg' });
+      expect(upload.querySelector(':scope .fla-thumb img')).toBeNull();
+    } finally {
+      downloadManager.clearAll();
+      uploadAssetsStore.reset();
+    }
   });
 });

@@ -600,7 +600,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-width: min(32rem, calc(100vw - 5rem));
+    min-width: min(32rem, 100%);
     margin-top: 12px;
     font-size: var(--fl-font-small);
   }

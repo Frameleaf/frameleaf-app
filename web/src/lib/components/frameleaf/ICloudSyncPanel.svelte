@@ -1096,7 +1096,7 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    min-width: min(28rem, calc(100vw - 4rem));
+    min-width: min(28rem, 100%);
   }
   .ic-dialog form {
     display: flex;
