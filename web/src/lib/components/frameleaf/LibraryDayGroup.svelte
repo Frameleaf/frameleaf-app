@@ -12,9 +12,9 @@
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import { fromTimelinePlainDate, getDateLocaleString } from '$lib/utils/timeline-util';
+  import { fromTimelinePlainDate } from '$lib/utils/timeline-util';
   import type { Snippet } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { locale } from 'svelte-i18n';
 
   type Props = {
     timelineDay: TimelineDay;
@@ -63,13 +63,19 @@
   const headingId = $derived(
     `fl-day-${timelineDay.timelineMonth.yearMonth.year}-${timelineDay.timelineMonth.yearMonth.month}-${timelineDay.day}`,
   );
-  const fullDate = $derived(
-    getDateLocaleString(
-      fromTimelinePlainDate({
-        year: timelineDay.timelineMonth.yearMonth.year,
-        month: timelineDay.timelineMonth.yearMonth.month,
-        day: timelineDay.day,
-      }),
+  /**
+   * The day's title as the prototype writes it (`explore-timeline.mjs` `timelineGroups`): the full
+   * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
+   * `groupTitle` stays as it is for everything else.
+   */
+  const dayTitle = $derived(
+    fromTimelinePlainDate({
+      year: timelineDay.timelineMonth.yearMonth.year,
+      month: timelineDay.timelineMonth.yearMonth.month,
+      day: timelineDay.day,
+    }).toLocaleString(
+      { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
+      { locale: $locale ?? undefined },
     ),
   );
 </script>
@@ -81,7 +87,7 @@
   data-group
   data-testid="frameleaf-day-group"
   aria-labelledby={showHeader && !grouped ? headingId : undefined}
-  aria-label={showHeader || grouped ? undefined : timelineDay.groupTitle}
+  aria-label={showHeader || grouped ? undefined : dayTitle}
   style:position="absolute"
   style:inset-inline-start="{timelineDay.start}px"
   style:top="{timelineDay.top}px"
@@ -89,10 +95,10 @@
   {#if showHeader && !grouped}
     <LibraryGroupHeader
       id={headingId}
-      title={timelineDay.groupTitle}
-      fullTitle={fullDate}
+      title={dayTitle}
       count={dayIds.length}
       {state}
+      {selecting}
       width={timelineDay.width}
       height={headerHeight}
       onSelect={(checked) => onSelectGroup?.(dayIds, checked)}

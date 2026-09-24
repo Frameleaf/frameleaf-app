@@ -312,7 +312,7 @@ export const pageUtils = {
   async selectDay(page: Page, day: string) {
     const section = page.getByRole('region', { name: day, exact: true });
     await section.hover();
-    await section.getByRole('checkbox', { name: `Select everything in ${day}` }).click();
+    await section.getByRole('checkbox', { name: `Select all in ${day}` }).click();
   },
   async pauseTestDebug() {
     console.log('NOTE: pausing test indefinitely for debug');
