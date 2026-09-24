@@ -61,4 +61,20 @@ describe('MergePeopleDialog (PD-4)', () => {
 
     expect(screen.getByRole('button', { name: /Grace/ }).getAttribute('aria-pressed')).toBe('true');
   });
+
+  it('reads a preselected person the list does not include', async () => {
+    const outside = personFactory.build({ id: 'outside', name: 'Outside' });
+    sdkMock.getPerson.mockResolvedValue(outside);
+    render(MergePeopleDialog, {
+      person: ada,
+      candidates: [ada, grace],
+      initialChoice: 'outside',
+      open: true,
+      onMerged: vi.fn(),
+    });
+
+    const row = await screen.findByRole('button', { name: /Outside/ });
+    expect(row.getAttribute('aria-pressed')).toBe('true');
+    expect(sdkMock.getPerson).toHaveBeenCalledWith({ id: 'outside' });
+  });
 });
