@@ -94,9 +94,10 @@
 <style>
   /*
    * template/src/styles.css `.dialog` with the apple-style.css sheet: the radius and motion come
-   * from the token scale. The dialog is itself the `.frameleaf` scope, so the tokens.css
-   * Reduce Motion clamp (which targets descendants) does not reach it; the media query below
-   * turns the rise into a crossfade instead.
+   * from the token scale. Under Reduce Motion the media query below turns the rise into a
+   * crossfade. A dialog mounted inside another `.frameleaf` scope is also matched by the
+   * tokens.css clamp (`.frameleaf *`, !important), so that rule is !important too and wins on
+   * specificity, keeping the crossfade rather than an instant change.
    */
   .dialog {
     color: var(--fl-text);
@@ -141,7 +142,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .dialog {
-      animation: fl-sheet-fade 200ms ease both;
+      animation: fl-sheet-fade 200ms ease both !important;
     }
   }
   /* The solid fallback of the frosted materials: a darker scrim, nothing blurred behind it. */
