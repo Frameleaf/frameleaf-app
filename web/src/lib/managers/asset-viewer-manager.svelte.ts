@@ -30,7 +30,6 @@ export type Events = {
   Zoom: [];
   ZoomChange: [ZoomImageWheelState];
   Copy: [];
-  FaceEditModeChange: [boolean];
 };
 
 class AssetViewerManager extends BaseEventManager<Events> {
@@ -201,15 +200,12 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.isShowEditor = false;
   }
 
+  /** FL-38: opens or closes the face tagger (`frameleaf/FaceTagger.svelte`), mounted by AssetViewer. */
   toggleFaceEditMode() {
     this.#isFaceEditMode = !this.#isFaceEditMode;
-    this.emit('FaceEditModeChange', this.#isFaceEditMode);
   }
 
   closeFaceEditMode() {
-    if (this.#isFaceEditMode) {
-      this.emit('FaceEditModeChange', false);
-    }
     this.#isFaceEditMode = false;
   }
 
