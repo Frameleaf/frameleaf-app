@@ -1,13 +1,14 @@
 <script lang="ts">
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { navigate } from '$lib/utils/navigation';
+  import { mdiHeartOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -42,7 +43,7 @@
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
-      <EmptyPlaceholder text={$t('no_favorites_message')} class="mx-auto mt-10" />
+      <LibraryEmptyState icon={mdiHeartOutline} message={$t('no_favorites_message')} />
     {/snippet}
 
     {#snippet viewer()}

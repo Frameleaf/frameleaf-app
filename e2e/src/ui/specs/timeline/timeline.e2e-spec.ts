@@ -351,6 +351,61 @@ test.describe('Timeline', () => {
     });
   });
 
+  /**
+   * FL-30 / FL-33 library chrome (prototype `App.jsx` `.results-toolbar`, `ShortcutsHelp.jsx`,
+   * `AssetTile.jsx` `.at-actions`, the library keydown): the toolbar's count, Filter with its
+   * chevron menu, Slideshow, the information panel, Sort and "More library actions"; the "?" sheet;
+   * tile quick actions and the action keys on /photos; no memory strip above the library.
+   */
+  test.describe('library chrome', () => {
+    test('the results toolbar carries the prototype controls', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      await expect(toolbar.getByTestId('frameleaf-result-count')).toHaveText(/items$/);
+      await expect(toolbar.getByRole('button', { name: 'Filter', exact: true })).toBeVisible();
+      await toolbar.getByRole('button', { name: 'Choose a filter' }).click();
+      await expect(page.getByRole('menu', { name: 'Choose a filter' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('menu', { name: 'Choose a filter' })).toBeHidden();
+      await expect(toolbar.getByRole('button', { name: 'Slideshow' })).toBeEnabled();
+      await expect(toolbar.getByRole('combobox', { name: 'Sort assets' })).toHaveValue('captured-desc');
+
+      await toolbar.getByRole('button', { name: 'Show information panel' }).click();
+      await expect(page.getByTestId('frameleaf-work-inspector')).toBeVisible();
+
+      await toolbar.getByRole('button', { name: 'More library actions' }).click();
+      const actions = page.getByRole('dialog', { name: 'Collection actions' });
+      await expect(actions).toBeVisible();
+      await expect(actions.getByRole('button', { name: 'Compare selected items' })).toBeDisabled();
+    });
+
+    test('? opens the Frameleaf shortcuts sheet, closed with Done', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.locator(page).hover();
+      await page.keyboard.press('Shift+?');
+      const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+      await expect(sheet).toBeVisible();
+      await expect(sheet.getByText('Move focus left or right')).toBeVisible();
+      await expect(sheet.getByText(/Shortcuts pause while you type in a field/)).toBeVisible();
+      await sheet.getByRole('button', { name: 'Done' }).click();
+      await expect(sheet).toBeHidden();
+    });
+
+    test('a tile offers its quick actions on hover, and F favorites the focused item', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      const asset = assets.slice(0, 10).find((item) => !item.isFavorite) ?? assets[0];
+      await thumbnailUtils.withAssetId(page, asset.id).hover();
+      const quick = thumbnailUtils.withAssetId(page, asset.id).getByRole('group', { name: /^Actions for / });
+      await expect(quick).toBeVisible();
+      await expect(quick.getByRole('button')).toHaveCount(4);
+
+      const favorite = favoriteRequest(page);
+      await thumbnailUtils.openButton(page, asset.id).focus();
+      await page.keyboard.press('f');
+      await expect(favorite).resolves.toEqual({ isFavorite: !asset.isFavorite, ids: [asset.id] });
+    });
+  });
+
   test.describe('keyboard', () => {
     /**
      * Arrow keys move focus between tiles (prototype `App.jsx` focus-previous / focus-next) and the
