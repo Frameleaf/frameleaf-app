@@ -99,7 +99,8 @@ export class IntegrityRepository {
 
   /**
    * Edited masters, previews and developed files brought back (FL-113, FL-64) live beside the
-   * asset's thumbnails but are tracked by their develop version, not `asset_file`. Without this
+   * asset's thumbnails but are tracked by their develop version, not `asset_file`. Retained video
+   * versions (FL-39) own their master, proxy and thumbnails the same way. Without this
    * the untracked-file check would report — and offer to delete — a person's saved edits.
    */
   async getDevelopRevisionPathsByPaths(paths: string[]): Promise<{ path: string }[]> {
@@ -110,6 +111,13 @@ export class IntegrityRepository {
       SELECT "masterPath" AS path FROM immich_fork.asset_develop_revision WHERE "masterPath" IN (${sql.join(paths)})
       UNION
       SELECT "previewPath" AS path FROM immich_fork.asset_develop_revision WHERE "previewPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "masterPath" AS path FROM immich_fork.video_edit_version WHERE "masterPath" IN (${sql.join(paths)})
+      UNION
+      SELECT "proxyPath" AS path FROM immich_fork.video_edit_version WHERE "proxyPath" IN (${sql.join(paths)})
+      UNION
+      SELECT file->>'path' AS path FROM immich_fork.video_edit_version version, jsonb_array_elements(version.files) file
+      WHERE file->>'path' IN (${sql.join(paths)})
     `.execute(this.db);
     return rows;
   }

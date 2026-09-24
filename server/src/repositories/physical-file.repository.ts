@@ -864,7 +864,17 @@ export class PhysicalFileRepository {
       )
       .executeTakeFirstOrThrow();
 
-    return Number(assetRefs.count) + Number(fileRefs.count);
+    // Saved versions remain owners even after their files leave the current asset projection.
+    const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.video_edit_version v
+      WHERE v."sourcePath"=${path} OR v."masterPath"=${path} OR v."proxyPath"=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
+      UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
+      WHERE o."sourceTable"='video_edit_version' AND (
+        o.payload->>'sourcePath'=${path} OR o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
+    ) retained`.execute(trx);
+    return Number(assetRefs.count) + Number(fileRefs.count) + Number(historyRefs.rows[0].count);
   }
 
   /**
