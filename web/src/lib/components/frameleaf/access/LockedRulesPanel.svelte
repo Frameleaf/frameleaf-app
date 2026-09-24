@@ -35,8 +35,8 @@
     type LockedRules,
   } from '$lib/frameleaf/locked-rules';
   import { isUnnamedPet, sortPets } from '$lib/frameleaf/pets';
+  import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
@@ -46,7 +46,6 @@
     getMyPreferences,
     getPerson,
     isHttpError,
-    lockAuthSession,
     searchPerson,
     SuppressionScope,
     updateMyPreferences,
@@ -254,12 +253,8 @@
   };
 
   const hideLocked = async () => {
-    try {
-      await lockAuthSession();
-      eventManager.emit('SessionLocked');
-    } catch {
-      error = $t('frameleaf_locked_rules_lock_failed');
-    }
+    // FL-83: the shared lock owns failures (root shield with Retry) instead of a local error line
+    await requestSessionLock();
   };
 
   const unlock = () => goto(Route.pinPrompt({ continue: `${page.url.pathname}?isOpen=${RULES_SECTION}` }));

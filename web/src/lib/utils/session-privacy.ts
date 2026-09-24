@@ -11,6 +11,25 @@ export const revokeSessionView = (destination: string) => {
   // Keep the old document concealed if navigation fails: a reload must authorize
   // fresh results before they can be displayed again.
   document.documentElement.style.setProperty('display', 'none', 'important');
+  const exitingPictureInPicture = clearSessionMedia();
+
+  // A SvelteKit navigation retains singleton result caches and in-flight work.
+  // Replace the whole document so they cannot repopulate a locked route.
+  if (exitingPictureInPicture) {
+    void exitingPictureInPicture.then(() => location.replace(destination));
+  } else {
+    location.replace(destination);
+  }
+};
+
+/**
+ * FL-83: stop already-playing media, Picture-in-Picture and downloads. Also used on its own while the
+ * local lock shield is up, before the document is replaced.
+ */
+export const clearSessionMedia = () => {
+  if (!browser) {
+    return;
+  }
   // Feature detection retains Firefox support, where native PiP is not exposed.
   const exitingPictureInPicture =
     'exitPictureInPicture' in document &&
@@ -55,11 +74,5 @@ export const revokeSessionView = (destination: string) => {
   clearMedia(document);
   downloadManager.clearAll();
 
-  // A SvelteKit navigation retains singleton result caches and in-flight work.
-  // Replace the whole document so they cannot repopulate a locked route.
-  if (exitingPictureInPicture) {
-    void exitingPictureInPicture.then(() => location.replace(destination));
-  } else {
-    location.replace(destination);
-  }
+  return exitingPictureInPicture;
 };

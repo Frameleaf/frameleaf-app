@@ -4351,7 +4351,6 @@
   "frameleaf_locked_rules_find_tag": "Find or create a tag",
   "frameleaf_locked_rules_hide": "Hide Locked content",
   "frameleaf_locked_rules_load_failed": "Locked rules could not be loaded. Try again.",
-  "frameleaf_locked_rules_lock_failed": "This session could not be locked. Try again.",
   "frameleaf_locked_rules_locked_description": "Unlock to view or change the photos and videos you keep private.",
   "frameleaf_locked_rules_locked_through": "Locked through {tag}",
   "frameleaf_locked_rules_people": "People",
