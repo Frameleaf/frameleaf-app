@@ -126,6 +126,45 @@ describe(AuthService.name, () => {
         }
       },
     );
+
+    it.each(['delete', 'expire'] as const)('rejects a session %sd after its stale PIN snapshot', async (change) => {
+      const { sut, ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser();
+      const token = `pin-refresh-${change}`;
+      const { session } = await ctx.newSession({
+        userId: user.id,
+        token: ctx.get(CryptoRepository).hashSha256(token),
+        pinExpiresAt: new Date(Date.now() + 60_000),
+        updatedAt: new Date(),
+      });
+      const read = repository.getByToken.bind(repository);
+      const snapshotRead = Promise.withResolvers<void>();
+      const releaseRead = Promise.withResolvers<void>();
+      const spy = vi.spyOn(repository, 'getByToken').mockImplementationOnce(async (hashed) => {
+        const snapshot = await read(hashed);
+        snapshotRead.resolve();
+        await releaseRead.promise;
+        return snapshot;
+      });
+      const pending = sut.authenticate({
+        headers: { cookie: `immich_access_token=${token}` },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+      });
+      try {
+        await snapshotRead.promise;
+        await (change === 'delete'
+          ? repository.delete(session.id)
+          : repository.update(session.id, { expiresAt: new Date(Date.now() - 1000) }));
+        releaseRead.resolve();
+        await expect(pending).rejects.toThrow('Invalid user token');
+      } finally {
+        releaseRead.resolve();
+        await pending.catch(() => {});
+        spy.mockRestore();
+      }
+    });
   });
 
   describe('adminSignUp', () => {
