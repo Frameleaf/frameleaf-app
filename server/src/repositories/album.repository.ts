@@ -1,13 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import {
-  ExpressionBuilder,
-  Kysely,
-  NotNull,
-  Selectable,
-  ShallowDehydrateObject,
-  Updateable,
-  sql,
-} from 'kysely';
+import { ExpressionBuilder, Kysely, NotNull, Selectable, ShallowDehydrateObject, Updateable, sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
@@ -17,8 +9,8 @@ import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -632,7 +624,6 @@ export class AlbumRepository {
       `.execute(tx);
     });
   }
-
 
   @Chunked({ chunkSize: 30_000 })
   async addAssetIdsToAlbums(values: { albumId: string; assetId: string }[]): Promise<void> {

@@ -3,6 +3,9 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AlbumResponseDto, mapAlbum } from 'src/dtos/album.dto.js';
 import {
+  RecipientGroupCreateDto,
+  RecipientGroupResponseDto,
+  RecipientGroupUpdateDto,
   SharedSpaceActivityResponseDto,
   SharedSpaceActivitySearchDto,
   SharedSpaceAlbumResponseDto,
@@ -20,9 +23,6 @@ import {
   SharedSpacePersonLinkDto,
   SharedSpacePersonResponseDto,
   SharedSpacePreviewResponseDto,
-  RecipientGroupCreateDto,
-  RecipientGroupResponseDto,
-  RecipientGroupUpdateDto,
 } from 'src/dtos/shared-space.dto.js';
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
 import { AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
@@ -187,10 +187,7 @@ export class SharedSpaceService extends BaseService {
     return wanted;
   }
 
-  private mapRecipientGroup(
-    group: RecipientGroup,
-    users: Parameters<typeof mapUser>[0][],
-  ): RecipientGroupResponseDto {
+  private mapRecipientGroup(group: RecipientGroup, users: Parameters<typeof mapUser>[0][]): RecipientGroupResponseDto {
     const byId = new Map(users.map((user) => [user.id, user]));
     return {
       id: group.id,

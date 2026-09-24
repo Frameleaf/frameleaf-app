@@ -84,12 +84,7 @@ const RecipientGroupResponseSchema = z
   })
   .meta({ id: 'RecipientGroupResponseDto' });
 
-const RecipientGroupNameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(100)
-  .describe('Name, visible to its owner only');
+const RecipientGroupNameSchema = z.string().trim().min(1).max(100).describe('Name, visible to its owner only');
 const RecipientGroupUserIdsSchema = z
   .array(z.uuidv4())
   .max(200)
