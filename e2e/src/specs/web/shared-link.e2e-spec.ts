@@ -106,6 +106,17 @@ test.describe('Shared Links', () => {
     await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
   });
 
+  test('a plain click opens an item in the viewer', async ({ page }) => {
+    // PublicViewer.jsx: outside Select mode a tile opens the viewer.
+    await page.goto(`/share/${sharedLink.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+
+    await page.locator(`[data-asset-id="${asset.id}"]`).click();
+
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/share/${sharedLink.key}/photos/${asset.id}`);
+  });
+
   test('offers only what the link allows', async ({ page }) => {
     await page.goto(`/share/${viewOnlySharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();

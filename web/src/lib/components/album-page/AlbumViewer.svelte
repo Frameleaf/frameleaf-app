@@ -11,7 +11,7 @@
   import { handleDownloadAlbum } from '$lib/services/album.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
-  import { downloadArchive } from '$lib/utils/asset-utils';
+  import { downloadArchive, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
@@ -116,6 +116,7 @@
       selectionMode={selecting}
       noSelectionBar
       publicView
+      onOpen={(asset) => void navigateToAsset(asset)}
     >
       {#if album.description}
         <p class="pv-album-description">{album.description}</p>
