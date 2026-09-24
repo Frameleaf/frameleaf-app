@@ -13,6 +13,7 @@
   import { Route } from '$lib/route';
   import { handleCreateJob } from '$lib/services/job.service';
   import {
+    getIntegrityCheckRuns,
     getIntegrityReportSummary,
     getQueuesLegacy,
     getServerVersion,
@@ -20,6 +21,7 @@
     type DatabaseBackupDto,
     IntegrityReport,
     ManualJobName,
+    type IntegrityCheckRunsResponseDto,
     type IntegrityReportSummaryResponseDto,
     type JobCreateDto,
     type QueuesResponseLegacyDto,
@@ -37,6 +39,14 @@
   const report = $derived(Object.values(IntegrityReport).find((type) => type === page.url.searchParams.get('report')));
 
   let integrityReport: IntegrityReportSummaryResponseDto | undefined = $state();
+  /** FL-81 (CC-21): when each check last ran; the panel works without it. */
+  let runs: IntegrityCheckRunsResponseDto | undefined = $state();
+  const loadRuns = () =>
+    getIntegrityCheckRuns()
+      .then((result) => (runs = result))
+      .catch(() => {
+        // "Last run" stays out; the findings still show.
+      });
   let backups: DatabaseBackupDto[] | undefined = $state();
   let expectedVersion = $state('');
   let failed = $state(false);
@@ -50,6 +60,7 @@
         backups = result.backups;
       })
       .catch(() => (failed = true));
+    void loadRuns();
   });
 
   const reportTypes: IntegrityReport[] = [
@@ -108,6 +119,7 @@
     } else if (activeJobs.size > 0) {
       activeJobs.clear();
       integrityReport = await getIntegrityReportSummary();
+      void loadRuns();
     }
   };
 
@@ -146,6 +158,7 @@
   <MaintenanceIntegrityPanel
     {reportTypes}
     {integrityReport}
+    {runs}
     {jobNames}
     {activeJobs}
     {getReportTypeTranslation}
