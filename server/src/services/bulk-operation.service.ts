@@ -100,6 +100,9 @@ const withoutInFlight = (result: BulkOperationResult): BulkOperationResult => ({
   retry: result.retry ? { ...result.retry, inFlight: null } : null,
 });
 
+const isArchiveAction = (action: MediaOperationBulkAction) =>
+  action === MediaOperationBulkAction.Archive || action === MediaOperationBulkAction.Unarchive;
+
 const ok = (id: string): Outcome => ({ id, status: MediaOperationItemStatus.Ok });
 
 const refused = (id: string, error: unknown): Outcome => {
@@ -664,6 +667,12 @@ export class BulkOperationService {
           }
         }
         allowed = allowed.filter((id) => !locked.has(id));
+        // FL-32: a transactional archive records them as skipped too, so its counts stay exact
+        if (payload.archiveOperationId && operationId && isArchiveAction(action)) {
+          await this.archiveOperations.skipUnreached(auth.user.id, payload.archiveOperationId, operationId, [
+            ...locked,
+          ]);
+        }
       }
     }
 
@@ -677,11 +686,7 @@ export class BulkOperationService {
     }
 
     // FL-32: a transactional archive publishes, or undoes, through its operation's own item records
-    if (
-      payload.archiveOperationId &&
-      operationId &&
-      (action === MediaOperationBulkAction.Archive || action === MediaOperationBulkAction.Unarchive)
-    ) {
+    if (payload.archiveOperationId && operationId && isArchiveAction(action)) {
       outcomes.push(
         ...(await this.applyArchiveOperation(auth, payload.archiveOperationId, operationId, action, allowed)),
       );
