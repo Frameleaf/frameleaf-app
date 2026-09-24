@@ -100,6 +100,30 @@ export class VideoMomentRepository {
     return new Map(rows.map((row) => [row.id, sourceFingerprint(row as Parameters<typeof sourceFingerprint>[0])]));
   }
 
+  /**
+   * Whether the frames on record were cut from the original as it is now, read inside the caller's
+   * transaction. Holds off a replacement of the original until the caller commits, as `replaceFrames`
+   * does, so embeddings or captions of frames from a replaced original are never published.
+   */
+  private async framesMatchSource(trx: Kysely<DB>, assetId: string): Promise<boolean> {
+    const current = await trx
+      .selectFrom('asset')
+      .select(['asset.checksum', 'asset.fileModifiedAt'])
+      .where('asset.id', '=', asUuid(assetId))
+      .forShare()
+      .executeTakeFirst();
+    const index = await trx
+      .selectFrom('video_moment_index')
+      .select('sourceFingerprint')
+      .where('assetId', '=', asUuid(assetId))
+      .executeTakeFirst();
+    return (
+      !!current &&
+      !!index &&
+      sourceFingerprint(current as Parameters<typeof sourceFingerprint>[0]) === index.sourceFingerprint
+    );
+  }
+
   /** Kind and owner of each asset, for a plan deciding which stages apply. Missing assets are left out. */
   async getAssetKinds(assetIds: string[]): Promise<Map<string, { type: AssetType; ownerId: string }>> {
     if (assetIds.length === 0) {
@@ -304,7 +328,8 @@ export class VideoMomentRepository {
   /**
    * Store frame embeddings and make sure every frame has its generated moment, only while the
    * frames are still the ones the embeddings were computed from: a frame replaced in the meantime
-   * has a new id, so its stale embedding matches nothing and is not written.
+   * has a new id, so its stale embedding matches nothing and is not written. Nothing is written
+   * either when the original was replaced after the frames were cut and before they were invalidated.
    */
   async publishIndex(
     assetId: string,
@@ -312,6 +337,9 @@ export class VideoMomentRepository {
     patch: { embeddingModel: string; embeddingDestinationId: string | null },
   ): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
+      if (!(await this.framesMatchSource(trx, assetId))) {
+        return 0;
+      }
       const frames = await trx
         .selectFrom('video_moment_frame')
         .select(['id', 'timestampMs'])
@@ -368,7 +396,8 @@ export class VideoMomentRepository {
 
   /**
    * Store generated captions for frames that are still current, creating their generated moment
-   * when the index stage has not. Manual moments are never written here.
+   * when the index stage has not. Manual moments are never written here, and nothing is written
+   * when the original was replaced after the frames were cut.
    */
   async publishCaptions(
     assetId: string,
@@ -382,6 +411,9 @@ export class VideoMomentRepository {
     },
   ): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
+      if (!(await this.framesMatchSource(trx, assetId))) {
+        return 0;
+      }
       const frames = await trx
         .selectFrom('video_moment_frame')
         .select(['id', 'timestampMs'])
@@ -509,31 +541,36 @@ export class VideoMomentRepository {
     modelName: string,
     scope: VideoMomentSearchScope,
   ): Promise<VideoMomentSearchHit[]> {
-    const rows = await this.db
-      .selectFrom('video_moment_frame_embedding')
-      .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
-      .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
-      .leftJoin('video_moment', (join) =>
-        join
-          .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
-          .on('video_moment.source', '=', VideoMomentSource.Generated),
-      )
-      .select([
-        'video_moment_frame.assetId',
-        'video_moment_frame.id as frameId',
-        'video_moment_frame.timestampMs',
-        'video_moment.caption',
-        sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
-      ])
-      .where('video_moment_frame_embedding.modelName', '=', modelName)
-      .where('asset.ownerId', '=', asUuid(scope.ownerId))
-      .where('asset.status', '=', AssetStatus.Active)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
-      .where(notLockedOrOwnedBy(scope.lockedOwnerId))
-      .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
-      .limit(scope.limit)
-      .execute();
+    const rows = await this.db.transaction().execute(async (trx) => {
+      // The frame index is built with a single list (`2100000000500-AddVideoMomentFrameVectorIndex`);
+      // like every other vector search, set the probes here rather than relying on a database default.
+      await sql`set local vchordrq.probes = ${sql.lit(1)}`.execute(trx);
+      return trx
+        .selectFrom('video_moment_frame_embedding')
+        .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+        .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+        .leftJoin('video_moment', (join) =>
+          join
+            .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
+            .on('video_moment.source', '=', VideoMomentSource.Generated),
+        )
+        .select([
+          'video_moment_frame.assetId',
+          'video_moment_frame.id as frameId',
+          'video_moment_frame.timestampMs',
+          'video_moment.caption',
+          sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
+        ])
+        .where('video_moment_frame_embedding.modelName', '=', modelName)
+        .where('asset.ownerId', '=', asUuid(scope.ownerId))
+        .where('asset.status', '=', AssetStatus.Active)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+        .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+        .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
+        .limit(scope.limit)
+        .execute();
+    });
     return rows.map((row) => ({ ...row, distance: Number(row.distance) }));
   }
 

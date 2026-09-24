@@ -73,6 +73,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -111,7 +112,11 @@ type MediumTestOptions = {
 
 type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
 // Repositories that services inject directly (outside BaseService) but medium specs still exercise against a real database.
-type MediumRepositoryKey = BaseServiceDeps[number] | typeof MediaOperationRepository | typeof StudioProjectRepository;
+type MediumRepositoryKey =
+  | BaseServiceDeps[number]
+  | typeof MediaOperationRepository
+  | typeof StudioProjectRepository
+  | typeof VideoMomentRepository;
 
 export const newMediumService = <S extends ClassConstructor<typeof BaseService>>(
   Service: S,
@@ -553,6 +558,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case SystemMetadataRepository:
     case UserRepository:
     case VersionHistoryRepository:
+    case VideoMomentRepository:
     case WorkflowRepository: {
       return new key(db) as InstanceType<T>;
     }
