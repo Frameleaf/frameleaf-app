@@ -15,6 +15,14 @@ export class CreateProfileImageDto {
     description: 'ID of the photo the image was copied from, if any. A Locked photo is refused.',
   })
   assetId?: string;
+
+  @ApiProperty({
+    type: 'boolean',
+    required: false,
+    description:
+      'The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set.',
+  })
+  keepSource?: boolean | 'true' | 'false';
 }
 
 const CreateProfileImageResponseSchema = z

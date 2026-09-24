@@ -236,7 +236,8 @@ export const getAssetActions = (
   const SetProfilePicture: ActionItem = {
     title: $t('set_as_profile_picture'),
     icon: mdiAccountCircleOutline,
-    $if: () => asset.type === AssetTypeEnum.Image && asset.visibility !== AssetVisibility.Locked,
+    // Profile pictures are shown to every account, so only the owner's own photo may become one.
+    $if: () => isOwner && asset.type === AssetTypeEnum.Image && asset.visibility !== AssetVisibility.Locked,
     onAction: () => modalManager.show(ProfileImageCropperModal, { asset }),
   };
 
