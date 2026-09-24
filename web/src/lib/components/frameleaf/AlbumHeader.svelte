@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
@@ -229,6 +230,41 @@
     }
     await onRefresh();
   };
+
+  /**
+   * A role can change while this page is open (FL-53): the server tells every open page at once
+   * (`AlbumUserUpdateV1`), the page patches the album, and here every control and open dialog the
+   * new role no longer allows closes, with a line saying why. The server refuses the same actions
+   * again; this only keeps the page honest.
+   */
+  let lastAccess = $state<{ editor: boolean; owner: boolean } | undefined>();
+  $effect(() => {
+    const access = { editor, owner };
+    const previous = untrack(() => lastAccess);
+    lastAccess = access;
+    if (!previous || (previous.editor === access.editor && previous.owner === access.owner)) {
+      return;
+    }
+    if (!access.editor) {
+      iconOpen = false;
+      coverOpen = false;
+      optionsOpen = false;
+      editOpen = false;
+      createOpen = false;
+      reevaluateOpen = false;
+      reviewOpen = false;
+      ruleOpen = false;
+    }
+    if (!access.owner) {
+      linkFormOpen = false;
+      deleteOpen = false;
+    }
+    if (previous.editor && !access.editor) {
+      status = $t('frameleaf_album_access_view_only');
+    } else if (!previous.editor && access.editor) {
+      status = $t('frameleaf_album_access_can_edit');
+    }
+  });
 
   let mapMarkers = $state<MapMarkerResponseDto[]>([]);
   let markerController: AbortController | undefined;
