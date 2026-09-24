@@ -3871,6 +3871,7 @@
   "frameleaf_library_filter_section_all": "All filters",
   "frameleaf_library_filters_active": "{count, plural, one {# filter active} other {# filters active}}",
   "frameleaf_library_group_all": "All photos and videos",
+  "frameleaf_library_group_select_failed": "Could not select everything in {title}. Try again.",
   "frameleaf_library_grouped_by_all": "Grouped by all",
   "frameleaf_library_grouped_by_days": "Grouped by days",
   "frameleaf_library_grouped_by_months": "Grouped by months",
