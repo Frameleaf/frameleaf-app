@@ -707,6 +707,33 @@ describe(AuthService.name, () => {
       vi.useRealTimers();
     });
 
+    it('does not extend an elevated session for a status read (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', refreshElevation: false },
+        }),
+      ).resolves.toEqual(expect.objectContaining({ session: { id: session.id, hasElevatedPermission: true } }));
+
+      expect(mocks.session.refreshPinExpiry).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
     it('does not elevate a request whose refresh loses to a concurrent lock (FL-34)', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
