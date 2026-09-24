@@ -17,8 +17,9 @@
    *
    * Every queue command, from the page or the command palette, goes through the template's review
    * (what it does, scope, affected now); the destructive ones ask for an acknowledgement, which
-   * also covers the face reset confirmation. The template's account filter, per-job account and
-   * worker columns and "Retry failed" have no server source and are not shown.
+   * also covers the face reset confirmation. The failed tab has "Retry failed" (`JobsManager.jsx`
+   * 715-727) and each job names its Account and Worker (758-796, 941-948) from the server. The
+   * template's account filter has no server source and is not shown.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -72,6 +73,7 @@
     handleClearWaitingJobs,
     handlePauseQueue,
     handleResumeQueue,
+    handleRetryFailedJobs,
   } from '$lib/services/queue.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -79,6 +81,7 @@
     createJob,
     getQueueJobs,
     QueueCommand,
+    QueueJobWorkerKind,
     QueueName,
     runQueueCommandLegacy,
     type JobName,
@@ -95,14 +98,17 @@
     mdiChevronRight,
     mdiClockOutline,
     mdiClose,
+    mdiCloudOutline,
     mdiCogOutline,
     mdiDeleteSweepOutline,
+    mdiDesktopTowerMonitor,
     mdiHistory,
     mdiImageSearchOutline,
     mdiMagnify,
     mdiPause,
     mdiPlay,
     mdiPlus,
+    mdiRedo,
     mdiShieldCheckOutline,
     mdiTuneVariant,
   } from '@mdi/js';
@@ -214,7 +220,16 @@
   // ---- the template's review of a queue command --------------------------------------------------
 
   type Command =
-    'pause' | 'resume' | 'clear-waiting' | 'remove-failed' | 'run' | 'force' | 'refresh' | 'resume-all' | 'manual';
+    | 'pause'
+    | 'resume'
+    | 'clear-waiting'
+    | 'remove-failed'
+    | 'retry-failed'
+    | 'run'
+    | 'force'
+    | 'refresh'
+    | 'resume-all'
+    | 'manual';
   type Review = {
     command: Command;
     name?: QueueName;
@@ -271,6 +286,13 @@
             ? $t('frameleaf_jobs_review_remove_failed_limit', { values: { limit: FAILED_CLEAN_LIMIT, total: failed } })
             : undefined,
         dangerous: true,
+      },
+      // The template's retry review (`jobs-data.mjs` 906-919): not destructive, every failed job.
+      'retry-failed': {
+        title: $t('frameleaf_jobs_retry_failed_title'),
+        detail: $t('frameleaf_jobs_review_retry_failed'),
+        affected: failed,
+        dangerous: false,
       },
       run: {
         title: row ? runLabel(row.definition) : '',
@@ -341,6 +363,10 @@
       }
       case 'remove-failed': {
         await handleClearFailedJobs({ name });
+        return;
+      }
+      case 'retry-failed': {
+        await handleRetryFailedJobs({ name });
         return;
       }
       case 'run':
@@ -450,6 +476,12 @@
   });
 
   const jobTitle = (name: JobName) => $t(jobNameKey(name) as Translations);
+  /** The template's `ownerName` / `destinationName` (`JobsManager.jsx` 37-40), from the server's job data. */
+  const accountName = (job: QueueJobResponseDto) => job.account?.name ?? $t('frameleaf_jobs_account_none');
+  const workerLabel = (job: QueueJobResponseDto) =>
+    $t(
+      `frameleaf_jobs_worker_${job.worker.kind === QueueJobWorkerKind.Lan ? 'local' : job.worker.kind}` as Translations,
+    );
   const subject = (job: QueueJobResponseDto) => {
     const id = job.data?.id;
     return typeof id === 'string' ? id : '';
@@ -545,6 +577,12 @@
             icon: mdiClose,
             $if: () => !!selected && selected.queue.statistics.waiting + selected.queue.statistics.paused > 0,
             onAction: () => selected && request('clear-waiting', selected),
+          },
+          {
+            title: $t('frameleaf_jobs_retry_failed'),
+            icon: mdiRedo,
+            $if: () => !!selected && selected.queue.statistics.failed > 0,
+            onAction: () => selected && request('retry-failed', selected),
           },
           {
             title: $t('frameleaf_jobs_remove_failed'),
@@ -870,6 +908,10 @@
       <p>{$t(`frameleaf_jobs_tab_help_${tab}` as Translations)}</p>
       {#if tab === 'failed'}
         <div>
+          <Button disabled={!queueCounts.failed} onclick={() => request('retry-failed', selected)}>
+            <Icon icon={mdiRedo} size="1rem" aria-hidden={true} />
+            {$t('frameleaf_jobs_retry_failed')}
+          </Button>
           <Button disabled={!queueCounts.failed} onclick={() => request('remove-failed', selected)}>
             {$t('frameleaf_jobs_remove_failed')}
           </Button>
@@ -895,6 +937,8 @@
         <thead>
           <tr>
             <th scope="col">{$t('frameleaf_jobs_column_job')}</th>
+            <th scope="col">{$t('frameleaf_jobs_column_account')}</th>
+            <th scope="col">{$t('frameleaf_jobs_column_worker')}</th>
             <th scope="col">{$t('frameleaf_jobs_column_status')}</th>
             <th scope="col">{$t('frameleaf_jobs_column_created')}</th>
             <th scope="col"><span class="jm-sr">{$t('frameleaf_jobs_column_details')}</span></th>
@@ -921,6 +965,8 @@
                   {/if}
                 </button>
               </th>
+              <td>{accountName(job)}</td>
+              <td>{@render worker(job)}</td>
               <td>{@render queueStatus(job.status)}</td>
               <td><time datetime={new Date(job.timestamp).toISOString()}>{timestamp(job.timestamp)}</time></td>
               <td class="jm-row-actions">
@@ -1000,6 +1046,17 @@
   </details>
 </section>
 
+{#snippet worker(job: QueueJobResponseDto)}
+  <span class="jm-destination" title={job.worker.name ?? undefined}>
+    <Icon
+      icon={job.worker.kind === QueueJobWorkerKind.Runpod ? mdiCloudOutline : mdiDesktopTowerMonitor}
+      size="15px"
+      aria-hidden={true}
+    />
+    {workerLabel(job)}
+  </span>
+{/snippet}
+
 {#snippet queueStatus(value: JobQueueStatus | QueueJobStatus)}
   <span class="jm-status" data-status={value}><i></i>{statusLabel(value)}</span>
 {/snippet}
@@ -1050,6 +1107,14 @@
         <div>
           <dt>{$t('frameleaf_jobs_detail_job')}</dt>
           <dd>{jobTitle(detail.name)}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_jobs_detail_account')}</dt>
+          <dd>{accountName(detail)}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_jobs_detail_worker')}</dt>
+          <dd>{workerLabel(detail)}{detail.worker.name ? ` · ${detail.worker.name}` : ''}</dd>
         </div>
         {#if detail.attemptsMade !== undefined}
           <div>
@@ -1474,6 +1539,16 @@
   }
   .jm-jobs td {
     font-size: 12px;
+  }
+  /* jobs-manager.css `.jm-destination` (the Worker column). */
+  .jm-destination {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .jm-destination :global(svg) {
+    color: var(--fl-muted);
   }
   .jm-empty {
     text-align: center;

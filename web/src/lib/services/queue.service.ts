@@ -6,6 +6,7 @@ import {
   runQueueCommandLegacy,
   updateQueue,
   type QueueResponseDto,
+  retryFailedQueueJobs,
 } from '@immich/sdk';
 import { type IconLike } from '@immich/ui';
 import {
@@ -70,6 +71,12 @@ export const handleClearFailedJobs = async (queue: Pick<QueueResponseDto, 'name'
     name: queue.name,
     queueCommandDto: { command: QueueCommand.ClearFailed, force: false },
   });
+  eventManager.emit('QueueUpdate', await getQueue({ name: queue.name }));
+};
+
+/** FL-71 "Retry failed" (`JobsManager.jsx` 715-727): every failed job goes back in the queue. */
+export const handleRetryFailedJobs = async (queue: Pick<QueueResponseDto, 'name'>) => {
+  await retryFailedQueueJobs({ name: queue.name });
   eventManager.emit('QueueUpdate', await getQueue({ name: queue.name }));
 };
 
