@@ -8,9 +8,12 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
   activityCounts,
+  activityEtaSeconds,
   activityIndicatorState,
+  activityStatusText,
   activitySettingsDetails,
   buildActivityList,
+  formatActivityDuration,
   fromBulkOperation,
   fromDownload,
   fromMediaOperation,
@@ -562,5 +565,68 @@ describe('fromMediaOperation, Studio bundles (FL-91)', () => {
       );
     }
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Completed })).studioBundle).toBeUndefined();
+  });
+});
+
+describe('the status line (FL-30, prototype `statusText`)', () => {
+  const translate = (key: string, options?: { values?: Record<string, unknown> }) =>
+    options?.values ? `${key}(${JSON.stringify(options.values)})` : key;
+  const formatDuration = (seconds: number) => `${seconds}s`;
+  const started = Date.parse('2026-09-22T09:50:00.000Z');
+  const item = (overrides: Partial<ReturnType<typeof fromMediaOperation>> = {}) => ({
+    ...fromMediaOperation(operation()),
+    startedAt: started,
+    ...overrides,
+  });
+
+  it('estimates the time left from the rate so far, and only from a measured percentage', () => {
+    // 42% in 42 seconds: 58 seconds to go.
+    expect(activityEtaSeconds(item({ progress: 42 }), started + 42_000)).toBe(58);
+    expect(activityEtaSeconds(item({ progress: null }), started + 42_000)).toBeNull();
+    expect(activityEtaSeconds(item({ progress: 0 }), started + 42_000)).toBeNull();
+    expect(activityEtaSeconds(item({ running: false }), started + 42_000)).toBeNull();
+    expect(activityEtaSeconds(item({ startedAt: 0 }), started + 42_000)).toBeNull();
+  });
+
+  it('reads "state · percent · about time left" while running', () => {
+    const text = activityStatusText(item({ progress: 42 }), { translate, formatDuration, now: started + 42_000 });
+    expect(text).toBe(
+      'frameleaf_activity_status_eta({"status":"frameleaf_activity_status_rendering","progress":42,"time":"58s"})',
+    );
+  });
+
+  it('reads "Paused at N%" and "Waiting for connection" while offline', () => {
+    const paused = item({ paused: true, running: false, statusKey: 'frameleaf_activity_status_paused', progress: 30 });
+    expect(activityStatusText(paused, { translate, formatDuration })).toBe(
+      'frameleaf_activity_status_at({"status":"frameleaf_activity_status_paused","progress":30})',
+    );
+    expect(activityStatusText(item({ progress: 42 }), { translate, formatDuration, online: false })).toBe(
+      'frameleaf_activity_status_offline_progress({"progress":42})',
+    );
+  });
+
+  it('keeps a finished state plain, but says where a cancelled job stopped', () => {
+    const done = item({
+      finished: true,
+      running: false,
+      statusKey: 'frameleaf_activity_status_completed',
+      progress: 100,
+    });
+    expect(activityStatusText(done, { translate, formatDuration })).toBe('frameleaf_activity_status_completed');
+    const cancelled = item({
+      finished: true,
+      running: false,
+      statusKey: 'frameleaf_activity_status_cancelled',
+      progress: 63,
+    });
+    expect(activityStatusText(cancelled, { translate, formatDuration })).toBe(
+      'frameleaf_activity_status_at({"status":"frameleaf_activity_status_cancelled","progress":63})',
+    );
+  });
+
+  it('formats the estimate in seconds, minutes or hours', () => {
+    expect(formatActivityDuration(20, 'en')).toBe('20 seconds');
+    expect(formatActivityDuration(125, 'en')).toBe('3 minutes');
+    expect(formatActivityDuration(5400, 'en')).toBe('1.5 hours');
   });
 });

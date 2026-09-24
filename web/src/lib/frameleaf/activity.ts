@@ -654,3 +654,72 @@ export const activityIndicatorState = (items: readonly ActivityItem[]) => {
 
   return { count: running.length, progress };
 };
+
+/** Seconds left at the rate so far, or null when there is no honest estimate yet. */
+export const activityEtaSeconds = (
+  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running'>,
+  now: number,
+): number | null => {
+  const progress = item.progress;
+  const elapsed = (now - item.startedAt) / 1000;
+  if (!item.running || progress === null || progress <= 0 || progress >= 100 || item.startedAt <= 0 || elapsed <= 0) {
+    return null;
+  }
+  return Math.ceil((elapsed * (100 - progress)) / progress);
+};
+
+/**
+ * A row's status line (prototype `Activity.jsx` `statusText`): the state, then how far along it
+ * is, then about how long is left while it runs; "Paused at N%" and "Cancelled at N%" where it
+ * stopped; "Waiting for connection · N%" while the server cannot be reached. Nothing is estimated
+ * without a measured percentage, and a failure's reason is added by the page, as given.
+ */
+export const activityStatusText = (
+  item: Pick<ActivityItem, 'statusKey' | 'progress' | 'startedAt' | 'running' | 'paused' | 'finished'>,
+  {
+    translate,
+    online = true,
+    now = Date.now(),
+    formatDuration,
+  }: {
+    translate: (key: Translations, options?: { values?: Record<string, unknown> }) => string;
+    online?: boolean;
+    now?: number;
+    /** "3 minutes", in the reader's language. */
+    formatDuration: (seconds: number) => string;
+  },
+): string => {
+  const status = translate(item.statusKey);
+  const progress = item.progress === null ? null : Math.round(item.progress);
+  if (item.finished) {
+    return item.statusKey === 'frameleaf_activity_status_cancelled' && progress !== null && progress < 100
+      ? translate('frameleaf_activity_status_at', { values: { status, progress } })
+      : status;
+  }
+  if (item.paused) {
+    return progress === null ? status : translate('frameleaf_activity_status_at', { values: { status, progress } });
+  }
+  if (item.running && !online) {
+    return progress === null
+      ? translate('frameleaf_activity_status_offline')
+      : translate('frameleaf_activity_status_offline_progress', { values: { progress } });
+  }
+  if (progress === null) {
+    return status;
+  }
+  const eta = activityEtaSeconds(item, now);
+  return eta === null
+    ? translate('frameleaf_activity_status_progress', { values: { status, progress } })
+    : translate('frameleaf_activity_status_eta', { values: { status, progress, time: formatDuration(eta) } });
+};
+
+/** "about 3 minutes" style durations: seconds under a minute, minutes under an hour, then hours. */
+export const formatActivityDuration = (seconds: number, locale?: string): string => {
+  const [value, unit] =
+    seconds < 60
+      ? [Math.max(1, Math.ceil(seconds)), 'second']
+      : seconds < 3600
+        ? [Math.ceil(seconds / 60), 'minute']
+        : [Math.round(seconds / 360) / 10, 'hour'];
+  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+};
