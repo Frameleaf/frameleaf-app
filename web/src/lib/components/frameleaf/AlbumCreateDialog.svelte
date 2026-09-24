@@ -144,7 +144,7 @@
           albumName: name,
           description: description.trim() || null,
           icon,
-          ...(showParent ? { parentId: parentId ?? null } : {}),
+          ...(showParent && { parentId: parentId ?? null }),
         });
         if (saved) {
           open = false;
