@@ -36,11 +36,8 @@ export interface AlbumMapMarkerSearchOptions {
   fileCreatedBefore?: Date;
   fileCreatedAfter?: Date;
   favoriteOwnerId?: string;
-  /**
-   * Whose album items to keep: always the viewer's own, then their partners' and everyone else's
-   * unless the sheet switched those off. Only ever narrows the album.
-   */
-  ownerScope?: { viewerId: string; partnerIds: string[]; withPartners: boolean; withOthers: boolean };
+  /** Keep only album items this user owns (the sheet's "Partner items" switched off). Only ever narrows the album. */
+  onlyOwnerId?: string;
 }
 
 export interface GeoPoint {
@@ -97,7 +94,7 @@ export class MapRepository {
     albumId: string,
     options: HiddenContentQueryOptions & LockedVisibilityOptions & AlbumMapMarkerSearchOptions = {},
   ) {
-    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, favoriteOwnerId, ownerScope } = options;
+    const { isArchived, isFavorite, fileCreatedAfter, fileCreatedBefore, favoriteOwnerId, onlyOwnerId } = options;
     return (
       this.mapMarkersQuery()
         .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -114,24 +111,7 @@ export class MapRepository {
         )
         .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
         .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))
-        .$if(!!ownerScope, (qb) =>
-          qb.where((eb) => {
-            const { viewerId, partnerIds, withPartners, withOthers } = ownerScope!;
-            const owners: Expression<SqlBool>[] = [eb('asset.ownerId', '=', viewerId)];
-            if (withPartners && partnerIds.length > 0) {
-              owners.push(eb('asset.ownerId', 'in', partnerIds));
-            }
-            if (withOthers) {
-              owners.push(
-                eb.and([
-                  eb('asset.ownerId', '!=', viewerId),
-                  ...(partnerIds.length > 0 ? [eb('asset.ownerId', 'not in', partnerIds)] : []),
-                ]),
-              );
-            }
-            return eb.or(owners);
-          }),
-        )
+        .$if(!!onlyOwnerId, (qb) => qb.where('asset.ownerId', '=', onlyOwnerId!))
         .execute()
     );
   }

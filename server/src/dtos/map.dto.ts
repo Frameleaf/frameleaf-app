@@ -33,8 +33,10 @@ const MapMarkerSchema = z
  * scope). Each only narrows what the album already shows its viewer: no filter reaches an asset outside
  * the album, and the album's hidden and Locked rules still apply. Omitting a filter keeps the album's
  * own behaviour, so an old client that sends none gets the same markers as before. Unlike the library
- * map, where `withPartners` and `withSharedAlbums` add other people's items, here `false` leaves the
- * album's items from those people out.
+ * map, where `withPartners` adds other people's items, here `withPartners=false` keeps only the viewer's
+ * own album items, as the prototype's `filterMapAssets` treats every item someone else owns as a partner
+ * item. `withSharedAlbums` is accepted for the shared settings sheet but narrows nothing here: the
+ * prototype's switch only hides the viewer's own items that reach them solely through a shared space.
  */
 const AlbumMapMarkerSchema = z
   .object({
@@ -46,12 +48,10 @@ const AlbumMapMarkerSchema = z
     fileCreatedBefore: isoDatetimeToDate.optional().describe('Filter assets created before this date'),
     withPartners: stringToBool
       .optional()
-      .describe("Include the album's items owned by your partners (the album default); false leaves them out"),
+      .describe("Include the album's items owned by anyone else (the album default); false keeps only your own"),
     withSharedAlbums: stringToBool
       .optional()
-      .describe(
-        "Include the album's items owned by other members who are not your partners (the album default); false leaves them out",
-      ),
+      .describe('Accepted for the shared map settings; has no effect on an album map'),
   })
   .meta({ id: 'AlbumMapMarkerDto' });
 
