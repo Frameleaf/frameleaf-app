@@ -2,7 +2,6 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import { zoomImageAction } from '$lib/actions/zoom-image';
   import AdaptiveImage from '$lib/components/AdaptiveImage.svelte';
-  import FaceEditor from '$lib/components/asset-viewer/face-editor/FaceEditor.svelte';
   import OcrBoundingBox from '$lib/components/asset-viewer/OcrBoundingBox.svelte';
   import AssetViewerEvents from '$lib/components/AssetViewerEvents.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
@@ -116,12 +115,6 @@
   const onZoomIn = () => assetViewerManager.animatedZoom(Math.min(assetViewerManager.zoom * 1.25, 10));
   const onZoomOut = () => assetViewerManager.animatedZoom(Math.max(assetViewerManager.zoom / 1.25, 1));
 
-  const onFaceEditModeChange = (isFaceEditMode: boolean) => {
-    if (isFaceEditMode && assetViewerManager.zoom > 1) {
-      onZoom();
-    }
-  };
-
   const onPlaySlideshow = () => ($slideshowState = SlideshowState.PlaySlideshow);
 
   // TODO move to action + command palette
@@ -210,20 +203,16 @@
   });
 </script>
 
-<AssetViewerEvents {onCopy} {onZoom} {onFaceEditModeChange} />
+<AssetViewerEvents {onCopy} {onZoom} />
 
 <svelte:document
   use:shortcuts={[
     { shortcut: { key: 'z' }, onShortcut: onZoom, preventDefault: true },
-    // While tagging a face, + / = / - resize the face region instead (FaceEditor), so they are not bound here.
-    ...(assetViewerManager.isFaceEditMode
-      ? []
-      : [
-          { shortcut: { key: '=' }, onShortcut: onZoomIn, preventDefault: true },
-          { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
-          { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
-          { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
-        ]),
+    // FL-38: the face tagger is a modal dialog that keeps its keys to itself, so zoom needs no carve-out.
+    { shortcut: { key: '=' }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
+    { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
     { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
     { shortcut: { key: 'c', meta: true }, onShortcut: onCopyShortcut, preventDefault: false },
@@ -327,8 +316,4 @@
       {/if}
     {/snippet}
   </AdaptiveImage>
-
-  {#if assetViewerManager.isFaceEditMode && assetViewerManager.imgRef}
-    <FaceEditor htmlElement={assetViewerManager.imgRef} {containerWidth} {containerHeight} assetId={asset.id} />
-  {/if}
 </div>

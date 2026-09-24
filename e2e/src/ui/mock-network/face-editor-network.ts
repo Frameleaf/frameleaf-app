@@ -75,9 +75,15 @@ export type FaceCreateCapture = {
     imageWidth: number;
     imageHeight: number;
   }>;
+  /** `POST /api/people` bodies, from the face tagger's "Create person" form. */
+  people: Array<{ name: string }>;
 };
 
-export const setupFaceEditorMockApiRoutes = async (
+/**
+ * FL-38: the routes the Frameleaf face tagger (`FaceTagger.svelte`) calls — the asset's
+ * existing faces, the people to choose from, and the batch save's person and face creates.
+ */
+export const setupFaceTaggerMockApiRoutes = async (
   context: BrowserContext,
   mockPeople: MockPerson[],
   faceCreateCapture: FaceCreateCapture,
@@ -97,6 +103,33 @@ export const setupFaceEditorMockApiRoutes = async (
         total: mockPeople.length,
       },
     });
+  });
+
+  await context.route('**/api/people', async (route, request) => {
+    if (request.method() !== 'POST') {
+      return route.fallback();
+    }
+
+    const body = request.postDataJSON() as { name: string };
+    faceCreateCapture.people.push(body);
+    const person: MockPerson = {
+      id: `created-person-${faceCreateCapture.people.length}`,
+      name: body.name,
+      birthDate: null,
+      isHidden: false,
+      thumbnailPath: '',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+    };
+
+    return route.fulfill({ status: 201, contentType: 'application/json', json: person });
+  });
+
+  await context.route('**/api/faces?*', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+
+    return route.fulfill({ status: 200, contentType: 'application/json', json: [] });
   });
 
   await context.route('**/api/faces', async (route, request) => {
