@@ -23,7 +23,9 @@ import "./sharing.css";
 
 /** Load, persist and cross-tab sync the shared links list. */
 export function useSharedLinks(options = {}) {
-  const [state, setState] = useState(() => loadSharedLinks(globalThis.localStorage, options));
+  const [state, setState] = useState(() =>
+    loadSharedLinks(globalThis.localStorage, options),
+  );
   useEffect(() => {
     const changed = (event) => {
       if (event.key === SHARED_LINKS_KEY || event.key === null)
@@ -91,13 +93,20 @@ export function SharedLinks({
           .includes(needle)),
   );
   const counts = Object.fromEntries(
-    TABS.map(([id]) => [id, links.filter((link) => id === "all" || link.type === id).length]),
+    TABS.map(([id]) => [
+      id,
+      links.filter((link) => id === "all" || link.type === id).length,
+    ]),
   );
   const options = collectionList(collections);
 
   const copy = async (link) => {
     const ok = await copyText(absoluteLinkUrl(link));
-    announce(ok ? `Link for ${titleOf(link)} copied.` : "Copying is not available here.");
+    announce(
+      ok
+        ? `Link for ${titleOf(link)} copied.`
+        : "Copying is not available here.",
+    );
   };
   const remove = (link) => {
     onChange?.(deleteLink(state, link.id).links);
@@ -106,7 +115,12 @@ export function SharedLinks({
   };
   const tabKeys = (event) => {
     const index = TABS.findIndex(([id]) => id === tab);
-    const delta = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: TABS.length - 1 - index }[event.key];
+    const delta = {
+      ArrowRight: 1,
+      ArrowLeft: -1,
+      Home: -index,
+      End: TABS.length - 1 - index,
+    }[event.key];
     if (delta === undefined) return;
     event.preventDefault();
     const next = (index + delta + TABS.length) % TABS.length;
@@ -120,8 +134,9 @@ export function SharedLinks({
         <div>
           <h1 id="sl-heading">Shared links</h1>
           <p>
-            Anyone with a link can view what you shared, even without an account. Passwords,
-            expiry and permissions can be changed at any time.
+            Anyone with a link can view what you shared, even without an
+            account. Passwords, expiry and permissions can be changed at any
+            time.
           </p>
         </div>
         <Button
@@ -138,7 +153,12 @@ export function SharedLinks({
       </header>
 
       <div className="sl-toolbar">
-        <div className="sl-tabs" role="tablist" aria-label="Link types" onKeyDown={tabKeys}>
+        <div
+          className="sl-tabs"
+          role="tablist"
+          aria-label="Link types"
+          onKeyDown={tabKeys}
+        >
           {TABS.map(([id, label], index) => (
             <button
               key={id}
@@ -183,12 +203,18 @@ export function SharedLinks({
               const items = linkAssets(link, assets);
               const expired = isExpired(link, now);
               return (
-                <li key={link.id} className="sl-card" data-expired={expired || undefined}>
+                <li
+                  key={link.id}
+                  className="sl-card"
+                  data-expired={expired || undefined}
+                >
                   <button
                     type="button"
                     className="sl-cover"
                     aria-label={
-                      link.type === "album" ? `Open album ${title}` : `Open shared page for ${title}`
+                      link.type === "album"
+                        ? `Open album ${title}`
+                        : `Open shared page for ${title}`
                     }
                     onClick={() =>
                       link.type === "album" && onOpenAlbum
@@ -206,10 +232,13 @@ export function SharedLinks({
                         {link.type === "album" ? "Album" : "Individual"}
                       </span>
                     </div>
-                    <p className="sl-desc">{link.description || "No description"}</p>
+                    <p className="sl-desc">
+                      {link.description || "No description"}
+                    </p>
                     <Badges badges={linkBadges(link, now)} />
                     <p className="sl-meta">
-                      Created {relativeDuration(now - Date.parse(link.createdAt))} ago ·{" "}
+                      Created{" "}
+                      {relativeDuration(now - Date.parse(link.createdAt))} ago ·{" "}
                       {link.slug ? `?link=${link.slug}` : link.id}
                       {link.uploads.length
                         ? ` · ${link.uploads.length} ${link.uploads.length === 1 ? "upload" : "uploads"}`
@@ -236,7 +265,10 @@ export function SharedLinks({
                       onClick={() => onOpenPublic?.(link)}
                     />
                     <span className="grow" />
-                    <Button icon="mdiPencilOutline" onClick={() => setDialog({ kind: "edit", link })}>
+                    <Button
+                      icon="mdiPencilOutline"
+                      onClick={() => setDialog({ kind: "edit", link })}
+                    >
                       Edit
                     </Button>
                     <Button
@@ -293,7 +325,11 @@ export function SharedLinks({
         >
           <label>
             Collection
-            <select data-initial-focus value={pickId} onChange={(event) => setPickId(event.target.value)}>
+            <select
+              data-initial-focus
+              value={pickId}
+              onChange={(event) => setPickId(event.target.value)}
+            >
               {options.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.name}
@@ -302,7 +338,8 @@ export function SharedLinks({
             </select>
           </label>
           <p className="muted">
-            To share a few items instead, select them in the library and choose Share.
+            To share a few items instead, select them in the library and choose
+            Share.
           </p>
         </Dialog>
       )}
@@ -343,9 +380,13 @@ export function SharedLinks({
         />
       )}
       {dialog?.kind === "qr" && (
-        <Dialog title={`QR code · ${titleOf(dialog.link)}`} close={() => setDialog(null)}>
+        <Dialog
+          title={`QR code · ${titleOf(dialog.link)}`}
+          close={() => setDialog(null)}
+        >
           <p className="muted">
-            Scan to open the shared page on another device. The address is embedded in the code.
+            Scan to open the shared page on another device. The address is
+            embedded in the code.
           </p>
           <QrCode
             value={absoluteLinkUrl(dialog.link)}
@@ -361,20 +402,26 @@ export function SharedLinks({
           actions={
             <>
               <Button onClick={() => setDialog(null)}>Cancel</Button>
-              <Button primary data-initial-focus onClick={() => remove(dialog.link)}>
+              <Button
+                primary
+                data-initial-focus
+                onClick={() => remove(dialog.link)}
+              >
                 Delete link
               </Button>
             </>
           }
         >
           <p>
-            Anyone using the link for <strong>{titleOf(dialog.link)}</strong> loses access
-            immediately. Your photos and the album itself are not affected.
+            Anyone using the link for <strong>{titleOf(dialog.link)}</strong>{" "}
+            loses access immediately. Your photos and the album itself are not
+            affected.
           </p>
           {dialog.link.uploads.length > 0 && (
             <p className="muted">
               {dialog.link.uploads.length} uploaded{" "}
-              {dialog.link.uploads.length === 1 ? "item stays" : "items stay"} in your library.
+              {dialog.link.uploads.length === 1 ? "item stays" : "items stay"}{" "}
+              in your library.
             </p>
           )}
         </Dialog>
@@ -396,6 +443,7 @@ export function ShareSheet({
   onCreateLink,
   onClose,
   onAction,
+  onSendCopy,
   owner = "Taylor",
 }) {
   const [mode, setMode] = useState("people");
@@ -404,14 +452,20 @@ export function ShareSheet({
   const photos = assets.filter((asset) => asset.type !== "video").length;
   const videos = count - photos;
   const choices = people.filter(
-    (person) => person.id !== owner && person.name !== owner && person.id !== owner.toLowerCase(),
+    (person) =>
+      person.id !== owner &&
+      person.name !== owner &&
+      person.id !== owner.toLowerCase(),
   );
   const modes = ["people", "link"];
   const modeKeys = (event) => {
-    const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[
+      event.key
+    ];
     if (!delta) return;
     event.preventDefault();
-    const next = modes[(modes.indexOf(mode) + delta + modes.length) % modes.length];
+    const next =
+      modes[(modes.indexOf(mode) + delta + modes.length) % modes.length];
     setMode(next);
     event.currentTarget.querySelector(`[data-mode="${next}"]`)?.focus();
   };
@@ -421,6 +475,11 @@ export function ShareSheet({
       close={onClose}
       actions={
         <>
+          {onSendCopy && typeof navigator.share === "function" && (
+            <Button icon="mdiExportVariant" onClick={onSendCopy}>
+              Send a copy…
+            </Button>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           {mode === "people" ? (
             <Button primary onClick={() => onAction?.("save", recipients)}>
@@ -452,10 +511,16 @@ export function ShareSheet({
         <AssetCollage items={assets} className="ss-collage" />
         <span>
           {count} {count === 1 ? "item" : "items"}
-          {count > 1 && ` · ${photos} ${photos === 1 ? "photo" : "photos"}${videos ? `, ${videos} ${videos === 1 ? "video" : "videos"}` : ""}`}
+          {count > 1 &&
+            ` · ${photos} ${photos === 1 ? "photo" : "photos"}${videos ? `, ${videos} ${videos === 1 ? "video" : "videos"}` : ""}`}
         </span>
       </div>
-      <div className="ss-options" role="radiogroup" aria-label="How to share" onKeyDown={modeKeys}>
+      <div
+        className="ss-options"
+        role="radiogroup"
+        aria-label="How to share"
+        onKeyDown={modeKeys}
+      >
         <button
           type="button"
           role="radio"
@@ -467,7 +532,9 @@ export function ShareSheet({
         >
           <Icon name="mdiAccountMultipleOutline" />
           <strong>Share with people in this library</strong>
-          <small>They see it in their own Frameleaf. Nothing leaves this server.</small>
+          <small>
+            They see it in their own Frameleaf. Nothing leaves this server.
+          </small>
         </button>
         <button
           type="button"
@@ -480,11 +547,17 @@ export function ShareSheet({
         >
           <Icon name="mdiLinkVariant" />
           <strong>Create a public link</strong>
-          <small>Anyone with the address can view. Add a password or an expiry.</small>
+          <small>
+            Anyone with the address can view. Add a password or an expiry.
+          </small>
         </button>
       </div>
       {mode === "people" ? (
-        <div className="ss-people" role="group" aria-label="People to share with">
+        <div
+          className="ss-people"
+          role="group"
+          aria-label="People to share with"
+        >
           {choices.length ? (
             choices.map((person) => {
               const selected = recipients.includes(person.id);
@@ -518,8 +591,8 @@ export function ShareSheet({
         </div>
       ) : (
         <p className="ss-link-copy">
-          Choose who can download or upload, set a password, and pick when the link expires.
-          You can change these later from Shared links.
+          Choose who can download or upload, set a password, and pick when the
+          link expires. You can change these later from Shared links.
         </p>
       )}
       <div className="ss-shortcuts">
@@ -530,7 +603,10 @@ export function ShareSheet({
         >
           Copy image
         </Button>
-        <Button icon="mdiDownloadOutline" onClick={() => onAction?.("download", assets)}>
+        <Button
+          icon="mdiDownloadOutline"
+          onClick={() => onAction?.("download", assets)}
+        >
           Download
         </Button>
       </div>

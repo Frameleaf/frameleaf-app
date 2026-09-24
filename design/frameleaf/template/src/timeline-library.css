@@ -262,6 +262,145 @@
   font-size: var(--fl-font-micro);
   font-weight: 500;
 }
+/* Curated Years and Months (Apple Photos style) */
+.timeline-library .tl-groups.is-curated {
+  display: grid;
+  gap: 16px;
+}
+.timeline-library .tl-cards-months {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+.timeline-library .tl-card {
+  min-width: 0;
+  animation: tl-card-in var(--fl-duration, 380ms) var(--fl-snappy, ease-out)
+    both;
+}
+@keyframes tl-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+.timeline-library .tl-card-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--fl-radius-card, 12px);
+  corner-shape: squircle;
+  overflow: hidden;
+  background: var(--fl-panel);
+  text-align: left;
+  box-shadow: 0 0 0 1px var(--fl-material-edge, var(--fl-border));
+  transition:
+    transform var(--fl-duration, 380ms) var(--fl-spring, ease),
+    box-shadow var(--fl-motion-fast) var(--fl-ease);
+}
+.timeline-library .tl-card-open:hover {
+  box-shadow:
+    0 0 0 1px var(--fl-material-edge, var(--fl-border)),
+    var(--fl-shadow-1);
+}
+.timeline-library .tl-card-open:active {
+  transform: scale(0.985);
+}
+.timeline-library .tl-card-open:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+.timeline-library .tl-card-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+}
+.timeline-library .tl-card-year .tl-card-media {
+  aspect-ratio: 21 / 9;
+  max-height: min(440px, 55vh);
+  width: 100%;
+}
+.timeline-library .tl-card-media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform calc(var(--fl-duration, 380ms) * 2)
+    var(--fl-spring, ease);
+}
+.timeline-library .tl-card-open:hover .tl-card-media img {
+  transform: scale(1.03);
+}
+.timeline-library .tl-card-caption {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 40px 18px 14px;
+  color: #fff;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.62));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+/* Years put the title at the top, as in Photos, clear of the floating toolbar. */
+.timeline-library .tl-card-year .tl-card-caption {
+  inset: 0 0 auto;
+  padding: 18px 22px 56px;
+  background: linear-gradient(rgb(0 0 0 / 0.55), transparent);
+}
+.timeline-library .tl-card-title {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.timeline-library .tl-card-year .tl-card-title {
+  font-size: clamp(34px, 6cqi, 56px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-library .tl-card-meta {
+  font-size: var(--fl-font-small);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+.timeline-library .tl-card-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+}
+.timeline-library .tl-card-strip img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+@media (prefers-reduced-motion: reduce) {
+  .timeline-library .tl-card {
+    animation-name: tl-card-fade;
+  }
+  .timeline-library .tl-card-open,
+  .timeline-library .tl-card-media img {
+    transition: none;
+  }
+  .timeline-library .tl-card-open:active,
+  .timeline-library .tl-card-open:hover .tl-card-media img {
+    transform: none;
+  }
+}
+@keyframes tl-card-fade {
+  from {
+    opacity: 0;
+  }
+}
 .timeline-library .tl-empty {
   padding: 45px 12px;
   color: var(--fl-muted);
@@ -307,6 +446,15 @@
   }
   .timeline-library .tl-scrub-marker {
     right: 8px;
+  }
+  .timeline-library .tl-groups.is-curated {
+    gap: 12px;
+  }
+  .timeline-library .tl-card-year .tl-card-media {
+    aspect-ratio: 4 / 3;
+  }
+  .timeline-library .tl-card-title {
+    font-size: 19px;
   }
 }
 @media (hover: none) {

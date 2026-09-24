@@ -2134,6 +2134,19 @@
     width: 40px;
     height: 40px;
   }
+  /* Too short to squeeze monitor, transport and timeline into one screen:
+     let them keep their natural height and scroll Studio instead. */
+  .fls {
+    overflow-y: auto;
+  }
+  .fls-body,
+  .fls-timeline {
+    flex: none;
+  }
+  .fls-monitor {
+    flex: none;
+    aspect-ratio: 16 / 9;
+  }
   .fls-program {
     padding: 10px 12px 6px;
   }
@@ -2154,10 +2167,10 @@
     display: none;
   }
   .fls-timeline {
-    height: 236px;
+    height: max(236px, 60dvh);
   }
   .fls {
-    --fls-head: 100px;
+    --fls-head: 124px;
   }
   .fls-track-label > span {
     display: none;

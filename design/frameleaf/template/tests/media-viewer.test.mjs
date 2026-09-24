@@ -68,7 +68,11 @@ test("viewer collection honors explicit access removal and requires opt-in for a
   assert.deepEqual(viewerAssets(null), []);
   assert.deepEqual(
     viewerAssets(
-      [...assets, { id: "binned", visibility: "trash" }, { id: "wasTrashed", status: "Trashed" }],
+      [
+        ...assets,
+        { id: "binned", visibility: "trash" },
+        { id: "wasTrashed", status: "Trashed" },
+      ],
       { allowTrashed: true },
     ).map((row) => row.id),
     ["normal", "trash", "binned", "wasTrashed"],
@@ -114,10 +118,11 @@ test("media source selection never treats a photo or preview as a playable video
 });
 
 test("encoded and live photo sources fall back safely and reject non-video sources", () => {
-  assert.deepEqual(
-    videoSources({ type: "video", mediaSrc: "/trip.mp4" }),
-    { original: "/trip.mp4", encoded: "/trip.mp4", hasEncoded: false },
-  );
+  assert.deepEqual(videoSources({ type: "video", mediaSrc: "/trip.mp4" }), {
+    original: "/trip.mp4",
+    encoded: "/trip.mp4",
+    hasEncoded: false,
+  });
   assert.deepEqual(
     videoSources({
       type: "video",
@@ -126,7 +131,10 @@ test("encoded and live photo sources fall back safely and reject non-video sourc
     }),
     { original: "/trip.mov", encoded: "/trip-encoded.mp4", hasEncoded: true },
   );
-  assert.equal(videoSources({ type: "photo", mediaSrc: "/x.mp4" }).original, null);
+  assert.equal(
+    videoSources({ type: "photo", mediaSrc: "/x.mp4" }).original,
+    null,
+  );
   assert.equal(
     livePhotoSource({ isLivePhoto: true, livePhotoVideo: "/live.mp4" }),
     "/live.mp4",
@@ -233,7 +241,10 @@ test("panorama strip fills the stage height and its offset and mini-map window s
     left: 0,
     width: 1,
   });
-  assert.equal(panoramaLayout({ width: 0, height: 1 }, { width: 1, height: 1 }), null);
+  assert.equal(
+    panoramaLayout({ width: 0, height: 1 }, { width: 1, height: 1 }),
+    null,
+  );
 });
 
 test("information is based on the asset rather than invented camera or dimensions metadata", () => {
@@ -324,7 +335,10 @@ test("size, megapixel, duration and folder formatting handle edge values", () =>
   assert.equal(formatDuration(24), "0:24");
   assert.equal(formatDuration(3725), "1:02:05");
   assert.equal(formatDuration(-3), null);
-  assert.equal(folderOf("/photos/2026/Rockies/Lake.jpg"), "/photos/2026/Rockies");
+  assert.equal(
+    folderOf("/photos/2026/Rockies/Lake.jpg"),
+    "/photos/2026/Rockies",
+  );
   assert.equal(folderOf("/Lake.jpg"), "/");
   assert.equal(folderOf("Lake.jpg"), null);
 });
@@ -362,10 +376,18 @@ test("capture date splits, joins and formats as wall-clock time without timezone
   assert.equal(timezoneOffsetLabel("UTC"), "UTC+00:00");
   assert.match(timezoneOffsetLabel("Asia/Kolkata"), /^UTC\+05:30$/);
   assert.equal(timezoneOffsetLabel("Not/AZone"), null);
-  const options = timezoneOptions("Europe/Kyiv", new Date("2026-08-16T12:00:00Z"));
+  const options = timezoneOptions(
+    "Europe/Kyiv",
+    new Date("2026-08-16T12:00:00Z"),
+  );
   assert.equal(options[0].value, "Europe/Kyiv");
-  assert.ok(options.every((option) => /^UTC[+-]\d{2}:\d{2} · /.test(option.label)));
-  assert.equal(new Set(options.map((option) => option.value)).size, options.length);
+  assert.ok(
+    options.every((option) => /^UTC[+-]\d{2}:\d{2} · /.test(option.label)),
+  );
+  assert.equal(
+    new Set(options.map((option) => option.value)).size,
+    options.length,
+  );
 });
 
 test("age at capture counts completed years and stays empty before birth or without data", () => {
@@ -386,14 +408,30 @@ test("people chips merge faces with assigned people, hide hidden people until as
   const people = [
     { id: "p1", name: "Emma" },
     { id: "p2", name: "Jamie", hidden: true },
-    { id: "p3", name: "Taylor", faceBox: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+    {
+      id: "p3",
+      name: "Taylor",
+      faceBox: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+    },
   ];
   const faces = [
-    { id: "f1", personId: "p1", box: { x: 0.2, y: 0.2, width: 0.1, height: 0.1 } },
-    { id: "f2", personId: null, box: { x: 0.5, y: 0.2, width: 0.1, height: 0.1 } },
+    {
+      id: "f1",
+      personId: "p1",
+      box: { x: 0.2, y: 0.2, width: 0.1, height: 0.1 },
+    },
+    {
+      id: "f2",
+      personId: null,
+      box: { x: 0.5, y: 0.2, width: 0.1, height: 0.1 },
+    },
     { id: "f3", personId: "p2", box: { x: 0, y: 0, width: 0, height: 0.1 } },
   ];
-  const result = peopleChips({ faces, people, personIds: ["p1", "Taylor", "Ghost"] });
+  const result = peopleChips({
+    faces,
+    people,
+    personIds: ["p1", "Taylor", "Ghost"],
+  });
   assert.deepEqual(
     result.chips.map((chip) => [chip.key, chip.name, chip.faceId, !!chip.box]),
     [
@@ -415,7 +453,12 @@ test("stack members put the primary first and step without wrapping", () => {
     { id: "b", stackId: "s", takenAt: "2026-08-16T08:00:00" },
     { id: "c", stackId: "other" },
     { id: "a", stackId: "s", takenAt: "2026-08-16T07:00:00" },
-    { id: "p", stackId: "s", stackPrimary: true, takenAt: "2026-08-16T09:00:00" },
+    {
+      id: "p",
+      stackId: "s",
+      stackPrimary: true,
+      takenAt: "2026-08-16T09:00:00",
+    },
   ];
   const members = stackMembers(assets, { id: "a", stackId: "s" });
   assert.deepEqual(
@@ -436,7 +479,10 @@ test("owner and sharing lines only appear for other people's or shared items", (
     ownerLine({ ownerId: "u2" }, "taylor", [{ id: "u2", name: "Emma R." }]),
     "Owned by Emma R.",
   );
-  assert.equal(ownerLine({ ownerId: "taylor", sharedBy: "jamie" }), "Shared by Jamie");
+  assert.equal(
+    ownerLine({ ownerId: "taylor", sharedBy: "jamie" }),
+    "Shared by Jamie",
+  );
   assert.equal(
     ownerLine({ ownerId: "taylor", sharedBy: { id: "x", name: "Sam" } }),
     "Shared by Sam",
@@ -447,22 +493,28 @@ test("owner and sharing lines only appear for other people's or shared items", (
 test("enrichment cards report generated versus manual descriptions and reviewed, pending or overridden sensitivity", () => {
   assert.deepEqual(
     descriptionReview({
-      enrichment: { description: { status: "generated", model: "Local", confidence: 0.874 } },
+      enrichment: {
+        description: { status: "generated", model: "Local", confidence: 0.874 },
+      },
     }),
     { status: "Generated", generated: true, model: "Local", confidence: 87 },
   );
   assert.equal(
-    descriptionReview({ enrichment: { description: { status: "manual" } } }).status,
+    descriptionReview({ enrichment: { description: { status: "manual" } } })
+      .status,
     "Manual",
   );
   assert.equal(descriptionReview({}), null);
   assert.deepEqual(
-    sensitivityReview({ enrichment: { sensitive: { status: "reviewed", score: 0.02 } } }),
+    sensitivityReview({
+      enrichment: { sensitive: { status: "reviewed", score: 0.02 } },
+    }),
     { score: 0.02, status: "Reviewed", marked: false },
   );
   assert.equal(
-    sensitivityReview({ enrichment: { sensitive: { status: "needs-review", score: 0.61 } } })
-      .status,
+    sensitivityReview({
+      enrichment: { sensitive: { status: "needs-review", score: 0.61 } },
+    }).status,
     "Needs review",
   );
   assert.equal(
@@ -495,7 +547,10 @@ test("sample OCR regions are deterministic, one per line and inside the image", 
     assert.ok(region.y >= 0 && region.y + region.height <= 1);
   }
   assert.deepEqual(ocrRegions(""), []);
-  assert.equal(ocrRegions(Array.from({ length: 30 }, () => "x").join("\n")).length, 12);
+  assert.equal(
+    ocrRegions(Array.from({ length: 30 }, () => "x").join("\n")).length,
+    12,
+  );
 });
 
 test("ratings clamp to whole stars and album membership follows albumIds", () => {
@@ -560,10 +615,10 @@ test("viewer preferences parse defensively and never trust stored shapes", () =>
 });
 
 test("available actions accept the legacy stack alias and drop unknown ids", () => {
-  assert.deepEqual(normalizeAvailableActions(["download", "stack", "bogus", "download"]), [
-    "download",
-    "add-to-stack",
-  ]);
+  assert.deepEqual(
+    normalizeAvailableActions(["download", "stack", "bogus", "download"]),
+    ["download", "add-to-stack"],
+  );
   assert.deepEqual(normalizeAvailableActions(undefined), [...VIEWER_ACTIONS]);
 });
 
@@ -576,7 +631,10 @@ test("more-menu groups follow trash, stack, album, sensitivity and media type co
     originalPath: "/photos/a.jpg",
     stackId: "s",
   };
-  const groups = viewerActionGroups(photo, { albumId: "family", peopleCount: 2 });
+  const groups = viewerActionGroups(photo, {
+    albumId: "family",
+    peopleCount: 2,
+  });
   const ids = groups.flatMap((group) => group.items.map((item) => item.id));
   assert.ok(ids.includes("remove-from-album"));
   assert.deepEqual(
@@ -585,29 +643,70 @@ test("more-menu groups follow trash, stack, album, sensitivity and media type co
       .items.find((item) => item.id === "remove-from-album").payload,
     { albumId: "family" },
   );
-  assert.ok(ids.includes("unstack") && ids.includes("stack-keep-this") && ids.includes("stack-set-primary"));
+  assert.ok(
+    ids.includes("unstack") &&
+      ids.includes("stack-keep-this") &&
+      ids.includes("stack-set-primary"),
+  );
   assert.ok(!ids.includes("add-to-stack"));
-  assert.ok(ids.includes("set-album-cover") && ids.includes("set-person-featured"));
+  assert.ok(
+    ids.includes("set-album-cover") && ids.includes("set-person-featured"),
+  );
   assert.ok(ids.includes("copy-image") && ids.includes("refresh-faces"));
   assert.ok(!ids.includes("refresh-encoded") && !ids.includes("transcode"));
-  assert.ok(ids.includes("lock") && ids.includes("archive") && ids.includes("open-folder"));
+  assert.ok(
+    ids.includes("lock") &&
+      ids.includes("archive") &&
+      ids.includes("open-folder"),
+  );
 
-  const primary = viewerActionGroups({ ...photo, stackPrimary: true, albumIds: [] }, {});
-  const primaryIds = primary.flatMap((group) => group.items.map((item) => item.id));
-  assert.ok(!primaryIds.includes("stack-set-primary") && !primaryIds.includes("set-album-cover"));
+  const primary = viewerActionGroups(
+    { ...photo, stackPrimary: true, albumIds: [] },
+    {},
+  );
+  const primaryIds = primary.flatMap((group) =>
+    group.items.map((item) => item.id),
+  );
+  assert.ok(
+    !primaryIds.includes("stack-set-primary") &&
+      !primaryIds.includes("set-album-cover"),
+  );
 
   const video = viewerActionGroups(
     { id: "2", type: "video", visibility: "archive", isSensitive: true },
-    { available: ["unarchive", "unlock", "transcode", "refresh-encoded", "copy-image", "refresh-faces"] },
+    {
+      available: [
+        "unarchive",
+        "unlock",
+        "transcode",
+        "refresh-encoded",
+        "copy-image",
+        "refresh-faces",
+      ],
+    },
   );
   const videoIds = video.flatMap((group) => group.items.map((item) => item.id));
-  assert.deepEqual(videoIds, ["unlock", "transcode", "refresh-encoded"].sort((a, b) => videoIds.indexOf(a) - videoIds.indexOf(b)));
-  assert.ok(!videoIds.includes("unarchive"), "sensitive items cannot be archived from the viewer");
+  assert.deepEqual(
+    videoIds,
+    ["unlock", "transcode", "refresh-encoded"].sort(
+      (a, b) => videoIds.indexOf(a) - videoIds.indexOf(b),
+    ),
+  );
+  assert.ok(
+    !videoIds.includes("unarchive"),
+    "sensitive items cannot be archived from the viewer",
+  );
 
   const trash = viewerActionGroups(photo, { trash: true });
   const trashIds = trash.flatMap((group) => group.items.map((item) => item.id));
-  assert.ok(trashIds.includes("restore") && trashIds.includes("delete-permanently"));
-  assert.ok(!trashIds.includes("archive") && !trashIds.includes("add-to-stack") && !trashIds.includes("refresh-metadata"));
+  assert.ok(
+    trashIds.includes("restore") && trashIds.includes("delete-permanently"),
+  );
+  assert.ok(
+    !trashIds.includes("archive") &&
+      !trashIds.includes("add-to-stack") &&
+      !trashIds.includes("refresh-metadata"),
+  );
 
   const readOnly = viewerActionGroups(photo, { readOnly: true, trash: true });
   assert.deepEqual(
@@ -635,4 +734,33 @@ test("sharing affordance follows the same Sensitive and rule privacy classificat
     { canShare: false },
   ])
     assert.equal(viewerCanShare({ id: "one", ...privacy }), false);
+});
+
+test("slideshow transitions keep fade as the default and respect reduced motion", async () => {
+  const {
+    effectiveTransition,
+    kenBurnsMove,
+    SLIDESHOW_TRANSITIONS,
+    parseViewerPreferences,
+    VIEWER_DEFAULTS,
+  } = await import("../src/media-viewer.mjs");
+  assert.equal(VIEWER_DEFAULTS.transition, "fade");
+  assert.deepEqual(
+    SLIDESHOW_TRANSITIONS.map(([id]) => id),
+    ["none", "fade", "slide", "ken-burns", "memories"],
+  );
+  assert.equal(
+    parseViewerPreferences({ transition: "memories" }).transition,
+    "memories",
+  );
+  assert.equal(
+    parseViewerPreferences({ transition: "bogus" }).transition,
+    "fade",
+  );
+  assert.equal(effectiveTransition("unknown"), "fade");
+  assert.equal(effectiveTransition("ken-burns"), "ken-burns");
+  assert.equal(effectiveTransition("memories", true), "fade");
+  assert.equal(effectiveTransition("none", true), "none");
+  assert.deepEqual(kenBurnsMove("7"), kenBurnsMove("7"));
+  assert.ok(kenBurnsMove("x").from && kenBurnsMove("x").to);
 });

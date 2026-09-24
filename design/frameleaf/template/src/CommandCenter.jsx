@@ -720,7 +720,8 @@ export function CommandCenter({
                 <p className="cc-overline">
                   {search ? (
                     "Settings search"
-                  ) : selectedSection ? (
+                  ) : selectedSection &&
+                    selectedSection.title !== current.title ? (
                     <>
                       <button onClick={() => navigate(area)}>
                         {current.title}
@@ -2582,20 +2583,88 @@ function ChangeHistory({ changes, onNavigate }) {
   );
 }
 
-function scopeLabel(scope) {
-  return (
-    {
-      server: "Server settings · all accounts",
-      account: "Your account",
-      device: "This device",
-      resource: "Resource settings",
-      deployment: "Managed by your installation",
-      mixed: "Account and server controls",
-    }[scope] || "Settings"
-  );
-}
+// Most areas are server-wide, so only scopes that differ get a tag on the row.
+const directoryScope = {
+  account: "Just you",
+  device: "This device",
+  deployment: "Set by your installation",
+};
+// Section groups for areas that don't need bespoke logic below.
+const directoryGroups = {
+  storage: {
+    volumes: "Storage",
+    organization: "Storage",
+    migration: "Storage",
+    deduplication: "Identical files",
+    "advanced-dedup-owner": "Identical files",
+    retention: "Trash",
+    "retention-policy": "Trash",
+  },
+  backup: {
+    takeout: "Import",
+    "devices-backup": "Import",
+    "advanced-icloud": "Import",
+    "database-backup": "Protection",
+    preservation: "Protection",
+  },
+  sharing: {
+    spaces: "Sharing",
+    links: "Sharing",
+    partner: "Sharing",
+    "shared-identities": "People",
+    "advanced-sharing-boundaries": "People",
+  },
+  care: {
+    health: "Health",
+    "integrity-schedules": "Health",
+    "advanced-integrity-budget": "Health",
+    repair: "Repairs",
+    "enrichment-care": "Repairs",
+    "advanced-duplicate-matching": "Duplicates",
+  },
+  security: {
+    signin: "Sign-in",
+    "oauth-advanced": "Sign-in",
+    "advanced-native-oauth": "Sign-in",
+    privacy: "Locked content",
+    "advanced-protected-suppression": "Locked content",
+    credentials: "Devices",
+  },
+  notifications: {
+    signals: "Alerts",
+    email: "Email",
+    "email-delivery-advanced": "Email",
+    "advanced-mail-reply": "Email",
+    templates: "Email templates",
+    "email-templates": "Email templates",
+  },
+  server: {
+    identity: "This server",
+    branding: "This server",
+    "instance-options": "This server",
+    updates: "Updates & diagnostics",
+    diagnostics: "Updates & diagnostics",
+    configuration: "Updates & diagnostics",
+    maps: "Maps",
+    "advanced-metadata-maps": "Maps",
+  },
+  preferences: {
+    profile: "Account",
+    "account-security": "Account",
+    "email-preferences": "Account",
+    "supporter-preference": "Account",
+    appearance: "Library",
+    "device-playback": "Library",
+    "library-features": "Library",
+    rediscovery: "Memories",
+    suppression: "Memories",
+    downloads: "Downloads",
+    "advanced-download-packaging": "Downloads",
+  },
+};
 function sectionGroup(area, section) {
   const id = section.id;
+  if (directoryGroups[area]) return directoryGroups[area][id] || "More";
   if (area === "utilities")
     return {
       duplicates: "Organize",
@@ -2633,33 +2702,51 @@ function sectionGroup(area, section) {
           : "Search";
   return "";
 }
+// Library care is the hub for fixing things, so it also lists the repair tools.
+const CARE_TOOLS = ["duplicates", "missing-media", "corrupt-media", "live-photos"];
 function SectionDirectory({ area, sections, navigate }) {
+  // Tag only the exceptions: an area that is all "just you" needn't say so per row.
+  const scopes = sections.map((section) => section.scope);
+  const usual = scopes.sort(
+    (a, b) =>
+      scopes.filter((scope) => scope === b).length -
+      scopes.filter((scope) => scope === a).length,
+  )[0];
+  const rows = [
+    ...sections.map((section) => ({
+      section,
+      areaId: area.id,
+      group: sectionGroup(area.id, section),
+    })),
+    ...(area.id === "care"
+      ? (settingsSections.utilities || [])
+          .filter((section) => CARE_TOOLS.includes(section.id))
+          .map((section) => ({ section, areaId: "utilities", group: "Tools" }))
+      : []),
+  ];
   return (
     <div className="cc-directory">
-      {[
-        ...new Set(sections.map((section) => sectionGroup(area.id, section))),
-      ].map((group) => (
+      {[...new Set(rows.map((row) => row.group))].map((group) => (
         <section key={group}>
           {group && <h2>{group}</h2>}
           <div className="cc-directory-list">
-            {sections
-              .filter((section) => sectionGroup(area.id, section) === group)
-              .map((section) => (
+            {rows
+              .filter((row) => row.group === group)
+              .map(({ section, areaId }) => (
                 <button
-                  key={section.id}
-                  onClick={() => navigate(area.id, section.id)}
+                  key={`${areaId}-${section.id}`}
+                  onClick={() => navigate(areaId, section.id)}
                 >
-                  <Icon name={section.icon || area.icon} />
+                  {section.icon && <Icon name={section.icon} />}
                   <span>
                     <strong>{section.title}</strong>
                     <span>{section.description}</span>
-                    <small>
-                      {scopeLabel(section.scope)}
-                      {section.fields.length > 0
-                        ? ` · ${section.fields.length} controls`
-                        : ""}
-                    </small>
                   </span>
+                  {section.scope !== usual && directoryScope[section.scope] && (
+                    <small className="cc-directory-scope">
+                      {directoryScope[section.scope]}
+                    </small>
+                  )}
                   <Icon name="mdiChevronRight" />
                 </button>
               ))}
