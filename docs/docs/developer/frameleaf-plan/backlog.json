@@ -1171,9 +1171,9 @@
       "objective": "A scoped sample grid lacks the source album detail workflow. Preserve title/description/cover, collaboration, activity and source asset actions.",
       "paths": [
         "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/lib/modals/AlbumOptionsModal.svelte",
+        "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
         "web/src/lib/components/frameleaf/AlbumHeader.svelte",
-        "web/src/lib/components/asset-viewer/ActivityViewer.svelte",
+        "web/src/lib/components/frameleaf/ActivityPanel.svelte",
         "web/src/lib/services/album.service.ts"
       ],
       "phase": 4,
@@ -1205,7 +1205,7 @@
         "web/src/routes/(user)/sharing/+page.svelte",
         "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/shared-links",
-        "web/src/lib/modals/SharedLinkCreateModal.svelte",
+        "web/src/lib/components/frameleaf/SharedLinkForm.svelte",
         "server/src/services/partner.service.ts",
         "server/src/services/shared-link.service.ts",
         "prototypes/frameleaf/src/SharingAccess.jsx"

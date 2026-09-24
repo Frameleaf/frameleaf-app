@@ -90,9 +90,9 @@ const sectionDefaults = {
 const actions = {
   // albums-organization
   "add-selected-existing-assets": [
-    "partial",
+    "fixed",
     ["AL-11", "AL-17"],
-    "Album header add-photos labels and picking-mode chrome",
+    "Add photos labels and the album page in the Frameleaf shell (fixed on codex/FL-52-albums-sharing)",
   ],
   "album-display-order-newest-oldest": ["match", []],
   "album-grouping-by-owner-year-no-grouping": [
@@ -106,34 +106,34 @@ const actions = {
   "browse-albums-as-covers-list": ["match", []],
   "change-collaborator-editor-viewer-role-remove-collaborator-leave-shared-album":
     [
-      "partial",
+      "fixed",
       ["AL-3", "AL-5", "AL-15", "AL-44"],
-      "Frameleaf share dialog on the Albums page, leave confirmation, invite search, role labels",
+      "Frameleaf share dialog everywhere, leave confirmation, invite search, role labels (fixed on codex/FL-52-albums-sharing)",
     ],
   "create-album": [
-    "partial",
+    "fixed",
     ["AL-8"],
     "Stay on the page after create (fixed); AL-8",
   ],
   "create-manage-album-public-links": [
-    "partial",
+    "fixed",
     ["AL-7", "AL-24", "AL-33"],
-    "Create link menu item, Link-ready step, Frameleaf form from the viewer/album service",
+    "Create link menu item, Link ready step, Frameleaf form and share sheet from the viewer (fixed on codex/FL-52-albums-sharing)",
   ],
   "custom-smart-album-filter-preset-snapshot": [
-    "missing",
+    "partial",
     ["AL-1", "AL-6", "AL-12", "S-14"],
-    "Smart albums with per-album rules and saved presets (coordinate with FL-60)",
+    "Per-album rules shipped with FL-60 (AL-1, AL-12); saved presets (S-14) and AL-6 remain",
   ],
   "delete-album-while-retaining-assets": [
     "fixed",
     ["AL-4"],
-    "Frameleaf delete dialog on the Albums page",
+    "Frameleaf delete dialog everywhere; legacy prompt path removed",
   ],
   "edit-album-title-and-description": [
-    "partial",
+    "fixed",
     ["AL-2"],
-    "Frameleaf edit dialog with the full icon chooser; retire AlbumEditModal",
+    "Frameleaf edit dialog with the full icon chooser; AlbumEditModal retired (fixed on codex/FL-52-albums-sharing)",
   ],
   "nested-albums-expand-collapse-all-top-level-all-views": [
     "match",
@@ -167,19 +167,19 @@ const actions = {
     '"Always use the newest item" option in the cover dialog',
   ],
   "share-album-invite-people": [
-    "partial",
+    "fixed",
     ["AL-3", "AL-15"],
-    "Invite search field + listbox; Frameleaf share dialog from the Albums page",
+    "Invite search field + listbox; Frameleaf share dialog from the Albums page (fixed on codex/FL-52-albums-sharing)",
   ],
   "show-hide-asset-owner-badges": ["match", []],
   "toggle-comments-likes-show-activity": [
-    "partial",
+    "fixed",
     ["AL-14", "AL-18"],
-    "Activity control always shown; Frameleaf per-asset activity panel",
+    "Activity control always shown; Frameleaf per-asset activity panel (fixed on codex/FL-52-albums-sharing)",
     { production: [`${W}/lib/components/frameleaf/ActivityPanel.svelte`] },
   ],
   "upload-from-computer-into-album": [
-    "partial",
+    "fixed",
     ["AL-11"],
     "Add photos menu labels",
     { production: [`${W}/lib/components/frameleaf/UploadMenuButton.svelte`] },
@@ -834,9 +834,9 @@ const actions = {
   "add-to-album": ["match", []],
   "add-to-stack": ["partial", ["V-11"], 'Label "Add to stack"'],
   "album-activity-comments-likes-activity-panel": [
-    "partial",
+    "fixed",
     ["AL-18"],
-    "Frameleaf per-asset activity panel for every album",
+    "Frameleaf per-asset activity panel (fixed on codex/FL-52-albums-sharing)",
     { production: [`${W}/lib/components/frameleaf/ActivityPanel.svelte`] },
   ],
   "archive-unarchive": ["match", []],
@@ -969,7 +969,7 @@ const actions = {
   "share-with-recipients-create-or-manage-a-public-link": [
     "partial",
     ["AL-30", "AL-30b", "AL-32", "AL-33"],
-    "Selection Share link opens the form and ShareSheet offers the link only (fixed); per-item person sharing has no server contract (AL-30b, owner); the viewer's Share still opens the legacy create modal (AL-33)",
+    "Selection Share link opens the form and ShareSheet offers the link only (fixed); the viewer's Share opens ShareSheet (AL-33, fixed on codex/FL-52-albums-sharing); per-item person sharing has no server contract (AL-30b, owner)",
     {
       production: [
         `${W}/lib/components/frameleaf/ShareSheet.svelte`,
@@ -1296,7 +1296,7 @@ const routes = {
   "/albums": [
     "partial",
     ["AL-1", "AL-2", "AL-3", "AL-4", "AL-5", "AL-6", "AL-7", "AL-8", "AL-9"],
-    "Albums page dialogs and smart albums",
+    "Albums page dialogs and smart album create fixed; AL-6 (built-in smart albums) and AL-9 (editor move rights, owner decision) remain",
     [`${P}/Collections.jsx`, `${P}/AlbumCard.jsx`, `${P}/collections-data.mjs`],
     [
       `${W}/routes/(user)/albums/+page.svelte`,
@@ -1316,7 +1316,7 @@ const routes = {
       "AL-17",
       "AL-18",
     ],
-    "Album header conformance",
+    "Album header conformance; AL-13 (newest-item cover) needs a server change",
     [`${P}/CollectionHeader.jsx`, `${P}/ActivityPanel.jsx`],
     [
       `${W}/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1513,7 +1513,7 @@ const routes = {
   "/partners/[userId]/[[photos=photos]]/[[assetId=id]]": [
     "partial",
     ["AL-39", "AL-40", "AL-41"],
-    "Partner header copy; remove legacy bar",
+    "Partner header copy (the legacy bar is removed, AL-41)",
     [`${P}/PartnerLibrary.jsx`],
     [
       `${W}/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1664,7 +1664,7 @@ const routes = {
       "AL-28",
       "AL-29",
     ],
-    "Shared links list and form conformance",
+    "Shared links list (AL-19..AL-22) and form preview/slug availability (AL-25, AL-26); AL-23, AL-24, AL-27..AL-29 fixed",
     [
       `${P}/SharedLinks.jsx`,
       `${P}/SharedLinkForm.jsx`,
@@ -1678,14 +1678,14 @@ const routes = {
   "/shared-links/[id]/edit": [
     "retained-live-route",
     ["AL-23"],
-    "Legacy edit route kept until the Frameleaf form serves it",
+    "Redirect to the list's Frameleaf edit form (/shared-links?edit={id})",
     [`${P}/SharedLinkForm.jsx`],
-    [`${W}/routes/(user)/shared-links/(list)/[id]/edit/+page.svelte`],
+    [`${W}/routes/(user)/shared-links/(list)/[id]/edit/+page.ts`],
   ],
   "/sharing": [
-    "partial",
+    "fixed",
     ["AL-45", "AL-2", "AL-3", "AL-5"],
-    "Workspace menu through Frameleaf dialogs",
+    "Workspace menu through Frameleaf dialogs (fixed on codex/FL-52-albums-sharing)",
     [`${P}/Collections.jsx`, `${P}/CollectionHeader.jsx`],
     [
       `${W}/routes/(user)/sharing/+page.svelte`,
@@ -1695,7 +1695,7 @@ const routes = {
   "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]": [
     "partial",
     ["AL-42", "AL-43", "AL-44"],
-    "Space header via AlbumHeader, confirmations, role labels",
+    "Space header controls (AL-42); confirmations and role labels fixed on codex/FL-52-albums-sharing",
     [`${P}/CollectionHeader.jsx`],
     [
       `${W}/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
