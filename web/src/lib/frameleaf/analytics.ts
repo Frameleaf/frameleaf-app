@@ -158,6 +158,19 @@ export const analyticsTables = (
     ],
   };
 
+  const parts = volumeParts(report, t);
+  const volumeParts_: AnalyticsTable[] = parts
+    ? [
+        {
+          id: 'volume-parts',
+          title: t('frameleaf_analytics_volume_parts'),
+          measurementScope: AnalyticsMeasurementScope.Host,
+          columns: bytesColumns,
+          rows: parts.map((part) => [part.label, toGiB(part.bytes), part.bytes]),
+        },
+      ]
+    : [];
+
   const processing: AnalyticsTable[] = report.processing.available
     ? [
         {
@@ -282,6 +295,7 @@ export const analyticsTables = (
     cameras,
     originals,
     volume,
+    ...volumeParts_,
     ...processing,
     metadata,
     views,
@@ -291,6 +305,62 @@ export const analyticsTables = (
     inventoryTable,
     ...estimate,
   ];
+};
+
+// ── The library volume (FL-79, AnalyticsDashboard.jsx StoragePanel) ──────
+
+export type VolumeSegment = { id: string; label: string; bytes: number; free?: boolean };
+
+/**
+ * What uses the volume, from the whole-server report's `host.breakdown`: originals, previews and
+ * thumbnails, encoded video, the database and other files. A generated folder not measured yet is
+ * left out (its bytes are in "Other files"). Null when the report has no breakdown.
+ */
+export const volumeParts = (report: AnalyticsReportResponseDto, t: Translate): VolumeSegment[] | null => {
+  const breakdown = report.host.breakdown;
+  if (!breakdown) {
+    return null;
+  }
+  const parts: Array<[string, string, number | null]> = [
+    ['originals', 'frameleaf_analytics_part_originals', breakdown.originalsBytes],
+    ['previews', 'frameleaf_analytics_part_previews', breakdown.previewsBytes],
+    ['encoded-video', 'frameleaf_analytics_part_encoded_video', breakdown.encodedVideoBytes],
+    ['database', 'frameleaf_analytics_part_database', breakdown.databaseBytes],
+    ['other', 'frameleaf_analytics_part_other', breakdown.otherBytes],
+  ];
+  return parts.flatMap(([id, key, bytes]) => (bytes === null ? [] : [{ id, label: t(key), bytes }]));
+};
+
+/**
+ * The storage donut's segments, which always add up to the volume's capacity, so the centre
+ * percentage and every legend percentage share one denominator. The used part is split by the
+ * breakdown when it reconciles, else shown whole. Free space is what the server read; the rest of
+ * the capacity is reserved by the file system. With no free reading, the unused part is shown as
+ * "Not in use". Null when the used or total size is unknown.
+ */
+export const volumeSegments = (report: AnalyticsReportResponseDto, t: Translate) => {
+  const { volumeUsedBytes: used, capacityBytes: capacity, freeBytes: free, breakdown } = report.host;
+  if (used === null || capacity === null || capacity <= 0) {
+    return null;
+  }
+  const parts = breakdown && !breakdown.exceedsUsed ? volumeParts(report, t) : null;
+  const segments: VolumeSegment[] = parts ?? [{ id: 'used', label: t('frameleaf_analytics_volume_used'), bytes: used }];
+  const unused = Math.max(0, capacity - used);
+  if (free === null) {
+    segments.push({ id: 'not-in-use', label: t('frameleaf_analytics_not_in_use'), bytes: unused, free: true });
+  } else {
+    const shownFree = Math.min(free, unused);
+    segments.push({ id: 'free', label: t('frameleaf_analytics_volume_free'), bytes: shownFree, free: true });
+    if (unused > shownFree) {
+      segments.push({
+        id: 'reserved',
+        label: t('frameleaf_analytics_reserved'),
+        bytes: unused - shownFree,
+        free: true,
+      });
+    }
+  }
+  return { segments, capacity, used, usedPercent: (Math.min(used, capacity) / capacity) * 100 };
 };
 
 // ── Formatting ────────────────────────────────────────────────────────────
@@ -660,12 +730,14 @@ export const analyticsCsv = (report: AnalyticsReportResponseDto, metric: GrowthM
     report.scopeKind === AnalyticsScopeKind.Host ? t('frameleaf_analytics_scope_all') : report.scopeLabel;
   const records: Cell[][] = [];
   for (const table of analyticsTables(report, metric, t)) {
-    const labelColumn = table.columns.findIndex((column) => column.unit === 'text' || column.unit === 'date');
-    for (const row of table.rows) {
-      const rowLabel = labelColumn === -1 ? '' : row[labelColumn];
-      const rowIndex = table.rows.indexOf(row);
+    // Every text and date column names the row, so a row keyed by two columns (the punchcard's
+    // weekday and hour) keeps both: "Monday · 09:00".
+    const isLabel = (column: AnalyticsColumn) => column.unit === 'text' || column.unit === 'date';
+    const labelColumns = table.columns.flatMap((column, index) => (isLabel(column) ? [index] : []));
+    for (const [rowIndex, row] of table.rows.entries()) {
+      const rowLabel = labelColumns.map((index) => row[index] ?? '').join(' · ');
       for (const [index, column] of table.columns.entries()) {
-        if (index === labelColumn || column.unit === 'text' || column.unit === 'date') {
+        if (isLabel(column)) {
           continue;
         }
         const unit = column.unit === 'row' ? (table.rowUnits?.[rowIndex] ?? 'items') : column.unit;

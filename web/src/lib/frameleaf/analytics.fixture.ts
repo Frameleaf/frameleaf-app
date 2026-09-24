@@ -76,6 +76,7 @@ export const analyticsInsightsFixture = (overrides: Partial<AnalyticsInsightsDto
   ],
   livePhotos: 12,
   hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 },
+  coverage: { facesChecked: 90, searchIndexed: 95 },
   peopleAndPlaces: {
     faces: 70,
     itemsWithFaces: 40,

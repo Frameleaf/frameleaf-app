@@ -31,13 +31,17 @@
     placeRows,
     punchcardPeak,
     videoResolutionRows,
+    volumeSegments,
     WEEKDAYS,
+    breakdownTotal,
     yearRows,
     type AnalyticsTable,
     type CalendarKind,
     type Translate,
   } from '$lib/frameleaf/analytics';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
@@ -71,6 +75,8 @@
   let { report, insights, tables }: Props = $props();
 
   const tr: Translate = (key, values) => $t(key as Translations, { values });
+  // Recognition settings are the server's; an account without administration goes to its People.
+  const isAdmin = $derived(authManager.user.isAdmin);
   const f = $derived(analyticsFormats($locale, tr));
   const table = (id: string) => tables.find((item) => item.id === id);
 
@@ -130,18 +136,38 @@
   const personThumbnail = (id: string) => getPeopleThumbnailUrl({ id } as PersonResponseDto);
 
   // ── Coverage ──
+  const visibleItems = $derived(breakdownTotal(report));
   const coverage = $derived(
     (
       [
         [AnalyticsMetadataField.CaptureDate, 'frameleaf_analytics_coverage_dated'],
         [AnalyticsMetadataField.Location, 'frameleaf_analytics_coverage_located'],
         [AnalyticsMetadataField.AiDescription, 'frameleaf_analytics_coverage_described'],
-        [AnalyticsMetadataField.Checksum, 'frameleaf_analytics_coverage_checksummed'],
       ] as const
-    ).flatMap(([field, key]) => {
-      const row = report.metadata.find((item) => item.field === field);
-      return row ? [{ field, label: tr(key), percent: f.percent(row.present, row.total) }] : [];
-    }),
+    )
+      .flatMap(([field, key]) => {
+        const row = report.metadata.find((item) => item.field === field);
+        return row ? [{ field: field as string, label: tr(key), percent: f.percent(row.present, row.total) }] : [];
+      })
+      .concat(
+        // Faces checked and search indexed are counted over the items this session may see
+        // (the template's coverage rings, AnalyticsDashboard.jsx:538-560).
+        [
+          ['faces', 'frameleaf_analytics_coverage_faces', insights.coverage?.facesChecked],
+          ['search', 'frameleaf_analytics_coverage_search', insights.coverage?.searchIndexed],
+        ].flatMap(([field, key, count]) =>
+          typeof count === 'number'
+            ? [{ field: field as string, label: tr(key as string), percent: f.percent(count, visibleItems) }]
+            : [],
+        ),
+        report.metadata
+          .filter((row) => row.field === AnalyticsMetadataField.Checksum)
+          .map((row) => ({
+            field: row.field as string,
+            label: tr('frameleaf_analytics_coverage_checksummed'),
+            percent: f.percent(row.present, row.total),
+          })),
+      ),
   );
 
   // ── Records ──
@@ -154,18 +180,25 @@
 
   // ── Storage ──
   const host = $derived(report.host);
+  const volume = $derived(volumeSegments(report, tr));
+  const PART_COLORS: Record<string, string> = {
+    originals: 'var(--an-1)',
+    used: 'var(--an-1)',
+    previews: 'var(--an-2)',
+    'encoded-video': 'var(--an-3)',
+    database: 'var(--an-5)',
+    other: 'var(--an-4)',
+    free: 'var(--an-free)',
+    'not-in-use': 'var(--an-free)',
+    reserved: 'var(--an-6)',
+  };
   const storageSegments = $derived(
-    host.volumeUsedBytes === null || host.freeBytes === null
-      ? []
-      : [
-          {
-            id: 'used',
-            label: tr('frameleaf_analytics_volume_used'),
-            value: host.volumeUsedBytes,
-            color: 'var(--an-1)',
-          },
-          { id: 'free', label: tr('frameleaf_analytics_volume_free'), value: host.freeBytes, color: 'var(--an-free)' },
-        ],
+    (volume?.segments ?? []).map((segment) => ({
+      id: segment.id,
+      label: segment.label,
+      value: segment.bytes,
+      color: PART_COLORS[segment.id],
+    })),
   );
 </script>
 
@@ -254,23 +287,37 @@
     caption={$t('frameleaf_analytics_storage_caption')}
     action={{ href: commandCenterUrl('storage'), label: $t('frameleaf_analytics_storage_settings') }}
   >
-    {#if storageSegments.length === 0}
+    {#if !volume}
       <p class="empty" role="status">{$t('frameleaf_analytics_volume_unreadable')}</p>
     {:else}
+      <!-- Every segment is a share of the capacity, like the centre figure. -->
       <AnalyticsDonut segments={storageSegments} label={$t('frameleaf_analytics_volume')} format={f.size}>
         {#snippet center()}
-          <strong>{Math.round(f.percent(host.volumeUsedBytes!, host.capacityBytes ?? 0))}%</strong>
+          <strong>{Math.round(volume.usedPercent)}%</strong>
           <small>{$t('frameleaf_analytics_used')}</small>
         {/snippet}
       </AnalyticsDonut>
     {/if}
     <p class="note">
-      {$t('frameleaf_analytics_disk_note', {
-        values: { scope: report.scopeLabel || $t('frameleaf_analytics_scope_all') },
-      })}
+      {#if host.breakdown?.exceedsUsed}
+        {$t('frameleaf_analytics_parts_exceed')}
+      {:else if host.breakdown}
+        {$t('frameleaf_analytics_parts_note')}
+        {#if host.breakdown.previewsBytes === null || host.breakdown.encodedVideoBytes === null}
+          {$t('frameleaf_analytics_parts_not_measured')}
+        {/if}
+      {:else}
+        {$t('frameleaf_analytics_disk_note', {
+          values: { scope: report.scopeLabel || $t('frameleaf_analytics_scope_all') },
+        })}
+      {/if}
+      {#if host.freeBytes === null && volume}
+        {$t('frameleaf_analytics_not_in_use_note')}
+      {/if}
     </p>
     {@render dataTable('originals')}
     {@render dataTable('volume')}
+    {@render dataTable('volume-parts')}
   </AnalyticsPanel>
 
   <!-- Every day (AnalyticsDashboard.jsx:352-420) -->
@@ -430,7 +477,9 @@
       kicker={$t('frameleaf_analytics_people_kicker')}
       title={$t('frameleaf_analytics_people_title', { values: { count: people.faces } })}
       caption={$t('frameleaf_analytics_people_caption', { values: { count: people.namedPeople } })}
-      action={{ href: commandCenterUrl('intelligence'), label: $t('frameleaf_analytics_recognition') }}
+      action={isAdmin
+        ? { href: commandCenterUrl('intelligence'), label: $t('frameleaf_analytics_recognition') }
+        : { href: Route.people(), label: $t('people') }}
     >
       {#if personRows.length === 0}
         <p class="empty">{$t('frameleaf_analytics_people_none')}</p>

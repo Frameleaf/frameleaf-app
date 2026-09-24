@@ -1,4 +1,4 @@
-import { AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
@@ -15,6 +15,8 @@ import en from '../../../../../../i18n/en.json';
 const goto = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/admin/system-settings?area=analytics') } }));
+const auth = vi.hoisted(() => ({ user: { id: 'me', isAdmin: true } }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 const downloadBlob = vi.hoisted(() => vi.fn());
 vi.mock('$lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/utils')>()),
@@ -38,6 +40,7 @@ describe('LibraryAnalytics', () => {
   beforeEach(() => {
     goto.mockReset();
     downloadBlob.mockReset();
+    auth.user = { id: 'me', isAdmin: true };
   });
 
   it('shows measured values, the whole volume beside the selection, and no sample-data badge', () => {
@@ -184,7 +187,7 @@ describe('LibraryAnalytics', () => {
         expect(tableTotal(container, id)).toBe(total);
       }
       expect(tableTotal(container, 'photo-formats') + tableTotal(container, 'video-resolutions')).toBe(total);
-      expect(tableTotal(container, 'cameras')).toBe(report.summary.items);
+      expect(tableTotal(container, 'cameras')).toBe(total);
       expect(screen.queryByRole('note')).not.toBeInTheDocument();
     });
 
@@ -197,8 +200,15 @@ describe('LibraryAnalytics', () => {
           { year: 2026, count: 50 },
         ],
       });
-      const report = analyticsReportFixture({ insights });
+      const report = analyticsReportFixture({
+        insights,
+        cameras: [
+          { name: 'Apple iPhone 16 Pro', kind: AnalyticsCameraKind.Model, count: 76 },
+          { name: null, kind: AnalyticsCameraKind.Unknown, count: 20 },
+        ],
+      });
       const { container } = render(LibraryAnalytics, { scopes, report });
+      expect(tableTotal(container, 'cameras')).toBe(report.summary.items - insights.hiddenItems);
       expect(screen.getByRole('note')).toHaveTextContent(
         '4 hidden items are left out of the breakdowns below, so they add up to 96.',
       );
@@ -239,6 +249,17 @@ describe('LibraryAnalytics', () => {
       const coverage = within(panel(container, 'coverage'));
       expect(coverage.getByRole('img', { name: 'Located: 60%' })).toBeInTheDocument();
       expect(coverage.getByRole('img', { name: 'Described by AI: 40%' })).toBeInTheDocument();
+      // faces checked and search indexed are shares of the items the session may see
+      expect(coverage.getByRole('img', { name: 'Faces checked: 90%' })).toBeInTheDocument();
+      expect(coverage.getByRole('img', { name: 'Search indexed: 95%' })).toBeInTheDocument();
+      expect(coverage.getAllByRole('img').map((ring) => ring.getAttribute('aria-label')!.split(':', 1)[0])).toEqual([
+        'Dated',
+        'Located',
+        'Described by AI',
+        'Faces checked',
+        'Search indexed',
+        'Checksummed',
+      ]);
     });
 
     it('shows the daily heatmap with an exact-count table for the chosen date', async () => {
@@ -246,7 +267,10 @@ describe('LibraryAnalytics', () => {
       const { container } = render(LibraryAnalytics, { scopes, report });
       const days = panel(container, 'days');
       expect(within(days).getByRole('heading', { name: '7 captures over 7 days' })).toBeInTheDocument();
-      expect(within(days).getByText('View daily counts')).toBeInTheDocument();
+      // the accessible name starts with the visible text (WCAG 2.5.3)
+      expect(within(days).getByText('View daily counts').closest('summary')!.getAttribute('aria-label')).toMatch(
+        /^View daily counts/,
+      );
       expect(tableTotal(container, 'calendar-captured')).toBe(7);
       await fireEvent.change(within(days).getByLabelText('Show'), { target: { value: 'uploaded' } });
       expect(within(days).getByRole('heading', { name: '4 uploads over 7 days' })).toBeInTheDocument();
@@ -288,6 +312,63 @@ describe('LibraryAnalytics', () => {
       for (const section of ['Captures per year', 'Favourite lenses', 'Photo formats', 'Where they were taken']) {
         expect(csv).toContain(`"${section}"`);
       }
+    });
+
+    it('links the People panel to recognition settings for an administrator, and to People otherwise', () => {
+      const { container, unmount } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      expect(within(panel(container, 'people')).getByRole('link', { name: /Recognition/ })).toHaveAttribute(
+        'href',
+        '/user-settings?area=intelligence',
+      );
+      unmount();
+      auth.user = { id: 'me', isAdmin: false };
+      const { container: own } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      expect(within(panel(own, 'people')).queryByRole('link', { name: /Recognition/ })).toBeNull();
+      expect(within(panel(own, 'people')).getByRole('link', { name: /People/ })).toHaveAttribute('href', '/people');
+    });
+
+    it('splits the whole volume by what the server measured, as shares of the capacity', () => {
+      const base = analyticsReportFixture();
+      const { container } = render(LibraryAnalytics, {
+        scopes,
+        report: analyticsReportFixture({
+          host: {
+            ...base.host,
+            breakdown: {
+              originalsBytes: 300_000,
+              previewsBytes: 100_000,
+              encodedVideoBytes: 50_000,
+              generatedObservedAt: '2026-09-19T00:05:00.000Z',
+              databaseBytes: 30_000,
+              otherBytes: 120_000,
+              exceedsUsed: false,
+            },
+          },
+        }),
+      });
+      const storage = within(panel(container, 'storage'));
+      const legend = within(panel(container, 'storage').querySelector<HTMLElement>(':scope .an-legend')!);
+      for (const part of ['Originals', 'Previews & thumbnails', 'Encoded video', 'Database', 'Other files', 'Free']) {
+        expect(legend.getByText(part)).toBeInTheDocument();
+      }
+      expect(storage.getByText('60%')).toBeInTheDocument();
+      // legend shares and the centre use one denominator: 300,000 of 1,000,000 is 30.0%
+      expect(storage.getByText('30.0%')).toBeInTheDocument();
+      expect(tableTotal(container, 'volume-parts')).toBe(600_000);
+    });
+
+    it('still draws the volume when free space could not be read', () => {
+      const base = analyticsReportFixture();
+      const { container } = render(LibraryAnalytics, {
+        scopes,
+        report: analyticsReportFixture({ host: { ...base.host, freeBytes: null } }),
+      });
+      const storage = within(panel(container, 'storage'));
+      expect(storage.queryByText(/could not be read\. /)).toBeNull();
+      expect(storage.getByText('Not in use')).toBeInTheDocument();
+      expect(storage.getByText('60%')).toBeInTheDocument();
+      expect(storage.getByText('60.0%')).toBeInTheDocument();
+      expect(storage.getByText('40.0%')).toBeInTheDocument();
     });
   });
 });
