@@ -884,7 +884,11 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike ('%' || f_unaccent(${filter.like}) || '%')`);
   }
   if (filter.notLike !== undefined) {
-    predicates.push(sql<SqlBool>`f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%')`);
+    // FL-49: "does not contain" keeps items with no value at all (a photo without a lens does not contain
+    // "24-70"), as the search palette's -camera: and -lens: do in the design reference (search.mjs)
+    predicates.push(
+      sql<SqlBool>`(${ref} is null or f_unaccent(${ref}) not ilike ('%' || f_unaccent(${filter.notLike}) || '%'))`,
+    );
   }
   if (filter.startsWith !== undefined) {
     predicates.push(sql<SqlBool>`f_unaccent(${ref}) ilike (f_unaccent(${filter.startsWith}) || '%')`);
