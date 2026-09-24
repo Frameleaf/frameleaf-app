@@ -1,5 +1,4 @@
 import {
-  mdiAccountMultipleOutline,
   mdiAccountOutline,
   mdiArchiveArrowDownOutline,
   mdiClockOutline,
@@ -152,15 +151,18 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
 /**
  * Frameleaf rail destinations (FL-30).
  *
- * The order and grouping come from the September 22, 2026 revision of the interaction
- * requirements and from `design/frameleaf/template/src/LibraryRail.jsx`:
+ * The order and grouping come from the September 24, 2026 polish pass of the interaction
+ * requirements ("Navigation rail") and from `design/frameleaf/template/src/LibraryRail.jsx`:
  *
  *   Library, Favorites, Recently added, Best Photos, Archive, Locked
- *   Albums: All albums, each collection with its albums, Shared links
- *   Shared spaces
  *   Explore: Explore, People, Pets, Memories, Places, Map, Tags, Folders, Documents
+ *   Albums (+ New album): All albums, each collection with its albums, Shared links
+ *   Shared spaces (+ New shared space)
  *   Tools: Workflows, Trash
  *   Library Care, Settings, Support
+ *
+ * Each labelled section folds away from its heading, remembered per device
+ * (`RAIL_CLOSED_SECTIONS_KEY`); the icon-only rail always shows everything.
  *
  * Studio and Activity are primary destinations in the top bar (see above), not rail entries, so
  * the rail's Tools section holds only Workflows and Trash, as in the prototype.
@@ -172,8 +174,9 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
  * it lists the photos whose recognized text is visible, and says so when text
  * recognition is switched off rather than disappearing.
  *
- * Duplicate review, large files and Live Photo pairing deliberately have no rail entry.
- * They stay under Settings -> Utilities, reached through the single Library Care entry.
+ * Duplicate review, Missing media, Damaged media and Live Photo pairing deliberately have no
+ * rail entry. Library Care opens the Library care settings area, the hub that lists them
+ * beside health, repairs and duplicates (September 24, FL-71/FL-81).
  */
 
 export type RailDestinationId =
@@ -185,7 +188,6 @@ export type RailDestinationId =
   | 'locked'
   | 'allAlbums'
   | 'sharedLinks'
-  | 'sharing'
   | 'explore'
   | 'people'
   | 'pets'
@@ -274,25 +276,6 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       ],
     },
     {
-      id: 'albums',
-      labelKey: 'albums',
-      destinations: [
-        destination('allAlbums', 'all_albums', mdiImageAlbum, Route.albums(), { exact: true }),
-        ...keep(
-          capabilities.sharedLinks,
-          destination('sharedLinks', 'shared_links', mdiLinkVariant, Route.sharedLinks()),
-        ),
-      ],
-    },
-    {
-      id: 'spaces',
-      labelKey: 'frameleaf_shared_spaces',
-      // The workspace at Route.sharing() (FL-55) lists every shared space and the
-      // account's partners; each space also gets its own entry below, rendered from
-      // `tree.spaces` the same way collections and albums are.
-      destinations: [destination('sharing', 'frameleaf_spaces_all', mdiAccountMultipleOutline, Route.sharing())],
-    },
-    {
       id: 'explore',
       labelKey: 'explore',
       destinations: [
@@ -308,6 +291,25 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       ],
     },
     {
+      id: 'albums',
+      labelKey: 'albums',
+      destinations: [
+        destination('allAlbums', 'all_albums', mdiImageAlbum, Route.albums(), { exact: true }),
+        ...keep(
+          capabilities.sharedLinks,
+          destination('sharedLinks', 'shared_links', mdiLinkVariant, Route.sharedLinks()),
+        ),
+      ],
+    },
+    {
+      id: 'spaces',
+      labelKey: 'frameleaf_shared_spaces',
+      // A plain heading with one entry per space and per partner library (LibraryRail.jsx); the
+      // rail renders them from `tree.spaces` and the account's partners. There is no "All shared
+      // spaces" entry: the Albums page lists every space.
+      destinations: [],
+    },
+    {
       id: 'tools',
       labelKey: 'frameleaf_tools',
       destinations: [
@@ -318,9 +320,9 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
     {
       id: 'footer',
       destinations: [
-        // One entry into the utilities hub. The individual repair workflows stay under
-        // Settings -> Utilities, so the rail never repeats them.
-        destination('libraryCare', 'frameleaf_library_care', mdiShieldCheckOutline, Route.utilities()),
+        // One entry into the Library care hub (the settings area that also lists the repair
+        // tools), so the rail never repeats them.
+        destination('libraryCare', 'frameleaf_library_care', mdiShieldCheckOutline, Route.libraryCare()),
         destination('settings', 'settings', mdiCogOutline, Route.userSettings()),
         destination('support', 'frameleaf_support_product', mdiHandHeartOutline, Route.buy()),
       ],
@@ -338,8 +340,11 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
   const url = new URL(current, 'https://frameleaf.local');
   const target = new URL(destination.href, url);
   if (url.pathname === '/user-settings') {
-    const utilities = url.searchParams.get('area') === 'utilities';
-    const care = url.searchParams.get('screen') === 'care';
+    const area = url.searchParams.get('area');
+    const utilities = area === 'utilities';
+    // The Library care hub (the `care` area) and its tools under Utilities belong to the rail's
+    // Library Care entry.
+    const care = area === 'care';
     if (destination.id === 'settings') {
       return !utilities && !care;
     }
@@ -354,4 +359,77 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
     return true;
   }
   return destination.exact ? false : url.pathname.startsWith(`${target.pathname}/`);
+};
+
+/* -------------------------------------------------------------------------- */
+/* Folding rail sections (September 24 polish pass)                            */
+/* -------------------------------------------------------------------------- */
+
+/** The sections whose heading folds them away (`heading()` in LibraryRail.jsx). */
+export const FOLDABLE_RAIL_SECTIONS: readonly RailSectionId[] = Object.freeze(['explore', 'albums', 'spaces', 'tools']);
+
+/** The prototype's per-device key (`CLOSED_KEY` in LibraryRail.jsx). */
+export const RAIL_CLOSED_SECTIONS_KEY = 'frameleaf.rail.closedSections';
+
+const isFoldable = (value: unknown): value is RailSectionId =>
+  typeof value === 'string' && FOLDABLE_RAIL_SECTIONS.includes(value as RailSectionId);
+
+/**
+ * The sections folded on this device. Anything unreadable (no storage, a private window, a value
+ * another version wrote) reads as "everything open", because this is a convenience only.
+ */
+export const readClosedRailSections = (storage: Pick<Storage, 'getItem'> | undefined): RailSectionId[] => {
+  try {
+    const value: unknown = JSON.parse(storage?.getItem(RAIL_CLOSED_SECTIONS_KEY) ?? '[]');
+    return Array.isArray(value) ? [...new Set(value.filter((item) => isFoldable(item)))] : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Folds or unfolds one section and remembers the result on this device. */
+export const toggleRailSection = (
+  closed: readonly RailSectionId[],
+  id: RailSectionId,
+  storage?: Pick<Storage, 'setItem'>,
+): RailSectionId[] => {
+  const next = closed.includes(id) ? closed.filter((item) => item !== id) : [...closed, id];
+  try {
+    storage?.setItem(RAIL_CLOSED_SECTIONS_KEY, JSON.stringify(next));
+  } catch {
+    // Per-device convenience only; the rail still folds for this visit.
+  }
+  return next;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Phone tab bar (September 24, second pass #7)                                */
+/* -------------------------------------------------------------------------- */
+
+export type TabBarId = 'library' | 'memories' | 'albums' | 'search';
+
+/** Studio and the settings screens have no tab bar (`!["studio", "admin", "review"]` in App.jsx). */
+export const showsTabBar = (pathname: string): boolean =>
+  !isWithin(pathname, pathOf(Route.studio())) && !isSettingsRoute(pathname);
+
+/**
+ * The tab that is current, as App.jsx's tab bar decides it: Memories on its screen, Albums on the
+ * collections index (every album and every shared space), Search on its page, and Library on the
+ * prototype's "library" screen — the library itself and every named collection, album or space
+ * opened from it, but not People, Explore or the other screens the ☰ drawer reaches.
+ */
+export const currentTab = (pathname: string): TabBarId | null => {
+  if (isWithin(pathname, pathOf(Route.memories()))) {
+    return 'memories';
+  }
+  if (LIBRARY_INDEX_ROOTS.has(pathname)) {
+    return 'albums';
+  }
+  if (isWithin(pathname, pathOf(Route.search()))) {
+    return 'search';
+  }
+  if (isWithin(pathname, pathOf(Route.explore())) || isWithin(pathname, PEOPLE_ROOT)) {
+    return null;
+  }
+  return currentPrimaryDestination(pathname) === 'library' ? 'library' : null;
 };

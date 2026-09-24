@@ -498,6 +498,40 @@ export function workflowProblems(
   return problems;
 }
 
+export type WorkflowPreviewStep = {
+  index: number;
+  method: string;
+  /** The installed method's title, when the step names one. */
+  title?: string;
+  result: 'validated' | 'disabled';
+};
+
+/**
+ * "Check and preview" (FL-82): a dry run built on the client from the plugin method schemas, as the
+ * prototype's `previewWorkflow` (utilities-data.mjs) does. It only succeeds for a definition with no
+ * problems and says, step by step, what a run would do. Nothing is executed and no webhook is sent;
+ * running still needs the server's workflow service (owner decision FL-146: client-side dry run).
+ */
+export function previewWorkflow(
+  draft: Pick<WorkflowDraft, 'trigger' | 'steps'>,
+  methods: PluginMethodResponseDto[],
+  triggers: WorkflowTriggerResponseDto[],
+): { problems: WorkflowProblem[]; steps: WorkflowPreviewStep[] } {
+  const problems = workflowProblems(draft, methods, triggers);
+  if (problems.length > 0) {
+    return { problems, steps: [] };
+  }
+  return {
+    problems,
+    steps: draft.steps.map((step, index) => ({
+      index,
+      method: step.method,
+      title: findMethod(methods, step.method)?.title,
+      result: step.enabled ? 'validated' : 'disabled',
+    })),
+  };
+}
+
 const hasPath = (value: unknown, path: string[]) => {
   let cursor = value;
   for (const key of path) {

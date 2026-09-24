@@ -118,9 +118,12 @@
     --navbar-height: calc(4.5rem + 4px);
     --navbar-height-md: calc(4.5rem + 4px - 14px);
 
-    /* The Frameleaf top bar (FL-30): the prototype's 56px bar, and its two-row phone grid. */
-    --fl-topbar-height: 3.5rem;
-    --fl-topbar-height-phone: 6rem;
+    /* The Frameleaf top bar (FL-30): the prototype's 56px bar, and its two-row phone grid. Both
+       include the top safe-area inset (apple-style.css "#9 edge-to-edge", viewport-fit=cover). */
+    --fl-topbar-height: calc(3.5rem + env(safe-area-inset-top, 0px));
+    --fl-topbar-height-phone: calc(6rem + env(safe-area-inset-top, 0px));
+    /* Room the phone tab bar needs under scrolling content; TabBar.svelte sets it at phone width. */
+    --fl-tabbar-space: 0px;
   }
 
   :root.dark {

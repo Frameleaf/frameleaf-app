@@ -282,6 +282,77 @@ test.describe('Timeline', () => {
     });
   });
 
+  test.describe('September 24 chrome', () => {
+    for (const layout of ['Timeline', 'Browse', 'Work'] as const) {
+      test(`${layout}: rows start right below the sticky header block, not a header height lower`, async ({ page }) => {
+        await pageUtils.openPhotosPage(page);
+        await timelineUtils.setLayout(page, layout);
+        const top = page.locator('.fl-timeline-top');
+        const month = page.locator('.fl-month').first();
+        await expect(month).toBeVisible();
+        // Months are placed by their transform from the body's top; an in-flow sticky header
+        // block must not push them down by its own height.
+        await expect
+          .poll(async () => {
+            const [topBox, monthBox] = await Promise.all([top.boundingBox(), month.boundingBox()]);
+            return Math.round((monthBox?.y ?? Infinity) - ((topBox?.y ?? 0) + (topBox?.height ?? 0)));
+          })
+          .toBeLessThanOrEqual(24);
+        if (layout === 'Timeline') {
+          const band = page.getByTestId('frameleaf-group').first();
+          const [bandBox, monthBox] = await Promise.all([band.boundingBox(), month.boundingBox()]);
+          expect(Math.abs(bandBox!.y - monthBox!.y)).toBeLessThanOrEqual(1);
+        }
+      });
+    }
+
+    test('the frosted results toolbar stays at the top while the photos scroll', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      const scroller = page.locator('.fl-timeline-scroll');
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      const before = await toolbar.boundingBox();
+      await scroller.evaluate((element) => element.scrollBy(0, 3000));
+      await expect(toolbar).toBeInViewport();
+      const [after, scrollerBox] = await Promise.all([toolbar.boundingBox(), scroller.boundingBox()]);
+      expect(after!.y).toBeLessThanOrEqual(before!.y);
+      expect(after!.y).toBeGreaterThanOrEqual(scrollerBox!.y - 1);
+      // The group headers stick below it, not under it.
+      const offset = await page
+        .getByTestId('frameleaf-library')
+        .evaluate((element) =>
+          Number(getComputedStyle(element).getPropertyValue('--fl-sticky-offset').replace('px', '')),
+        );
+      expect(offset).toBeGreaterThan(0);
+    });
+
+    test('on a phone the drawer ends above the tab bar and its footer stays reachable', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await pageUtils.openPhotosPage(page);
+      const tabBar = page.getByRole('navigation', { name: 'Sections' });
+      await expect(tabBar).toBeVisible();
+      await page.getByRole('button', { name: 'Main menu' }).click();
+      // The tab bar stays; the drawer stops above it (template `.sidebar.mobile-open`).
+      await expect(tabBar).toBeVisible();
+      const [drawer, bar] = await Promise.all([page.getByTestId('sidebar-parent').boundingBox(), tabBar.boundingBox()]);
+      expect(drawer!.y + drawer!.height).toBeLessThanOrEqual(bar!.y);
+      const care = railLink(page, 'Library Care');
+      await care.scrollIntoViewIfNeeded();
+      await care.click();
+      await expect(page).toHaveURL(/area=care/);
+    });
+
+    test('Timeline: only the results toolbar stays; the grouping row scrolls away', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Timeline');
+      const grouping = page.getByRole('group', { name: 'Timeline grouping' });
+      await expect(grouping).toBeVisible();
+      await page.locator('.fl-timeline-scroll').evaluate((element) => element.scrollBy(0, 2000));
+      await expect(page.getByTestId('frameleaf-results-toolbar')).toBeInViewport();
+      // timeline-library.css: `.tl-toolbar` is not sticky (browsers with scroll-driven animation).
+      await expect(grouping).toBeHidden();
+    });
+  });
+
   test.describe('keyboard', () => {
     /**
      * Arrow keys move focus between tiles (prototype `App.jsx` focus-previous / focus-next) and the

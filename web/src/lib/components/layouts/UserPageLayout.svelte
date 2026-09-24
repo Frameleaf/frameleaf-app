@@ -147,7 +147,12 @@
   {/if}
 
   <main class="relative">
-    <div class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2" use:useActions={use}>
+    <!-- On phones the frosted tab bar floats over the foot of the page (TabBar.svelte). -->
+    <div
+      class="{scrollbarClass} absolute {hasTitleClass} w-full overflow-y-auto p-2"
+      style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
+      use:useActions={use}
+    >
       {@render children?.()}
     </div>
 

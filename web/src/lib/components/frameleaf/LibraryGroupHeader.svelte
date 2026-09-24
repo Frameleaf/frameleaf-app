@@ -64,7 +64,8 @@
 <style>
   .fl-group-header {
     position: sticky;
-    top: 0;
+    /* Below the frosted results toolbar, whatever its height (LibraryView publishes it). */
+    top: var(--fl-sticky-offset, 0px);
     z-index: 3;
     display: flex;
     align-items: center;
