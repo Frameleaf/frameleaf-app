@@ -169,6 +169,21 @@ const onEvent = ({ event, id }: { event: EventType; id: string }) => {
   }
 };
 
+/** Whether the server is in (or restarting out of) maintenance mode. */
+const isInMaintenance = async () => {
+  try {
+    const response = await fetch(`${app}/server/config`);
+    if (!response.ok) {
+      return true;
+    }
+    const config = await response.json();
+    return config.maintenanceMode === true;
+  } catch {
+    // restarting
+    return true;
+  }
+};
+
 export const utils = {
   connectDatabase: async () => {
     if (client) {
@@ -633,38 +648,29 @@ export const utils = {
    * `fallbackToken` for a test that entered maintenance mode through the API.
    */
   endMaintenance: async (context: BrowserContext, fallbackToken?: string) => {
-    const token =
-      (await context.cookies()).find(({ name }) => name === 'immich_maintenance_token')?.value ?? fallbackToken;
+    const cookies = await context.cookies();
+    const token = cookies.find(({ name }) => name === 'immich_maintenance_token')?.value ?? fallbackToken;
     const headers = { cookie: `immich_maintenance_token=${token}`, 'content-type': 'application/json' };
-    const inMaintenance = async () => {
-      try {
-        const response = await fetch(`${app}/server/config`);
-        return !response.ok || (await response.json()).maintenanceMode === true;
-      } catch {
-        // restarting
-        return true;
-      }
-    };
 
     // Inside the default 30 s test timeout, so a stuck server fails with this message, not a hook timeout.
     const deadline = Date.now() + 25_000;
-    while (await inMaintenance()) {
+    while (await isInMaintenance()) {
       if (!token || Date.now() > deadline) {
         throw new Error(`The server did not leave maintenance mode${token ? '' : ': no maintenance token'}`);
       }
-      const status = await fetch(`${app}/admin/maintenance/status`, { headers })
-        .then((response) => (response.ok ? response.json() : undefined))
-        .catch(() => undefined);
-      const canEnd =
-        status &&
-        status.action !== MaintenanceAction.End &&
-        !(status.action === MaintenanceAction.RestoreDatabase && !status.error);
-      if (canEnd) {
-        await fetch(`${app}/admin/maintenance`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ action: MaintenanceAction.End }),
-        }).catch(() => undefined);
+      try {
+        const response = await fetch(`${app}/admin/maintenance/status`, { headers });
+        const status = response.ok ? await response.json() : null;
+        const restoring = status?.action === MaintenanceAction.RestoreDatabase && !status.error;
+        if (status && status.action !== MaintenanceAction.End && !restoring) {
+          await fetch(`${app}/admin/maintenance`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: MaintenanceAction.End }),
+          });
+        }
+      } catch {
+        // restarting; check again
       }
       await setAsyncTimeout(1000);
     }
