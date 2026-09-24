@@ -23,6 +23,8 @@
     selecting: boolean;
     /** Browse hides the day header; Timeline and Work keep it sticky above the rows. */
     showHeader?: boolean;
+    /** The space the timeline manager reserves above the rows; the header fills exactly this. */
+    headerHeight?: number;
     /** Work shows the capture time under each tile. */
     captionFor?: (asset: TimelineAsset) => string | null;
     /** Rating for an asset, supplied by the host; the timeline model does not carry one. */
@@ -40,6 +42,7 @@
     selection,
     selecting,
     showHeader = true,
+    headerHeight = 48,
     captionFor,
     ratingFor,
     onOpen,
@@ -78,7 +81,7 @@
   style:top="{timelineDay.top}px"
 >
   {#if showHeader}
-    <header class="fl-day-header" style:width="{timelineDay.width}px">
+    <header class="fl-day-header" style:width="{timelineDay.width}px" style:height="{headerHeight}px">
       <label class="fl-day-select" class:is-active={state !== 'none'}>
         <input
           type="checkbox"
@@ -98,6 +101,8 @@
       <h2 id={headingId} title={fullDate}>{timelineDay.groupTitle}</h2>
       <span class="fl-day-count">{$t('items_count', { values: { count: dayIds.length } })}</span>
     </header>
+  {:else}
+    <div style:height="{headerHeight}px" aria-hidden="true"></div>
   {/if}
 
   <div class="fl-day-rows" style:width="{timelineDay.width}px" style:height="{timelineDay.height}px">
@@ -142,8 +147,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 0 6px;
-    padding: 10px 0 8px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 0 6px;
     background: linear-gradient(var(--fl-canvas) 78%, transparent);
   }
   .fl-day-header h2 {
