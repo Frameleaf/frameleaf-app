@@ -583,7 +583,7 @@ const actions = {
   "clear-all-removable-chips-filter-presets": [
     "partial",
     ["S-19", "SD-12"],
-    "Chips open their section, Clear all whenever active, Frameleaf chips on the results page (Save search fixed on codex/FL-49-search-palette)",
+    "Chips open their section and Clear all whenever active (S-19); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
     {
       production: [
         `${W}/lib/components/frameleaf/ResultsToolbar.svelte`,
@@ -718,7 +718,7 @@ const actions = {
   "save-update-delete-custom-server-queries": [
     "partial",
     ["S-14"],
-    "Rail presets; palette Save search, replace by name and delete in the savedSearches preference fixed on codex/FL-49-search-palette",
+    "RailSavedSearches is ready on codex/FL-49-search-palette for the shell to mount in LibraryRail; palette Save search (Smart album, Album snapshot, saved search) fixed there",
     { prototype: [`${P}/App.jsx`, `${P}/FilterPanel.jsx`] },
   ],
   "search-assets-inside-shared-spaces-or-named-pets": [
@@ -1605,9 +1605,9 @@ const routes = {
     ],
   ],
   "/search/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["SD-12"],
-    "Frameleaf chips on the results page (the search palette, SD-1..SD-11, FP-1..FP-5, fixed on codex/FL-49-search-palette)",
+    "Search palette (SD-1..SD-11, FP-1..FP-5) and the results page's palette-style chips (SD-12) fixed on codex/FL-49-search-palette",
     [
       `${P}/SearchPalette.jsx`,
       `${P}/search-palette.mjs`,
