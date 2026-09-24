@@ -349,6 +349,19 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+    const version = await this.assetEditRepository.getVideoVersion(id, versionId);
+    if (!version || version.ownerId !== auth.user.id || version.status !== 'ready' || !version.masterPath)
+      throw new NotFoundException('Video version is unavailable');
+    return new ImmichFileResponse({
+      path: version.masterPath,
+      fileName: `${id}-${version.id}.mp4`,
+      contentType: 'video/mp4',
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
   async playbackVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
