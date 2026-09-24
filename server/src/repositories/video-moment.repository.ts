@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, VectorIndex, VideoMomentSource } from 'src/enum.js';
 import { probes } from 'src/repositories/database.repository.js';
@@ -10,7 +11,7 @@ import {
   VideoMomentIndexTable,
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
-import { anyUuid, asUuid, withVideoFormat, withVideoStream } from 'src/utils/database.js';
+import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -52,6 +53,8 @@ export type VideoMomentSearchScope = {
   ownerId: string;
   /** The same owner, only when their session is unlocked; otherwise Locked videos are left out. */
   lockedOwnerId?: string;
+  /** The session's hidden-content filter: suppressed people, pets and tags, and sensitive media while locked. */
+  privacy?: HiddenContentQueryOptions;
   limit: number;
   /** A frame never returned: the one a frame-to-moment search started from. */
   excludeFrameId?: string;
@@ -564,7 +567,13 @@ export class VideoMomentRepository {
     params: [
       DummyValue.VECTOR,
       DummyValue.STRING,
-      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, limit: 24, excludeFrameId: DummyValue.UUID },
+      {
+        ownerId: DummyValue.UUID,
+        lockedOwnerId: DummyValue.UUID,
+        privacy: { excludeNsfw: true },
+        limit: 24,
+        excludeFrameId: DummyValue.UUID,
+      },
     ],
   })
   async searchFrames(
@@ -598,6 +607,7 @@ export class VideoMomentRepository {
         .where('asset.deletedAt', 'is', null)
         .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
         .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+        .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
         .$if(!!scope.excludeFrameId, (qb) =>
           qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
         )
@@ -609,6 +619,12 @@ export class VideoMomentRepository {
   }
 
   /** Moments whose caption or typed transcript mentions the text, under the same visibility rules. */
+  @GenerateSql({
+    params: [
+      DummyValue.STRING,
+      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, privacy: { excludeNsfw: true }, limit: 24 },
+    ],
+  })
   searchMomentText(text: string, scope: VideoMomentSearchScope): Promise<VideoMomentTextHit[]> {
     const pattern = `%${text.replaceAll(/[%_\\]/g, (match) => `\\${match}`)}%`;
     return this.db
@@ -627,6 +643,7 @@ export class VideoMomentRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
       .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
       .where((eb) =>
         eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
       )

@@ -36,7 +36,12 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { VideoMoment, VideoMomentFrame, VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import {
+  VideoMoment,
+  VideoMomentFrame,
+  VideoMomentRepository,
+  VideoMomentSearchScope,
+} from 'src/repositories/video-moment.repository.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson } from 'src/services/prompt-assembler.service.js';
 import { requireAccess } from 'src/utils/access.js';
@@ -48,6 +53,7 @@ import {
   identityHash,
 } from 'src/utils/enrichment-plan.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -413,7 +419,7 @@ export class VideoMomentIndexService {
    */
   async search(auth: AuthDto, dto: VideoMomentSearchDto): Promise<VideoMomentSearchResponseDto> {
     const limit = dto.limit ?? 24;
-    const scope = { ownerId: auth.user.id, lockedOwnerId: getLockedOwnerId(auth), limit };
+    const scope = this.searchScope(auth, limit);
     const config = await this.config();
 
     const textHits = await this.moments.searchMomentText(dto.query, scope);
@@ -438,13 +444,16 @@ export class VideoMomentIndexService {
         const selection = await this.select(MlWorkload.Clip, null, null);
         const modelName = config.machineLearning.clip.modelName;
         const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });
-        for (const hit of await this.moments.searchFrames(embedding, modelName, scope)) {
+        const frameHits = await this.moments.searchFrames(embedding, modelName, scope);
+        const staleFrameCaptions = await this.staleCaptionIds(frameHits.flatMap(({ momentId }) => momentId ?? []));
+        for (const hit of frameHits) {
           hits.push({
             assetId: hit.assetId,
             timestampMs: hit.timestampMs,
             frameId: hit.frameId,
             momentId: null,
-            caption: hit.caption,
+            // A caption made with names that have changed since is not shown; the frame still matched.
+            caption: hit.momentId && staleFrameCaptions.has(hit.momentId) ? null : hit.caption,
             match: VideoMomentMatch.Visual,
             score: Math.max(0, 1 - hit.distance),
           });
@@ -468,30 +477,46 @@ export class VideoMomentIndexService {
     frameId: string,
     dto: VideoMomentSimilarDto,
   ): Promise<VideoMomentSearchResponseDto> {
-    const query = await this.moments.getFrameEmbedding(frameId);
+    const frame = await this.moments.getFrame(frameId);
     // An unknown frame and a frame of a video the caller may not read answer the same.
-    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [query?.assetId ?? frameId] });
+    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [frame?.assetId ?? frameId] });
+    if (!frame) {
+      throw new BadRequestException(`Not found or no ${Permission.AssetRead} access`);
+    }
+    const query = await this.moments.getFrameEmbedding(frameId);
     if (!query) {
       throw new BadRequestException('This frame has no search embedding yet; index the video first');
     }
 
-    const limit = dto.limit ?? 24;
     const found = await this.moments.searchFrames(query.embedding, query.modelName, {
-      ownerId: auth.user.id,
-      lockedOwnerId: getLockedOwnerId(auth),
-      limit,
+      ...this.searchScope(auth, dto.limit ?? 24),
       excludeFrameId: frameId,
     });
+    const staleCaptions = await this.staleCaptionIds(found.flatMap(({ momentId }) => momentId ?? []));
     const hits = found.map((hit) => ({
       assetId: hit.assetId,
       timestampMs: hit.timestampMs,
       frameId: hit.frameId,
       momentId: hit.momentId,
-      caption: hit.caption,
+      caption: hit.momentId && staleCaptions.has(hit.momentId) ? null : hit.caption,
       match: VideoMomentMatch.Visual,
       score: Math.max(0, 1 - hit.distance),
     }));
-    return { hits: uniqueMoments(hits).slice(0, limit) };
+    return { hits: uniqueMoments(hits).slice(0, dto.limit ?? 24) };
+  }
+
+  /**
+   * What a moment search may return: the caller's own library, Locked videos only in an unlocked
+   * session, and nothing the session's hidden-content filter hides (suppressed people, pets and
+   * tags, and sensitive media while locked), exactly as smart search and asset reads apply it.
+   */
+  private searchScope(auth: AuthDto, limit: number): VideoMomentSearchScope {
+    return {
+      ownerId: auth.user.id,
+      lockedOwnerId: getLockedOwnerId(auth),
+      privacy: getHiddenContentQueryOptions(auth),
+      limit,
+    };
   }
 
   /* ------------------------------------------------------------------ */

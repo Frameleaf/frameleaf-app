@@ -45,9 +45,128 @@ where
     )
     or "asset"."ownerId" = $8::uuid
   )
+  and not (
+    case
+      when "asset"."id" is null then false
+      when coalesce(
+        (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ),
+        'inactive'
+      ) in ('legacy', 'dual-write', 'ready') then exists (
+        select
+          1
+        from
+          asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset"."id"
+          and nsfw_asset.is_nsfw = true
+      )
+      when (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ) = 'active' then not exists (
+        select
+          1
+        from
+          immich_fork.asset_privacy as privacy_asset
+        where
+          privacy_asset."assetId" = "asset"."id"
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end
+  )
   and "video_moment_frame_embedding"."frameId" != $9::uuid
 order by
   video_moment_frame_embedding.embedding <=> $10
 limit
   $11
 commit
+
+-- VideoMomentRepository.searchMomentText
+select
+  "video_moment"."assetId",
+  "video_moment"."id" as "momentId",
+  "video_moment"."timestampMs",
+  "video_moment"."source",
+  "video_moment"."caption",
+  "video_moment"."transcript"
+from
+  "video_moment"
+  inner join "asset" on "asset"."id" = "video_moment"."assetId"
+where
+  "asset"."ownerId" = $1::uuid
+  and "asset"."status" = $2
+  and "asset"."deletedAt" is null
+  and "asset"."visibility" in ($3, $4)
+  and (
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or "asset"."ownerId" = $5::uuid
+  )
+  and not (
+    case
+      when "asset"."id" is null then false
+      when coalesce(
+        (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ),
+        'inactive'
+      ) in ('legacy', 'dual-write', 'ready') then exists (
+        select
+          1
+        from
+          asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset"."id"
+          and nsfw_asset.is_nsfw = true
+      )
+      when (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ) = 'active' then not exists (
+        select
+          1
+        from
+          immich_fork.asset_privacy as privacy_asset
+        where
+          privacy_asset."assetId" = "asset"."id"
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end
+  )
+  and (
+    "video_moment"."caption" ilike $6
+    or "video_moment"."transcript" ilike $7
+  )
+order by
+  "video_moment"."source" desc,
+  "video_moment"."updatedAt" desc
+limit
+  $8

@@ -562,4 +562,73 @@ describe(VideoMomentIndexService.name, () => {
       await expect(sut.searchSimilar(bob.auth, query.id, {})).rejects.toThrow();
     });
   });
+
+  describe('hidden content (suppressed people and tags)', () => {
+    it('leaves suppressed videos out of text and frame-to-moment search while the session is locked', async () => {
+      const context = setup();
+      const { ctx, sut, machineLearning, newOwner, newVideo, framesOf } = context;
+      const { user } = await newOwner();
+      const clean = await newVideo(user.id);
+      const tagged = await newVideo(user.id);
+      const withPerson = await newVideo(user.id);
+
+      const { tag } = await ctx.newTag({ userId: user.id, value: `private-${factory.uuid()}` });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [tagged.id] });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: withPerson.id, personGroupId: person.personGroupId });
+
+      // Every frame of every video, and the search text, encode to the same vector.
+      const embedding = newEmbedding();
+      machineLearning.encodeImage.mockResolvedValue(embedding);
+      machineLearning.encodeText.mockResolvedValue(embedding);
+      const owner = factory.auth({ user: { id: user.id } });
+      for (const video of [clean, tagged, withPerson]) {
+        await expect(sut.runIndexStage(video.id)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
+        await sut.createMoment(owner, video.id, { timestampMs: 30_000, transcript: 'the birthday song' });
+      }
+
+      const hiddenContent = {
+        userId: user.id,
+        includeNsfw: false,
+        tagIds: [tag.id],
+        personIds: [person.personGroupId],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      const locked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: false } });
+      const lockedAuth = { ...locked, hiddenContent };
+      const [query] = await framesOf(clean.id);
+
+      const text = await sut.search(lockedAuth, { query: 'birthday', limit: 100 });
+      expect(text.hits.length).toBeGreaterThan(0);
+      expect(new Set(text.hits.map(({ assetId }) => assetId))).toEqual(new Set([clean.id]));
+
+      const similar = await sut.searchSimilar(lockedAuth, query.id, { limit: 100 });
+      expect(similar.hits.length).toBeGreaterThan(0);
+      expect(new Set(similar.hits.map(({ assetId }) => assetId))).toEqual(new Set([clean.id]));
+
+      // A frame of a suppressed video is not a starting point either.
+      const [taggedFrame] = await framesOf(tagged.id);
+      await expect(sut.searchSimilar(lockedAuth, taggedFrame.id, {})).rejects.toThrow(
+        'Not found or no asset.read access',
+      );
+
+      // Without the filter (an unlocked session) all three are found again.
+      const unfiltered = await sut.searchSimilar(owner, query.id, { limit: 100 });
+      expect(new Set(unfiltered.hits.map(({ assetId }) => assetId))).toEqual(
+        new Set([clean.id, tagged.id, withPerson.id]),
+      );
+    });
+
+    it('tells the reader of a frame that has no embedding yet to index the video', async () => {
+      const context = setup();
+      const { sut, newOwner, newVideo, framesOf } = context;
+      const { user, auth } = await newOwner();
+      const video = await newVideo(user.id);
+      await sut.runFramesStage(video.id);
+      const [frame] = await framesOf(video.id);
+
+      await expect(sut.searchSimilar(auth, frame.id, {})).rejects.toThrow('no search embedding yet');
+    });
+  });
 });
