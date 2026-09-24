@@ -454,8 +454,9 @@ export const getEditedMasterTimingArgs = (
  * which is what the pixels actually are.
  */
 export const getEditedMasterColorArgs = (
-  videoStream: Pick<VideoStreamInfo, 'colorPrimaries' | 'colorMatrix' | 'colorTransfer' | 'colorRange'>,
+  videoStream: Pick<VideoStreamInfo, 'colorPrimaries' | 'colorMatrix' | 'colorTransfer'>,
   decision: EditedMasterColorDecision,
+  statedRange: VideoColorRange | null = null,
 ): string[] => {
   if (decision.policy === EditedMasterColorPolicy.ToneMap) {
     return ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'];
@@ -474,9 +475,12 @@ export const getEditedMasterColorArgs = (
   if (matrix) {
     args.push('-colorspace', matrix);
   }
-  // FL-102: a preserving render keeps the source's signal range, so the tag says which one it is.
-  if (videoStream.colorRange) {
-    args.push('-color_range', videoStream.colorRange);
+  // FL-102: the range is tagged only when the render's filter graph converted the pixels to it
+  // (`statedRange`, from the encode plan's `out_range`). On any other path — the plain 8-bit chain,
+  // a hardware scaler with its own `out_range`, ffmpeg's automatic format conversion — the range
+  // the pixels end up in is not one this code chose, and a tag could contradict them.
+  if (statedRange) {
+    args.push('-color_range', statedRange);
   }
   return args;
 };
