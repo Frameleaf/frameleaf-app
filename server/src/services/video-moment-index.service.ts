@@ -11,6 +11,7 @@ import {
   VideoMomentDto,
   VideoMomentSearchDto,
   VideoMomentSearchResponseDto,
+  VideoMomentSimilarDto,
   VideoMomentUpdateDto,
   VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
@@ -35,7 +36,12 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { VideoMoment, VideoMomentFrame, VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import {
+  VideoMoment,
+  VideoMomentFrame,
+  VideoMomentRepository,
+  VideoMomentSearchScope,
+} from 'src/repositories/video-moment.repository.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson } from 'src/services/prompt-assembler.service.js';
 import { requireAccess } from 'src/utils/access.js';
@@ -47,6 +53,7 @@ import {
   identityHash,
 } from 'src/utils/enrichment-plan.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isImageDescriptionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -89,6 +96,19 @@ const asIso = (value: unknown): string | null => {
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+/** One hit per second of each video, the first (best) one kept. */
+const uniqueMoments = <T extends { assetId: string; timestampMs: number }>(hits: T[]): T[] => {
+  const seen = new Set<string>();
+  return hits.filter((hit) => {
+    const key = `${hit.assetId}:${Math.round(hit.timestampMs / 1000)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
 
 /**
  * The timestamped moment index of videos (FL-59, `REC-101`).
@@ -262,28 +282,33 @@ export class VideoMomentIndexService {
     }
 
     // What was captioned is kept even when a frame failed; the retry only asks for the rest.
-    if (captions.length > 0) {
-      await this.moments.publishCaptions(
-        assetId,
-        captions,
-        {
-          modelName: captionConfig.modelName,
-          configHash: captionHash,
-          identityHash: names,
-          destinationId: selection.destinationId,
-          ...(options.planConfigHash && { planConfigHash: options.planConfigHash }),
-        },
-        {
-          captionModel: captionConfig.modelName,
-          captionConfigHash: captionHash,
-          captionIdentityHash: names,
-          captionDestinationId: selection.destinationId,
-        },
-      );
-    }
+    const written =
+      captions.length > 0
+        ? await this.moments.publishCaptions(
+            assetId,
+            captions,
+            {
+              modelName: captionConfig.modelName,
+              configHash: captionHash,
+              identityHash: names,
+              destinationId: selection.destinationId,
+              ...(options.planConfigHash && { planConfigHash: options.planConfigHash }),
+            },
+            {
+              captionModel: captionConfig.modelName,
+              captionConfigHash: captionHash,
+              captionIdentityHash: names,
+              captionDestinationId: selection.destinationId,
+            },
+          )
+        : 0;
 
     if (claimLost) {
       return CLAIM_LOST;
+    }
+    if (captions.length > 0 && written === 0) {
+      // The original was replaced while the frames were being captioned; a retry cuts them again.
+      return { state: EnrichmentItemState.Failed, reasonKey: 'source-changed' };
     }
     return failure
       ? { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure }
@@ -394,7 +419,7 @@ export class VideoMomentIndexService {
    */
   async search(auth: AuthDto, dto: VideoMomentSearchDto): Promise<VideoMomentSearchResponseDto> {
     const limit = dto.limit ?? 24;
-    const scope = { ownerId: auth.user.id, lockedOwnerId: getLockedOwnerId(auth), limit };
+    const scope = this.searchScope(auth, limit);
     const config = await this.config();
 
     const textHits = await this.moments.searchMomentText(dto.query, scope);
@@ -419,13 +444,16 @@ export class VideoMomentIndexService {
         const selection = await this.select(MlWorkload.Clip, null, null);
         const modelName = config.machineLearning.clip.modelName;
         const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });
-        for (const hit of await this.moments.searchFrames(embedding, modelName, scope)) {
+        const frameHits = await this.moments.searchFrames(embedding, modelName, scope);
+        const staleFrameCaptions = await this.staleCaptionIds(frameHits.flatMap(({ momentId }) => momentId ?? []));
+        for (const hit of frameHits) {
           hits.push({
             assetId: hit.assetId,
             timestampMs: hit.timestampMs,
             frameId: hit.frameId,
             momentId: null,
-            caption: hit.caption,
+            // A caption made with names that have changed since is not shown; the frame still matched.
+            caption: hit.momentId && staleFrameCaptions.has(hit.momentId) ? null : hit.caption,
             match: VideoMomentMatch.Visual,
             score: Math.max(0, 1 - hit.distance),
           });
@@ -435,16 +463,60 @@ export class VideoMomentIndexService {
       }
     }
 
-    const seen = new Set<string>();
-    const unique = hits.filter((hit) => {
-      const key = `${hit.assetId}:${Math.round(hit.timestampMs / 1000)}`;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
+    return { hits: uniqueMoments(hits).slice(0, limit) };
+  }
+
+  /**
+   * Frame-to-moment search (FL-59): the moments nearest one frame's stored embedding, in other
+   * videos and at other times in the same one. The frame is read under its video's own access; the
+   * results are the caller's own library under exactly the rules of `search`, and never the frame
+   * itself. Nothing is sent to a model: the embedding is already stored.
+   */
+  async searchSimilar(
+    auth: AuthDto,
+    frameId: string,
+    dto: VideoMomentSimilarDto,
+  ): Promise<VideoMomentSearchResponseDto> {
+    const frame = await this.moments.getFrame(frameId);
+    // An unknown frame and a frame of a video the caller may not read answer the same.
+    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [frame?.assetId ?? frameId] });
+    if (!frame) {
+      throw new BadRequestException(`Not found or no ${Permission.AssetRead} access`);
+    }
+    const query = await this.moments.getFrameEmbedding(frameId);
+    if (!query) {
+      throw new BadRequestException('This frame has no search embedding yet; index the video first');
+    }
+
+    const found = await this.moments.searchFrames(query.embedding, query.modelName, {
+      ...this.searchScope(auth, dto.limit ?? 24),
+      excludeFrameId: frameId,
     });
-    return { hits: unique.slice(0, limit) };
+    const staleCaptions = await this.staleCaptionIds(found.flatMap(({ momentId }) => momentId ?? []));
+    const hits = found.map((hit) => ({
+      assetId: hit.assetId,
+      timestampMs: hit.timestampMs,
+      frameId: hit.frameId,
+      momentId: hit.momentId,
+      caption: hit.momentId && staleCaptions.has(hit.momentId) ? null : hit.caption,
+      match: VideoMomentMatch.Visual,
+      score: Math.max(0, 1 - hit.distance),
+    }));
+    return { hits: uniqueMoments(hits).slice(0, dto.limit ?? 24) };
+  }
+
+  /**
+   * What a moment search may return: the caller's own library, Locked videos only in an unlocked
+   * session, and nothing the session's hidden-content filter hides (suppressed people, pets and
+   * tags, and sensitive media while locked), exactly as smart search and asset reads apply it.
+   */
+  private searchScope(auth: AuthDto, limit: number): VideoMomentSearchScope {
+    return {
+      ownerId: auth.user.id,
+      lockedOwnerId: getLockedOwnerId(auth),
+      privacy: getHiddenContentQueryOptions(auth),
+      limit,
+    };
   }
 
   /* ------------------------------------------------------------------ */

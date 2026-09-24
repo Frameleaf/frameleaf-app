@@ -8,11 +8,11 @@
  * a destination is enabled, consented, allowed to run it, probed healthy and reporting that
  * it serves it. The Studio row of that snapshot is what this probe returns.
  *
- * `gpuWorker` and `renderWorker` stay false until the render worker admission (FL-95,
- * FL-104) reports one; the destination service has no evidence of a render worker and says
- * so rather than inferring one from an ML endpoint. A request failure reports every
- * capability as absent, because a capability the server did not confirm is not one the
- * route may claim.
+ * `gpuWorker` and `renderWorker` come from render worker admission (FL-95, FL-104, FL-42):
+ * the server reports them only while an admitted worker session is live, unrevoked and still
+ * backed by fresh conformance evidence on the engine digest its worker is qualified with; it
+ * never infers one from an ML endpoint. A request failure reports every capability as absent,
+ * because a capability the server did not confirm is not one the route may claim.
  */
 import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';

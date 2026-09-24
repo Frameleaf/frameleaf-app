@@ -339,9 +339,52 @@ describe(VideoMomentIndexService.name, () => {
       expect(moments.searchFrames).toHaveBeenCalledWith('[0.3]', defaults.machineLearning.clip.modelName, {
         ownerId,
         lockedOwnerId: undefined,
+        privacy: {},
         limit: 24,
       });
       expect(hits).toEqual([expect.objectContaining({ assetId, timestampMs: 20_000, match: 'visual' })]);
+    });
+
+    it('passes the session hidden-content filter to both text and visual search', async () => {
+      mocks.machineLearning.encodeText.mockResolvedValue('[0.3]');
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: true,
+        tagIds: [newUuid()],
+        personIds: [newUuid()],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+
+      await sut.search({ ...authStub.user1, hiddenContent }, { query: 'waves' });
+
+      expect(moments.searchMomentText).toHaveBeenCalledWith(
+        'waves',
+        expect.objectContaining({ privacy: { hiddenContent } }),
+      );
+      expect(moments.searchFrames).toHaveBeenCalledWith(
+        '[0.3]',
+        expect.any(String),
+        expect.objectContaining({ privacy: { hiddenContent } }),
+      );
+    });
+
+    it('hides a visual hit’s caption made with names that changed since, keeping the hit', async () => {
+      mocks.machineLearning.encodeText.mockResolvedValue('[0.3]');
+      const momentId = newUuid();
+      moments.searchFrames.mockResolvedValue([
+        { assetId, frameId: frames[1].id, momentId, timestampMs: 20_000, distance: 0.2, caption: 'Anna laughs' },
+      ]);
+      moments.getMoment.mockResolvedValue({
+        id: momentId,
+        assetId,
+        source: VideoMomentSource.Generated,
+        provenance: { identityHash: 'names-before' },
+      });
+
+      const { hits } = await sut.search(authStub.user1, { query: 'laughing' });
+
+      expect(hits).toEqual([expect.objectContaining({ frameId: frames[1].id, caption: null, match: 'visual' })]);
     });
 
     it('still answers from captions and transcripts when the search destination refuses', async () => {
@@ -361,6 +404,122 @@ describe(VideoMomentIndexService.name, () => {
 
       expect(hits).toEqual([expect.objectContaining({ match: 'caption', timestampMs: 5000 })]);
       expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('searchSimilar', () => {
+    const frameId = frames[0].id;
+    const otherAsset = newUuid();
+
+    beforeEach(() => {
+      moments.getFrame = vi.fn().mockResolvedValue({ id: frameId, assetId, timestampMs: 2000, path: '/f', ownerId });
+      moments.getFrameEmbedding = vi.fn().mockResolvedValue({ assetId, embedding: '[0.5]', modelName: 'frame-model' });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+    });
+
+    it("searches the caller's library with the frame's own embedding and model, never returning the frame", async () => {
+      const momentId = newUuid();
+      moments.searchFrames.mockResolvedValue([
+        { assetId: otherAsset, frameId: newUuid(), momentId, timestampMs: 4000, distance: 0.1, caption: 'Surf' },
+        { assetId, frameId: frames[2].id, momentId: null, timestampMs: 30_000, distance: 0.4, caption: null },
+      ]);
+
+      const { hits } = await sut.searchSimilar(authStub.user1, frameId, { limit: 10 });
+
+      expect(moments.searchFrames).toHaveBeenCalledWith('[0.5]', 'frame-model', {
+        ownerId,
+        lockedOwnerId: undefined,
+        privacy: {},
+        limit: 10,
+        excludeFrameId: frameId,
+      });
+      expect(hits).toEqual([
+        expect.objectContaining({ assetId: otherAsset, timestampMs: 4000, momentId, match: 'visual', score: 0.9 }),
+        expect.objectContaining({ assetId, timestampMs: 30_000, frameId: frames[2].id, score: 0.6 }),
+      ]);
+      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+    });
+
+    it('includes Locked videos only for the owner in an unlocked session', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+
+      await sut.searchSimilar(authStub.adminWithElevatedPermission, frameId, {});
+
+      expect(moments.searchFrames).toHaveBeenCalledWith(
+        '[0.5]',
+        'frame-model',
+        expect.objectContaining({
+          ownerId: authStub.adminWithElevatedPermission.user.id,
+          lockedOwnerId: authStub.adminWithElevatedPermission.user.id,
+          limit: 24,
+        }),
+      );
+    });
+
+    it('needs read access to the video of the frame', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.searchSimilar(authStub.user1, frameId, {})).rejects.toThrow(BadRequestException);
+      expect(moments.searchFrames).not.toHaveBeenCalled();
+    });
+
+    it('answers an unknown frame exactly like a frame of a video the caller cannot read', async () => {
+      moments.getFrame.mockResolvedValue(undefined);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.searchSimilar(authStub.user1, frameId, {})).rejects.toThrow('Not found or no asset.read access');
+      expect(moments.getFrameEmbedding).not.toHaveBeenCalled();
+      expect(moments.searchFrames).not.toHaveBeenCalled();
+    });
+
+    it('tells the reader of an unindexed frame to index the video', async () => {
+      moments.getFrameEmbedding.mockResolvedValue(undefined);
+
+      await expect(sut.searchSimilar(authStub.user1, frameId, {})).rejects.toThrow('no search embedding yet');
+      expect(moments.searchFrames).not.toHaveBeenCalled();
+    });
+
+    it('passes the session hidden-content filter, and hides stale generated captions', async () => {
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: false,
+        tagIds: [newUuid()],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      const momentId = newUuid();
+      moments.searchFrames.mockResolvedValue([
+        { assetId, frameId: frames[2].id, momentId, timestampMs: 30_000, distance: 0.3, caption: 'Anna laughs' },
+      ]);
+      moments.getMoment.mockResolvedValue({
+        id: momentId,
+        assetId,
+        source: VideoMomentSource.Generated,
+        provenance: { identityHash: 'names-before' },
+      });
+
+      const { hits } = await sut.searchSimilar({ ...authStub.user1, hiddenContent }, frameId, {});
+
+      expect(moments.searchFrames).toHaveBeenCalledWith(
+        '[0.5]',
+        'frame-model',
+        expect.objectContaining({ privacy: { hiddenContent } }),
+      );
+      expect(hits).toEqual([expect.objectContaining({ momentId, caption: null })]);
+    });
+
+    it('keeps one hit per second of each video', async () => {
+      moments.searchFrames.mockResolvedValue([
+        { assetId: otherAsset, frameId: newUuid(), momentId: null, timestampMs: 4000, distance: 0.1, caption: null },
+        { assetId: otherAsset, frameId: newUuid(), momentId: null, timestampMs: 4200, distance: 0.2, caption: null },
+      ]);
+
+      const { hits } = await sut.searchSimilar(authStub.user1, frameId, {});
+
+      expect(hits).toHaveLength(1);
+      expect(hits[0].score).toBe(0.9);
     });
   });
 });

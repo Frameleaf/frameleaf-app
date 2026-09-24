@@ -27,6 +27,7 @@ import {
   MlWorkerRole,
   MlWorkload,
   RESTORATION_ML_WORKLOADS,
+  RenderWorkerStatus,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -42,6 +43,7 @@ import {
   summarizeProbe,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
+import { isQualifiedRenderSession } from 'src/utils/render-admission.js';
 
 /**
  * The check summary a local destination carries while it is off because its URL left the
@@ -481,14 +483,34 @@ export class MlDestinationService extends BaseService {
 
   /**
    * What this deployment can run right now, per workload, from the persisted probe state.
-   * The Studio host reads `studio`; gpuWorker and renderWorker stay false here because the
-   * render worker admission (FL-95, FL-104) owns them and this service has no evidence of one.
+   * The Studio host reads `studio`. gpuWorker and renderWorker come from render worker admission
+   * (FL-95, FL-104): they are true only while an admitted session is live, unrevoked, and still
+   * carries fresh conformance evidence on the engine digest its worker is pinned to (FL-42).
    */
   async getCapabilities(): Promise<MlCapabilitiesResponseDto> {
-    const [rows, routes] = await Promise.all([
+    const [rows, routes, sessions] = await Promise.all([
       this.mlDestinationRepository.getAll(),
       this.mlDestinationRepository.getRoutes(),
+      this.renderWorkerRepository.listLiveSessions(),
     ]);
+    const now = new Date();
+    const qualifiedRenderer = sessions.some(({ worker, session }) =>
+      isQualifiedRenderSession({
+        worker: {
+          revoked: worker.status !== RenderWorkerStatus.Active,
+          engineDigest: worker.engineDigest,
+          conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+        },
+        session: {
+          revoked: session.revokedAt !== null,
+          expiresAt: new Date(session.expiresAt),
+          engineDigest: session.engineDigest,
+          conformanceReportedAt: new Date(session.conformanceReportedAt),
+          scopes: session.scopes,
+        },
+        now,
+      }),
+    );
     const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
 
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
@@ -522,8 +544,8 @@ export class MlDestinationService extends BaseService {
     return {
       workloads,
       studio: {
-        gpuWorker: false,
-        renderWorker: false,
+        gpuWorker: qualifiedRenderer,
+        renderWorker: qualifiedRenderer,
         restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
         transcriptionWorker: available(MlWorkload.StudioAi),
       },

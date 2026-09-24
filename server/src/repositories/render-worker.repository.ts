@@ -186,6 +186,66 @@ export class RenderWorkerRepository {
     return worker ? { worker, session } : undefined;
   }
 
+  /**
+   * Every session that could still render: unrevoked, unexpired and held by an active worker, with
+   * that worker. Whether its evidence is still good enough is the caller's decision (FL-42).
+   */
+  async listLiveSessions(): Promise<AuthenticatedRenderWorker[]> {
+    // One query: the worker's columns as they are, the session's aliased so the shared names
+    // (id, engineDigest, gpuMemoryBytes, createdAt) do not collide.
+    const rows = await this.db
+      .selectFrom('render_worker_session')
+      .innerJoin('render_worker', 'render_worker.id', 'render_worker_session.workerId')
+      .selectAll('render_worker')
+      .select([
+        'render_worker_session.id as sessionId',
+        'render_worker_session.token as sessionToken',
+        'render_worker_session.scopes as sessionScopes',
+        'render_worker_session.gpuMemoryBytes as sessionGpuMemoryBytes',
+        'render_worker_session.engineDigest as sessionEngineDigest',
+        'render_worker_session.conformanceReportedAt as sessionConformanceReportedAt',
+        'render_worker_session.expiresAt as sessionExpiresAt',
+        'render_worker_session.revokedAt as sessionRevokedAt',
+        'render_worker_session.lastUsedAt as sessionLastUsedAt',
+        'render_worker_session.createdAt as sessionCreatedAt',
+      ])
+      .where('render_worker.status', '=', RenderWorkerStatus.Active)
+      .where('render_worker_session.revokedAt', 'is', null)
+      .where('render_worker_session.expiresAt', '>', sql<Date>`now()`)
+      .execute();
+
+    return rows.map(
+      ({
+        sessionId,
+        sessionToken,
+        sessionScopes,
+        sessionGpuMemoryBytes,
+        sessionEngineDigest,
+        sessionConformanceReportedAt,
+        sessionExpiresAt,
+        sessionRevokedAt,
+        sessionLastUsedAt,
+        sessionCreatedAt,
+        ...worker
+      }) => ({
+        worker: worker as unknown as RenderWorker,
+        session: {
+          id: sessionId,
+          workerId: worker.id,
+          token: sessionToken,
+          scopes: sessionScopes,
+          gpuMemoryBytes: sessionGpuMemoryBytes,
+          engineDigest: sessionEngineDigest,
+          conformanceReportedAt: sessionConformanceReportedAt,
+          expiresAt: sessionExpiresAt,
+          revokedAt: sessionRevokedAt,
+          lastUsedAt: sessionLastUsedAt,
+          createdAt: sessionCreatedAt,
+        } as unknown as RenderWorkerSession,
+      }),
+    );
+  }
+
   async touchSession(id: string): Promise<void> {
     await this.db
       .updateTable('render_worker_session')

@@ -5,9 +5,22 @@ import {
   SharedLinkResponseDto,
   SharedLinkType,
   createAlbum,
+  removeSharedLink,
 } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
+
+/** A fresh album link and a way to revoke it from the owner's side while a viewer has it open. */
+const revokeLater = async (accessToken: string, albumId: string) => {
+  const link = await utils.createSharedLink(accessToken, { type: SharedLinkType.Album, albumId });
+  const revoke = () => removeSharedLink({ id: link.id }, { headers: asBearerAuth(accessToken) });
+  return { link, revoke };
+};
+
+const unlock = async (page: Page) => {
+  await page.getByPlaceholder('Password').fill('test-password');
+  await page.getByRole('button', { name: 'Continue' }).click();
+};
 
 test.describe('Shared Links', () => {
   let admin: LoginResponseDto;
@@ -168,6 +181,90 @@ test.describe('Shared Links', () => {
       page.getByText('Ask the person who shared it for a new link if you still need these photos.'),
     ).toBeVisible();
     await expect(page.getByText('Immich Admin')).toHaveCount(0);
+  });
+
+  // FL-56: revoking a link takes effect on the viewer's next action, not only on a reload.
+  test.describe('a link revoked while its viewer is open', () => {
+    test('opening an item shows the unavailable state', async ({ page }) => {
+      const { link, revoke } = await revokeLater(admin.accessToken, album.id);
+      await page.goto(`/share/${link.key}`);
+      await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+
+      await revoke();
+      await page.locator(`[data-asset-id="${asset.id}"]`).click();
+
+      await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
+      await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+    });
+
+    test('downloading shows the unavailable state instead of a server error', async ({ page }) => {
+      const { link, revoke } = await revokeLater(admin.accessToken, album.id);
+      await page.goto(`/share/${link.key}`);
+      await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+
+      await revoke();
+      await page.getByRole('button', { name: 'Download all' }).click();
+
+      await page.getByRole('heading', { name: 'This link is not available' }).waitFor();
+      await expect(page.getByText('(Frameleaf Server Error)')).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Test Album' })).toHaveCount(0);
+    });
+  });
+
+  // FL-56: the password gate only ever continues to the share it guards.
+  test.describe('crafted continuation URLs on the password gate', () => {
+    let privateAsset: AssetMediaResponseDto;
+    let slugLink: SharedLinkResponseDto;
+
+    test.beforeAll(async () => {
+      // An item of the same owner that no link shares.
+      privateAsset = await utils.createAsset(admin.accessToken);
+      slugLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        password: 'test-password',
+        slug: 'fl56-guarded',
+      });
+    });
+
+    for (const [name, gate] of [
+      ['/share/{key}', () => `/share/${sharedLinkPassword.key}`],
+      ['/s/{slug}', () => `/s/${slugLink.slug}`],
+    ] as const) {
+      test(`${name}: continuation parameters never leave the share`, async ({ page }) => {
+        await page.goto(`${gate()}?continue=%2Fadmin%2Fusers&redirect=%2Fphotos&returnTo=%2F%2Fexample.com`);
+        await unlock(page);
+
+        await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+        expect(new URL(page.url()).pathname).toBe(gate());
+        // Still the public frame, with no private navigation.
+        await expect(page.getByRole('link', { name: 'Go to Frameleaf' })).toBeVisible();
+      });
+
+      test(`${name}: an item path outside the share never opens it`, async ({ page }) => {
+        await page.goto(`${gate()}/photos/${privateAsset.id}`);
+        // Either the gate is asked first or the item is refused outright; the private item never shows.
+        const password = page.getByPlaceholder('Password');
+        await password
+          .or(page.getByRole('heading', { name: 'This link is not available' }))
+          .first()
+          .waitFor();
+        if (await password.isVisible()) {
+          await unlock(page);
+        }
+
+        await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+        await expect(page.locator(`[data-asset-id="${privateAsset.id}"]`)).toHaveCount(0);
+        expect(new URL(page.url()).pathname.startsWith(gate())).toBe(true);
+      });
+
+      test(`${name}: an encoded path cannot climb out of the share`, async ({ page }) => {
+        await page.goto(`${gate()}%2F..%2F..%2Fadmin`);
+
+        await expect(page.getByRole('heading', { name: 'This link is not available' })).toBeVisible();
+        expect(new URL(page.url()).pathname.startsWith('/admin')).toBe(false);
+      });
+    }
   });
 
   test('show error for invalid shared link', async ({ page }) => {
