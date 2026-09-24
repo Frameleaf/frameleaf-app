@@ -23,6 +23,7 @@ import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
 import { Route } from '$lib/route';
 import { memoryLaneTitle } from '$lib/utils';
+import { handleError } from '$lib/utils/handle-error';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 
 type MemoriesSearchDto = Parameters<typeof searchMemories>[0];
@@ -237,7 +238,11 @@ class MemoryManager {
     const memoryId = current.memory.id;
     const assetId = current.asset.id;
     await this.#leaveCurrentAsset();
-    await this.#deleteAsset(memoryId, assetId);
+    try {
+      await this.#deleteAsset(memoryId, assetId);
+    } catch (error) {
+      handleError(error, get(t)('errors.something_went_wrong'));
+    }
   }
 
   async deleteCurrentMemory() {
@@ -321,7 +326,12 @@ class MemoryManager {
       return;
     }
 
-    await removeMemoryAssets({ id: memoryId, bulkIdsDto: { ids: [assetId] } });
+    // FL-83 (ported from ef7ad8b832): the bulk endpoint answers 200 with a per-item outcome; only an
+    // explicit success for this item may change local state.
+    const removed = await removeMemoryAssets({ id: memoryId, bulkIdsDto: { ids: [assetId] } });
+    if (removed.find((result) => result.id === assetId)?.success !== true) {
+      throw new Error('Unable to remove the item from this memory');
+    }
     memory.assets = memory.assets.filter((asset) => asset.id !== assetId);
   }
 
