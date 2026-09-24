@@ -58,6 +58,7 @@
     mdiTextBoxOutline,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
 
   /**
    * The bar's own icons, imported one by one. The whole Material catalogue is served as data to the
@@ -106,6 +107,11 @@
    * September 22, 2026 revision: the bar carries the complete bulk set, nothing is selected on
    * load, and "select everything matching" offers a scope-bound snapshot that runs in the
    * background with progress and cancellation.
+   *
+   * September 24 "one toolbar": while items are selected this bar takes the library bar's place
+   * and carries the page's own actions (`leading`: Compare, Quick edit, Open in Studio) as labelled
+   * buttons ahead of the bulk actions, which are icon-only and named in tooltips. It is a frosted
+   * capsule over the photos (apple-style.css "#1 one toolbar"), and sits above the phone tab bar.
    */
   let {
     count = 0,
@@ -126,6 +132,7 @@
     onCancelOperation,
     onRetryOperation,
     onDismissOperation,
+    leading = [],
   }: {
     count?: number;
     total?: number | null;
@@ -143,6 +150,8 @@
     onCancelOperation?: (requestId: string) => void;
     onRetryOperation?: (operation: BulkOperationRecord) => void;
     onDismissOperation?: (requestId: string) => void;
+    /** The page's own actions, labelled, ahead of the bulk actions (SelectionBar.jsx `leading`). */
+    leading?: SelectionBarLeadingAction[];
   } = $props();
 
   let menuOpen = $state(false);
@@ -339,12 +348,31 @@
     </div>
 
     <div class="actions" role="group" aria-label={$t('frameleaf_selection_actions')}>
+      {#each leading as action (action.id)}
+        <button
+          type="button"
+          class="action is-leading"
+          class:is-primary={action.primary}
+          title={action.label}
+          disabled={action.disabled}
+          data-testid="selection-leading-{action.id}"
+          onclick={action.onClick}
+        >
+          <Icon icon={action.icon} size="1.125rem" />
+          <span>{action.label}</span>
+        </button>
+      {/each}
+      {#if leading.length > 0}
+        <span class="divider" aria-hidden="true"></span>
+      {/if}
       {#each primary as action (action.id)}
         <button
           type="button"
           class="action"
           class:is-danger={action.danger}
+          class:icon-only={leading.length > 0}
           title={$t(action.labelKey)}
+          aria-label={$t(action.labelKey)}
           onclick={() => perform(action.id)}
         >
           <Icon icon={icon(action.icon)} size="1.125rem" />
@@ -358,6 +386,9 @@
             bind:this={moreButton}
             type="button"
             class="action"
+            class:icon-only={leading.length > 0}
+            title={$t('more')}
+            aria-label={$t('frameleaf_selection_more_actions')}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? menuId : undefined}
@@ -444,30 +475,36 @@
 {/if}
 
 <style>
+  /*
+   * apple-style.css "#1 one toolbar": a frosted capsule centred over the library photos, between
+   * the rail and the inspector (--fl-left / --fl-right, published by LibraryView).
+   */
   .selection-bar {
     position: fixed;
-    inset-block-end: max(1rem, env(safe-area-inset-bottom));
-    inset-inline: 0;
+    inset-block-end: max(18px, var(--fl-safe-bottom, 0px));
+    inset-inline: calc(var(--fl-left, 0px) + 12px) calc(var(--fl-right, 0px) + 12px);
     z-index: 30;
     display: grid;
     justify-items: center;
     gap: 0.5rem;
-    padding-inline: 1rem;
     pointer-events: none;
     opacity: 0;
-    translate: 0 1rem;
+    translate: 0 12px;
     transition:
-      opacity 120ms ease,
-      translate 120ms ease;
+      opacity 200ms ease,
+      translate 420ms var(--fl-spring, ease);
   }
   .selection-bar.is-open {
     opacity: 1;
     translate: none;
+  }
+  .selection-bar.is-open > :global(*) {
     pointer-events: auto;
   }
   @media (prefers-reduced-motion: reduce) {
     .selection-bar {
-      transition: none;
+      translate: none;
+      transition: opacity 150ms ease;
     }
   }
   .pill {
@@ -476,12 +513,49 @@
     align-items: center;
     gap: 0.75rem;
     max-inline-size: 100%;
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
-    padding: 0.4rem 0.6rem;
+    min-block-size: 52px;
+    color: var(--fl-text);
+    background: var(--fl-material);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid var(--fl-material-edge);
+    border-radius: 18px;
+    box-shadow: 0 10px 40px rgb(0 0 0 / 40%);
+    padding: 6px 10px 6px 18px;
     font-size: 0.875rem;
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .pill {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  .divider {
+    align-self: stretch;
+    width: 1px;
+    margin: 4px;
+    background: var(--fl-material-edge);
+  }
+  .action span {
+    white-space: nowrap;
+  }
+  .action.icon-only {
+    padding-inline: 8px;
+  }
+  .action.icon-only span {
+    display: none;
+  }
+  .action.is-primary {
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    font-weight: 600;
+  }
+  .action.is-primary:hover:not(:disabled) {
+    background: var(--fl-accent-hover, var(--fl-accent));
+  }
+  .action:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .count {
     display: flex;
@@ -552,9 +626,23 @@
     color: var(--fl-muted);
     font-size: 0.75rem;
   }
-  @media (max-width: 40rem) {
+  /* Phones: the bar spans the screen just above the tab bar, labels drop to icons. */
+  @media (max-width: 700px) {
+    .selection-bar {
+      inset-inline: 12px;
+      inset-block-end: calc(max(10px, var(--fl-safe-bottom, 0px)) + 74px);
+    }
     .pill {
       inline-size: 100%;
+      justify-content: space-between;
+      row-gap: 4px;
+      padding-inline-start: 12px;
+    }
+    .actions {
+      flex: 1 1 100%;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      overflow-x: auto;
     }
     .actions .action span {
       display: none;
