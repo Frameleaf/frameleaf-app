@@ -116,8 +116,8 @@
       albumId
         ? {
             id: albumId,
-            // an album shows archived, partners' and other members' items unless the sheet leaves
-            // them out, so these are sent either way
+            // an album shows archived items and everyone else's items unless the sheet leaves them
+            // out, so these are sent either way; withSharedAlbums narrows nothing in album scope
             isArchived: $mapSettings.includeArchived,
             isFavorite: $mapSettings.onlyFavorites || undefined,
             withPartners: $mapSettings.withPartners,
