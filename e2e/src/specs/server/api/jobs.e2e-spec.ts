@@ -2,7 +2,9 @@ import { LoginResponseDto, QueueCommand, QueueName, updateConfig } from '@immich
 import { cpSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';
+import { createUserDto } from 'src/fixtures.js';
+import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
+import request from 'supertest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 describe('/jobs', () => {
@@ -212,6 +214,37 @@ describe('/jobs', () => {
       expect(assetAfter.thumbhash).toEqual(assetBefore.thumbhash);
 
       rmSync(path);
+    });
+  });
+
+  describe('POST /queues/:name/jobs/retry-failed (FL-71)', () => {
+    it('retries failed jobs for an administrator and reports how many', async () => {
+      const { status, body } = await request(app)
+        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: expect.any(Number) });
+    });
+
+    it('is for administrators only', async () => {
+      const user = await utils.userSetup(admin.accessToken, createUserDto.user1);
+      const { status } = await request(app)
+        .post(`/queues/${QueueName.ThumbnailGeneration}/jobs/retry-failed`)
+        .set('Authorization', `Bearer ${user.accessToken}`);
+
+      expect(status).toBe(403);
+    });
+
+    it('names the account and worker of a listed job', async () => {
+      const { status, body } = await request(app)
+        .get(`/queues/${QueueName.ThumbnailGeneration}/jobs`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      for (const job of body) {
+        expect(job.worker).toEqual({ kind: 'server', name: null });
+      }
     });
   });
 });
