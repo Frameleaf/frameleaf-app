@@ -6,7 +6,9 @@ import {
   JobName,
   QueueCommand,
   QueueJobStatus,
+  QueueJobWorkerKind,
   QueueName,
+  retryFailedQueueJobs,
   runQueueCommandLegacy,
   updateQueue,
   type QueueResponseDto,
@@ -35,6 +37,7 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   emptyQueue: vi.fn(),
   getQueue: vi.fn(),
   createJob: vi.fn(),
+  retryFailedQueueJobs: vi.fn(),
 }));
 vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();
@@ -164,6 +167,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
         data: { id: 'asset-1' },
         attemptsMade: 3,
         failedReason: 'Machine learning is unreachable',
+        worker: { kind: QueueJobWorkerKind.Server, name: null },
       },
     ]);
     render(JobsManager);
@@ -278,5 +282,67 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(screen.getByRole('dialog', { name: 'Remove failed records' })).toBeInTheDocument();
     expect(runQueueCommandLegacy).not.toHaveBeenCalled();
     expect(emptyQueue).not.toHaveBeenCalled();
+  });
+
+  it("names each job's account and worker, as the template's jobs table does", async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueJobs).mockResolvedValue([
+      {
+        id: 'job-1',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 10),
+        data: { id: 'asset-1' },
+        attemptsMade: 1,
+        account: { id: 'user-1', name: 'Ada Lovelace' },
+        worker: { kind: QueueJobWorkerKind.Runpod, name: 'Studio pod' },
+      },
+      {
+        id: 'job-2',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 9),
+        data: {},
+        worker: { kind: QueueJobWorkerKind.Lan, name: 'Workshop GPU' },
+      },
+    ]);
+    render(JobsManager);
+
+    await screen.findByText('Ada Lovelace');
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('columnheader', { name: 'Account' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Worker' })).toBeInTheDocument();
+    const [, first, second] = within(table).getAllByRole('row');
+    expect(within(first).getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(within(first).getByText('RunPod').closest('span')).toHaveAttribute('title', 'Studio pod');
+    expect(within(second).getByText('No account')).toBeInTheDocument();
+    expect(within(second).getByText('Local / LAN')).toBeInTheDocument();
+
+    await fireEvent.click(within(first).getByRole('button', { name: /^Detect faces/ }));
+    const detail = screen.getByRole('dialog', { name: 'Detect faces' });
+    expect(within(detail).getByText('Account').nextElementSibling).toHaveTextContent('Ada Lovelace');
+    expect(within(detail).getByText('Worker').nextElementSibling).toHaveTextContent('RunPod · Studio pod');
+  });
+
+  it('retries the failed jobs after the review, without an acknowledgement', async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(retryFailedQueueJobs).mockResolvedValue({ count: 3 });
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
+    const review = screen.getByRole('dialog', { name: 'Retry failed jobs' });
+    expect(within(review).getByText(/Put failed jobs back in the queue/)).toBeInTheDocument();
+    expect(within(review).getByText('3 items')).toBeInTheDocument();
+    expect(within(review).queryByRole('checkbox')).not.toBeInTheDocument();
+    await fireEvent.click(within(review).getByRole('button', { name: 'Retry failed jobs' }));
+
+    await waitFor(() => expect(retryFailedQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection }));
+    expect(await screen.findByText('Retry failed jobs: request sent to the server.')).toBeInTheDocument();
+  });
+
+  it('offers no retry while no job has failed', () => {
+    queues.list = [queue(QueueName.FaceDetection)];
+    at('&queue=face-detection&tab=failed');
+    render(JobsManager);
+
+    expect(screen.getByRole('button', { name: 'Retry failed' })).toBeDisabled();
   });
 });
