@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -28,6 +28,7 @@ import {
   AssetEditActionItem,
   AssetEditsCreateDto,
   AssetEditsResponseDto,
+  VideoEditVersionResponseDto,
 } from 'src/dtos/editing.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import {
@@ -100,6 +101,30 @@ const getAssetDateTimeUpdates = (dateTimeOriginal?: string) => {
     fileCreatedAt: dateTime.toUTC().toJSDate(),
     localDateTime: dateTime.setZone('UTC', { keepLocalTime: true }).toJSDate(),
   };
+};
+
+const videoVersionErrors: Record<string, string> = {
+  video_version_inactive: 'Video version history is unavailable while fork writes are disabled',
+  video_version_handoff: 'Video version history is locked while a schema handoff is running',
+  video_version_not_ready: 'The current video version is not ready to export',
+  video_version_selected_or_missing: 'Only an unselected saved video version can be pruned',
+  video_version_source_changed: 'The original video changed after this version was saved',
+};
+
+/** Repository refusals for retained video versions are client errors, not server faults. */
+const withVideoVersionErrors = async <T>(call: () => Promise<T>): Promise<T> => {
+  try {
+    return await call();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'video_version_not_found') {
+      throw new NotFoundException('Video version is unavailable');
+    }
+    if (code in videoVersionErrors) {
+      throw new BadRequestException(videoVersionErrors[code]);
+    }
+    throw error;
+  }
 };
 
 @Injectable()
@@ -524,6 +549,13 @@ export class AssetService extends BaseService {
       );
     }
 
+    // FL-39: video versions whose asset is gone (left behind while fork writes were disabled, or
+    // archived by a handoff return) release their files here.
+    const orphanedVersionPaths = await this.assetEditRepository.releaseOrphanedVideoVersions();
+    if (orphanedVersionPaths.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: orphanedVersionPaths } });
+    }
+
     return JobStatus.Success;
   }
 
@@ -592,6 +624,7 @@ export class AssetService extends BaseService {
       assetFiles.editedThumbnailFile?.path,
       assetFiles.encodedVideoFile?.path,
       ...videoDuplicateFrameFiles.map(({ path }) => path),
+      ...(removedAsset.videoEditPaths ?? []),
     ];
 
     // FL-78: an external library item only references its original, which stays in the library's
@@ -789,15 +822,48 @@ export class AssetService extends BaseService {
 
   async getAssetEdits(auth: AuthDto, id: string): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) throw new BadRequestException('Asset not found');
+    // Best effort: clients that only list edits must not fail because the original cannot be probed.
+    // Saving still requires the original's bounds (see editAsset).
+    let originalVideo: AssetEditsResponseDto['originalVideo'];
+    if (asset.type === AssetType.Video) {
+      try {
+        originalVideo = await this.getOriginalVideoMetadata(asset.originalPath);
+      } catch (error: any) {
+        this.logger.warn(`Original video metadata is unavailable for asset ${id}: ${error?.message ?? error}`);
+      }
+    }
     const edits = await this.assetEditRepository.getAll(id);
 
-    return {
-      assetId: id,
-      edits,
-    };
+    return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
   }
 
-  async editAsset(auth: AuthDto, id: string, dto: AssetEditsCreateDto): Promise<AssetEditsResponseDto> {
+  private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
+    const source = await this.mediaRepository.probe(path);
+    const video = source.videoStreams[0];
+    const durationMs = getDurationMs(Math.round(source.format.duration * 1000));
+    if (
+      !video ||
+      !Number.isSafeInteger(video.width) ||
+      video.width <= 0 ||
+      !Number.isSafeInteger(video.height) ||
+      video.height <= 0 ||
+      !durationMs ||
+      !Number.isFinite(video.rotation)
+    ) {
+      throw new BadRequestException('Original video metadata is not available for editing');
+    }
+    const rotated = Math.abs(video.rotation) % 180 === 90;
+    return { width: rotated ? video.height : video.width, height: rotated ? video.width : video.height, durationMs };
+  }
+
+  async editAsset(
+    auth: AuthDto,
+    id: string,
+    dto: AssetEditsCreateDto,
+    purpose: 'save' | 'revert' = 'save',
+  ): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
 
     const asset = await this.assetRepository.getForEdit(id);
@@ -834,14 +900,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Editing SVG images is not supported');
     }
 
-    const { width: assetWidth, height: assetHeight } = getDimensions(asset);
+    const originalVideo =
+      asset.type === AssetType.Video ? await this.getOriginalVideoMetadata(asset.originalPath) : undefined;
+    const { width: assetWidth, height: assetHeight } = originalVideo ?? getDimensions(asset);
     if (!assetWidth || !assetHeight) {
       throw new BadRequestException('Asset dimensions are not available for editing');
     }
 
-    if (asset.type === AssetType.Video && !getDurationMs(asset.duration)) {
-      throw new BadRequestException('Video duration is not available for editing');
-    }
+    const originalDurationMs = originalVideo?.durationMs ?? null;
 
     const crop = edits.find((e) => e.action === AssetEditAction.Crop);
     if (crop) {
@@ -856,7 +922,7 @@ export class AssetService extends BaseService {
     }
 
     if (asset.type === AssetType.Video) {
-      const durationMs = getDurationMs(asset.duration)!;
+      const durationMs = originalDurationMs!;
       const trimEdit = edits.find(
         (edit): edit is Extract<AssetEditActionItem, { action: AssetEditAction.Trim }> =>
           edit.action === AssetEditAction.Trim,
@@ -902,7 +968,7 @@ export class AssetService extends BaseService {
       }
     }
 
-    const newEdits = await this.assetEditRepository.replaceAll(id, edits);
+    const newEdits = await withVideoVersionErrors(() => this.assetEditRepository.replaceAll(id, edits, purpose));
     await this.jobRepository.queue({
       name: asset.type === AssetType.Video ? JobName.AssetVideoEditGeneration : JobName.AssetEditThumbnailGeneration,
       data: { id },
@@ -915,17 +981,75 @@ export class AssetService extends BaseService {
     };
   }
 
+  async getVideoEditVersions(auth: AuthDto, id: string): Promise<VideoEditVersionResponseDto[]> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditGet, ids: [id] });
+    const versions = await this.assetEditRepository.listVideoVersions(id, auth.user.id);
+    return versions.map((version) => ({
+      id: version.id,
+      assetId: version.assetId,
+      purpose: version.purpose,
+      status: version.status,
+      createdAt: new Date(version.createdAt).toISOString(),
+      edits: version.recipe,
+      isCurrent: version.isCurrent,
+      isRequested: version.isRequested,
+    }));
+  }
+
+  async restoreVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
+    const version = await this.assetEditRepository.getVideoVersion(id, versionId);
+    if (!version || version.ownerId !== auth.user.id || version.status !== 'ready')
+      throw new BadRequestException('Video version is unavailable');
+    if (version.recipe.length === 0) await this.clearAssetEdits(id, 'revert');
+    else await this.editAsset(auth, id, { edits: version.recipe }, 'revert');
+  }
+
+  async exportVideoEditVersion(auth: AuthDto, id: string): Promise<VideoEditVersionResponseDto> {
+    // An export renders a new master, so it needs the same permission as saving an edit.
+    await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
+    const version = await withVideoVersionErrors(() => this.assetEditRepository.createVideoExport(id, auth.user.id));
+    await this.jobRepository.queue({ name: JobName.AssetVideoEditGeneration, data: { id, versionId: version.id } });
+    return {
+      id: version.id,
+      assetId: id,
+      purpose: version.purpose,
+      status: version.status,
+      createdAt: new Date(version.createdAt).toISOString(),
+      edits: version.recipe,
+      isCurrent: false,
+      isRequested: false,
+    };
+  }
+
+  async pruneVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<void> {
+    await this.requireAccess({ auth, permission: Permission.AssetEditDelete, ids: [id] });
+    const paths = await withVideoVersionErrors(() =>
+      this.assetEditRepository.pruneVideoVersion(id, versionId, auth.user.id),
+    );
+    if (paths.length > 0) await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: paths } });
+  }
+
   async removeAssetEdits(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetEditDelete, ids: [id] });
+    await this.clearAssetEdits(id, 'save');
+  }
 
+  /** Restoring a version with an empty recipe is an edit, not a deletion; callers check access. */
+  private async clearAssetEdits(id: string, purpose: 'save' | 'revert'): Promise<void> {
     const asset = await this.assetRepository.getById(id, { files: true });
     if (!asset) {
       throw new BadRequestException('Asset not found');
     }
 
-    await this.assetEditRepository.replaceAll(id, []);
+    await withVideoVersionErrors(() => this.assetEditRepository.replaceAll(id, [], purpose));
 
-    if (asset.type === AssetType.Video) {
+    const requested =
+      asset.type === AssetType.Video
+        ? await withVideoVersionErrors(() => this.assetEditRepository.getRequestedVideoVersion(id))
+        : undefined;
+    // A retained version owns its files; only legacy (history-less) edits are deleted here.
+    if (asset.type === AssetType.Video && !requested) {
       const editedFiles = asset.files?.filter((file) => file.isEdited) ?? [];
       if (editedFiles.length > 0) {
         await this.jobRepository.queue({

@@ -34,6 +34,7 @@ import {
   isPlaybackProxyFileType,
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
+  validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
 import { OutputCadenceMode } from 'src/utils/video-timing.js';
@@ -599,5 +600,86 @@ describe('getFfmpegColorMatrixName', () => {
   it('returns null rather than a guess for a code point with no name', () => {
     expect(getFfmpegColorMatrixName(ColorMatrix.Unknown)).toBeNull();
     expect(getFfmpegColorMatrixName(ColorMatrix.Reserved)).toBeNull();
+  });
+});
+
+describe('validateVideoMaster (FL-39)', () => {
+  const preserve = { policy: EditedMasterColorPolicy.Preserve, reason: 'Source is SDR.' };
+  const toneMap = { policy: EditedMasterColorPolicy.ToneMap, reason: 'tone mapped' };
+  const source = { ...sdrStream, width: 3840, height: 2160, rotation: 0 };
+  const expectViolation = (run: () => void, message: string) => {
+    expect(run).toThrow(MediaPolicyError);
+    expect(run).toThrow(message);
+  };
+
+  it('accepts a baked master whose raster matches the recipe', () => {
+    expect(() =>
+      validateVideoMaster({
+        source,
+        output: { ...source, width: 2160, height: 3840 },
+        dimensions: { width: 2160, height: 3840 },
+        colorDecision: preserve,
+      }),
+    ).not.toThrow();
+  });
+
+  it('validates the displayed raster and stored rotation of a packet-preserving quarter turn', () => {
+    const rotated = { ...source, rotation: -90 };
+    const dimensions = { width: 2160, height: 3840 };
+    const check = (output: typeof rotated, expectedRotation?: number) => () =>
+      validateVideoMaster({ source, output, dimensions, expectedRotation, colorDecision: preserve, packetCopy: true });
+
+    expect(check(rotated, -90)).not.toThrow();
+    expectViolation(check({ ...rotated, rotation: 90 }, -90), 'dimensions');
+    expectViolation(check(rotated), 'dimensions');
+    expectViolation(check({ ...rotated, width: 1920 }, -90), 'dimensions');
+    expectViolation(check({ ...rotated, pixelFormat: 'yuv420p10le' }, -90), 'packet copy');
+    expectViolation(check({ ...rotated, colorTransfer: ColorTransfer.Smpte2084 }, -90), 'packet copy');
+  });
+
+  it('rejects a missing master stream', () => {
+    expectViolation(
+      () => validateVideoMaster({ source, output: undefined, dimensions: source, colorDecision: preserve }),
+      'dimensions',
+    );
+  });
+
+  it('keeps precision and declared colour intent when preserving', () => {
+    const hdr = {
+      ...source,
+      pixelFormat: 'yuv420p10le',
+      colorTransfer: ColorTransfer.Smpte2084,
+      colorPrimaries: ColorPrimaries.Bt2020,
+      colorMatrix: ColorMatrix.Bt2020Nc,
+    };
+    const check = (output: Partial<typeof hdr>) => () =>
+      validateVideoMaster({ source: hdr, output: { ...hdr, ...output }, dimensions: hdr, colorDecision: preserve });
+
+    expect(check({})).not.toThrow();
+    // a different high-precision layout is still a preserving delivery
+    expect(check({ pixelFormat: 'yuv422p10le' })).not.toThrow();
+    expectViolation(check({ pixelFormat: 'yuv420p' }), 'precision');
+    expectViolation(check({ colorTransfer: ColorTransfer.Bt709 }), 'color intent');
+  });
+
+  it('does not invent colour intent the source never declared', () => {
+    const untagged = { ...source, colorPrimaries: ColorPrimaries.Unknown, colorTransfer: ColorTransfer.Unknown };
+    expect(() =>
+      validateVideoMaster({
+        source: untagged,
+        output: { ...untagged, colorPrimaries: ColorPrimaries.Bt709, colorTransfer: ColorTransfer.Bt709 },
+        dimensions: untagged,
+        colorDecision: preserve,
+      }),
+    ).not.toThrow();
+  });
+
+  it('requires a tone-mapped master to leave HDR', () => {
+    const hdr = { ...source, pixelFormat: 'yuv420p10le', colorTransfer: ColorTransfer.Smpte2084 };
+    const check = (output: Partial<typeof hdr>) => () =>
+      validateVideoMaster({ source: hdr, output: { ...hdr, ...output }, dimensions: hdr, colorDecision: toneMap });
+
+    expect(check({ pixelFormat: 'yuv420p', colorTransfer: ColorTransfer.Bt709 })).not.toThrow();
+    expectViolation(check({ pixelFormat: 'yuv420p' }), 'HDR');
   });
 });

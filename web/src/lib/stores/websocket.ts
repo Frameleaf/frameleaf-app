@@ -44,6 +44,8 @@ export interface Events {
 
   MaintenanceStatusV1: (event: MaintenanceStatusResponseDto) => void;
   AssetEditReadyV2: (data: { asset: SyncAssetV2; edit: SyncAssetEditV1[] }) => void;
+  /** Fork-only (FL-39): a video edit render settled without publishing anything. */
+  VideoEditVersionFailedV1: (data: { assetId: string; versionId: string | null }) => void;
 }
 
 const websocket: Socket<Events> = io({
