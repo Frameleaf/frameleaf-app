@@ -5,6 +5,7 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
@@ -104,6 +105,7 @@
   onUpload={() => handlePromiseError(handleUploadAssets())}
   onDownloadAll={() => download(assets.map((asset) => asset.id))}
   onDownloadSelected={() => download([...librarySession.selection])}
+  onSendCopy={() => void sendCopiesWithFeedback([...librarySession.selection])}
   onSelectAll={() => librarySession.selectAll(assets.map((asset) => asset.id))}
   onClear={() => librarySession.clearSelection()}
   noSelectBar={isOwned}

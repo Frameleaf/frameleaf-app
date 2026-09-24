@@ -187,6 +187,20 @@ describe('bulk action descriptors', () => {
     expect(available({ count: 10, snapshot: true })).toContain('refresh-encoded');
   });
 
+  // FL-35 / FL-54: "Send a copy…" through the native share sheet, separate from the shared link.
+  it('offers Send a copy where the browser can share files, for explicit items outside trash and Locked', () => {
+    const assets = [photo('a'), photo('b')];
+    expect(available({ assets })).not.toContain('send-copy');
+    expect(available({ assets, canSendCopy: true })).toContain('send-copy');
+    expect(available({ assets, canSendCopy: true, trash: true })).not.toContain('send-copy');
+    expect(available({ assets, canSendCopy: true, locked: true })).not.toContain('send-copy');
+    expect(available({ count: 3, snapshot: true, canSendCopy: true })).not.toContain('send-copy');
+    // A shared link that allows downloads may send copies too.
+    expect(available({ assets, canSendCopy: true, readOnly: true })).toContain('send-copy');
+    const primary = primaryBulkActions(bulkActions({ assets, canSendCopy: true }), false).map((action) => action.id);
+    expect(primary).toEqual(['favorite', 'add-to-album', 'create-shared-link', 'send-copy', 'download', 'delete']);
+  });
+
   it('draws the primary buttons and never repeats them in the menu', () => {
     const actions = bulkActions({ assets: [photo('a', { isFavorite: true }), photo('b')], albumId: 'album-1' });
     const primary = primaryBulkActions(actions, false).map((action) => action.id);
