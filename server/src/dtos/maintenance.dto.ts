@@ -2,9 +2,28 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { MaintenanceAction, MaintenanceActionSchema, StorageFolderSchema } from 'src/enum.js';
 
+/**
+ * FL-81: the reason is shown to everyone on the maintenance screen, signed in or not, so it is plain
+ * public text: control and invisible formatting characters (line breaks, bidi overrides) become
+ * spaces, runs of spaces collapse and the result is trimmed; an empty reason is no reason.
+ */
+const maintenanceReason = z
+  .string()
+  .max(200)
+  .transform(
+    (value) =>
+      value
+        .replaceAll(/[\p{Cc}\p{Cf}\u{2028}\u{2029}]+/gu, ' ')
+        .replaceAll(/ {2,}/g, ' ')
+        .trim() || undefined,
+  )
+  .optional()
+  .describe('Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters)');
+
 const SetMaintenanceModeSchema = z
   .object({
     action: MaintenanceActionSchema,
+    reason: maintenanceReason,
     restoreBackupFilename: z.string().optional().describe('Restore backup filename'),
     keepSafetyBackup: z
       .boolean()
@@ -38,6 +57,7 @@ const MaintenanceStatusResponseSchema = z
     progress: z.int().optional(),
     task: z.string().optional(),
     error: z.string().optional(),
+    reason: z.string().optional().describe('Why the server is in maintenance, as set by the administrator (public)'),
   })
   .meta({ id: 'MaintenanceStatusResponseDto' });
 

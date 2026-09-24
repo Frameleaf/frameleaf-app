@@ -39,6 +39,8 @@ import { getExternalDomain } from 'src/utils/misc.js';
 @Injectable()
 export class MaintenanceWorkerService {
   #secret: string | null = null;
+  /** FL-81: the administrator's public reason, carried on every status this worker reports */
+  #reason: string | undefined;
   #status: MaintenanceStatusResponseDto = {
     active: true,
     action: MaintenanceAction.Start,
@@ -70,6 +72,7 @@ export class MaintenanceWorkerService {
     )) as MaintenanceModeState & { isMaintenanceMode: true };
 
     this.#secret = state.secret;
+    this.#reason = state.action?.reason;
     this.#status = {
       active: true,
       action: state.action?.action ?? MaintenanceAction.Start,
@@ -78,7 +81,10 @@ export class MaintenanceWorkerService {
     StorageCore.setMediaLocation(this.detectMediaLocation());
 
     this.maintenanceWebsocketRepository.setAuthFn(async (client) => this.authenticate(client.request.headers));
-    this.maintenanceWebsocketRepository.setStatusUpdateFn((status) => (this.#status = status));
+    this.maintenanceWebsocketRepository.setStatusUpdateFn((status) => {
+      this.#status = status;
+      this.#reason = status.reason ?? this.#reason;
+    });
 
     await this.logSecret();
 
@@ -207,11 +213,11 @@ export class MaintenanceWorkerService {
   }
 
   private getStatus(): MaintenanceStatusResponseDto {
-    return this.#status;
+    return this.withReason(this.#status);
   }
 
   private getPublicStatus(): MaintenanceStatusResponseDto {
-    const state = structuredClone(this.#status);
+    const state = structuredClone(this.withReason(this.#status));
 
     if (state.error) {
       state.error = 'Something went wrong, see logs!';
@@ -220,10 +226,14 @@ export class MaintenanceWorkerService {
     return state;
   }
 
+  private withReason(status: MaintenanceStatusResponseDto): MaintenanceStatusResponseDto {
+    return this.#reason === undefined ? status : { ...status, reason: this.#reason };
+  }
+
   setStatus(status: MaintenanceStatusResponseDto): void {
     this.#status = status;
-    this.maintenanceWebsocketRepository.serverSend('MaintenanceStatus', status);
-    this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'private', status);
+    this.maintenanceWebsocketRepository.serverSend('MaintenanceStatus', this.getStatus());
+    this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'private', this.getStatus());
     this.maintenanceWebsocketRepository.clientSend('MaintenanceStatusV1', 'public', this.getPublicStatus());
   }
 
@@ -274,6 +284,10 @@ export class MaintenanceWorkerService {
   }
 
   async setAction(action: SetMaintenanceModeDto) {
+    // a new reason replaces the old one; an action sent without one keeps it
+    if (action.reason !== undefined) {
+      this.#reason = action.reason;
+    }
     this.setStatus({
       active: true,
       action: action.action,
@@ -310,6 +324,7 @@ export class MaintenanceWorkerService {
       secret: this.secret,
       action: {
         action: MaintenanceAction.Start,
+        reason: this.#reason,
       },
     });
 
