@@ -221,6 +221,17 @@ export class JobService extends BaseService {
             },
             edit: edits,
           });
+          // Export completion updates history only. A ready save/revert also refreshes
+          // viewers and caches through the application-wide asset update subscription.
+          const version = item.data.versionId
+            ? await this.assetEditRepository.getVideoVersion(item.data.id, item.data.versionId)
+            : undefined;
+          if (!item.data.versionId || (version?.status === 'ready' && version.purpose !== 'export')) {
+            const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
+            if (updatedAsset) {
+              this.websocketRepository.clientSend('on_asset_update', updatedAsset.ownerId, mapAsset(updatedAsset));
+            }
+          }
         }
 
         break;
