@@ -51,6 +51,12 @@ const checkAssetOwnerAccess = (
     ? access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission, accessPrivacy(auth))
     : access.asset.checkOwnerAccess(auth.user.id, ids, hasElevatedPermission);
 
+// FL-34: derivative files carry their source asset's hidden-content filter, like the asset checks above
+const checkAssetFileOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
+  accessPrivacy(auth)
+    ? access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission, accessPrivacy(auth))
+    : access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+
 const checkAssetAlbumAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
     ? access.asset.checkAlbumAccess(auth.user.id, ids, accessPrivacy(auth))
@@ -227,7 +233,7 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetFileDownload: {
-      return access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return checkAssetFileOwnerAccess(access, auth, ids);
     }
 
     case Permission.AssetView: {
@@ -270,7 +276,7 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
 
     case Permission.AssetFileRead:
     case Permission.AssetFileDelete: {
-      return await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return await checkAssetFileOwnerAccess(access, auth, ids);
     }
 
     case Permission.AlbumRead: {

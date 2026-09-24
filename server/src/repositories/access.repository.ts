@@ -383,21 +383,31 @@ class AssetFileAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, fileIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkOwnerAccess(
+    userId: string,
+    fileIds: Set<string>,
+    hasElevatedPermission: boolean | undefined,
+    hideNsfwAssets?: AccessPrivacy,
+  ) {
     if (fileIds.size === 0) {
       return new Set<string>();
     }
 
-    return this.db
-      .selectFrom('asset_file')
-      .select('asset_file.id')
-      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-      .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
-      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
-      .where('asset.ownerId', '=', userId)
-      .where('asset_file.id', 'in', [...fileIds])
-      .execute()
-      .then((files) => new Set(files.map(({ id }) => id)));
+    return (
+      this.db
+        .selectFrom('asset_file')
+        .select('asset_file.id')
+        .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+        .$if(!hasElevatedPermission, (eb) => eb.where(isNotLocked('asset')))
+        .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
+        .where('asset.ownerId', '=', userId)
+        .where('asset_file.id', 'in', [...fileIds])
+        // FL-34: a derivative file is as private as its source asset, so the caller's hidden-content
+        // filter applies to it exactly as it does to the asset itself (`AssetAccess.checkOwnerAccess`)
+        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
+        .execute()
+        .then((files) => new Set(files.map(({ id }) => id)))
+    );
   }
 }
 

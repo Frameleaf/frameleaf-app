@@ -76,7 +76,7 @@ import {
   withTags,
 } from 'src/utils/database.js';
 import { lockDerivedResults } from 'src/utils/derivative-locks.js';
-import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
+import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
   isLocked,
@@ -831,14 +831,28 @@ export class AssetRepository {
    * In the same transaction every cover, featured photo and face thumbnail the newly locked assets
    * were is released (FL-53, `releaseLockedCoverReferences`), and the assets are touched so clients
    * that sync learn of the change. Returns the ids this call locked, for the caller to queue the
-   * released face thumbnails and sidecar writes.
+   * released face thumbnails and sidecar writes. With `kysely` (a caller's transaction) the lock
+   * commits with the caller's own writes, such as the sensitive review that caused it.
    */
-  async lock(ids: string[], reason: AssetLockReason, lockedBy: string | null): Promise<string[]> {
+  async lock(ids: string[], reason: AssetLockReason, lockedBy: string | null, kysely?: Kysely<DB>): Promise<string[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    return this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
+    return kysely
+      ? this.lockIn(kysely, ids, reason, lockedBy)
+      : this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
+  }
+
+  /**
+   * FL-34: takes, in the caller's transaction and in id order, the row locks that a later lock or
+   * unlock of `ids` needs on its whole stack and live-photo group. Called first in a transaction that
+   * writes one member (its `is_nsfw`, its review) and may then lock the group, so two such
+   * transactions for members of one group queue here instead of each holding its own row and waiting
+   * on the other's.
+   */
+  async lockGroupRows(ids: string[], kysely: Kysely<DB>): Promise<void> {
+    await lockAssetRowsInOrder(kysely, await this.getLockGroupIds(kysely, ids));
   }
 
   /** `lock` inside the caller's transaction `tx`. */
@@ -852,6 +866,8 @@ export class AssetRepository {
     if (targetIds.length === 0) {
       return [];
     }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
 
     const { rows } = await sql<{ assetId: string }>`
       insert into asset_lock ("assetId", "reason", "lockedBy")
@@ -916,31 +932,36 @@ export class AssetRepository {
   /**
    * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
    * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
-   * been locked.
+   * been locked. With `kysely` (a caller's transaction) the unlock commits with the caller's writes.
    */
-  async unlock(ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  async unlock(ids: string[], kysely?: Kysely<DB>): Promise<{ assetId: string; reason: AssetLockReason }[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    return this.inTransaction(async (tx) => {
-      const targetIds = await this.getLockGroupIds(tx, ids);
-      if (targetIds.length === 0) {
-        return [];
-      }
+    return kysely ? this.unlockIn(kysely, ids) : this.inTransaction((tx) => this.unlockIn(tx, ids));
+  }
 
-      const unlocked = await tx
-        .deleteFrom('asset_lock')
-        .where('asset_lock.assetId', '=', anyUuid(targetIds))
-        .returning(['asset_lock.assetId', 'asset_lock.reason'])
-        .execute();
-      if (unlocked.length > 0) {
-        const unlockedIds = unlocked.map(({ assetId }) => assetId);
-        await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
-      }
+  /** `unlock` inside the caller's transaction `tx`. */
+  private async unlockIn(tx: Kysely<DB>, ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+    const targetIds = await this.getLockGroupIds(tx, ids);
+    if (targetIds.length === 0) {
+      return [];
+    }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
 
-      return unlocked;
-    });
+    const unlocked = await tx
+      .deleteFrom('asset_lock')
+      .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .returning(['asset_lock.assetId', 'asset_lock.reason'])
+      .execute();
+    if (unlocked.length > 0) {
+      const unlockedIds = unlocked.map(({ assetId }) => assetId);
+      await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(unlockedIds)).execute();
+    }
+
+    return unlocked;
   }
 
   /**

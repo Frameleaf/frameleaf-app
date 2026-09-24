@@ -83,6 +83,8 @@ export type ValidateRequest = {
     /** `false` explicitly means no permission is required, which otherwise defaults to `all` */
     permission?: Permission | false;
     uri: string;
+    /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
+    refreshElevation?: boolean;
   };
 };
 
@@ -200,6 +202,8 @@ export class AuthService extends BaseService {
 
     await this.userRepository.update(auth.user.id, { pinCode: null });
     await this.sessionRepository.lockAll(auth.user.id);
+    // FL-34: every open tab of every session of this account drops what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
@@ -208,6 +212,9 @@ export class AuthService extends BaseService {
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
+    await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   private validatePinCode(
@@ -244,7 +251,7 @@ export class AuthService extends BaseService {
   }
 
   async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {
-    const authDto = await this.validate({ headers, queryParams });
+    const authDto = await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
@@ -296,7 +303,10 @@ export class AuthService extends BaseService {
     };
   }
 
-  private async validate({ headers, queryParams }: Omit<ValidateRequest, 'metadata'>): Promise<AuthDto> {
+  private async validate(
+    { headers, queryParams }: Omit<ValidateRequest, 'metadata'>,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
     const shareKey = (headers[ImmichHeader.SharedLinkKey] || queryParams[ImmichQuery.SharedLinkKey]) as string;
     const shareSlug = (headers[ImmichHeader.SharedLinkSlug] || queryParams[ImmichQuery.SharedLinkSlug]) as string;
     const session = (headers[ImmichHeader.UserToken] ||
@@ -315,7 +325,7 @@ export class AuthService extends BaseService {
     }
 
     if (session) {
-      return this.validateSession(session, headers);
+      return this.validateSession(session, headers, refreshElevation);
     }
 
     if (apiKey) {
@@ -620,7 +630,11 @@ export class AuthService extends BaseService {
     return this.cryptoRepository.compareBcrypt(inputSecret, existingHash);
   }
 
-  private async validateSession(token: string, headers: IncomingHttpHeaders): Promise<AuthDto> {
+  private async validateSession(
+    token: string,
+    headers: IncomingHttpHeaders,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
     const hashed = this.cryptoRepository.hashSha256(token);
     const session = await this.sessionRepository.getByToken(hashed);
     if (session?.user) {
@@ -645,10 +659,17 @@ export class AuthService extends BaseService {
         const pinExpiresAt = DateTime.fromJSDate(session.pinExpiresAt);
         hasElevatedPermission = pinExpiresAt > now;
 
-        if (hasElevatedPermission && now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt) {
-          await this.sessionRepository.update(session.id, {
-            pinExpiresAt: DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
-          });
+        if (
+          refreshElevation &&
+          hasElevatedPermission &&
+          now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt
+        ) {
+          // FL-34: conditional, so a lock that lands after the read above is never reversed; if the
+          // refresh finds the session locked, this request is not elevated either
+          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
+            session.id,
+            DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+          );
         }
       }
 
@@ -699,9 +720,17 @@ export class AuthService extends BaseService {
     // Successful unlock — reset the per-user counter.
     pinAttemptsByUser.delete(auth.user.id);
 
-    await this.sessionRepository.update(auth.session.id, {
-      pinExpiresAt: DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
-    });
+    // FL-34: conditional on the credentials just checked, so a PIN or password change that lands
+    // in between (and locked every session) is not undone by this unlock
+    const elevated = await this.sessionRepository.elevate(
+      auth.session.id,
+      auth.user.id,
+      user,
+      DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+    );
+    if (!elevated) {
+      throw new UnauthorizedException('Your PIN or password changed; unlock again');
+    }
   }
 
   async lockSession(auth: AuthDto): Promise<void> {
@@ -710,6 +739,8 @@ export class AuthService extends BaseService {
     }
 
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
+    // FL-34: only once the lock is stored; the session's other tabs drop what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.session.id);
   }
 
   private async createLoginResponse(

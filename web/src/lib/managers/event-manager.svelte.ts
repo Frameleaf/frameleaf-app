@@ -81,6 +81,12 @@ export type Events = {
   UserAdminDeleted: [{ id: string }];
 
   SessionLocked: [];
+  /**
+   * FL-34: the server revoked elevated access for this session or account (`on_session_lock`), from
+   * this tab or elsewhere. Distinct from `SessionLocked` (this tab's own lock): a non-elevated tab has
+   * nothing to give up, so only the session privacy guard acts on it, and only while elevated.
+   */
+  SessionLockedRemote: [];
   SessionAccessChanged: [{ isElevated: boolean }];
   SessionDelete: [];
 

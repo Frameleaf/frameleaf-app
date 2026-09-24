@@ -5,6 +5,7 @@
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
+  import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
   import VersionAnnouncement from './VersionAnnouncement.svelte';
@@ -250,19 +251,22 @@
   {/if}
 </svelte:head>
 
-<TooltipProvider>
-  {#if page.data.error}
-    <ErrorLayout error={page.data.error}></ErrorLayout>
-  {:else}
-    {@render children?.()}
-  {/if}
+<!-- FL-34: nothing (panels included) renders until the session's elevated access is verified -->
+<SessionPrivacyGuard>
+  <TooltipProvider>
+    {#if page.data.error}
+      <ErrorLayout error={page.data.error}></ErrorLayout>
+    {:else}
+      {@render children?.()}
+    {/if}
 
-  {#if showNavigationLoadingBar}
-    <NavigationLoadingBar />
-  {/if}
+    {#if showNavigationLoadingBar}
+      <NavigationLoadingBar />
+    {/if}
 
-  <PanelDock>
-    <DownloadPanel />
-    <UploadPanel />
-  </PanelDock>
-</TooltipProvider>
+    <PanelDock>
+      <DownloadPanel />
+      <UploadPanel />
+    </PanelDock>
+  </TooltipProvider>
+</SessionPrivacyGuard>
