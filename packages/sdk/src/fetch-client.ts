@@ -2003,6 +2003,8 @@ export type ArchiveOperationResponseDto = {
     /** Assets frozen into this operation */
     count: number;
     createdAt: string;
+    /** The operation was submitted or confirmed from the session asking, so it may offer its Undo */
+    currentSession: boolean;
     /** When an unconfirmed prepared selection stops being confirmable */
     expiresAt: string | null;
     /** Archive operation ID */

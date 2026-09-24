@@ -38848,6 +38848,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "currentSession": {
+            "description": "The operation was submitted or confirmed from the session asking, so it may offer its Undo",
+            "type": "boolean"
+          },
           "expiresAt": {
             "description": "When an unconfirmed prepared selection stops being confirmable",
             "format": "date-time",
@@ -38909,6 +38913,7 @@
           "conflict",
           "count",
           "createdAt",
+          "currentSession",
           "expiresAt",
           "id",
           "pending",
