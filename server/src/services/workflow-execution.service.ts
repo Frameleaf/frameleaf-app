@@ -581,6 +581,7 @@ export class WorkflowExecutionService extends BaseService {
     let data = readResult.data;
 
     for (const step of steps) {
+      const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
       try {
         const payload: WorkflowEventPayload<typeof type> = {
           trigger: workflow.trigger,
@@ -627,7 +628,6 @@ export class WorkflowExecutionService extends BaseService {
 
         if (result?.config) {
           await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config);
-          const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
           if (definitionStep) {
             definitionStep.config = structuredClone(result.config);
           }
@@ -646,7 +646,7 @@ export class WorkflowExecutionService extends BaseService {
         // well as in the step's parameters, so both are scrubbed from what run history keeps.
         const message = redactRunError(error instanceof Error ? error.message : String(error), {
           config: step.config ?? null,
-          stepExtra: expectedDefinition.steps.find((item) => item.id === step.id)?.extra ?? null,
+          stepExtra: definitionStep?.extra ?? null,
           workflowExtra: expectedDefinition.extra ?? null,
         });
         await log({
