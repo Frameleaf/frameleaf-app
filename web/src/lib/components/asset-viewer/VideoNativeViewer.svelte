@@ -191,7 +191,8 @@
 
   // The highest level at or under the pinned short side, else the lowest; undefined when on auto.
   const pickPinnedLevel = (levels: { width: number; height: number }[], quality: 'auto' | number) => {
-    if (quality === 'auto' || levels.length === 0) {
+    // A corrupt stored value would otherwise pin everything to the lowest level.
+    if (typeof quality !== 'number' || !Number.isFinite(quality) || quality <= 0 || levels.length === 0) {
       return;
     }
     const index = levels.findLastIndex((level) => shortSide(level) <= quality);

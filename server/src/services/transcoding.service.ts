@@ -156,6 +156,9 @@ export class TranscodingService extends BaseService {
       return;
     }
 
+    // Nothing running (e.g. ffmpeg was killed externally): start from the requested segment, not the stale start.
+    session.startSegment = segmentIndex;
+
     session.starting = true;
     try {
       const process = await this.startTranscode(session, variantIndex, segmentIndex);
