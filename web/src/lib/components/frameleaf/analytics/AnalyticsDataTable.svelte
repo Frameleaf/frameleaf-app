@@ -34,7 +34,11 @@
     aria-label={$t('frameleaf_analytics_table_region', { values: { title: table.title } })}
   >
     <table>
-      <caption>{caption ?? $t('frameleaf_analytics_table_caption', { values: { title: table.title } })}</caption>
+      <caption
+        >{caption ??
+          table.caption ??
+          $t('frameleaf_analytics_table_caption', { values: { title: table.title } })}</caption
+      >
       <thead>
         <tr>
           {#each table.columns as column (column.label)}
