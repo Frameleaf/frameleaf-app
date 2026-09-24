@@ -3,7 +3,7 @@
   import AlbumSummary from '$lib/components/album-page/AlbumSummary.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
@@ -14,7 +14,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { AlbumUserRole, type AlbumResponseDto } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
-  import { mdiArrowLeft } from '@mdi/js';
+  import { mdiArrowLeft, mdiEyeOffOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -83,10 +83,10 @@
     </section>
 
     {#snippet empty()}
-      <EmptyPlaceholder
-        text={$t('no_suppressed_content_message')}
+      <LibraryEmptyState
+        icon={mdiEyeOffOutline}
         title={$t('nothing_here_yet')}
-        class="mx-auto mt-10"
+        message={$t('no_suppressed_content_message')}
       />
     {/snippet}
 

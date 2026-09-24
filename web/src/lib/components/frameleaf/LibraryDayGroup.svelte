@@ -10,6 +10,7 @@
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -32,7 +33,7 @@
     grouped?: boolean;
     /** The layout the tiles are drawn in (FL-33 tile variants). */
     layout?: TileLayout;
-    /** Work: the caption row under each tile, included in the tile height. */
+    /** Timeline and Work: the caption row under each tile, included in the tile height. */
     captionHeight?: number;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
@@ -44,6 +45,8 @@
     onFocusAsset?: (asset: TimelineAsset) => void;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions each tile may offer. */
+    quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
   };
 
   let {
@@ -62,6 +65,7 @@
     onSelectGroup,
     onFocusAsset,
     tileOverlay,
+    quickActions,
   }: Props = $props();
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
@@ -140,6 +144,7 @@
             {onToggleSelect}
             onFocus={onFocusAsset}
             overlay={tileOverlay}
+            quickActions={quickActions?.(asset)}
           />
         </div>
       {/if}

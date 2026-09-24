@@ -8,7 +8,11 @@
    * "grids per tab"): Browse is a square cell with no rating and no caption; Work always shows the
    * rating (and Rejected) and a caption under the photo whose file name shows on request, inset so
    * one tile's time never runs into the next tile's name; Timeline shows the rating on hover or
-   * selection, as before.
+   * selection, as before, and a caption with the name and time (`TimelineLibrary.jsx`
+   * `showCaption`). A Locked item's caption never names its file.
+   *
+   * Hovering (or focusing) a tile shows its quick actions — favorite, edit, share, more — in the
+   * top corner (`AssetTile.jsx` `.at-actions`), except while a selection is in progress.
    *
    * Media sources are the production ones. The hover scrub plays the existing preview transcode
    * (`/assets/:id/video/playback`), never the original file, and a Live Photo plays its own motion
@@ -19,6 +23,7 @@
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import type { TileLayout } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -32,10 +37,14 @@
     mdiArchiveArrowDownOutline,
     mdiCheck,
     mdiCloudOffOutline,
+    mdiDotsHorizontal,
+    mdiExportVariant,
     mdiHeart,
+    mdiHeartOutline,
     mdiLayersOutline,
     mdiMotionPlayOutline,
     mdiPanoramaVariantOutline,
+    mdiPencilOutline,
     mdiPlay,
     mdiShieldLockOutline,
     mdiStar,
@@ -58,7 +67,7 @@
     /** Marked sensitive. Metadata only — the asset is never relocated. */
     sensitive?: boolean;
     offline?: boolean;
-    /** Work: space under the photo for the caption; `height` includes it. */
+    /** Timeline and Work: space under the photo for the caption; `height` includes it. */
     captionHeight?: number;
     /** Work: show the file name in the caption (a per-device toggle, off by default). */
     showFileName?: boolean;
@@ -71,6 +80,8 @@
      * utility's GPS markers, for instance. It is decoration: pointer events stay with the tile.
      */
     overlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions this tile may offer; none are drawn without them. */
+    quickActions?: TileQuickActions | null;
   };
 
   let {
@@ -90,6 +101,7 @@
     onFocus,
     tabindex = 0,
     overlay,
+    quickActions = null,
   }: Props = $props();
 
   const PREVIEW_DELAY = 300;
@@ -120,9 +132,21 @@
     stars !== 0 && layout !== 'browse' && (layout === 'work' || hovered || selected || !!previewMode),
   );
   const title = $derived($getAltText(asset));
-  const withCaption = $derived(layout === 'work' && captionHeight > 0);
-  /** Template `assetTitle`: the file name without its extension. */
-  const fileName = $derived(asset.originalFileName ? asset.originalFileName.replace(/\.[^.]+$/, '') : null);
+  const withCaption = $derived(layout !== 'browse' && captionHeight > 0);
+  /** Template `assetTitle`: the file name without its extension. A Locked item's name is never shown. */
+  const fileName = $derived(
+    asset.originalFileName && !isLocked ? asset.originalFileName.replace(/\.[^.]+$/, '') : null,
+  );
+  /** The Timeline caption always names the item; Work names it only on request. */
+  const captionName = $derived(layout === 'timeline' || showFileName ? fileName : null);
+  const hasQuickActions = $derived(
+    !!quickActions && !!(quickActions.onFavorite || quickActions.onEdit || quickActions.onShare || quickActions.onMore),
+  );
+  /** Run a quick action without also opening or selecting the tile under it. */
+  const quick = (action: (() => void) | undefined) => (event: MouseEvent) => {
+    event.stopPropagation();
+    action?.();
+  };
   /** Template `localCaptureTime`: the capture time on the photo's own clock. */
   const captureTime = $derived.by(() => {
     try {
@@ -276,6 +300,7 @@
   class:is-selected={selected}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
+  class:has-actions={hasQuickActions && !selecting}
   aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
   data-layout={layout}
@@ -420,11 +445,61 @@
     </span>
   </label>
 
+  {#if quickActions && hasQuickActions && !selecting}
+    <!-- Template `.at-actions`: hover and focus reveal them; a selection in progress hides them. -->
+    <div class="fl-tile-actions" role="group" aria-label={$t('frameleaf_tile_actions', { values: { title } })}>
+      {#if quickActions.onFavorite}
+        <button
+          type="button"
+          class:is-favorite={asset.isFavorite}
+          aria-pressed={asset.isFavorite}
+          aria-label={asset.isFavorite
+            ? $t('frameleaf_tile_unfavorite', { values: { title } })
+            : $t('frameleaf_tile_favorite', { values: { title } })}
+          title={asset.isFavorite ? $t('frameleaf_tile_remove_from_favorites') : $t('favorite')}
+          onclick={quick(quickActions.onFavorite)}
+        >
+          <Icon icon={asset.isFavorite ? mdiHeart : mdiHeartOutline} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onEdit}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_edit', { values: { title } })}
+          title={$t('edit')}
+          onclick={quick(quickActions.onEdit)}
+        >
+          <Icon icon={mdiPencilOutline} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onShare}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_share', { values: { title } })}
+          title={$t('share')}
+          onclick={quick(quickActions.onShare)}
+        >
+          <Icon icon={mdiExportVariant} size="16" />
+        </button>
+      {/if}
+      {#if quickActions.onMore}
+        <button
+          type="button"
+          aria-label={$t('frameleaf_tile_more', { values: { title } })}
+          title={$t('more')}
+          onclick={quick(quickActions.onMore)}
+        >
+          <Icon icon={mdiDotsHorizontal} size="16" />
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   {#if withCaption}
-    <!-- Template `.at-caption`: the name (on request) and the capture time, inset from the tile edges. -->
+    <!-- Template `.at-caption`: the name and the capture time, inset from the tile edges. -->
     <div class="fl-tile-caption" style:height="{captionHeight}px">
-      {#if showFileName && fileName}
-        <span title={asset.originalFileName}>{fileName}</span>
+      {#if captionName}
+        <span title={captionName}>{captionName}</span>
       {/if}
       {#if captureTime}
         <time datetime={fromTimelinePlainDateTime(asset.localDateTime).toISO({ includeOffset: false }) ?? undefined}
@@ -544,6 +619,57 @@
     font-size: var(--fl-font-small, 12px);
     pointer-events: none;
   }
+  /* Template asset-tile.css `.at-actions`: a dark capsule in the top corner, shown on hover and focus. */
+  .fl-tile-actions {
+    position: absolute;
+    inset-inline-end: 6px;
+    top: 6px;
+    z-index: 2;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 6px;
+    background: rgb(16 20 22 / 86%);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity var(--fl-motion-fast, 120ms) var(--fl-ease, ease),
+      transform var(--fl-motion-fast, 120ms) var(--fl-ease, ease);
+  }
+  .fl-tile:hover .fl-tile-actions,
+  .fl-tile:focus-within .fl-tile-actions {
+    opacity: 1;
+    transform: none;
+  }
+  .fl-tile-actions button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #e5e7eb;
+    cursor: pointer;
+  }
+  .fl-tile-actions button:hover,
+  .fl-tile-actions button:focus-visible {
+    background: rgb(255 255 255 / 14%);
+  }
+  .fl-tile-actions button.is-favorite {
+    color: var(--fl-accent);
+  }
+  /* The actions take the top corner while they show; the badges there step aside. */
+  .fl-tile.has-actions:hover .fl-tile-badges,
+  .fl-tile.has-actions:focus-within .fl-tile-badges {
+    opacity: 0;
+  }
+  .fl-tile-badges {
+    transition: opacity var(--fl-motion-fast, 120ms) ease;
+  }
   .fl-tile-select {
     position: absolute;
     inset-inline-start: 6px;
@@ -626,6 +752,9 @@
     white-space: nowrap;
   }
   @media (prefers-reduced-motion: reduce) {
+    .fl-tile-actions {
+      transform: none;
+    }
     .fl-tile-scrim,
     .fl-tile-select {
       transition: none;
