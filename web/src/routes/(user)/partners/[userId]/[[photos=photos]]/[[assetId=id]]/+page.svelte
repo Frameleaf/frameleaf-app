@@ -1,16 +1,19 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import PartnerLibraryHeader from '$lib/components/frameleaf/PartnerLibraryHeader.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, type PartnerResponseDto } from '@immich/sdk';
+  import { toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -34,12 +37,28 @@
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
 
+  /**
+   * FL-54: when this partner stops sharing while the page is open, nothing of theirs stays on
+   * screen: an open viewer closes, the timeline is dropped (the timeline manager does that for every
+   * open timeline), and the page goes back to Sharing and says why.
+   */
+  const onPartnerRevoke = async ({ sharedById, sharedWithId }: { sharedById: string; sharedWithId: string }) => {
+    if (sharedById !== data.partner.id || sharedWithId !== authManager.user.id) {
+      return;
+    }
+    assetViewerManager.showAssetViewer(false);
+    toastManager.primary($t('frameleaf_sharing.partner_revoked', { values: { name: partner.name } }));
+    await goto(Route.sharing());
+  };
+
   const options = $derived({
     userId: data.partner.id,
     visibility: AssetVisibility.Timeline,
     withStacked: true,
   });
 </script>
+
+<OnEvents {onPartnerRevoke} />
 
 <!-- The Frameleaf shell (top bar and rail) replaces the legacy ControlAppBar (AL-41), as in PartnerLibrary.jsx. -->
 <UserPageLayout scrollbar={false}>

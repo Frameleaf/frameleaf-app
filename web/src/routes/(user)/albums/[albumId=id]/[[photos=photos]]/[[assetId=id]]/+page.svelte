@@ -12,7 +12,7 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
-  import { canEdit } from '$lib/frameleaf/album-directory';
+  import { canEdit, isOwner, removalOutcome } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
@@ -20,7 +20,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAlbumAssetsActions, handleDeleteAlbum } from '$lib/services/album.service';
+  import { getAlbumAssetsActions, handleDeleteAlbum, leftLocally } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
@@ -202,8 +202,14 @@
    * album an item actually lives in, so the album-scoped bulk actions are offered on an album
    * or a shared space only. A collection's cover is set from the header instead.
    */
+  /**
+   * FL-53: removing items from the album and choosing its cover are the owner's and an editor's,
+   * so a viewer's selection bar does not offer them (the server refuses them too). The flag follows
+   * a role change made while the page is open.
+   */
+  const canChangeAlbum = $derived(canEdit(album, currentUserId));
   const bulkContext = $derived({
-    albumId: isCollection ? null : albumId,
+    albumId: isCollection || !canChangeAlbum ? null : albumId,
     ...(isSpaceViewer && { spaceViewerMatching: true }),
   });
 
@@ -338,6 +344,27 @@
     };
   };
 
+  /**
+   * Somebody left or was taken out of this album (FL-53). When it is the person looking at it —
+   * removed by the owner in another window, or leaving from another tab — the page can no longer
+   * read the album, so it says so and goes back instead of failing on a refresh.
+   */
+  const onAlbumUserDelete = async (removal: { albumId: string; userId: string }) => {
+    const outcome = removalOutcome(removal, {
+      albumId,
+      userId: currentUserId,
+      isOwner: isOwner(album, currentUserId),
+      leftLocally: leftLocally(removal.albumId),
+    });
+    if (outcome === 'exit') {
+      activityOpen = false;
+      toastManager.primary($t('frameleaf_album_access_removed', { values: { name: album.albumName } }));
+      await goto(album.kind === AlbumKind.Space ? Route.sharing() : Route.albums());
+    } else if (outcome === 'refresh') {
+      await refreshEverything();
+    }
+  };
+
   const onAlbumUpdate = async (newAlbum: AlbumResponseDto) => {
     if (newAlbum.id === albumId) {
       album = newAlbum;
@@ -370,7 +397,7 @@
   {onAlbumRemoveAssets}
   onAlbumShare={refreshEverything}
   {onAlbumUserUpdate}
-  onAlbumUserDelete={refreshEverything}
+  {onAlbumUserDelete}
   {onAlbumUpdate}
 />
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />

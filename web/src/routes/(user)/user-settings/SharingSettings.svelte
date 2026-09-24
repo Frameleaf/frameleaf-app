@@ -15,6 +15,7 @@
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
     acceptClusterGroupRequest,
@@ -271,11 +272,15 @@
       danger: true,
     });
     if (confirmed) {
-      await run(
+      const stopped = await run(
         () => removePartner({ id: partner.user.id }),
         $t('frameleaf_people_sharing.stopped'),
         'errors.unable_to_remove_partner',
       );
+      if (stopped) {
+        // FL-54: this tab's open pages drop the partner at once, as the server tells other tabs.
+        eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.user.id });
+      }
       await refreshPartners();
     }
   };
