@@ -6,10 +6,10 @@
   import { Route } from '$lib/route';
   import { faceManager } from '$lib/stores/face.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getPeopleThumbnailUrl } from '$lib/utils';
-  import { type AssetResponseDto } from '@immich/sdk';
-  import { Button, IconButton, Text } from '@immich/ui';
-  import { mdiEye, mdiEyeOff, mdiPencil, mdiPlus } from '@mdi/js';
+  import { getAssetMediaUrl, getPeopleThumbnailUrl } from '$lib/utils';
+  import { AssetMediaSize, type AssetFaceResponseDto, type AssetResponseDto } from '@immich/sdk';
+  import { Button, Text } from '@immich/ui';
+  import { mdiEye, mdiEyeOff, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -19,8 +19,8 @@
     previousRoute: string;
     /**
      * FL-38: re-reads the asset and its faces from the server after an inline reassign,
-     * create-person, remove or hide action lands. `DetailPanel.svelte` passes its existing
-     * `handleRefreshPeople`, the same refresh the full "Edit people" panel already uses.
+     * create-person, remove or hide action lands. `DetailPanel.svelte` passes its
+     * `handleRefreshPeople`.
      */
     onFacesChanged: () => void | Promise<void>;
   };
@@ -28,6 +28,28 @@
   const { asset, isOwner, previousRoute, onFacesChanged }: Props = $props();
 
   const people = $derived(Array.from(faceManager.people));
+  /**
+   * FL-38 (V-22): with the legacy "Edit people" side panel gone, a detected face nobody is
+   * assigned to gets its own "Unnamed person" chip and chip menu, as the prototype's
+   * `peopleChips` does (media-viewer.mjs:451; MediaViewer.jsx PeopleSection 2071-2285).
+   */
+  const unassignedFaces = $derived(isOwner ? faceManager.data.filter((face) => !face.person) : []);
+  const previewUrl = $derived(
+    getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
+  );
+
+  /** Crops the asset preview to one face with CSS, so an unnamed chip shows whose face it is. */
+  const faceCropStyle = (face: AssetFaceResponseDto) => {
+    const width = Math.max(1, face.boundingBoxX2 - face.boundingBoxX1);
+    const height = Math.max(1, face.boundingBoxY2 - face.boundingBoxY1);
+    const offset = (start: number, size: number, total: number) =>
+      total > size ? `${(start / (total - size)) * 100}%` : '50%';
+    return [
+      `background-image: url("${previewUrl}")`,
+      `background-size: ${(face.imageWidth / width) * 100}% ${(face.imageHeight / height) * 100}%`,
+      `background-position: ${offset(face.boundingBoxX1, width, face.imageWidth)} ${offset(face.boundingBoxY1, height, face.imageHeight)}`,
+    ].join('; ');
+  };
   const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
   const visiblePeople = $derived(
     people
@@ -67,7 +89,7 @@
 
 {#if !authManager.isSharedLink}
   <section class="px-4 pt-4 text-sm">
-    {#if isOwner || visiblePeople.length > 0}
+    {#if isOwner || visiblePeople.length > 0 || unassignedFaces.length > 0}
       <div class="flex h-10 w-full items-center justify-between">
         <Text size="small" color="muted">{$t('people')}</Text>
         <div class="flex items-center gap-2">
@@ -96,27 +118,17 @@
             >
               {$t('frameleaf_viewer_add_person')}
             </Button>
-
-            {#if faceManager.data.length > 0}
-              <IconButton
-                aria-label={$t('edit_people')}
-                icon={mdiPencil}
-                size="medium"
-                shape="round"
-                color="secondary"
-                variant="ghost"
-                onclick={() => assetViewerManager.openEditFacesPanel()}
-              />
-            {/if}
           {/if}
         </div>
       </div>
-      {#if visiblePeople.length === 0}
+      {#if visiblePeople.length === 0 && unassignedFaces.length === 0}
         <Text size="small" color="muted">{$t('frameleaf_viewer_no_people')}</Text>
       {/if}
     {/if}
 
-    <div class="mt-2 grid {visiblePeople.length <= 6 ? 'grid-cols-3 gap-3' : 'grid-cols-4 gap-2'}">
+    <div
+      class="mt-2 grid {visiblePeople.length + unassignedFaces.length <= 6 ? 'grid-cols-3 gap-3' : 'grid-cols-4 gap-2'}"
+    >
       {#each visiblePeople as person (person.id)}
         {@const personFaces = faceManager.facesByPersonId.get(person.id) ?? []}
         {@const primaryFace = personFaces[0]}
@@ -153,6 +165,32 @@
               <PersonFaceActions {person} face={primaryFace} {previousRoute} {onFacesChanged} />
             </div>
           {/if}
+        </div>
+      {/each}
+      {#each unassignedFaces as face (face.id)}
+        {@const isHighlighted = assetViewerManager.highlightedFaces.some((b) => b.id === face.id)}
+        <div
+          class="relative"
+          data-testid="unassigned-face"
+          role="presentation"
+          onpointerenter={() => assetViewerManager.setHighlightedFaces([face])}
+          onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
+          onfocusin={() => assetViewerManager.setHighlightedFaces([face])}
+          onfocusout={() => assetViewerManager.clearHighlightedFaces()}
+        >
+          <div>
+            <div
+              class="aspect-square w-full rounded-xl bg-gray-200 bg-no-repeat shadow-md dark:bg-gray-700 {isHighlighted
+                ? 'outline-2 outline-offset-2 outline-immich-primary dark:outline-immich-dark-primary'
+                : ''}"
+              style={faceCropStyle(face)}
+              aria-hidden="true"
+            ></div>
+            <p class="mt-1 truncate font-medium">{$t('frameleaf_faces_unnamed_person')}</p>
+          </div>
+          <div class="absolute -inset-e-1 -top-1">
+            <PersonFaceActions person={null} {face} {previousRoute} {onFacesChanged} />
+          </div>
         </div>
       {/each}
     </div>
