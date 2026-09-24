@@ -4904,6 +4904,7 @@
   "frameleaf_public_selected_of": "{count} of {total} selected",
   "frameleaf_public_selection": "Selection",
   "frameleaf_public_shared_by": "Shared by {name}",
+  "frameleaf_public_try_again": "Try again",
   "frameleaf_public_unavailable_body": "It may have been removed, or the address is incomplete.",
   "frameleaf_public_unavailable_title": "This link is not available",
   "frameleaf_render_workers_audit_all_workers": "All workers",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -52,6 +53,9 @@
   }
 
   const handlePasswordSubmit = async () => {
+    // Cleared first so a repeated wrong password is announced again.
+    passwordError = '';
+    await tick();
     try {
       sharedLink = await sharedLinkLogin({ key, slug, sharedLinkLoginDto: { password } });
       setSharedLink(sharedLink);
@@ -67,7 +71,13 @@
       );
     } catch (error) {
       if (isHttpError(error) && error.status === 401) {
-        passwordError = $t('frameleaf_public_password_wrong');
+        // Only the service's own answer is a wrong password; any other 401 means the link itself
+        // expired or was revoked meanwhile, so reload into the unavailable state.
+        if (error.data?.message === 'Invalid password') {
+          passwordError = $t('frameleaf_public_password_wrong');
+        } else {
+          await invalidateAll();
+        }
         return;
       }
       handleError(error, $t('errors.unable_to_get_shared_link'));
@@ -165,7 +175,12 @@
     padding: 0.625rem 0.75rem;
     border-radius: var(--fl-radius-control);
     background: color-mix(in srgb, var(--fl-danger), transparent 88%);
+    line-height: 1.5;
     text-align: start;
+  }
+  .pv-password-error :global(svg) {
+    flex-shrink: 0;
+    margin-top: 1px;
   }
   /* Above `.pv-password-card p`, which mutes the body text. */
   .pv-password-card .pv-password-error {
