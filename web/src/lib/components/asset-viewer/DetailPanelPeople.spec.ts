@@ -90,4 +90,17 @@ describe('DetailPanelPeople', () => {
     expect(screen.queryByText('frameleaf_viewer_no_people')).toBeNull();
     expect(screen.getByText('unnamed_person')).toBeInTheDocument();
   });
+
+  it('draws the people photos and unassigned face crops as squircles (FL-37)', () => {
+    const { container } = renderPanel(true);
+
+    // The photo (or its broken-image stand-in) sits inside a squircle backing that carries the highlight.
+    const link = screen.getByText('Alex').closest('a') as HTMLElement;
+    const backing = link.querySelector(':scope > .fl-squircle') as HTMLElement;
+    expect(backing).not.toBeNull();
+    expect(backing.querySelector('.fl-squircle')).not.toBeNull();
+    const crop = screen.getByTestId('unassigned-face').querySelector(':scope [aria-hidden="true"]');
+    expect(crop).toHaveClass('fl-squircle');
+    expect(container.querySelector(':scope .rounded-full, :scope [class~="rounded-xl"] > img')).toBeNull();
+  });
 });

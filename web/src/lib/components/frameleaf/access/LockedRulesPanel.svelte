@@ -415,7 +415,7 @@
           <label class="option">
             <input type="checkbox" checked onchange={() => toggle('personIds', id)} />
             {#if person}
-              <img src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
+              <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
               <span>{personName(person)}</span>
             {:else}
               <span class="unavailable">
@@ -431,7 +431,7 @@
         {#each personResults.filter((person) => !draft.personIds.includes(person.id)) as person (person.id)}
           <label class="option">
             <input type="checkbox" checked={false} onchange={() => togglePerson(person)} />
-            <img src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
+            <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" loading="lazy" />
             <span>{personName(person)}</span>
           </label>
         {/each}
@@ -614,7 +614,6 @@
   .option img {
     width: 2rem;
     height: 2rem;
-    border-radius: var(--fl-radius-pill);
     object-fit: cover;
   }
   .unavailable {
