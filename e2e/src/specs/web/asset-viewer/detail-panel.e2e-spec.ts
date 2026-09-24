@@ -177,8 +177,9 @@ test.describe('Detail Panel', () => {
       await page.getByRole('button', { name: 'Information (I)' }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
       await expect(page.locator('#datetime')).toBeVisible();
-      const lock = page.getByRole('button', { name: 'Hide Locked content' }).first();
-      await expect(lock).toBeVisible();
+      // The viewer covers the top bar, so its lock control is present but not exposed.
+      const lock = page.getByRole('button', { name: 'Hide Locked content', includeHidden: true }).first();
+      await expect(lock).toBeAttached();
 
       await page.evaluate(() => {
         const dialog = document.createElement('dialog');
