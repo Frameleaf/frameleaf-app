@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, OrderByDirection, Selectable, ShallowDehydrateObject, sql } from 'kysely';
+import { Kysely, NotNull, OrderByDirection, Selectable, ShallowDehydrateObject, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -583,6 +583,28 @@ export class SearchRepository {
           .as('exifInfo'),
       )
       .orderBy('asset_exif.city')
+      .execute();
+  }
+
+  /**
+   * Media per city for the places page (FL-51): the same owners and privacy rules as `getAssetsByCity`
+   * (timeline-visible, not Locked, hidden content filtered), but counting photos and videos, so a city
+   * with only videos has a count here and no entry in `getAssetsByCity`, which lists photos only.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getCityAssetCounts(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
+    return this.db
+      .selectFrom('asset_exif')
+      .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+      .select((eb) => ['asset_exif.city', eb.fn.countAll<number>().as('count')])
+      .where('asset.ownerId', '=', anyUuid(userIds))
+      .where(isTimelineVisible('asset'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_exif.city', 'is not', null)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .groupBy('asset_exif.city')
+      .orderBy('asset_exif.city')
+      .$narrowType<{ city: NotNull }>()
       .execute();
   }
 

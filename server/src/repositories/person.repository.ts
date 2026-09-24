@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, sql } from 'kysely';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, SourceType, UserMetadataKey } from 'src/enum.js';
+import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -76,6 +78,9 @@ export interface GetAllFacesOptions {
 }
 
 export type UnassignFacesOptions = DeleteFacesOptions & { clusterGroupId?: string };
+
+/** FL-57: an owner's answer to a merge suggestion they did not accept. */
+export type PersonMergeVerdict = 'different' | 'later';
 
 export type GetFacesOptions = WithPersonOptions & { isVisible?: boolean };
 
@@ -909,6 +914,15 @@ export class PersonRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID, { maxDistance: 0.5, limit: 20 }] })
   getMergeSuggestions(ownerId: string, { maxDistance, limit = 20 }: { maxDistance: number; limit?: number }) {
+    // a pair the owner answered "different" is never suggested again, one deferred with "later" not for
+    // 30 days (see `setMergeVerdict`)
+    const unanswered = sql<boolean>`not exists (
+      select 1 from immich_fork.person_merge_verdict verdict
+      where verdict."ownerId" = ${ownerId}::uuid
+        and verdict."personId" = "candidates"."personId"
+        and verdict."suggestionId" = "candidates"."suggestionId"
+        and (verdict.verdict = 'different' or verdict."createdAt" > now() - interval '30 days')
+    )`;
     return this.db
       .with('candidates', (qb) =>
         qb
@@ -930,9 +944,81 @@ export class PersonRepository {
       .selectFrom('candidates')
       .selectAll()
       .where('candidates.distance', '<', maxDistance)
+      .where(unanswered)
       .orderBy('candidates.distance', 'asc')
       .limit(limit)
       .execute();
+  }
+
+  /**
+   * FL-57: records an owner's answer to a merge suggestion, replacing any earlier one for the pair.
+   * `personId` must sort before `suggestionId` (the order `getMergeSuggestions` returns pairs in).
+   * Like every fork-owned writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  setMergeVerdict(ownerId: string, personId: string, suggestionId: string, verdict: PersonMergeVerdict) {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      const { rows } = await sql<{ verdict: PersonMergeVerdict; createdAt: Date }>`
+        INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
+        VALUES (${ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${verdict})
+        ON CONFLICT ("ownerId", "personId", "suggestionId")
+        DO UPDATE SET verdict = excluded.verdict, "createdAt" = excluded."createdAt"
+        RETURNING verdict, "createdAt"
+      `.execute(tx);
+      return rows[0];
+    });
+  }
+
+  /** FL-57: undoes a merge-suggestion answer; true when there was one. */
+  deleteMergeVerdict(ownerId: string, personId: string, suggestionId: string) {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      const { numAffectedRows } = await sql`
+        DELETE FROM immich_fork.person_merge_verdict
+        WHERE "ownerId" = ${ownerId}::uuid AND "personId" = ${personId}::uuid AND "suggestionId" = ${suggestionId}::uuid
+      `.execute(tx);
+      return (numAffectedRows ?? 0n) > 0n;
+    });
+  }
+
+  /**
+   * FL-57: drops verdicts that name a person their owner no longer has (deleted, merged away, or the
+   * owner's account removed). `ownerId` narrows it to one owner; without it every owner is checked.
+   */
+  async deleteOrphanedMergeVerdicts(ownerId?: string): Promise<number> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      const { numAffectedRows } = await sql`
+        DELETE FROM immich_fork.person_merge_verdict verdict
+        WHERE (${ownerId ?? null}::uuid IS NULL OR verdict."ownerId" = ${ownerId ?? null}::uuid)
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM public.person person
+              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."personId"
+            )
+            OR NOT EXISTS (
+              SELECT 1 FROM public.person person
+              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."suggestionId"
+            )
+          )
+      `.execute(tx);
+      return Number(numAffectedRows ?? 0n);
+    });
+  }
+
+  private async lockForkWrites(tx: Transaction<DB>) {
+    const { rows } = await sql<{ phase: ForkSchemaPhase }>`
+      SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
+    `.execute(tx);
+    const handoff = await sql`
+      SELECT 1 FROM immich_fork.migration_audit
+      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
+      LIMIT 1
+    `.execute(tx);
+    const phase = rows[0]?.phase;
+    if (!phase || !(isLegacyAuthoritative(phase) || isForkWriteEnabled(phase)) || handoff.rows.length > 0) {
+      throw new ConflictException('Merge suggestion answers are unavailable during database handoff');
+    }
   }
 
   /**

@@ -172,6 +172,44 @@ describe(PersonController.name, () => {
     });
   });
 
+  describe('PUT /people/merge-suggestions/verdicts', () => {
+    it('should reject an unknown verdict', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/people/merge-suggestions/verdicts')
+        .send({ personId: factory.uuid(), suggestionId: factory.uuid(), verdict: 'maybe' });
+      expect(status).toBe(400);
+      expect(service.setMergeVerdict).not.toHaveBeenCalled();
+    });
+
+    it('should record a verdict', async () => {
+      const dto = { personId: factory.uuid(), suggestionId: factory.uuid(), verdict: 'different' };
+      service.setMergeVerdict.mockResolvedValue({
+        ...dto,
+        verdict: 'different',
+        createdAt: '2026-09-24T00:00:00.000Z',
+      });
+      const { status } = await request(ctx.getHttpServer()).put('/people/merge-suggestions/verdicts').send(dto);
+      expect(status).toBe(200);
+      expect(service.setMergeVerdict).toHaveBeenCalledWith(undefined, dto);
+    });
+  });
+
+  describe('DELETE /people/merge-suggestions/verdicts', () => {
+    it('should require valid uuids', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .delete('/people/merge-suggestions/verdicts')
+        .send({ personId: 'invalid', suggestionId: factory.uuid() });
+      expect(status).toBe(400);
+    });
+
+    it('should undo a verdict', async () => {
+      const dto = { personId: factory.uuid(), suggestionId: factory.uuid() };
+      const { status } = await request(ctx.getHttpServer()).delete('/people/merge-suggestions/verdicts').send(dto);
+      expect(status).toBe(204);
+      expect(service.deleteMergeVerdict).toHaveBeenCalledWith(undefined, dto);
+    });
+  });
+
   describe('GET /people/:id/corrections', () => {
     it('should require a valid uuid', async () => {
       const { status, body } = await request(ctx.getHttpServer()).get('/people/invalid/corrections');

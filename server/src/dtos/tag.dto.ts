@@ -24,6 +24,13 @@ export const TagUpdateSchema = z
       .optional()
       .describe('Tag name'),
     color: hexColor.nullable().optional().describe('Tag color (hex)'),
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path',
+      ),
   })
   .meta({ id: 'TagUpdateDto' });
 

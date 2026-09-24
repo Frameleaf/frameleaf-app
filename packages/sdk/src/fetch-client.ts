@@ -727,6 +727,8 @@ export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
     keepSafetyBackup?: boolean;
+    /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it */
+    reason?: string | null;
     /** Restore backup filename */
     restoreBackupFilename?: string;
 };
@@ -755,6 +757,8 @@ export type MaintenanceStatusResponseDto = {
     active: boolean;
     error?: string;
     progress?: number;
+    /** Why the server is in maintenance, as set by the administrator (public) */
+    reason?: string;
     task?: string;
 };
 export type NotificationCreateDto = {
@@ -1751,14 +1755,21 @@ export type MapMarkerResponseDto = {
     city: string | null;
     /** Country name */
     country: string | null;
+    /** UTC timestamp when the asset was captured */
+    fileCreatedAt?: string;
     /** Asset ID */
     id: string;
     /** Latitude */
     lat: number;
+    /** Capture date and time in the local time zone where it was taken, encoded as UTC */
+    localDateTime?: string;
     /** Longitude */
     lon: number;
+    /** Original file name */
+    originalFileName?: string;
     /** State/Province name */
     state: string | null;
+    "type"?: AssetTypeEnum;
 };
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
@@ -5161,6 +5172,28 @@ export type MergeSuggestionsResponseDto = {
     /** Suggested pairs of people that may be the same person */
     suggestions: PersonMergeSuggestionDto[];
 };
+export type PersonMergeVerdictDeleteDto = {
+    /** One person of the suggested pair (either order) */
+    personId: string;
+    /** The other person of the suggested pair */
+    suggestionId: string;
+};
+export type PersonMergeVerdictCreateDto = {
+    /** One person of the suggested pair (either order) */
+    personId: string;
+    /** The other person of the suggested pair */
+    suggestionId: string;
+    verdict: PersonMergeVerdict;
+};
+export type PersonMergeVerdictResponseDto = {
+    /** When the verdict was recorded */
+    createdAt: string;
+    /** The person of the pair whose id sorts first */
+    personId: string;
+    /** The other person of the pair */
+    suggestionId: string;
+    verdict: PersonMergeVerdict;
+};
 export type PersonUpdateDto = {
     /** Person date of birth */
     birthDate?: string | null;
@@ -6201,6 +6234,12 @@ export type AskSearchResponseDto = {
     results: SearchResponseDto;
     /** Unsupported or ambiguous parts of the query */
     warnings: string[];
+};
+export type SearchCityCountResponseDto = {
+    /** City name, grouped as in GET /search/cities (which lists only cities with a photo) */
+    city: string;
+    /** Number of timeline photos and videos in this city */
+    count: number;
 };
 export type SearchExploreItem = {
     data: AssetResponseDto;
@@ -7675,6 +7714,8 @@ export type TagUpdateDto = {
     color?: string | null;
     /** Tag name */
     name?: string;
+    /** Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path */
+    parentId?: string | null;
 };
 export type TakeoutAlbumDto = {
     /** Items in the folder */
@@ -7924,6 +7965,8 @@ export type TimeBucketAssetResponseDto = {
     ownerId: string[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */
     projectionType: (string | null)[];
+    /** Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF */
+    rating?: (number | null)[];
     /** Array of aspect ratios (width/height) for each asset */
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
@@ -13191,6 +13234,33 @@ export function getMergeSuggestions(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Undo a merge suggestion verdict
+ */
+export function deleteMergeVerdict({ personMergeVerdictDeleteDto }: {
+    personMergeVerdictDeleteDto: PersonMergeVerdictDeleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/people/merge-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: personMergeVerdictDeleteDto
+    })));
+}
+/**
+ * Record a merge suggestion verdict
+ */
+export function setMergeVerdict({ personMergeVerdictCreateDto }: {
+    personMergeVerdictCreateDto: PersonMergeVerdictCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonMergeVerdictResponseDto;
+    }>("/people/merge-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personMergeVerdictCreateDto
+    })));
+}
+/**
  * Delete person
  */
 export function deletePerson({ id }: {
@@ -14297,6 +14367,17 @@ export function getAssetsByCity(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: AssetResponseDto[];
     }>("/search/cities", {
+        ...opts
+    }));
+}
+/**
+ * Retrieve asset counts by city
+ */
+export function getCityAssetCounts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchCityCountResponseDto[];
+    }>("/search/cities/counts", {
         ...opts
     }));
 }
@@ -18046,6 +18127,10 @@ export enum RestorationModelState {
 export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
+}
+export enum PersonMergeVerdict {
+    Different = "different",
+    Later = "later"
 }
 export enum PetSpecies {
     Cat = "cat",

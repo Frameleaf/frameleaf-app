@@ -141,6 +141,12 @@ const TimeBucketAssetResponseSchema = z
       .describe(
         'Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items',
       ),
+    rating: z
+      .array(z.int32().min(-1).max(5).nullable())
+      .optional()
+      .describe(
+        'Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF',
+      ),
     city: z.array(z.string().nullable()).optional().describe('Array of city names extracted from EXIF GPS data'),
     country: z.array(z.string().nullable()).optional().describe('Array of country names extracted from EXIF GPS data'),
     latitude: z

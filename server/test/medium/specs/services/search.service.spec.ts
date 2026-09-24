@@ -567,4 +567,37 @@ describe(SearchService.name, () => {
       expect(response.length).toBe(0);
     });
   });
+
+  describe('getCityAssetCounts (FL-51)', () => {
+    it("counts timeline photos and videos per city and never Locked, trashed or other users' media", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const inCity = async (city: string, dto: Parameters<typeof ctx.newAsset>[0]) => {
+        const { asset } = await ctx.newAsset(dto);
+        await ctx.newExif({ assetId: asset.id, city, latitude: 48.85, longitude: 2.35 });
+        return asset;
+      };
+
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Image });
+      await inCity('Paris', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Rome', { ownerId: user.id });
+      await inCity('Rome', { ownerId: user.id, deletedAt: new Date() });
+      await inCity('Rome', { ownerId: user.id, visibility: AssetVisibility.Archive });
+      await inCity('Secret', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Lisbon', { ownerId: user.id, type: AssetType.Video });
+      await inCity('Paris', { ownerId: stranger.id });
+
+      const counts = await sut.getCityAssetCounts(factory.auth({ user: { id: user.id } }));
+      expect(counts).toEqual([
+        { city: 'Lisbon', count: 1 },
+        { city: 'Paris', count: 2 },
+        { city: 'Rome', count: 1 },
+      ]);
+      // the places list itself shows photo cities only, so the video-only city is counted but not listed
+      const listed = await sut.getAssetsByCity(factory.auth({ user: { id: user.id } }));
+      expect(listed.map((asset) => asset.exifInfo?.city)).toEqual(['Paris', 'Rome']);
+    });
+  });
 });

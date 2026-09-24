@@ -60,19 +60,14 @@ export class TagService extends BaseService {
   async update(auth: AuthDto, id: string, dto: TagUpdateDto): Promise<TagResponseDto> {
     await this.requireTag(auth, Permission.TagUpdate, id);
 
-    const { name, color } = dto;
-    const existing = await this.findOrFail(id);
-
-    let value;
-    if (name) {
-      const parts = existing.value.split('/');
-      parts[parts.length - 1] = name;
-      value = parts.join('/');
-    } else {
-      value = existing.value;
+    const { name, color, parentId } = dto;
+    if (parentId) {
+      // FL-46: moving a tag, like creating one, needs the new parent to be a tag this user can read
+      await this.requireTag(auth, Permission.TagRead, parentId);
     }
 
-    const tag = await this.tagRepository.update(id, { value, color });
+    // the path, cycle and duplicate checks run with the owner's tags locked (see TagRepository.update)
+    const tag = await this.tagRepository.update(id, { name, color, parentId });
     return mapTag(tag);
   }
 

@@ -176,6 +176,57 @@ describe(MaintenanceWorkerService.name, () => {
     });
   });
 
+  describe('reason (FL-81)', () => {
+    it('reports the reason from setAction on the public and private status', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+
+      await expect(sut.status()).resolves.toEqual(expect.objectContaining({ reason: 'Upgrading storage' }));
+      expect(maintenanceWebsocketRepositoryMock.clientSend).toHaveBeenCalledWith(
+        'MaintenanceStatusV1',
+        'public',
+        expect.objectContaining({ reason: 'Upgrading storage' }),
+      );
+    });
+
+    it('keeps the reason when a later action does not send one', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+      sut.setStatus({ active: true, action: MaintenanceAction.Start, task: 'abc' });
+
+      await expect(sut.status()).resolves.toEqual(
+        expect.objectContaining({ task: 'abc', reason: 'Upgrading storage' }),
+      );
+    });
+
+    it('clears the reason with null and stores the change', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: 'Upgrading storage' },
+      });
+
+      await sut.setAction({ action: MaintenanceAction.Start, reason: null });
+
+      await expect(sut.status()).resolves.not.toHaveProperty('reason');
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: undefined },
+      });
+    });
+
+    it('restores the stored reason on init', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: 'Moving house' },
+      });
+      await sut.init();
+
+      await expect(sut.status()).resolves.toEqual(expect.objectContaining({ reason: 'Moving house' }));
+    });
+  });
+
   describe('logSecret', () => {
     const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
