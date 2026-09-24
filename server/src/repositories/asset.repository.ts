@@ -1622,6 +1622,7 @@ export class AssetRepository {
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select(lockReasonOf('asset').as('lockReason')),
           )
+          .$if(withPlaces, (qb) => qb.select('asset_exif.rating'))
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
           .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
@@ -1744,6 +1745,7 @@ export class AssetRepository {
             qb.select((eb) => [
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
               eb.fn.coalesce(eb.fn('array_agg', ['country']), sql.lit('{}')).as('country'),
+              eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
             ]),
           )
           .$if(!!options.withCoordinates, (qb) =>
