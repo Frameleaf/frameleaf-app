@@ -22,6 +22,7 @@ import {
 import { utils } from 'src/utils.js';
 import {
   assetViewerUtils,
+  groupingUtils,
   padYearMonth,
   pageUtils,
   poll,
@@ -84,6 +85,11 @@ test.describe('Timeline', () => {
   });
 
   const assetsInMonth = (yearMonth: string) => assets.filter((asset) => getYearMonth(assets, asset.id) === yearMonth);
+
+  /** Group titles as the prototype writes them (`explore-timeline.mjs` `timelineGroups`). */
+  const monthTitle = (assetId: string) =>
+    captured(assets, assetId).setLocale('en').toLocaleString({ month: 'long', year: 'numeric' });
+  const yearTitle = (assetId: string) => String(captured(assets, assetId).year);
 
   /** Assets deep enough in the library that showing one always scrolls the timeline. */
   const deepAssets = () => assets.slice(100);
@@ -388,6 +394,130 @@ test.describe('Timeline', () => {
         }
         await thumbnailUtils.expectInViewport(page, assetsInMonth(yearMonths[index])[0].id);
       }
+    });
+  });
+
+  /**
+   * Prototype `TimelineLibrary.jsx` and `explore-timeline.mjs` `timelineGroups`: the grouping control
+   * lays the Timeline out by year, month or day under one sticky header per group ("2024",
+   * "December 2024", "Wednesday…" day headers), and ⌘/Ctrl+wheel steps between the modes.
+   */
+  test.describe('grouping', () => {
+    test('Group by month and by year from the grouping control, then back to days', async ({ page }) => {
+      await openTimeline(page);
+      const dayTitles = await groupingUtils.dayHeadings(page).allTextContents();
+
+      await groupingUtils.choose(page, 'Months');
+      await expect.poll(() => timelineUtils.grouping(page)).toBe('months');
+      await expect(page.getByRole('status').filter({ hasText: 'Grouped by months' })).toHaveCount(1);
+      await expect(groupingUtils.dayHeadings(page)).toHaveCount(0);
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(monthTitle(assets[0].id));
+      await expect(page.getByTestId('frameleaf-group').first()).toContainText(
+        new RegExp(String.raw`\b${assetsInMonth(yearMonths[0]).length} items`),
+      );
+      await expectTilesUnderTheirGroup(page, monthTitle);
+
+      await groupingUtils.choose(page, 'Years');
+      await expect.poll(() => timelineUtils.grouping(page)).toBe('years');
+      await expect(groupingUtils.dayHeadings(page)).toHaveCount(0);
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(yearTitle(assets[0].id));
+      const newestYear = captured(assets, assets[0].id).year;
+      const inNewestYear = assets.filter((asset) => captured(assets, asset.id).year === newestYear).length;
+      await expect(page.getByTestId('frameleaf-group').first()).toContainText(
+        new RegExp(String.raw`\b${inNewestYear} items`),
+      );
+      await expectTilesUnderTheirGroup(page, yearTitle);
+
+      await groupingUtils.choose(page, 'Days');
+      await expect.poll(() => timelineUtils.grouping(page)).toBe('days');
+      await expect(groupingUtils.groupHeadings(page)).toHaveCount(0);
+      await expect(groupingUtils.dayHeadings(page).first()).toBeVisible();
+      expect(await groupingUtils.dayHeadings(page).allTextContents()).toEqual(dayTitles);
+    });
+
+    test('A year header stays at the top through every month of its year', async ({ page }) => {
+      await openTimeline(page);
+      await groupingUtils.choose(page, 'Years');
+      const newestYear = captured(assets, assets[0].id).year;
+      // A later month of the newest year and a month of the year before it.
+      const laterMonth = yearMonths.findLast((yearMonth) => yearMonth.startsWith(`${newestYear}-`))!;
+      const olderMonth = yearMonths.find((yearMonth) => !yearMonth.startsWith(`${newestYear}-`))!;
+      for (const [yearMonth, year] of [
+        [laterMonth, newestYear],
+        [olderMonth, Number(olderMonth.split('-', 1)[0])],
+      ] as const) {
+        await scrubberUtils.clickMonth(page, yearMonth);
+        await expect
+          .poll(() => thumbnailUtils.someInViewport(page, (assetId) => getYearMonth(assets, assetId) === yearMonth))
+          .toBe(true);
+        const heading = groupingUtils.groupHeadings(page).filter({ hasText: String(year) });
+        await expect(heading).toBeInViewport();
+        await expect
+          .poll(async () => {
+            const box = await heading.boundingBox();
+            const scroller = await timelineUtils.locator(page).boundingBox();
+            return Math.abs(box!.y - scroller!.y) < box!.height;
+          })
+          .toBe(true);
+      }
+    });
+
+    test('A year header selects the whole year, months not yet loaded included', async ({ page }) => {
+      await openTimeline(page);
+      await groupingUtils.choose(page, 'Years');
+      const newestYear = captured(assets, assets[0].id).year;
+      const inNewestYear = assets.filter((asset) => captured(assets, asset.id).year === newestYear).length;
+      const header = page.getByTestId('frameleaf-group').first();
+      await header.getByRole('heading').hover();
+      const checkbox = header.getByRole('checkbox', { name: `Select everything in ${newestYear}` });
+      await checkbox.click();
+      await expect(selectionBarUtils.locator(page)).toContainText(`${inNewestYear} selected`);
+      await expect(checkbox).toBeChecked();
+      await checkbox.click();
+      await expect(checkbox).not.toBeChecked();
+      await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(0);
+    });
+
+    test('Ctrl+wheel steps the grouping coarser and finer', async ({ page }) => {
+      await openTimeline(page);
+      await timelineUtils.locator(page).hover();
+      const scrollTop = await timelineUtils.locator(page).evaluate((element) => element.scrollTop);
+      const step = async (deltaY: number, mode: 'Years' | 'Months' | 'Days') => {
+        await page.keyboard.down('Control');
+        await page.mouse.wheel(0, deltaY);
+        await page.keyboard.up('Control');
+        await groupingUtils.expectMode(page, mode);
+        // The prototype waits 300 ms before it takes the next step.
+        await page.waitForTimeout(350);
+      };
+      // Scrolling down with the modifier held groups more coarsely, scrolling up more finely.
+      await step(120, 'Months');
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(monthTitle(assets[0].id));
+      await step(120, 'Years');
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(yearTitle(assets[0].id));
+      await step(-120, 'Months');
+      await step(-120, 'Days');
+      await expect(groupingUtils.groupHeadings(page)).toHaveCount(0);
+      await expect(groupingUtils.dayHeadings(page).first()).toBeVisible();
+      // The modified wheel changes the grouping instead of scrolling the timeline.
+      expect(await timelineUtils.locator(page).evaluate((element) => element.scrollTop)).toBe(scrollTop);
+    });
+
+    test('M and Y group by month and year, and D brings the day headers back', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.locator(page).hover();
+      await page.keyboard.press('m');
+      await groupingUtils.expectMode(page, 'Months');
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(monthTitle(assets[0].id));
+      await expectTilesUnderTheirGroup(page, monthTitle);
+      await page.keyboard.press('y');
+      await groupingUtils.expectMode(page, 'Years');
+      await expect(groupingUtils.groupHeadings(page).first()).toHaveText(yearTitle(assets[0].id));
+      await expectTilesUnderTheirGroup(page, yearTitle);
+      await page.keyboard.press('d');
+      await groupingUtils.expectMode(page, 'Days');
+      await expect(groupingUtils.groupHeadings(page)).toHaveCount(0);
+      await expect(groupingUtils.dayHeadings(page).first()).toBeVisible();
     });
   });
 
@@ -740,8 +870,38 @@ test.describe('Timeline', () => {
 const railLink = (page: Page, name: string) =>
   page.getByTestId('sidebar-parent').getByRole('link', { name, exact: true });
 
-const getYearMonth = (assets: TimelineAssetConfig[], assetId: string) => {
+const GROUP_HEADING = '[data-testid="frameleaf-group"] h2';
+
+/** Every tile on screen sits under the header of its own group, and there is at least one. */
+const expectTilesUnderTheirGroup = async (page: Page, title: (assetId: string) => string) => {
+  await expect
+    .poll(async () => {
+      const tiles = await groupingUtils.tilesUnderHeadings(page, GROUP_HEADING);
+      // Each misplaced tile, as the heading it was drawn under and the one it belongs to.
+      return tiles.length === 0
+        ? ['no tiles on screen']
+        : tiles
+            .filter(({ id, heading }) => heading !== title(id))
+            .map(({ id, heading }) => `${heading} ≠ ${title(id)}`);
+    })
+    .toEqual([]);
+};
+
+/** The library in the Timeline layout, grouped by day as it opens. */
+const openTimeline = async (page: Page) => {
+  await pageUtils.openPhotosPage(page);
+  await timelineUtils.setLayout(page, 'Timeline');
+  await groupingUtils.expectMode(page, 'Days');
+  await expect(groupingUtils.dayHeadings(page).first()).toBeVisible();
+};
+
+/** When an asset was captured, as the timeline files it. */
+const captured = (assets: TimelineAssetConfig[], assetId: string) => {
   const mockAsset = assets.find((mockAsset) => mockAsset.id === assetId)!;
-  const dateTime = DateTime.fromISO(mockAsset.fileCreatedAt!, { zone: 'utc' });
+  return DateTime.fromISO(mockAsset.fileCreatedAt!, { zone: 'utc' });
+};
+
+const getYearMonth = (assets: TimelineAssetConfig[], assetId: string) => {
+  const dateTime = captured(assets, assetId);
   return dateTime.year + '-' + dateTime.month;
 };
