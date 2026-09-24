@@ -72,7 +72,7 @@
   let changed = false;
   let previous: Element | null = null;
 
-  const name = $derived(isUnnamedPerson(person) ? $t('frameleaf_people_unnamed_person') : person.name);
+  const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
   const open = $derived(rows.filter(({ face }) => !resolved.has(face.id)).length);
 
   const loadPage = async (page?: string) => {

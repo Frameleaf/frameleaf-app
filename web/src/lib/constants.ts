@@ -83,8 +83,6 @@ export enum OpenQueryParam {
   PRESERVATION = 'preservation',
 }
 
-export const maximumLengthSearchPeople = 100;
-
 // time to load the map before displaying the loading spinner
 export const timeToLoadTheMap: number = 100;
 

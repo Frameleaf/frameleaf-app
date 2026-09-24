@@ -64,8 +64,7 @@
   let dialog: { type: 'merge' | 'birthday'; person: PeopleListItemDto } | undefined = $state();
   let dialogOpen = $state(false);
 
-  const nameOf = (person: { name: string }) =>
-    isUnnamedPerson(person) ? $t('frameleaf_people_unnamed_person') : person.name;
+  const nameOf = (person: { name: string }) => (isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
 
   const visible = $derived(people.filter((person) => showHidden || !person.isHidden));
   const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));

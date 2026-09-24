@@ -65,7 +65,7 @@
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiCheck, mdiClose } from '@mdi/js';
   import { onDestroy, onMount, tick } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     asset: AssetResponseDto;
@@ -88,7 +88,7 @@
   const NEW_FACE = 'new-face-';
   const NEW_PERSON = 'new-person-';
   const PEOPLE_PAGE_SIZE = 1000;
-  const COORDINATES: [FaceBoxField, string][] = [
+  const COORDINATES: [FaceBoxField, Translations][] = [
     ['x', 'frameleaf_face_tagger_left'],
     ['y', 'frameleaf_face_tagger_top'],
     ['width', 'frameleaf_face_tagger_width'],

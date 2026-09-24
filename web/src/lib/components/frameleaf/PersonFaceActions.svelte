@@ -59,7 +59,7 @@
 
   const { person, face, previousRoute, onFacesChanged }: Props = $props();
 
-  const name = $derived(person?.name || $t('frameleaf_faces_unnamed_person'));
+  const name = $derived(person?.name || $t('unnamed_person'));
 
   let open = $state(false);
   let mode = $state<'menu' | 'reassign' | 'create'>('menu');

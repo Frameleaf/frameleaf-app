@@ -43,7 +43,7 @@
   let failed = $state(false);
   let chosen: string | null = $state(null);
   let busy = $state(false);
-  const name = $derived(isUnnamedPerson(person) ? $t('frameleaf_people_unnamed_person') : person.name);
+  const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
 
   const load = async (page?: string) => {
     loading = true;
