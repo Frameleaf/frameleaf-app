@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyticsAreaUrl,
+  AREA_TILE_COLORS,
   areaForPersonalSection,
   areaSectionKeys,
   areaForSection,
   commandCenterUrl,
   defaultSettingsArea,
+  directoryGroup,
   isAreaAvailable,
   isScreenArea,
   resolveSettingsArea,
   resolveSettingsSection,
   searchSettingsSections,
+  sectionScope,
   sectionsForArea,
   SETTINGS_AREAS,
+  usualScope,
 } from '$lib/frameleaf/settings-areas';
 
 const sections = [
@@ -197,7 +201,8 @@ describe('Frameleaf settings areas', () => {
         { key: 'backup', title: 'Database backups', admin: true },
         { key: 'takeout', title: 'Imports' },
       ];
-      expect(sectionsForArea(backup, 'backup').map((s) => s.key)).toEqual(['backup', 'takeout', 'preservation']);
+      // Imports first, then protection, as the template lists them.
+      expect(sectionsForArea(backup, 'backup').map((s) => s.key)).toEqual(['takeout', 'backup', 'preservation']);
     });
 
     it("interleaves server and account sections where the template does (Library care's health, repair, enrichment)", () => {
@@ -231,6 +236,44 @@ describe('Frameleaf settings areas', () => {
       expect(area('history')).toEqual({ id: 'history', group: 'personal', sections: [], adminOnly: true });
       expect(sectionsForArea(sections, 'history')).toEqual([]);
       expect(resolveSettingsArea({ area: 'history' })).toBe('history');
+    });
+  });
+
+  describe('area directories (FL-71, FL-10)', () => {
+    it('gives every area a tile colour (FL-76)', () => {
+      for (const item of SETTINGS_AREAS) {
+        expect(AREA_TILE_COLORS[item.id]).toMatch(/^#[\da-f]{6}$/);
+      }
+    });
+
+    it('tells server, account and device sections apart', () => {
+      expect(sectionScope({ key: 'backup', admin: true })).toBe('server');
+      expect(sectionScope({ key: 'takeout' })).toBe('account');
+      expect(sectionScope({ key: 'app-settings' })).toBe('device');
+    });
+
+    it('finds the scope most rows share, the first one on a tie', () => {
+      expect(usualScope(['server', 'account', 'server'])).toBe('server');
+      expect(usualScope(['account', 'server'])).toBe('account');
+      expect(usualScope([])).toBeUndefined();
+    });
+
+    it("groups each area's sections as the template's directory does, with More for strays and none for Maintenance", () => {
+      expect(directoryGroup('storage', 'storage-template')).toBe('storage');
+      expect(directoryGroup('storage', 'deduplication')).toBe('identical_files');
+      expect(directoryGroup('security', 'suppressed-content')).toBe('locked_content');
+      expect(directoryGroup('storage', 'something-new')).toBe('more');
+      expect(directoryGroup('maintenance', 'mode')).toBeUndefined();
+      // Every section an area lists has a group of its own, not More.
+      const ungrouped = new Set(['maintenance', 'users', 'libraries', 'trash']);
+      for (const item of SETTINGS_AREAS) {
+        if (ungrouped.has(item.id)) {
+          continue;
+        }
+        for (const key of areaSectionKeys(item.id)) {
+          expect(directoryGroup(item.id, key)).not.toBe('more');
+        }
+      }
     });
   });
 });
