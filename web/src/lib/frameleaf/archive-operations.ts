@@ -41,7 +41,7 @@ export const ARCHIVE_OPERATION_MAX_ITEMS = 50_000;
 export const ARCHIVE_UNDO_RESTORE_MS = 30 * 60 * 1000;
 
 /** The operation was submitted or confirmed from this session, so this session may offer its Undo. */
-export const isCurrentSession = (operation: ArchiveOperationResponseDto) => operation.currentSession === true;
+export const isCurrentSession = (operation: ArchiveOperationResponseDto) => operation.currentSession ?? false;
 
 /** The server refused to confirm a prepared selection because it expired (HTTP 410). */
 export const isExpiredSelection = (error: unknown) => isHttpError(error) && error.status === 410;
