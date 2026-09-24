@@ -271,6 +271,9 @@ export const HLS_CRF: Record<VideoCodec, number> = {
 export const HLS_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 export const HLS_LEASE_DURATION_MS = 30 * 60 * 1000;
 export const HLS_PLAYLIST_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
+// A request this many segments past the transcode head waits for it instead of restarting ffmpeg.
+// Covers hls.js skipping ahead after a short seek or buffer-starved switch; restart costs more than ~10s of catch-up.
+export const HLS_RESTART_LOOKAHEAD_SEGMENTS = 5;
 export const HLS_SEGMENT_DURATION = 2;
 export const HLS_SEGMENT_FILENAME_REGEX = /^seg_(\d+)\.m4s$/;
 export const HLS_VARIANTS = [

@@ -10,6 +10,7 @@ import {
   HLS_CRF,
   HLS_INACTIVITY_TIMEOUT_MS,
   HLS_LEASE_DURATION_MS,
+  HLS_RESTART_LOOKAHEAD_SEGMENTS,
   HLS_SEGMENT_DURATION,
   HLS_SEGMENT_FILENAME_REGEX,
   HLS_VARIANTS,
@@ -32,6 +33,8 @@ type Session = {
   paused: boolean;
   process: ChildProcess | null;
   starting: boolean;
+  // Bumped per start attempt so a superseded start doesn't clear `starting` under a newer one.
+  startToken: number;
   startSegment: number | null;
   variantIndex: number | null;
 };
@@ -78,6 +81,7 @@ export class TranscodingService extends BaseService {
         paused: false,
         process: null,
         starting: false,
+        startToken: 0,
         startSegment: null,
         variantIndex: null,
       });
@@ -140,7 +144,9 @@ export class TranscodingService extends BaseService {
     session.startSegment ??= segmentIndex;
     const curSegment = session.lastCompletedSegment === null ? session.startSegment : session.lastCompletedSegment + 1;
     const isNeedsRestart =
-      session.variantIndex !== variantIndex || segmentIndex < session.startSegment || segmentIndex > curSegment + 1;
+      session.variantIndex !== variantIndex ||
+      segmentIndex < session.startSegment ||
+      segmentIndex > curSegment + HLS_RESTART_LOOKAHEAD_SEGMENTS;
     if (isNeedsRestart) {
       this.stopTranscode(session);
       session.variantIndex = variantIndex;
@@ -153,14 +159,20 @@ export class TranscodingService extends BaseService {
       return;
     }
 
+    // Nothing running (e.g. ffmpeg was killed externally): start from the requested segment, not the stale start.
+    session.startSegment = segmentIndex;
+
     session.starting = true;
+    const token = ++session.startToken;
     try {
-      const process = await this.startTranscode(session, variantIndex, segmentIndex);
+      const process = await this.startTranscode(session, variantIndex, segmentIndex, token);
       if (process) {
         session.process = process;
       }
     } finally {
-      session.starting = false;
+      if (session.startToken === token) {
+        session.starting = false;
+      }
     }
   }
 
@@ -177,7 +189,7 @@ export class TranscodingService extends BaseService {
     }
   }
 
-  private async startTranscode(session: Session, variantIndex: number, startSegment: number) {
+  private async startTranscode(session: Session, variantIndex: number, startSegment: number, token: number) {
     const { ffmpeg } = await this.getConfig({ withCache: true });
 
     const asset = await this.videoStreamRepository.getForTranscoding(session.assetId);
@@ -186,7 +198,8 @@ export class TranscodingService extends BaseService {
       return;
     }
 
-    if (session.variantIndex !== variantIndex || session.startSegment !== startSegment) {
+    // Only the newest start may spawn; an older one can match again after seeking away and back.
+    if (session.startToken !== token) {
       return;
     }
 

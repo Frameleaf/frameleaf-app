@@ -5,6 +5,7 @@ import {
   HLS_CLEANUP_INTERVAL_MS,
   HLS_INACTIVITY_TIMEOUT_MS,
   HLS_LEASE_DURATION_MS,
+  HLS_RESTART_LOOKAHEAD_SEGMENTS,
 } from 'src/constants.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { VIDEO_STREAM_SESSION_PK_CONSTRAINT } from 'src/utils/database.js';
@@ -166,10 +167,77 @@ describe(TranscodingService.name, () => {
       mocks.process.spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
 
       await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
-      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 5 });
+      await sut.onSegmentRequest({
+        sessionId,
+        assetId,
+        variantIndex: 0,
+        segmentIndex: HLS_RESTART_LOOKAHEAD_SEGMENTS + 1,
+      });
 
       expect(first.kill).toHaveBeenCalled();
       expect(mocks.process.spawn).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the running transcode when the requested segment is within the lookahead', async () => {
+      const first = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValueOnce(first);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: HLS_RESTART_LOOKAHEAD_SEGMENTS });
+
+      expect(first.kill).not.toHaveBeenCalled();
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('respawns inside the lookahead after ffmpeg was killed externally', async () => {
+      const first = mockSpawn(0, '', '');
+      const second = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      const onCalls = vi.mocked(first.on).mock.calls as unknown as [string, (code: number | null) => void][];
+      onCalls.find(([event]) => event === 'exit')?.[1](null);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 2 });
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(2);
+      expect(mocks.process.spawn.mock.calls[1][1]).toEqual(expect.arrayContaining(['-start_number', '2']));
+    });
+
+    it('keeps a seek restart when an older start finishes before it', async () => {
+      let resolveA!: (value: typeof eiffelTower) => void;
+      let resolveB!: (value: typeof eiffelTower) => void;
+      mocks.videoStream.getForTranscoding
+        .mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)))
+        .mockReturnValueOnce(new Promise((resolve) => (resolveB = resolve)));
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+
+      const a = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      const b = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 20 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledTimes(2));
+      resolveA(eiffelTower);
+      await a;
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 22 });
+      resolveB(eiffelTower);
+      await b;
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
+      expect(mocks.process.spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['-start_number', '20']));
+    });
+
+    it('does not spawn a superseded start after seeking away and back', async () => {
+      let resolveA!: (value: typeof eiffelTower) => void;
+      mocks.videoStream.getForTranscoding.mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)));
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+
+      const a = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledTimes(1));
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 20 });
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      resolveA(eiffelTower);
+      await a;
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(2); // B and D; A stays superseded
     });
 
     it('does not spawn when the session is unknown', async () => {
