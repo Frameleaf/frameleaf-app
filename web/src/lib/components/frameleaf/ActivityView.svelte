@@ -21,7 +21,7 @@
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { Icon, Theme, themeManager } from '@immich/ui';
   import {
     mdiAutoFix,
     mdiCancel,
@@ -61,6 +61,10 @@
 
   let filter = $state<ActivityFilter>(initialFilter);
   let busyId = $state<string | null>(null);
+  /** Row heading ids come from the list position: an item id can hold spaces (a download key). */
+  const rowIdPrefix = $props.id();
+  /** No ancestor sets the token scope for this page, so it declares its own, as AuthShell does. */
+  const theme = $derived(themeManager.value === Theme.Dark ? 'dark' : 'light');
   let announcement = $state('');
 
   const items = $derived(
@@ -91,11 +95,13 @@
   const nameOf = (item: ActivityItem) => (item.titleKey ? $t(item.titleKey) : item.title);
 
   /**
-   * The row's picture. A job about a photo shows it; a withheld Locked item and a bulk job never
-   * do, so nothing private is drawn here (FL-43). Everything else gets the prototype's kind icon.
+   * The row's picture. A server job about a photo shows it; a withheld Locked item, a bulk job,
+   * an upload and a download never do, so nothing private is drawn here (FL-43). An upload row
+   * carries no withheld flag, so a Locked upload would otherwise show its picture. Everything
+   * else gets the prototype's kind icon.
    */
   const thumbnailOf = (item: ActivityItem) =>
-    item.assetId && !item.withheld && !item.bulk
+    item.source === 'job' && item.assetId && !item.withheld && !item.bulk
       ? getAssetMediaUrl({ id: item.assetId, size: AssetMediaSize.Thumbnail })
       : null;
 
@@ -247,7 +253,7 @@
   };
 </script>
 
-<main class="frameleaf fla" aria-labelledby="fl-activity-title">
+<main class="frameleaf fla" data-theme={theme} aria-labelledby="fl-activity-title">
   <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 
   <header class="fla-head">
@@ -312,7 +318,7 @@
   {/if}
 
   <div class="fla-list">
-    {#each visible as item (item.id)}
+    {#each visible as item, index (item.id)}
       {@const thumbnail = thumbnailOf(item)}
       <article
         class="fla-job"
@@ -321,7 +327,7 @@
         class:is-warning={item.tone === 'warning'}
         class:is-danger={item.tone === 'danger'}
         class:is-neutral={item.tone === 'neutral'}
-        aria-labelledby="fla-job-{item.id}"
+        aria-labelledby="{rowIdPrefix}-job-{index}"
       >
         <div class="fla-thumb">
           {#if thumbnail}
@@ -333,7 +339,7 @@
 
         <div class="fla-body">
           <div class="fla-row">
-            <h3 id="fla-job-{item.id}">{nameOf(item)}</h3>
+            <h3 id="{rowIdPrefix}-job-{index}">{nameOf(item)}</h3>
             <span
               class="fla-chip"
               class:fla-chip--info={item.tone === 'info'}

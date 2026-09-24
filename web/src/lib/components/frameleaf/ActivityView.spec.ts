@@ -10,6 +10,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+import { downloadManager } from '$lib/managers/download-manager.svelte';
+import { uploadAssetsStore } from '$lib/stores/upload';
+import { UploadState } from '$lib/types';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -216,6 +219,39 @@ describe('Frameleaf Activity page', () => {
   it('says nothing is processing when there are no tasks', async () => {
     await mount([]);
 
-    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing is processing' })).toBeInTheDocument());
+    // The prototype's words (Activity.jsx).
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing processing' })).toBeInTheDocument());
+    expect(screen.getByText('Nothing running')).toBeInTheDocument();
+    const filters = screen.getByRole('group', { name: 'Filter jobs' });
+    expect(filters.querySelectorAll('button')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: 'Failed' })).toBeInTheDocument();
+  });
+
+  it('declares its own theme scope so the Frameleaf colours resolve', async () => {
+    const { container } = await mount([]);
+
+    expect(container.querySelector('main.frameleaf')?.getAttribute('data-theme')).toMatch(/^(dark|light)$/);
+  });
+
+  it('names a row whose id holds spaces, and never draws an upload picture', async () => {
+    downloadManager.add('Holiday (1/2)', '/download', ['a'], 'Holiday (1/2)', 10);
+    uploadAssetsStore.addItem({
+      id: 'upload-1',
+      file: new File([''], 'private.jpg'),
+      assetId: '0195e2a0-0000-7000-8000-00000000000a',
+      state: UploadState.DONE,
+    });
+    try {
+      await mount([]);
+
+      // The row heading id comes from the list position, so a key with spaces still names the row.
+      expect(await screen.findByRole('article', { name: 'Holiday (1/2)' })).toBeInTheDocument();
+      // An upload row carries no withheld flag, so it never shows its (possibly Locked) picture.
+      const upload = screen.getByRole('article', { name: 'private.jpg' });
+      expect(upload.querySelector(':scope .fla-thumb img')).toBeNull();
+    } finally {
+      downloadManager.clearAll();
+      uploadAssetsStore.reset();
+    }
   });
 });
