@@ -265,7 +265,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledWith({ jobCreateDto: { name: ManualJobName.UserCleanup } }));
     const history = screen.getByText('Queue action history').closest('details')!;
     expect(within(history).getByText('Clean up deleted accounts')).toBeInTheDocument();
-    expect(within(history).getByText('Background tasks · 1 item')).toBeInTheDocument();
+    expect(within(history).getByText('Background tasks · 1 item · all accounts')).toBeInTheDocument();
   });
 
   it('sends queue commands only through the review and never offers pausing background tasks', async () => {

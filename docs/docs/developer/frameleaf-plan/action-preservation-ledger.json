@@ -21457,7 +21457,7 @@
       "title": "Reset to defaults",
       "sourceRowIds": ["settings:action:system/job/reset-defaults"],
       "entrypoints": [
-        "CommandCenter.resetPage:processing/queues",
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte:processing/queues",
         "web/src/routes/admin/system-settings/JobSettings.svelte"
       ],
       "owners": {
@@ -21467,7 +21467,7 @@
           { "planId": "MOB-107", "jiraKey": "FL-124", "url": "https://heroit.atlassian.net/browse/FL-124" }
         ]
       },
-      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": true },
+      "disposition": { "kind": "intentional-product-change", "legacyFallback": false },
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
@@ -21484,7 +21484,7 @@
       "title": "Reset to saved settings",
       "sourceRowIds": ["settings:action:system/job/reset-saved"],
       "entrypoints": [
-        "CommandCenter.discard:processing/queues",
+        "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte:processing/queues",
         "web/src/routes/admin/system-settings/JobSettings.svelte"
       ],
       "owners": {
@@ -21494,7 +21494,7 @@
           { "planId": "MOB-107", "jiraKey": "FL-124", "url": "https://heroit.atlassian.net/browse/FL-124" }
         ]
       },
-      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": true },
+      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": false },
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
@@ -21511,7 +21511,7 @@
       "title": "Save settings",
       "sourceRowIds": ["settings:action:system/job/save"],
       "entrypoints": [
-        "CommandCenter.save:processing/queues",
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte:processing/queues",
         "web/src/routes/admin/system-settings/JobSettings.svelte"
       ],
       "owners": {
@@ -21521,7 +21521,7 @@
           { "planId": "MOB-107", "jiraKey": "FL-124", "url": "https://heroit.atlassian.net/browse/FL-124" }
         ]
       },
-      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": true },
+      "disposition": { "kind": "legacy-fallback-until-qualified", "legacyFallback": false },
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
@@ -51790,7 +51790,7 @@
       "title": "Reset to defaults",
       "entrypoints": [
         "web/src/routes/admin/system-settings/JobSettings.svelte",
-        "CommandCenter.resetPage:processing/queues"
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte:processing/queues"
       ],
       "qualification": "planned-not-qualified",
       "mappings": {
@@ -51800,8 +51800,12 @@
           "evidence": ["web/src/routes/admin/system-settings/JobSettings.svelte"]
         },
         "newUi": {
-          "status": "resource-flow",
-          "target": { "area": "processing", "section": "queues", "module": "CommandCenter.resetPage" },
+          "status": "mapped-unqualified",
+          "target": {
+            "module": "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+            "area": "processing",
+            "section": "queues"
+          },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "not-connected", "evidence": ["none-qualified"] },
@@ -51821,7 +51825,7 @@
       "title": "Reset to saved settings",
       "entrypoints": [
         "web/src/routes/admin/system-settings/JobSettings.svelte",
-        "CommandCenter.discard:processing/queues"
+        "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte:processing/queues"
       ],
       "qualification": "planned-not-qualified",
       "mappings": {
@@ -51831,9 +51835,13 @@
           "evidence": ["web/src/routes/admin/system-settings/JobSettings.svelte"]
         },
         "newUi": {
-          "status": "resource-flow",
-          "target": { "area": "processing", "section": "queues", "module": "CommandCenter.discard" },
-          "evidence": ["none-qualified"]
+          "status": "mapped-unqualified",
+          "target": {
+            "module": "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte",
+            "area": "processing",
+            "section": "queues"
+          },
+          "evidence": ["web/src/lib/frameleaf/system-config-draft.svelte.spec.ts"]
         },
         "api": { "status": "not-connected", "evidence": ["none-qualified"] },
         "native": { "status": "planned-not-qualified", "evidence": ["MOB-107"] },
@@ -51852,7 +51860,7 @@
       "title": "Save settings",
       "entrypoints": [
         "web/src/routes/admin/system-settings/JobSettings.svelte",
-        "CommandCenter.save:processing/queues"
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte:processing/queues"
       ],
       "qualification": "planned-not-qualified",
       "mappings": {
@@ -51862,9 +51870,13 @@
           "evidence": ["web/src/routes/admin/system-settings/JobSettings.svelte"]
         },
         "newUi": {
-          "status": "resource-flow",
-          "target": { "area": "processing", "section": "queues", "module": "CommandCenter.save" },
-          "evidence": ["none-qualified"]
+          "status": "mapped-unqualified",
+          "target": {
+            "module": "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+            "area": "processing",
+            "section": "queues"
+          },
+          "evidence": ["web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.spec.ts"]
         },
         "api": { "status": "not-connected", "evidence": ["none-qualified"] },
         "native": { "status": "planned-not-qualified", "evidence": ["MOB-107"] },
@@ -78516,9 +78528,13 @@
     "CommandCenter.save:care/integrity-schedules": ["setting:action:system/integrity-checks/save"],
     "CommandCenter.discard:care/integrity-schedules": ["setting:action:system/integrity-checks/reset-saved"],
     "CommandCenter.resetPage:care/integrity-schedules": ["setting:action:system/integrity-checks/reset-defaults"],
-    "CommandCenter.save:processing/queues": ["setting:action:system/job/save"],
-    "CommandCenter.discard:processing/queues": ["setting:action:system/job/reset-saved"],
-    "CommandCenter.resetPage:processing/queues": ["setting:action:system/job/reset-defaults"],
+    "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte:processing/queues": [
+      "setting:action:system/job/reset-defaults",
+      "setting:action:system/job/save"
+    ],
+    "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte:processing/queues": [
+      "setting:action:system/job/reset-saved"
+    ],
     "CommandCenter.save:libraries/sources": ["setting:action:system/external-library/save"],
     "CommandCenter.discard:libraries/sources": ["setting:action:system/external-library/reset-saved"],
     "CommandCenter.resetPage:libraries/sources": ["setting:action:system/external-library/reset-defaults"],

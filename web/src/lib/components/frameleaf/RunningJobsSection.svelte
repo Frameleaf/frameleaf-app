@@ -1,14 +1,14 @@
 <script lang="ts">
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { jobQueue } from '$lib/frameleaf/job-queues';
   import type { RunningJobRow } from '$lib/frameleaf/running-jobs';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { Route } from '$lib/route';
-  import { asQueueItem } from '$lib/services/queue.service';
   import { handleError } from '$lib/utils/handle-error';
   import { MediaOperationStatus } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiFolderZipOutline, mdiPause, mdiPlay, mdiProgressClock, mdiTrayFull } from '@mdi/js';
-  import { locale, t } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   /**
    * The running-jobs section of the notifications panel (FL-104, owner request September 23, 2026;
@@ -36,14 +36,16 @@
 
   const titleOf = (row: RunningJobRow): string => {
     if (row.queueName) {
-      return asQueueItem($t, { name: row.queueName })?.title ?? row.queueName;
+      // The Job manager's queue titles (FL-71), so a queue reads the same in both places.
+      const definition = jobQueue(row.queueName);
+      return definition ? $t(`frameleaf_jobs_queue_${definition.key}` as Translations) : row.queueName;
     }
     return row.titleKey ? $t(row.titleKey) : (row.title ?? '');
   };
 
   const iconOf = (row: RunningJobRow) => {
     if (row.queueName) {
-      return asQueueItem($t, { name: row.queueName })?.icon || mdiTrayFull;
+      return jobQueue(row.queueName)?.icon ?? mdiTrayFull;
     }
     return row.source === 'memoryExport' ? mdiFolderZipOutline : mdiProgressClock;
   };

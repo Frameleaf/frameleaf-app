@@ -99,6 +99,31 @@ describe(JobRepository.name, () => {
         { id: '2', name: JobName.AssetDetectFaces, timestamp: 2000, data: {}, attemptsMade: 0 },
       ]);
     });
+
+    it('cuts a long last error to 500 characters', async () => {
+      const getJobs = vi
+        .fn()
+        .mockResolvedValue([
+          {
+            id: '1',
+            name: JobName.AssetDetectFaces,
+            timestamp: 1000,
+            data: {},
+            attemptsMade: 1,
+            failedReason: 'x'.repeat(2000),
+          },
+        ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const [job] = await repository.searchJobs(QueueName.FaceDetection, { status: [] });
+      expect(job.failedReason).toHaveLength(500);
+    });
   });
 
   it('should use a longer lock for the database backup worker', () => {

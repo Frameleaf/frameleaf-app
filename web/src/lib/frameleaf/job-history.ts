@@ -2,12 +2,15 @@
  * The Job manager's "Queue action history" (FL-71), the template's `state.history` in
  * `JobsManager.jsx`: the server-wide queue commands sent from this device, newest first. It
  * records commands, not their outcome or completed processing, so it lives in this browser's
- * storage (never shared, never sent anywhere) and is capped at the template's 40 entries.
+ * storage (never shared, never sent anywhere). As the template (`JOBS_LIMITS.history`), it keeps 120
+ * entries and the list shows the newest 40 of the chosen queue.
  */
 import type { QueueName } from '@immich/sdk';
 
 export const JOB_HISTORY_STORAGE_KEY = 'frameleaf:job-manager-history:v1';
-export const JOB_HISTORY_LIMIT = 40;
+export const JOB_HISTORY_LIMIT = 120;
+/** How many entries the history list shows, as the template's `scopedHistory.slice(0, 40)`. */
+export const JOB_HISTORY_SHOWN = 40;
 
 export type JobHistoryEntry = {
   id: string;
@@ -57,7 +60,7 @@ export const readJobHistory = (storage: HistoryStorage | undefined = defaultStor
   }
 };
 
-/** Adds a command to the front of the history and keeps the newest 40; storage failures are ignored. */
+/** Adds a command to the front of the history and keeps the newest 120; storage failures are ignored. */
 export const recordJobHistory = (
   entry: JobHistoryEntry,
   storage: HistoryStorage | undefined = defaultStorage(),
