@@ -10,9 +10,8 @@
       FL-135: favicon.svg is a verbatim copy of design/frameleaf/brand-kit/frameleaf-symbol.svg
       (sha256 beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2, matching the brand
       kit manifest). It comes first so SVG-capable browsers use the authorized Frameleaf mark. The
-      .ico/.png fallbacks below are still the historical Immich raster set: this machine has no SVG
-      rasterizer available, so regenerating them from the authoritative SVGs (never by hand-redrawing)
-      is tracked as follow-up CI work; see scripts/frameleaf-generate-web-icons.mjs.
+      .ico/.png fallbacks below are rendered from the same brand kit (never hand-redrawn) by
+      scripts/frameleaf-logo-exports.mjs, with provenance in design/frameleaf/derivatives/exports.json.
     -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />

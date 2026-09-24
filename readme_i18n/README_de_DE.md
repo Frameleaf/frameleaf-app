@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login mit eigener URL">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../design/frameleaf/brand-kit/frameleaf-logo-dark.svg"><img src="../design/frameleaf/derivatives/frameleaf-logo-light.svg" width="300" title="Login mit eigener URL" alt="Frameleaf"></picture>
 </p>
-<h3 align="center">Immich - Hoch performante, selbst gehostete Backup-Lösung für Fotos und Videos</h3>
+<h3 align="center">Frameleaf - Hoch performante, selbst gehostete Backup-Lösung für Fotos und Videos</h3>
 <br/>
 <a href="https://immich.app">
 <img src="../design/immich-screenshots.png" title="Haupt-Screenshot">

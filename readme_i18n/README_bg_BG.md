@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Вход с персонализиран URL">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../design/frameleaf/brand-kit/frameleaf-logo-dark.svg"><img src="../design/frameleaf/derivatives/frameleaf-logo-light.svg" width="300" title="Вход с персонализиран URL" alt="Frameleaf"></picture>
 </p>
 <h3 align="center">Високопроизводително самостоятелно хоствано решение за управление на снимки и видеа</h3>
 <br/>
