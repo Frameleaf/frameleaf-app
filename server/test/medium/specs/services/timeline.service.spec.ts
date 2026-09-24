@@ -141,6 +141,7 @@ describe(TimelineService.name, () => {
         livePhotoVideoId: [],
         fileCreatedAt: [],
         localOffsetHours: [],
+        originalFileName: [],
         ownerId: [],
         projectionType: [],
         rating: [],
@@ -168,6 +169,21 @@ describe(TimelineService.name, () => {
       const auth = factory.auth({ user: { id: user.id } });
       const response = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1970-02-01' }));
       expect(response).toEqual(expect.objectContaining({ id: [rated.id, unrated.id], rating: [4, null] }));
+    });
+
+    it('should return each asset file name for the Work layout (FL-33)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalFileName: 'IMG_0042.HEIC',
+        fileCreatedAt: new Date('1970-02-13'),
+        localDateTime: new Date('1970-02-13'),
+      });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      const auth = factory.auth({ user: { id: user.id } });
+      const response = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1970-02-01' }));
+      expect(response).toEqual(expect.objectContaining({ id: [asset.id], originalFileName: ['IMG_0042.HEIC'] }));
     });
 
     it('should handle 5 digit years', async () => {
@@ -270,6 +286,7 @@ describe(TimelineService.name, () => {
     const response = JSON.parse(rawResponse);
     expect(response).not.toEqual(expect.objectContaining({ city: expect.any(Array), country: expect.any(Array) }));
     expect(response).not.toHaveProperty('rating');
+    expect(response).not.toHaveProperty('originalFileName');
   });
 
   describe('Locked media in album timelines (FL-32)', () => {

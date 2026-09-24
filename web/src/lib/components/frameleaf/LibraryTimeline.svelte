@@ -15,10 +15,22 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import TimelineCards from '$lib/components/frameleaf/TimelineCards.svelte';
+  import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
+  import {
+    cellGridOptions,
+    stepThumbnailSize,
+    THUMBNAIL_SIZE_DEFAULT,
+    timelineRowHeight,
+    type TileLayout,
+  } from '$lib/frameleaf/library-grid';
+  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
+  import { animateFlip } from '$lib/frameleaf/motion';
+  import type { TimelineCardTarget } from '$lib/frameleaf/timeline-cards';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -39,10 +51,24 @@
   type Props = {
     timelineManager: TimelineManager;
     session: LibrarySessionStore;
-    /** Rating for an asset, supplied by the host; the timeline model does not carry one. */
+    /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
-    /** Browse hides the sticky day headers; Timeline and Work keep them. */
+    /** Only the Timeline layout draws the sticky day headers; the Browse and Work grids have none. */
     showDayHeaders?: boolean;
+    /**
+     * The tile layout (FL-33): Timeline's justified rows, Browse's square grid or Work's 3:2 grid with
+     * captions. Browse and Work are cell grids, still laid out and mounted a month at a time.
+     */
+    tileLayout?: TileLayout;
+    /** The per-device Thumbnail size (140–290) the grids and Timeline rows scale with. */
+    thumbnailSize?: number;
+    /** Work: show file names in the captions. */
+    showFileNames?: boolean;
+    /**
+     * Called with a new Thumbnail size when a pinch, Ctrl-scroll or + / − zooms the Browse or Work
+     * grid. Without it the grids do not zoom.
+     */
+    onThumbnailSizeChange?: (size: number) => void;
     /**
      * Group by day, month, year or everything (prototype `TimelineLibrary.jsx`). Applies where group
      * headers show; Browse, which has none, keeps its day flow.
@@ -50,7 +76,6 @@
     grouping?: TimelineGrouping;
     /** Show the grouping control and accept ⌘/Ctrl+wheel and pinch; called with the new grouping. */
     onGroupingChange?: (grouping: TimelineGrouping) => void;
-    captionFor?: (asset: TimelineAsset) => string | null;
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
     onOpen?: (asset: TimelineAsset) => void;
@@ -80,9 +105,12 @@
     session,
     ratingFor,
     showDayHeaders = true,
+    tileLayout = 'timeline',
+    thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
+    showFileNames = false,
+    onThumbnailSizeChange,
     grouping = 'days',
     onGroupingChange,
-    captionFor,
     enableRouting = false,
     onOpen,
     selectionMode = false,
@@ -95,6 +123,7 @@
   }: Props = $props();
 
   let scrollable = $state<HTMLElement>();
+  let root = $state<HTMLElement>();
   let scrubberWidth = $state(0);
   let viewportTopMonth: ViewportTopMonth = $state(undefined);
   let viewportTopMonthScrollPercent = $state(0);
@@ -108,15 +137,89 @@
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
+  /** Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. */
+  const cells = $derived(
+    tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone),
+  );
+
   $effect(() => {
+    if (cells) {
+      // One gutter between months, so the grid reads as one surface (apple-style.css `gap: 2px`).
+      timelineManager.setLayoutOptions({ headerHeight: cells.gap, gap: cells.gap, fillRowWidth: true, cells });
+      return;
+    }
     // The filling justified layout is what makes a short day group span the timeline. The space the
     // manager reserves above each day's rows is exactly what the day group draws there: its header
-    // in Timeline and Work, a plain gap in Browse, which has none.
+    // in the Timeline, a plain gap where there is none.
+    // Thumbnail size scales the row height too; the default size keeps the default height.
     timelineManager.setLayoutOptions(
       maxMd
-        ? { rowHeight: 100, headerHeight: showDayHeaders ? 32 : 8, gap: 8, fillRowWidth: true }
-        : { rowHeight: 235, headerHeight: showDayHeaders ? 48 : 12, gap: 12, fillRowWidth: true },
+        ? {
+            rowHeight: timelineRowHeight(100, thumbnailSize),
+            headerHeight: showDayHeaders ? 32 : 8,
+            gap: 8,
+            fillRowWidth: true,
+          }
+        : {
+            rowHeight: timelineRowHeight(235, thumbnailSize),
+            headerHeight: showDayHeaders ? 48 : 12,
+            gap: 12,
+            fillRowWidth: true,
+          },
     );
+  });
+
+  /*
+   * A Thumbnail size change reflows every row, so the asset in view is held at the same height on
+   * screen (template `App.jsx` restores its scroll anchor whenever `size` changes). The anchor is
+   * read before the layout options change and put back once the months have been laid out again,
+   * which happens synchronously: the width does not change, so nothing has to be measured.
+   */
+  let lastThumbnailSize = untrack(() => thumbnailSize);
+  let sizeAnchor: LibraryAnchor | undefined;
+  $effect.pre(() => {
+    if (thumbnailSize === lastThumbnailSize) {
+      return;
+    }
+    sizeAnchor = untrack(
+      () =>
+        captureLibraryAnchor(timelineManager, session.session.scrollAnchor) ?? captureLibraryAnchor(timelineManager),
+    );
+  });
+  $effect(() => {
+    const size = thumbnailSize;
+    if (size === lastThumbnailSize) {
+      return;
+    }
+    lastThumbnailSize = size;
+    const anchor = sizeAnchor;
+    sizeAnchor = undefined;
+    untrack(() => restoreLibraryAnchor(timelineManager, anchor));
+  });
+
+  /**
+   * Grid zoom (template `App.jsx` `zoomGrid`, `interactions.js` `animateGridChange`): one step of
+   * the Thumbnail size, with the visible tiles sliding from their old boxes to their new ones.
+   * Under Reduce Motion the change is instant (`animateFlip`).
+   */
+  const zoomGrid = (direction: 1 | -1) => {
+    const next = stepThumbnailSize(thumbnailSize, direction);
+    if (next === thumbnailSize || !onThumbnailSizeChange) {
+      return;
+    }
+    animateFlip(scrollable, () => onThumbnailSizeChange(next));
+  };
+
+  // Browse and Work zoom with pinch, Ctrl-scroll and + / −; the Timeline keeps them for grouping.
+  $effect(() => {
+    const element = root;
+    if (!element || tileLayout === 'timeline' || !onThumbnailSizeChange) {
+      return;
+    }
+    return bindGridZoom(element, {
+      onZoom: zoomGrid,
+      enabled: () => !session.openAssetId && !assetViewerManager.isViewing,
+    });
   });
 
   $effect(() => {
@@ -168,9 +271,13 @@
   const PINCH_STEP = 56;
 
   let announcement = $state('');
-  let root = $state<HTMLElement>();
 
-  const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders ? grouping : 'days');
+  /**
+   * Years and Months are curated cards (September 24; template `TimelineLibrary.jsx` `curated`), not
+   * tile flows: the manager keeps its day layout underneath, ready for a card that opens Days.
+   */
+  const curated = $derived(showDayHeaders && (grouping === 'years' || grouping === 'months'));
+  const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders && !curated ? grouping : 'days');
   $effect(() => {
     timelineManager.grouping = effectiveGrouping;
   });
@@ -187,6 +294,103 @@
     const index = MODES.indexOf(grouping);
     changeGrouping(MODES[Math.min(MODES.length - 1, Math.max(0, index + delta))]);
   };
+
+  /** The year a Years card opened, whose months the Months cards bring to the top. */
+  let focusYear = $state<number | null>(null);
+  /** The month a Months card opened, which Days scrolls to once it is laid out. */
+  let pendingMonth = $state<{ year: number; month: number } | null>(null);
+
+  /** Template `openCard`: a card steps one level finer and scrolls to its period. */
+  const openCard = (target: TimelineCardTarget) => {
+    if (target.grouping === 'months') {
+      focusYear = target.year;
+    } else {
+      pendingMonth = { year: target.year, month: target.month };
+    }
+    changeGrouping(target.grouping);
+  };
+
+  /*
+   * Leaving the tile flow for the cards unmounts it, and coming back would start at the top. The
+   * asset in view is remembered on the way out (read before the flow unmounts) and put back at the
+   * same height on screen on the way in, unless a month card chose where Days opens.
+   */
+  let wasCurated = untrack(() => curated);
+  let flowAnchor: LibraryAnchor | undefined;
+  let flowScrollTop = 0;
+  $effect.pre(() => {
+    const now = curated;
+    if (now && !wasCurated) {
+      untrack(() => {
+        flowAnchor =
+          captureLibraryAnchor(timelineManager, session.session.scrollAnchor) ?? captureLibraryAnchor(timelineManager);
+        flowScrollTop = scrollable?.scrollTop ?? 0;
+      });
+    }
+  });
+  $effect(() => {
+    const now = curated;
+    const was = wasCurated;
+    wasCurated = now;
+    if (now || !was || !scrollable) {
+      return;
+    }
+    const anchor = flowAnchor;
+    const top = flowScrollTop;
+    flowAnchor = undefined;
+    if (untrack(() => pendingMonth)) {
+      return;
+    }
+    void tick()
+      .then(nextFrame)
+      .then(nextFrame)
+      .then(() => {
+        if (!restoreLibraryAnchor(timelineManager, anchor) && top > 0) {
+          timelineManager.scrollTo(top);
+        }
+      });
+  });
+
+  /** The card at the top of the Years or Months view, as the scrubber's current month. */
+  let cardTopMonth = $state<ViewportTopMonth>(undefined);
+  let cards = $state<{ jumpTo: (month: { year: number; month: number }) => boolean }>();
+
+  const onCardPeriod = (period: { year: number; month?: number } | undefined) => {
+    if (!period) {
+      cardTopMonth = undefined;
+      return;
+    }
+    // A year card stands for the first of its months in display order.
+    const month =
+      period.month ?? timelineManager.months.find(({ yearMonth }) => yearMonth.year === period.year)?.yearMonth.month;
+    cardTopMonth = month === undefined ? undefined : { year: period.year, month };
+  };
+
+  /** The scrubber over the cards: a month goes to its month card, or its year's (template `jumpTo`). */
+  const onCardScrub: ScrubberListener = ({ scrubberMonth }) => {
+    if (scrubberMonth && typeof scrubberMonth === 'object') {
+      cards?.jumpTo(scrubberMonth);
+    }
+  };
+  const onCardJump = (month: { year: number; month: number }) => {
+    if (cards?.jumpTo(month)) {
+      cardTopMonth = month;
+    }
+  };
+
+  $effect(() => {
+    const month = pendingMonth;
+    if (!month || curated || !scrollable) {
+      return;
+    }
+    pendingMonth = null;
+    // The day layout mounts, is measured and laid out over the next frames; then the month's first
+    // row goes to the top, as the scrubber's month jump does.
+    void tick()
+      .then(nextFrame)
+      .then(nextFrame)
+      .then(() => onJump(month));
+  });
 
   // ⌘/Ctrl + wheel (also a trackpad pinch) and a two-finger pinch step the grouping.
   $effect(() => {
@@ -804,139 +1008,177 @@
   };
 </script>
 
+{#snippet top()}
+  {@render header?.()}
+  {#if onGroupingChange && showDayHeaders}
+    <div class="fl-grouping">
+      <span class="fl-grouping-hint">
+        {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
+      </span>
+      <div class="fl-grouping-modes" role="group" aria-label={$t('frameleaf_library_grouping')}>
+        {#each CONTROL_ORDER as value (value)}
+          <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
+            {$t(MODE_LABELS[value])}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
 <div
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
+  class:is-zoomable={tileLayout !== 'timeline' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
   bind:this={root}
 >
-  <section
-    class="fl-timeline-scroll"
-    tabindex="-1"
-    bind:this={scrollable}
-    bind:clientHeight={measuredHeight}
-    bind:clientWidth={measuredWidth}
-    style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
-    onscroll={handleScroll}
-    aria-busy={rangePending || groupPending}
-  >
-    <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
-      <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
-        {@render header?.()}
-        {#if onGroupingChange && showDayHeaders}
-          <div class="fl-grouping">
-            <span class="fl-grouping-hint">
-              {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
-            </span>
-            <div class="fl-grouping-modes" role="group" aria-label={$t('frameleaf_library_grouping')}>
-              {#each CONTROL_ORDER as value (value)}
-                <button type="button" aria-pressed={grouping === value} onclick={() => changeGrouping(value)}>
-                  {$t(MODE_LABELS[value])}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-        {#if isEmpty}
-          {@render empty?.()}
-        {/if}
-      </div>
+  {#if curated && (grouping === 'years' || grouping === 'months')}
+    <div
+      class="fl-timeline-cards"
+      bind:clientHeight={measuredHeight}
+      bind:clientWidth={measuredWidth}
+      style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
+    >
+      <TimelineCards
+        bind:this={cards}
+        {timelineManager}
+        {grouping}
+        {focusYear}
+        onOpen={openCard}
+        onCurrentPeriod={onCardPeriod}
+        header={top}
+        {empty}
+      />
+    </div>
+    <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
+    {#if timelineManager.months.length > 0}
+      <YearScrubber
+        {timelineManager}
+        height={measuredHeight}
+        viewportTopMonth={cardTopMonth}
+        onScrub={onCardScrub}
+        onJump={onCardJump}
+        bind:scrubberWidth
+      />
+    {/if}
+  {:else}
+    <section
+      class="fl-timeline-scroll"
+      tabindex="-1"
+      bind:this={scrollable}
+      bind:clientHeight={measuredHeight}
+      bind:clientWidth={measuredWidth}
+      style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
+      onscroll={handleScroll}
+      aria-busy={rangePending || groupPending}
+    >
+      <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
+        <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
+          {@render top()}
+          {#if isEmpty}
+            {@render empty?.()}
+          {/if}
+        </div>
 
-      {#each timelineManager.months as month (month.viewId)}
-        {@const group = groupOf.get(month.viewId)}
-        <!--
+        {#each timelineManager.months as month (month.viewId)}
+          {@const group = groupOf.get(month.viewId)}
+          <!--
           A month, year or "all" group's header comes first in the document, before its tiles, as
           the prototype's header opens its <section>. The band spans every month of the group so the
           header sticks through all of them; only the header takes the pointer.
         -->
-        {#if group && bandHosts.get(group.key) === month.viewId}
-          {@const first = group.months[0]}
-          {@const last = group.months.at(-1)!}
-          <div
-            class="fl-group-band"
-            data-testid="frameleaf-group"
-            data-group-key={group.key}
-            onfocusin={() => (focusedGroupKey = group.key)}
-            onfocusout={(event) => {
-              // Focus moving to another element ends the claim; the header being drawn anew does not.
-              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
-                focusedGroupKey = null;
-              }
-            }}
-            style:top="{first.top}px"
-            style:height="{last.top + last.height - first.top}px"
-          >
-            <LibraryGroupHeader
-              id={groupHeadingId(group)}
-              title={group.title}
-              count={group.months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
-              state={displayGroupState(group)}
-              {selecting}
-              hovered={group.months.some((groupMonth) => groupMonth.viewId === hoveredMonth)}
-              width={timelineManager.viewportWidth}
-              height={first.groupHeaderHeight}
-              onSelect={(checked) => selectDisplayGroup(group, checked)}
-            />
-          </div>
-        {/if}
-        {#if !month.isLoaded}
-          <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
-            <Skeleton height={month.height} title={month.title} />
-          </div>
-        {:else if month.isInOrNearViewport}
-          <div
-            class="fl-month"
-            role={group && regionHosts.get(group.key) === month.viewId ? 'region' : undefined}
-            aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
-            style:height="{month.height}px"
-            style:transform={`translate3d(0,${month.top}px,0)`}
-            onpointerenter={() => (hoveredMonth = month.viewId)}
-            onpointerleave={() => {
-              if (hoveredMonth === month.viewId) {
-                hoveredMonth = null;
-              }
-            }}
-          >
-            {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
-              <LibraryDayGroup
-                {timelineDay}
-                {selection}
+          {#if group && bandHosts.get(group.key) === month.viewId}
+            {@const first = group.months[0]}
+            {@const last = group.months.at(-1)!}
+            <div
+              class="fl-group-band"
+              data-testid="frameleaf-group"
+              data-group-key={group.key}
+              onfocusin={() => (focusedGroupKey = group.key)}
+              onfocusout={(event) => {
+                // Focus moving to another element ends the claim; the header being drawn anew does not.
+                if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+                  focusedGroupKey = null;
+                }
+              }}
+              style:top="{first.top}px"
+              style:height="{last.top + last.height - first.top}px"
+            >
+              <LibraryGroupHeader
+                id={groupHeadingId(group)}
+                title={group.title}
+                count={group.months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
+                state={displayGroupState(group)}
                 {selecting}
-                {ratingFor}
-                {captionFor}
-                showHeader={showDayHeaders}
-                grouped={effectiveGrouping !== 'days'}
-                headerHeight={month.groupHeaderHeight}
-                onOpen={handleOpen}
-                {onToggleSelect}
-                onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
-                onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
-                {tileOverlay}
+                hovered={group.months.some((groupMonth) => groupMonth.viewId === hoveredMonth)}
+                width={timelineManager.viewportWidth}
+                height={first.groupHeaderHeight}
+                onSelect={(checked) => selectDisplayGroup(group, checked)}
               />
-            {/each}
-          </div>
-        {/if}
-      {/each}
+            </div>
+          {/if}
+          {#if !month.isLoaded}
+            <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
+              <Skeleton height={month.height} title={month.title} />
+            </div>
+          {:else if month.isInOrNearViewport}
+            <div
+              class="fl-month"
+              role={group && regionHosts.get(group.key) === month.viewId ? 'region' : undefined}
+              aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
+              style:height="{month.height}px"
+              style:transform={`translate3d(0,${month.top}px,0)`}
+              onpointerenter={() => (hoveredMonth = month.viewId)}
+              onpointerleave={() => {
+                if (hoveredMonth === month.viewId) {
+                  hoveredMonth = null;
+                }
+              }}
+            >
+              {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
+                <LibraryDayGroup
+                  {timelineDay}
+                  {selection}
+                  {selecting}
+                  {ratingFor}
+                  layout={tileLayout}
+                  captionHeight={cells?.captionHeight ?? 0}
+                  {showFileNames}
+                  showHeader={showDayHeaders}
+                  grouped={effectiveGrouping !== 'days' || !!cells}
+                  headerHeight={month.groupHeaderHeight}
+                  onOpen={handleOpen}
+                  {onToggleSelect}
+                  onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
+                  onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
+                  {tileOverlay}
+                />
+              {/each}
+            </div>
+          {/if}
+        {/each}
 
-      <div
-        class="fl-timeline-bottom"
-        style:height="{timelineManager.bottomSectionHeight}px"
-        style:transform={`translate3d(0,${timelineManager.topSectionHeight + timelineManager.bodySectionHeight}px,0)`}
-      ></div>
-    </div>
-  </section>
+        <div
+          class="fl-timeline-bottom"
+          style:height="{timelineManager.bottomSectionHeight}px"
+          style:transform={`translate3d(0,${timelineManager.topSectionHeight + timelineManager.bodySectionHeight}px,0)`}
+        ></div>
+      </div>
+    </section>
 
-  {#if timelineManager.months.length > 0}
-    <YearScrubber
-      {timelineManager}
-      height={timelineManager.viewportHeight}
-      {viewportTopMonth}
-      {viewportTopMonthScrollPercent}
-      {timelineScrollPercent}
-      {onScrub}
-      {onJump}
-      bind:scrubberWidth
-    />
+    {#if timelineManager.months.length > 0}
+      <YearScrubber
+        {timelineManager}
+        height={timelineManager.viewportHeight}
+        {viewportTopMonth}
+        {viewportTopMonthScrollPercent}
+        {timelineScrollPercent}
+        {onScrub}
+        {onJump}
+        bind:scrubberWidth
+      />
+    {/if}
   {/if}
 </div>
 
@@ -965,13 +1207,19 @@
   .fl-timeline-body {
     position: relative;
   }
+  .fl-timeline-cards {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+  }
   .fl-timeline-top,
   .fl-timeline-bottom {
     position: absolute;
     inset-inline: 0;
   }
-  .fl-timeline.is-groupable {
-    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping, not the page zoom. */
+  .fl-timeline.is-groupable,
+  .fl-timeline.is-zoomable {
+    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping (or the grid zoom), not the page zoom. */
     touch-action: pan-y;
   }
   .fl-group-band {

@@ -1,4 +1,5 @@
-import { debounce } from 'lodash-es';
+import { debounce, isEqual } from 'lodash-es';
+import type { CellGridOptions } from '$lib/frameleaf/library-grid';
 
 type LayoutOptions = {
   headerHeight: number;
@@ -10,6 +11,11 @@ type LayoutOptions = {
    * layouts turn it on.
    */
   fillRowWidth: boolean;
+  /**
+   * Frameleaf (FL-33): lay each month out as a grid of equal cells instead of justified rows — the
+   * Browse square grid and the Work grid. `null` keeps the justified rows (Timeline).
+   */
+  cells: CellGridOptions | null;
 };
 export abstract class VirtualScrollManager {
   topSectionHeight = $state(0);
@@ -29,6 +35,7 @@ export abstract class VirtualScrollManager {
   #headerHeight = $state(48);
   #gap = $state(12);
   #fillRowWidth = $state(false);
+  #cells = $state<CellGridOptions | null>(null);
   #scrolling = $state(false);
   #suspendTransitions = $state(false);
   #resetScrolling = debounce(() => (this.#scrolling = false), 1000);
@@ -110,6 +117,19 @@ export abstract class VirtualScrollManager {
     return this.#fillRowWidth;
   }
 
+  #setCells(value: CellGridOptions | null) {
+    if (isEqual(this.#cells, value)) {
+      return false;
+    }
+    this.#cells = value;
+    return true;
+  }
+
+  /** The Browse or Work cell grid, or `null` for justified rows. */
+  get cells() {
+    return this.#cells;
+  }
+
   set scrolling(value: boolean) {
     this.#scrolling = value;
     if (value) {
@@ -167,6 +187,7 @@ export abstract class VirtualScrollManager {
     rowHeight = 235,
     gap = 12,
     fillRowWidth = false,
+    cells = null,
   }: Partial<LayoutOptions> = {}) {
     // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
     // used to stop the rest from being applied at all — switching to the mobile layout set the
@@ -176,6 +197,7 @@ export abstract class VirtualScrollManager {
       this.#setGap(gap),
       this.#setRowHeight(rowHeight),
       this.#setFillRowWidth(fillRowWidth),
+      this.#setCells(cells),
     ];
     if (changes.includes(true)) {
       this.refreshLayout();

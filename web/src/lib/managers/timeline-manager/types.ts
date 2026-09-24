@@ -40,6 +40,10 @@ export type TimelineAsset = {
   people: string[] | null;
   latitude?: number | null;
   longitude?: number | null;
+  /** Star rating (-1 rejected, 0 unrated, 1-5); absent where the source withholds metadata (FL-33). */
+  rating?: number | null;
+  /** The original file name, which Work shows on request (FL-33); absent where metadata is withheld. */
+  originalFileName?: string | null;
 };
 
 export type MoveAsset = { asset: TimelineAsset; date: TimelineDate };
