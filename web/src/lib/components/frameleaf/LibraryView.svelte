@@ -595,8 +595,6 @@
   let root = $state<HTMLElement>();
   let main = $state<HTMLElement>();
   let toolbarStrip = $state<HTMLElement>();
-  /** Where scroll-driven animation exists, the grouping row fades away under the toolbar. */
-  const groupingScrollsAway = typeof CSS !== 'undefined' && !!CSS.supports?.('animation-timeline: scroll()');
 
   /**
    * The capsules centre over the photos, between the rail and the inspector (apple-style.css
@@ -617,26 +615,14 @@
       if (!strip) {
         return;
       }
-      // As in the template only the results toolbar stays; the Timeline grouping row below it
-      // scrolls away (timeline-library.css `.tl-toolbar` is not sticky). Timeline rows pin the whole
-      // header block, so the grouping row is faded out by scroll where the browser can; elsewhere it
-      // stays pinned inside the frosted strip. Years and Months cards pin the toolbar alone.
-      const top = strip.closest<HTMLElement>('.fl-timeline-top');
-      const offsetTop = top ? strip.offsetTop : 0;
-      host.style.setProperty('--fl-toolbar-top', `${offsetTop}px`);
-      host.style.setProperty(
-        '--fl-sticky-offset',
-        `${Math.round(top && !groupingScrollsAway ? top.offsetHeight - offsetTop : strip.offsetHeight)}px`,
-      );
+      // As in the template only the results toolbar stays (`.media-scroll > .results-toolbar`); the
+      // header above it and the Timeline grouping row below it scroll away.
+      host.style.setProperty('--fl-sticky-offset', `${Math.round(strip.offsetHeight)}px`);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(area);
     if (toolbarStrip) {
       observer.observe(toolbarStrip);
-      const top = toolbarStrip.closest('.fl-timeline-top');
-      if (top) {
-        observer.observe(top);
-      }
     }
     // The window and the rail change the photo area's own size, so observing it covers both.
     observer.observe(document.documentElement);
@@ -1091,31 +1077,24 @@
   }
   /*
    * apple-style.css "#3 materials": the header scrolls away and the frosted toolbar stays. The
-   * timeline draws its header block (`.fl-timeline-top`) above the rows; it sticks with a negative
-   * top equal to the toolbar's offset, so everything above the toolbar scrolls out of view.
+   * timeline's header block spans the whole scroll height (LibraryTimeline), and the Years and
+   * Months cards draw it in their own scroller, so the toolbar can stick by itself in either while
+   * the header above it and the grouping row below it scroll away as in the template.
    */
-  /* Only where the toolbar exists: a public shared-link page's header simply scrolls away. */
-  .fl-library.has-sticky-toolbar :global(.fl-timeline-body > .fl-timeline-top) {
-    position: sticky;
-    top: calc(-1 * var(--fl-toolbar-top, 0px));
-    z-index: 4;
-  }
   .fl-library-toolbar {
     position: relative;
   }
-  /* Years and Months cards scroll in their own container: the toolbar sticks there by itself. */
-  .has-sticky-toolbar :global(.fl-tl-cards-scroll > .fl-library-toolbar) {
+  .fl-library.has-sticky-toolbar .fl-library-toolbar {
     position: sticky;
     top: 0;
-    z-index: 4;
+    z-index: 5;
   }
   .fl-library-toolbar::before {
-    /* The frosted strip spans the scroller's width under the toolbar (and, without scroll-driven
-       animation, the pinned grouping row below it). */
+    /* The frosted strip spans the scroller's width under the toolbar. */
     content: '';
     position: absolute;
     inset: 0 -8px auto;
-    height: var(--fl-sticky-offset, 100%);
+    bottom: 0;
     z-index: -1;
     border-bottom: 1px solid var(--fl-material-edge);
     background: var(--fl-material);
@@ -1135,12 +1114,6 @@
       animation-timeline: --fl-library;
       animation-range: 0 90px;
     }
-    /* The grouping row goes as the rows reach the toolbar, like the template's scrolling .tl-toolbar. */
-    .has-sticky-toolbar :global(.fl-timeline-top > .fl-grouping) {
-      animation: fl-grouping-away linear both;
-      animation-timeline: --fl-library;
-      animation-range: var(--fl-toolbar-top, 0px) calc(var(--fl-toolbar-top, 0px) + 40px);
-    }
     @media (prefers-reduced-motion: reduce) {
       .has-sticky-toolbar .fl-library-header :global(h1) {
         animation-name: fl-title-fade;
@@ -1151,12 +1124,6 @@
     to {
       scale: 0.62;
       opacity: 0.2;
-    }
-  }
-  @keyframes fl-grouping-away {
-    to {
-      opacity: 0;
-      visibility: hidden;
     }
   }
   @keyframes fl-title-fade {

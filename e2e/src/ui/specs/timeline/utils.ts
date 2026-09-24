@@ -139,13 +139,17 @@ export const thumbnailUtils = {
       })
       .toBeLessThan(2);
   },
-  /** The tile's top edge is the scroll area's top edge: it was scrolled no further than needed. */
+  /**
+   * The tile's top edge is the top of the visible scroll area — just below the sticky results
+   * toolbar (apple-style.css "#3 materials") — so it was scrolled no further than needed.
+   */
   async expectTopIsTimelineTop(page: Page, assetId: string) {
     await expect
       .poll(async () => {
         const box = await thumbnailUtils.withAssetId(page, assetId).boundingBox();
         const gridBox = await timelineUtils.locator(page).boundingBox();
-        return Math.abs(box!.y - gridBox!.y);
+        const covered = await timelineUtils.stickyOffset(page);
+        return Math.abs(box!.y - (gridBox!.y + covered));
       })
       .toBeLessThan(2);
   },
@@ -155,6 +159,13 @@ export const timelineUtils = {
   /** The timeline's scroll area. */
   locator(page: Page) {
     return page.locator('[data-testid="frameleaf-timeline"] .fl-timeline-scroll');
+  },
+  /** Height of the sticky results toolbar over the top of the scroll area (`--fl-sticky-offset`). */
+  async stickyOffset(page: Page) {
+    const value = await page
+      .getByTestId('frameleaf-library')
+      .evaluate((element) => getComputedStyle(element).getPropertyValue('--fl-sticky-offset'));
+    return Number(value.trim().replace('px', '')) || 0;
   },
   async waitForTimelineLoad(page: Page) {
     await expect(timelineUtils.locator(page)).toHaveCount(1);

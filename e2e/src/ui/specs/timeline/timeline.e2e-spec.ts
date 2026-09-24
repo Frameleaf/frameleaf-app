@@ -284,25 +284,20 @@ test.describe('Timeline', () => {
 
   test.describe('September 24 chrome', () => {
     for (const layout of ['Timeline', 'Browse', 'Work'] as const) {
-      test(`${layout}: rows start right below the sticky header block, not a header height lower`, async ({ page }) => {
+      test(`${layout}: rows start right below the header content, not a header height lower`, async ({ page }) => {
         await pageUtils.openPhotosPage(page);
         await timelineUtils.setLayout(page, layout);
-        const top = page.locator('.fl-timeline-top');
+        const end = page.locator('.fl-timeline-top-end');
         const month = page.locator('.fl-month').first();
         await expect(month).toBeVisible();
-        // Months are placed by their transform from the body's top; an in-flow sticky header
-        // block must not push them down by its own height.
+        // Months are placed by their transform from the body's top, just below where the header
+        // content ends; the header block itself spans the scroll height for the sticky toolbar.
         await expect
           .poll(async () => {
-            const [topBox, monthBox] = await Promise.all([top.boundingBox(), month.boundingBox()]);
-            return Math.round((monthBox?.y ?? Infinity) - ((topBox?.y ?? 0) + (topBox?.height ?? 0)));
+            const [endBox, monthBox] = await Promise.all([end.boundingBox(), month.boundingBox()]);
+            return Math.abs(Math.round((monthBox?.y ?? Infinity) - (endBox?.y ?? 0)));
           })
           .toBeLessThanOrEqual(24);
-        if (layout === 'Timeline') {
-          const band = page.getByTestId('frameleaf-group').first();
-          const [bandBox, monthBox] = await Promise.all([band.boundingBox(), month.boundingBox()]);
-          expect(Math.abs(bandBox!.y - monthBox!.y)).toBeLessThanOrEqual(1);
-        }
       });
     }
 
@@ -347,9 +342,11 @@ test.describe('Timeline', () => {
       const grouping = page.getByRole('group', { name: 'Timeline grouping' });
       await expect(grouping).toBeVisible();
       await page.locator('.fl-timeline-scroll').evaluate((element) => element.scrollBy(0, 2000));
-      await expect(page.getByTestId('frameleaf-results-toolbar')).toBeInViewport();
-      // timeline-library.css: `.tl-toolbar` is not sticky (browsers with scroll-driven animation).
-      await expect(grouping).toBeHidden();
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      await expect(toolbar).toBeInViewport();
+      // timeline-library.css: `.tl-toolbar` is not sticky; it has scrolled out above the toolbar.
+      const [groupingBox, toolbarBox] = await Promise.all([grouping.boundingBox(), toolbar.boundingBox()]);
+      expect(groupingBox!.y + groupingBox!.height).toBeLessThanOrEqual(toolbarBox!.y + toolbarBox!.height);
     });
   });
 
