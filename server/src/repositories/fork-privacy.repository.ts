@@ -68,8 +68,10 @@ export class ForkPrivacyRepository {
   /**
    * Writes the privacy projection for one asset's classification (FL-34). Called with the enrichment
    * writer's transaction and per-asset metadata lock, so the projection every read filters on commits
-   * with the review that produced it. A missing row is only created by an explicit owner mark or safe
-   * decision; any other write to an asset without a row fails closed.
+   * with the review that produced it. A missing row means "no classification yet" (not sensitive, no
+   * review), so any write creates it: with the effective verdict when there is one, otherwise not
+   * sensitive. An existing row keeps its verdict when this write has none; the review (`suppression`)
+   * is always the one written.
    */
   async saveClassification(
     assetId: string,
@@ -77,21 +79,13 @@ export class ForkPrivacyRepository {
     suppression: Record<string, unknown> | null,
     kysely: Kysely<DB>,
   ): Promise<void> {
-    const isManualMark = suppression?.action === 'marked-nsfw' || suppression?.action === 'marked-safe';
-    const result = await sql`
+    await sql`
       INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw", suppression)
-      SELECT ${assetId}::uuid, ${isNsfw ?? true}, ${suppression}::jsonb
-      WHERE ${isManualMark && isNsfw !== undefined} OR EXISTS (
-        SELECT 1 FROM immich_fork.asset_privacy WHERE "assetId" = ${assetId}::uuid
-      )
+      VALUES (${assetId}::uuid, ${isNsfw ?? false}, ${suppression}::jsonb)
       ON CONFLICT ("assetId") DO UPDATE
       SET "isNsfw" = COALESCE(${isNsfw ?? null}::boolean, asset_privacy."isNsfw"),
         suppression = EXCLUDED.suppression, "updatedAt" = now()
-      RETURNING "assetId"
     `.execute(kysely);
-    if (result.rows.length === 0) {
-      throw new Error(`Missing fork privacy sidecar for asset ${assetId}`);
-    }
   }
 
   async delete(assetIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
