@@ -299,20 +299,52 @@ describe(MachineLearningRepository.name, () => {
       expect(rejected.workloads).toEqual([]);
     });
 
-    it('does not publish an in-flight probe after configuration changes', async () => {
+    const heldPing = () => {
       const deferred = Promise.withResolvers<Response>();
-      const fetch = vi
-        .fn()
-        .mockImplementation((url: URL) =>
-          url.pathname === '/ping' ? deferred.promise : Promise.resolve(new Response('', { status: 404 })),
-        );
-      vi.stubGlobal('fetch', fetch);
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation((url: URL) =>
+            url.pathname === '/ping' ? deferred.promise : Promise.resolve(new Response('', { status: 404 })),
+          ),
+      );
+      return deferred;
+    };
+
+    it('keeps a destination probe across an unrelated configuration change', async () => {
+      const deferred = heldPing();
       const pending = sut.probe({ url: localUrl });
       sut.setup({ ...defaults.machineLearning });
       deferred.resolve(new Response('pong'));
-      const result = await pending;
+      expect((await pending).reachable).toBe(true);
+    });
+
+    it('does not publish an in-flight RunPod probe after the endpoint changes or is withdrawn', async () => {
+      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
+      let deferred = heldPing();
+      let pending = sut.probe({ url: runPodUrl, authToken: 'rpa_test_key' });
+      sut.setRunPodEndpoint(runPodUrl, 'rpa_rotated_key');
+      deferred.resolve(new Response('pong'));
+      let result = await pending;
       expect(result.reachable).toBe(false);
       expect(result.workloads).toEqual([]);
+
+      deferred = heldPing();
+      pending = sut.probe({ url: runPodUrl, authToken: 'rpa_rotated_key' });
+      sut.clearRunPodEndpoint();
+      deferred.resolve(new Response('pong'));
+      result = await pending;
+      expect(result.reachable).toBe(false);
+    });
+
+    it('keeps an in-flight RunPod probe when the same endpoint is republished', async () => {
+      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
+      const deferred = heldPing();
+      const pending = sut.probe({ url: runPodUrl, authToken: 'rpa_test_key' });
+      sut.setRunPodEndpoint(runPodUrl, 'rpa_test_key');
+      deferred.resolve(new Response('pong'));
+      expect((await pending).reachable).toBe(true);
     });
 
     it('rejects oversized capability reports before admitting any workloads', async () => {
