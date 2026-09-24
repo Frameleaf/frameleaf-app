@@ -232,6 +232,29 @@ describe(MediaOperationService.name, () => {
       expect(running[0]).toEqual(expect.objectContaining({ label: '', withheld: true }));
     });
 
+    it('withholds a job whose published result is Locked even when its source is not (FL-43)', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.Restoration,
+        assetId: visibleId,
+        resultAssetId: lockedId,
+        label: 'IMG_0412 restored.MOV',
+        snapshot: { assetId: visibleId, sourceWidth: 1920, sourceHeight: 1080 },
+      });
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getLockedAssetIds).mockResolvedValue(new Set([lockedId]));
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+      expect(items[0]).toEqual(
+        expect.objectContaining({ label: '', withheld: true, assetId: visibleId, resultAssetId: null }),
+      );
+
+      const detail = await sut.get(authStub.user1, operation.id);
+      expect(detail).toEqual(expect.objectContaining({ label: '', withheld: true, snapshot: {} }));
+      expect(JSON.stringify(detail)).not.toContain(lockedId);
+      expect(JSON.stringify(detail)).not.toContain('IMG_0412');
+    });
+
     it('shows the same job in full once the session is unlocked (FL-43)', async () => {
       const operation = operationStub({
         kind: MediaOperationKind.Restoration,
