@@ -484,7 +484,31 @@ test.describe('Timeline', () => {
             return Math.abs(box!.y - scroller!.y) < box!.height;
           })
           .toBe(true);
+        // One region per group, named by its heading, however many of its months are drawn.
+        await expect(page.getByRole('region', { name: String(year), exact: true })).toHaveCount(1);
       }
+    });
+
+    test('A focused year checkbox keeps focus as the header moves down its year', async ({ page }) => {
+      await openTimeline(page);
+      await groupingUtils.choose(page, 'Years');
+      const newestYear = captured(assets, assets[0].id).year;
+      const checkbox = page.getByRole('checkbox', { name: `Select all in ${newestYear}` });
+      await checkbox.focus();
+      await expect(checkbox).toBeFocused();
+      // Scroll the timeline itself, which leaves focus where it is, until the year's first month is
+      // out of reach: the header is then drawn before a later month, as a new element.
+      const firstHeader = await page.getByTestId('frameleaf-group').first().elementHandle();
+      await expect
+        .poll(async () => {
+          await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 1000));
+          return firstHeader!.evaluate((element) => element.isConnected);
+        })
+        .toBe(false);
+      const ids = await thumbnailUtils.idsInViewport(page);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(ids.every((id) => captured(assets, id).year === newestYear)).toBe(true);
+      await expect(checkbox).toBeFocused();
     });
 
     test('A year header selects the whole year, months not yet loaded included', async ({ page }) => {

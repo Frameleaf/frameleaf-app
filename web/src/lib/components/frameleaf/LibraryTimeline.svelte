@@ -16,7 +16,7 @@
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
-  import { selectGroupAfterLoading } from '$lib/frameleaf/timeline-group-load';
+  import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
@@ -30,7 +30,8 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
   import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
-  import { tick, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
@@ -317,6 +318,21 @@
     new Map(displayGroups.flatMap((group) => group.months.map((month) => [month.viewId, group] as const))),
   );
 
+  /**
+   * The loaded month that carries the group's region: one region per group, named by its heading,
+   * so a year does not show up as a dozen regions of the same name.
+   */
+  const regionHosts = $derived.by(() => {
+    const hosts = new Map<string, string>();
+    for (const group of displayGroups) {
+      const host = group.months.find((month) => month.isLoaded && month.isInOrNearViewport);
+      if (host) {
+        hosts.set(group.key, host.viewId);
+      }
+    }
+    return hosts;
+  });
+
   /** The month each group's header is drawn before: the group's first month within reach. */
   const bandHosts = $derived.by(() => {
     const hosts = new Map<string, string>();
@@ -337,8 +353,14 @@
     return state === 'all' && group.months.some((month) => !month.isLoaded) ? 'some' : state;
   };
 
-  /** Bumped by every group click, so only the newest one acts once its months have loaded. */
-  let groupRequest = 0;
+  /**
+   * The newest pending request of each group whose months are loading. A group has at most one:
+   * a newer click on the same group supersedes it, and a click on another group leaves it alone.
+   */
+  const groupRequests = new SvelteMap<string, number>();
+  let nextGroupRequest = 0;
+  /** A group checkbox is loading months; drives `aria-busy` and the loading status with ranges. */
+  const groupPending = $derived(groupRequests.size > 0);
 
   /**
    * The prototype's group checkbox selects every item in the group. A year or "all" group can reach
@@ -347,26 +369,77 @@
    * rather than select-all-matching: the timeline also serves albums, archive, favorites and the
    * pickers, where no server-side matching selection exists, and the tiles and group checkboxes
    * show a selection only through concrete ids.
+   *
+   * Resolves `false` when the click did not take effect (a month did not load, or the view changed),
+   * so the header puts its checkbox back; a click superseded by a newer one on the same group
+   * resolves `true`, since the newer click owns the checkbox now.
    */
-  const selectDisplayGroup = async (group: DisplayGroup, checked: boolean) => {
-    const request = ++groupRequest;
+  const selectDisplayGroup = async (group: DisplayGroup, checked: boolean): Promise<boolean> => {
+    const request = ++nextGroupRequest;
     const loading = checked && group.months.some((month) => !month.isLoaded);
-    rangePending ||= loading;
+    if (loading) {
+      groupRequests.set(group.key, request);
+    } else {
+      // Unchecking, or checking a fully loaded group, supersedes a load still running for it.
+      groupRequests.delete(group.key);
+    }
+    let outcome: GroupLoadOutcome;
     try {
-      await selectGroupAfterLoading(session, {
+      outcome = await selectGroupAfterLoading(session, {
         months: group.months,
         checked,
         isLoaded: (month) => month.isLoaded,
         load: (month) => timelineManager.loadTimelineMonth(month.yearMonth),
         idsOf: () => groupIds(group),
-        isLatest: () => request === groupRequest,
+        isLatest: () => !loading || groupRequests.get(group.key) === request,
       });
-    } finally {
-      if (loading && request === groupRequest) {
-        rangePending = false;
-      }
+    } catch {
+      outcome = 'incomplete';
     }
+    const superseded = loading && groupRequests.get(group.key) !== request;
+    if (!superseded) {
+      groupRequests.delete(group.key);
+    }
+    if (outcome === 'done' || superseded) {
+      return true;
+    }
+    announcement = $t('frameleaf_library_group_select_failed', { values: { title: group.title } });
+    return false;
   };
+
+  /**
+   * The header moves to another month as the group scrolls (`bandHosts`), which draws it anew. A
+   * group checkbox that had keyboard focus keeps it: the new header's checkbox takes it back.
+   */
+  let focusedGroupKey = $state<string | null>(null);
+  $effect(() => {
+    void bandHosts;
+    const key = untrack(() => focusedGroupKey);
+    if (!key) {
+      return;
+    }
+    void tick().then(() => {
+      // Only focus that was lost with the old header is given back, never focus taken elsewhere.
+      const active = document.activeElement;
+      if (active && active !== document.body) {
+        return;
+      }
+      root
+        ?.querySelector<HTMLInputElement>(`[data-group-key="${CSS.escape(key)}"] input[type="checkbox"]`)
+        ?.focus({ preventScroll: true });
+    });
+  });
+
+  // A press anywhere outside the group headers ends the claim, even on something not focusable.
+  $effect(() => {
+    const release = (event: PointerEvent) => {
+      if (!(event.target instanceof Element && event.target.closest('.fl-group-band'))) {
+        focusedGroupKey = null;
+      }
+    };
+    document.addEventListener('pointerdown', release, { capture: true });
+    return () => document.removeEventListener('pointerdown', release, { capture: true });
+  });
 
   /** The group under the pointer shows its checkbox, as the prototype's `.tl-group:hover`. */
   let hoveredMonth = $state<string | null>(null);
@@ -712,7 +785,7 @@
     bind:clientWidth={measuredWidth}
     style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
     onscroll={handleScroll}
-    aria-busy={rangePending}
+    aria-busy={rangePending || groupPending}
   >
     <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
       <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
@@ -750,6 +823,13 @@
             class="fl-group-band"
             data-testid="frameleaf-group"
             data-group-key={group.key}
+            onfocusin={() => (focusedGroupKey = group.key)}
+            onfocusout={(event) => {
+              // Focus moving to another element ends the claim; the header being drawn anew does not.
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+                focusedGroupKey = null;
+              }
+            }}
             style:top="{first.top}px"
             style:height="{last.top + last.height - first.top}px"
           >
@@ -762,7 +842,7 @@
               hovered={group.months.some((groupMonth) => groupMonth.viewId === hoveredMonth)}
               width={timelineManager.viewportWidth}
               height={first.groupHeaderHeight}
-              onSelect={(checked) => void selectDisplayGroup(group, checked)}
+              onSelect={(checked) => selectDisplayGroup(group, checked)}
             />
           </div>
         {/if}
@@ -773,8 +853,8 @@
         {:else if month.isInOrNearViewport}
           <div
             class="fl-month"
-            role={group ? 'region' : undefined}
-            aria-labelledby={group ? groupHeadingId(group) : undefined}
+            role={group && regionHosts.get(group.key) === month.viewId ? 'region' : undefined}
+            aria-labelledby={group && regionHosts.get(group.key) === month.viewId ? groupHeadingId(group) : undefined}
             style:height="{month.height}px"
             style:transform={`translate3d(0,${month.top}px,0)`}
             onpointerenter={() => (hoveredMonth = month.viewId)}
@@ -828,7 +908,7 @@
 </div>
 
 <span class="fl-sr" role="status" aria-live="polite">
-  {#if rangePending}{$t('loading')}{/if}
+  {#if rangePending || groupPending}{$t('loading')}{/if}
 </span>
 <!-- Prototype `.tl-live`: the grouping announcement has a live region of its own. -->
 <span class="fl-sr" role="status" aria-live="polite" data-testid="frameleaf-grouping-status">{announcement}</span>
