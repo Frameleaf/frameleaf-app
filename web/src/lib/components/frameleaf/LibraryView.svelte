@@ -869,7 +869,13 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={gridLayout} bind:this={root}>
+<div
+  class="frameleaf fl-library"
+  class:has-sticky-toolbar={!publicView}
+  data-testid="frameleaf-library"
+  data-layout={gridLayout}
+  bind:this={root}
+>
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
@@ -1031,7 +1037,8 @@
    * timeline draws its header block (`.fl-timeline-top`) above the rows; it sticks with a negative
    * top equal to the toolbar's offset, so everything above the toolbar scrolls out of view.
    */
-  .fl-library :global(.fl-timeline-body > .fl-timeline-top) {
+  /* Only where the toolbar exists: a public shared-link page's header simply scrolls away. */
+  .fl-library.has-sticky-toolbar :global(.fl-timeline-body > .fl-timeline-top) {
     position: sticky;
     top: calc(-1 * var(--fl-toolbar-top, 0px));
     z-index: 4;
@@ -1056,16 +1063,16 @@
     transform-origin: left bottom;
   }
   @supports (animation-timeline: scroll()) {
-    .fl-library :global(.fl-timeline-scroll) {
+    .fl-library.has-sticky-toolbar :global(.fl-timeline-scroll) {
       scroll-timeline: --fl-library block;
     }
-    .fl-library-header :global(h1) {
+    .has-sticky-toolbar .fl-library-header :global(h1) {
       animation: fl-title-shrink linear both;
       animation-timeline: --fl-library;
       animation-range: 0 90px;
     }
     @media (prefers-reduced-motion: reduce) {
-      .fl-library-header :global(h1) {
+      .has-sticky-toolbar .fl-library-header :global(h1) {
         animation-name: fl-title-fade;
       }
     }
