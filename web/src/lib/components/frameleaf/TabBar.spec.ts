@@ -99,10 +99,10 @@ describe('TabBar', () => {
     expect(screen.getByRole('link', { name: 'Albums' })).toBeInTheDocument();
   });
 
-  it('steps away while the ☰ drawer is open so its footer stays reachable', () => {
+  it('stays in place while the ☰ drawer is open (the drawer ends above it)', () => {
     sidebarStore.isOpen = true;
     render(TabBar, { theme: 'dark' });
 
-    expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Sections' })).toBeInTheDocument();
   });
 });
