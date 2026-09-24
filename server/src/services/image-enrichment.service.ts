@@ -396,6 +396,8 @@ export class ImageEnrichmentService extends BaseService {
 
       return { metadata: m, locked };
     });
+    // the lock is committed: release what a locked photo may no longer be before anything below can fail
+    await this.afterSensitiveLock(locked);
 
     // Phase 2 (no lock): tag application + finalize. These are idempotent on
     // their applied-hash bookkeeping, so the brief unlocked window between
@@ -440,7 +442,6 @@ export class ImageEnrichmentService extends BaseService {
     }
 
     await this.finalizeRepair(id, changed, metadata);
-    await this.afterSensitiveLock(locked);
 
     return this.toResponse(id, await this.getEnrichmentMetadata(id));
   }
@@ -705,6 +706,7 @@ export class ImageEnrichmentService extends BaseService {
       const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
       return { metadata: m, locked };
     });
+    await this.afterSensitiveLock(locked);
 
     // the owner's review decides which tags apply, not the raw detection (FL-34)
     const changed = await this.applyNsfwTags(id, asset.ownerId, this.getStoredNsfw(metadata)!, metadata);
@@ -714,8 +716,6 @@ export class ImageEnrichmentService extends BaseService {
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
-
-    await this.afterSensitiveLock(locked);
 
     return { status: JobStatus.Success };
   }
