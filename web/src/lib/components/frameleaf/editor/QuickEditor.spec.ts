@@ -193,21 +193,20 @@ describe('QuickEditor', () => {
     expect(getAssetDevelop).not.toHaveBeenCalled();
   });
 
-  it('opens video versions beside the still-mounted video editor (FL-39)', async () => {
+  it('opens the video Versions menu over the still-mounted video editor (FL-39)', async () => {
     const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
     render(QuickEditor, { asset: video, onClose: vi.fn() });
 
     const versions = screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' });
+    expect(versions).toHaveAttribute('aria-haspopup', 'menu');
     await fireEvent.click(versions);
 
-    expect(versions).toHaveAttribute('aria-pressed', 'true');
-    expect(await screen.findByRole('region', { name: 'frameleaf_editor_tool_versions' })).toBeInTheDocument();
-    // The open draft is not discarded by looking at history.
+    expect(await screen.findByRole('menu', { name: 'editor_video_versions' })).toBeInTheDocument();
+    // Looking at history never discards the open draft.
     expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
     await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledWith({ id: video.id }));
-
-    await fireEvent.click(versions);
-    expect(screen.queryByRole('region', { name: 'frameleaf_editor_tool_versions' })).not.toBeInTheDocument();
+    // The draft is already the original, so there is nothing to revert.
+    expect(screen.queryByRole('button', { name: 'frameleaf_editor_revert' })).not.toBeInTheDocument();
   });
 
   describe('selective photo tools (FL-64)', () => {

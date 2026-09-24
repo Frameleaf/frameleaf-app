@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** FL-39: loads a saved version's recipe into the open draft. */
+  export type VideoEditorDraft = { applyRecipe: (edits: Array<{ action: string; parameters: unknown }>) => void };
+</script>
+
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -33,6 +38,10 @@
     onClose: (refreshAsset?: boolean) => void;
     /** FL-39: lets the hosting editor guard version actions against discarding this draft. */
     onUnsavedChange?: (hasUnsavedChanges: boolean) => void;
+    /** FL-39: the draft recipe, as the JSON of the edits Save version would send. */
+    onDraftChange?: (editKey: string) => void;
+    /** FL-39: hands the host a way to load a saved version's recipe into the draft. */
+    onReady?: (editor: VideoEditorDraft) => void;
   }
 
   type VideoEdit = AssetEditsCreateDto['edits'][number];
@@ -122,7 +131,7 @@
   const minimumTimelineGap = 0.1;
   const minimumCropSize = 32;
 
-  let { asset = $bindable(), onClose, onUnsavedChange }: Props = $props();
+  let { asset = $bindable(), onClose, onUnsavedChange, onDraftChange, onReady }: Props = $props();
 
   let selectedTool = $state<Tool>('auto');
   let isSaving = $state(false);
@@ -191,6 +200,11 @@
   );
   $effect(() => {
     onUnsavedChange?.(hasUnsavedChanges);
+  });
+  $effect(() => {
+    if (!isLoading && originalVideo) {
+      onDraftChange?.(getCurrentEditKey());
+    }
   });
   const saveButtonText = $derived($t('editor_video_save_version'));
   const previewUrl = $derived(
@@ -263,95 +277,11 @@
         throw new Error('Original video metadata unavailable');
       }
       originalVideo = source;
-      resetControls();
-      for (const edit of edits) {
-        const action = edit.action as string;
-        const parameters = edit.parameters as EditParameters;
-
-        switch (action) {
-          case 'crop': {
-            cropEnabled = true;
-            cropAspectRatio = 'free';
-            cropX = getNumberParameter(parameters, 'x', cropX);
-            cropY = getNumberParameter(parameters, 'y', cropY);
-            cropWidth = getNumberParameter(parameters, 'width', cropWidth);
-            cropHeight = getNumberParameter(parameters, 'height', cropHeight);
-            clampCropToFrame();
-            break;
-          }
-          case 'rotate': {
-            rotation = getNumberParameter(parameters, 'angle', rotation);
-            break;
-          }
-          case 'straighten': {
-            straighten = getNumberParameter(parameters, 'angle', straighten);
-            break;
-          }
-          case 'mirror': {
-            mirrorHorizontal ||= parameters.axis === 'horizontal';
-            mirrorVertical ||= parameters.axis === 'vertical';
-            break;
-          }
-          case 'trim': {
-            trimStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-            trimEndSeconds = getNumberParameter(parameters, 'endMs', originalVideo.durationMs) / 1000;
-            break;
-          }
-          case 'autoEnhance': {
-            autoEnhance = getBooleanParameter(parameters, 'enabled', true);
-            break;
-          }
-          case 'stabilize': {
-            stabilize = getBooleanParameter(parameters, 'enabled', true);
-            break;
-          }
-          case 'adjust': {
-            for (const control of adjustmentControls) {
-              adjustments[control.key] = getNumberParameter(parameters, control.key, adjustments[control.key]);
-            }
-            break;
-          }
-          case 'filter':
-          case 'effect': {
-            lookName = getStringParameter(parameters, 'name', lookName);
-            lookIntensity = getNumberParameter(parameters, 'intensity', lookIntensity);
-            break;
-          }
-          case 'audio': {
-            muted = getBooleanParameter(parameters, 'muted', muted);
-            volume = getNumberParameter(parameters, 'volume', volume);
-            break;
-          }
-          case 'speed': {
-            const startMs = parameters.startMs;
-            const endMs = parameters.endMs;
-            if (typeof startMs === 'number' && typeof endMs === 'number') {
-              speedMode = 'segment';
-              speedSegments = [
-                ...speedSegments,
-                createSpeedSegment(getNumberParameter(parameters, 'rate', 1), startMs / 1000, endMs / 1000),
-              ];
-            } else {
-              speedMode = 'whole';
-              speed = getNumberParameter(parameters, 'rate', speed);
-            }
-            break;
-          }
-          case 'textOverlay': {
-            text = getStringParameter(parameters, 'text', text);
-            textX = getNumberParameter(parameters, 'x', textX);
-            textY = getNumberParameter(parameters, 'y', textY);
-            textStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-            textEndSeconds = getNumberParameter(parameters, 'endMs', originalVideo.durationMs) / 1000;
-            textSize = getNumberParameter(parameters, 'size', textSize);
-            textColor = getStringParameter(parameters, 'color', textColor);
-            break;
-          }
-        }
-      }
-
-      clampTimelineState();
+      loadRecipe(edits);
       initialEditKey = getCurrentEditKey();
+      // FL-39: a saved version's recipe loads into the draft, as the prototype's Versions menu does.
+      // Nothing is published until Save version.
+      onReady?.({ applyRecipe: loadRecipe });
     } catch {
       metadataError = true;
     } finally {
@@ -364,6 +294,102 @@
     stopTimelineDrag();
     stopTextDrag();
   });
+
+  /** Replaces the controls with a recipe measured against the original. */
+  function loadRecipe(edits: Array<{ action: string; parameters: unknown }>) {
+    if (!originalVideo) {
+      return;
+    }
+    const source = originalVideo;
+    resetControls();
+    for (const edit of edits) {
+      const action = edit.action as string;
+      const parameters = edit.parameters as EditParameters;
+
+      switch (action) {
+        case 'crop': {
+          cropEnabled = true;
+          cropAspectRatio = 'free';
+          cropX = getNumberParameter(parameters, 'x', cropX);
+          cropY = getNumberParameter(parameters, 'y', cropY);
+          cropWidth = getNumberParameter(parameters, 'width', cropWidth);
+          cropHeight = getNumberParameter(parameters, 'height', cropHeight);
+          clampCropToFrame();
+          break;
+        }
+        case 'rotate': {
+          rotation = getNumberParameter(parameters, 'angle', rotation);
+          break;
+        }
+        case 'straighten': {
+          straighten = getNumberParameter(parameters, 'angle', straighten);
+          break;
+        }
+        case 'mirror': {
+          mirrorHorizontal ||= parameters.axis === 'horizontal';
+          mirrorVertical ||= parameters.axis === 'vertical';
+          break;
+        }
+        case 'trim': {
+          trimStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
+          trimEndSeconds = getNumberParameter(parameters, 'endMs', source.durationMs) / 1000;
+          break;
+        }
+        case 'autoEnhance': {
+          autoEnhance = getBooleanParameter(parameters, 'enabled', true);
+          break;
+        }
+        case 'stabilize': {
+          stabilize = getBooleanParameter(parameters, 'enabled', true);
+          break;
+        }
+        case 'adjust': {
+          for (const control of adjustmentControls) {
+            adjustments[control.key] = getNumberParameter(parameters, control.key, adjustments[control.key]);
+          }
+          break;
+        }
+        case 'filter':
+        case 'effect': {
+          lookName = getStringParameter(parameters, 'name', lookName);
+          lookIntensity = getNumberParameter(parameters, 'intensity', lookIntensity);
+          break;
+        }
+        case 'audio': {
+          muted = getBooleanParameter(parameters, 'muted', muted);
+          volume = getNumberParameter(parameters, 'volume', volume);
+          break;
+        }
+        case 'speed': {
+          const startMs = parameters.startMs;
+          const endMs = parameters.endMs;
+          if (typeof startMs === 'number' && typeof endMs === 'number') {
+            speedMode = 'segment';
+            speedSegments = [
+              ...speedSegments,
+              createSpeedSegment(getNumberParameter(parameters, 'rate', 1), startMs / 1000, endMs / 1000),
+            ];
+          } else {
+            speedMode = 'whole';
+            speed = getNumberParameter(parameters, 'rate', speed);
+          }
+          break;
+        }
+        case 'textOverlay': {
+          text = getStringParameter(parameters, 'text', text);
+          textX = getNumberParameter(parameters, 'x', textX);
+          textY = getNumberParameter(parameters, 'y', textY);
+          textStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
+          textEndSeconds = getNumberParameter(parameters, 'endMs', source.durationMs) / 1000;
+          textSize = getNumberParameter(parameters, 'size', textSize);
+          textColor = getStringParameter(parameters, 'color', textColor);
+          break;
+        }
+      }
+    }
+
+    clampTimelineState();
+  }
 
   function resetControls() {
     cropEnabled = false;
@@ -1039,9 +1065,15 @@
       return;
     }
 
+    const edits = buildEdits();
+    // Saving the original over the original would only add an empty version.
+    if (edits.length === 0 && !asset.isEdited && initialEditKey === '[]') {
+      onClose();
+      return;
+    }
+
     isSaving = true;
     try {
-      const edits = buildEdits();
       await (edits.length === 0
         ? removeAssetEdits({ id: asset.id })
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
