@@ -1,4 +1,4 @@
-import type { TimeBucketAssetResponseDto } from '@immich/sdk';
+import { AssetVisibility, type TimeBucketAssetResponseDto } from '@immich/sdk';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -26,7 +26,7 @@ const inMonth = (month: string, count: number): TimelineAsset[] =>
     return { ...asset, fileCreatedAt: at, localDateTime: at };
   });
 
-describe('LibraryTimeline year grouping', () => {
+describe('LibraryTimeline "all" grouping', () => {
   const march = inMonth('2024-03', 40);
   const february = inMonth('2024-02', 3);
   let releaseFebruary: () => void;
@@ -51,11 +51,13 @@ describe('LibraryTimeline year grouping', () => {
     session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
   });
 
+  // Years and Months are curated cards (September 24); "all" is the group whose checkbox reaches
+  // months that are not loaded yet.
   const renderYears = () =>
     render(LibraryTimeline, {
       timelineManager: manager,
       session,
-      grouping: 'years',
+      grouping: 'all',
       onGroupingChange: vi.fn(),
     });
 
@@ -285,5 +287,75 @@ describe('LibraryTimeline grid zoom', () => {
     renderLayout('browse');
     await tick();
     expect(manager.cells).toMatchObject({ aspect: 1, gap: 2 });
+  });
+});
+
+// FL-33 / FL-50: curated Years and Months cards from GET /timeline/highlights.
+describe('LibraryTimeline curated Years and Months', () => {
+  let manager: TimelineManager;
+  let session: LibrarySessionStore;
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: 2 }]);
+    sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(...inMonth('2024-03', 2)));
+    sdkMock.getTimelineHighlights.mockImplementation(({ grouping }) =>
+      Promise.resolve(
+        grouping === 'year'
+          ? [{ timeBucket: '2024-01-01', count: 2, keyAssetId: 'key', highlightAssetIds: [], places: ['Banff'] }]
+          : [
+              {
+                timeBucket: '2024-03-01',
+                count: 2,
+                keyAssetId: 'key',
+                highlightAssetIds: ['h1'],
+                places: ['Banff', 'Jasper'],
+              },
+            ],
+      ),
+    );
+    manager = new TimelineManager();
+    await manager.updateOptions({ visibility: AssetVisibility.Timeline });
+    await manager.updateViewport({ width: 1000, height: 400 });
+    session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+  });
+
+  const renderGrouping = (grouping: 'years' | 'months' | 'days') => {
+    const onGroupingChange = vi.fn();
+    const view = render(LibraryTimeline, { timelineManager: manager, session, grouping, onGroupingChange });
+    return { ...view, onGroupingChange };
+  };
+
+  it('shows a card per year with the same query as the time buckets, and opens Months', async () => {
+    const { onGroupingChange } = renderGrouping('years');
+    const card = await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_months' });
+    expect(sdkMock.getTimelineHighlights).toHaveBeenCalledWith(
+      expect.objectContaining({ grouping: 'year', visibility: AssetVisibility.Timeline }),
+    );
+    expect(card.textContent).toContain('2024');
+    expect(screen.queryByTestId('frameleaf-day-group')).toBeNull();
+    await fireEvent.click(card);
+    expect(onGroupingChange).toHaveBeenCalledWith('months');
+  });
+
+  it('adds a highlight strip to month cards and opens Days', async () => {
+    const { container, onGroupingChange } = renderGrouping('months');
+    const card = await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_days' });
+    expect(container.querySelectorAll(':scope .fl-card-strip img')).toHaveLength(1);
+    await fireEvent.click(card);
+    expect(onGroupingChange).toHaveBeenCalledWith('days');
+  });
+
+  it('keeps the tile flow for Days', async () => {
+    renderGrouping('days');
+    await tick();
+    expect(screen.queryByTestId('frameleaf-timeline-cards')).toBeNull();
+    expect(sdkMock.getTimelineHighlights).not.toHaveBeenCalled();
+  });
+
+  it('says so when the cards cannot load', async () => {
+    sdkMock.getTimelineHighlights.mockRejectedValue(new Error('offline'));
+    renderGrouping('years');
+    expect(await screen.findByText('frameleaf_timeline_cards_failed')).toBeTruthy();
   });
 });
