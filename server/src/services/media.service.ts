@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
+import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   AudioStreamInfo,
@@ -1307,7 +1307,7 @@ export class MediaService extends BaseService {
 
       if (edits.length === 0 && version.purpose !== 'export') {
         const originalPreview = asset.files.find((file) => file.type === AssetFileType.Preview && !file.isEdited);
-        published = await this.assetEditRepository.publishVideoVersion(version, {
+        published = await this.publishVideoVersion(version, {
           files: [],
           masterPath: null,
           thumbhash: originalPreview
@@ -1404,7 +1404,7 @@ export class MediaService extends BaseService {
       const duration = this.getVideoEditDurationMs(edits, original.format);
 
       if (version.purpose === 'export') {
-        published = await this.assetEditRepository.publishVideoVersion(version, {
+        published = await this.publishVideoVersion(version, {
           masterPath: master,
           files: [proxyFile],
           ...dimensions,
@@ -1418,7 +1418,7 @@ export class MediaService extends BaseService {
         config,
         { sourcePath: master, isEdited: true, fullsizeDimensions: dimensions, pathSuffix: suffix, candidates },
       );
-      published = await this.assetEditRepository.publishVideoVersion(version, {
+      published = await this.publishVideoVersion(version, {
         masterPath: master,
         files: [proxyFile, ...generated.files],
         ...dimensions,
@@ -1435,6 +1435,21 @@ export class MediaService extends BaseService {
         await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
       }
     }
+  }
+
+  /**
+   * Publishes a rendered version and queues any edited files it released (a pre-history edit's
+   * proxy, thumbnails and lineage) for deletion. FileDelete re-checks references under the path lock.
+   */
+  private async publishVideoVersion(
+    version: VideoEditVersion,
+    result: Parameters<AssetEditRepository['publishVideoVersion']>[1],
+  ): Promise<boolean> {
+    const { published, releasedPaths } = await this.assetEditRepository.publishVideoVersion(version, result);
+    if (releasedPaths.length > 0) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
+    }
+    return published;
   }
 
   private async transcodePlaybackProxy(input: string, output: string, master: VideoInfo, config: ConfigFFmpegDto) {
