@@ -3950,7 +3950,6 @@
   "frameleaf_map_count_in_view": "In view",
   "frameleaf_map_count_located": "Located",
   "frameleaf_map_date_range": "Date range",
-  "frameleaf_map_empty_album": "Nothing in this album has a location",
   "frameleaf_map_empty_help": "Widen the date range or include archived items to see them here.",
   "frameleaf_map_empty_title": "No located items match these settings",
   "frameleaf_map_from": "From",

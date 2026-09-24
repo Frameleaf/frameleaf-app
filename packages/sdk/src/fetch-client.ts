@@ -9630,17 +9630,29 @@ export function getAlbumDescendantCount({ id }: {
 /**
  * Retrieve album map markers
  */
-export function getAlbumMapMarkers({ id, key, slug }: {
+export function getAlbumMapMarkers({ fileCreatedAfter, fileCreatedBefore, id, isArchived, isFavorite, key, slug, withPartners, withSharedAlbums }: {
+    fileCreatedAfter?: string;
+    fileCreatedBefore?: string;
     id: string;
+    isArchived?: boolean;
+    isFavorite?: boolean;
     key?: string;
     slug?: string;
+    withPartners?: boolean;
+    withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MapMarkerResponseDto[];
     }>(`/albums/${encodeURIComponent(id)}/map-markers${QS.query(QS.explode({
+        fileCreatedAfter,
+        fileCreatedBefore,
+        isArchived,
+        isFavorite,
         key,
-        slug
+        slug,
+        withPartners,
+        withSharedAlbums
     }))}`, {
         ...opts
     }));

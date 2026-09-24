@@ -65,6 +65,24 @@ test.describe('Album', () => {
 
     const mapMarker = page.getByRole('img', { name: /^Open item/ }).first();
     await expect(mapMarker).toBeVisible();
+
+    // MapView.jsx in album scope keeps the settings sheet, whose switches narrow the album's items.
+    const tools = page.getByRole('toolbar', { name: 'Map tools' });
+    await tools.getByRole('button', { name: 'Map settings' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Map settings' });
+    await expect(sheet.getByRole('switch', { name: 'Partner items' })).toHaveAttribute('aria-checked', 'true');
+    await sheet.getByRole('switch', { name: 'Only favorites' }).click();
+    await expect(page.getByText('No located items match these settings')).toBeVisible();
+    await sheet.getByRole('switch', { name: 'Only favorites' }).click();
+    await expect(mapMarker).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // "Search this area" is offered in album scope too, once the view has moved.
+    await tools.getByRole('button', { name: 'Zoom out' }).click();
+    await expect(page.getByRole('button', { name: 'Search this area' })).toBeVisible();
+    await tools.getByRole('button', { name: 'Show all items' }).click();
+
     await mapMarker.click();
 
     const viewer = page.locator('#immich-asset-viewer');
