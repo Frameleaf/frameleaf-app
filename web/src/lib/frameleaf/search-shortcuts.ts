@@ -1,4 +1,5 @@
 import { shouldIgnoreEvent } from '$lib/actions/shortcut';
+import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
 
 /**
  * The prototype's search keys (App.jsx keydown handler and `shortcuts.mjs` `focus-search`):
@@ -45,3 +46,17 @@ export const installSearchShortcuts = (
   target.addEventListener('keydown', onKeydown, { capture: true });
   return () => target.removeEventListener('keydown', onKeydown, { capture: true });
 };
+
+/**
+ * The results toolbar's Filter control (prototype `App.jsx` `openFilters`) opens the filter panel at
+ * a section. The panel is the search palette's Advanced view (September 24), which the top bar's one
+ * search entry owns, so the toolbar asks for it with this event rather than mounting a second panel.
+ */
+export const FILTER_PANEL_EVENT = 'frameleaf:open-filters';
+
+export type FilterPanelRequest = { section: DiscoveryFilterSection };
+
+export const requestFilterPanel = (
+  section: DiscoveryFilterSection,
+  target: Pick<Window, 'dispatchEvent'> = globalThis,
+) => target.dispatchEvent(new CustomEvent<FilterPanelRequest>(FILTER_PANEL_EVENT, { detail: { section } }));
