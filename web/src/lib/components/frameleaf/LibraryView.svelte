@@ -130,6 +130,11 @@
      * the selected item's information (`LibraryWorkInspector`, FL-33).
      */
     infoPanel?: Snippet;
+    /**
+     * Another side panel (Activity, the filter panel) is open beside the results. Work's information
+     * panel steps aside while it is, as the template's inspector does (`App.jsx`).
+     */
+    sidePanelOpen?: boolean;
     empty?: Snippet;
     /**
      * A public shared-link page (prototype `PublicViewer.jsx`): header, select bar and grid only. The
@@ -172,6 +177,7 @@
     onOpen,
     viewer,
     infoPanel,
+    sidePanelOpen = false,
     empty,
     publicView = false,
   }: Props = $props();
@@ -204,7 +210,7 @@
   });
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
   const canShowInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
-  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen);
+  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen);
   const selecting = $derived(session.selection.length > 0);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');

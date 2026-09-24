@@ -66,6 +66,22 @@ describe('LibraryView', () => {
       await tick();
     };
 
+    it('steps aside while Activity or the filter panel is open beside the results', async () => {
+      const props = {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album' as const, id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      };
+      render(LibraryView, { ...props, sidePanelOpen: true });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      await tick();
+      expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
+      // the toggle still says the panel is on: it comes back when the side panel closes
+      expect(screen.getByRole('button', { name: 'frameleaf_work_inspector_hide' })).toBeInTheDocument();
+    });
+
     it('describes the selection itself when the page supplies no panel of its own', async () => {
       await setupWork();
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
