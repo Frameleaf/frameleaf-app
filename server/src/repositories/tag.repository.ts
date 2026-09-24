@@ -83,11 +83,11 @@ export class TagRepository {
   @GenerateSql({ params: [DummyValue.UUID, { value: DummyValue.STRING, color: DummyValue.STRING }] })
   async update(id: string, dto: Updateable<TagTable>) {
     return this.db.transaction().execute(async (tx) => {
-      // Get previous tag value for reference if the current update contains a new value
+      // Get previous tag value for reference if the current update contains a new value or parent
       const previousTag =
-        dto.value === undefined
+        dto.value === undefined && dto.parentId === undefined
           ? undefined
-          : await tx.selectFrom('tag').select('value').where('id', '=', id).executeTakeFirst();
+          : await tx.selectFrom('tag').select(['value', 'parentId']).where('id', '=', id).executeTakeFirst();
 
       // Perform main tag update
       const updated = await tx
@@ -96,6 +96,31 @@ export class TagRepository {
         .where('id', '=', id)
         .returningAll()
         .executeTakeFirstOrThrow();
+
+      // FL-46: a moved tag takes its whole subtree along, so the subtree's closure rows are re-rooted:
+      // links to the old ancestors are dropped and links to the new parent's ancestors added
+      if (previousTag && dto.parentId !== undefined && dto.parentId !== previousTag.parentId) {
+        const subtree = tx.selectFrom('tag_closure').select('id_descendant').where('id_ancestor', '=', id);
+        await tx
+          .deleteFrom('tag_closure')
+          .where('id_descendant', 'in', subtree)
+          .where('id_ancestor', 'not in', subtree)
+          .execute();
+        if (dto.parentId !== null) {
+          await tx
+            .insertInto('tag_closure')
+            .columns(['id_ancestor', 'id_descendant'])
+            .expression((eb) =>
+              eb
+                .selectFrom('tag_closure as ancestor')
+                .innerJoin('tag_closure as descendant', (join) => join.on('descendant.id_ancestor', '=', id))
+                .where('ancestor.id_descendant', '=', dto.parentId as string)
+                .select(['ancestor.id_ancestor', 'descendant.id_descendant']),
+            )
+            .onConflict((oc) => oc.doNothing())
+            .execute();
+        }
+      }
 
       // Check if value has changed, trigger value updates on all children if so
       if (previousTag && dto.value !== previousTag.value) {
@@ -142,6 +167,18 @@ export class TagRepository {
       }
       return updated;
     });
+  }
+
+  /** Whether `ancestorId` is `descendantId` or one of its ancestors. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async isAncestor(ancestorId: string, descendantId: string) {
+    const row = await this.db
+      .selectFrom('tag_closure')
+      .select('id_ancestor')
+      .where('id_ancestor', '=', ancestorId)
+      .where('id_descendant', '=', descendantId)
+      .executeTakeFirst();
+    return !!row;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

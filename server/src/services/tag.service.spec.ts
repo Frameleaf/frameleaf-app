@@ -133,6 +133,26 @@ describe(TagService.name, () => {
       );
       expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { value: 'tag', color: '#000000' });
     });
+
+    it('should move a tag to the top level', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.tag.get.mockResolvedValue({ ...tagStub.tag, value: 'Parent/tag', parentId: 'tag-parent' });
+      mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
+      await sut.update(authStub.admin, 'tag-1', { parentId: null });
+      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { value: 'tag', color: undefined, parentId: null });
+    });
+
+    it('should not move a tag under one of its descendants', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set(['tag-1']));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set(['tag-child']));
+      mocks.tag.get.mockResolvedValue(tagStub.tag);
+      mocks.tag.isAncestor.mockResolvedValue(true);
+      await expect(sut.update(authStub.admin, 'tag-1', { parentId: 'tag-child' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.tag.isAncestor).toHaveBeenCalledWith('tag-1', 'tag-child');
+      expect(mocks.tag.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('upsert', () => {

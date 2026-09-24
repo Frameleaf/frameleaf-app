@@ -60,19 +60,36 @@ export class TagService extends BaseService {
   async update(auth: AuthDto, id: string, dto: TagUpdateDto): Promise<TagResponseDto> {
     await this.requireTag(auth, Permission.TagUpdate, id);
 
-    const { name, color } = dto;
+    const { name, color, parentId } = dto;
     const existing = await this.findOrFail(id);
+    const leaf = name || (existing.value.split('/').at(-1) as string);
 
     let value;
-    if (name) {
+    if (parentId === undefined) {
       const parts = existing.value.split('/');
-      parts[parts.length - 1] = name;
+      parts[parts.length - 1] = leaf;
       value = parts.join('/');
+    } else if (parentId === null) {
+      value = leaf;
     } else {
-      value = existing.value;
+      // FL-46: moving a tag, like creating one, needs the new parent to be a tag this user can read
+      await this.requireTag(auth, Permission.TagRead, parentId);
+      if (parentId === id || (await this.tagRepository.isAncestor(id, parentId))) {
+        throw new BadRequestException('A tag cannot be moved under itself or one of its descendants');
+      }
+      const parent = await this.findOrFail(parentId);
+      value = `${parent.value}/${leaf}`;
     }
 
-    const tag = await this.tagRepository.update(id, { value, color });
+    if (value !== existing.value && (await this.tagRepository.getByValue(auth.user.id, value))) {
+      throw new BadRequestException('A tag with that name already exists');
+    }
+
+    const tag = await this.tagRepository.update(id, {
+      value,
+      color,
+      ...(parentId !== undefined && { parentId }),
+    });
     return mapTag(tag);
   }
 
