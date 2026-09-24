@@ -9,6 +9,8 @@
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { effectiveTransition, SlideshowTransition } from '$lib/frameleaf/slideshow-transitions';
   import { SlideshowLook, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { canCopyImageToClipboard, copyImageToClipboard } from '$lib/utils/asset-utils';
@@ -34,7 +36,7 @@
 
   let { cursor, element = $bindable(), sharedLink, onReady, onError, onSwipe }: Props = $props();
 
-  const { slideshowState, slideshowLook } = slideshowStore;
+  const { slideshowState, slideshowLook, slideshowTransition } = slideshowStore;
   const asset = $derived(cursor.current);
 
   let visibleImageReady: boolean = $state(false);
@@ -154,8 +156,16 @@
     }
   };
 
+  // FL-36: the Memories transition plays over a dimmed, blurred backdrop of the photo
+  // (MediaViewer.jsx:1350-1358), as the Blurred background look does.
+  const memoriesBackdrop = $derived(
+    $slideshowState !== SlideshowState.None &&
+      effectiveTransition($slideshowTransition, prefersReducedMotion()) === SlideshowTransition.Memories,
+  );
   const blurredSlideshow = $derived(
-    $slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.BlurredBackground && !!asset.thumbhash,
+    $slideshowState !== SlideshowState.None &&
+      ($slideshowLook === SlideshowLook.BlurredBackground || memoriesBackdrop) &&
+      !!asset.thumbhash,
   );
 
   let adaptiveImage = $state<HTMLDivElement | undefined>();
@@ -248,7 +258,10 @@
   >
     {#snippet backdrop()}
       {#if blurredSlideshow}
-        <Thumbhash base64ThumbHash={asset.thumbhash!} class="absolute inset-s-0 top-0 left-0 h-dvh w-dvw" />
+        <Thumbhash
+          base64ThumbHash={asset.thumbhash!}
+          class="absolute inset-s-0 top-0 left-0 h-dvh w-dvw {memoriesBackdrop ? 'brightness-50 saturate-[1.15]' : ''}"
+        />
       {/if}
     {/snippet}
     {#snippet overlays()}

@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import type { MemoryResponseDto } from '@immich/sdk';
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { generateMemoriesFromTimeline } from 'src/ui/generators/memory.js';
 import {
   Changes,
@@ -211,6 +211,33 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
 
       await page.keyboard.press('ArrowRight');
       await memoryAssetViewerUtils.waitForAssetLoad(page, firstAssetOfSecond);
+    });
+  });
+
+  // FL-62: the shared Memories engine opens a memory with its title card, then shows the lower third.
+  test.describe('Memories engine', () => {
+    test('opens with the title card and plays on from it', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[0].id);
+
+      const viewer = memoryViewerUtils.locator(page);
+      const titleCard = viewer.locator('.fmp-title-card');
+      await expect(titleCard).toBeVisible();
+      await expect(titleCard.getByText('Memory', { exact: true })).toBeVisible();
+      await expect(titleCard.getByText(`${firstMemory.assets.length} items`)).toBeVisible();
+
+      await titleCard.getByRole('button', { name: 'Play' }).click();
+      await expect(titleCard).toHaveCount(0);
+      await expect(viewer.locator('.fmp-lower-third')).toBeVisible();
+    });
+
+    test('does not show the title card when opened part way through', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      await expect(memoryViewerUtils.locator(page).locator('.fmp-title-card')).toHaveCount(0);
     });
   });
 });
