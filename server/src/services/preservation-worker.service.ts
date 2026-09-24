@@ -1318,10 +1318,12 @@ export class PreservationWorkerService {
     try {
       const manifest = await this.readManifest(source);
       const identity = restore.packageIdentity ?? manifest.packageId;
-      if (
-        identity !== manifest.packageId ||
-        !sameReviewedDocuments(asRecord(restore.summary).reviewedDocuments, manifest.files)
-      ) {
+      // A restoration reviewed before digests were recorded (FL-74) carries none; it is compared with
+      // the digests stored on the package row when there are some, and is otherwise not refused for
+      // a comparison its review never made possible.
+      const reviewedDocuments =
+        asRecord(restore.summary).reviewedDocuments ?? asRecord(found.manifest).files ?? manifest.files;
+      if (identity !== manifest.packageId || !sameReviewedDocuments(reviewedDocuments, manifest.files)) {
         // A package rewritten in place since its review is never applied as changed; it is reviewed again.
         const reasonKey = 'package_changed_since_review';
         await this.repository.updateRestore(restore.id, {
