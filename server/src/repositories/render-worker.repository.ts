@@ -186,6 +186,36 @@ export class RenderWorkerRepository {
     return worker ? { worker, session } : undefined;
   }
 
+  /**
+   * Every session that could still render: unrevoked, unexpired and held by an active worker, with
+   * that worker. Whether its evidence is still good enough is the caller's decision (FL-42).
+   */
+  async listLiveSessions(): Promise<AuthenticatedRenderWorker[]> {
+    const sessions = (await this.db
+      .selectFrom('render_worker_session')
+      .selectAll('render_worker_session')
+      .innerJoin('render_worker', 'render_worker.id', 'render_worker_session.workerId')
+      .where('render_worker.status', '=', RenderWorkerStatus.Active)
+      .where('render_worker_session.revokedAt', 'is', null)
+      .where('render_worker_session.expiresAt', '>', sql<Date>`now()`)
+      .execute()) as unknown as RenderWorkerSession[];
+    if (sessions.length === 0) {
+      return [];
+    }
+
+    const workers = (await this.db
+      .selectFrom('render_worker')
+      .selectAll()
+      .where('id', 'in', [...new Set(sessions.map((session) => session.workerId))])
+      .where('status', '=', RenderWorkerStatus.Active)
+      .execute()) as unknown as RenderWorker[];
+    const byId = new Map(workers.map((worker) => [worker.id, worker]));
+    return sessions.flatMap((session) => {
+      const worker = byId.get(session.workerId);
+      return worker ? [{ worker, session }] : [];
+    });
+  }
+
   async touchSession(id: string): Promise<void> {
     await this.db
       .updateTable('render_worker_session')
