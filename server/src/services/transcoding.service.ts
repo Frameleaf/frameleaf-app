@@ -33,6 +33,8 @@ type Session = {
   paused: boolean;
   process: ChildProcess | null;
   starting: boolean;
+  // Bumped per start attempt so a superseded start doesn't clear `starting` under a newer one.
+  startToken: number;
   startSegment: number | null;
   variantIndex: number | null;
 };
@@ -79,6 +81,7 @@ export class TranscodingService extends BaseService {
         paused: false,
         process: null,
         starting: false,
+        startToken: 0,
         startSegment: null,
         variantIndex: null,
       });
@@ -160,13 +163,16 @@ export class TranscodingService extends BaseService {
     session.startSegment = segmentIndex;
 
     session.starting = true;
+    const token = ++session.startToken;
     try {
       const process = await this.startTranscode(session, variantIndex, segmentIndex);
       if (process) {
         session.process = process;
       }
     } finally {
-      session.starting = false;
+      if (session.startToken === token) {
+        session.starting = false;
+      }
     }
   }
 
