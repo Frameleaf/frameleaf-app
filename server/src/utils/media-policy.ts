@@ -24,7 +24,7 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { AudioStreamInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
@@ -454,7 +454,7 @@ export const getEditedMasterTimingArgs = (
  * which is what the pixels actually are.
  */
 export const getEditedMasterColorArgs = (
-  videoStream: Pick<VideoStreamInfo, 'colorPrimaries' | 'colorMatrix' | 'colorTransfer'>,
+  videoStream: Pick<VideoStreamInfo, 'colorPrimaries' | 'colorMatrix' | 'colorTransfer' | 'colorRange'>,
   decision: EditedMasterColorDecision,
 ): string[] => {
   if (decision.policy === EditedMasterColorPolicy.ToneMap) {
@@ -474,8 +474,46 @@ export const getEditedMasterColorArgs = (
   if (matrix) {
     args.push('-colorspace', matrix);
   }
+  // FL-102: a preserving render keeps the source's signal range, so the tag says which one it is.
+  if (videoStream.colorRange) {
+    args.push('-color_range', videoStream.colorRange);
+  }
   return args;
 };
+
+/**
+ * ffprobe's `color_range`, as the range ffmpeg's filters and `-color_range` accept (FL-102).
+ * Older builds say `mpeg`/`jpeg` for the same two ranges; anything else is not stated.
+ */
+export const parseFfprobeColorRange = (value: string | undefined): VideoColorRange | null => {
+  switch (value) {
+    case 'tv':
+    case 'mpeg': {
+      return 'tv';
+    }
+    case 'pc':
+    case 'jpeg': {
+      return 'pc';
+    }
+    default: {
+      return null;
+    }
+  }
+};
+
+/**
+ * The signal range an edited master is delivered in (FL-102).
+ *
+ * A preserving render keeps the source's range: a full-range (`pc`) phone or screen recording
+ * squeezed into limited range loses its shadow and highlight steps, and a decoder told the wrong
+ * range washes the picture out or crushes it. A tone-mapped render is consumer Rec. 709 delivery,
+ * which is limited range, and so is a source that does not state its range.
+ */
+export const getEditedMasterColorRange = (
+  videoStream: Pick<VideoStreamInfo, 'colorRange'>,
+  decision: EditedMasterColorDecision,
+): VideoColorRange =>
+  decision.policy === EditedMasterColorPolicy.Preserve && videoStream.colorRange ? videoStream.colorRange : 'tv';
 
 export type EditedMasterAudioPolicy = {
   /** True when the source track is muxed through untouched. */

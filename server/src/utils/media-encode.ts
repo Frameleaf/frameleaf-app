@@ -17,6 +17,7 @@
  *   hardware plan states the surface format the accelerator must reach and emits no filters
  *   and no `-pix_fmt` of its own — only the refusal, which applies either way.
  */
+import type { VideoColorRange } from 'src/types.js';
 import { ColorMatrix, TranscodeHardwareAcceleration, VideoCodec } from 'src/enum.js';
 import { ChromaSubsampling, SourcePixelLayout, SourceTransferKind } from 'src/utils/media-decode.js';
 import {
@@ -103,7 +104,7 @@ export type EncoderPixelFormatRequest = {
   /** The source colour matrix, used as the conversion target when preserving. */
   colorMatrix: ColorMatrix;
   /** Output signal range. Consumer delivery is limited range unless the caller says otherwise. */
-  range?: 'tv' | 'pc';
+  range?: VideoColorRange;
 };
 
 export type EncoderPixelFormatPlan = {
