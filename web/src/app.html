@@ -24,6 +24,12 @@
     <link rel="preload" as="font" type="font/ttf" href="%app.font%" crossorigin="anonymous" />
     <link rel="preload" as="font" type="font/ttf" href="%app.monofont%" crossorigin="anonymous" />
 
+    <!--
+      The browser chrome colour: the dark canvas by default (template index.html:9), switched to the
+      light canvas below before first paint, and kept in step with the app theme by
+      $lib/frameleaf/theme-color.ts afterwards.
+    -->
+    <meta name="theme-color" content="#101416" />
     <script>
       try {
         const preference = JSON.parse(localStorage.getItem('immich-ui-theme'));
@@ -31,6 +37,7 @@
         if (preference === 'light' || (preference !== 'dark' && !prefersDark)) {
           document.documentElement.classList.remove('dark');
           document.documentElement.classList.add('light');
+          document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
         }
       } catch {
         // noop
