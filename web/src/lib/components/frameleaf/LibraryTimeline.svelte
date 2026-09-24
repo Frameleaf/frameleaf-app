@@ -472,9 +472,7 @@
 
   /** The keyboard's month jump: the month's first row at the top of the timeline. */
   const onJump = ({ year, month }: { year: number; month: number }) => {
-    const target = timelineManager.months.find(
-      ({ yearMonth }) => yearMonth.year === year && yearMonth.month === month,
-    );
+    const target = timelineManager.months.find(({ yearMonth }) => yearMonth.year === year && yearMonth.month === month);
     if (target) {
       timelineManager.scrollTo(Math.min(target.top, timelineManager.maxScroll));
     }

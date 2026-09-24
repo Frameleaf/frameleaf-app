@@ -78,6 +78,8 @@ function setup(isTrashed = true) {
   };
   vi.mocked(getAssetInfo).mockImplementation(({ id }) => Promise.resolve(id === b.id ? b : c));
   deleteRequest.mockResolvedValue(undefined);
+  // The viewer confirms every permanent delete; the user answers the dialog with "Delete permanently".
+  confirmRequest.mockResolvedValue(true);
   assetViewerManager.setAsset(a);
   return { a, b, c, manager };
 }
@@ -123,6 +125,7 @@ it.each([true, false])(
     expect.soft(routeError).toBeUndefined();
     expect(assetViewerManager.asset?.id).toBe(b.id);
     expect(assetViewerManager.isViewing).toBe(true);
+    expect(confirmRequest).toHaveBeenCalledTimes(force ? 1 : 0);
     stop();
   },
 );
@@ -176,5 +179,9 @@ it('ignores a late neighbor lookup for an asset that is no longer open', async (
   await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith(expect.objectContaining({ id: b.id })));
   await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
   await waitFor(() => expect(deleteRequest).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: [b.id], force: true } }));
+  expect(confirmRequest).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ size: 1, suppressible: false }),
+  );
   expect(assetViewerManager.asset?.id).toBe(c.id);
 });
