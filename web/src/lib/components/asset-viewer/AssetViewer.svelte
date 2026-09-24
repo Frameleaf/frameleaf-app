@@ -8,6 +8,7 @@
   import AssetViewerNavBar from '$lib/components/asset-viewer/AssetViewerNavBar.svelte';
   import { preloadManager } from '$lib/components/asset-viewer/PreloadManager.svelte';
   import QuickEditor from '$lib/components/frameleaf/editor/QuickEditor.svelte';
+  import FaceTagger from '$lib/components/frameleaf/FaceTagger.svelte';
   import ViewerFilmstrip from '$lib/components/frameleaf/ViewerFilmstrip.svelte';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
@@ -224,6 +225,15 @@
       assetViewerManager.setAsset(refreshedAsset);
     }
     assetViewerManager.closeEditor();
+  };
+
+  // FL-38: after the face tagger saves, re-read the asset and its faces, as closeEditor does.
+  const refreshFaces = async () => {
+    const refreshedAsset = await getAssetInfo({ id: asset.id });
+    onAssetChange?.(refreshedAsset);
+    assetViewerManager.setAsset(refreshedAsset);
+    faceManager.clear();
+    await faceManager.getAssetFaces(refreshedAsset.id);
   };
 
   const tracker = new InvocationTracker();
@@ -680,6 +690,13 @@
   -->
   {#if assetViewerManager.isShowEditor}
     <QuickEditor {asset} onClose={closeEditor} />
+  {/if}
+
+  <!-- FL-38: the face tagger is a modal dialog over the viewer (FaceTagger.jsx), for photos and videos alike. -->
+  {#if assetViewerManager.isFaceEditMode}
+    {#key asset.id}
+      <FaceTagger {asset} onClose={() => assetViewerManager.closeFaceEditMode()} onSaved={refreshFaces} />
+    {/key}
   {/if}
 
   <!-- FL-35: the stack strip carries keep-this and set-primary beside the members. -->

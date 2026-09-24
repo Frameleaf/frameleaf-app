@@ -1,5 +1,4 @@
 <script lang="ts">
-  import FaceEditor from '$lib/components/asset-viewer/face-editor/FaceEditor.svelte';
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
@@ -415,9 +414,6 @@
     Actions.Edit.onAction(Actions.Edit);
   };
 
-  let containerWidth = $state(0);
-  let containerHeight = $state(0);
-
   $effect(() => {
     if (assetViewerManager.isFaceEditMode) {
       videoPlayer?.pause();
@@ -454,8 +450,6 @@
   <div
     transition:fade={{ duration: assetViewerFadeDuration }}
     class="flex h-full place-content-center place-items-center select-none"
-    bind:clientWidth={containerWidth}
-    bind:clientHeight={containerHeight}
   >
     {#if castManager.isCasting}
       <div class="h-full place-content-center place-items-center">
@@ -611,10 +605,6 @@
         <div role="status" aria-label={$t('loading')} class="absolute flex place-content-center place-items-center">
           <LoadingSpinner />
         </div>
-      {/if}
-
-      {#if assetViewerManager.isFaceEditMode && videoPlayer && hasLoadedMetadata}
-        <FaceEditor htmlElement={videoPlayer} {containerWidth} {containerHeight} {assetId} />
       {/if}
     {/if}
   </div>
