@@ -23,18 +23,22 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
-  import SettingsDirectory from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
+  import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
     AREA_TILE_COLORS,
+    CARE_TOOLS,
     commandCenterUrl,
+    directoryGroup,
     isAreaAvailable,
     isScreenArea,
     resolveSettingsArea,
     resolveSettingsSection,
     searchSettingsSections,
+    sectionScope,
     sectionsForArea,
     SETTINGS_AREAS,
     SETTINGS_GROUP_ORDER,
@@ -242,6 +246,11 @@
     resolveSettingsSection(area, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
   );
   const selected = $derived(areaSections.find((section) => section.key === selectedKey));
+  /** Sections that are managers with their own heading and layout rather than a grouped list of settings. */
+  const MANAGER_SECTIONS = ['accounts', 'contents', 'queues'];
+  // A page named like its area does not repeat the name as a breadcrumb (INTERACTION-REQUIREMENTS
+  // "Settings"; CommandCenter.jsx:721-731): the overline names the area's group instead.
+  const breadcrumb = $derived(selected !== undefined && selected.title !== areaCopy[area].title);
   // As in the template, the Users manager and the Job manager carry their own headings.
   const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
 
@@ -254,6 +263,36 @@
         ? []
         : areaSections.map((section) => ({ key: section.key, title: section.title })),
   );
+  /** The area directory's rows: its sections, and for Library care the repair tools (CommandCenter.jsx:2705-2722). */
+  const directoryRows = $derived.by((): DirectoryRow[] => {
+    const group = (key: string) => {
+      const id = directoryGroup(area, key);
+      return id ? $t(`frameleaf_cc_group_${id}` as Translations) : undefined;
+    };
+    const rows: DirectoryRow[] = areaSections.map((section) => ({
+      id: `${section.admin ? 'server' : 'account'}:${section.key}`,
+      title: section.title,
+      description: section.subtitle,
+      group: group(section.key),
+      scope: sectionScope(section),
+      onSelect: () => void navigate(area, section.key),
+    }));
+    if (area === 'care') {
+      for (const tool of utilityTools) {
+        if (!(CARE_TOOLS as readonly string[]).includes(tool.id)) {
+          continue;
+        }
+        rows.push({
+          id: `utilities:${tool.id}`,
+          title: $t(tool.titleKey),
+          description: $t(tool.descriptionKey),
+          group: $t('frameleaf_cc_group_tools'),
+          onSelect: () => void navigate('utilities', tool.id),
+        });
+      }
+    }
+    return rows;
+  });
   const activeChild = $derived(
     area === 'utilities' ? utilityTool(page.url.searchParams.get('section'))?.id : selected?.key,
   );
@@ -543,7 +582,7 @@
     <main class="cc-main">
       {#if searching}
         <header class="cc-page-heading">
-          <p class="cc-overline">{$t('frameleaf_cc_search_overline')}</p>
+          <SettingsOverline>{$t('frameleaf_cc_search_overline')}</SettingsOverline>
           <h1>{$t('frameleaf_cc_search_title')}</h1>
           <p>{$t('frameleaf_settings_search_results', { values: { count: results.length } })}</p>
         </header>
@@ -595,15 +634,15 @@
         {:else}
           {#if !ownHeading}
             <header class="cc-page-heading">
-              <p class="cc-overline">
-                {#if selected}
+              <SettingsOverline>
+                {#if selected && breadcrumb}
                   <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
                   <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
                   {selected.title}
                 {:else}
                   {groupCopy[areaDefinition?.group ?? 'library']}
                 {/if}
-              </p>
+              </SettingsOverline>
               <h1>{selected?.title ?? areaCopy[area].title}</h1>
               <p>{selected?.subtitle ?? areaCopy[area].description}</p>
             </header>
@@ -618,28 +657,32 @@
               onConfigure={() => navigate('processing')}
             />
           {:else if selected}
-            <section class="cc-section" id="setting-{selected.key}">
-              {#if area === 'storage' && selected.key === 'trash'}
-                <!-- The template's Storage → Trash & retention links to the account's own trash. -->
-                <div class="cc-section-link">
-                  <Button onclick={() => navigate('trash', 'contents')}>
-                    <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
-                    {$t('frameleaf_cc_open_trash')}
-                  </Button>
-                </div>
-              {/if}
-              {#if selected.component}
-                <selected.component />
-              {:else}
-                {@render sectionBody?.(selected)}
-              {/if}
-            </section>
+            <div class="cc-settings-content">
+              <section
+                class="cc-section"
+                class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
+                id="setting-{selected.key}"
+              >
+                {#if area === 'storage' && selected.key === 'trash'}
+                  <!-- The template's Storage → Trash & retention links to the account's own trash. -->
+                  <div class="cc-section-link">
+                    <Button onclick={() => navigate('trash', 'contents')}>
+                      <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
+                      {$t('frameleaf_cc_open_trash')}
+                    </Button>
+                  </div>
+                {/if}
+                {#if selected.component}
+                  <selected.component />
+                {:else}
+                  {@render sectionBody?.(selected)}
+                {/if}
+              </section>
+            </div>
           {:else}
-            <SettingsDirectory
-              sections={areaSections}
-              icon={areaCopy[area].icon}
-              onSelect={(key) => navigate(area, key)}
-            />
+            <div class="cc-settings-content">
+              <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />
+            </div>
           {/if}
         {/if}
       {/if}
@@ -925,28 +968,6 @@
   .cc-page-heading {
     margin-bottom: 22px;
   }
-  .cc-overline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 8px;
-    color: var(--fl-muted);
-    font-size: 10px;
-    letter-spacing: 1.3px;
-    text-transform: uppercase;
-  }
-  .cc-overline button {
-    padding: 0;
-    color: var(--fl-muted);
-    background: none;
-    border: 0;
-    font-size: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-  }
-  .cc-overline button:hover {
-    color: var(--fl-accent);
-  }
   .cc-page-heading h1 {
     margin: 0;
     font-size: 28px;
@@ -959,15 +980,35 @@
     font-size: var(--fl-font-small);
     line-height: 1.5;
   }
+  /*
+   * apple-style.css:1014-1045: a settings page is one calm grouped list in a single column. The
+   * shared Setting* fields lay themselves out as compact rows with right-aligned controls inside
+   * this `settings` container, and stack on a narrow one.
+   */
   .cc-section {
+    container: settings / inline-size;
     min-width: 0;
-    padding: 20px;
+    max-width: 820px;
+    padding: 4px 18px;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
   }
+  @supports (corner-shape: squircle) {
+    .cc-section {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+  }
+  /* The Users, Trash and Job managers are full screens of their own, not grouped lists (command-center.css:1710-1717). */
+  .cc-section.cc-manager {
+    max-width: none;
+    padding: 0;
+    background: none;
+    border: 0;
+  }
   .cc-section-link {
-    margin-bottom: 16px;
+    margin: 14px 0;
   }
   .cc-section + .cc-section {
     margin-top: 16px;
