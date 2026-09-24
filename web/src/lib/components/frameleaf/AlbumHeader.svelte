@@ -523,11 +523,18 @@
 
     <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
     {#if onToggleActivity}
-      <button type="button" class="action" aria-pressed={activityOpen} onclick={() => onToggleActivity?.()}>
+      <!-- The count badge and "Activity, N entries" name follow CollectionHeader.jsx:1290-1297. -->
+      <button
+        type="button"
+        class="action"
+        aria-pressed={activityOpen}
+        aria-label={$t('frameleaf_album_activity_button', { values: { count: likeCount + commentCount } })}
+        onclick={() => onToggleActivity?.()}
+      >
         <Icon icon={mdiCommentTextOutline} size="18" />
         <span>{$t('activity')}</span>
         {#if likeCount + commentCount > 0}
-          <span class="count">{likeCount + commentCount}</span>
+          <span class="count" aria-hidden="true">{likeCount + commentCount}</span>
         {/if}
       </button>
     {/if}
