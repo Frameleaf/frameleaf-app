@@ -44898,6 +44898,10 @@
             "description": "Profile image file",
             "format": "binary",
             "type": "string"
+          },
+          "keepSource": {
+            "description": "The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set.",
+            "type": "boolean"
           }
         },
         "required": [

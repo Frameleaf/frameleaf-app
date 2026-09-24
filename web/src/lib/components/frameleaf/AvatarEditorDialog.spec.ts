@@ -31,9 +31,12 @@ describe('AvatarEditorDialog (S-2)', () => {
     });
     sdkMock.searchAssets.mockResolvedValue({
       assets: {
-        items: [{ id: 'a1', originalFileName: 'lake.jpg', thumbhash: null }],
-        total: 1,
-        count: 1,
+        items: [
+          { id: 'a1', ownerId: 'u1', originalFileName: 'lake.jpg', thumbhash: null },
+          { id: 'p1', ownerId: 'partner', originalFileName: 'partner.jpg', thumbhash: null },
+        ],
+        total: 2,
+        count: 2,
         facets: [],
         nextPage: null,
       },
@@ -42,11 +45,13 @@ describe('AvatarEditorDialog (S-2)', () => {
     sdkMock.updateMyUser.mockResolvedValue({} as never);
   });
 
-  it('offers recent timeline photos, never Locked ones, and saves a colour', async () => {
+  it('offers only your own recent timeline photos, never Locked or partner ones, and saves a colour', async () => {
     const onClose = vi.fn();
     render(AvatarEditorDialog, { onClose });
 
     expect(await screen.findByRole('button', { name: 'lake.jpg' })).toBeInTheDocument();
+    // A partner's timeline photo is never offered: profile pictures are visible to every account.
+    expect(screen.queryByRole('button', { name: 'partner.jpg' })).not.toBeInTheDocument();
     expect(sdkMock.searchAssets).toHaveBeenCalledWith({
       metadataSearchDto: expect.objectContaining({ visibility: 'timeline', type: 'IMAGE' }),
     });
