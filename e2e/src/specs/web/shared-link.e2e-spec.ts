@@ -200,6 +200,8 @@ test.describe('Shared Links', () => {
       const { link, revoke } = await revokeLater(admin.accessToken, album.id);
       await page.goto(`/share/${link.key}`);
       await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+      // Revoke once the grid has loaded: a request still in flight would find the revocation first.
+      await page.locator(`[data-asset-id="${asset.id}"] img`).waitFor();
 
       await revoke();
       await page.locator(`[data-asset-id="${asset.id}"]`).click();
@@ -212,6 +214,8 @@ test.describe('Shared Links', () => {
       const { link, revoke } = await revokeLater(admin.accessToken, album.id);
       await page.goto(`/share/${link.key}`);
       await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+      // Revoke once the grid has loaded: a request still in flight would find the revocation first.
+      await page.locator(`[data-asset-id="${asset.id}"] img`).waitFor();
 
       await revoke();
       await page.getByRole('button', { name: 'Download all' }).click();
