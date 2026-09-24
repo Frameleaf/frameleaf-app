@@ -773,12 +773,17 @@
     padding-bottom: 6px;
     border-top: 1px solid var(--fl-border);
   }
-  /* apple-style.css:641-648: sentence-case group labels beside the coloured tiles. */
+  /*
+   * The rendered template keeps the uppercase group labels: command-center.css:62-69 loads after
+   * apple-style.css:641-648 and wins the cascade, so the running prototype shows them this way.
+   */
   .cc-nav-group > p {
     margin: 12px 22px 6px;
     color: var(--fl-muted);
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 500;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
   }
   .area {
     display: flex;
