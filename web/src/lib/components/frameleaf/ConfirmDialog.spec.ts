@@ -41,4 +41,19 @@ describe('ConfirmDialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalledWith(false);
   });
+
+  it('puts first focus on Cancel for a destructive action, on the action otherwise', () => {
+    const { unmount } = render(ConfirmDialog, {
+      title: 'Delete?',
+      confirmText: 'Delete',
+      danger: true,
+      onClose: vi.fn(),
+    });
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveAttribute('data-initial-focus');
+    expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('data-initial-focus');
+    unmount();
+
+    render(ConfirmDialog, { title: 'Rotate?', confirmText: 'Rotate', onClose: vi.fn() });
+    expect(screen.getByRole('button', { name: 'Rotate' })).toHaveAttribute('data-initial-focus');
+  });
 });

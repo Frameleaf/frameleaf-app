@@ -33,6 +33,7 @@
     searchUsers,
     updatePartner,
     type ClusterGroupRequestResponseDto,
+    type PartnerResponseDto,
     type UserResponseDto,
   } from '@immich/sdk';
   import { onMount } from 'svelte';
@@ -52,6 +53,9 @@
   let sentRequests: ClusterGroupRequestResponseDto[] = $state([]);
   let receivedRequests: ClusterGroupRequestResponseDto[] = $state([]);
   let accounts: UserResponseDto[] = $state([]);
+  // The accounts to add or invite load on their own, so a recognition group that fails to load
+  // never blocks adding a partner.
+  let accountsStatus = $state<'loading' | 'loaded' | 'error'>('loading');
   const byId = $derived(Object.fromEntries(accounts.map((user) => [user.id, user])));
   let partners: PartnerSharing[] = $state([]);
   let notice = $state('');
@@ -90,35 +94,51 @@
   const name = (user?: UserResponseDto, fallback = '') => user?.name ?? fallback;
 
   onMount(async () => {
-    await Promise.all([refresh(), refreshPartners()]);
+    await Promise.all([refresh(), refreshPartners(), loadAccounts()]);
   });
+
+  const loadAccounts = async () => {
+    accountsStatus = 'loading';
+    try {
+      accounts = await searchUsers();
+      accountsStatus = 'loaded';
+    } catch (error) {
+      accountsStatus = 'error';
+      handleError(error, $t('frameleaf_people_sharing.accounts_error'));
+    }
+  };
 
   const refresh = async () => {
     try {
       const { clusterGroupId: id } = await getMyUser();
       clusterGroupId = id;
 
-      const [groupUsers, sent, received, allUsers] = await Promise.all([
+      const [groupUsers, sent, received] = await Promise.all([
         getClusterGroupUsers({ id }),
         getClusterGroupRequestsForGroup({ id }),
         getClusterGroupRequests(),
-        searchUsers(),
       ]);
 
       members = groupUsers;
       sentRequests = sent;
       receivedRequests = received;
-      accounts = allUsers;
     } catch (error) {
       handleError(error, $t('errors.unable_to_load_cluster_group'));
     }
   };
 
   const refreshPartners = async () => {
-    const [sharedBy, sharedWith] = await Promise.all([
-      getPartners({ direction: PartnerDirection.SharedBy }),
-      getPartners({ direction: PartnerDirection.SharedWith }),
-    ]);
+    let sharedBy: PartnerResponseDto[];
+    let sharedWith: PartnerResponseDto[];
+    try {
+      [sharedBy, sharedWith] = await Promise.all([
+        getPartners({ direction: PartnerDirection.SharedBy }),
+        getPartners({ direction: PartnerDirection.SharedWith }),
+      ]);
+    } catch (error) {
+      handleError(error, $t('frameleaf_people_sharing.partners_error'));
+      return;
+    }
 
     const next: PartnerSharing[] = sharedBy.map((candidate) => ({
       user: candidate,
@@ -390,6 +410,12 @@
         {$t('add_partner')}
       </button>
     </div>
+    {#if accountsStatus === 'error'}
+      <p class="cc-error" role="alert">
+        {$t('frameleaf_people_sharing.accounts_error')}
+        <button type="button" class="button" onclick={loadAccounts}>{$t('retry')}</button>
+      </p>
+    {/if}
     <div class="cc-sharing-list">
       {#each partners as partner (partner.user.id)}
         <article>
@@ -527,6 +553,14 @@
   }
   .cc-subtle {
     color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .cc-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    color: var(--fl-danger);
     font-size: var(--fl-font-small);
   }
   .cc-notice {
