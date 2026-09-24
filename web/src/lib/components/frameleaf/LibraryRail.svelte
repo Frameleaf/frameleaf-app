@@ -1,6 +1,7 @@
 <script lang="ts">
   import { browser } from '$app/environment';
   import { page } from '$app/state';
+  import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
   import {
     buildAlbumTree,
@@ -298,6 +299,10 @@
             {#each tree.albums as album (album.id)}
               {@render albumLink(album)}
             {/each}
+          {/if}
+          {#if destination.id === 'allAlbums'}
+            <!-- LibraryRail.jsx: saved searches follow the album tree, before Shared links. -->
+            <RailSavedSearches {iconOnly} />
           {/if}
         {/each}
 
