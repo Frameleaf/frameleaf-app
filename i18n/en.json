@@ -4502,6 +4502,7 @@
   "frameleaf_library_show_more": "Show more",
   "frameleaf_library_showing_all": "Showing all {total, number}",
   "frameleaf_library_showing_of": "Showing {shown, number} of {total, number}",
+  "frameleaf_library_thumbnail_size": "Thumbnail size",
   "frameleaf_live_photos_linked": "Linked",
   "frameleaf_lock_filter_all": "All",
   "frameleaf_lock_filter_detected": "Detected",

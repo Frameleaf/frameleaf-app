@@ -15,12 +15,20 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
-  import { cellGridOptions, THUMBNAIL_SIZE_DEFAULT, type TileLayout } from '$lib/frameleaf/library-grid';
+  import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
+  import {
+    cellGridOptions,
+    stepThumbnailSize,
+    THUMBNAIL_SIZE_DEFAULT,
+    timelineRowHeight,
+    type TileLayout,
+  } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
+  import { animateFlip } from '$lib/frameleaf/motion';
   import YearScrubber from '$lib/components/frameleaf/YearScrubber.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -54,6 +62,11 @@
     thumbnailSize?: number;
     /** Work: show file names in the captions. */
     showFileNames?: boolean;
+    /**
+     * Called with a new Thumbnail size when a pinch, Ctrl-scroll or + / − zooms the Browse or Work
+     * grid. Without it the grids do not zoom.
+     */
+    onThumbnailSizeChange?: (size: number) => void;
     /**
      * Group by day, month, year or everything (prototype `TimelineLibrary.jsx`). Applies where group
      * headers show; Browse, which has none, keeps its day flow.
@@ -93,6 +106,7 @@
     tileLayout = 'timeline',
     thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
     showFileNames = false,
+    onThumbnailSizeChange,
     grouping = 'days',
     onGroupingChange,
     enableRouting = false,
@@ -107,6 +121,7 @@
   }: Props = $props();
 
   let scrollable = $state<HTMLElement>();
+  let root = $state<HTMLElement>();
   let scrubberWidth = $state(0);
   let viewportTopMonth: ViewportTopMonth = $state(undefined);
   let viewportTopMonthScrollPercent = $state(0);
@@ -134,11 +149,72 @@
     // The filling justified layout is what makes a short day group span the timeline. The space the
     // manager reserves above each day's rows is exactly what the day group draws there: its header
     // in the Timeline, a plain gap where there is none.
+    // Thumbnail size scales the row height too; the default size keeps the default height.
     timelineManager.setLayoutOptions(
       maxMd
-        ? { rowHeight: 100, headerHeight: showDayHeaders ? 32 : 8, gap: 8, fillRowWidth: true }
-        : { rowHeight: 235, headerHeight: showDayHeaders ? 48 : 12, gap: 12, fillRowWidth: true },
+        ? {
+            rowHeight: timelineRowHeight(100, thumbnailSize),
+            headerHeight: showDayHeaders ? 32 : 8,
+            gap: 8,
+            fillRowWidth: true,
+          }
+        : {
+            rowHeight: timelineRowHeight(235, thumbnailSize),
+            headerHeight: showDayHeaders ? 48 : 12,
+            gap: 12,
+            fillRowWidth: true,
+          },
     );
+  });
+
+  /*
+   * A Thumbnail size change reflows every row, so the asset in view is held at the same height on
+   * screen (template `App.jsx` restores its scroll anchor whenever `size` changes). The anchor is
+   * read before the layout options change and put back once the months have been laid out again,
+   * which happens synchronously: the width does not change, so nothing has to be measured.
+   */
+  let lastThumbnailSize = untrack(() => thumbnailSize);
+  let sizeAnchor: LibraryAnchor | undefined;
+  $effect.pre(() => {
+    if (thumbnailSize === lastThumbnailSize) {
+      return;
+    }
+    sizeAnchor = untrack(
+      () =>
+        captureLibraryAnchor(timelineManager, session.session.scrollAnchor) ?? captureLibraryAnchor(timelineManager),
+    );
+  });
+  $effect(() => {
+    const size = thumbnailSize;
+    if (size === lastThumbnailSize) {
+      return;
+    }
+    lastThumbnailSize = size;
+    const anchor = sizeAnchor;
+    sizeAnchor = undefined;
+    untrack(() => restoreLibraryAnchor(timelineManager, anchor));
+  });
+
+  /**
+   * Grid zoom (template `App.jsx` `zoomGrid`, `interactions.js` `animateGridChange`): one step of
+   * the Thumbnail size, with the visible tiles sliding from their old boxes to their new ones.
+   * Under Reduce Motion the change is instant (`animateFlip`).
+   */
+  const zoomGrid = (direction: 1 | -1) => {
+    const next = stepThumbnailSize(thumbnailSize, direction);
+    if (next === thumbnailSize || !onThumbnailSizeChange) {
+      return;
+    }
+    animateFlip(scrollable, () => onThumbnailSizeChange(next));
+  };
+
+  // Browse and Work zoom with pinch, Ctrl-scroll and + / −; the Timeline keeps them for grouping.
+  $effect(() => {
+    const element = root;
+    if (!element || tileLayout === 'timeline' || !onThumbnailSizeChange) {
+      return;
+    }
+    return bindGridZoom(element, { onZoom: zoomGrid, enabled: () => !session.openAssetId });
   });
 
   $effect(() => {
@@ -190,7 +266,6 @@
   const PINCH_STEP = 56;
 
   let announcement = $state('');
-  let root = $state<HTMLElement>();
 
   const effectiveGrouping = $derived<TimelineGrouping>(showDayHeaders ? grouping : 'days');
   $effect(() => {
@@ -829,6 +904,7 @@
 <div
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
+  class:is-zoomable={tileLayout !== 'timeline' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
   bind:this={root}
 >
@@ -994,8 +1070,9 @@
     position: absolute;
     inset-inline: 0;
   }
-  .fl-timeline.is-groupable {
-    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping, not the page zoom. */
+  .fl-timeline.is-groupable,
+  .fl-timeline.is-zoomable {
+    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping (or the grid zoom), not the page zoom. */
     touch-action: pan-y;
   }
   .fl-group-band {
