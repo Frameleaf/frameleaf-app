@@ -5,9 +5,11 @@
   import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
   /**
-   * The Frameleaf modal: September 22 prototype `Dialog` (template/src/Controls.jsx) and its
-   * `.dialog` styles. A title bar with an icon close button, the body, and an optional
-   * `actions` footer that stays pinned while a long body scrolls.
+   * The Frameleaf modal: prototype `Dialog` (template/src/Controls.jsx) and its `.dialog`
+   * styles, with the September 24 sheet chrome (apple-style.css:106-135, 211-217, 303-321):
+   * 22px continuous corners, a spring entry, and a dimmed, blurred backdrop. A title bar with
+   * an icon close button, the body, and an optional `actions` footer that stays pinned while a
+   * long body scrolls.
    */
   let {
     title,
@@ -90,36 +92,64 @@
 </dialog>
 
 <style>
-  /* template/src/styles.css `.dialog`; the radius and motion come from the token scale. */
+  /*
+   * template/src/styles.css `.dialog` with the apple-style.css sheet: the radius and motion come
+   * from the token scale. The dialog is itself the `.frameleaf` scope, so the tokens.css
+   * Reduce Motion clamp (which targets descendants) does not reach it; the media query below
+   * turns the rise into a crossfade instead.
+   */
   .dialog {
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-dialog);
+    border-radius: var(--fl-radius-sheet);
     padding: 22px;
     width: 100%;
     max-width: min(510px, calc(100vw - 32px));
     max-height: calc(100dvh - 44px);
     overflow: auto;
     box-shadow: 0 18px 80px rgb(0 0 0 / 47%);
-    /* Clamped by the prefers-reduced-motion rule in tokens.css. */
-    animation: fl-dialog-in var(--fl-motion) var(--fl-ease);
+    animation:
+      fl-sheet-fade 220ms ease both,
+      fl-sheet-rise 480ms var(--fl-spring) both;
   }
   .dialog.wide {
     max-width: min(1120px, calc(100vw - 32px));
   }
   .dialog::backdrop {
-    background: rgb(0 0 0 / 60%);
-    backdrop-filter: blur(2px);
+    background: rgb(0 0 0 / 40%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    animation: fl-sheet-fade 260ms ease both;
   }
-  @keyframes fl-dialog-in {
+  @keyframes fl-sheet-fade {
     from {
       opacity: 0;
-      transform: scale(0.98) translateY(6px);
     }
-    to {
-      opacity: 1;
-      transform: none;
+  }
+  @keyframes fl-sheet-rise {
+    from {
+      translate: 0 40px;
+      scale: 0.96;
+    }
+  }
+  @supports (corner-shape: squircle) {
+    .dialog {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-sheet) * 1.8);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dialog {
+      animation: fl-sheet-fade 200ms ease both;
+    }
+  }
+  /* The solid fallback of the frosted materials: a darker scrim, nothing blurred behind it. */
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .dialog::backdrop {
+      background: rgb(0 0 0 / 67%);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
     }
   }
   .dialog-title {
