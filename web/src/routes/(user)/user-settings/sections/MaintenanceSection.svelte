@@ -10,6 +10,7 @@
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import { Route } from '$lib/route';
   import { handleCreateJob } from '$lib/services/job.service';
   import {
     getIntegrityReportSummary,
@@ -133,7 +134,10 @@
 <OnEvents {onJobCreate} />
 
 {#if section === 'mode'}
-  <MaintenanceModeCard />
+  <MaintenanceModeCard
+    backupsHref={Route.systemMaintenance({ section: 'backups' })}
+    integrityHref={Route.systemMaintenance({ section: 'integrity' })}
+  />
 {:else if failed}
   <p role="alert">{$t('frameleaf_cc_load_failed')}</p>
 {:else if section === 'integrity' && report}
@@ -143,19 +147,12 @@
     {reportTypes}
     {integrityReport}
     {jobNames}
-    {refreshJobNames}
     {activeJobs}
     {getReportTypeTranslation}
     {getReportTypeDescriptionKey}
     onCheck={(type) => void handleCreateJob({ name: jobNames[type] })}
-    onRefresh={(type) => void handleCreateJob({ name: refreshJobNames[type] })}
     onCheckAll={() => {
       for (const name of Object.values(jobNames)) {
-        void handleCreateJob({ name });
-      }
-    }}
-    onRefreshAll={() => {
-      for (const name of Object.values(refreshJobNames)) {
         void handleCreateJob({ name });
       }
     }}

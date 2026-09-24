@@ -513,3 +513,101 @@
     max-width: 300px;
   }
 }
+
+/* Maintenance page (FL-80 MS-1): design/frameleaf/template/src/auth.css `.maint-*` and system.css `.fl-bar`. */
+.auth-screen .fl-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fl-border);
+  overflow: hidden;
+}
+.auth-screen .fl-bar span {
+  display: block;
+  height: 100%;
+  background: var(--fl-teal);
+  transition: width var(--fl-motion-slow) var(--fl-ease);
+}
+.auth-screen .maint-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.auth-screen .maint-tasks li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 10px 6px;
+  border-top: 1px solid var(--fl-border);
+}
+.auth-screen .maint-tasks li:first-child {
+  border-top: 0;
+}
+.auth-screen .maint-tasks .maint-icon {
+  display: grid;
+  place-items: center;
+  color: var(--fl-muted);
+}
+.auth-screen .maint-tasks li[data-status='done'] .maint-icon {
+  color: var(--fl-teal);
+}
+.auth-screen .maint-tasks li[data-status='running'] .maint-icon {
+  color: var(--fl-blue);
+}
+.auth-screen .maint-tasks li[data-status='failed'] .maint-icon {
+  color: var(--fl-danger);
+}
+.auth-screen .maint-tasks li[data-status='running'] .maint-icon svg {
+  animation: maint-spin 1.2s linear infinite;
+}
+@keyframes maint-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.auth-screen .maint-tasks strong {
+  font-weight: 600;
+  display: block;
+}
+.auth-screen .maint-tasks span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .maint-tasks .maint-pct {
+  font-variant-numeric: tabular-nums;
+}
+.auth-screen .maint-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .maint-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.auth-screen .maint-reason {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--fl-warning);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  font-size: var(--fl-font-small);
+}
+.auth-screen .maint-error {
+  max-height: 20rem;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-raised);
+  font-size: var(--fl-font-small);
+  text-align: left;
+  white-space: pre-wrap;
+}

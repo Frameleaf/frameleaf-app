@@ -25,14 +25,20 @@ test.describe('Maintenance', () => {
 
     // FL-71: maintenance mode is the Command Center's Maintenance → Maintenance mode section.
     await page.goto('/user-settings?area=maintenance&section=mode');
-    await page.getByRole('button', { name: 'Switch to maintenance mode' }).click();
+    await page.getByRole('button', { name: 'Start maintenance' }).click();
 
     // FL-81: MaintenanceModeCard always asks for confirmation before starting maintenance mode
-    // (it signs every other session out), so wait for and click the confirm action.
-    await page.getByRole('button', { name: 'Start maintenance mode now' }).click();
+    // (it signs every other session out), with the prototype's optional reason, which the
+    // maintenance page then shows (FL-80).
+    const dialog = page.getByRole('dialog', { name: 'Start maintenance mode' });
+    await dialog.getByLabel('Reason shown on the maintenance page (optional)').fill('Replacing the library disk');
+    await dialog.getByRole('button', { name: 'Start maintenance' }).click();
 
-    await expect(page.getByText('Temporarily Unavailable')).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'End maintenance mode' }).click();
+    await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText('Replacing the library disk')).toBeVisible();
+    await page.getByRole('button', { name: 'End maintenance' }).click();
     await page.waitForURL('**/user-settings?area=maintenance*', { timeout: 10_000 });
   });
 
@@ -52,13 +58,14 @@ test.describe('Maintenance', () => {
       });
     }).toPass({ timeout: 10_000 });
 
-    await expect(page.getByText('Temporarily Unavailable')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'End maintenance mode' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible();
+    await expect(page.getByText(/Checking again in \d+ s/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'End maintenance' })).toHaveCount(0);
 
     await page.goto(`/maintenance?${new URLSearchParams({ token: cookie![1] })}`);
-    await expect(page.getByText('Temporarily Unavailable')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'End maintenance mode' })).toBeVisible();
-    await page.getByRole('button', { name: 'End maintenance mode' }).click();
+    await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'End maintenance' })).toBeVisible();
+    await page.getByRole('button', { name: 'End maintenance' }).click();
     await page.waitForURL('**/auth/login');
   });
 });
