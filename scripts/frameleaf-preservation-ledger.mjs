@@ -238,6 +238,114 @@ const shippedSettingHomes = {
       "Server migration is the resumable command-line tool; the web home shows its exact commands and opens its audit report read-only. It never runs a migration or holds API keys.",
   },
 };
+// FL-71: routes whose screens moved into the Command Center (`/user-settings?area=&section=`).
+// Their old addresses only redirect there; the row stays unqualified until acceptance and names the
+// Command Center home (area, section, production module) instead of the retired page.
+const commandCenterRouteHomes = {
+  "/admin": {
+    area: "overview",
+    module:
+      "web/src/lib/components/frameleaf/settings/CommandCenterOverview.svelte",
+  },
+  "/admin/system-settings": {
+    area: "overview",
+    module: "web/src/routes/(user)/user-settings/SystemSettings.svelte",
+  },
+  "/admin/server-status": {
+    area: "analytics",
+    module: "web/src/lib/components/frameleaf/analytics/AnalyticsArea.svelte",
+  },
+  "/admin/jobs-status": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/queues": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/queues/[name]": {
+    area: "processing",
+    section: "queues",
+    module: "web/src/lib/components/frameleaf/JobsManager.svelte",
+  },
+  "/admin/render-workers": {
+    area: "processing",
+    section: "render-workers",
+    module:
+      "web/src/routes/(user)/user-settings/sections/RenderWorkersSection.svelte",
+  },
+  "/admin/processing-destinations": {
+    area: "processing",
+    section: "routing",
+    module:
+      "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte",
+  },
+  "/admin/physical-deduplication": {
+    area: "storage",
+    section: "deduplication",
+    module:
+      "web/src/routes/(user)/user-settings/sections/DeduplicationSection.svelte",
+  },
+  "/admin/maintenance": {
+    area: "maintenance",
+    module:
+      "web/src/routes/(user)/user-settings/sections/MaintenanceSection.svelte",
+  },
+  "/admin/maintenance/integrity-report/[type]": {
+    area: "maintenance",
+    section: "integrity",
+    module:
+      "web/src/routes/(user)/user-settings/sections/IntegrityReportSection.svelte",
+  },
+  "/admin/user-management": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+  },
+  "/admin/users": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UsersSection.svelte",
+  },
+  "/admin/users/new": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/lib/components/frameleaf/AccountFormDialog.svelte",
+  },
+  "/admin/users/[id]": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/routes/(user)/user-settings/sections/UserDetail.svelte",
+  },
+  "/admin/users/[id]/edit": {
+    area: "users",
+    section: "accounts",
+    module: "web/src/lib/components/frameleaf/AccountFormDialog.svelte",
+  },
+  "/admin/library-management": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibrariesManager.svelte",
+  },
+  "/admin/library-management/new": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryFormDialog.svelte",
+  },
+  "/admin/library-management/[id]": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryDetail.svelte",
+  },
+  "/admin/library-management/[id]/edit": {
+    area: "libraries",
+    module: "web/src/lib/components/frameleaf/LibraryFormDialog.svelte",
+  },
+  "/trash/[[photos=photos]]/[[assetId=id]]": {
+    area: "trash",
+    section: "contents",
+    module: "web/src/routes/(user)/user-settings/sections/TrashSection.svelte",
+  },
+};
 const sharedQueueConcurrency = new Set([
   "backgroundTask",
   "editor",
@@ -800,7 +908,10 @@ async function buildLedger() {
           paths: row.source,
           access: row.access,
         },
-        { status: "not-qualified", target: row.id },
+        {
+          status: "not-qualified",
+          target: commandCenterRouteHomes[row.id] ?? row.id,
+        },
         { status: "preserve-existing-contracts", evidence: [] },
         { status: "not-qualified", evidence: [] },
         { status: "missing-route-action-qualification", evidence: [] },
