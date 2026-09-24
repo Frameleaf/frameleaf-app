@@ -256,6 +256,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   albumIds: 'albums',
   type: 'media_type',
   takenAt: 'frameleaf_search_field_taken_at',
+  localDateTime: 'frameleaf_search_field_taken_at',
   createdAt: 'frameleaf_search_field_created_at',
   updatedAt: 'frameleaf_search_field_updated_at',
   trashedAt: 'frameleaf_search_field_trashed_at',
@@ -304,7 +305,7 @@ export interface FilterChipDescriptor {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-const DATE_FIELDS = new Set(['takenAt', 'createdAt', 'updatedAt', 'trashedAt']);
+const DATE_FIELDS = new Set(['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt']);
 const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds']);
 
 const formatDay = (value: unknown, locale: string) => {

@@ -40,6 +40,8 @@ const asset = (id: string, name: string) =>
     exifInfo: { city: 'Banff' },
   }) as unknown as AssetResponseDto;
 
+const statisticsDto = (value: unknown) => JSON.stringify(value);
+
 const searchResponse = (items: AssetResponseDto[]) => ({
   albums: { total: 0, count: 0, items: [], facets: [] },
   assets: { total: items.length, count: items.length, items, facets: [], nextPage: null, nextCursor: null },
@@ -236,7 +238,12 @@ describe('SearchPalette', () => {
     expect(url.pathname).toBe('/search');
     const query = JSON.parse(url.searchParams.get('dq')!) as DiscoveryQuery;
     expect(query).toMatchObject({ mode: 'smart', text: 'beach', filter: { personIds: { all: [JAMIE] } } });
-    expect(searchStore.recentSearches[0]).toMatchObject({ input: 'person:Jamie beach', mode: 'smart' });
+    // Recents keep the compiled query (ids, not names)
+    expect(searchStore.recentSearches[0].query).toMatchObject({
+      mode: 'smart',
+      text: 'beach',
+      filter: { personIds: { all: [JAMIE] } },
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -251,27 +258,108 @@ describe('SearchPalette', () => {
     await waitFor(() => expect(within(scopes).getByRole('radio', { name: /Library/ })).toHaveTextContent('7'));
   });
 
-  it('saves a search to the account preferences', async () => {
+  it('saves the compiled search, with ids and no typed names, to the account preferences', async () => {
     const { input } = setup();
     await waitFor(() => expect(sdkMock.getMyPreferences).toHaveBeenCalled());
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await type(input, 'person:Jamie ');
     await type(input, 'sunset');
     await fireEvent.click(screen.getByRole('button', { name: 'Save search' }));
-    const name = screen.getByRole('textbox', { name: 'Name' });
+    const dialog = await screen.findByRole('dialog', { name: 'Save this collection' });
+    const name = within(dialog).getByRole('textbox', { name: 'Name' });
+    expect(name).toHaveValue('person:Jamie sunset');
     await fireEvent.input(name, { target: { value: 'Sunsets' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await fireEvent.click(within(dialog).getByRole('button', { name: /Saved search/ }));
 
+    await waitFor(() => expect(sdkMock.updateMyPreferences).toHaveBeenCalled());
+    const [{ userPreferencesUpdateDto }] = sdkMock.updateMyPreferences.mock.calls[0];
+    expect(userPreferencesUpdateDto.expectedRevision).toBe('r1');
+    const [saved] = userPreferencesUpdateDto.savedSearches!;
+    expect(saved.name).toBe('Sunsets');
+    expect(saved.query).toMatchObject({ mode: 'smart', text: 'sunset', filter: { personIds: { all: [JAMIE] } } });
+    expect(JSON.stringify(saved.query)).not.toContain('Jamie');
+  });
+
+  it('opens a saved search with its chips rebuilt from the ids, and deletes one from its own button', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({
+      savedSearches: [
+        {
+          name: 'Jamie hikes',
+          query: { ...emptyDiscoveryQuery(), mode: 'smart', text: 'hike', filter: { personIds: { all: [JAMIE] } } },
+        },
+      ],
+      revision: 'r1',
+    } as never);
+    const { input } = setup();
+    const option = await screen.findByRole('option', { name: /Jamie hikes/ });
+    expect(within(option).queryByRole('button')).not.toBeInTheDocument();
+    await fireEvent.click(option);
+    expect(await screen.findByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
+    expect(input).toHaveValue('hike');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove Jamie' }));
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete saved search Jamie hikes' }));
     await waitFor(() =>
       expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
-        userPreferencesUpdateDto: {
-          expectedRevision: 'r1',
-          savedSearches: [
-            expect.objectContaining({
-              name: 'Sunsets',
-              query: expect.objectContaining({ palette: { input: 'sunset', mode: 'smart' } }),
-            }),
-          ],
-        },
+        userPreferencesUpdateDto: { savedSearches: [], expectedRevision: 'r1' },
       }),
     );
+  });
+
+  it('reads a URL search back as typed chips and keeps a legacy search unchanged until edited', async () => {
+    const query: DiscoveryQuery = {
+      ...emptyDiscoveryQuery(),
+      text: 'IMG',
+      filter: { personIds: { all: [JAMIE] }, city: { eq: 'Banff' } },
+    };
+    const { input, onClose } = setup(query, { unsupported: ['withDeleted'] });
+    expect(await screen.findByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Banff' })).toBeInTheDocument();
+    // The page's own text mode is kept, not replaced by smart search
+    expect(screen.getByRole('button', { name: 'Search mode: Filename' })).toBeInTheDocument();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(goto).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('keeps arrows and Enter out of the hidden results in the Advanced view', async () => {
+    const { input } = setup();
+    await type(input, 'IMG');
+    await screen.findByRole('option', { name: 'IMG_0002.jpg' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced filters' }));
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input).not.toHaveAttribute('aria-activedescendant');
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(vi.mocked(goto).mock.calls[0][0]).toMatch(/^\/search\?dq=/);
+  });
+
+  it('removes the chip that was clicked, never a neighbour, and ignores a repeated token', async () => {
+    const { input } = setup();
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await type(input, 'place:Banff person:Jamie place:Banff ');
+    expect(screen.getAllByRole('button', { name: 'Remove Banff' })).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove Banff' }));
+    expect(screen.getByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove Banff' })).not.toBeInTheDocument();
+  });
+  it('shows a chip that stops resolving after a lock as unavailable and leaves it out of the search', async () => {
+    const { input } = setup();
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await type(input, 'person:Jamie place:Banff ');
+    expect(await screen.findByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
+    sdkMock.searchAssetStatistics.mockClear();
+    eventManager.emit('SessionLocked');
+    expect(await screen.findByRole('button', { name: 'Remove person:Jamie' })).toBeInTheDocument();
+    await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalled());
+    const bodies = sdkMock.searchAssetStatistics.mock.calls.map(([{ statisticsSearchDto }]) =>
+      statisticsDto(statisticsSearchDto),
+    );
+    expect(bodies.every((body) => !body.includes(JAMIE) && !body.includes('person:Jamie'))).toBe(true);
+    // Removing the unavailable chip removes that chip, not its neighbour
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove person:Jamie' }));
+    expect(screen.getByRole('button', { name: 'Remove Banff' })).toBeInTheDocument();
   });
 });

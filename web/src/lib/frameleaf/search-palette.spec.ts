@@ -14,6 +14,9 @@ import {
   histogramBars,
   histogramUnitFor,
   narrowToBar,
+  paletteSearchLabel,
+  smartAlbumCriteria,
+  typedTokensFromQuery,
   paletteScopeOf,
   paletteSearchBody,
   paletteStatisticsBody,
@@ -79,10 +82,10 @@ describe('parseSearchInput', () => {
       city: { eq: 'Banff' },
       type: { eq: AssetTypeEnum.Video },
       make: { eq: 'Sony' },
-      lensModel: { eq: 'FE 24-70mm F2.8 GM' },
+      lensModel: { like: '24-70' },
       rating: { gte: 4 },
       isFavorite: { eq: true },
-      takenAt: { gte: '2026-01-01T00:00:00.000Z', lt: '2027-01-01T00:00:00.000Z' },
+      localDateTime: { gte: '2026-01-01T00:00:00.000Z', lt: '2027-01-01T00:00:00.000Z' },
       originalFileName: { like: 'IMG_' },
       ocr: { matches: 'lake agnes' },
       originalPath: { like: '2026/' },
@@ -115,7 +118,7 @@ describe('parseSearchInput', () => {
       city: { notIn: ['Banff', 'Lake Louise'] },
       type: { ne: AssetTypeEnum.Image },
       make: { ne: 'Canon' },
-      lensModel: { ne: 'RF 15-35mm' },
+      lensModel: { notLike: 'RF' },
       tagIds: { none: [WATER] },
       originalFileName: { notLike: 'tmp' },
       originalPath: { notLike: 'cache' },
@@ -124,13 +127,16 @@ describe('parseSearchInput', () => {
     expect(isDiscoveryFilter(filter)).toBe(true);
   });
 
-  it('matches cameras and lenses by "contains" over the library vocabulary only', () => {
-    expect(parseSearchInput('camera:EOS', catalog).filter).toEqual({ model: { eq: 'EOS R5' } });
-    expect(parseSearchInput('camera:o', catalog).filter).toEqual({ make: { in: ['Sony', 'Canon'] } });
-    // Nothing in the library matches: the operator stays text instead of inventing a condition
-    const unknown = parseSearchInput('camera:Nikon lens:85mm', catalog);
-    expect(unknown.filter).toEqual({});
-    expect(unknown.text).toBe('camera:Nikon lens:85mm');
+  it('matches cameras and lenses by "contains", as the prototype does', () => {
+    // An exact make, else a model containing it, else a make containing it
+    expect(parseSearchInput('camera:canon', catalog).filter).toEqual({ make: { eq: 'Canon' } });
+    expect(parseSearchInput('camera:EOS', catalog).filter).toEqual({ model: { like: 'EOS' } });
+    expect(parseSearchInput('camera:Nikon lens:85mm', catalog).filter).toEqual({
+      make: { like: 'Nikon' },
+      lensModel: { like: '85mm' },
+    });
+    expect(parseSearchInput('-camera:Nikon', catalog).filter).toEqual({ make: { notLike: 'Nikon' } });
+    expect(isDiscoveryFilter(parseSearchInput('camera:Nikon -lens:85mm', catalog).filter)).toBe(true);
   });
 
   it('leaves unresolvable and unsupported operators in the text', () => {
@@ -147,7 +153,7 @@ describe('parseSearchInput', () => {
 
   it('narrows capture dates to the tightest range and brackets after/before as the prototype does', () => {
     expect(parseSearchInput('month:2026-08 after:2026-08-12 before:2026-08-15', catalog).filter).toEqual({
-      takenAt: { gte: '2026-08-13T00:00:00.000Z', lt: '2026-08-15T00:00:00.000Z' },
+      localDateTime: { gte: '2026-08-13T00:00:00.000Z', lt: '2026-08-15T00:00:00.000Z' },
     });
   });
 
@@ -178,9 +184,9 @@ describe('token editing', () => {
       tokens: ['person:Jamie'],
       rest: 'beach type:vid',
     });
-    expect(commitCompletedTokens('camera:Nikon person:Jamie ', catalog)).toEqual({
+    expect(commitCompletedTokens('person:Nobody person:Jamie ', catalog)).toEqual({
       tokens: ['person:Jamie'],
-      rest: 'camera:Nikon ',
+      rest: 'person:Nobody ',
     });
   });
 
@@ -191,7 +197,7 @@ describe('token editing', () => {
       'year:2026',
       'after:2026-01-02',
     ]);
-    expect(withoutTokensForFields(tokens, new Set(['takenAt', 'city']), catalog)).toEqual(['person:Jamie']);
+    expect(withoutTokensForFields(tokens, new Set(['localDateTime', 'city']), catalog)).toEqual(['person:Jamie']);
   });
 });
 
@@ -254,7 +260,7 @@ describe('date histogram', () => {
     const tokens = narrowToBar(['person:Jamie', 'year:2026', 'before:2026-12-01'], bar);
     expect(tokens).toEqual(['person:Jamie', 'after:2026-07-31', 'before:2026-09-01']);
     // The chips select exactly the bar's range
-    expect(parseSearchInput(tokens.join(' '), catalog).filter.takenAt).toEqual({
+    expect(parseSearchInput(tokens.join(' '), catalog).filter.localDateTime).toEqual({
       gte: '2026-08-01T00:00:00.000Z',
       lt: '2026-09-01T00:00:00.000Z',
     });
@@ -380,29 +386,118 @@ describe('catalog and facets', () => {
 });
 
 describe('recent and saved searches', () => {
-  const search = { input: 'person:Jamie beach', mode: 'smart' as const, query: emptyDiscoveryQuery() };
+  const compiled = (input: string, mode: 'smart' | 'all' = 'smart') =>
+    compilePaletteQuery(emptyDiscoveryQuery(), parseSearchInput(input, catalog), mode)!;
 
-  it('keeps five recent searches, one per input and mode', () => {
-    let recent = rememberRecentSearch([], search);
-    recent = rememberRecentSearch(recent, { ...search, mode: 'ocr' });
-    recent = rememberRecentSearch(recent, search);
-    expect(recent.map((item) => item.mode)).toEqual(['smart', 'ocr']);
+  it('keeps five recent searches, one per compiled query', () => {
+    let recent = rememberRecentSearch([], { query: compiled('person:Jamie beach') });
+    recent = rememberRecentSearch(recent, { query: compiled('beach', 'all') });
+    recent = rememberRecentSearch(recent, { query: compiled('person:Jamie beach') });
+    expect(recent).toHaveLength(2);
     for (let index = 0; index < 10; index++) {
-      recent = rememberRecentSearch(recent, { ...search, input: `term ${index}` });
+      recent = rememberRecentSearch(recent, { query: compiled(`term ${index}`) });
     }
     expect(recent).toHaveLength(5);
-    expect(rememberRecentSearch(recent, { ...search, input: '  ' })).toBe(recent);
+    expect(rememberRecentSearch(recent, { query: emptyDiscoveryQuery() })).toBe(recent);
   });
 
-  it('stores the portable query with the typed input and restores it', () => {
-    const saved = toSavedSearch('  Jamie at the beach  ', search);
+  it('stores the compiled query with resolved ids and no typed names', () => {
+    const query = compiled('person:Jamie -tag:water beach');
+    const saved = toSavedSearch('  Jamie at the beach  ', query);
     expect(saved.name).toBe('Jamie at the beach');
-    expect(fromSavedSearch(saved)).toEqual(search);
+    expect(saved.query).toMatchObject({ filter: { personIds: { all: [JAMIE] }, tagIds: { none: [WATER] } } });
+    // The server withholds a search naming a Locked id by looking for the id; no name is stored to leak
+    const stored = JSON.stringify(saved.query);
+    expect(stored).toContain(JAMIE);
+    expect(stored).not.toContain('Jamie');
+    expect(stored).not.toContain('water');
+    expect(fromSavedSearch(saved)).toEqual(query);
     expect(fromSavedSearch({ name: 'broken', query: { version: 99 } })).toBeUndefined();
-    const list = upsertSavedSearch(
-      [toSavedSearch('Other', search), saved],
-      toSavedSearch('jamie AT the beach', search),
-    );
+    const list = upsertSavedSearch([toSavedSearch('Other', query), saved], toSavedSearch('jamie AT the beach', query));
     expect(list.map((item) => item.name)).toEqual(['jamie AT the beach', 'Other']);
+  });
+
+  it('shows a saved search from the ids it can still resolve', () => {
+    const query = compiled('person:Jamie -tag:water year:2026 beach');
+    expect(paletteSearchLabel(query, catalog)).toBe('person:Jamie -tag:water year:2026 beach');
+    // Once Jamie cannot be resolved (hidden, or Locked), no name is shown and the condition stays a filter
+    const withoutJamie = { ...catalog, people: [] };
+    expect(paletteSearchLabel(query, withoutJamie)).toBe('-tag:water year:2026 beach');
+    expect(typedTokensFromQuery(readPaletteState(query).base, withoutJamie).base.filter.personIds).toEqual({
+      all: [JAMIE],
+    });
+  });
+});
+
+describe('typed chips from a query (FL-48 round trip)', () => {
+  it('reads every condition an operator can say back as its chips, exactly', () => {
+    const input =
+      'person:Jamie -person:"Robin Lee" tag:water place:Banff -type:photo camera:Canon lens:24-70 rating:4 ' +
+      'is:favorite month:2026-08 file:IMG_ text:"lake agnes" -path:cache';
+    const query = compilePaletteQuery(emptyDiscoveryQuery(), parseSearchInput(input, catalog), 'smart')!;
+    const { tokens, base } = typedTokensFromQuery(query, catalog);
+    expect(base.filter).toEqual({});
+    const again = compilePaletteQuery(base, parseSearchInput(tokens.join(' '), catalog), 'smart')!;
+    expect(paletteSearchBody(again)).toEqual(paletteSearchBody(query));
+    expect(tokens).toContain('month:2026-08');
+    expect(tokens).toContain('-person:"Robin Lee"');
+  });
+
+  it('keeps in the base what no operator can say', () => {
+    const query: DiscoveryQuery = {
+      ...emptyDiscoveryQuery(),
+      filter: {
+        albumIds: { any: [ALBUM] },
+        personIds: { any: [JAMIE, ROBIN] },
+        localDateTime: { gte: '2026-08-01T10:00:00.000Z' },
+        rating: { eq: 3 },
+        city: { eq: 'Banff' },
+      },
+    };
+    const { tokens, base } = typedTokensFromQuery(query, catalog);
+    expect(tokens).toEqual(['place:Banff']);
+    expect(Object.keys(base.filter).sort()).toEqual(['albumIds', 'localDateTime', 'personIds', 'rating']);
+  });
+
+  it('reads after/before days back from a date range', () => {
+    const query: DiscoveryQuery = {
+      ...emptyDiscoveryQuery(),
+      filter: { localDateTime: { gte: '2026-08-13T00:00:00.000Z', lt: '2026-08-15T00:00:00.000Z' } },
+    };
+    expect(typedTokensFromQuery(query, catalog).tokens).toEqual(['after:2026-08-12', 'before:2026-08-15']);
+  });
+});
+
+describe('saving as a smart album', () => {
+  it('turns people, tags, media type, dates and smart text into an FL-60 rule', () => {
+    const query = compilePaletteQuery(
+      emptyDiscoveryQuery(),
+      parseSearchInput('person:Jamie tag:water type:video month:2026-08 sunset', catalog),
+      'smart',
+    )!;
+    expect(smartAlbumCriteria(query)).toEqual({
+      ok: true,
+      criteria: {
+        personIds: [JAMIE],
+        tagIds: [WATER],
+        mediaType: 'video',
+        takenAfter: '2026-08-01',
+        takenBefore: '2026-08-31',
+        visualQueries: ['sunset'],
+      },
+    });
+  });
+
+  it('refuses a search a rule cannot say, naming what stops it', () => {
+    const query = compilePaletteQuery(
+      emptyDiscoveryQuery(),
+      parseSearchInput('-person:Jamie place:Banff', catalog),
+      'originalFileName',
+    )!;
+    expect(smartAlbumCriteria({ ...query, text: 'IMG' })).toEqual({
+      ok: false,
+      fields: ['personIds', 'city', 'text'],
+    });
+    expect(smartAlbumCriteria(emptyDiscoveryQuery())).toEqual({ ok: false, fields: [] });
   });
 });

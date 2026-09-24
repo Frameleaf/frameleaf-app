@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
+  import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
   import SearchPaletteSide from '$lib/components/frameleaf/SearchPaletteSide.svelte';
   import {
     DISCOVERY_QUERY_PARAMETER,
@@ -35,6 +37,9 @@
     compilePaletteQuery,
     formatScopeCount,
     fromSavedSearch,
+    MAX_PALETTE_TEXT,
+    paletteSearchLabel,
+    typedTokensFromQuery,
     isSmartBody,
     narrowToBar,
     operatorToken,
@@ -45,13 +50,9 @@
     parseSearchInput,
     readPaletteState,
     rememberRecentSearch,
-    removeSavedSearch,
-    SAVED_SEARCH_NAME_LIMIT,
     SEARCH_OPERATORS,
     suggestSearchTokens,
     tokenLabel,
-    toSavedSearch,
-    upsertSavedSearch,
     withoutPaletteScope,
     withoutTokensForFields,
     withPaletteScope,
@@ -63,16 +64,14 @@
   } from '$lib/frameleaf/search-palette';
   import '$lib/frameleaf/tokens.css';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { searchStore } from '$lib/stores/search.svelte';
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
   import {
     AssetMediaSize,
     AssetTypeEnum,
-    getMyPreferences,
     ImageEnrichmentFilter,
-    updateMyPreferences,
     type AssetResponseDto,
-    type SavedSearch,
     type SearchHistogramBucketDto,
   } from '@immich/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
@@ -121,8 +120,9 @@
    *   interprets text on the server, so that row shows the non-typed filters the search carries instead.
    * - The prototype's note "Sample library…" is replaced by a note in smart mode that facets and the
    *   histogram describe the filters smart search ranks within (their endpoints take no smart text).
-   * - "Save search" stores the search in the account's `savedSearches` preference (owner decision,
-   *   FL-146) instead of the prototype's local Smart album / snapshot / preset dialog.
+   * - "Save search" offers the prototype's Smart album, Album snapshot and saved search
+   *   (`SearchSaveDialog.svelte`); the saved search is the compiled query in the `savedSearches`
+   *   preference, with ids rather than typed names, so the server can withhold it while locked.
    */
 
   let {
@@ -195,21 +195,27 @@
   let base = $state.raw<DiscoveryQuery>(opened.base);
   let tokens = $state<string[]>([]);
   let text = $state(opened.input);
-  // A fresh search starts in smart search, as the prototype's `searchBy` defaults to "semantic"
+  // A fresh search starts in smart search, as the prototype's `searchBy` defaults to "semantic". A page
+  // search the palette cannot fully carry (FL-48) keeps its own mode, so reopening it changes nothing.
   let mode = $state<PaletteMode>(
-    !opened.input && untrack(() => featureFlagsManager.value.smartSearch) ? 'smart' : opened.mode,
+    untrack(() => !opened.input && unsupported.length === 0 && featureFlagsManager.value.smartSearch)
+      ? 'smart'
+      : opened.mode,
   );
+  /** Whether the base's typeable conditions have been read back as typed chips (needs the vocabulary). */
+  let decompiled = false;
   let scopeChoice = $state<'current' | 'library'>('current');
   let active = $state(-1);
   let modeMenu = $state(false);
   let help = $state(false);
   let saving = $state(false);
-  let saveName = $state('');
-  let saveError = $state(false);
+  /** The last settled match count, which is all the live region announces. */
+  let settledLabel = $state('');
   // Graphical filters for people who would rather pick than type; remembered per device
   let advanced = $state(readAdvanced() || !!section);
 
   let options = $state.raw(emptyFilterPanelOptions());
+  let optionsLoaded = $state(false);
   let catalogFacets = $state.raw<PaletteFacets>({});
   let catalogYears = $state.raw<SearchHistogramBucketDto[]>([]);
   let facets = $state.raw<PaletteFacets>({});
@@ -221,8 +227,6 @@
   let counts = $state<{ current: PaletteCount | null; library: PaletteCount | null }>({ current: null, library: null });
   let enrichmentCounts = $state.raw<Partial<Record<ImageEnrichmentFilter, number>>>({});
   let loading = $state(false);
-  let savedSearches = $state.raw<SavedSearch[]>([]);
-  let preferencesRevision = $state<string | undefined>();
   /** Bumped on every access change: everything loaded before it is dropped and loaded again. */
   let generation = $state(0);
 
@@ -247,7 +251,18 @@
   /* Derived search                                                          */
   /* ---------------------------------------------------------------------- */
 
-  const liveInput = $derived([...tokens, text].join(' ').trim());
+  const catalog = $derived(buildPaletteCatalog(options, catalogFacets, catalogYears));
+
+  /**
+   * One chip per typed token, each parsed on its own so a token that stops resolving (after an access
+   * change) is shown as unavailable and left out of the search instead of shifting the others.
+   */
+  const chips = $derived(tokens.map((raw, index) => ({ raw, index, token: parseSearchInput(raw, catalog).tokens[0] })));
+  /** Only the first MAX_PALETTE_TEXT characters of free text are searched, and the palette says so. */
+  const textCut = $derived(text.length > MAX_PALETTE_TEXT);
+  const liveInput = $derived(
+    [...chips.filter((chip) => chip.token).map((chip) => chip.raw), text.slice(0, MAX_PALETTE_TEXT)].join(' ').trim(),
+  );
   // Large libraries: typing stays responsive while the result work trails behind (useDeferredValue)
   let deferredInput = $state(untrack(() => liveInput));
   $effect(() => {
@@ -256,7 +271,6 @@
     return () => clearTimeout(timer);
   });
 
-  const catalog = $derived(buildPaletteCatalog(options, catalogFacets, catalogYears));
   const parsed = $derived(parseSearchInput(deferredInput, catalog));
 
   const compileFor = (target: DiscoveryQuery) =>
@@ -277,7 +291,6 @@
   const selectedCount = $derived(scopeChoice === 'library' ? counts.library : counts.current);
   const otherCount = $derived(scopeChoice === 'library' ? counts.current : counts.library);
 
-  const chips = $derived(parseSearchInput(tokens.join(' '), catalog).tokens);
   const suggestions = $derived<PaletteSuggestion[]>(text.trim() ? suggestSearchTokens(text, catalog, 6) : []);
   // "Go to" reuses the shared command index; a filter being typed ("person:…") is not a destination
   const destinations = $derived(
@@ -286,19 +299,32 @@
       : [],
   );
 
-  const EXAMPLES: PaletteSearch[] = [
-    { input: $t('frameleaf_search_example_smart'), mode: 'smart', query: emptyDiscoveryQuery() },
-    { input: $t('frameleaf_search_example_video'), mode: 'smart', query: emptyDiscoveryQuery() },
-    { input: $t('frameleaf_search_example_ocr'), mode: 'ocr', query: emptyDiscoveryQuery() },
-  ];
+  const example = (text: string, textMode: PaletteMode): PaletteSearch => ({
+    query: {
+      ...emptyDiscoveryQuery(),
+      text,
+      mode: textMode === 'smart' ? 'smart' : 'text',
+      ...(textMode !== 'smart' && textMode !== 'all' && textMode !== 'originalFileName' && { textField: textMode }),
+    },
+  });
+  const EXAMPLES = $derived([
+    example($t('frameleaf_search_example_smart'), 'smart'),
+    example($t('frameleaf_search_example_video'), 'smart'),
+    example($t('frameleaf_search_example_ocr'), 'ocr'),
+  ]);
   const recent = $derived(searchStore.recentSearches.slice(0, 5));
   const idleSearches = $derived(
-    (recent.length > 0 ? recent : EXAMPLES.filter((item) => item.mode !== 'smart' || smartEnabled)).slice(0, 5),
+    (recent.length > 0 ? recent : EXAMPLES.filter((item) => item.query.mode !== 'smart' || smartEnabled)).slice(0, 5),
   );
+  /** Rows are labelled from the query's ids, so a name is shown only while the viewer can resolve it. */
+  const searchRow = (query: DiscoveryQuery) => ({
+    label: paletteSearchLabel(query, catalog),
+    mode: readPaletteState(query).mode,
+  });
   const saved = $derived(
-    savedSearches.flatMap((item) => {
-      const search = fromSavedSearch(item);
-      return search ? [{ name: item.name, search }] : [];
+    savedSearchesStore.list.flatMap((item) => {
+      const query = fromSavedSearch(item);
+      return query ? [{ name: item.name, query }] : [];
     }),
   );
 
@@ -307,7 +333,7 @@
     | { kind: 'asset'; item: AssetResponseDto }
     | { kind: 'destination'; item: CommandItem }
     | { kind: 'recent'; item: PaletteSearch }
-    | { kind: 'saved'; item: { name: string; search: PaletteSearch } };
+    | { kind: 'saved'; item: { name: string; query: DiscoveryQuery } };
 
   // One flat list drives arrow-key navigation across every section
   const items = $derived<Entry[]>([
@@ -317,8 +343,10 @@
     ...(typing ? [] : idleSearches.map((item) => ({ kind: 'recent' as const, item }))),
     ...(typing ? [] : saved.map((item) => ({ kind: 'saved' as const, item }))),
   ]);
+  // The Advanced view hides the results, so arrows and Enter never move through them
+  const navItems = $derived(advanced ? [] : items);
   const indexOf = (entry: Entry) => items.indexOf(entry);
-  const activeEntry = $derived(active >= 0 ? items[active] : undefined);
+  const activeEntry = $derived(active >= 0 ? navItems[active] : undefined);
   const previewAsset = $derived(
     activeEntry?.kind === 'asset' ? activeEntry.item : typing ? (results[0] ?? undefined) : undefined,
   );
@@ -328,6 +356,7 @@
     void deferredInput;
     void scopeChoice;
     void mode;
+    void advanced;
     active = -1;
   });
 
@@ -403,26 +432,18 @@
           }
 
           options = result;
-          // Operators in a reopened search resolve once the vocabulary they name has arrived
-          if (tokens.length === 0 && text) {
-            restoreInput(text);
+          optionsLoaded = true;
+          // A reopened search's conditions read back as typed chips once the vocabulary they name arrives,
+          // and operators typed before it arrived become chips now
+          readBackChips();
+          if (text) {
+            onInput(text);
           }
         })
         .catch(() => {
           // Aborted: the palette closed or access changed
         });
-      void getMyPreferences({ signal: controller.signal })
-        .then((preferences) => {
-          if (controller.signal.aborted) {
-            return;
-          }
-
-          savedSearches = preferences.savedSearches ?? [];
-          preferencesRevision = preferences.revision;
-        })
-        .catch(() => {
-          // Saved searches are optional; the palette works without them
-        });
+      void savedSearchesStore.load(true);
     });
   });
 
@@ -526,6 +547,8 @@
     catalogController?.abort();
     remoteController?.abort();
     options = emptyFilterPanelOptions();
+    optionsLoaded = false;
+    decompiled = false;
     catalogFacets = {};
     catalogYears = [];
     facets = {};
@@ -533,7 +556,7 @@
     results = [];
     counts = { current: null, library: null };
     enrichmentCounts = {};
-    savedSearches = [];
+    settledLabel = '';
     generation += 1;
   });
 
@@ -573,8 +596,9 @@
       return;
     }
     const committed = commitCompletedTokens(value, catalog);
-    if (committed.tokens.length > 0) {
-      tokens = [...tokens, ...committed.tokens];
+    const added = [...new Set(committed.tokens)].filter((raw) => !tokens.includes(raw));
+    if (added.length > 0) {
+      tokens = [...tokens, ...added];
     }
     text = committed.rest;
     // The field is one-way bound: when a chip takes the typed token, the text left behind may equal
@@ -584,11 +608,22 @@
     }
   };
 
-  /** Restores a whole input (a recent or saved search): every resolvable operator becomes a chip. */
-  const restoreInput = (value: string) => {
-    const committed = commitCompletedTokens(`${value} `, catalog);
-    tokens = committed.tokens;
-    text = committed.rest.trimEnd();
+  /**
+   * Moves every condition of the base an operator can say exactly into typed chips (FL-48: a search
+   * reopened from the URL, from Back, from a recent or a saved search comes back as typed chips).
+   */
+  const readBackChips = () => {
+    if (decompiled || !optionsLoaded) {
+      return;
+    }
+    const scoped = scope ? withoutPaletteScope(base, scope) : base;
+    const { tokens: typed, base: rest } = typedTokensFromQuery(scoped, catalog);
+    decompiled = true;
+    if (typed.length === 0) {
+      return;
+    }
+    tokens = [...tokens, ...typed.filter((raw) => !tokens.includes(raw))];
+    base = scope ? withPaletteScope(rest, scope) : rest;
   };
 
   const addToken = (raw: string) => {
@@ -598,8 +633,8 @@
     input?.focus();
   };
 
-  const removeToken = (index: number) => {
-    tokens = tokens.filter((_, position) => position !== index);
+  const removeToken = (index: number, raw: string) => {
+    tokens = tokens.filter((item, position) => !(position === index && item === raw));
     input?.focus();
   };
 
@@ -658,10 +693,9 @@
   /* Running                                                                 */
   /* ---------------------------------------------------------------------- */
 
-  const snapshot = (): PaletteSearch => ({ input: liveInput, mode, query: base });
-
+  /** Recent searches keep the compiled query (ids, not names); their rows are labelled from it. */
   const remember = () => {
-    searchStore.recentSearches = rememberRecentSearch(searchStore.recentSearches, snapshot());
+    searchStore.recentSearches = rememberRecentSearch(searchStore.recentSearches, { query: submitted() });
   };
 
   /** The query submitted now, compiled from the live input rather than the deferred one. */
@@ -673,8 +707,12 @@
 
   const run = () => {
     const query = submitted();
-    // FL-48: until something is edited, "Show results" keeps the page's own (wider) search
-    if (unsupported.length > 0 && JSON.stringify(query) === JSON.stringify(initialQuery)) {
+    // FL-48: until something is edited, "Show results" keeps the page's own (wider) search. Searches are
+    // compared as the server receives them, so reading conditions back as chips is not an edit.
+    if (
+      unsupported.length > 0 &&
+      JSON.stringify(paletteSearchBody(query)) === JSON.stringify(paletteSearchBody(initialQuery))
+    ) {
       onClose();
       return;
     }
@@ -690,10 +728,14 @@
     onClose();
   };
 
-  const restore = (search: PaletteSearch) => {
-    base = $state.snapshot(search.query) as DiscoveryQuery;
-    mode = search.mode === 'smart' && !smartEnabled ? 'originalFileName' : search.mode;
-    restoreInput(search.input);
+  const restore = (query: DiscoveryQuery) => {
+    const state = readPaletteState($state.snapshot(query) as DiscoveryQuery);
+    base = state.base;
+    mode = state.mode === 'smart' && !smartEnabled ? 'originalFileName' : state.mode;
+    text = state.input;
+    tokens = [];
+    decompiled = false;
+    readBackChips();
     input?.focus();
   };
 
@@ -722,24 +764,21 @@
         break;
       }
       case 'recent': {
-        restore(entry.item);
+        restore(entry.item.query);
         break;
       }
       case 'saved': {
-        restore(entry.item.search);
+        restore(entry.item.query);
         break;
       }
     }
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (saving) {
-      return;
-    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const step = event.key === 'ArrowDown' ? 1 : -1;
-      active = Math.max(-1, Math.min(items.length - 1, active + step));
+      active = Math.max(-1, Math.min(navItems.length - 1, active + step));
     } else if (event.key === 'Enter' && event.target === input) {
       event.preventDefault();
       if (event.metaKey || event.ctrlKey) {
@@ -747,7 +786,13 @@
       } else {
         activate(activeEntry);
       }
-    } else if (event.key === 'Tab' && !event.shiftKey && suggestions.length > 0 && event.target === input) {
+    } else if (
+      event.key === 'Tab' &&
+      !event.shiftKey &&
+      !advanced &&
+      suggestions.length > 0 &&
+      event.target === input
+    ) {
       event.preventDefault();
       const suggestion = activeEntry?.kind === 'suggestion' ? activeEntry.item : suggestions[0];
       activate({ kind: 'suggestion', item: suggestion });
@@ -761,42 +806,14 @@
   /* Saved searches                                                          */
   /* ---------------------------------------------------------------------- */
 
-  const writeSavedSearches = async (list: SavedSearch[]) => {
-    saveError = false;
-    try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { savedSearches: list, expectedRevision: preferencesRevision },
-      });
-      savedSearches = response.savedSearches ?? list;
-      preferencesRevision = response.revision;
-      return true;
-    } catch {
-      saveError = true;
-      // Somebody else changed the preferences, or the save failed: load them again
-      try {
-        const preferences = await getMyPreferences();
-        savedSearches = preferences.savedSearches ?? [];
-        preferencesRevision = preferences.revision;
-      } catch {
-        // Keep what is shown
-      }
-      return false;
-    }
-  };
+  const deleteSavedSearch = (name: string) => void savedSearchesStore.remove(name);
 
-  const saveSearch = async () => {
-    const name = saveName.trim();
-    if (!name) {
-      return;
-    }
-    if (await writeSavedSearches(upsertSavedSearch(savedSearches, toSavedSearch(name, snapshot())))) {
-      saving = false;
-      saveName = '';
-      input?.focus();
-    }
+  /** The compiled search the save dialog keeps, frozen when it opens. */
+  let saveQuery = $state.raw<DiscoveryQuery>(emptyDiscoveryQuery());
+  const openSave = () => {
+    saveQuery = submitted();
+    saving = true;
   };
-
-  const deleteSavedSearch = (name: string) => void writeSavedSearches(removeSavedSearch(savedSearches, name));
 
   const selectedPeople = $derived(
     new Set([...(next.filter.personIds?.any ?? []), ...(next.filter.personIds?.all ?? [])]),
@@ -814,13 +831,17 @@
   const thumbnail = (asset: AssetResponseDto, size = AssetMediaSize.Thumbnail) =>
     getAssetMediaUrl({ id: asset.id, size, cacheKey: asset.thumbhash });
 
+  const countLabel = (count: PaletteCount) =>
+    $t('frameleaf_search_palette_matches', { values: { count: count.total, capped: count.capped ? 'yes' : 'no' } });
   const matchesLabel = $derived(
-    pending || !selectedCount
-      ? $t('frameleaf_search_searching')
-      : $t('frameleaf_search_palette_matches', {
-          values: { count: selectedCount.total, capped: selectedCount.capped ? 'yes' : 'no' },
-        }),
+    pending || !selectedCount ? $t('frameleaf_search_searching') : countLabel(selectedCount),
   );
+  // The live region speaks only settled answers, never "Searching…" on every keystroke
+  $effect(() => {
+    if (!pending && selectedCount) {
+      settledLabel = countLabel(selectedCount);
+    }
+  });
 </script>
 
 <dialog
@@ -855,32 +876,36 @@
     <div class="sp-field">
       <Icon icon={mdiMagnify} size="22" aria-hidden={true} />
       <div class="sp-tokens">
-        {#each chips as token, position (tokens[position])}
-          <span class="sp-token" class:exclude={token.exclude}>
-            {#if token.key === 'person'}
-              <PersonAvatar
-                person={options.people.find((person) => person.name.toLowerCase() === token.display.toLowerCase())}
-                size={18}
-              />
-            {/if}
-            {tokenLabel($t, token)}
-            <button
-              type="button"
-              aria-label={$t('frameleaf_search_remove_filter', { values: { filter: tokenLabel($t, token) } })}
-              onclick={() => removeToken(position)}
-            >
-              <Icon icon={mdiClose} size="12" aria-hidden={true} />
-            </button>
-          </span>
+        {#each chips as chip (`${chip.index}:${chip.raw}`)}
+          {#if chip.token}
+            {@const label = tokenLabel($t, chip.token)}
+            <SearchChip
+              {label}
+              exclude={chip.token.exclude}
+              person={chip.token.key === 'person'
+                ? options.people.find((person) => person.id === chip.token?.id)
+                : undefined}
+              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
+              onRemove={() => removeToken(chip.index, chip.raw)}
+            />
+          {:else}
+            <SearchChip
+              label={chip.raw}
+              unresolved
+              title={$t('frameleaf_search_token_unavailable')}
+              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.raw } })}
+              onRemove={() => removeToken(chip.index, chip.raw)}
+            />
+          {/if}
         {/each}
         <input
           bind:this={input}
           aria-label={$t('frameleaf_search_query')}
           role="combobox"
-          aria-expanded="true"
+          aria-expanded={navItems.length > 0}
           aria-controls="{listId}-results"
           aria-autocomplete="list"
-          aria-activedescendant={active >= 0 ? `${listId}-item-${active}` : undefined}
+          aria-activedescendant={!advanced && active >= 0 && activeEntry ? `${listId}-item-${active}` : undefined}
           autocomplete="off"
           spellcheck="false"
           value={text}
@@ -976,8 +1001,15 @@
           {/each}
         </div>
       {/if}
-      <span class="sp-status" aria-live="polite">{matchesLabel}</span>
+      <span class="sp-status">{matchesLabel}</span>
+      <span class="sr-only" aria-live="polite">{settledLabel}</span>
     </div>
+
+    {#if textCut}
+      <p class="sp-note-row" role="status">
+        {$t('frameleaf_search_text_cut', { values: { count: MAX_PALETTE_TEXT } })}
+      </p>
+    {/if}
 
     {#if unsupported.length > 0}
       <p class="sp-note-row" role="note">{$t('frameleaf_search_bridge_unsupported')}</p>
@@ -1164,9 +1196,13 @@
                   onclick={() => activate(entry)}
                 >
                   <Icon icon={mdiHistory} size="16" aria-hidden={true} />
-                  <span>{entry.item.input}</span>
-                  <small>{$t(PALETTE_MODES.find((item) => item.value === entry.item.mode)?.labelKey ?? 'search')}</small
-                  >
+                  <span>{searchRow(entry.item.query).label}</span>
+                  <small>
+                    {$t(
+                      PALETTE_MODES.find((item) => item.value === searchRow(entry.item.query).mode)?.labelKey ??
+                        'search',
+                    )}
+                  </small>
                 </div>
               {/if}
             {/each}
@@ -1177,28 +1213,27 @@
               {#each items as entry (entry)}
                 {#if entry.kind === 'saved'}
                   {@const at = indexOf(entry)}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <div
-                    id="{listId}-item-{at}"
-                    role="option"
-                    tabindex="-1"
-                    aria-selected={at === active}
-                    class="sp-row"
-                    class:active={at === active}
-                    onmouseenter={() => (active = at)}
-                    onclick={() => activate(entry)}
-                  >
-                    <Icon icon={mdiBookmarkOutline} size="16" aria-hidden={true} />
-                    <span>{entry.item.name}</span>
-                    <small>{entry.item.search.input}</small>
+                  <div class="sp-saved" role="presentation">
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <div
+                      id="{listId}-item-{at}"
+                      role="option"
+                      tabindex="-1"
+                      aria-selected={at === active}
+                      class="sp-row"
+                      class:active={at === active}
+                      onmouseenter={() => (active = at)}
+                      onclick={() => activate(entry)}
+                    >
+                      <Icon icon={mdiBookmarkOutline} size="16" aria-hidden={true} />
+                      <span>{entry.item.name}</span>
+                      <small>{searchRow(entry.item.query).label}</small>
+                    </div>
                     <button
                       type="button"
                       class="sp-row-action"
                       aria-label={$t('frameleaf_search_delete_saved', { values: { name: entry.item.name } })}
-                      onclick={(event) => {
-                        event.stopPropagation();
-                        deleteSavedSearch(entry.item.name);
-                      }}
+                      onclick={() => deleteSavedSearch(entry.item.name)}
                     >
                       <Icon icon={mdiClose} size="14" aria-hidden={true} />
                     </button>
@@ -1240,71 +1275,42 @@
       />
     </div>
 
-    {#if saving}
-      <div class="sp-footer sp-save" role="group" aria-label={$t('frameleaf_search_save_search')}>
-        <label>
-          <span>{$t('name')}</span>
-          <!-- svelte-ignore a11y_autofocus -->
-          <input
-            autofocus
-            maxlength={SAVED_SEARCH_NAME_LIMIT}
-            bind:value={saveName}
-            onkeydown={(event) => {
-              if (event.key !== 'Enter') {
-                return;
-              }
-
-              event.preventDefault();
-              void saveSearch();
-            }}
-          />
-        </label>
-        {#if saveError}
-          <span class="sp-error" role="alert">{$t('frameleaf_search_save_failed')}</span>
-        {/if}
-        <button type="button" class="sp-secondary" onclick={() => (saving = false)}>{$t('cancel')}</button>
-        <button type="button" class="sp-primary" disabled={!saveName.trim()} onclick={() => void saveSearch()}>
-          {$t('save')}
-        </button>
-      </div>
-    {:else}
-      <footer class="sp-footer">
-        <span class="sp-keys" aria-hidden="true">
-          <kbd>↑</kbd><kbd>↓</kbd>
-          {$t('frameleaf_search_key_move')}
-          <kbd>⏎</kbd>
-          {$t('frameleaf_search_key_open')}
-          <kbd>⇥</kbd>
-          {$t('frameleaf_search_key_complete')}
-          <kbd>⌘⏎</kbd>
-          {$t('frameleaf_search_key_all')}
-          <kbd>esc</kbd>
-          {$t('frameleaf_search_key_close')}
-        </span>
-        <span class="sp-note">{smart ? $t('frameleaf_search_smart_note') : ''}</span>
-        <button
-          type="button"
-          class="sp-secondary"
-          onclick={() => {
-            saving = true;
-            saveError = false;
-            saveName = text.trim() || liveInput;
-          }}
-        >
-          <Icon icon={mdiContentSaveOutline} size="16" aria-hidden={true} />
-          {$t('frameleaf_search_save_search')}
-        </button>
-        <button type="submit" class="sp-primary">
-          {selectedCount
-            ? $t('frameleaf_search_show_count', {
-                values: { count: selectedCount.total, label: formatScopeCount(selectedCount) },
-              })
-            : $t('frameleaf_search_show_results')}
-        </button>
-      </footer>
-    {/if}
+    <footer class="sp-footer">
+      <span class="sp-keys" aria-hidden="true">
+        <kbd>↑</kbd><kbd>↓</kbd>
+        {$t('frameleaf_search_key_move')}
+        <kbd>⏎</kbd>
+        {$t('frameleaf_search_key_open')}
+        <kbd>⇥</kbd>
+        {$t('frameleaf_search_key_complete')}
+        <kbd>⌘⏎</kbd>
+        {$t('frameleaf_search_key_all')}
+        <kbd>esc</kbd>
+        {$t('frameleaf_search_key_close')}
+      </span>
+      <span class="sp-note">{smart ? $t('frameleaf_search_smart_note') : ''}</span>
+      <button type="button" class="sp-secondary" onclick={openSave}>
+        <Icon icon={mdiContentSaveOutline} size="16" aria-hidden={true} />
+        {$t('frameleaf_search_save_search')}
+      </button>
+      <button type="submit" class="sp-primary">
+        {selectedCount
+          ? $t('frameleaf_search_show_count', {
+              values: { count: selectedCount.total, label: formatScopeCount(selectedCount) },
+            })
+          : $t('frameleaf_search_show_results')}
+      </button>
+    </footer>
   </form>
 </dialog>
+
+<SearchSaveDialog
+  bind:open={saving}
+  query={saveQuery}
+  defaultName={liveInput}
+  count={selectedCount?.capped ? null : selectedCount?.total}
+  onSaved={(_, navigated) => (navigated ? onClose() : input?.focus())}
+/>
 
 <style>
   /* Spotlight-style glass panel anchored near the top of the window (search-palette.css). */
@@ -1453,23 +1459,6 @@
     line-height: 1.2;
     letter-spacing: -0.01em;
   }
-  .sp-token {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 4px 3px 8px;
-    border-radius: 8px;
-    background: var(--sp-active);
-    color: var(--fl-text);
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .sp-token.exclude {
-    background: color-mix(in srgb, #ff453a 22%, transparent);
-    text-decoration: line-through;
-    text-decoration-color: #ff453a99;
-  }
-  .sp-token button,
   .sp-understood button {
     display: inline-grid;
     place-items: center;
@@ -1681,6 +1670,23 @@
   .sp-row.active {
     background: var(--sp-active);
   }
+  .sp-saved {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sp-saved .sp-row {
+    flex: 1;
+    min-width: 0;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
   .sp-row-action {
     display: grid;
     place-items: center;
@@ -1790,26 +1796,6 @@
     color: var(--fl-muted);
     font-size: 11px;
     text-align: end;
-  }
-  .sp-save label {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 10px;
-  }
-  .sp-save input {
-    flex: 1;
-    min-width: 0;
-    min-height: 34px;
-    padding: 0 10px;
-    color: var(--fl-text);
-    background: var(--sp-row);
-    border: 1px solid var(--sp-edge);
-    border-radius: 9px;
-  }
-  .sp-error {
-    color: var(--fl-danger, #ff453a);
-    font-size: 12px;
   }
   .sp-secondary,
   .sp-primary {

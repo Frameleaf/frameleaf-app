@@ -21,7 +21,7 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiTextBoxOutline } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   /**
    * The search palette's side column (`<aside className="sp-side">` in `SearchPalette.jsx`): a preview
@@ -65,7 +65,7 @@
 
   const bars = $derived(histogramBars(histogram.buckets, histogram.unit));
   const barMax = $derived(Math.max(1, ...bars.map((bar) => bar.count)));
-  const barLabel = (bar: (typeof bars)[number]) => histogramBarLabel(bar, histogram.unit);
+  const barLabel = (bar: (typeof bars)[number]) => histogramBarLabel(bar, histogram.unit, $locale ?? undefined);
 
   const tokenSet = $derived(new Set(tokens));
   const refine = $derived(
@@ -116,7 +116,7 @@
   );
 
   const formatDate = (value: string | undefined) =>
-    value ? new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' }) : '';
+    value ? new Date(value).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium', timeZone: 'UTC' }) : '';
 
   const thumbnail = (asset: AssetResponseDto) =>
     getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash });
