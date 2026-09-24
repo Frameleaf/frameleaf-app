@@ -162,6 +162,9 @@ export const loopVideo = persisted<boolean>('loop-video', true, {});
 
 export const autoPlayVideo = persisted<boolean>('auto-play-video', true, {});
 
+// Realtime-transcoding quality: 'auto' lets hls.js adapt, a number pins the rendition by its short side (e.g. 720).
+export const videoQuality = persisted<'auto' | number>('video-quality', 'auto', {});
+
 export const alwaysLoadOriginalVideo = persisted<boolean>('always-load-original-video', false, {});
 
 export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {});
