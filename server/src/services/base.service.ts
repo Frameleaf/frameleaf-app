@@ -51,6 +51,7 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { RunPodRepository } from 'src/repositories/runpod.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
@@ -121,6 +122,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   PhysicalFileRepository,
   PluginRepository,
   ProcessRepository,
+  RenderWorkerRepository,
   RunPodRepository,
   SearchRepository,
   ServerInfoRepository,
@@ -189,6 +191,7 @@ export class BaseService {
     protected physicalFileRepository: PhysicalFileRepository,
     protected pluginRepository: PluginRepository,
     protected processRepository: ProcessRepository,
+    protected renderWorkerRepository: RenderWorkerRepository,
     protected runPodRepository: RunPodRepository,
     protected searchRepository: SearchRepository,
     protected serverInfoRepository: ServerInfoRepository,
@@ -266,6 +269,7 @@ export class BaseService {
       ctx.physicalFileRepository,
       ctx.pluginRepository,
       ctx.processRepository,
+      ctx.renderWorkerRepository,
       ctx.runPodRepository,
       ctx.searchRepository,
       ctx.serverInfoRepository,
