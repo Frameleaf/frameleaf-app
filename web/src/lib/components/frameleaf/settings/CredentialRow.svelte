@@ -11,6 +11,7 @@
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CredentialDialog from '$lib/components/frameleaf/settings/CredentialDialog.svelte';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { CREDENTIALS, isCredentialConfigured, withCredentialState } from '$lib/frameleaf/credentials';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -50,11 +51,11 @@
 
   const clear = async () => {
     const label = $t(definition.labelKey);
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_credentials_clear_title', { values: { name: label } }),
       prompt: $t('frameleaf_credentials_clear_prompt', { values: { name: label } }),
       confirmText: $t('frameleaf_credentials_clear'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -75,6 +76,7 @@
   };
 </script>
 
+<!-- A compact settings row (apple-style.css:1014-1045): what it is on the left; state and actions on the right. -->
 <div class="credential">
   <div class="text">
     <strong>{$t(definition.labelKey)}</strong>
@@ -98,11 +100,12 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem 0.75rem;
-    padding: 0.75rem 0;
+    gap: 8px 12px;
+    padding: 14px 0;
     border-top: 1px solid var(--fl-border);
-    border-bottom: 1px solid var(--fl-border);
-    margin-bottom: 1rem;
+  }
+  .credential:first-child {
+    border-top: 0;
   }
   .text {
     display: grid;
@@ -112,15 +115,18 @@
   }
   strong {
     color: var(--fl-text);
+    font-size: 14px;
+    font-weight: 500;
   }
   p {
     margin: 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: 12.5px;
+    line-height: 1.45;
   }
   small {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: 11.5px;
   }
   .actions {
     display: flex;

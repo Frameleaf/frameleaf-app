@@ -62,7 +62,8 @@
 <section class="mt-card" aria-labelledby="fl-maintenance-integrity-title">
   <div class="mt-card-title">
     <div>
-      <h2 id="fl-maintenance-integrity-title">{$t('admin.frameleaf_maintenance_integrity_title')}</h2>
+      <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
+      <h2 class="sr-only" id="fl-maintenance-integrity-title">{$t('admin.frameleaf_maintenance_integrity_title')}</h2>
       <p>{$t('admin.frameleaf_maintenance_integrity_description')}</p>
     </div>
     <button type="button" class="button primary" disabled={allRunning} onclick={onCheckAll}>

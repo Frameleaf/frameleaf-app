@@ -10,8 +10,9 @@
   import { handleError } from '$lib/utils/handle-error';
   import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
   import { ConfigCredential, OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
-  import { Button, Link, modalManager, Text, toastManager } from '@immich/ui';
-  import { mdiRestart } from '@mdi/js';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { Link, Text, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
@@ -30,11 +31,11 @@
   };
 
   const handleUnlinkAllOAuthAccounts = async () => {
-    const confirmed = await modalManager.showDialog({
-      icon: mdiRestart,
+    const confirmed = await confirmFrameleaf({
       title: $t('admin.unlink_all_oauth_accounts'),
       prompt: $t('admin.unlink_all_oauth_accounts_prompt'),
-      confirmColor: 'danger',
+      confirmText: $t('confirm'),
+      danger: true,
     });
 
     if (!confirmed) {
@@ -75,9 +76,7 @@
 
               <div class="flex items-center justify-between gap-2">
                 <Text size="small">{$t('admin.unlink_all_oauth_accounts_description')}</Text>
-                <Button size="small" onclick={handleUnlinkAllOAuthAccounts}
-                  >{$t('admin.unlink_all_oauth_accounts')}</Button
-                >
+                <Button onclick={handleUnlinkAllOAuthAccounts}>{$t('admin.unlink_all_oauth_accounts')}</Button>
               </div>
 
               <SettingField

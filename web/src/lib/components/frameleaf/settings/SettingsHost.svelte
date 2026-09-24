@@ -246,8 +246,26 @@
     resolveSettingsSection(area, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
   );
   const selected = $derived(areaSections.find((section) => section.key === selectedKey));
-  /** Sections that are managers with their own heading and layout rather than a grouped list of settings. */
-  const MANAGER_SECTIONS = ['accounts', 'contents', 'queues'];
+  /**
+   * Sections that are managers or administration tools with their own grouped containers, rather
+   * than one grouped list of settings: they take the page width without a card around their cards
+   * (command-center.css:1710-1717). Section D of the Sept 24 port plan: render workers, workers and
+   * ML destinations, deduplication, maintenance, enrichment and repair queues.
+   */
+  const MANAGER_SECTIONS = [
+    'accounts',
+    'contents',
+    'queues',
+    'workers',
+    'routing',
+    'render-workers',
+    'deduplication',
+    'mode',
+    'backups',
+    'integrity',
+    'enrichment-care',
+    'repair',
+  ];
   // A page named like its area does not repeat the name as a breadcrumb (INTERACTION-REQUIREMENTS
   // "Settings"; CommandCenter.jsx:721-731): the overline names the area's group instead.
   const breadcrumb = $derived(selected !== undefined && selected.title !== areaCopy[area].title);
@@ -965,6 +983,8 @@
     overflow: auto;
     padding: 28px 30px 12px;
     scrollbar-width: thin;
+    /* Counts, sizes, times and table columns line up everywhere in settings (apple-style.css:59-69). */
+    font-variant-numeric: tabular-nums;
   }
   .cc-main > :global(*) {
     max-width: 1480px;
@@ -1005,7 +1025,7 @@
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }
-  /* The Users, Trash and Job managers are full screens of their own, not grouped lists (command-center.css:1710-1717). */
+  /* Managers and administration tools carry their own grouped containers (command-center.css:1710-1717). */
   .cc-section.cc-manager {
     max-width: none;
     padding: 0;
