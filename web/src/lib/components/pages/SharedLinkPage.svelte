@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
+  import { page } from '$app/state';
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -8,7 +9,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { setSharedLink } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
+  import { handleError, setUnauthorizedHandler } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import {
     isHttpError,
@@ -19,7 +20,7 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiEyeOutline, mdiLockOutline } from '@mdi/js';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -89,7 +90,23 @@
     await handlePasswordSubmit();
   };
 
+  // FL-56: an action refused because the link was revoked or expired while this page was open
+  // reloads the route; the fresh link lookup fails and the unavailable state replaces the content.
+  // A reload that finds the link still valid means the 401 had another cause: it is shown as usual.
+  const onUnauthorized = async (showError: () => void) => {
+    setSharedLink(undefined);
+    await invalidateAll();
+    if (!page.error && page.data.sharedLink) {
+      showError();
+    }
+  };
+
+  onMount(() => {
+    setUnauthorizedHandler((showError) => void onUnauthorized(showError));
+  });
+
   onDestroy(() => {
+    setUnauthorizedHandler(undefined);
     setSharedLink(undefined);
   });
 </script>

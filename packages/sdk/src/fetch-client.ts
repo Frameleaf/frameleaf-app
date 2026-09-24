@@ -3721,10 +3721,6 @@ export type DuplicateReviewGroupDto = {
     /** Size of the originals shown, in bytes */
     totalBytes: number;
 };
-export type VideoMomentSearchDto = {
-    limit?: number;
-    query: string;
-};
 export type VideoMomentSearchHitDto = {
     assetId: string;
     caption: string | null;
@@ -3737,6 +3733,10 @@ export type VideoMomentSearchHitDto = {
 };
 export type VideoMomentSearchResponseDto = {
     hits: VideoMomentSearchHitDto[];
+};
+export type VideoMomentSearchDto = {
+    limit?: number;
+    query: string;
 };
 export type EnrichmentDestinationAdmissionDto = {
     admitted: boolean;
@@ -11659,6 +11659,22 @@ export function getVideoMomentFrame({ id }: {
         status: 200;
         data: Blob;
     }>(`/enrichment/frames/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Find moments like a video frame
+ */
+export function searchSimilarVideoMoments({ id, limit }: {
+    id: string;
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoMomentSearchResponseDto;
+    }>(`/enrichment/frames/${encodeURIComponent(id)}/similar${QS.query(QS.explode({
+        limit
+    }))}`, {
         ...opts
     }));
 }

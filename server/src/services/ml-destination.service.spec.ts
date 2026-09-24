@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import {
@@ -9,11 +10,13 @@ import {
 } from 'src/dtos/restoration-inference.dto.js';
 import {
   ImmichWorker,
+  MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkerRole,
   MlWorkload,
+  RenderWorkerStatus,
 } from 'src/enum.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
@@ -44,6 +47,7 @@ describe(MlDestinationService.name, () => {
     mocks.mlDestination.create.mockImplementation((row) =>
       Promise.resolve({ ...mlDestinationStub.local, ...row, id: 'created' } as never),
     );
+    mocks.renderWorker.listLiveSessions.mockResolvedValue([]);
   });
 
   describe('bootstrap', () => {
@@ -581,7 +585,96 @@ describe(MlDestinationService.name, () => {
       expect(restoration.routedDestinationId).toBeNull();
     });
 
-    it('never claims a render or GPU worker and derives the Studio row from workloads', async () => {
+    describe('render worker (FL-42)', () => {
+      const hour = 60 * 60 * 1000;
+      const liveSession = (
+        worker: Record<string, unknown> = {},
+        session: Record<string, unknown> = {},
+      ): AuthenticatedRenderWorker =>
+        ({
+          worker: {
+            id: 'worker-1',
+            name: 'Studio GPU',
+            status: RenderWorkerStatus.Active,
+            engineDigest: 'sha256:engine',
+            conformanceMaxAgeMs: 24 * hour,
+            ...worker,
+          },
+          session: {
+            id: 'session-1',
+            workerId: 'worker-1',
+            scopes: [MediaOperationKind.StudioExport],
+            engineDigest: 'sha256:engine',
+            conformanceReportedAt: new Date(Date.now() - hour),
+            expiresAt: new Date(Date.now() + hour),
+            revokedAt: null,
+            ...session,
+          },
+        }) as unknown as AuthenticatedRenderWorker;
+
+      const studioOf = async (...sessions: AuthenticatedRenderWorker[]) => {
+        mocks.renderWorker.listLiveSessions.mockResolvedValue(sessions);
+        const { studio } = await sut.getCapabilities();
+        return { gpuWorker: studio.gpuWorker, renderWorker: studio.renderWorker };
+      };
+
+      it('reports a GPU render worker while a qualified session is admitted', async () => {
+        await expect(studioOf(liveSession())).resolves.toEqual({ gpuWorker: true, renderWorker: true });
+      });
+
+      it('accepts a worker that is not pinned to an engine digest', async () => {
+        await expect(studioOf(liveSession({ engineDigest: null }))).resolves.toEqual({
+          gpuWorker: true,
+          renderWorker: true,
+        });
+      });
+
+      it('does not count an expired session', async () => {
+        await expect(studioOf(liveSession({}, { expiresAt: new Date(Date.now() - 1000) }))).resolves.toEqual({
+          gpuWorker: false,
+          renderWorker: false,
+        });
+      });
+
+      it('does not count a revoked session or a revoked worker', async () => {
+        await expect(
+          studioOf(
+            liveSession({}, { revokedAt: new Date() }),
+            liveSession({ status: RenderWorkerStatus.Revoked, revokedAt: new Date() }),
+          ),
+        ).resolves.toEqual({ gpuWorker: false, renderWorker: false });
+      });
+
+      it('does not count a session whose conformance evidence is stale or from the future', async () => {
+        await expect(
+          studioOf(
+            liveSession({ conformanceMaxAgeMs: hour }, { conformanceReportedAt: new Date(Date.now() - 2 * hour) }),
+            liveSession({}, { conformanceReportedAt: new Date(Date.now() + 2 * hour) }),
+          ),
+        ).resolves.toEqual({ gpuWorker: false, renderWorker: false });
+      });
+
+      it('does not count a session admitted on another engine than the worker is qualified with', async () => {
+        await expect(
+          studioOf(liveSession({ engineDigest: 'sha256:requalified' }), liveSession({}, { engineDigest: null })),
+        ).resolves.toEqual({ gpuWorker: false, renderWorker: false });
+      });
+
+      it('does not count a session that may claim no render work', async () => {
+        await expect(studioOf(liveSession({}, { scopes: [] }))).resolves.toEqual({
+          gpuWorker: false,
+          renderWorker: false,
+        });
+      });
+
+      it('counts one qualified session among unqualified ones', async () => {
+        await expect(
+          studioOf(liveSession({}, { revokedAt: new Date() }), liveSession({}, { id: 'session-2' })),
+        ).resolves.toEqual({ gpuWorker: true, renderWorker: true });
+      });
+    });
+
+    it('never claims a render or GPU worker without an admitted session and derives the Studio row from workloads', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
 
       const result = await sut.getCapabilities();
