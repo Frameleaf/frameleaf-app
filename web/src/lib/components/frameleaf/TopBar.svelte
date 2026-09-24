@@ -10,7 +10,7 @@
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
-  import { buildPrimaryDestinations, currentPrimaryDestination, isSettingsRoute } from '$lib/frameleaf/navigation';
+  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
@@ -18,14 +18,13 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import { getGlobalActions } from '$lib/services/app.service';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
   import { getAuthStatus } from '@immich/sdk';
-  import { ActionButton, Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellOutline,
     mdiChevronRight,
@@ -112,13 +111,6 @@
     isElevated ? $t('frameleaf_locked_hide_content') : $t('frameleaf_locked_unlock_content'),
   );
   let unlockDialogOpen = $state(false);
-  // The prototype's one "admin" screen covers account preferences and system administration
-  // alike (`openSettings()` in App.jsx always sets `screen("admin")`), so both roots hide
-  // Upload and switch the search entry to settings search.
-  const isAdminRoute = $derived(isSettingsRoute(page.url.pathname));
-  // Casting is an existing production capability; the new bar keeps it rather than
-  // dropping an action the legacy bar offered.
-  const { Cast } = $derived(getGlobalActions($t));
   // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
   // page join that album, and uploads made from the Locked area stay locked.
   const uploadAlbumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
@@ -304,7 +296,7 @@
     </div>
 
     <section class="fl-topbar-actions">
-      {#if onUploadClick && !isAdminRoute}
+      {#if onUploadClick}
         <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
       {/if}
 
@@ -372,9 +364,6 @@
           </a>
         {/if}
       </div>
-
-      <!-- Casting is contextual: the button shows only while a cast device is available. -->
-      <ActionButton action={Cast} />
 
       <IconButton
         shape="round"

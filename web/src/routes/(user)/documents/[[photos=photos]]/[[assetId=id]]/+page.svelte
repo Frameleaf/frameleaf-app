@@ -171,7 +171,7 @@
   });
 </script>
 
-<UserPageLayout hideNavbar={librarySession.selection.length > 0} title={data.meta.title} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   <section class="frameleaf documents m-4 mb-12">
     <ResultsView
       assets={timelineAssets}

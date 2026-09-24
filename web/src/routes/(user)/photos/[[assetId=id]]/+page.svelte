@@ -9,7 +9,6 @@
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { formatMapArea, parseMapArea } from '$lib/frameleaf/map-settings';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -63,7 +62,7 @@
   memoryManager.setFilters({ $for: DateTime.now().toISODate() });
 </script>
 
-<UserPageLayout hideNavbar={librarySession.selection.length > 0} scrollbar={false}>
+<UserPageLayout scrollbar={false}>
   <LibraryView
     bind:timelineManager
     {options}
