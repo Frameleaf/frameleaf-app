@@ -6,7 +6,6 @@
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -37,7 +36,7 @@
   };
 </script>
 
-<UserPageLayout hideNavbar={librarySession.selection.length > 0} title={data.meta.title} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   <LibraryView
     bind:timelineManager
     {options}

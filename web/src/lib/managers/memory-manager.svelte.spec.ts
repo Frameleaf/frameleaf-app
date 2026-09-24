@@ -1,56 +1,157 @@
-import { removeMemoryAssets, type MemoryResponseDto } from '@immich/sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  addMemoryAssets,
+  deleteMemory,
+  memoriesStatistics,
+  removeMemoryAssets,
+  searchMemories,
+  type MemoryResponseDto,
+} from '@immich/sdk';
+import { toastManager } from '@immich/ui';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleError } from '$lib/utils/handle-error';
-import { memoryManager } from './memory-manager.svelte';
-
-// FL-83 (ported from ef7ad8b832): memory removal trusts the per-item outcome, not the HTTP status
+import { MEMORY_REMOVE_UNDO_TIMEOUT_MS, memoryManager } from './memory-manager.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('$app/state', async () => {
-  const { QueryParameter } = await import('$lib/constants');
-  return {
-    page: {
-      params: { id: 'memory-1' },
-      url: new URL(`http://localhost/memories/memory-1?${QueryParameter.ASSET_ID}=asset-1`),
-    },
-  };
-});
+vi.mock('$app/state', () => ({
+  page: { params: { id: 'memory-1' }, url: new URL('http://localhost/memories/memory-1?assetId=asset-1') },
+}));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { authenticated: false, user: { id: 'me' } } }));
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
-  removeMemoryAssets: vi.fn(),
+  removeMemoryAssets: vi.fn().mockResolvedValue([{ id: 'asset-1', success: true }]),
+  addMemoryAssets: vi.fn().mockResolvedValue([{ id: 'asset-1', success: true }]),
+  deleteMemory: vi.fn().mockResolvedValue(undefined),
+  searchMemories: vi.fn().mockResolvedValue([]),
+  memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
 }));
-
-const asset = (id: string) => ({ id, ownerId: 'me', fileCreatedAt: '2026-01-01T00:00:00.000Z' });
+vi.mock('@immich/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@immich/ui')>()),
+  toastManager: { primary: vi.fn() },
+}));
 
 const memory = () =>
   ({
     id: 'memory-1',
-    memoryAt: '2026-01-01T00:00:00.000Z',
-    assets: [asset('asset-1'), asset('asset-2')],
+    assets: [{ id: 'asset-1', originalFileName: 'IMG_0001.jpg', type: 'IMAGE' }],
+    isSaved: false,
   }) as unknown as MemoryResponseDto;
 
-describe('memoryManager.deleteCurrentAsset', () => {
+describe('memoryManager.removeCurrentAsset', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     memoryManager.memories = [memory()];
   });
 
-  it('removes the item once the server reports success for it', async () => {
-    vi.mocked(removeMemoryAssets).mockResolvedValueOnce([{ id: 'asset-1', success: true }]);
-    await memoryManager.deleteCurrentAsset();
-    expect(memoryManager.memories[0].assets.map(({ id }) => id)).toEqual(['asset-2']);
-    expect(handleError).not.toHaveBeenCalled();
+  it('sends the removal to the server at once and drops an emptied memory without deleting it', async () => {
+    await memoryManager.removeCurrentAsset();
+
+    expect(removeMemoryAssets).toHaveBeenCalledExactlyOnceWith({ id: 'memory-1', bulkIdsDto: { ids: ['asset-1'] } });
+    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(memoryManager.memories).toHaveLength(0);
+    expect(toastManager.primary).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    ['refuses the item', [{ id: 'asset-1', success: false }]],
-    ['omits the item', [{ id: 'asset-2', success: true }]],
-  ])('keeps the item and reports an error when the server %s', async (_, results) => {
-    vi.mocked(removeMemoryAssets).mockResolvedValueOnce(results);
-    await memoryManager.deleteCurrentAsset();
-    expect(memoryManager.memories[0].assets.map(({ id }) => id)).toEqual(['asset-1', 'asset-2']);
-    expect(handleError).toHaveBeenCalledOnce();
+  it('keeps the item and offers no Undo when the server refuses removal', async () => {
+    vi.mocked(removeMemoryAssets).mockResolvedValueOnce([{ id: 'asset-1', success: false }]);
+    await expect(memoryManager.removeCurrentAsset()).rejects.toThrow('Unable to remove');
+    expect(memoryManager.memories[0].assets.map((asset) => asset.id)).toEqual(['asset-1']);
+    expect(toastManager.primary).not.toHaveBeenCalled();
+  });
+
+  it('does not restore local state when the server refuses Undo', async () => {
+    vi.mocked(addMemoryAssets).mockResolvedValueOnce([{ id: 'asset-1', success: false }]);
+    await memoryManager.removeCurrentAsset();
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    toast.button(() => {}).onclick();
+    await vi.waitFor(() => expect(handleError).toHaveBeenCalledOnce());
+    expect(memoryManager.memories).toHaveLength(0);
+  });
+
+  it('puts the item back through the inverse call when Undo is pressed, and only once', async () => {
+    await memoryManager.removeCurrentAsset();
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    const button = toast.button(() => {});
+
+    button.onclick();
+    button.onclick();
+    await vi.waitFor(() => expect(addMemoryAssets).toHaveBeenCalledOnce());
+
+    expect(addMemoryAssets).toHaveBeenCalledWith({ id: 'memory-1', bulkIdsDto: { ids: ['asset-1'] } });
+    expect(memoryManager.memories).toHaveLength(1);
+    expect(memoryManager.memories[0].assets.map((asset) => asset.id)).toEqual(['asset-1']);
+  });
+});
+
+describe('memoryManager: a memory emptied by removal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    memoryManager.memories = [memory()];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const undoButton = () => {
+    const [[toast]] = vi.mocked(toastManager.primary).mock.calls as unknown as [
+      [{ button: (close: () => void) => { onclick: () => void } }],
+    ];
+    return toast.button(() => {});
+  };
+
+  it('is deleted on the server once the Undo window closes unused', async () => {
+    await memoryManager.removeCurrentAsset();
+    expect(deleteMemory).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(MEMORY_REMOVE_UNDO_TIMEOUT_MS);
+
+    expect(deleteMemory).toHaveBeenCalledExactlyOnceWith({ id: 'memory-1' });
+  });
+
+  it('is not deleted when Undo runs inside the window', async () => {
+    await memoryManager.removeCurrentAsset();
+    const button = undoButton();
+
+    button.onclick();
+    await vi.advanceTimersByTimeAsync(MEMORY_REMOVE_UNDO_TIMEOUT_MS);
+
+    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(addMemoryAssets).toHaveBeenCalledOnce();
+    expect(memoryManager.memories).toHaveLength(1);
+  });
+
+  it('ignores an Undo pressed after the window has deleted the memory', async () => {
+    await memoryManager.removeCurrentAsset();
+    const button = undoButton();
+
+    await vi.advanceTimersByTimeAsync(MEMORY_REMOVE_UNDO_TIMEOUT_MS);
+    button.onclick();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(deleteMemory).toHaveBeenCalledOnce();
+    expect(addMemoryAssets).not.toHaveBeenCalled();
+    expect(memoryManager.memories).toHaveLength(0);
+  });
+
+  it('never lists an empty memory the server still returns after a reload', async () => {
+    const empty = { ...memory(), id: 'memory-empty', assets: [] } as unknown as MemoryResponseDto;
+    const kept = { ...memory(), id: 'memory-2' } as unknown as MemoryResponseDto;
+    vi.mocked(searchMemories).mockResolvedValueOnce([empty, kept]);
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 2 });
+    memoryManager.memories = [];
+
+    await memoryManager.refresh();
+
+    expect(memoryManager.memories.map(({ id }) => id)).toEqual(['memory-2']);
+    expect(memoryManager.hasNextPage).toBe(false);
+
+    vi.mocked(searchMemories).mockResolvedValueOnce([empty]);
+    await expect(memoryManager.loadMemory('memory-empty')).resolves.toBeUndefined();
+    expect(memoryManager.memories.map(({ id }) => id)).toEqual(['memory-2']);
   });
 });
