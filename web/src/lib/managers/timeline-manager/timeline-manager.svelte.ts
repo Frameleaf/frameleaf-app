@@ -162,6 +162,18 @@ export class TimelineManager extends VirtualScrollManager {
     );
   }
 
+  /**
+   * The query the time buckets were asked with (the view's filters and the viewer's key), for a
+   * request that must cover exactly the same assets — the curated Years and Months cards (FL-33).
+   */
+  get bucketQuery() {
+    const options = { ...this.#options };
+    delete options.timelineAlbumId;
+    delete options.deferInit;
+    delete options.assetFilter;
+    return { ...authManager.params, ...options };
+  }
+
   override get scrollTop(): number {
     return this.#scrollableElement?.scrollTop ?? 0;
   }
