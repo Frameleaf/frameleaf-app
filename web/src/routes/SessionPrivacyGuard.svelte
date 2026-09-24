@@ -10,14 +10,18 @@
    */
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
-  import { getAssetInfo } from '@immich/sdk';
+  import { getAssetInfo, isHttpError } from '@immich/sdk';
   import { Button } from '@immich/ui';
   import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { isLockedFolderRoute } from '$lib/utils/navigation';
   import { markRouterStarted } from '$lib/utils/router-started';
-  import { watchSessionPrivacy, type SessionPrivacyStatus } from '$lib/utils/session-privacy-guard';
+  import {
+    watchSessionPrivacy,
+    type PreloadedDataResult,
+    type SessionPrivacyStatus,
+  } from '$lib/utils/session-privacy-guard';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -37,19 +41,38 @@
       ? Route.photos()
       : `${page.url.pathname}${page.url.search}`;
 
+  /** The route without the asset in its URL: where a viewer of an asset the caller may not see goes. */
+  const withoutAsset = (assetId: string) => {
+    const pathname = page.url.pathname.replace(new RegExp(`/${assetId}/?$`), '');
+    return pathname && pathname !== page.url.pathname ? `${pathname}${page.url.search}` : Route.photos();
+  };
+
+  const revalidatePreloadedData = async (): Promise<PreloadedDataResult> => {
+    assetCacheManager.invalidate();
+    const assetId = page.params.assetId;
+    if (assetId) {
+      // Check the preloaded viewer directly: route invalidation can render an error boundary, but must
+      // never release an old authorized asset.
+      try {
+        await getAssetInfo({ id: assetId, ...authManager.params }, { cache: 'no-store' });
+      } catch (error) {
+        if (isHttpError(error) && error.status >= 400 && error.status < 500) {
+          // Not the caller's to see now: a retry would get the same answer, so leave for the same
+          // view without the asset. A network failure still offers the retry.
+          location.replace(withoutAsset(assetId));
+          return 'replaced';
+        }
+        throw error;
+      }
+    }
+    await invalidateAll();
+  };
+
   onMount(() => {
     guard = watchSessionPrivacy(
       () => authManager.authenticated,
       (value) => (status = value),
-      async () => {
-        assetCacheManager.invalidate();
-        if (page.params.assetId) {
-          // Check the preloaded viewer directly: route invalidation can render an error boundary,
-          // but must never release an old authorized asset.
-          await getAssetInfo({ id: page.params.assetId, ...authManager.params }, { cache: 'no-store' });
-        }
-        await invalidateAll();
-      },
+      revalidatePreloadedData,
       revokedDestination,
     );
     return () => guard?.dispose();
@@ -57,7 +80,8 @@
 
   afterNavigate(() => {
     markRouterStarted();
-    void guard?.refresh();
+    // joins the first check when it is still running, so a cold load asks the server once
+    void guard?.revalidate();
   });
 </script>
 

@@ -1,4 +1,4 @@
-import { getAuthStatus } from '@immich/sdk';
+import { getAuthStatus, lockAuthSession } from '@immich/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { revokeSessionView } from '$lib/utils/session-privacy';
@@ -6,7 +6,7 @@ import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 
 // FL-34: ported from PR131 bebfed12ff and 25990c373c (d7cfe8b1a7), adapted to the current Locked flow
 
-vi.mock('@immich/sdk', () => ({ getAuthStatus: vi.fn() }));
+vi.mock('@immich/sdk', () => ({ getAuthStatus: vi.fn(), lockAuthSession: vi.fn() }));
 vi.mock('$lib/utils/session-privacy', () => ({ revokeSessionView: vi.fn() }));
 const respond =
   (value: Awaited<ReturnType<typeof getAuthStatus>>) => async (opts?: Parameters<typeof getAuthStatus>[0]) => {
@@ -87,14 +87,78 @@ describe('watchSessionPrivacy', () => {
     expect(gate).toHaveBeenLastCalledWith('ready');
   });
 
-  it('keeps initial elevated content gated if the server Date header is absent', async () => {
+  // Review P3-6: reloading would get the same unbounded answer and loop, so the elevation is ended
+  it('ends an elevation it cannot bound on the first check instead of reloading', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('{}'));
+    vi.mocked(lockAuthSession).mockResolvedValue(undefined as never);
+    const gate = vi.fn();
+    const revalidate = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lockAuthSession).toHaveBeenCalledOnce();
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    // continues as a locked view: preloaded data is checked again before anything is released
+    expect(revalidate).toHaveBeenCalledOnce();
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('ends an elevation whose server clock puts it past expiry on the first check, without a reload', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('{}', { headers: { Date: new Date(Date.now() + 60_000).toUTCString() } }),
+    );
+    vi.mocked(lockAuthSession).mockResolvedValue(undefined as never);
+    const gate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true, gate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lockAuthSession).toHaveBeenCalledOnce();
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('keeps initial content held if the unbounded elevation cannot be ended', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{}'));
+    vi.mocked(lockAuthSession).mockRejectedValue(new Error('offline'));
     const gate = vi.fn();
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
     guard = watchSessionPrivacy(() => true, gate);
     await vi.advanceTimersByTimeAsync(0);
     expect(gate).toHaveBeenLastCalledWith('error');
     expect(gate).not.toHaveBeenCalledWith('ready');
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  // Review P2-1: the caller left the page (the asset in the URL is not the caller's to see)
+  it('releases nothing when re-checking the preloaded data replaced the page', async () => {
+    const gate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
+    guard = watchSessionPrivacy(
+      () => true,
+      gate,
+      async () => 'replaced',
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).not.toHaveBeenCalledWith('ready');
+    expect(gate).not.toHaveBeenCalledWith('error');
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getAuthStatus).toHaveBeenCalledOnce();
+  });
+
+  // Review P3-7: a cold load's navigation and focus share the first check
+  it('lets passive rechecks join a check already in flight', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof getAuthStatus>>) => void;
+    vi.mocked(getAuthStatus).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    guard = watchSessionPrivacy(() => true);
+    const joined = guard.revalidate();
+    dispatchEvent(new Event('focus'));
+    finish(status(false));
+    await joined;
+    expect(getAuthStatus).toHaveBeenCalledOnce();
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    await guard.revalidate();
+    expect(getAuthStatus).toHaveBeenCalledTimes(2);
   });
 
   it('clears at the known expiry even while status revalidation is stalled', async () => {
@@ -174,14 +238,17 @@ describe('watchSessionPrivacy', () => {
 
   // FL-34 adaptation: a lock anywhere (this tab, another tab via `on_session_lock`, a PIN reset)
   // discards an elevated view; a view that was never elevated has nothing to discard and rechecks
-  it.each(['SessionLocked', 'UserPinCodeReset'] as const)('discards an elevated view on %s', async (event) => {
-    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
-    guard = watchSessionPrivacy(() => true);
-    await vi.advanceTimersByTimeAsync(0);
-    eventManager.emit(event);
-    expect(revokeSessionView).toHaveBeenCalledOnce();
-    expect(revokeSessionView).toHaveBeenCalledWith('/photos');
-  });
+  it.each(['SessionLocked', 'SessionLockedRemote', 'UserPinCodeReset'] as const)(
+    'discards an elevated view on %s',
+    async (event) => {
+      vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+      guard = watchSessionPrivacy(() => true);
+      await vi.advanceTimersByTimeAsync(0);
+      eventManager.emit(event);
+      expect(revokeSessionView).toHaveBeenCalledOnce();
+      expect(revokeSessionView).toHaveBeenCalledWith('/photos');
+    },
+  );
 
   it('discards an elevated view when this tab locks it', async () => {
     vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
@@ -191,7 +258,7 @@ describe('watchSessionPrivacy', () => {
     expect(revokeSessionView).toHaveBeenCalledOnce();
   });
 
-  it.each(['SessionLocked', 'UserPinCodeReset'] as const)(
+  it.each(['SessionLocked', 'SessionLockedRemote', 'UserPinCodeReset'] as const)(
     'only rechecks a view that was not elevated on %s',
     async (event) => {
       vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));

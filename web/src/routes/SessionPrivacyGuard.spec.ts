@@ -7,7 +7,9 @@ type Status = 'pending' | 'ready' | 'error';
 const guard = vi.hoisted(() => ({
   setStatus: undefined as ((status: Status) => void) | undefined,
   destination: undefined as (() => string) | undefined,
+  revalidatePreloaded: undefined as (() => Promise<unknown>) | undefined,
   refresh: vi.fn(),
+  revalidate: vi.fn(),
   dispose: vi.fn(),
 }));
 
@@ -21,16 +23,24 @@ const state = vi.hoisted(() => ({
 
 vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('$app/state', () => state);
+
+const sdk = vi.hoisted(() => ({ getAssetInfo: vi.fn() }));
+vi.mock('@immich/sdk', () => ({
+  getAssetInfo: sdk.getAssetInfo,
+  isHttpError: (error: unknown) => !!(error as { isHttp?: boolean })?.isHttp,
+}));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn() } }));
 vi.mock('$lib/utils/session-privacy-guard', () => ({
   watchSessionPrivacy: (
     _isAuthenticated: () => boolean,
     onInitialStatus: (status: Status) => void,
-    _revalidate: () => Promise<void>,
+    revalidatePreloaded: () => Promise<unknown>,
     destination: () => string,
   ) => {
     guard.setStatus = onInitialStatus;
     guard.destination = destination;
-    return { refresh: guard.refresh, dispose: guard.dispose };
+    guard.revalidatePreloaded = revalidatePreloaded;
+    return { refresh: guard.refresh, revalidate: guard.revalidate, dispose: guard.dispose };
   },
 }));
 
@@ -84,6 +94,37 @@ describe('SessionPrivacyGuard', () => {
     state.page.url = new URL(`http://localhost${path}`);
 
     expect(guard.destination?.()).toBe('/photos');
+  });
+
+  // Review P2-1: a cold load of an asset the locked session may not see leaves instead of a dead retry
+  it.each([400, 403, 404])(
+    'leaves a preloaded viewer the server refuses with %i for the view without it',
+    async (code) => {
+      render(SessionPrivacyGuard, { children });
+      state.page.params = { assetId: 'asset-1' };
+      state.page.route.id = '/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]';
+      state.page.url = new URL('http://localhost/albums/a/photos/asset-1?at=1');
+      sdk.getAssetInfo.mockRejectedValue({ isHttp: true, status: code });
+      const replace = vi.spyOn(location, 'replace').mockImplementation(() => {});
+
+      await expect(guard.revalidatePreloaded?.()).resolves.toBe('replaced');
+
+      expect(replace).toHaveBeenCalledWith('/albums/a/photos?at=1');
+      replace.mockRestore();
+    },
+  );
+
+  it('keeps the retry for a network failure while checking a preloaded viewer', async () => {
+    render(SessionPrivacyGuard, { children });
+    state.page.params = { assetId: 'asset-1' };
+    state.page.url = new URL('http://localhost/photos/asset-1');
+    sdk.getAssetInfo.mockRejectedValue(new TypeError('Failed to fetch'));
+    const replace = vi.spyOn(location, 'replace').mockImplementation(() => {});
+
+    await expect(guard.revalidatePreloaded?.()).rejects.toThrow('Failed to fetch');
+
+    expect(replace).not.toHaveBeenCalled();
+    replace.mockRestore();
   });
 
   it('stops watching when the root is destroyed', () => {
