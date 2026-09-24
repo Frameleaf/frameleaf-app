@@ -296,6 +296,31 @@ describe('VideoNativeViewer component', () => {
     errorLog.mockRestore();
   });
 
+  it('stays on auto when the saved quality is corrupt', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    videoQuality.set('garbage' as unknown as number);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
+    vi.spyOn(mediaCapabilitiesManager, 'efficientLevels').mockResolvedValue(new Set([0, 1]));
+    const viewer = renderViewer(videoProps());
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const api = hlsMocks.instances[0];
+    const url = '/video/stream/11111111-1111-1111-1111-111111111111/0/playlist.m3u8';
+    api.levels = [
+      { url: [url], width: 854, height: 480 },
+      { url: [url], width: 1280, height: 720 },
+    ];
+    const manifestHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1];
+    await manifestHandler();
+
+    const element = viewer.container.querySelector('hls-video') as unknown as {
+      videoRenditions: { selectedIndex: number };
+    };
+    expect(element.videoRenditions.selectedIndex).toBe(-1);
+    expect(api.startLevel).toBeUndefined();
+    viewer.unmount();
+    fetchMock.mockRestore();
+  });
+
   it('starts on the saved quality and saves the one picked from the quality menu', async () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     videoQuality.set(720);
