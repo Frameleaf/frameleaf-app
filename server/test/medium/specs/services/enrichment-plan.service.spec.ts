@@ -188,8 +188,7 @@ describe(EnrichmentPlanService.name, () => {
       const plan = await sut.createPlan(auth, { assetIds, stages: [EnrichmentStage.Description] });
 
       // What the row says while each asset is in hand: the cursor and the asset being worked on.
-      const seen: Array<{ assetId: string; processedUnits: number; inFlight: string | null; status: string }> =
-        [];
+      const seen: Array<{ assetId: string; processedUnits: number; inFlight: string | null; status: string }> = [];
       enrichment.describeAsset.mockImplementation(async (assetId: string) => {
         const current = await row(plan.operation.id);
         seen.push({
