@@ -57,3 +57,20 @@ describe('NotificationPanel', () => {
     await waitFor(() => expect(screen.getByText('Backup finished')).toBeInTheDocument());
   });
 });
+
+describe('notificationManager.dismiss', () => {
+  it('puts back only the notification whose dismiss failed', async () => {
+    notificationManager.notifications = [notification('a', 'A'), notification('b', 'B'), notification('c', 'C')];
+    let fail!: (reason: Error) => void;
+    sdkMock.deleteNotification.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)) as never);
+    sdkMock.updateNotification.mockResolvedValue(undefined as never);
+
+    const pending = notificationManager.dismiss('b');
+    // Meanwhile another one is read and leaves the list.
+    await notificationManager.markAsRead('c');
+    fail(new Error('offline'));
+
+    await expect(pending).rejects.toThrow('offline');
+    expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['a', 'b']);
+  });
+});
