@@ -328,4 +328,80 @@ test.describe('Shared Links', () => {
     await expect(page.getByRole('dialog', { name: 'Edit shared link' })).toBeVisible();
     expect(new URL(page.url()).searchParams.has('edit')).toBe(false);
   });
+
+  test('a link’s permissions follow the owner’s change for the next visit (FL-54)', async ({ page }) => {
+    const link = await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Album,
+      albumId: album.id,
+      allowDownload: true,
+      allowUpload: false,
+    });
+    await page.goto(`/share/${link.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
+
+    // The owner turns downloads off and uploads on: an uploader who cannot take originals away.
+    await updateSharedLink(
+      { id: link.id, sharedLinkEditDto: { allowDownload: false, allowUpload: true } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+    await page.reload();
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    await expect(page.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+  });
+
+  test('the shared links screen follows the prototype: intro, keyboard tabs, badges and delete (AL-19..AL-22)', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 60_000).toISOString();
+    await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Album,
+      albumId: album.id,
+      description: 'Badge check',
+      password: 'secret',
+      allowDownload: true,
+      allowUpload: true,
+      showMetadata: true,
+      expiresAt: soon,
+    });
+
+    await page.goto('/shared-links');
+    await expect(
+      page.getByText('Anyone with a link can view what you shared, even without an account.', { exact: false }),
+    ).toBeVisible();
+
+    // AL-20: one tab stop; the arrows, Home and End move and select.
+    const tabs = page.getByRole('tablist', { name: 'Link types' });
+    await tabs.getByRole('tab', { name: /^All/ }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.getByRole('tab', { name: /^Albums/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.getByRole('tab', { name: /^Albums/ })).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(tabs.getByRole('tab', { name: /^Individual shares/ })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Home');
+    await expect(tabs.getByRole('tab', { name: /^All/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.getByRole('tab', { selected: false }).first()).toHaveAttribute('tabindex', '-1');
+
+    // AL-21: the card's badges and its open-public action.
+    const card = page.getByRole('listitem').filter({ hasText: 'Badge check' });
+    const badges = card.getByRole('list', { name: 'Link details' });
+    for (const badge of ['Password', 'Downloads', 'Uploads', 'Metadata', 'Expires in 3 days']) {
+      await expect(badges.getByText(badge)).toBeVisible();
+    }
+    await expect(card.getByText('secret')).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Open public page for Test Album' })).toBeVisible();
+
+    // AL-22: the delete dialog says who loses access and what is kept.
+    await card.getByRole('button', { name: 'Delete', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Delete shared link' });
+    await expect(dialog).toContainText(
+      'Anyone using the link for Test Album loses access immediately. Your photos and the album itself are not affected.',
+    );
+    await dialog.getByRole('button', { name: 'Delete link' }).click();
+    await expect(page.getByRole('listitem').filter({ hasText: 'Badge check' })).toHaveCount(0);
+  });
 });
