@@ -19,6 +19,7 @@ import {
   MlEndpointProbe,
   MlSelection,
   MlUsage,
+  sameEndpoint,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 
@@ -422,7 +423,12 @@ export const selectMlDestination = async (
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
   }
 
-  const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, { maxAgeMs: ML_PROBE_FRESHNESS_MS });
+  let probe = await machineLearningRepository.probe(endpoint as MlEndpoint, { maxAgeMs: ML_PROBE_FRESHNESS_MS });
+  // The RunPod endpoint can be republished or withdrawn while the spend lookup and the probe
+  // wait; admit only against the endpoint that is still current.
+  if (!sameEndpoint(resolveEndpoint(destination, machineLearningRepository.getRunPodEndpoint()), endpoint)) {
+    probe = { ...probe, reachable: false, workloads: [], hardware: null, error: 'Endpoint configuration changed' };
+  }
   await mlDestinationRepository.recordProbe(destination.id, {
     health: healthFromProbe(probe),
     summary: summarizeProbe(probe),

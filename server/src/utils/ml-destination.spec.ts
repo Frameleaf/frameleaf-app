@@ -182,6 +182,18 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it('refuses when the RunPod endpoint is replaced while the probe runs', async () => {
+    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
+    const d = deps({ destination: mlDestinationStub.runPodConsented as never, runPod: published });
+    vi.mocked(d.machineLearningRepository.getRunPodEndpoint)
+      .mockReturnValueOnce(published)
+      .mockReturnValue({ url: 'https://replaced.api.runpod.ai/', authToken: 'rp2' });
+
+    await expect(
+      selectMlDestination(d, { workload: MlWorkload.Face, destinationId: 'ml-destination-runpod' }),
+    ).rejects.toBeInstanceOf(MlDestinationRefusedError);
+  });
+
   it('admits and returns a selection whose accounting hook records the request', async () => {
     const d = deps({});
     const selection = await selectMlDestination(d, {
