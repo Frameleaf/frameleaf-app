@@ -2608,6 +2608,30 @@ export type SpeedParameters = {
     /** Speed segment start time in milliseconds */
     startMs?: number;
 };
+export type AssetEditActionItemDto = {
+    action: AssetEditAction;
+    /** List of edit actions to apply */
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+};
+export type VideoEditVersionResponseDto = {
+    /** Asset ID */
+    assetId: string;
+    /** When the version was saved */
+    createdAt: string;
+    /** The recipe rendered from the original */
+    edits: AssetEditActionItemDto[];
+    /** Video edit version ID */
+    id: string;
+    /** Whether this version is the one currently published for playback */
+    isCurrent: boolean;
+    /** Whether this version is the latest requested save or revert */
+    isRequested: boolean;
+    purpose: VideoEditVersionPurpose;
+    status: VideoEditVersionStatus;
+};
+export type VideoEditExportDto = {
+    profile: VideoEditExportProfile;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -2615,16 +2639,21 @@ export type AssetEditActionItemResponseDto = {
     /** List of edit actions to apply */
     parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
+export type AssetEditsOriginalVideoDto = {
+    /** Duration of the original in milliseconds */
+    durationMs: number;
+    /** Displayed height of the original, after its rotation */
+    height: number;
+    /** Displayed width of the original, after its rotation */
+    width: number;
+};
 export type AssetEditsResponseDto = {
     /** Asset ID these edits belong to */
     assetId: string;
     /** List of edit actions applied to the asset */
     edits: AssetEditActionItemResponseDto[];
-};
-export type AssetEditActionItemDto = {
-    action: AssetEditAction;
-    /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    /** Original video display raster and timeline, independent of the current edited version */
+    originalVideo?: AssetEditsOriginalVideoDto;
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */
@@ -10230,6 +10259,73 @@ export function renderAssetDevelopRevision({ id, revisionId }: {
     }));
 }
 /**
+ * List saved video versions
+ */
+export function getVideoEditVersions({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoEditVersionResponseDto[];
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions`, {
+        ...opts
+    }));
+}
+/**
+ * Export the current video version
+ */
+export function exportVideoEditVersion({ id, videoEditExportDto }: {
+    id: string;
+    videoEditExportDto: VideoEditExportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: VideoEditVersionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions/export`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoEditExportDto
+    })));
+}
+/**
+ * Prune an unselected video version
+ */
+export function pruneVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Download a video version master
+ */
+export function downloadVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a saved video version
+ */
+export function restoreVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}/restore`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Remove edits from an existing asset
  */
 export function removeAssetEdits({ id }: {
@@ -17425,6 +17521,19 @@ export enum AssetEditAction {
 export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
+}
+export enum VideoEditVersionPurpose {
+    Save = "save",
+    Export = "export",
+    Revert = "revert"
+}
+export enum VideoEditVersionStatus {
+    Pending = "pending",
+    Ready = "ready",
+    Failed = "failed"
+}
+export enum VideoEditExportProfile {
+    Master = "master"
 }
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
