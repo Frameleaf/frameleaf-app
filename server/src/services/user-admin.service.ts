@@ -12,6 +12,7 @@ import {
   UserAdminDeleteDto,
   UserAdminHistoryResponseDto,
   UserAdminHistorySearchDto,
+  UserAdminPinCodeStateResponseDto,
   UserAdminResponseDto,
   UserAdminSearchDto,
   UserAdminUpdateDto,
@@ -282,6 +283,18 @@ export class UserAdminService extends BaseService {
       })),
       hasMore: rows.length > take,
     };
+  }
+
+  /**
+   * FL-76 (CC-30): whether the account has a PIN, so its Security tab offers Set PIN or Change PIN
+   * and Reset PIN. Admin-only (`AdminUserRead`); only the presence is read, never the PIN.
+   */
+  async getPinCodeState(auth: AuthDto, id: string): Promise<UserAdminPinCodeStateResponseDto> {
+    const pinCode = await this.userRepository.hasPinCode(id);
+    if (pinCode === undefined) {
+      throw new NotFoundException('User not found');
+    }
+    return { pinCode };
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {

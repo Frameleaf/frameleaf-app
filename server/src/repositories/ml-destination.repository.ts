@@ -59,6 +59,14 @@ export type MlAccountingInsert = {
   finishedAt: Date;
 };
 
+/** FL-71: the destination that last served a job, for the Job manager's Worker column. */
+export type MlJobDestination = {
+  jobId: string;
+  jobName: string;
+  destinationKind: MlDestinationKind;
+  destinationName: string | null;
+};
+
 /** Measured throughput for one destination and workload, from the accounting rows. */
 export type MlThroughputSample = {
   sampleCount: number;
@@ -208,5 +216,36 @@ export class MlDestinationRepository {
       .where('startedAt', '>=', since)
       .executeTakeFirstOrThrow();
     return Number(row.spentUsd);
+  }
+
+  /**
+   * FL-71: for each job subject (the `jobId` a handler records, usually the asset id), the
+   * destination of its most recent accounted request under one of `jobNames`. A destination
+   * removed since keeps its kind with no name.
+   */
+  async getLatestJobDestinations(jobIds: string[], jobNames: string[]): Promise<MlJobDestination[]> {
+    if (jobIds.length === 0 || jobNames.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('ml_workload_accounting')
+      .leftJoin('ml_destination', 'ml_destination.id', 'ml_workload_accounting.destinationId')
+      .distinctOn(['ml_workload_accounting.jobId', 'ml_workload_accounting.jobName'])
+      .select([
+        'ml_workload_accounting.jobId',
+        'ml_workload_accounting.jobName',
+        'ml_workload_accounting.destinationKind',
+        'ml_destination.name as destinationName',
+      ])
+      .where('ml_workload_accounting.jobId', 'in', jobIds)
+      .where('ml_workload_accounting.jobName', 'in', jobNames)
+      .orderBy('ml_workload_accounting.jobId')
+      .orderBy('ml_workload_accounting.jobName')
+      .orderBy('ml_workload_accounting.startedAt', 'desc')
+      .orderBy('ml_workload_accounting.id', 'desc')
+      .execute();
+    return rows.flatMap(({ jobId, jobName, destinationKind, destinationName }) =>
+      jobId && jobName ? [{ jobId, jobName, destinationKind, destinationName }] : [],
+    );
   }
 }

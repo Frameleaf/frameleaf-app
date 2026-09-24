@@ -1280,6 +1280,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/integrity/runs": {
+      "get": {
+        "description": "Get when each integrity check last ran in full",
+        "operationId": "getIntegrityCheckRuns",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityCheckRunsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get integrity check runs",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/summary": {
       "get": {
         "description": "Get a count of the items flagged in each integrity report",
@@ -2906,6 +2953,64 @@
         ],
         "x-immich-permission": "adminUser.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/pin-code": {
+      "get": {
+        "description": "Retrieve whether a specific user has a PIN code set, never the PIN itself.",
+        "operationId": "getUserPinCodeStateAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminPinCodeStateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve whether a user has a PIN",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminUser.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/users/{id}/preferences": {
@@ -22179,6 +22284,62 @@
           }
         ],
         "x-immich-permission": "queueJob.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/jobs/retry-failed": {
+      "post": {
+        "description": "Puts every failed job of the specified queue back in the queue with its saved data.",
+        "operationId": "retryFailedQueueJobs",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueRetryFailedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "FL-71: the Job manager's \"Retry failed\" (`JobsManager.jsx` 715-727).",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -49548,6 +49709,34 @@
         ],
         "type": "string"
       },
+      "IntegrityCheckRunsResponseDto": {
+        "properties": {
+          "checksum_mismatch": {
+            "description": "When the checksum check last ran",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "missing_file": {
+            "description": "When the missing-file check last ran",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "untracked_file": {
+            "description": "When the untracked-file check last ran",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum_mismatch",
+          "missing_file",
+          "untracked_file"
+        ],
+        "type": "object"
+      },
       "IntegrityReport": {
         "description": "Integrity report type",
         "enum": [
@@ -58500,8 +58689,31 @@
         },
         "type": "object"
       },
+      "QueueJobAccountDto": {
+        "properties": {
+          "id": {
+            "description": "Account ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Account name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "QueueJobResponseDto": {
         "properties": {
+          "account": {
+            "$ref": "#/components/schemas/QueueJobAccountDto",
+            "description": "The account whose item the job works on, when the job names an asset, person, library or account"
+          },
           "attemptsMade": {
             "description": "How many times the job has been attempted",
             "maximum": 9007199254740991,
@@ -58529,12 +58741,17 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/QueueJobWorkerDto",
+            "description": "Where the job runs or ran"
           }
         },
         "required": [
           "data",
           "name",
-          "timestamp"
+          "timestamp",
+          "worker"
         ],
         "type": "object"
       },
@@ -58547,6 +58764,33 @@
           "delayed",
           "waiting",
           "paused"
+        ],
+        "type": "string"
+      },
+      "QueueJobWorkerDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/QueueJobWorkerKind"
+          },
+          "name": {
+            "description": "The processing destination name, for a machine-learning worker",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "QueueJobWorkerKind": {
+        "description": "Where a queue job runs",
+        "enum": [
+          "server",
+          "local",
+          "lan",
+          "runpod"
         ],
         "type": "string"
       },
@@ -58612,6 +58856,20 @@
         "required": [
           "jobCounts",
           "queueStatus"
+        ],
+        "type": "object"
+      },
+      "QueueRetryFailedResponseDto": {
+        "properties": {
+          "count": {
+            "description": "How many failed jobs were put back in the queue",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
         ],
         "type": "object"
       },
@@ -72683,6 +72941,18 @@
         "required": [
           "events",
           "hasMore"
+        ],
+        "type": "object"
+      },
+      "UserAdminPinCodeStateResponseDto": {
+        "properties": {
+          "pinCode": {
+            "description": "Whether the account has a PIN set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pinCode"
         ],
         "type": "object"
       },

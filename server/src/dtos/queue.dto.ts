@@ -1,7 +1,13 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { JobNameSchema, QueueCommandSchema, QueueJobStatusSchema, QueueNameSchema } from 'src/enum.js';
+import {
+  JobNameSchema,
+  QueueCommandSchema,
+  QueueJobStatusSchema,
+  QueueJobWorkerKindSchema,
+  QueueNameSchema,
+} from 'src/enum.js';
 
 const QueueNameParamSchema = z
   .object({
@@ -38,6 +44,22 @@ const QueueJobSearchSchema = z
   })
   .meta({ id: 'QueueJobSearchDto' });
 
+/** FL-71: the Job manager's Account column (`JobsManager.jsx` 760, 784). Administrators only. */
+const QueueJobAccountSchema = z
+  .object({
+    id: z.uuidv4().describe('Account ID'),
+    name: z.string().describe('Account name'),
+  })
+  .meta({ id: 'QueueJobAccountDto' });
+
+/** FL-71: the Job manager's Worker column (`JobsManager.jsx` 761, 786-795). */
+const QueueJobWorkerSchema = z
+  .object({
+    kind: QueueJobWorkerKindSchema,
+    name: z.string().nullable().describe('The processing destination name, for a machine-learning worker'),
+  })
+  .meta({ id: 'QueueJobWorkerDto' });
+
 const QueueJobResponseSchema = z
   .object({
     id: z.string().optional().describe('Job ID'),
@@ -46,8 +68,18 @@ const QueueJobResponseSchema = z
     timestamp: z.int().describe('Job creation timestamp'),
     attemptsMade: z.int().optional().describe('How many times the job has been attempted'),
     failedReason: z.string().optional().describe('Why the last attempt failed, for a failed job'),
+    account: QueueJobAccountSchema.optional().describe(
+      'The account whose item the job works on, when the job names an asset, person, library or account',
+    ),
+    worker: QueueJobWorkerSchema.describe('Where the job runs or ran'),
   })
   .meta({ id: 'QueueJobResponseDto' });
+
+const QueueRetryFailedResponseSchema = z
+  .object({
+    count: z.int().nonnegative().describe('How many failed jobs were put back in the queue'),
+  })
+  .meta({ id: 'QueueRetryFailedResponseDto' });
 
 export const QueueStatisticsSchema = z
   .object({
@@ -74,5 +106,6 @@ export class QueueUpdateDto extends createZodDto(QueueUpdateSchema) {}
 export class QueueDeleteDto extends createZodDto(QueueDeleteSchema) {}
 export class QueueJobSearchDto extends createZodDto(QueueJobSearchSchema) {}
 export class QueueJobResponseDto extends createZodDto(QueueJobResponseSchema) {}
+export class QueueRetryFailedResponseDto extends createZodDto(QueueRetryFailedResponseSchema) {}
 export class QueueStatisticsDto extends createZodDto(QueueStatisticsSchema) {}
 export class QueueResponseDto extends createZodDto(QueueResponseSchema) {}

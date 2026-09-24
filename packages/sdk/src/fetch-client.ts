@@ -718,6 +718,14 @@ export type IntegrityReportResponseDto = {
     }[];
     nextCursor?: string;
 };
+export type IntegrityCheckRunsResponseDto = {
+    /** When the checksum check last ran */
+    checksum_mismatch: string | null;
+    /** When the missing-file check last ran */
+    missing_file: string | null;
+    /** When the untracked-file check last ran */
+    untracked_file: string | null;
+};
 export type IntegrityReportSummaryResponseDto = {
     checksum_mismatch: number;
     missing_file: number;
@@ -1256,6 +1264,10 @@ export type UserAdminHistoryResponseDto = {
     events: UserAdminHistoryEventResponseDto[];
     /** True when older events exist beyond this page */
     hasMore: boolean;
+};
+export type UserAdminPinCodeStateResponseDto = {
+    /** Whether the account has a PIN set */
+    pinCode: boolean;
 };
 export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
@@ -6035,7 +6047,20 @@ export type QueueDeleteDto = {
     /** If true, will also remove failed jobs from the queue. */
     failed?: boolean;
 };
+export type QueueJobAccountDto = {
+    /** Account ID */
+    id: string;
+    /** Account name */
+    name: string;
+};
+export type QueueJobWorkerDto = {
+    kind: QueueJobWorkerKind;
+    /** The processing destination name, for a machine-learning worker */
+    name: string | null;
+};
 export type QueueJobResponseDto = {
+    /** The account whose item the job works on, when the job names an asset, person, library or account */
+    account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
     /** Job data payload */
@@ -6049,6 +6074,12 @@ export type QueueJobResponseDto = {
     name: JobName;
     /** Job creation timestamp */
     timestamp: number;
+    /** Where the job runs or ran */
+    worker: QueueJobWorkerDto;
+};
+export type QueueRetryFailedResponseDto = {
+    /** How many failed jobs were put back in the queue */
+    count: number;
 };
 export type RenderWorkerAdmissionDto = {
     /** Encoder and decoder names the check verified */
@@ -9449,6 +9480,17 @@ export function getIntegrityReportCsv({ $type }: {
     }));
 }
 /**
+ * Get integrity check runs
+ */
+export function getIntegrityCheckRuns(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityCheckRunsResponseDto;
+    }>("/admin/integrity/runs", {
+        ...opts
+    }));
+}
+/**
  * Get integrity report summary
  */
 export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
@@ -9840,6 +9882,19 @@ export function getUserHistoryAdmin({ before, id, take }: {
         before,
         take
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve whether a user has a PIN
+ */
+export function getUserPinCodeStateAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminPinCodeStateResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/pin-code`, {
         ...opts
     }));
 }
@@ -14383,6 +14438,20 @@ export function getQueueJobs({ name, status }: {
         status
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * FL-71: the Job manager's "Retry failed" (`JobsManager.jsx` 715-727).
+ */
+export function retryFailedQueueJobs({ name }: {
+    name: QueueName;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueRetryFailedResponseDto;
+    }>(`/queues/${encodeURIComponent(name)}/jobs/retry-failed`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -18968,6 +19037,12 @@ export enum JobName {
     IntegrityChecksumFilesRefresh = "IntegrityChecksumFilesRefresh",
     IntegrityDeleteReportType = "IntegrityDeleteReportType",
     IntegrityDeleteReports = "IntegrityDeleteReports"
+}
+export enum QueueJobWorkerKind {
+    Server = "server",
+    Local = "local",
+    Lan = "lan",
+    Runpod = "runpod"
 }
 export enum Status3 {
     Preparing = "preparing",
