@@ -144,7 +144,7 @@
         {@const on = rule.personIds.includes(person.id)}
         <label class="check person" class:on>
           <input type="checkbox" checked={on} onchange={() => set({ personIds: toggle(rule.personIds, person.id) })} />
-          <img src={getPeopleThumbnailUrl(person)} alt="" width="24" height="24" />
+          <img class="fl-squircle" src={getPeopleThumbnailUrl(person)} alt="" width="24" height="24" />
           <span>{person.name}</span>
         </label>
       {/each}
@@ -334,7 +334,6 @@
   .check img {
     width: 24px;
     height: 24px;
-    border-radius: 50%;
     object-fit: cover;
   }
   .check input {

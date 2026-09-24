@@ -22,6 +22,7 @@
   import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
+  import { applyThemeColor } from '$lib/frameleaf/theme-color';
   import frameleafLogoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
   import frameleafSymbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import { getServerConfig } from '@immich/sdk';
@@ -43,6 +44,9 @@
   import '../app.css';
 
   trackSessionModals(modalManager);
+
+  // The browser chrome follows the app theme, not the OS colour scheme (App.jsx:2193-2203).
+  $effect(() => applyThemeColor(themeManager.value === Theme.Dark ? 'dark' : 'light'));
 
   interface Props {
     children?: Snippet;
@@ -269,8 +273,6 @@
 <svelte:head>
   <title>{page.data.meta?.title || 'Web'} - Frameleaf</title>
   <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
-  <meta name="theme-color" content="white" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="black" media="(prefers-color-scheme: dark)" />
 
   {#if page.data.meta}
     <meta name="description" content={page.data.meta.description} />

@@ -31,6 +31,17 @@
   --fl-warning-text: #2b1f05;
   --fl-danger: #f16966;
   --fl-danger-text: #2a0605;
+  /* Reserved for AI-produced content: the sparkle on a solid indigo tile (tokens.json `ai`). */
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  /*
+   * Foregrounds on the frosted material. The material lets a photograph show through, so it can
+   * be as bright as white or as dark as black behind the panel tint; only these tokens and
+   * --fl-text are checked at 4.5:1 across both extremes and the solid fallback. --fl-muted and
+   * --fl-accent are not: use the on-material pair for secondary text and accent marks on material.
+   */
+  --fl-on-material-muted: #d3dae0;
+  --fl-on-material-accent: #8be9ab;
   --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
   --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
   /*
@@ -70,6 +81,10 @@
   --fl-warning-text: #ffffff;
   --fl-danger: #c62828;
   --fl-danger-text: #ffffff;
+  --fl-ai: #5e5ce6;
+  --fl-ai-text: #ffffff;
+  --fl-on-material-muted: #36434b;
+  --fl-on-material-accent: #0b4f28;
   --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 13%);
   --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 20%);
   --fl-viewer-canvas: #08090b;
@@ -93,10 +108,62 @@
    * back to 0. New code uses --fl-radius-card or --fl-radius-control directly.
    */
   --fl-panel-radius: var(--fl-radius-control);
+  /* The sheet radius (apple-style.css:48 `--fl-radius-sheet`); --fl-radius-dialog is the same corner. */
+  --fl-radius-sheet: var(--fl-radius-dialog);
   --fl-motion-fast: 120ms;
   --fl-motion: 180ms;
   --fl-motion-slow: 240ms;
   --fl-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /*
+   * September 24 motion (apple-style.css:11-40): a spring with a slight settle for sheets,
+   * menus and presses, and a snappy ease for small moves. Svelte transitions read the same
+   * preference through $lib/frameleaf/motion.ts, which turns movement into crossfades.
+   */
+  --fl-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141,
+    0.281 6.7%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017,
+    1.077,
+    1.121,
+    1.149 24.3%,
+    1.159,
+    1.163,
+    1.161,
+    1.154 29.9%,
+    1.129 32.8%,
+    1.051 39.6%,
+    1.017 43.1%,
+    0.991,
+    0.977 51%,
+    0.974 53.8%,
+    0.975 57.1%,
+    0.997 69.8%,
+    1.003 76.9%,
+    1
+  );
+  --fl-snappy: cubic-bezier(0.2, 0.9, 0.1, 1);
+  --fl-duration: 380ms;
+  /*
+   * Frosted materials (apple-style.css:41-44): the panel at 72% over a blurred backdrop, with
+   * a hairline edge. Increase Contrast and Reduce Transparency swap in a solid panel below.
+   * Text on material uses --fl-text, --fl-on-material-muted or --fl-on-material-accent only.
+   */
+  --fl-material: color-mix(in srgb, var(--fl-panel) 72%, transparent);
+  --fl-material-edge: color-mix(in srgb, var(--fl-text) 12%, transparent);
+  --fl-material-blur: blur(24px) saturate(180%);
+  /*
+   * Edge-to-edge devices: chrome keeps clear of the notch and home indicator
+   * (apple-style.css:502-513). env() reads 0 where there is no inset.
+   */
+  --fl-safe-top: env(safe-area-inset-top, 0px);
+  --fl-safe-right: env(safe-area-inset-right, 0px);
+  --fl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --fl-safe-left: env(safe-area-inset-left, 0px);
   --fl-font-size: 14px;
   --fl-font-small: 12px;
   --fl-font-micro: 11px;
@@ -105,7 +172,32 @@
   background: var(--fl-canvas);
   font-size: var(--fl-font-size);
   line-height: 1.45;
+  /* SF Pro on Apple devices, bundled Inter elsewhere: SF Pro cannot be licensed for web delivery. */
   font-family: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
+}
+/*
+ * Solid fallbacks for the frosted material (apple-style.css:51-57): under Increase Contrast or
+ * Reduce Transparency the material is the opaque panel, its edge the ordinary border, and
+ * nothing behind it is blurred.
+ */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .frameleaf {
+    --fl-material: var(--fl-panel);
+    --fl-material-edge: var(--fl-border);
+    --fl-material-blur: none;
+  }
+}
+/*
+ * The Display P3 accent (apple-style.css:70-77, tokens.json `accentP3`) on wide-gamut screens.
+ * web/src/lib/frameleaf/tokens.spec.ts checks it keeps the sRGB accent's contrast.
+ */
+@media (color-gamut: p3) {
+  .frameleaf[data-theme='dark'] {
+    --fl-accent: color(display-p3 0.2 0.82 0.38);
+  }
+  .frameleaf[data-theme='light'] {
+    --fl-accent: color(display-p3 0.1 0.5 0.26);
+  }
 }
 .frameleaf :focus-visible {
   outline: 2px solid var(--fl-accent);

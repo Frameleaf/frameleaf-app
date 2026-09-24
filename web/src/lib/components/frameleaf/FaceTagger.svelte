@@ -695,7 +695,7 @@
               >
                 <button
                   type="button"
-                  class="ft-face-move"
+                  class="ft-face-move fl-no-press"
                   aria-label={$t('frameleaf_face_tagger_face_label', { values: { index: index + 1, name: label } })}
                   aria-pressed={face.id === selectedId}
                   disabled={saving}
@@ -713,7 +713,7 @@
                 {#if face.id === selectedId && !face.detected}
                   <button
                     type="button"
-                    class="ft-resize"
+                    class="ft-resize fl-no-press"
                     aria-label={$t('frameleaf_face_tagger_resize', { values: { index: index + 1 } })}
                     title={$t('frameleaf_face_tagger_resize_hint')}
                     disabled={saving}
@@ -806,7 +806,7 @@
               {@const active = current.personId === person.id}
               <button type="button" disabled={saving} aria-pressed={active} class:active onclick={() => choose(person)}>
                 {#if isNewPerson(person)}
-                  <span class="ft-avatar-placeholder" aria-hidden="true">{person.name.charAt(0)}</span>
+                  <span class="ft-avatar-placeholder fl-squircle" aria-hidden="true">{person.name.charAt(0)}</span>
                 {:else}
                   <PersonAvatar {person} size={36} />
                 {/if}
@@ -1149,7 +1149,6 @@
     flex-shrink: 0;
     width: 36px;
     height: 36px;
-    border-radius: 50%;
     background: var(--fl-raised);
     color: var(--fl-muted);
   }

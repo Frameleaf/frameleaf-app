@@ -23,13 +23,12 @@
   import { focusOutside } from '$lib/actions/focus-outside';
   import { shortcuts } from '$lib/actions/shortcut';
   import { generateId } from '$lib/utils/generate-id';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { Icon, IconButton, Label } from '@immich/ui';
   import { mdiChevronDown, mdiClose, mdiMagnify } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { FormEventHandler } from 'svelte/elements';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
 
   interface Props {
     label: string;
@@ -383,7 +382,7 @@
   <ul
     role="listbox"
     id={listboxId}
-    in:fly={{ duration: mediaQueryManager.reducedMotion ? 0 : 250 }}
+    in:motionFly={{ duration: 250 }}
     class="fixed z-1 w-full overflow-y-auto border-gray-300 bg-white text-start text-sm dark:border-gray-900 dark:bg-gray-800"
     class:rounded-b-xl={dropdownDirection === 'bottom'}
     class:rounded-t-xl={dropdownDirection === 'top'}

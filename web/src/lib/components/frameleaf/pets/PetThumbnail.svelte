@@ -12,7 +12,8 @@
    * the facial-recognition job wrote, and no equivalent job exists for pets. The featured
    * photo is therefore an ordinary asset thumbnail, requested through the same
    * authorized media URL as every other thumbnail, and a pet with no featured photo gets
-   * a plain mark rather than a borrowed image.
+   * a plain mark rather than a borrowed image. Like every people photo it is a squircle
+   * (apple-style.css:137-148; the people grid is the prototype pattern pets follow).
    */
   let {
     assetId,
@@ -22,14 +23,13 @@
   }: { assetId?: string | null; cacheKey?: string | null; size?: number; alt?: string } = $props();
 </script>
 
-<span class="pet-thumb" style:width="{size}px" style:height="{size}px">
+<span class="pet-thumb fl-squircle" style:width="{size}px" style:height="{size}px">
   {#if assetId}
     {#key assetId + (cacheKey ?? '')}
       <ImageThumbnail
         url={getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Thumbnail, cacheKey })}
         altText={alt}
         widthStyle="100%"
-        circle
       />
     {/key}
   {:else}
@@ -44,7 +44,6 @@
     display: inline-flex;
     flex-shrink: 0;
     overflow: hidden;
-    border-radius: 50%;
     background: var(--fl-raised);
   }
   .placeholder {
