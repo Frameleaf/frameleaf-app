@@ -72,7 +72,10 @@ export class CliService extends BaseService {
     await this.userRepository.update(admin.id, { password: hashedPassword });
 
     if (invalidateSessions) {
-      await this.sessionRepository.invalidateAll({ userId: admin.id });
+      const deletedIds = await this.sessionRepository.invalidateAll({ userId: admin.id });
+      for (const sessionId of deletedIds) {
+        await this.eventRepository.emit('SessionDelete', { sessionId });
+      }
     }
 
     return { admin, password, provided: !!providedPassword };
