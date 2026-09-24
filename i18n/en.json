@@ -3890,7 +3890,7 @@
   "frameleaf_library_rating_rejected": "Rejected",
   "frameleaf_library_rating_stars": "{count, plural, one {# star} other {# stars}}",
   "frameleaf_library_remove_filter": "Remove filter {name}",
-  "frameleaf_library_select_all_in_group": "Select everything in {title}",
+  "frameleaf_library_select_all_in_group": "Select all in {title}",
   "frameleaf_library_select_item": "Select {title}",
   "frameleaf_library_shortcut_clear_selection": "Clear selection",
   "frameleaf_library_shortcut_group_days": "Group by day",
