@@ -113,6 +113,40 @@ export class SessionRepository {
     return !!result;
   }
 
+  /**
+   * Elevates a session after its PIN was checked (FL-34), only while the account's PIN and password
+   * are still the ones that check read. A PIN change or reset, or a password change, that commits
+   * (with its `lockAll`) between the check and this write is never undone by it: PostgreSQL
+   * re-evaluates the predicate against the committed user row. Returns whether it applied.
+   */
+  async elevate(
+    id: string,
+    userId: string,
+    verified: { pinCode: string | null; password: string | null },
+    pinExpiresAt: Date,
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt })
+      .where('session.id', '=', asUuid(id))
+      .where('session.userId', '=', asUuid(userId))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('user')
+            .select('user.id')
+            .whereRef('user.id', '=', 'session.userId')
+            .where('user.deletedAt', 'is', null)
+            .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
+            .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
+            .forShare(),
+        ),
+      )
+      .returning('session.id')
+      .executeTakeFirst();
+    return !!result;
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(id: string) {
     await this.db.deleteFrom('session').where('id', '=', asUuid(id)).execute();
