@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import { goto, replaceState } from '$app/navigation';
+  import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
@@ -90,6 +90,7 @@
     mdiViewGridOutline,
     mdiViewListOutline,
   } from '@mdi/js';
+  import { hasRouterStarted } from '$lib/utils/router-started';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -261,9 +262,18 @@
    * request is consumed once and dropped from the address, so opening All albums afterwards, going
    * back or reloading never replays it (September 24 polish pass).
    */
+  // `replaceState` throws before the router's first navigation, as on a direct load of the link.
+  let routerReady = $state(hasRouterStarted());
+  afterNavigate(() => {
+    routerReady = true;
+  });
+
   $effect(() => {
     const request = page.url.searchParams.get('create');
     if (request !== 'album' && request !== 'space') {
+      return;
+    }
+    if (!routerReady) {
       return;
     }
     untrack(() => openCreate(request === 'space' ? AlbumKind.Space : AlbumKind.Album));

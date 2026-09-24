@@ -3,7 +3,11 @@
   import { currentTab, showsTabBar, type TabBarId } from '$lib/frameleaf/navigation';
   import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
   import '$lib/frameleaf/tokens.css';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { Icon } from '@immich/ui';
   import { mdiFolderMultipleOutline, mdiHistory, mdiImageMultipleOutline, mdiMagnify } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -16,14 +20,16 @@
    * Library Care are reachable only from there. Studio and the settings screens have no tab bar.
    *
    * Search opens the one search entry in the top bar (the same event ⌘K sends), so there is still
-   * exactly one search surface.
+   * exactly one search surface. Memories and Search follow the same switches as the rail (the
+   * account's Memories preference, the server's search feature). While the ☰ drawer is open the tab
+   * bar steps away so the drawer's footer (Library Care, Settings, Support) stays reachable.
    */
 
   let { theme }: { theme: 'dark' | 'light' } = $props();
 
   type Tab = { id: TabBarId; labelKey: Translations; icon: string; href?: string };
 
-  const TABS: Tab[] = [
+  const ALL_TABS: Tab[] = [
     { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
     { id: 'memories', labelKey: 'memories', icon: mdiHistory, href: Route.memories() },
     // The prototype's "collections" screen: every album and shared space.
@@ -31,7 +37,18 @@
     { id: 'search', labelKey: 'search', icon: mdiMagnify },
   ];
 
-  const visible = $derived(showsTabBar(page.url.pathname));
+  const memories = $derived(
+    authManager.authenticated &&
+      authManager.preferences.memories.enabled &&
+      authManager.preferences.memories.sidebarWeb,
+  );
+  const TABS = $derived(
+    ALL_TABS.filter(
+      (tab) => (tab.id !== 'memories' || memories) && (tab.id !== 'search' || featureFlagsManager.value.search),
+    ),
+  );
+  const drawerOpen = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
+  const visible = $derived(showsTabBar(page.url.pathname) && !drawerOpen);
   const current = $derived(currentTab(page.url.pathname));
 
   const openSearch = () => dispatchEvent(new CustomEvent(SEARCH_SHORTCUT_EVENT));
@@ -71,9 +88,11 @@
       left: max(12px, var(--fl-safe-left));
       right: max(12px, var(--fl-safe-right));
       bottom: max(10px, var(--fl-safe-bottom));
-      z-index: 40;
+      /* apple-style.css "#7 phone tab bar": over the page, under dialogs and the drawer. */
+      z-index: 8;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-auto-columns: 1fr;
+      grid-auto-flow: column;
       padding: 6px;
       border: 1px solid var(--fl-material-edge);
       border-radius: 26px;

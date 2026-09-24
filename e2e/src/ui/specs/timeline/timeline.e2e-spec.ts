@@ -274,6 +274,54 @@ test.describe('Timeline', () => {
     });
   });
 
+  test.describe('September 24 chrome', () => {
+    test('rows start where their group header starts under the sticky toolbar', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Timeline');
+      const band = page.getByTestId('frameleaf-group').first();
+      const month = page.locator('.fl-month').first();
+      await expect(month).toBeVisible();
+      // The band is placed by its own top and each month by its transform; both measure from the
+      // body's top, so an in-flow sticky header block must not push the months down.
+      await expect
+        .poll(async () => {
+          const [bandBox, monthBox] = await Promise.all([band.boundingBox(), month.boundingBox()]);
+          return Math.round(Math.abs((bandBox?.y ?? 0) - (monthBox?.y ?? Infinity)));
+        })
+        .toBeLessThanOrEqual(1);
+    });
+
+    test('the frosted results toolbar stays at the top while the photos scroll', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      const scroller = page.locator('.fl-timeline-scroll');
+      const toolbar = page.getByTestId('frameleaf-results-toolbar');
+      const before = await toolbar.boundingBox();
+      await scroller.evaluate((element) => element.scrollBy(0, 3000));
+      await expect(toolbar).toBeInViewport();
+      const [after, scrollerBox] = await Promise.all([toolbar.boundingBox(), scroller.boundingBox()]);
+      expect(after!.y).toBeLessThanOrEqual(before!.y);
+      expect(after!.y).toBeGreaterThanOrEqual(scrollerBox!.y - 1);
+      // The group headers stick below it, not under it.
+      const offset = await page
+        .getByTestId('frameleaf-library')
+        .evaluate((element) =>
+          Number(getComputedStyle(element).getPropertyValue('--fl-sticky-offset').replace('px', '')),
+        );
+      expect(offset).toBeGreaterThan(0);
+    });
+
+    test('on a phone the drawer footer stays reachable over the tab bar', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await pageUtils.openPhotosPage(page);
+      await expect(page.getByRole('navigation', { name: 'Sections' })).toBeVisible();
+      await page.getByRole('button', { name: 'Main menu' }).click();
+      // The tab bar steps away while the drawer is open.
+      await expect(page.getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
+      await railLink(page, 'Library Care').click();
+      await expect(page).toHaveURL(/area=care/);
+    });
+  });
+
   test.describe('keyboard', () => {
     /**
      * Arrow keys move focus between tiles (prototype `App.jsx` focus-previous / focus-next) and the
