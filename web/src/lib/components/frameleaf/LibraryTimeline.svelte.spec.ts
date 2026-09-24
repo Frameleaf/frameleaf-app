@@ -10,6 +10,8 @@ import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
 
 vi.mock('$app/navigation', () => ({ afterNavigate: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
+const routerStarted = vi.hoisted(() => ({ value: false }));
+vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => routerStarted.value }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { nsfwHiding: true } },
 }));
@@ -110,5 +112,51 @@ describe('LibraryTimeline year grouping', () => {
     expect(session.selection).toEqual([]);
     expect(yearCheckbox().checked).toBe(false);
     expect(scroller(container).getAttribute('aria-busy')).toBe('false');
+  });
+});
+
+// FL-34 (ported from PR131 8c6bf6bb31): the session privacy gate can mount a routed timeline after
+// the router's first navigation, when no `afterNavigate` call will come for it
+describe('LibraryTimeline mounted after the first navigation', () => {
+  let manager: TimelineManager;
+  let session: LibrarySessionStore;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    sdkMock.getTimeBuckets.mockResolvedValue([]);
+    manager = new TimelineManager();
+    session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+    session.dispatch({ type: 'anchor', id: 'asset-anchor' });
+  });
+
+  afterEach(() => {
+    routerStarted.value = false;
+  });
+
+  const renderRouted = () =>
+    render(LibraryTimeline, {
+      timelineManager: manager,
+      session,
+      grouping: 'days',
+      onGroupingChange: vi.fn(),
+      enableRouting: true,
+    });
+
+  it('places the grid on mount once the router has started', async () => {
+    routerStarted.value = true;
+    const find = vi.spyOn(manager, 'findTimelineMonthForAsset').mockResolvedValue(undefined);
+
+    renderRouted();
+
+    await waitFor(() => expect(find).toHaveBeenCalledWith({ id: 'asset-anchor' }));
+  });
+
+  it('leaves the first placement to the router while it has not started', async () => {
+    const find = vi.spyOn(manager, 'findTimelineMonthForAsset').mockResolvedValue(undefined);
+
+    renderRouted();
+    await tick();
+
+    expect(find).not.toHaveBeenCalled();
   });
 });
