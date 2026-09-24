@@ -511,6 +511,13 @@
     flex-shrink: 0;
     color: var(--fl-muted);
   }
+  /* Phones: the ☰ drawer ends above the frosted tab bar (template `.sidebar.mobile-open`,
+     bottom inset = tab bar height + safe area), so its footer stays reachable. */
+  @media (max-width: 700px) {
+    :global(#sidebar) {
+      margin-bottom: var(--fl-tabbar-height, 0px);
+    }
+  }
   @media (pointer: coarse) {
     .fl-link {
       min-height: 48px;
