@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetMetadataKey, AssetOrder, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AssetMetadataKey, AssetOrder, AssetVisibility, SharedLinkType, TimeBucketDateType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
@@ -235,5 +235,38 @@ describe('TimelineService.getTimelineHighlights (FL-33)', () => {
 
     const [card] = await sut.getTimelineHighlights(factory.auth({ user }), { grouping: 'month' });
     expect(card).toEqual(expect.objectContaining({ count: 2, keyAssetId: scored.id }));
+  });
+
+  it('groups, breaks ties and orders by the date added when asked', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset: takenLateAddedEarly } = await ctx.newAsset({
+      ownerId: user.id,
+      localDateTime: new Date('2024-05-30T10:00:00Z'),
+      createdAt: new Date('2024-06-01T10:00:00Z'),
+    });
+    const { asset: takenEarlyAddedLate } = await ctx.newAsset({
+      ownerId: user.id,
+      localDateTime: new Date('2024-01-01T10:00:00Z'),
+      createdAt: new Date('2024-06-20T10:00:00Z'),
+    });
+    for (const { id } of [takenLateAddedEarly, takenEarlyAddedLate]) {
+      await ctx.newExif({ assetId: id, make: 'Canon' });
+    }
+
+    const cards = await sut.getTimelineHighlights(factory.auth({ user }), {
+      grouping: 'month',
+      dateType: TimeBucketDateType.Added,
+    });
+    // one June card; with nothing else to rank by, the most recently added photo is the key
+    expect(cards).toEqual([
+      {
+        timeBucket: '2024-06-01',
+        count: 2,
+        keyAssetId: takenEarlyAddedLate.id,
+        highlightAssetIds: [takenLateAddedEarly.id],
+        places: [],
+      },
+    ]);
   });
 });

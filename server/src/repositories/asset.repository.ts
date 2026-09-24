@@ -1602,6 +1602,11 @@ export class AssetRepository {
     const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
     const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
     const size = grouping === 'year' ? 'YEAR' : 'MONTH';
+    // the same date the cards are grouped by breaks ties and orders the highlights
+    const sortDate =
+      options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
+        ? sql<Date>`asset."createdAt"`
+        : sql<Date>`asset."localDateTime"`;
     const place = sql`coalesce(nullif(trim(e.city), ''), nullif(trim(e.state), ''), nullif(trim(e.country), ''))`;
     const locationShared = hiddenOwnerIds.length > 0 ? sql`not (a."ownerId" = ${anyUuid(hiddenOwnerIds)})` : sql`true`;
 
@@ -1616,20 +1621,20 @@ export class AssetRepository {
         ${this.timelineAssets(options, auth, this.timelineBucketDate(options, size)).select([
           'asset.id',
           'asset.ownerId',
-          'asset.localDateTime',
+          sortDate.as('sortDate'),
         ])}
       ),
       ranked as (
         select
           a.id,
           a."timeBucket",
-          a."localDateTime",
+          a."sortDate",
           row_number() over (
             partition by a."timeBucket"
             order by
               s.score desc nulls last,
               nullif(greatest(e.rating, 0), 0) desc nulls last,
-              a."localDateTime" desc,
+              a."sortDate" desc,
               a.id asc
           ) as rank
         from asset a
@@ -1650,7 +1655,7 @@ export class AssetRepository {
         (r."timeBucket" at time zone 'UTC')::date::text as "timeBucket",
         count(*) as count,
         (array_agg(r.id::text) filter (where r.rank = 1))[1] as "keyAssetId",
-        array_agg(r.id::text order by r."localDateTime" ${order}, r.id) filter (
+        array_agg(r.id::text order by r."sortDate" ${order}, r.id) filter (
           where r.rank > 1 and r.rank <= ${1 + highlightCount}
         ) as "highlightAssetIds",
         (
