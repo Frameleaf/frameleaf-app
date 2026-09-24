@@ -23,7 +23,7 @@ const sections = [
     admin: true,
   },
   { key: 'trash', title: 'Trash settings', subtitle: 'Manage trash settings', admin: true },
-  { key: 'job', title: 'Job settings', subtitle: 'Manage job concurrency', admin: true },
+  { key: 'queues', title: 'Job manager', subtitle: 'Manage queues & jobs', admin: true },
   { key: 'authentication', title: 'Authentication settings', subtitle: 'Manage password, OAuth', admin: true },
 ];
 
@@ -39,6 +39,7 @@ describe('Frameleaf settings areas', () => {
 
   it('keeps every legacy accordion key that other pages deep link to', () => {
     // OpenQueryParam.JOB, OpenQueryParam.STORAGE_TEMPLATE, OpenQueryParam.OAUTH's section, OpenQueryParam.NOTIFICATIONS
+    // The old job settings key opens the Job manager, where queue concurrency is edited.
     expect(areaForSection('job')).toBe('processing');
     expect(areaForSection('storage-template')).toBe('storage');
     expect(areaForSection('authentication')).toBe('security');
@@ -167,7 +168,7 @@ describe('Frameleaf settings areas', () => {
     it('opens the named section of the area, or the first isOpen key the area holds', () => {
       expect(resolveSettingsSection('server', { section: 'theme' })).toBe('theme');
       expect(resolveSettingsSection('server', { section: 'job' })).toBeUndefined();
-      expect(resolveSettingsSection('processing', { isOpen: 'library-watch job' })).toBe('job');
+      expect(resolveSettingsSection('processing', { isOpen: 'library-watch job' })).toBe('queues');
       expect(resolveSettingsSection('notifications', { isOpen: 'notifications' })).toBe('email-preferences');
       expect(resolveSettingsSection('backup', { isOpen: 'preservation' })).toBe('preservation');
       expect(resolveSettingsSection('storage', {})).toBeUndefined();
@@ -180,7 +181,7 @@ describe('Frameleaf settings areas', () => {
       expect(searchSettingsSections(sections, 'manage').map((s) => s.key)).toEqual([
         'storage-template',
         'trash',
-        'job',
+        'queues',
         'authentication',
       ]);
       expect(searchSettingsSections(sections, ' '.repeat(3))).toEqual([]);

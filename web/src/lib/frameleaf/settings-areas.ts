@@ -89,11 +89,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     order: ['integrity-checks', 'repair', 'enrichment-care'],
   },
   // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
-  // and /admin/render-workers pages are sections of Compute & jobs, with the job and nightly settings.
+  // and /admin/render-workers pages are sections of Compute & jobs, with the nightly settings. As in
+  // the template, queue concurrency is edited only in the Job manager's concurrency dialog; the old
+  // job settings key (`isOpen=job`) opens the Job manager.
   {
     id: 'processing',
     group: 'server',
-    sections: ['workers', 'routing', 'queues', 'job', 'render-workers', 'nightly-tasks'],
+    sections: ['workers', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
   },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
@@ -192,9 +194,15 @@ export const commandCenterUrl = (
 export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) =>
   commandCenterUrl('analytics', undefined, { scope: params.scope, range: params.range });
 
+/** Server section keys older links use for a section that now has another key. */
+const SERVER_ALIASES: Record<string, string> = { job: 'queues' };
+
+/** The server section a legacy key names. */
+export const serverSectionKey = (key: string) => SERVER_ALIASES[key] ?? key;
+
 /** The area that owns a server settings section key, for `?isOpen=` links written before the areas existed. */
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>
-  SETTINGS_AREAS.find((area) => area.sections.includes(sectionKey))?.id;
+  SETTINGS_AREAS.find((area) => area.sections.includes(serverSectionKey(sectionKey)))?.id;
 
 /** Account section keys the older personal settings page used under another name. */
 const PERSONAL_ALIASES: Record<string, string> = { notifications: 'email-preferences' };
@@ -255,8 +263,8 @@ export const resolveSettingsSection = (
     if (area_?.personal?.includes(personalSectionKey(key))) {
       return personalSectionKey(key);
     }
-    if (area_?.sections.includes(key)) {
-      return key;
+    if (area_?.sections.includes(serverSectionKey(key))) {
+      return serverSectionKey(key);
     }
   }
   return DIRECT_SECTION[area];
