@@ -312,7 +312,7 @@ test.describe('Shared Links', () => {
 
     // The floating selection bar (SelectionBar.jsx) keeps the less common actions under More.
     const selectionBar = page.getByRole('region', { name: 'Selected items' });
-    await selectionBar.getByRole('button', { name: 'More' }).click();
+    await selectionBar.getByRole('button', { name: 'More actions' }).click();
     // Pruning a link is immediate and reported in the bar, like every other bulk action.
     await page.getByRole('menuitem', { name: 'Remove from shared link' }).click();
 
