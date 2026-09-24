@@ -12,7 +12,7 @@ import {
   JobStatus,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { ImageEnrichmentService, descriptionConfidence } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
@@ -104,6 +104,96 @@ describe(ImageEnrichmentService.name, () => {
       { name: JobName.ImageDescription, data: { id: firstAssetId } },
       { name: JobName.ImageDescription, data: { id: secondAssetId } },
     ]);
+  });
+
+  describe('description confidence (FL-36)', () => {
+    const storedDescription = (result: Record<string, unknown>) => ({
+      key: AssetMetadataKey.MlEnrichment,
+      updatedAt: new Date(),
+      value: {
+        description: {
+          status: 'success',
+          modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
+          updatedAt: '2026-05-05T00:00:00.000Z',
+          result: {
+            description: 'A kitchen.',
+            people: [],
+            environment: '',
+            objects: [],
+            visible_text: [],
+            context: '',
+            tags: [],
+            ...result,
+          },
+        },
+      },
+    });
+
+    it.each([
+      [0.82, 0.82],
+      [0, 0],
+      [1, 1],
+      [82, null],
+      [-0.1, null],
+      ['high', null],
+      [NaN, null],
+      [undefined, null],
+    ])('keeps only a reported 0-1 number (%s)', (confidence, expected) => {
+      expect(descriptionConfidence({ confidence })).toBe(expected);
+    });
+
+    it('returns the stored confidence, or null when the destination reported none', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.getMetadataByKey.mockResolvedValue(storedDescription({ confidence: 0.7 }) as never);
+      await expect(sut.getAssetEnrichment(authStub.user1, assetId)).resolves.toMatchObject({
+        description: { status: 'success', confidence: 0.7 },
+      });
+
+      mocks.asset.getMetadataByKey.mockResolvedValue(storedDescription({}) as never);
+      const missing = await sut.getAssetEnrichment(authStub.user1, assetId);
+      expect(missing.description.confidence).toBeNull();
+
+      mocks.asset.getMetadataByKey.mockResolvedValue({ value: {} } as never);
+      const none = await sut.getAssetEnrichment(authStub.user1, assetId);
+      expect(none.description).toMatchObject({ status: 'missing', confidence: null });
+    });
+
+    it.each([
+      [0.64, 0.64],
+      ['medium', null],
+    ])('stores a reported confidence of %s as %s', async (reported, stored) => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+      });
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        type: AssetType.Image,
+        status: AssetStatus.Active,
+        deletedAt: null,
+        visibility: AssetVisibility.Timeline,
+        description: '',
+        previewFile,
+      });
+      mocks.machineLearning.describeImage.mockResolvedValue({
+        description: 'A kitchen.',
+        confidence: reported as number,
+        people: [],
+        environment: 'kitchen',
+        objects: [],
+        visible_text: [],
+        context: '',
+        tags: [],
+      });
+
+      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+      const saved = mocks.asset.upsertMetadata.mock.calls
+        .flatMap(([, items]) => items)
+        .map((item) => item.value as { description?: { status: string; result?: { confidence?: unknown } } })
+        .findLast((value) => value.description?.status === 'success');
+      expect(saved?.description?.result?.confidence).toBe(stored);
+    });
   });
 
   it('should require asset update access when reading private enrichment metadata', async () => {

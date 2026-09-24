@@ -612,3 +612,41 @@ describe('unlocking assets', () => {
     await expect(new ForkPrivacyRepository(database).get(sibling.id)).resolves.toEqual(reviewed);
   });
 });
+
+// FL-36: the description confidence round-trips through the stored enrichment record, owner only
+describe('description confidence', () => {
+  const save = async (sut: ImageEnrichmentService, assetId: string, result: Record<string, unknown>) => {
+    const service = sut as unknown as {
+      saveEnrichmentMetadata(id: string, value: object, kysely: Kysely<DB>): Promise<void>;
+    };
+    await database.transaction().execute((trx) =>
+      service.saveEnrichmentMetadata(
+        assetId,
+        {
+          description: {
+            status: 'success',
+            modelName: 'vlm',
+            updatedAt: '2026-09-24T00:00:00.000Z',
+            result: { description: 'A beach', tags: [], ...result },
+          },
+        },
+        trx,
+      ),
+    );
+  };
+
+  it('returns a stored confidence and null when none was reported', async () => {
+    const { sut, ctx, asset, auth } = await setup();
+    await save(sut, asset.id, { confidence: 0.91 });
+    await expect(sut.getAssetEnrichment(auth, asset.id)).resolves.toMatchObject({
+      description: { status: 'success', description: 'A beach', confidence: 0.91 },
+    });
+
+    await save(sut, asset.id, {});
+    const response = await sut.getAssetEnrichment(auth, asset.id);
+    expect(response.description.confidence).toBeNull();
+
+    const { user: stranger } = await ctx.newUser();
+    await expect(sut.getAssetEnrichment(factory.auth({ user: { id: stranger.id } }), asset.id)).rejects.toThrow();
+  });
+});

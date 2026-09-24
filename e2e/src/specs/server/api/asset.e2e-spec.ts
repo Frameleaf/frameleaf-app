@@ -143,6 +143,16 @@ describe('/asset', () => {
     utils.disconnectWebsocket(websocket);
   });
 
+  describe('GET /assets/:id/image-enrichment (FL-36)', () => {
+    it('should report no description confidence before a description exists', async () => {
+      const { status, body } = await request(app)
+        .get(`/assets/${user1Assets[0].id}/image-enrichment`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(status).toBe(200);
+      expect(body.description).toMatchObject({ status: 'missing', confidence: null });
+    });
+  });
+
   describe('GET /assets/:id/original', () => {
     it('should download the file', async () => {
       const response = await request(app)
