@@ -1,13 +1,13 @@
 <script lang="ts">
   /**
    * One account (FL-76) inside Users → People with server access (FL-71): the old
-   * `/admin/users/<id>` page. Its header actions sit at the top of the section; `?edit=1` opens the
-   * account form over it.
+   * `/admin/users/<id>` page, as the template's detail panel below the account list. Its header
+   * carries the profile, View analytics, Edit account and Close details; the account's password,
+   * PIN, sessions, deletion and restore live in its tabs. `?edit=1` opens the account form over it.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
-  import CommandCenterActions from '$lib/components/frameleaf/settings/CommandCenterActions.svelte';
   import AccountDetailTabs from '$lib/components/frameleaf/AccountDetailTabs.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -22,8 +22,8 @@
     updateUserPreferencesAdmin,
     type UserAdminResponseDto,
   } from '@immich/sdk';
-  import { Alert, Badge, CommandPaletteDefaultProvider, Heading, MenuItemType, Text, toastManager } from '@immich/ui';
-  import { mdiTrashCanOutline } from '@mdi/js';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import { CommandPaletteDefaultProvider, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { loadUserDetail, type UserDetailData } from './loaders';
 
@@ -113,26 +113,25 @@
   {@const { ResetPassword, ResetPinCode, Update, Delete, Restore } = getUserAdminActions($t, user)}
   <CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
 
-  {#if user.deletedAt}
-    <Alert color="danger" class="my-4" title={$t('user_has_been_deleted')} icon={mdiTrashCanOutline} />
-  {/if}
-
-  <div class="mb-4 flex flex-col gap-4">
-    <div class="flex items-center gap-4">
-      <UserAvatar {user} size="md" />
+  <!-- The template's account detail header (AccountsLibraries.jsx): profile, View analytics, Edit account and Close. -->
+  <header>
+    <div class="resource-profile">
+      <UserAvatar {user} size="xl" />
       <div>
-        <Heading tag="h2" size="large">{user.name}</Heading>
-        <Text color="secondary">{user.email}</Text>
+        <h2>{user.name}</h2>
+        <p>{user.email}</p>
       </div>
     </div>
-    {#if user.isAdmin}
-      <div>
-        <Badge color="primary" size="small">{$t('admin.admin_user')}</Badge>
-      </div>
-    {/if}
-  </div>
-
-  <CommandCenterActions actions={[ResetPassword, ResetPinCode, Update, Restore, MenuItemType.Divider, Delete]} />
+    <div class="resource-actions">
+      <Button onclick={() => void goto(Route.libraryAnalytics({ scope: `account:${user.id}` }))}>
+        {$t('frameleaf_users_view_analytics')}
+      </Button>
+      {#if accountLifecycle(user) === 'active'}
+        <Button onclick={() => void goto(Route.editUser(user))}>{$t('frameleaf_users_edit_account')}</Button>
+      {/if}
+      <Button label={$t('frameleaf_users_close_details')} onclick={() => void goto(Route.users())}>×</Button>
+    </div>
+  </header>
 
   <!--
     The account detail's tabs (FL-76): Overview, Features / Preferences / Notifications

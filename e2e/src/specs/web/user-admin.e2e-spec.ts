@@ -62,7 +62,7 @@ test.describe('User Administration', () => {
     await page.goto(`${usersManager}&user=${user.userId}`);
 
     // FL-76: the Frameleaf account form carries the role as a select, not a switch.
-    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit account', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByLabel('Role')).toHaveValue('user');
     await dialog.getByLabel('Role').selectOption('admin');
@@ -91,7 +91,7 @@ test.describe('User Administration', () => {
 
     await page.goto(`${usersManager}&user=${user.userId}`);
 
-    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit account', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByLabel('Role')).toHaveValue('admin');
     await dialog.getByLabel('Role').selectOption('user');
