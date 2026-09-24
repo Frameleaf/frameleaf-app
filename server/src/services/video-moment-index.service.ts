@@ -262,8 +262,9 @@ export class VideoMomentIndexService {
     }
 
     // What was captioned is kept even when a frame failed; the retry only asks for the rest.
+    let written = 0;
     if (captions.length > 0) {
-      await this.moments.publishCaptions(
+      written = await this.moments.publishCaptions(
         assetId,
         captions,
         {
@@ -284,6 +285,10 @@ export class VideoMomentIndexService {
 
     if (claimLost) {
       return CLAIM_LOST;
+    }
+    if (captions.length > 0 && written === 0) {
+      // The original was replaced while the frames were being captioned; a retry cuts them again.
+      return { state: EnrichmentItemState.Failed, reasonKey: 'source-changed' };
     }
     return failure
       ? { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure }
