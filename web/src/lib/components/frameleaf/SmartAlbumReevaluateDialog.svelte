@@ -154,7 +154,7 @@
     flex-direction: column;
     gap: 0.75rem;
     margin-block-start: 1rem;
-    width: min(32rem, calc(100vw - 4rem));
+    width: min(32rem, 100%);
   }
   .lead {
     margin: 0.5rem 0 0;
