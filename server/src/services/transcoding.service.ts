@@ -10,6 +10,7 @@ import {
   HLS_CRF,
   HLS_INACTIVITY_TIMEOUT_MS,
   HLS_LEASE_DURATION_MS,
+  HLS_RESTART_LOOKAHEAD_SEGMENTS,
   HLS_SEGMENT_DURATION,
   HLS_SEGMENT_FILENAME_REGEX,
   HLS_VARIANTS,
@@ -140,7 +141,9 @@ export class TranscodingService extends BaseService {
     session.startSegment ??= segmentIndex;
     const curSegment = session.lastCompletedSegment === null ? session.startSegment : session.lastCompletedSegment + 1;
     const isNeedsRestart =
-      session.variantIndex !== variantIndex || segmentIndex < session.startSegment || segmentIndex > curSegment + 1;
+      session.variantIndex !== variantIndex ||
+      segmentIndex < session.startSegment ||
+      segmentIndex > curSegment + HLS_RESTART_LOOKAHEAD_SEGMENTS;
     if (isNeedsRestart) {
       this.stopTranscode(session);
       session.variantIndex = variantIndex;
