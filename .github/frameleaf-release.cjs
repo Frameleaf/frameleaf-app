@@ -597,6 +597,25 @@ async function planReuse(env = process.env, registry = new Registry(env)) {
     );
   }
 }
+// `imagetools create` writes a new index and does not carry the source index's own annotations, so
+// the reused tag restates the ones validateIndex requires (as mergeCandidate does) besides the
+// qualification record; the revision stays the commit the image was built from.
+function reuseAnnotations(spec, image, env) {
+  return [
+    "--annotation",
+    `index:org.opencontainers.image.source=${SOURCE}`,
+    "--annotation",
+    `index:org.opencontainers.image.revision=${image.buildSourceCommit}`,
+    "--annotation",
+    `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
+    "--annotation",
+    `index:org.frameleaf.qualification.revision=${env.GITHUB_SHA}`,
+    "--annotation",
+    `index:org.frameleaf.qualification.release=${env.REUSE_RELEASE}`,
+    "--annotation",
+    `index:org.frameleaf.build.digest=${image.buildDigest}`,
+  ];
+}
 async function reuseCandidate(env = process.env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
@@ -621,12 +640,7 @@ async function reuseCandidate(env = process.env) {
   if (!exists)
     docker(
       "create",
-      "--annotation",
-      `index:org.frameleaf.qualification.revision=${env.GITHUB_SHA}`,
-      "--annotation",
-      `index:org.frameleaf.qualification.release=${env.REUSE_RELEASE}`,
-      "--annotation",
-      `index:org.frameleaf.build.digest=${image.buildDigest}`,
+      ...reuseAnnotations(spec, image, env),
       "--tag",
       `${image.image}:${ref}`,
       `${image.image}@${image.buildDigest}`,
@@ -940,6 +954,7 @@ async function release(env = process.env) {
   );
 }
 module.exports = {
+  reuseAnnotations,
   REPOSITORY,
   SOURCE,
   VARIANTS,
