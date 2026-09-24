@@ -345,8 +345,18 @@ import {
   mdiWifi,
   mdiWifiOff,
   mdiWrenchOutline,
+  mdiRecordCircleOutline,
+  mdiKeyboardReturn,
+  mdiContentSaveOutline,
+  mdiPoundBox,
+  mdiShieldAlertOutline,
 } from "@mdi/js";
 const paths = {
+  mdiShieldAlertOutline,
+  mdiRecordCircleOutline,
+  mdiKeyboardReturn,
+  mdiContentSaveOutline,
+  mdiPoundBox,
   mdiAccountCircleOutline,
   mdiAccountEditOutline,
   mdiAccountGroupOutline,
@@ -703,7 +713,10 @@ export function Icon({ name, size = 18, className }) {
       focusable="false"
       className={className}
     >
-      <path fill="currentColor" d={paths[name] || catalogue[name] || paths.mdiCircleOutline} />
+      <path
+        fill="currentColor"
+        d={paths[name] || catalogue[name] || paths.mdiCircleOutline}
+      />
     </svg>
   );
 }

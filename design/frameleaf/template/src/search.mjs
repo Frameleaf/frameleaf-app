@@ -75,6 +75,8 @@ const catalog = (items) =>
     : [];
 const labelFor = (items, id) => {
   const item = catalog(items).find((item) => item.id === id);
+  if (item && "name" in item && !item.name?.trim() && !item.label)
+    return "Unnamed person";
   return item?.name || item?.label || String(id);
 };
 const idFor = (items, value) =>

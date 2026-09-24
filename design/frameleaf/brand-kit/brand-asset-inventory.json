@@ -1,43 +1,43 @@
 {
   "approvedReferences": [
     {
-      "bytes": 5242,
+      "bytes": 5342,
       "id": "reference:design/frameleaf/README.md",
       "path": "design/frameleaf/README.md",
       "role": "approved-design-handoff",
-      "sha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
+      "sha256": "3dad9d726b0e1530397f1749dbc9ea9e29be9b670404c562eddc99089e68da02",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 13640,
+      "bytes": 19635,
       "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "role": "approved-interaction-contract",
-      "sha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
+      "sha256": "9a8f95c48361361f84cee2876b6622b21210672832bc3c42ed3e14fd389310b2",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 750,
+      "bytes": 1615,
       "id": "reference:design/frameleaf/tokens.json",
       "path": "design/frameleaf/tokens.json",
       "role": "approved-token-reference",
-      "sha256": "a96c48c2c279fd99cf20a49276f647dae5f95eb523f45171cc8d45155aca71aa",
+      "sha256": "818fce6202ca27e7a8a1a4e888e5e55fab51e5964c14bf98932b0a8cd9f49961",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 5051,
+      "bytes": 6195,
       "id": "reference:design/frameleaf/template/README.md",
       "path": "design/frameleaf/template/README.md",
       "role": "approved-prototype-usage-contract",
-      "sha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
+      "sha256": "df372146d6ab68fddf9cedd90d087afea7f7bf4020912db12ee49dd7b2acadfa",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 1547,
+      "bytes": 1805,
       "id": "reference:design/frameleaf/references/README.md",
       "path": "design/frameleaf/references/README.md",
       "role": "approved-visual-reference-contract",
-      "sha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
+      "sha256": "423eb8fe70df78929c926fb83011a3a55c00f760b8807ed951f3c8f776882488",
       "status": "reference-not-production-qualification"
     },
     {
@@ -105,7 +105,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "1551e00ff1a52856001b3128e6c8678fc8f933c8a7efc877347858717841632e",
+    "approvedReferenceLedgerSha256": "df9c05e4154c41eb51541a9af27a7763e5adb907917b31ccc6486c391b686dc9",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [

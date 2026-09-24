@@ -89,7 +89,6 @@ export function PersonAvatar({ person, size = 32, decorative = true }) {
           position: "relative",
           display: "inline-block",
           overflow: "hidden",
-          borderRadius: "50%",
           flexShrink: 0,
         }}
         role={decorative ? undefined : "img"}

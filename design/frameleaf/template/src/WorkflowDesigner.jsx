@@ -15,6 +15,7 @@ import {
   exportWorkflowDefinition,
   updateWorkflowParameter,
 } from "./workflow-schema.mjs";
+import { previewWorkflow } from "./utilities-data.mjs";
 import "./workflow-designer.css";
 const referenceOptions = {
   TagId: tags,
@@ -751,7 +752,7 @@ export function WorkflowDesigner({ value, close, onSave, onRemove }) {
             <Button
               onClick={() => setValidation(workflowExecutionErrors(draft))}
             >
-              Validate workflow
+              Check and preview
             </Button>
             {validation && (
               <div role="status">
@@ -762,11 +763,26 @@ export function WorkflowDesigner({ value, close, onSave, onRemove }) {
                     ))}
                   </ul>
                 ) : (
-                  <p>
-                    The definition matches the available schemas. Execution
-                    still requires the server workflow service and access to its
-                    selected albums and tags.
-                  </p>
+                  <>
+                    <p>
+                      The definition matches the available schemas. This is
+                      what a run would do, step by step:
+                    </p>
+                    <ol className="wd-preview">
+                      {previewWorkflow(draft).map((step, index) => (
+                        <li key={index}>
+                          <strong>
+                            {methodByKey(step.method)?.title || step.method}
+                          </strong>
+                          <span>{step.result}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p>
+                      Running it still needs the server workflow service and
+                      access to its selected albums and tags.
+                    </p>
+                  </>
                 )}
               </div>
             )}

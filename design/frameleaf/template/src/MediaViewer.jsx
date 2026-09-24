@@ -51,7 +51,11 @@ import {
   VIEWER_PREFERENCES_KEY,
   normalizeAvailableActions,
   viewerActionGroups,
+  SLIDESHOW_TRANSITIONS,
+  effectiveTransition,
+  kenBurnsMove,
 } from "./media-viewer.mjs";
+import { prefersReducedMotion } from "./interactions";
 import "./media-viewer.css";
 
 const readPreferences = () => {
@@ -67,7 +71,15 @@ const ratingLabel = (value) =>
   value === 0 ? "Not rated" : `${value} ${value === 1 ? "star" : "stars"}`;
 const stopKeys = (event) => event.stopPropagation();
 
-function Tool({ label, icon, children, active, className = "", title, ...props }) {
+function Tool({
+  label,
+  icon,
+  children,
+  active,
+  className = "",
+  title,
+  ...props
+}) {
   return (
     <button
       type="button"
@@ -103,8 +115,7 @@ function menuKeys(event, container, close) {
       ? 0
       : key === "End"
         ? items.length - 1
-        : (index + (key === "ArrowDown" ? 1 : -1) + items.length) %
-          items.length
+        : (index + (key === "ArrowDown" ? 1 : -1) + items.length) % items.length
   ]?.focus();
   return true;
 }
@@ -139,6 +150,7 @@ export function MediaViewer({
   ratings,
   users = [],
   currentUserId = "taylor",
+  slideshowTitle = "",
 }) {
   const profiles = people || personProfiles || [];
   const collection = viewerAssets(assets, { allowLocked, allowTrashed: trash }),
@@ -151,7 +163,9 @@ export function MediaViewer({
     idsKey = JSON.stringify(ids);
   const [prefs, setPrefs] = useState(readPreferences);
   const [playing, setPlaying] = useState(Boolean(slideshow)),
-    [order, setOrder] = useState(() => slideshowOrder(ids, assetId, prefs.order)),
+    [order, setOrder] = useState(() =>
+      slideshowOrder(ids, assetId, prefs.order),
+    ),
     [direction, setDirection] = useState(1);
   const [showInfo, setShowInfo] = useState(false),
     [settingsOpen, setSettingsOpen] = useState(false),
@@ -180,6 +194,11 @@ export function MediaViewer({
     [hidden, setHidden] = useState(
       () => typeof document !== "undefined" && document.hidden,
     );
+  // #13 tap hides the controls; a downward swipe at normal zoom closes the viewer.
+  const [chromeHidden, setChromeHidden] = useState(false),
+    [dragging, setDragging] = useState(false);
+  const dismiss = useRef(null),
+    titleShown = useRef(false);
   const dialog = useRef(null),
     closeButton = useRef(null),
     stage = useRef(null),
@@ -298,7 +317,11 @@ export function MediaViewer({
     else if (automatic) play(false);
   }
   function stepStack(towards) {
-    const next = stackNeighbor(latest.current.stack, latest.current.asset?.id, towards);
+    const next = stackNeighbor(
+      latest.current.stack,
+      latest.current.asset?.id,
+      towards,
+    );
     if (next) navigate(next, towards);
   }
   const stepRef = useRef(step);
@@ -397,12 +420,25 @@ export function MediaViewer({
     return () => observer.disconnect();
   }, [Boolean(asset), showInfo, prefs.filmstrip]);
   const overlayOpen =
-    settingsOpen || menuOpen || ratingOpen || castOpen || !!chooser || !!confirm;
-  const activeVideo = videoSource === "encoded" ? sources.encoded : sources.original;
+    settingsOpen ||
+    menuOpen ||
+    ratingOpen ||
+    castOpen ||
+    !!chooser ||
+    !!confirm;
+  const activeVideo =
+    videoSource === "encoded" ? sources.encoded : sources.original;
   const playable = Boolean(activeVideo && videoError !== activeVideo);
   useEffect(() => {
     cancelTimer();
-    if (!playing || !asset || hidden || overlayOpen || playable || !onNavigateAsset)
+    if (
+      !playing ||
+      !asset ||
+      hidden ||
+      overlayOpen ||
+      playable ||
+      !onNavigateAsset
+    )
       return;
     const token = epoch.current,
       scheduledId = asset.id;
@@ -454,7 +490,8 @@ export function MediaViewer({
     };
   }, [playable, asset?.id, activeVideo]);
   useEffect(() => {
-    if (menuOpen) menu.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+    if (menuOpen)
+      menu.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
   }, [menuOpen]);
   useEffect(() => {
     if (ratingOpen) ratingPopover.current?.querySelector("button")?.focus();
@@ -465,9 +502,11 @@ export function MediaViewer({
   }, [settingsOpen]);
   useEffect(() => {
     if (!prefs.filmstrip || !filmstrip.current) return;
-    filmstrip.current
-      .querySelector('[aria-current="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "center", behavior: "smooth" });
+    filmstrip.current.querySelector('[aria-current="true"]')?.scrollIntoView?.({
+      block: "nearest",
+      inline: "center",
+      behavior: "smooth",
+    });
   }, [asset?.id, prefs.filmstrip]);
   useEffect(() => {
     if (!focusRequest || !showInfo) return;
@@ -483,13 +522,57 @@ export function MediaViewer({
     setPan({ x: 0, y: 0 });
   }
   function startPan(event) {
-    if (zoom <= 1 || event.button > 0 || event.target.closest?.("button,video,a"))
+    if (
+      zoom <= 1 &&
+      event.button <= 0 &&
+      !event.target.closest?.("button,video,a,input,select,textarea")
+    ) {
+      dismiss.current = {
+        x: event.clientX,
+        y: event.clientY,
+        time: performance.now(),
+        dy: 0,
+      };
+      return;
+    }
+    if (
+      zoom <= 1 ||
+      event.button > 0 ||
+      event.target.closest?.("button,video,a")
+    )
       return;
     drag.current = { x: event.clientX, y: event.clientY, pan };
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   }
+  function trackDismiss(event) {
+    const gesture = dismiss.current;
+    if (!gesture) return false;
+    gesture.dy = Math.max(0, event.clientY - gesture.y);
+    if (gesture.dy < 8) return true;
+    if (!dragging) setDragging(true);
+    const progress = Math.min(1, gesture.dy / 400);
+    stage.current.style.transform = `translate(${(event.clientX - gesture.x) * 0.5}px, ${gesture.dy}px) scale(${1 - progress * 0.25})`;
+    dialog.current.style.backgroundColor = `rgb(0 0 0 / ${1 - progress})`;
+    return true;
+  }
+  function endDismiss(event) {
+    const gesture = dismiss.current;
+    dismiss.current = null;
+    if (!gesture) return;
+    setDragging(false);
+    stage.current.style.transform = "";
+    dialog.current.style.backgroundColor = "";
+    const moved = Math.hypot(
+      event.clientX - gesture.x,
+      event.clientY - gesture.y,
+    );
+    if (gesture.dy > 110) close();
+    else if (moved < 6 && performance.now() - gesture.time < 280)
+      setChromeHidden((value) => !value);
+  }
   function movePan(event) {
+    if (trackDismiss(event)) return;
     if (!drag.current) return;
     const dimensions = fitDimensions(
       natural?.width,
@@ -573,13 +656,20 @@ export function MediaViewer({
       canvas.height = image.naturalHeight;
       canvas.getContext("2d").drawImage(image, 0, 0);
       const blob = await new Promise((resolve, reject) =>
-        canvas.toBlob((value) => (value ? resolve(value) : reject()), "image/png"),
+        canvas.toBlob(
+          (value) => (value ? resolve(value) : reject()),
+          "image/png",
+        ),
       );
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
       copied = true;
       announce("Image copied");
     } catch {
-      setError("Copying images is not available here. Download the photo instead.");
+      setError(
+        "Copying images is not available here. Download the photo instead.",
+      );
     }
     if (onAction && available.includes("copy-image"))
       try {
@@ -608,9 +698,17 @@ export function MediaViewer({
     else element.pause();
   }
   function keyDown(event) {
-    if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey)
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    )
       return;
-    const top = [...document.querySelectorAll('dialog[open],[role="dialog"]')].at(-1);
+    const top = [
+      ...document.querySelectorAll('dialog[open],[role="dialog"]'),
+    ].at(-1);
     if (top && top !== dialog.current) return;
     if (event.key === "Tab") {
       const elements = [...dialog.current.querySelectorAll(focusable)].filter(
@@ -620,7 +718,8 @@ export function MediaViewer({
         last = elements.at(-1);
       if (
         event.shiftKey &&
-        (document.activeElement === first || document.activeElement === dialog.current)
+        (document.activeElement === first ||
+          document.activeElement === dialog.current)
       ) {
         event.preventDefault();
         last?.focus();
@@ -640,12 +739,18 @@ export function MediaViewer({
         ratingButton.current?.focus();
       } else if (settingsOpen) {
         setSettingsOpen(false);
-        dialog.current?.querySelector('.mv-footer [aria-label="Slideshow settings"]')?.focus();
+        dialog.current
+          ?.querySelector('.mv-footer [aria-label="Slideshow settings"]')
+          ?.focus();
       } else if (fullscreen) document.exitFullscreen?.().catch?.(() => {});
       else close();
       return;
     }
-    if (event.target.closest?.('input,select,textarea,[contenteditable="true"],video,[role="slider"],[role="combobox"]'))
+    if (
+      event.target.closest?.(
+        'input,select,textarea,[contenteditable="true"],video,[role="slider"],[role="combobox"]',
+      )
+    )
       return;
     if (event.shiftKey) {
       if (event.key === "A" && canEdit && !trash) {
@@ -659,7 +764,8 @@ export function MediaViewer({
         setPreference({ filmstrip: !prefs.filmstrip });
       } else if (event.key === "Delete" && canEdit) {
         event.preventDefault();
-        if (available.includes("delete-permanently")) setConfirm("delete-permanently");
+        if (available.includes("delete-permanently"))
+          setConfirm("delete-permanently");
       }
       return;
     }
@@ -688,7 +794,9 @@ export function MediaViewer({
       action(onFavorite, asset.id);
     } else if (key === "e" && onEdit && !readOnly) {
       event.preventDefault();
-      action(onEdit, asset.id, { currentTime: video.current?.currentTime || 0 });
+      action(onEdit, asset.id, {
+        currentTime: video.current?.currentTime || 0,
+      });
     } else if (key === "l" && canEdit && !trash) {
       event.preventDefault();
       run("add-to-album");
@@ -723,6 +831,93 @@ export function MediaViewer({
       setScale(zoom === 1 ? 2 : 1);
     }
   }
+  // Memories opens with a title card, once per run.
+  const [showTitleCard, setShowTitleCard] = useState(false);
+  const memoriesOn =
+    playing &&
+    effectiveTransition(prefs.transition, prefersReducedMotion()) ===
+      "memories";
+  useEffect(() => {
+    if (!memoriesOn) {
+      titleShown.current = false;
+      setShowTitleCard(false);
+      return;
+    }
+    if (titleShown.current) return;
+    titleShown.current = true;
+    setShowTitleCard(true);
+    const timer = setTimeout(() => setShowTitleCard(false), 3200);
+    return () => clearTimeout(timer);
+  }, [memoriesOn]);
+  const memoriesSubtitle = (() => {
+    const dates = collection
+      .map((item) => item.date)
+      .filter(Boolean)
+      .sort();
+    return dates.length
+      ? dates[0] === dates.at(-1)
+        ? dates[0]
+        : `${dates[0]} – ${dates.at(-1)}`
+      : "";
+  })();
+  // #6 keep the screen awake while a slideshow plays.
+  useEffect(() => {
+    if (!playing || !navigator.wakeLock) return;
+    let sentinel = null,
+      released = false;
+    const request = () =>
+      navigator.wakeLock
+        .request("screen")
+        .then((lock) => {
+          if (released) lock.release();
+          else sentinel = lock;
+        })
+        .catch(() => {});
+    request();
+    const visibility = () =>
+      document.visibilityState === "visible" && request();
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      released = true;
+      document.removeEventListener("visibilitychange", visibility);
+      sentinel?.release().catch(() => {});
+    };
+  }, [playing]);
+  // #7 lock screen, Control Center, headphones and media keys.
+  useEffect(() => {
+    if (
+      !asset ||
+      !("mediaSession" in navigator) ||
+      typeof MediaMetadata !== "function"
+    )
+      return;
+    const session = navigator.mediaSession;
+    session.metadata = new MediaMetadata({
+      title: asset.name || "Photo",
+      artist: slideshowTitle || "Frameleaf",
+      album: [asset.date, asset.city].filter(Boolean).join(" · "),
+      artwork: media.image ? [{ src: media.image, sizes: "512x512" }] : [],
+    });
+    const handlers = {
+      play: () => play(true),
+      pause: () => play(false),
+      previoustrack: () => step(-1),
+      nexttrack: () => step(1),
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {}
+    }
+    if (!media.isVideo) session.playbackState = playing ? "playing" : "paused";
+    return () => {
+      for (const action of Object.keys(handlers)) {
+        try {
+          session.setActionHandler(action, null);
+        } catch {}
+      }
+    };
+  }, [asset?.id, media.image, playing]);
   if (!asset) return null;
   const index = collection.findIndex((item) => item.id === asset.id),
     readOnly = asset.readOnly === true || asset.canEdit === false,
@@ -731,7 +926,9 @@ export function MediaViewer({
     favorite = Boolean(asset.favorite || asset.isFavorite);
   const currentRating = ratingValue(
     rating ??
-      (typeof ratings === "function" ? ratings(asset.id) : ratings?.[asset.id]) ??
+      (typeof ratings === "function"
+        ? ratings(asset.id)
+        : ratings?.[asset.id]) ??
       asset.rating,
   );
   const assetAlbums = albumsForAsset(albums, asset);
@@ -741,8 +938,11 @@ export function MediaViewer({
         trash,
         albumId,
         albumCount: assetAlbums.length,
-        peopleCount: peopleChips({ faces, people: profiles, personIds: asset.personIds || [] })
-          .chips.filter((chip) => chip.person).length,
+        peopleCount: peopleChips({
+          faces,
+          people: profiles,
+          personIds: asset.personIds || [],
+        }).chips.filter((chip) => chip.person).length,
         readOnly,
       })
     : [];
@@ -751,21 +951,36 @@ export function MediaViewer({
     headline = viewerHeadline(asset).join(" · "),
     lookActive = playing || settingsOpen,
     look = lookActive ? prefs.look : "fit",
-    fit = fitDimensions(natural?.width, natural?.height, viewport.width, viewport.height),
+    fit = fitDimensions(
+      natural?.width,
+      natural?.height,
+      viewport.width,
+      viewport.height,
+    ),
+    activeTransition = effectiveTransition(
+      prefs.transition,
+      prefersReducedMotion(),
+    ),
     transitionClass =
-      playing && prefs.transition !== "none"
-        ? prefs.transition === "fade"
+      playing && activeTransition !== "none"
+        ? activeTransition === "fade"
           ? "fade"
-          : direction < 0
-            ? "slide-prev"
-            : "slide-next"
-        : "";
+          : activeTransition === "slide"
+            ? direction < 0
+              ? "slide-prev"
+              : "slide-next"
+            : `fade ${activeTransition}`
+        : "",
+    kenBurns =
+      playing &&
+      ["ken-burns", "memories"].includes(activeTransition) &&
+      !media.isVideo;
   const ocrBoxes = showOcr && asset.ocr ? ocrRegions(asset.ocr) : [];
   const stackOpen = stack.length > 1;
   return (
     <dialog
       ref={dialog}
-      className="media-viewer"
+      className={`media-viewer ${chromeHidden ? "chrome-hidden" : ""} ${dragging ? "dragging" : ""}`}
       aria-label={`Media viewer: ${name}`}
       onKeyDown={keyDown}
       onCancel={(event) => {
@@ -795,7 +1010,11 @@ export function MediaViewer({
               {name}
               <small>
                 {position}
-                {media.isVideo ? " · Video" : asset.isLivePhoto ? " · Live" : ""}
+                {media.isVideo
+                  ? " · Video"
+                  : asset.isLivePhoto
+                    ? " · Live"
+                    : ""}
                 {asset.isPanorama ? " · Panorama" : ""}
               </small>
             </strong>
@@ -803,22 +1022,36 @@ export function MediaViewer({
           </div>
           <div className="mv-actions" aria-label="Media actions">
             {onShare && viewerCanShare(asset) && !trash && (
-              <Tool label="Share" icon="mdiShareVariantOutline" onClick={() => action(onShare, asset.id)} />
-            )}
-            {onAction && available.includes("cast") && castDevices.length > 0 && !trash && (
               <Tool
-                label={castDevice ? "Cast · connected" : "Cast"}
-                icon={castDevice ? "mdiCastConnected" : "mdiCast"}
-                active={Boolean(castDevice)}
-                onClick={() => {
-                  play(false);
-                  setCastOpen(true);
-                }}
+                label="Share"
+                icon="mdiShareVariantOutline"
+                onClick={() => action(onShare, asset.id)}
               />
             )}
-            {!media.isVideo && media.image && available.includes("copy-image") && (
-              <Tool label="Copy image" icon="mdiContentCopy" className="mv-wide-only" onClick={copyImage} />
-            )}
+            {onAction &&
+              available.includes("cast") &&
+              castDevices.length > 0 &&
+              !trash && (
+                <Tool
+                  label={castDevice ? "Cast · connected" : "Cast"}
+                  icon={castDevice ? "mdiCastConnected" : "mdiCast"}
+                  active={Boolean(castDevice)}
+                  onClick={() => {
+                    play(false);
+                    setCastOpen(true);
+                  }}
+                />
+              )}
+            {!media.isVideo &&
+              media.image &&
+              available.includes("copy-image") && (
+                <Tool
+                  label="Copy image"
+                  icon="mdiContentCopy"
+                  className="mv-wide-only"
+                  onClick={copyImage}
+                />
+              )}
             <Tool
               label="Information"
               title="Information (I)"
@@ -865,9 +1098,16 @@ export function MediaViewer({
                       if (["ArrowRight", "ArrowLeft"].includes(event.key)) {
                         event.preventDefault();
                         event.stopPropagation();
-                        const buttons = [...ratingPopover.current.querySelectorAll("button")];
+                        const buttons = [
+                          ...ratingPopover.current.querySelectorAll("button"),
+                        ];
                         const i = buttons.indexOf(document.activeElement);
-                        buttons[(i + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+                        buttons[
+                          (i +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            buttons.length) %
+                            buttons.length
+                        ]?.focus();
                       }
                     }}
                   >
@@ -888,13 +1128,21 @@ export function MediaViewer({
                 label="Edit"
                 title="Edit (E)"
                 icon="mdiPencilOutline"
-                onClick={() => action(onEdit, asset.id, { currentTime: video.current?.currentTime || 0 })}
+                onClick={() =>
+                  action(onEdit, asset.id, {
+                    currentTime: video.current?.currentTime || 0,
+                  })
+                }
               />
             )}
             {trash ? (
               <>
                 {available.includes("restore") && !readOnly && (
-                  <Tool label="Restore" icon="mdiDeleteRestore" onClick={() => run("restore")} />
+                  <Tool
+                    label="Restore"
+                    icon="mdiDeleteRestore"
+                    onClick={() => run("restore")}
+                  />
                 )}
                 {available.includes("delete-permanently") && !readOnly && (
                   <Tool
@@ -969,25 +1217,31 @@ export function MediaViewer({
                       Viewer
                     </div>
                     {onTagPeople && !readOnly && !trash && (
-                      <button type="button" role="menuitem" onClick={() => action(onTagPeople, asset.id)}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => action(onTagPeople, asset.id)}
+                      >
                         <Icon name="mdiAccountPlusOutline" size={17} />
                         Tag people
                       </button>
                     )}
-                    {onAction && available.includes("cast") && castDevices.length > 0 && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          play(false);
-                          setCastOpen(true);
-                        }}
-                      >
-                        <Icon name="mdiCast" size={17} />
-                        Cast
-                      </button>
-                    )}
+                    {onAction &&
+                      available.includes("cast") &&
+                      castDevices.length > 0 && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            play(false);
+                            setCastOpen(true);
+                          }}
+                        >
+                          <Icon name="mdiCast" size={17} />
+                          Cast
+                        </button>
+                      )}
                     <button
                       type="button"
                       role="menuitem"
@@ -1008,7 +1262,10 @@ export function MediaViewer({
                         play(!playing);
                       }}
                     >
-                      <Icon name={playing ? "mdiPause" : "mdiPlayCircleOutline"} size={17} />
+                      <Icon
+                        name={playing ? "mdiPause" : "mdiPlayCircleOutline"}
+                        size={17}
+                      />
                       {playing ? "Pause slideshow" : "Play slideshow"}
                     </button>
                     <button
@@ -1032,13 +1289,28 @@ export function MediaViewer({
           className={`mv-canvas ${look === "blur" ? "blurred" : ""}`}
           ref={stage}
           tabIndex={0}
-          aria-label={media.isVideo ? "Video viewing area" : "Image viewing area"}
+          aria-label={
+            media.isVideo ? "Video viewing area" : "Image viewing area"
+          }
           onPointerDown={startPan}
           onPointerMove={movePan}
-          onPointerUp={() => (drag.current = null)}
-          onPointerCancel={() => (drag.current = null)}
+          onPointerUp={(event) => {
+            drag.current = null;
+            endDismiss(event);
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+            dismiss.current = null;
+            setDragging(false);
+            stage.current.style.transform = "";
+            dialog.current.style.backgroundColor = "";
+          }}
           onDoubleClick={(event) => {
-            if (!media.isVideo && !panorama && !event.target.closest?.("button,a"))
+            if (
+              !media.isVideo &&
+              !panorama &&
+              !event.target.closest?.("button,a")
+            )
               setScale(zoom === 1 ? 2 : 1);
           }}
           style={{
@@ -1051,19 +1323,52 @@ export function MediaViewer({
               <Icon name="mdiLinkOff" size={18} />
               <div>
                 <strong>Original file unavailable</strong>
-                <span>{asset.originalPath || "The file could not be found in its library."}</span>
+                <span>
+                  {asset.originalPath ||
+                    "The file could not be found in its library."}
+                </span>
               </div>
               {onAction && available.includes("open-folder") && (
-                <button type="button" className="mv-inline-button" onClick={() => run("open-folder")}>
+                <button
+                  type="button"
+                  className="mv-inline-button"
+                  onClick={() => run("open-folder")}
+                >
                   Relink
                 </button>
               )}
             </div>
           )}
           {look === "blur" && media.image && (
-            <div className="mv-blur" style={{ backgroundImage: `url("${media.image}")` }} aria-hidden="true" />
+            <div
+              className="mv-blur"
+              style={{ backgroundImage: `url("${media.image}")` }}
+              aria-hidden="true"
+            />
           )}
-          <div className={`mv-stage-item ${transitionClass}`} key={`${asset.id}:${transitionClass}`}>
+          {playing &&
+            activeTransition === "memories" &&
+            look !== "blur" &&
+            media.image && (
+              <div
+                className="mv-blur"
+                style={{ backgroundImage: `url("${media.image}")` }}
+                aria-hidden="true"
+              />
+            )}
+          <div
+            className={`mv-stage-item ${transitionClass}`}
+            key={`${asset.id}:${transitionClass}`}
+            style={
+              kenBurns
+                ? {
+                    "--kb-from": kenBurnsMove(asset.id).from,
+                    "--kb-to": kenBurnsMove(asset.id).to,
+                    "--kb-duration": `${prefs.interval + 1}s`,
+                  }
+                : undefined
+            }
+          >
             {playable ? (
               <video
                 key={`${asset.id}:${activeVideo}`}
@@ -1077,30 +1382,45 @@ export function MediaViewer({
                 onLoadedMetadata={(event) => {
                   if (latest.current.asset?.id !== asset.id) return;
                   const time =
-                    resumeTime.current !== null ? resumeTime.current : Number(latest.current.initialTime);
+                    resumeTime.current !== null
+                      ? resumeTime.current
+                      : Number(latest.current.initialTime);
                   resumeTime.current = null;
                   if (Number.isFinite(time) && time >= 0)
                     event.currentTarget.currentTime = Math.min(
                       time,
-                      Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : time,
+                      Number.isFinite(event.currentTarget.duration)
+                        ? event.currentTarget.duration
+                        : time,
                     );
                 }}
                 onTimeUpdate={(event) => {
                   if (latest.current.asset?.id === asset.id)
-                    latest.current.onPlaybackChange?.(asset.id, event.currentTarget.currentTime);
+                    latest.current.onPlaybackChange?.(
+                      asset.id,
+                      event.currentTarget.currentTime,
+                    );
                 }}
                 onPause={(event) => {
                   if (latest.current.asset?.id === asset.id)
-                    latest.current.onPlaybackChange?.(asset.id, event.currentTarget.currentTime);
+                    latest.current.onPlaybackChange?.(
+                      asset.id,
+                      event.currentTarget.currentTime,
+                    );
                 }}
                 onEnded={() => {
-                  if (latest.current.playing && latest.current.asset?.id === asset.id)
+                  if (
+                    latest.current.playing &&
+                    latest.current.asset?.id === asset.id
+                  )
                     stepRef.current(1, true);
                 }}
                 onError={() => {
                   if (latest.current.asset?.id !== asset.id) return;
                   setVideoError(activeVideo);
-                  setError("This video could not be played. Its preview is still available.");
+                  setError(
+                    "This video could not be played. Its preview is still available.",
+                  );
                 }}
               />
             ) : media.image && imageError !== media.image ? (
@@ -1115,14 +1435,17 @@ export function MediaViewer({
                     if (latest.current.asset?.id === asset.id) setNatural(size);
                   }}
                   onError={() => {
-                    if (latest.current.asset?.id === asset.id) setImageError(media.image);
+                    if (latest.current.asset?.id === asset.id)
+                      setImageError(media.image);
                   }}
                 />
               ) : (
                 <div
                   className={`mv-photo ${look === "fill" ? "fill" : ""} ${fit && look !== "fill" ? "measured" : ""}`}
                   style={{
-                    ...(fit && look !== "fill" ? { width: fit.width, height: fit.height } : {}),
+                    ...(fit && look !== "fill"
+                      ? { width: fit.width, height: fit.height }
+                      : {}),
                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   }}
                 >
@@ -1140,7 +1463,8 @@ export function MediaViewer({
                         });
                     }}
                     onError={() => {
-                      if (latest.current.asset?.id === asset.id) setImageError(media.image);
+                      if (latest.current.asset?.id === asset.id)
+                        setImageError(media.image);
                     }}
                   />
                   {liveSource && livePlaying && (
@@ -1189,52 +1513,95 @@ export function MediaViewer({
             ) : (
               <div className="mv-unavailable">
                 <strong>Image unavailable</strong>
-                <span>The source could not be displayed. Try another item.</span>
+                <span>
+                  The source could not be displayed. Try another item.
+                </span>
               </div>
             )}
           </div>
-          {liveSource && !playable && media.image && imageError !== media.image && !panorama && (
-            <button
-              type="button"
-              className={`mv-live-badge ${livePlaying ? "playing" : ""}`}
-              aria-pressed={livePlaying}
-              aria-label={livePlaying ? "Stop live clip" : "Play live clip"}
-              title="Live photo · hover or press to play"
-              onPointerEnter={(event) => {
-                if (event.pointerType === "mouse") setLivePlaying(true);
-              }}
-              onPointerLeave={(event) => {
-                if (event.pointerType === "mouse") setLivePlaying(false);
-              }}
-              onClick={() => setLivePlaying((value) => !value)}
-            >
-              <Icon name="mdiMotionPlayOutline" size={16} />
-              Live
-            </button>
-          )}
-          {media.isVideo && !playable && media.image && imageError !== media.image && (
-            <div className="mv-still-label">Video preview · playback source unavailable</div>
-          )}
+          {liveSource &&
+            !playable &&
+            media.image &&
+            imageError !== media.image &&
+            !panorama && (
+              <button
+                type="button"
+                className={`mv-live-badge ${livePlaying ? "playing" : ""}`}
+                aria-pressed={livePlaying}
+                aria-label={livePlaying ? "Stop live clip" : "Play live clip"}
+                title="Live photo · hover or press to play"
+                onPointerEnter={(event) => {
+                  if (event.pointerType === "mouse") setLivePlaying(true);
+                }}
+                onPointerLeave={(event) => {
+                  if (event.pointerType === "mouse") setLivePlaying(false);
+                }}
+                onClick={() => setLivePlaying((value) => !value)}
+              >
+                <Icon name="mdiMotionPlayOutline" size={16} />
+                Live
+              </button>
+            )}
+          {media.isVideo &&
+            !playable &&
+            media.image &&
+            imageError !== media.image && (
+              <div className="mv-still-label">
+                Video preview · playback source unavailable
+              </div>
+            )}
           {collection.length > 1 && onNavigateAsset && (
             <>
-              <Tool label="Previous item" icon="mdiChevronLeft" className="mv-side previous" onClick={() => step(-1)} />
-              <Tool label="Next item" icon="mdiChevronRight" className="mv-side next" onClick={() => step(1)} />
+              <Tool
+                label="Previous item"
+                icon="mdiChevronLeft"
+                className="mv-side previous"
+                onClick={() => step(-1)}
+              />
+              <Tool
+                label="Next item"
+                icon="mdiChevronRight"
+                className="mv-side next"
+                onClick={() => step(1)}
+              />
             </>
           )}
-          {playing && prefs.caption !== "off" && (asset.description || prefs.caption === "details") && (
-            <div className="mv-caption">
-              <strong>{asset.description || name}</strong>
-              {prefs.caption === "details" && (
-                <span>
-                  {[formatCaptureDate(asset.takenAt || asset.date).date, locationLabel(asset), cameraLabel(asset)]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              )}
+          {playing && activeTransition === "memories" && showTitleCard && (
+            <div className="mv-title-card" aria-hidden="true">
+              <h2>{slideshowTitle || "Memories"}</h2>
+              <p>{memoriesSubtitle}</p>
             </div>
           )}
+          {playing && activeTransition === "memories" && !showTitleCard && (
+            <div className="mv-lower-third" key={asset.id} aria-hidden="true">
+              <strong>{asset.city || slideshowTitle}</strong>
+              <span>{asset.date}</span>
+            </div>
+          )}
+          {playing &&
+            prefs.caption !== "off" &&
+            (asset.description || prefs.caption === "details") && (
+              <div className="mv-caption">
+                <strong>{asset.description || name}</strong>
+                {prefs.caption === "details" && (
+                  <span>
+                    {[
+                      formatCaptureDate(asset.takenAt || asset.date).date,
+                      locationLabel(asset),
+                      cameraLabel(asset),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                )}
+              </div>
+            )}
           {playing && prefs.progress && !playable && (
-            <div className="mv-progress" aria-hidden="true" key={`${asset.id}:${prefs.interval}`}>
+            <div
+              className="mv-progress"
+              aria-hidden="true"
+              key={`${asset.id}:${prefs.interval}`}
+            >
               <span style={{ animationDuration: `${prefs.interval}s` }} />
             </div>
           )}
@@ -1242,7 +1609,15 @@ export function MediaViewer({
             <StackStrip
               members={stack}
               currentId={asset.id}
-              onPick={(id) => navigate(id, stack.findIndex((m) => m.id === id) > stack.findIndex((m) => m.id === asset.id) ? 1 : -1)}
+              onPick={(id) =>
+                navigate(
+                  id,
+                  stack.findIndex((m) => m.id === id) >
+                    stack.findIndex((m) => m.id === asset.id)
+                    ? 1
+                    : -1,
+                )
+              }
             />
           )}
         </main>
@@ -1257,10 +1632,22 @@ export function MediaViewer({
                   aria-current={item.id === asset.id ? "true" : undefined}
                   aria-label={item.name || item.originalFileName || "Item"}
                   title={item.name || item.originalFileName || "Item"}
-                  onClick={() => navigate(item.id, collection.indexOf(item) > index ? 1 : -1)}
+                  onClick={() =>
+                    navigate(item.id, collection.indexOf(item) > index ? 1 : -1)
+                  }
                 >
-                  {thumb ? <img src={thumb} alt="" loading="lazy" draggable="false" /> : <Icon name="mdiImageOutline" size={20} />}
-                  {viewerMedia(item).isVideo && <Icon name="mdiPlay" size={14} className="mv-filmstrip-badge" />}
+                  {thumb ? (
+                    <img src={thumb} alt="" loading="lazy" draggable="false" />
+                  ) : (
+                    <Icon name="mdiImageOutline" size={20} />
+                  )}
+                  {viewerMedia(item).isVideo && (
+                    <Icon
+                      name="mdiPlay"
+                      size={14}
+                      className="mv-filmstrip-badge"
+                    />
+                  )}
                 </button>
               );
             })}
@@ -1337,12 +1724,21 @@ export function MediaViewer({
             />
           </div>
           <span className="mv-key-hint">
-            ← → Browse {stackOpen && <><span>·</span> ↑ ↓ Stack </>}
+            ← → Browse{" "}
+            {stackOpen && (
+              <>
+                <span>·</span> ↑ ↓ Stack{" "}
+              </>
+            )}
             <span>·</span> I Info <span>·</span> Esc Close
           </span>
           <div className="mv-zoom">
             {media.isVideo && sources.original && (
-              <div className="mv-segment" role="group" aria-label="Video source">
+              <div
+                className="mv-segment"
+                role="group"
+                aria-label="Video source"
+              >
                 <button
                   type="button"
                   aria-pressed={videoSource === "original"}
@@ -1354,7 +1750,11 @@ export function MediaViewer({
                   type="button"
                   aria-pressed={videoSource === "encoded"}
                   onClick={() => switchVideoSource("encoded")}
-                  title={sources.hasEncoded ? "Encoded rendition" : "Encoded rendition · same source in this preview"}
+                  title={
+                    sources.hasEncoded
+                      ? "Encoded rendition"
+                      : "Encoded rendition · same source in this preview"
+                  }
                 >
                   Play encoded
                 </button>
@@ -1374,11 +1774,26 @@ export function MediaViewer({
             )}
             {!media.isVideo && !panorama && (
               <>
-                <Tool label="Zoom out" icon="mdiMagnifyMinusOutline" disabled={zoom <= 1} onClick={() => setScale(zoom / 1.25)} />
-                <button type="button" className="mv-fit" onClick={() => setScale(1)} title="Fit image to window">
+                <Tool
+                  label="Zoom out"
+                  icon="mdiMagnifyMinusOutline"
+                  disabled={zoom <= 1}
+                  onClick={() => setScale(zoom / 1.25)}
+                />
+                <button
+                  type="button"
+                  className="mv-fit"
+                  onClick={() => setScale(1)}
+                  title="Fit image to window"
+                >
                   {zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}% of fit`}
                 </button>
-                <Tool label="Zoom in" icon="mdiMagnifyPlusOutline" disabled={zoom >= 32} onClick={() => setScale(zoom * 1.25)} />
+                <Tool
+                  label="Zoom in"
+                  icon="mdiMagnifyPlusOutline"
+                  disabled={zoom >= 32}
+                  onClick={() => setScale(zoom * 1.25)}
+                />
               </>
             )}
             <Tool
@@ -1393,12 +1808,20 @@ export function MediaViewer({
           </div>
         </footer>
         {settingsOpen && (
-          <SlideshowSettings prefs={prefs} onChange={setPreference} onClose={() => setSettingsOpen(false)} />
+          <SlideshowSettings
+            prefs={prefs}
+            onChange={setPreference}
+            onClose={() => setSettingsOpen(false)}
+          />
         )}
         {error && (
           <div className="mv-error" role="alert">
             <span>{error}</span>
-            <Tool label="Dismiss viewer message" icon="mdiClose" onClick={() => setError("")} />
+            <Tool
+              label="Dismiss viewer message"
+              icon="mdiClose"
+              onClick={() => setError("")}
+            />
           </div>
         )}
         <div className="mv-status" role="status" aria-live="polite">
@@ -1426,7 +1849,11 @@ export function MediaViewer({
           <ChooserDialog
             kind={chooser.kind}
             albums={assetAlbums}
-            people={peopleChips({ faces, people: profiles, personIds: asset.personIds || [] })
+            people={peopleChips({
+              faces,
+              people: profiles,
+              personIds: asset.personIds || [],
+            })
               .chips.filter((chip) => chip.person)
               .map((chip) => chip.person)}
             close={() => setChooser(null)}
@@ -1458,7 +1885,8 @@ export function MediaViewer({
             }
           >
             <p className="mv-dialog-copy">
-              {name} will be removed from every album and cannot be recovered afterwards.
+              {name} will be removed from every album and cannot be recovered
+              afterwards.
             </p>
           </Dialog>
         )}
@@ -1472,22 +1900,36 @@ function PanoramaStage({ src, alt, natural, viewport, onNatural, onError }) {
     gesture = useRef(null),
     layout = panoramaLayout(natural, viewport),
     id = useId();
-  const current = clampPanorama(offset === null && layout ? layout.maxOffset / 2 : offset, layout);
+  const current = clampPanorama(
+    offset === null && layout ? layout.maxOffset / 2 : offset,
+    layout,
+  );
   const windowBox = panoramaWindow(current, layout, viewport);
-  const percent = layout?.maxOffset ? Math.round((current / layout.maxOffset) * 100) : 0;
+  const percent = layout?.maxOffset
+    ? Math.round((current / layout.maxOffset) * 100)
+    : 0;
   const nudge = (delta) => setOffset(clampPanorama(current + delta, layout));
   return (
     <div
       className="mv-panorama"
       onPointerDown={(event) => {
-        if (event.button > 0 || event.target.closest?.("button,[role='slider']")) return;
+        if (
+          event.button > 0 ||
+          event.target.closest?.("button,[role='slider']")
+        )
+          return;
         gesture.current = { x: event.clientX, offset: current };
         event.currentTarget.setPointerCapture?.(event.pointerId);
         event.preventDefault();
       }}
       onPointerMove={(event) => {
         if (!gesture.current) return;
-        setOffset(clampPanorama(gesture.current.offset - (event.clientX - gesture.current.x), layout));
+        setOffset(
+          clampPanorama(
+            gesture.current.offset - (event.clientX - gesture.current.x),
+            layout,
+          ),
+        );
       }}
       onPointerUp={() => (gesture.current = null)}
       onPointerCancel={() => (gesture.current = null)}
@@ -1502,9 +1944,20 @@ function PanoramaStage({ src, alt, natural, viewport, onNatural, onError }) {
         src={src}
         alt={alt}
         draggable="false"
-        style={layout ? { width: layout.width, height: layout.height, transform: `translateX(${-current}px)` } : undefined}
+        style={
+          layout
+            ? {
+                width: layout.width,
+                height: layout.height,
+                transform: `translateX(${-current}px)`,
+              }
+            : undefined
+        }
         onLoad={(event) =>
-          onNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
+          onNatural({
+            width: event.currentTarget.naturalWidth,
+            height: event.currentTarget.naturalHeight,
+          })
         }
         onError={onError}
       />
@@ -1524,8 +1977,10 @@ function PanoramaStage({ src, alt, natural, viewport, onNatural, onError }) {
             onKeyDown={(event) => {
               const large = event.shiftKey ? 5 : 1;
               const stepSize = (layout.maxOffset / 40) * large;
-              if (event.key === "ArrowLeft" || event.key === "ArrowUp") nudge(-stepSize);
-              else if (event.key === "ArrowRight" || event.key === "ArrowDown") nudge(stepSize);
+              if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+                nudge(-stepSize);
+              else if (event.key === "ArrowRight" || event.key === "ArrowDown")
+                nudge(stepSize);
               else if (event.key === "Home") setOffset(0);
               else if (event.key === "End") setOffset(layout.maxOffset);
               else return;
@@ -1534,7 +1989,8 @@ function PanoramaStage({ src, alt, natural, viewport, onNatural, onError }) {
             }}
             onPointerDown={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
-              const fraction = (event.clientX - rect.left) / rect.width - windowBox.width / 2;
+              const fraction =
+                (event.clientX - rect.left) / rect.width - windowBox.width / 2;
               setOffset(clampPanorama(fraction * layout.width, layout));
               gesture.current = null;
               event.stopPropagation();
@@ -1542,10 +1998,15 @@ function PanoramaStage({ src, alt, natural, viewport, onNatural, onError }) {
           >
             <span
               className="mv-minimap-window"
-              style={{ left: `${windowBox.left * 100}%`, width: `${windowBox.width * 100}%` }}
+              style={{
+                left: `${windowBox.left * 100}%`,
+                width: `${windowBox.width * 100}%`,
+              }}
             />
           </div>
-          <small id={`${id}-hint`}>Drag the photo to look around · arrows move the view</small>
+          <small id={`${id}-hint`}>
+            Drag the photo to look around · arrows move the view
+          </small>
         </div>
       )}
     </div>
@@ -1570,7 +2031,11 @@ function StackStrip({ members, currentId, onPick }) {
                 title={member.name || member.originalFileName}
                 onClick={() => member.id !== currentId && onPick(member.id)}
               >
-                {thumb ? <img src={thumb} alt="" draggable="false" loading="lazy" /> : <Icon name="mdiImageOutline" />}
+                {thumb ? (
+                  <img src={thumb} alt="" draggable="false" loading="lazy" />
+                ) : (
+                  <Icon name="mdiImageOutline" />
+                )}
                 {member.stackPrimary && (
                   <span className="mv-stack-primary">
                     <Icon name="mdiCrownOutline" size={12} />
@@ -1587,7 +2052,11 @@ function StackStrip({ members, currentId, onPick }) {
 }
 function RatingStars({ value, onRate, compact = false }) {
   return (
-    <div className={`mv-stars ${compact ? "compact" : ""}`} role="group" aria-label="Rating">
+    <div
+      className={`mv-stars ${compact ? "compact" : ""}`}
+      role="group"
+      aria-label="Rating"
+    >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           type="button"
@@ -1597,10 +2066,18 @@ function RatingStars({ value, onRate, compact = false }) {
           aria-pressed={star === value}
           onClick={() => onRate(star === value ? 0 : star)}
         >
-          <Icon name={star <= value ? "mdiStar" : "mdiStarOutline"} size={compact ? 18 : 22} />
+          <Icon
+            name={star <= value ? "mdiStar" : "mdiStarOutline"}
+            size={compact ? 18 : 22}
+          />
         </button>
       ))}
-      <button type="button" className="mv-stars-clear" disabled={!value} onClick={() => onRate(0)}>
+      <button
+        type="button"
+        className="mv-stars-clear"
+        disabled={!value}
+        onClick={() => onRate(0)}
+      >
         Clear
       </button>
     </div>
@@ -1611,11 +2088,21 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
     <section className="mv-slideshow-settings" aria-label="Slideshow settings">
       <header>
         <h2>Slideshow</h2>
-        <Tool label="Close slideshow settings" icon="mdiClose" onClick={onClose} />
+        <Tool
+          label="Close slideshow settings"
+          icon="mdiClose"
+          onClick={onClose}
+        />
       </header>
       <label>
         Photo duration
-        <select aria-label="Photo duration" value={prefs.interval} onChange={(event) => onChange({ interval: Number(event.target.value) })}>
+        <select
+          aria-label="Photo duration"
+          value={prefs.interval}
+          onChange={(event) =>
+            onChange({ interval: Number(event.target.value) })
+          }
+        >
           {[2, 3, 5, 10, 15, 30].map((seconds) => (
             <option key={seconds} value={seconds}>
               {seconds} seconds
@@ -1625,7 +2112,11 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
       </label>
       <label>
         Image fit
-        <select aria-label="Image fit" value={prefs.look} onChange={(event) => onChange({ look: event.target.value })}>
+        <select
+          aria-label="Image fit"
+          value={prefs.look}
+          onChange={(event) => onChange({ look: event.target.value })}
+        >
           <option value="fit">Fit entire photo</option>
           <option value="fill">Fill screen</option>
           <option value="blur">Blurred background</option>
@@ -1633,7 +2124,11 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
       </label>
       <label>
         Caption
-        <select aria-label="Slideshow caption" value={prefs.caption} onChange={(event) => onChange({ caption: event.target.value })}>
+        <select
+          aria-label="Slideshow caption"
+          value={prefs.caption}
+          onChange={(event) => onChange({ caption: event.target.value })}
+        >
           <option value="off">Off</option>
           <option value="description">Description</option>
           <option value="details">Description & details</option>
@@ -1641,7 +2136,11 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
       </label>
       <label>
         Order
-        <select aria-label="Slideshow order" value={prefs.order} onChange={(event) => onChange({ order: event.target.value })}>
+        <select
+          aria-label="Slideshow order"
+          value={prefs.order}
+          onChange={(event) => onChange({ order: event.target.value })}
+        >
           <option value="ascending">Ascending</option>
           <option value="descending">Descending</option>
           <option value="shuffle">Shuffle</option>
@@ -1649,18 +2148,33 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
       </label>
       <label>
         Transition
-        <select aria-label="Slideshow transition" value={prefs.transition} onChange={(event) => onChange({ transition: event.target.value })}>
-          <option value="none">None</option>
-          <option value="fade">Fade</option>
-          <option value="slide">Slide</option>
+        <select
+          aria-label="Slideshow transition"
+          value={prefs.transition}
+          onChange={(event) => onChange({ transition: event.target.value })}
+        >
+          {SLIDESHOW_TRANSITIONS.map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+              {id === "fade" ? " (default)" : ""}
+            </option>
+          ))}
         </select>
       </label>
       <label className="mv-check">
-        <input type="checkbox" checked={prefs.repeat} onChange={(event) => onChange({ repeat: event.target.checked })} />
+        <input
+          type="checkbox"
+          checked={prefs.repeat}
+          onChange={(event) => onChange({ repeat: event.target.checked })}
+        />
         Repeat collection
       </label>
       <label className="mv-check">
-        <input type="checkbox" checked={prefs.progress} onChange={(event) => onChange({ progress: event.target.checked })} />
+        <input
+          type="checkbox"
+          checked={prefs.progress}
+          onChange={(event) => onChange({ progress: event.target.checked })}
+        />
         Show progress bar
       </label>
       <p>Videos play to their end. Photos follow the duration above.</p>
@@ -1670,13 +2184,20 @@ function SlideshowSettings({ prefs, onChange, onClose }) {
 function CastDialog({ devices, connected, close, onConnect }) {
   const [busy, setBusy] = useState(null);
   const iconFor = (type) =>
-    ({ tv: "mdiTelevision", television: "mdiTelevision", monitor: "mdiMonitor", display: "mdiMonitor", phone: "mdiCellphone", speaker: "mdiVolumeHigh" })[
-      String(type || "").toLowerCase()
-    ] || "mdiDevices";
+    ({
+      tv: "mdiTelevision",
+      television: "mdiTelevision",
+      monitor: "mdiMonitor",
+      display: "mdiMonitor",
+      phone: "mdiCellphone",
+      speaker: "mdiVolumeHigh",
+    })[String(type || "").toLowerCase()] || "mdiDevices";
   return (
     <Dialog title="Cast" close={close}>
       {devices.length === 0 ? (
-        <p className="mv-dialog-copy">No cast devices were found on this network.</p>
+        <p className="mv-dialog-copy">
+          No cast devices were found on this network.
+        </p>
       ) : (
         <ul className="mv-cast-list">
           {devices.map((device) => {
@@ -1686,12 +2207,22 @@ function CastDialog({ devices, connected, close, onConnect }) {
                 <Icon name={iconFor(device.type)} size={20} />
                 <div>
                   <strong>{device.name}</strong>
-                  <span>{active ? "Connected" : busy === device.id ? "Connecting…" : device.type || "Device"}</span>
+                  <span>
+                    {active
+                      ? "Connected"
+                      : busy === device.id
+                        ? "Connecting…"
+                        : device.type || "Device"}
+                  </span>
                 </div>
                 <Button
                   primary={!active}
                   disabled={busy !== null}
-                  data-initial-focus={active || (!connected && device === devices[0]) ? "" : undefined}
+                  data-initial-focus={
+                    active || (!connected && device === devices[0])
+                      ? ""
+                      : undefined
+                  }
                   onClick={async () => {
                     setBusy(device.id);
                     await onConnect(active ? null : device.id);
@@ -1711,13 +2242,28 @@ function CastDialog({ devices, connected, close, onConnect }) {
 function ChooserDialog({ kind, albums, people, close, onPick }) {
   const rows =
     kind === "album"
-      ? albums.map((album) => ({ key: album.id, label: album.name, image: album.cover, payload: { albumId: album.id } }))
-      : people.map((person) => ({ key: person.id, label: person.name, person, payload: { personId: person.id } }));
+      ? albums.map((album) => ({
+          key: album.id,
+          label: album.name,
+          image: album.cover,
+          payload: { albumId: album.id },
+        }))
+      : people.map((person) => ({
+          key: person.id,
+          label: person.name,
+          person,
+          payload: { personId: person.id },
+        }));
   return (
-    <Dialog title={kind === "album" ? "Set as album cover" : "Set as featured photo"} close={close}>
+    <Dialog
+      title={kind === "album" ? "Set as album cover" : "Set as featured photo"}
+      close={close}
+    >
       {rows.length === 0 ? (
         <p className="mv-dialog-copy">
-          {kind === "album" ? "This item is not in any album yet." : "No people are tagged in this item yet."}
+          {kind === "album"
+            ? "This item is not in any album yet."
+            : "No people are tagged in this item yet."}
         </p>
       ) : (
         <div className="mv-choice-list">
@@ -1787,7 +2333,8 @@ function InfoPanel(props) {
     link = osmLink(asset.latitude, asset.longitude),
     place = locationLabel(asset),
     coords =
-      validCoordinate(asset.latitude, 90) !== null && validCoordinate(asset.longitude, 180) !== null
+      validCoordinate(asset.latitude, 90) !== null &&
+      validCoordinate(asset.longitude, 180) !== null
         ? `${Number(asset.latitude).toFixed(4)}, ${Number(asset.longitude).toFixed(4)}`
         : null;
   return (
@@ -1803,6 +2350,20 @@ function InfoPanel(props) {
           asset={asset}
           canEdit={canEdit}
           badge={description ? (manual ? "Manual" : description.status) : null}
+          ai={
+            description && !manual && description.generated
+              ? {
+                  detail: [
+                    description.model,
+                    description.confidence !== null
+                      ? `${description.confidence}% confident`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                }
+              : null
+          }
           onSave={async (value) => {
             if ((await update({ description: value })) !== false) onManual();
           }}
@@ -1856,11 +2417,21 @@ function InfoPanel(props) {
               <span>
                 <strong>{captured.date || "Date unknown"}</strong>
                 <small>
-                  {[captured.time, asset.timezone ? asset.timezone.replace(/_/g, " ") : null].filter(Boolean).join(" · ") ||
-                    "Add a capture time"}
+                  {[
+                    captured.time,
+                    asset.timezone ? asset.timezone.replace(/_/g, " ") : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Add a capture time"}
                 </small>
               </span>
-              {canEdit && <Icon name="mdiPencilOutline" size={16} className="mv-row-edit" />}
+              {canEdit && (
+                <Icon
+                  name="mdiPencilOutline"
+                  size={16}
+                  className="mv-row-edit"
+                />
+              )}
             </button>
             <button
               type="button"
@@ -1875,20 +2446,45 @@ function InfoPanel(props) {
               <Icon name="mdiMapMarkerOutline" size={20} />
               <span>
                 <strong>{place || "No location"}</strong>
-                <small>{coords || (canEdit ? "Add a location" : "Location unknown")}</small>
+                <small>
+                  {coords || (canEdit ? "Add a location" : "Location unknown")}
+                </small>
               </span>
-              {canEdit && <Icon name="mdiPencilOutline" size={16} className="mv-row-edit" />}
+              {canEdit && (
+                <Icon
+                  name="mdiPencilOutline"
+                  size={16}
+                  className="mv-row-edit"
+                />
+              )}
             </button>
             {link && (
-              <a className="mv-link" href={link} target="_blank" rel="noopener noreferrer">
+              <a
+                className="mv-link"
+                href={link}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <Icon name="mdiOpenInNew" size={15} />
                 Open in OpenStreetMap
               </a>
             )}
           </div>
         </section>
-        <DetailsSection asset={asset} name={name} media={media} available={available} hasAction={Boolean(onAction)} run={run} />
-        <TagsSection asset={asset} canEdit={canEdit && !trash} tagOptions={tagOptions} update={update} />
+        <DetailsSection
+          asset={asset}
+          name={name}
+          media={media}
+          available={available}
+          hasAction={Boolean(onAction)}
+          run={run}
+        />
+        <TagsSection
+          asset={asset}
+          canEdit={canEdit && !trash}
+          tagOptions={tagOptions}
+          update={update}
+        />
         {albums.length > 0 && (
           <section>
             <h3>Appears in</h3>
@@ -1900,7 +2496,11 @@ function InfoPanel(props) {
                   disabled={!onAction || !available.includes("open-album")}
                   onClick={() => run("open-album", { albumId: album.id })}
                 >
-                  {album.cover ? <img src={album.cover} alt="" loading="lazy" /> : <Icon name="mdiImageAlbum" size={20} />}
+                  {album.cover ? (
+                    <img src={album.cover} alt="" loading="lazy" />
+                  ) : (
+                    <Icon name="mdiImageAlbum" size={20} />
+                  )}
                   <span>
                     <strong>{album.name}</strong>
                     {album.count != null && <small>{album.count} items</small>}
@@ -1918,7 +2518,12 @@ function InfoPanel(props) {
           </p>
         )}
         {asset.ocr && (
-          <OcrSection text={asset.ocr} showOcr={showOcr} onShowOcr={onShowOcr} announce={announce} />
+          <OcrSection
+            text={asset.ocr}
+            showOcr={showOcr}
+            onShowOcr={onShowOcr}
+            announce={announce}
+          />
         )}
       </div>
       {dateOpen && (
@@ -1926,7 +2531,8 @@ function InfoPanel(props) {
           asset={asset}
           close={() => setDateOpen(false)}
           onSave={async (patch) => {
-            if ((await update(patch, "Date updated")) !== false) setDateOpen(false);
+            if ((await update(patch, "Date updated")) !== false)
+              setDateOpen(false);
           }}
         />
       )}
@@ -1935,14 +2541,15 @@ function InfoPanel(props) {
           asset={asset}
           close={() => setLocationOpen(false)}
           onSave={async (patch) => {
-            if ((await update(patch, "Location updated")) !== false) setLocationOpen(false);
+            if ((await update(patch, "Location updated")) !== false)
+              setLocationOpen(false);
           }}
         />
       )}
     </aside>
   );
 }
-function DescriptionEditor({ asset, canEdit, badge, onSave }) {
+function DescriptionEditor({ asset, canEdit, badge, ai, onSave }) {
   const [value, setValue] = useState(asset.description || ""),
     [editing, setEditing] = useState(false),
     area = useRef(null),
@@ -1966,7 +2573,24 @@ function DescriptionEditor({ asset, canEdit, badge, onSave }) {
     <section className="mv-description-section">
       <div className="mv-section-heading">
         <h3 id={id}>Description</h3>
-        {badge && <span className={`mv-badge ${badge === "Generated" ? "generated" : ""}`}>{badge}</span>}
+        {badge === "Generated" ? (
+          <span
+            className="mv-badge mv-ai-badge"
+            title={
+              ai?.detail ? `Written by AI · ${ai.detail}` : "Written by AI"
+            }
+          >
+            <Icon name="mdiShimmer" size={12} />
+            AI
+          </span>
+        ) : badge === "Manual" ? (
+          <span className="mv-badge" title="Written by you">
+            <Icon name="mdiPencilOutline" size={11} />
+            Yours
+          </span>
+        ) : (
+          badge && <span className="mv-badge">{badge}</span>
+        )}
       </div>
       {canEdit ? (
         <textarea
@@ -1993,78 +2617,148 @@ function DescriptionEditor({ asset, canEdit, badge, onSave }) {
           }}
         />
       ) : (
-        <p className="mv-description">{asset.description || "No description"}</p>
+        <p className="mv-description">
+          {asset.description || "No description"}
+        </p>
       )}
     </section>
   );
 }
-function EnrichmentCard({ description, manual, sensitivity, canEdit, available, hasAction, run, onClear }) {
+function EnrichmentCard({
+  description,
+  manual,
+  sensitivity,
+  canEdit,
+  available,
+  hasAction,
+  run,
+  onClear,
+}) {
   const can = (id) => hasAction && available.includes(id);
   const tone =
-    sensitivity?.status === "Needs review" ? "warning" : sensitivity?.status === "Overridden" ? "blue" : "teal";
+    sensitivity?.status === "Needs review"
+      ? "warning"
+      : sensitivity?.status === "Overridden"
+        ? "blue"
+        : "teal";
+  const aiDescription = description && !manual && description.generated;
+  const likelihood =
+    sensitivity?.score !== null && sensitivity?.score !== undefined
+      ? `${Math.round(sensitivity.score * 100)}% likely sensitive`
+      : null;
   return (
     <section className="mv-enrichment" aria-label="AI enrichment">
-      <div className="mv-section-heading">
-        <h3>
+      <div className="mv-enrich-head">
+        <span className="mv-ai-mark" aria-hidden="true">
           <Icon name="mdiShimmer" size={14} />
-          Enrichment
-        </h3>
+        </span>
+        <h3>Enrichment</h3>
         <small className="mv-note">Preview · sample data</small>
       </div>
-      {description && (
-        <div className="mv-enrich-row">
-          <div>
-            <strong>Description</strong>
-            <span>
-              {manual ? "Manual" : description.status}
-              {!manual && description.generated && description.model ? ` · ${description.model}` : ""}
-              {!manual && description.generated && description.confidence !== null
-                ? ` · ${description.confidence}% confidence`
-                : ""}
+      <div className="mv-enrich-list">
+        {description && (
+          <div className="mv-enrich-row">
+            <span
+              className={`mv-enrich-icon ${aiDescription ? "ai" : "manual"}`}
+              aria-hidden="true"
+            >
+              <Icon
+                name={aiDescription ? "mdiShimmer" : "mdiPencilOutline"}
+                size={15}
+              />
             </span>
+            <div className="mv-enrich-text">
+              <strong>Description</strong>
+              <span>
+                {aiDescription
+                  ? [
+                      "Written by AI",
+                      description.model,
+                      description.confidence !== null
+                        ? `${description.confidence}% confident`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : manual || !description.generated
+                    ? "Written by you"
+                    : description.status}
+              </span>
+            </div>
+            <div className="mv-enrich-actions">
+              {aiDescription && can("accept-description") && canEdit && (
+                <button type="button" onClick={() => run("accept-description")}>
+                  Accept
+                </button>
+              )}
+              {can("rerun-description") && canEdit && (
+                <button
+                  type="button"
+                  aria-label="Rewrite description with AI"
+                  title="Rewrite with AI"
+                  onClick={() => run("rerun-description")}
+                >
+                  <Icon name="mdiRefresh" size={14} />
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label="Clear description"
+                  title="Clear"
+                  onClick={onClear}
+                >
+                  <Icon name="mdiClose" size={14} />
+                </button>
+              )}
+            </div>
           </div>
-          <div className="mv-enrich-actions">
-            {!manual && description.generated && can("accept-description") && canEdit && (
-              <button type="button" onClick={() => run("accept-description")}>
-                Accept
-              </button>
-            )}
-            {canEdit && (
-              <button type="button" onClick={onClear}>
-                Clear
-              </button>
-            )}
-            {can("rerun-description") && canEdit && (
-              <button type="button" onClick={() => run("rerun-description")}>
-                Rerun
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {sensitivity && (
-        <div className="mv-enrich-row">
-          <div>
-            <strong>Sensitivity</strong>
-            <span>
-              {sensitivity.score !== null ? `Score ${Math.round(sensitivity.score * 100)}% · ` : ""}
-              <em className={`mv-pill ${tone}`}>{sensitivity.status}</em>
+        )}
+        {sensitivity && (
+          <div className="mv-enrich-row">
+            <span className={`mv-enrich-icon ${tone}`} aria-hidden="true">
+              <Icon
+                name={
+                  sensitivity.status === "Needs review"
+                    ? "mdiShieldAlertOutline"
+                    : "mdiShieldCheckOutline"
+                }
+                size={15}
+              />
             </span>
+            <div className="mv-enrich-text">
+              <strong>
+                Sensitive content
+                <em className={`mv-pill ${tone}`}>{sensitivity.status}</em>
+              </strong>
+              <span>
+                {["Checked by AI", likelihood].filter(Boolean).join(" · ")}
+              </span>
+            </div>
+            <div className="mv-enrich-actions">
+              {canEdit &&
+                (sensitivity.marked ? can("unlock") : can("lock")) && (
+                  <button
+                    type="button"
+                    onClick={() => run(sensitivity.marked ? "unlock" : "lock")}
+                  >
+                    {sensitivity.marked ? "Mark safe" : "Mark sensitive"}
+                  </button>
+                )}
+              {can("rerun-sensitive") && canEdit && (
+                <button
+                  type="button"
+                  aria-label="Check again with AI"
+                  title="Check again"
+                  onClick={() => run("rerun-sensitive")}
+                >
+                  <Icon name="mdiRefresh" size={14} />
+                </button>
+              )}
+            </div>
           </div>
-          <div className="mv-enrich-actions">
-            {canEdit && (sensitivity.marked ? can("unlock") : can("lock")) && (
-              <button type="button" onClick={() => run(sensitivity.marked ? "unlock" : "lock")}>
-                {sensitivity.marked ? "Mark safe" : "Mark sensitive"}
-              </button>
-            )}
-            {can("rerun-sensitive") && canEdit && (
-              <button type="button" onClick={() => run("rerun-sensitive")}>
-                Rerun
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   );
 }
@@ -2089,7 +2783,12 @@ function PeopleSection({
     [newName, setNewName] = useState(""),
     menuRef = useRef(null),
     buttons = useRef(new Map());
-  const { chips, hiddenCount } = peopleChips({ faces, people: profiles, personIds: asset.personIds || [], showHidden });
+  const { chips, hiddenCount } = peopleChips({
+    faces,
+    people: profiles,
+    personIds: asset.personIds || [],
+    showHidden,
+  });
   const takenAt = asset.takenAt || asset.date;
   const canFace = typeof onFaceAction === "function" && !readOnly;
   const closeMenu = (restore = true) => {
@@ -2101,7 +2800,8 @@ function PeopleSection({
     if (restore && key) buttons.current.get(key)?.focus();
   };
   useEffect(() => {
-    if (openKey && mode === "menu") menuRef.current?.querySelector('[role="menuitem"]')?.focus();
+    if (openKey && mode === "menu")
+      menuRef.current?.querySelector('[role="menuitem"]')?.focus();
     else if (openKey) menuRef.current?.querySelector("input")?.focus();
   }, [openKey, mode]);
   const face = (chip, payload) => {
@@ -2109,20 +2809,35 @@ function PeopleSection({
     action(onFaceAction, asset.id, { ...payload, faceId: chip.faceId });
   };
   if (!chips.length && !onTagPeople && !hiddenCount) return null;
-  const matches = profiles.filter((person) => person.name?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const matches = profiles.filter((person) =>
+    person.name?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
   return (
     <section>
       <div className="mv-section-heading">
         <h3>People</h3>
         <div className="mv-heading-actions">
           {hiddenCount > 0 && (
-            <button type="button" className="mv-text-button" aria-pressed={showHidden} onClick={() => setShowHidden((value) => !value)}>
-              <Icon name={showHidden ? "mdiEyeOffOutline" : "mdiEyeOutline"} size={15} />
+            <button
+              type="button"
+              className="mv-text-button"
+              aria-pressed={showHidden}
+              onClick={() => setShowHidden((value) => !value)}
+            >
+              <Icon
+                name={showHidden ? "mdiEyeOffOutline" : "mdiEyeOutline"}
+                size={15}
+              />
               {showHidden ? "Hide hidden" : `Show hidden (${hiddenCount})`}
             </button>
           )}
           {onTagPeople && !readOnly && (
-            <button type="button" className="mv-text-button" aria-label="Add person" onClick={() => action(onTagPeople, asset.id)}>
+            <button
+              type="button"
+              className="mv-text-button"
+              aria-label="Add person"
+              onClick={() => action(onTagPeople, asset.id)}
+            >
               <Icon name="mdiAccountPlusOutline" size={15} />
               Add
             </button>
@@ -2134,10 +2849,20 @@ function PeopleSection({
       ) : (
         <div className="mv-people-list">
           {chips.map((chip) => {
-            const label = chip.person ? personChipLabel(chip.person, takenAt) : chip.name;
-            const age = chip.person ? ageAtCapture(chip.person.birthday || chip.person.birthDate, takenAt) : null;
+            const label = chip.person
+              ? personChipLabel(chip.person, takenAt)
+              : chip.name;
+            const age = chip.person
+              ? ageAtCapture(
+                  chip.person.birthday || chip.person.birthDate,
+                  takenAt,
+                )
+              : null;
             const open = openKey === chip.key;
-            const highlightChip = () => onHighlight(chip.box ? { box: chip.box, label: chip.name } : null);
+            const highlightChip = () =>
+              onHighlight(
+                chip.box ? { box: chip.box, label: chip.name } : null,
+              );
             return (
               <div
                 className={`mv-chip-wrap ${chip.hidden ? "hidden-person" : ""}`}
@@ -2146,17 +2871,29 @@ function PeopleSection({
                 onPointerLeave={() => onHighlight(null)}
                 onFocus={highlightChip}
                 onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget)) onHighlight(null);
+                  if (!event.currentTarget.contains(event.relatedTarget))
+                    onHighlight(null);
                 }}
               >
                 <button
                   type="button"
                   className="mv-chip"
                   title={label}
-                  disabled={!chip.person || !onAction || !available.includes("open-person")}
-                  onClick={() => run("open-person", { personId: chip.person.id })}
+                  disabled={
+                    !chip.person ||
+                    !onAction ||
+                    !available.includes("open-person")
+                  }
+                  onClick={() =>
+                    run("open-person", { personId: chip.person.id })
+                  }
                 >
-                  <PersonAvatar person={chip.person || { name: chip.name, avatarColor: "gray" }} size={34} />
+                  <PersonAvatar
+                    person={
+                      chip.person || { name: chip.name, avatarColor: "gray" }
+                    }
+                    size={34}
+                  />
                   <span>
                     {chip.name}
                     {age !== null && <small aria-hidden="true"> · {age}</small>}
@@ -2174,7 +2911,11 @@ function PeopleSection({
                       if (element) buttons.current.set(chip.key, element);
                       else buttons.current.delete(chip.key);
                     }}
-                    onClick={() => (open ? closeMenu(false) : (setMode("menu"), setOpenKey(chip.key)))}
+                    onClick={() =>
+                      open
+                        ? closeMenu(false)
+                        : (setMode("menu"), setOpenKey(chip.key))
+                    }
                   >
                     <Icon name="mdiDotsVertical" size={16} />
                   </button>
@@ -2185,30 +2926,57 @@ function PeopleSection({
                     role="menu"
                     aria-label={`Options for ${chip.name}`}
                     ref={menuRef}
-                    onKeyDown={(event) => menuKeys(event, menuRef.current, closeMenu)}
+                    onKeyDown={(event) =>
+                      menuKeys(event, menuRef.current, closeMenu)
+                    }
                   >
-                    {chip.person && onAction && available.includes("open-person") && (
-                      <button type="button" role="menuitem" onClick={() => (closeMenu(), run("open-person", { personId: chip.person.id }))}>
-                        <Icon name="mdiAccountOutline" size={16} />
-                        Open person
-                      </button>
-                    )}
+                    {chip.person &&
+                      onAction &&
+                      available.includes("open-person") && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => (
+                            closeMenu(),
+                            run("open-person", { personId: chip.person.id })
+                          )}
+                        >
+                          <Icon name="mdiAccountOutline" size={16} />
+                          Open person
+                        </button>
+                      )}
                     {chip.faceId && canFace && (
                       <>
-                        <button type="button" role="menuitem" onClick={() => setMode("reassign")}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => setMode("reassign")}
+                        >
                           <Icon name="mdiAccountEditOutline" size={16} />
                           Reassign face…
                         </button>
-                        <button type="button" role="menuitem" onClick={() => setMode("create")}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => setMode("create")}
+                        >
                           <Icon name="mdiAccountPlusOutline" size={16} />
                           Create new person…
                         </button>
-                        <button type="button" role="menuitem" onClick={() => face(chip, { type: "remove" })}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => face(chip, { type: "remove" })}
+                        >
                           <Icon name="mdiClose" size={16} />
                           Remove face
                         </button>
                         {!chip.hidden && (
-                          <button type="button" role="menuitem" onClick={() => face(chip, { type: "hide" })}>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => face(chip, { type: "hide" })}
+                          >
                             <Icon name="mdiEyeOffOutline" size={16} />
                             Hide face
                           </button>
@@ -2218,7 +2986,18 @@ function PeopleSection({
                   </div>
                 )}
                 {open && mode === "reassign" && (
-                  <div className="mv-menu mv-chip-menu mv-picker" role="group" aria-label="Reassign face" ref={menuRef} onKeyDown={(event) => event.key === "Escape" && (event.preventDefault(), event.stopPropagation(), closeMenu())}>
+                  <div
+                    className="mv-menu mv-chip-menu mv-picker"
+                    role="group"
+                    aria-label="Reassign face"
+                    ref={menuRef}
+                    onKeyDown={(event) =>
+                      event.key === "Escape" &&
+                      (event.preventDefault(),
+                      event.stopPropagation(),
+                      closeMenu())
+                    }
+                  >
                     <input
                       type="search"
                       aria-label="Find a person"
@@ -2232,18 +3011,33 @@ function PeopleSection({
                           closeMenu();
                         } else if (event.key === "Enter" && matches[0]) {
                           event.preventDefault();
-                          face(chip, { type: "reassign", personId: matches[0].id });
+                          face(chip, {
+                            type: "reassign",
+                            personId: matches[0].id,
+                          });
                         }
                       }}
                     />
                     <div className="mv-picker-list">
                       {matches.slice(0, 8).map((person) => (
-                        <button type="button" key={person.id} disabled={person.id === chip.person?.id} onClick={() => face(chip, { type: "reassign", personId: person.id })}>
+                        <button
+                          type="button"
+                          key={person.id}
+                          disabled={person.id === chip.person?.id}
+                          onClick={() =>
+                            face(chip, {
+                              type: "reassign",
+                              personId: person.id,
+                            })
+                          }
+                        >
                           <PersonAvatar person={person} size={26} />
                           {person.name}
                         </button>
                       ))}
-                      {matches.length === 0 && <p className="mv-no-people">No people match.</p>}
+                      {matches.length === 0 && (
+                        <p className="mv-no-people">No people match.</p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2254,7 +3048,8 @@ function PeopleSection({
                     aria-label="Create new person"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      if (newName.trim()) face(chip, { type: "create", name: newName.trim() });
+                      if (newName.trim())
+                        face(chip, { type: "create", name: newName.trim() });
                     }}
                     onKeyDown={(event) => {
                       event.stopPropagation();
@@ -2264,12 +3059,21 @@ function PeopleSection({
                       }
                     }}
                   >
-                    <input aria-label="New person name" placeholder="Name" value={newName} onChange={(event) => setNewName(event.target.value)} />
+                    <input
+                      aria-label="New person name"
+                      placeholder="Name"
+                      value={newName}
+                      onChange={(event) => setNewName(event.target.value)}
+                    />
                     <div className="mv-picker-actions">
                       <button type="button" onClick={() => closeMenu()}>
                         Cancel
                       </button>
-                      <button type="submit" className="primary" disabled={!newName.trim()}>
+                      <button
+                        type="submit"
+                        className="primary"
+                        disabled={!newName.trim()}
+                      >
                         Create
                       </button>
                     </div>
@@ -2297,7 +3101,11 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
       <span className="mv-path" key="path">
         <code>{asset.originalPath}</code>
         {can("open-folder") && (
-          <button type="button" className="mv-text-button" onClick={() => run("open-folder")}>
+          <button
+            type="button"
+            className="mv-text-button"
+            onClick={() => run("open-folder")}
+          >
             <Icon name="mdiFolderOpenOutline" size={14} />
             Show in folder
           </button>
@@ -2313,7 +3121,14 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
     camera && [
       "Camera",
       can("search-camera") ? (
-        <button type="button" className="mv-link-button" key="camera" onClick={() => run("search-camera", { make: asset.make, model: asset.model })}>
+        <button
+          type="button"
+          className="mv-link-button"
+          key="camera"
+          onClick={() =>
+            run("search-camera", { make: asset.make, model: asset.model })
+          }
+        >
           {camera}
         </button>
       ) : (
@@ -2324,7 +3139,12 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
     asset.lensModel && [
       "Lens",
       can("search-camera") ? (
-        <button type="button" className="mv-link-button" key="lens" onClick={() => run("search-camera", { lensModel: asset.lensModel })}>
+        <button
+          type="button"
+          className="mv-link-button"
+          key="lens"
+          onClick={() => run("search-camera", { lensModel: asset.lensModel })}
+        >
           {asset.lensModel}
         </button>
       ) : (
@@ -2336,10 +3156,19 @@ function DetailsSection({ asset, name, media, available, hasAction, run }) {
     media.isVideo &&
       (asset.frameRate || asset.duration) && [
         "Video",
-        [asset.frameRate ? `${asset.frameRate} fps` : null, formatDuration(asset.duration)].filter(Boolean).join(" · "),
+        [
+          asset.frameRate ? `${asset.frameRate} fps` : null,
+          formatDuration(asset.duration),
+        ]
+          .filter(Boolean)
+          .join(" · "),
         "mdiVideoOutline",
       ],
-    asset.checksum && ["Checksum", <code key="sum">{asset.checksum}</code>, "mdiHarddisk"],
+    asset.checksum && [
+      "Checksum",
+      <code key="sum">{asset.checksum}</code>,
+      "mdiHarddisk",
+    ],
   ].filter(Boolean);
   return (
     <section>
@@ -2363,22 +3192,53 @@ function TagsSection({ asset, canEdit, tagOptions, update }) {
     [open, setOpen] = useState(false),
     [active, setActive] = useState(0),
     listId = useId();
-  const current = Array.isArray(asset.tagIds) ? asset.tagIds : Array.isArray(asset.tags) ? asset.tags.map((tag) => (typeof tag === "string" ? tag : tag.id)) : [];
-  const labelOf = (id) => tagOptions.find((tag) => tag.id === id)?.label || tagOptions.find((tag) => tag.id === id)?.name || id;
+  const current = Array.isArray(asset.tagIds)
+    ? asset.tagIds
+    : Array.isArray(asset.tags)
+      ? asset.tags.map((tag) => (typeof tag === "string" ? tag : tag.id))
+      : [];
+  const labelOf = (id) =>
+    tagOptions.find((tag) => tag.id === id)?.label ||
+    tagOptions.find((tag) => tag.id === id)?.name ||
+    id;
   const term = query.trim().toLocaleLowerCase();
   const options = tagOptions
     .filter((tag) => !current.includes(tag.id))
-    .filter((tag) => !term || String(tag.label || tag.name || tag.id).toLocaleLowerCase().includes(term))
+    .filter(
+      (tag) =>
+        !term ||
+        String(tag.label || tag.name || tag.id)
+          .toLocaleLowerCase()
+          .includes(term),
+    )
     .slice(0, 8)
-    .map((tag) => ({ id: tag.id, label: tag.label || tag.name || tag.id, create: false }));
-  const exact = tagOptions.some((tag) => String(tag.label || tag.name || tag.id).toLocaleLowerCase() === term);
-  if (term && !exact && !current.some((id) => String(id).toLocaleLowerCase() === term))
-    options.push({ id: query.trim(), label: `Create “${query.trim()}”`, create: true });
+    .map((tag) => ({
+      id: tag.id,
+      label: tag.label || tag.name || tag.id,
+      create: false,
+    }));
+  const exact = tagOptions.some(
+    (tag) =>
+      String(tag.label || tag.name || tag.id).toLocaleLowerCase() === term,
+  );
+  if (
+    term &&
+    !exact &&
+    !current.some((id) => String(id).toLocaleLowerCase() === term)
+  )
+    options.push({
+      id: query.trim(),
+      label: `Create “${query.trim()}”`,
+      create: true,
+    });
   const choose = async (option) => {
     setQuery("");
     setOpen(false);
     setActive(0);
-    await update({ tagIds: [...current, option.id] }, option.create ? "Tag created" : "Tag added");
+    await update(
+      { tagIds: [...current, option.id] },
+      option.create ? "Tag created" : "Tag added",
+    );
   };
   if (!current.length && !canEdit) return null;
   return (
@@ -2390,7 +3250,16 @@ function TagsSection({ asset, canEdit, tagOptions, update }) {
             <Icon name="mdiTagOutline" size={13} />
             {labelOf(id)}
             {canEdit && (
-              <button type="button" aria-label={`Remove tag ${labelOf(id)}`} onClick={() => update({ tagIds: current.filter((item) => item !== id) }, "Tag removed")}>
+              <button
+                type="button"
+                aria-label={`Remove tag ${labelOf(id)}`}
+                onClick={() =>
+                  update(
+                    { tagIds: current.filter((item) => item !== id) },
+                    "Tag removed",
+                  )
+                }
+              >
                 <Icon name="mdiClose" size={13} />
               </button>
             )}
@@ -2408,7 +3277,9 @@ function TagsSection({ asset, canEdit, tagOptions, update }) {
             aria-expanded={open && options.length > 0}
             aria-controls={listId}
             aria-autocomplete="list"
-            aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
+            aria-activedescendant={
+              open && options[active] ? `${listId}-${active}` : undefined
+            }
             placeholder="Add a tag"
             value={query}
             onFocus={() => setOpen(true)}
@@ -2440,7 +3311,12 @@ function TagsSection({ asset, canEdit, tagOptions, update }) {
             }}
           />
           {open && options.length > 0 && (
-            <ul className="mv-listbox" role="listbox" id={listId} aria-label="Tag suggestions">
+            <ul
+              className="mv-listbox"
+              role="listbox"
+              id={listId}
+              aria-label="Tag suggestions"
+            >
               {options.map((option, index) => (
                 <li
                   key={`${option.create ? "new" : "tag"}:${option.id}`}
@@ -2451,7 +3327,10 @@ function TagsSection({ asset, canEdit, tagOptions, update }) {
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => choose(option)}
                 >
-                  <Icon name={option.create ? "mdiPlus" : "mdiTagOutline"} size={14} />
+                  <Icon
+                    name={option.create ? "mdiPlus" : "mdiTagOutline"}
+                    size={14}
+                  />
                   {option.label}
                 </li>
               ))}
@@ -2477,7 +3356,12 @@ function OcrSection({ text, showOcr, onShowOcr, announce }) {
     <section>
       <div className="mv-section-heading">
         <h3>Text in this photo</h3>
-        <button type="button" className="mv-text-button" aria-pressed={showOcr} onClick={() => onShowOcr(!showOcr)}>
+        <button
+          type="button"
+          className="mv-text-button"
+          aria-pressed={showOcr}
+          onClick={() => onShowOcr(!showOcr)}
+        >
           <Icon name="mdiTextRecognition" size={15} />
           {showOcr ? "Hide text regions" : "Show text regions"}
         </button>
@@ -2524,7 +3408,13 @@ function DateTimeDialog({ asset, close, onSave }) {
       actions={
         <>
           <Button onClick={close}>Cancel</Button>
-          <Button primary disabled={!takenAt} onClick={() => onSave({ takenAt, date, ...(zone ? { timezone: zone } : {}) })}>
+          <Button
+            primary
+            disabled={!takenAt}
+            onClick={() =>
+              onSave({ takenAt, date, ...(zone ? { timezone: zone } : {}) })
+            }
+          >
             Save
           </Button>
         </>
@@ -2533,15 +3423,27 @@ function DateTimeDialog({ asset, close, onSave }) {
       <div className="mv-form">
         <label>
           Date
-          <input type="date" value={date} data-initial-focus onChange={(event) => setDate(event.target.value)} />
+          <input
+            type="date"
+            value={date}
+            data-initial-focus
+            onChange={(event) => setDate(event.target.value)}
+          />
         </label>
         <label>
           Time
-          <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+          <input
+            type="time"
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+          />
         </label>
         <label>
           Time zone
-          <select value={zone} onChange={(event) => setZone(event.target.value)}>
+          <select
+            value={zone}
+            onChange={(event) => setZone(event.target.value)}
+          >
             <option value="">Keep the current time zone</option>
             {zones.map((option) => (
               <option key={option.value} value={option.value}>
@@ -2551,7 +3453,9 @@ function DateTimeDialog({ asset, close, onSave }) {
           </select>
         </label>
         <p className="mv-dialog-copy">
-          {takenAt ? `Capture time becomes ${formatCaptureDate(takenAt).date} · ${formatCaptureDate(takenAt).time}.` : "Enter a valid date and time."}
+          {takenAt
+            ? `Capture time becomes ${formatCaptureDate(takenAt).date} · ${formatCaptureDate(takenAt).time}.`
+            : "Enter a valid date and time."}
         </p>
       </div>
     </Dialog>
@@ -2575,7 +3479,10 @@ function PinMap({ latitude, longitude, onChange }) {
   });
   const fromEvent = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    const x = Math.max(
+        0,
+        Math.min(1, (event.clientX - rect.left) / rect.width),
+      ),
       y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
     return {
       lat: Number((center.lat + SPAN.lat / 2 - y * SPAN.lat).toFixed(5)),
@@ -2588,7 +3495,9 @@ function PinMap({ latitude, longitude, onChange }) {
       Number(((lat ?? center.lat) + dLat).toFixed(5)),
       Number(((lon ?? center.lon) + dLon).toFixed(5)),
     );
-  const label = pin ? `Pin at ${lat.toFixed(4)}, ${lon.toFixed(4)}` : "No pin placed";
+  const label = pin
+    ? `Pin at ${lat.toFixed(4)}, ${lon.toFixed(4)}`
+    : "No pin placed";
   return (
     <div className="mv-map-wrap">
       <svg
@@ -2625,14 +3534,35 @@ function PinMap({ latitude, longitude, onChange }) {
         }}
       >
         <rect className="mv-map-land" width={MAP_W} height={MAP_H} />
-        <path className="mv-map-ridge" d="M0 190 L60 120 L110 150 L170 70 L230 130 L290 90 L350 140 L410 80 L460 120 L460 260 L0 260 Z" />
-        <path className="mv-map-ridge far" d="M0 120 L50 80 L120 105 L200 40 L280 95 L340 60 L420 100 L460 70 L460 260 L0 260 Z" />
+        <path
+          className="mv-map-ridge"
+          d="M0 190 L60 120 L110 150 L170 70 L230 130 L290 90 L350 140 L410 80 L460 120 L460 260 L0 260 Z"
+        />
+        <path
+          className="mv-map-ridge far"
+          d="M0 120 L50 80 L120 105 L200 40 L280 95 L340 60 L420 100 L460 70 L460 260 L0 260 Z"
+        />
         <ellipse className="mv-map-water" cx="300" cy="185" rx="70" ry="24" />
-        <path className="mv-map-road" d="M0 230 C120 210 180 250 300 215 S420 190 460 200" />
+        <path
+          className="mv-map-road"
+          d="M0 230 C120 210 180 250 300 215 S420 190 460 200"
+        />
         {[0.25, 0.5, 0.75].map((f) => (
           <React.Fragment key={f}>
-            <line x1={f * MAP_W} y1="0" x2={f * MAP_W} y2={MAP_H} className="mv-map-grid" />
-            <line x1="0" y1={f * MAP_H} x2={MAP_W} y2={f * MAP_H} className="mv-map-grid" />
+            <line
+              x1={f * MAP_W}
+              y1="0"
+              x2={f * MAP_W}
+              y2={MAP_H}
+              className="mv-map-grid"
+            />
+            <line
+              x1="0"
+              y1={f * MAP_H}
+              x2={MAP_W}
+              y2={f * MAP_H}
+              className="mv-map-grid"
+            />
           </React.Fragment>
         ))}
         <text x="8" y="16" className="mv-map-text">
@@ -2651,7 +3581,10 @@ function PinMap({ latitude, longitude, onChange }) {
           </g>
         )}
       </svg>
-      <small id={`${id}-hint`}>Click or drag on the map to place the pin · arrow keys nudge · Shift for larger steps</small>
+      <small id={`${id}-hint`}>
+        Click or drag on the map to place the pin · arrow keys nudge · Shift for
+        larger steps
+      </small>
     </div>
   );
 }
@@ -2659,11 +3592,17 @@ function LocationDialog({ asset, close, onSave }) {
   const [city, setCity] = useState(asset.city || ""),
     [state, setState] = useState(asset.state || ""),
     [country, setCountry] = useState(asset.country || ""),
-    [latitude, setLatitude] = useState(asset.latitude != null ? String(asset.latitude) : ""),
-    [longitude, setLongitude] = useState(asset.longitude != null ? String(asset.longitude) : "");
+    [latitude, setLatitude] = useState(
+      asset.latitude != null ? String(asset.latitude) : "",
+    ),
+    [longitude, setLongitude] = useState(
+      asset.longitude != null ? String(asset.longitude) : "",
+    );
   const lat = validCoordinate(latitude, 90),
     lon = validCoordinate(longitude, 180);
-  const coordinatesValid = (latitude.trim() === "" && longitude.trim() === "") || (lat !== null && lon !== null);
+  const coordinatesValid =
+    (latitude.trim() === "" && longitude.trim() === "") ||
+    (lat !== null && lon !== null);
   return (
     <Dialog
       title="Edit location"
@@ -2694,27 +3633,51 @@ function LocationDialog({ asset, close, onSave }) {
         <div className="mv-form">
           <label>
             City
-            <input value={city} data-initial-focus onChange={(event) => setCity(event.target.value)} />
+            <input
+              value={city}
+              data-initial-focus
+              onChange={(event) => setCity(event.target.value)}
+            />
           </label>
           <label>
             State or region
-            <input value={state} onChange={(event) => setState(event.target.value)} />
+            <input
+              value={state}
+              onChange={(event) => setState(event.target.value)}
+            />
           </label>
           <label>
             Country
-            <input value={country} onChange={(event) => setCountry(event.target.value)} />
+            <input
+              value={country}
+              onChange={(event) => setCountry(event.target.value)}
+            />
           </label>
           <div className="mv-form-row">
             <label>
               Latitude
-              <input inputMode="decimal" value={latitude} aria-invalid={latitude.trim() !== "" && lat === null} onChange={(event) => setLatitude(event.target.value)} />
+              <input
+                inputMode="decimal"
+                value={latitude}
+                aria-invalid={latitude.trim() !== "" && lat === null}
+                onChange={(event) => setLatitude(event.target.value)}
+              />
             </label>
             <label>
               Longitude
-              <input inputMode="decimal" value={longitude} aria-invalid={longitude.trim() !== "" && lon === null} onChange={(event) => setLongitude(event.target.value)} />
+              <input
+                inputMode="decimal"
+                value={longitude}
+                aria-invalid={longitude.trim() !== "" && lon === null}
+                onChange={(event) => setLongitude(event.target.value)}
+              />
             </label>
           </div>
-          {!coordinatesValid && <p className="mv-form-error">Enter both coordinates as decimal degrees, or leave both empty.</p>}
+          {!coordinatesValid && (
+            <p className="mv-form-error">
+              Enter both coordinates as decimal degrees, or leave both empty.
+            </p>
+          )}
         </div>
         <PinMap
           latitude={latitude}
