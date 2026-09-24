@@ -122,9 +122,12 @@ export class UserAdminService extends BaseService {
      * that had already unlocked with the old PIN holding `pinExpiresAt` in the future, and
      * that session keeps reaching Locked content for the rest of its elevation window.
      * `undefined` means the update never mentioned the PIN, so nothing is locked then.
+     * FL-34: a password reset revokes elevation the same way, and the account's open tabs are
+     * told (`on_session_lock`) so none keeps showing what it had unlocked.
      */
-    if (dto.pinCode !== undefined) {
+    if (dto.password !== undefined || dto.pinCode !== undefined) {
       await this.sessionRepository.lockAll(id);
+      this.websocketRepository.clientSend('on_session_lock', id);
     }
 
     await this.recordAdminEvents(this.getUpdateEvents(auth, user, updatedUser, dto));

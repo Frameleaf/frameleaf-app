@@ -13,6 +13,7 @@ import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
+import { revokeSessionView } from '$lib/utils/session-privacy';
 
 class AuthManager {
   isPurchased = $state(false);
@@ -44,7 +45,8 @@ class AuthManager {
 
   constructor() {
     eventManager.on({
-      SessionDelete: () => goto(Route.logout()),
+      // FL-34: a deleted session discards every view, player and download it held, not only the route
+      SessionDelete: () => revokeSessionView(Route.logout()),
     });
   }
 
