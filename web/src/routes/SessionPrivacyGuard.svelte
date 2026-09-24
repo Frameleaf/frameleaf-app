@@ -49,7 +49,7 @@
   };
 
   const revalidatePreloadedData = async (): Promise<PreloadedDataResult> => {
-    assetCacheManager.invalidate();
+    assetCacheManager.revoke();
     const assetId = page.params.assetId;
     if (assetId) {
       // Check the preloaded viewer directly: route invalidation can render an error boundary, but must

@@ -21,7 +21,7 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/photos'), params: {} } }));
-vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn() } }));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() } }));
 vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn(), revokeSessionView: vi.fn() }));
 vi.mock('$lib/utils/navigation', () => ({ isAssetViewerRoute: () => false, navigate: vi.fn() }));
 

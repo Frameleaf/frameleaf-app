@@ -47,9 +47,12 @@ class AsyncCache<K, V> {
     this.#keyGenerations.set(cacheKey, (this.#keyGenerations.get(cacheKey) ?? 0) + 1);
   }
 
-  clear() {
-    this.#generation++;
-    this.#keyGenerations.clear();
+  /** `revoke` also rejects fetches still in flight: their answers belong to the old access boundary. */
+  clear(revoke = false) {
+    if (revoke) {
+      this.#generation++;
+      this.#keyGenerations.clear();
+    }
     this.#cache.clear();
   }
 }
@@ -60,7 +63,7 @@ class AssetCacheManager {
   #faceCache = new AsyncCache(getFaces);
 
   constructor() {
-    onLibraryAccessChange(() => this.invalidate());
+    onLibraryAccessChange(() => this.revoke());
     eventManager.on({
       AssetEditsApplied: (assetId) => {
         this.invalidateAsset(assetId);
@@ -102,10 +105,18 @@ class AssetCacheManager {
     this.#faceCache.clear();
   }
 
+  /** Drops cached answers; fetches in flight still resolve (a data refresh, not an access change). */
   invalidate() {
     this.clearAssetCache();
     this.clearOcrCache();
     this.clearFaceCache();
+  }
+
+  /** An access boundary (lock, account switch): drops cached answers and rejects fetches in flight. */
+  revoke() {
+    this.#assetCache.clear(true);
+    this.#ocrCache.clear(true);
+    this.#faceCache.clear(true);
   }
 }
 

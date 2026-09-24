@@ -19,7 +19,7 @@ vi.mock('@immich/sdk', async (original) => ({
 vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto: vi.fn(), invalidateAll: vi.fn() }));
 vi.mock('$lib/managers/event-manager.svelte', () => ({ eventManager: { emit: vi.fn(), on: () => () => {} } }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/auth/pin-prompt'), params: {} } }));
-vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn() } }));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() } }));
 vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn() }));
 vi.mock('$lib/utils/navigation', () => ({ isAssetViewerRoute: () => false, navigate: vi.fn() }));
 

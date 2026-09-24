@@ -43,7 +43,7 @@ export const requestSessionLock = (): Promise<void> => {
   sessionAccess.isElevated = false;
   sessionAccess.lockStatus = 'locking';
   const mediaCleared = clearSessionMedia();
-  assetCacheManager.invalidate();
+  assetCacheManager.revoke();
   lockFlight = (async () => {
     try {
       // A stale PIN unlock can finish after its prompt unmounts. Lock only after it settles.
