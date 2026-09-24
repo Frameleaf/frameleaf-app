@@ -115,6 +115,23 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('gives every area a coloured icon tile, like System Settings (FL-76)', () => {
+    open('/user-settings?area=storage');
+    render(SettingsHost, { sections });
+    const tile = (name: string) =>
+      screen.getByRole('button', { name }).querySelector<HTMLElement>('.tile')!.style.getPropertyValue('--tile');
+    expect(tile('Overview')).toBe('#0a84ff');
+    expect(tile('Library analytics')).toBe('#bf5af2');
+    expect(tile('Import & protection')).toBe('#30b0c7');
+    expect(tile('Library care')).toBe('#30d158');
+    expect(tile('Notifications')).toBe('#ff453a');
+    for (const button of screen
+      .getByRole('navigation', { name: 'Settings navigation' })
+      .querySelectorAll('button.area')) {
+      expect(button.querySelector(':scope .tile svg')).not.toBeNull();
+    }
+  });
+
   it('shows an area as a section directory and one section at a time with its breadcrumb', async () => {
     open('/user-settings?area=storage');
     const { container } = render(SettingsHost, { sections });
