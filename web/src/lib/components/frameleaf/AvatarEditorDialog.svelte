@@ -209,7 +209,9 @@
 <Dialog title={$t('edit_avatar')} closeLabel={$t('close')} bind:open>
   <div class="avatar-editor">
     <div class="avatar-stage">
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+      <!-- The crop is an image that can be moved by pointer or arrow keys, as the prototype's is. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         class="avatar-crop"
         role="img"
