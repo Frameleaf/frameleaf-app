@@ -441,6 +441,33 @@ from
 order by
   "asset_exif"."city"
 
+-- SearchRepository.getCityAssetCounts
+select
+  "asset_exif"."city",
+  count(*) as "count"
+from
+  "asset_exif"
+  inner join "asset" on "asset"."id" = "asset_exif"."assetId"
+where
+  "asset"."ownerId" = any ($1::uuid[])
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "asset"."deletedAt" is null
+  and "asset_exif"."city" is not null
+group by
+  "asset_exif"."city"
+order by
+  "asset_exif"."city"
+
 -- SearchRepository.getStates
 select distinct
   on ("state") "state"

@@ -26,6 +26,10 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   fileCreatedAfter?: Date;
 }
 
+/** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
+const isoTimestamp = (column: 'asset.fileCreatedAt' | 'asset.localDateTime') =>
+  sql<string>`to_char(${sql.ref(column)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
 /**
  * The settings sheet's filters for an album map (FL-51). Each narrows the album's own markers; favorites
  * are matched only among `favoriteOwnerId`'s own items, because a favorite is private to its owner.
@@ -166,7 +170,7 @@ export class MapRepository {
           .on('asset_exif.longitude', 'is not', null),
       )
       .where('asset.deletedAt', 'is', null)
-      .orderBy('fileCreatedAt', 'desc')
+      .orderBy('asset.fileCreatedAt', 'desc')
       .select([
         'id',
         'asset_exif.latitude as lat',
@@ -174,6 +178,10 @@ export class MapRepository {
         'asset_exif.city',
         'asset_exif.state',
         'asset_exif.country',
+        'asset.originalFileName',
+        'asset.type',
+        isoTimestamp('asset.fileCreatedAt').as('fileCreatedAt'),
+        isoTimestamp('asset.localDateTime').as('localDateTime'),
       ])
       .$narrowType<{ lat: NotNull; lon: NotNull }>();
   }
