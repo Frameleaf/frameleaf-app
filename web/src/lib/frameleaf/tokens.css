@@ -105,13 +105,7 @@
   background: var(--fl-canvas);
   font-size: var(--fl-font-size);
   line-height: 1.45;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    system-ui,
-    Inter,
-    'Segoe UI',
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
 }
 .frameleaf :focus-visible {
   outline: 2px solid var(--fl-accent);
