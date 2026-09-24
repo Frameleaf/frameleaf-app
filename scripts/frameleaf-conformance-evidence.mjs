@@ -11,7 +11,6 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { format, resolveConfig } from "prettier";
 
 const root = resolve(import.meta.dirname, "..");
 export const evidencePath = resolve(
@@ -2001,7 +2000,10 @@ export async function buildEvidence(repository = root) {
   };
 }
 
+// Prettier is loaded only when writing the file: the drift test in CI imports buildEvidence from an
+// install (`--filter @immich/scripts --filter immich`) that does not include it.
 const formatJson = async (value) => {
+  const { format, resolveConfig } = await import("prettier");
   const config = (await resolveConfig(evidencePath)) ?? {};
   return format(JSON.stringify(value), { ...config, filepath: evidencePath });
 };
