@@ -1861,6 +1861,8 @@ export type AnalyticsVolumeBreakdownDto = {
     exceedsUsed: boolean;
     /** When the generated folders were last measured */
     generatedObservedAt: string | null;
+    /** Generated folders the collector found on another disk than the library; not part of volumeUsedBytes */
+    onOtherDisk: AnalyticsVolumePart[];
     /** Uploaded original files on the volume, each shared file counted once (Locked excluded) */
     originalsBytes: number;
     /** volumeUsedBytes minus every measured part: other files on the volume, Locked originals and anything unmeasured */
@@ -17918,6 +17920,8 @@ export enum AnalyticsSeriesId {
     HostCapacityBytes = "host.capacityBytes",
     HostThumbnailBytes = "host.thumbnailBytes",
     HostEncodedVideoBytes = "host.encodedVideoBytes",
+    HostThumbnailOtherDiskBytes = "host.thumbnailOtherDiskBytes",
+    HostEncodedVideoOtherDiskBytes = "host.encodedVideoOtherDiskBytes",
     LibraryArrivals = "library.arrivals",
     LibraryCaptures = "library.captures",
     ProcessingCompleted = "processing.completed",
@@ -17948,6 +17952,10 @@ export enum AnalyticsState {
     Measured = "measured",
     Stale = "stale",
     Unknown = "unknown"
+}
+export enum AnalyticsVolumePart {
+    Previews = "previews",
+    EncodedVideo = "encodedVideo"
 }
 export enum AnalyticsFocalLengthDtoKey {
     $016 = "0-16",

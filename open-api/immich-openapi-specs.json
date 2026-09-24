@@ -39905,6 +39905,8 @@
           "host.capacityBytes",
           "host.thumbnailBytes",
           "host.encodedVideoBytes",
+          "host.thumbnailOtherDiskBytes",
+          "host.encodedVideoOtherDiskBytes",
           "library.arrivals",
           "library.captures",
           "processing.completed",
@@ -40141,6 +40143,13 @@
             "nullable": true,
             "type": "string"
           },
+          "onOtherDisk": {
+            "description": "Generated folders the collector found on another disk than the library; not part of volumeUsedBytes",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsVolumePart"
+            },
+            "type": "array"
+          },
           "originalsBytes": {
             "description": "Uploaded original files on the volume, each shared file counted once (Locked excluded)",
             "maximum": 9007199254740991,
@@ -40166,11 +40175,19 @@
           "encodedVideoBytes",
           "exceedsUsed",
           "generatedObservedAt",
+          "onOtherDisk",
           "originalsBytes",
           "otherBytes",
           "previewsBytes"
         ],
         "type": "object"
+      },
+      "AnalyticsVolumePart": {
+        "enum": [
+          "previews",
+          "encodedVideo"
+        ],
+        "type": "string"
       },
       "AnalyticsYearCountDto": {
         "properties": {

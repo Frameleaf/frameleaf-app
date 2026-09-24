@@ -94,6 +94,9 @@ const AnalyticsVolumeBreakdownSchema = z
     otherBytes: bytes().describe(
       'volumeUsedBytes minus every measured part: other files on the volume, Locked originals and anything unmeasured',
     ),
+    onOtherDisk: z
+      .array(z.enum(['previews', 'encodedVideo']).meta({ id: 'AnalyticsVolumePart' }))
+      .describe('Generated folders the collector found on another disk than the library; not part of volumeUsedBytes'),
     exceedsUsed: z
       .boolean()
       .describe(

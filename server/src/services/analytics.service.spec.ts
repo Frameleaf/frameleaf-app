@@ -126,7 +126,7 @@ describe(AnalyticsService.name, () => {
     getInsights: vitest.fn(),
     getDatabaseBytes: vitest.fn(),
   };
-  const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn() };
+  const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn(), getDevice: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
 
   let sut: AnalyticsService;
@@ -167,6 +167,7 @@ describe(AnalyticsService.name, () => {
     analyticsRepository.getInsights.mockResolvedValue(insightRows());
     analyticsRepository.getDatabaseBytes.mockResolvedValue(50_000);
     storageRepository.getFolderBytes.mockResolvedValue(0);
+    storageRepository.getDevice.mockResolvedValue(1);
     storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 400_000, available: 350_000 });
     sut = new AnalyticsService(
       logger as never,
@@ -261,6 +262,7 @@ describe(AnalyticsService.name, () => {
         volumeUsedBytes: 600_000,
         capacityBytes: 1_000_000,
         freeBytes: 350_000,
+        breakdown: null,
       });
       expect(JSON.stringify(result)).not.toMatch(/other (libraries|host files)/i);
     });
@@ -337,8 +339,9 @@ describe(AnalyticsService.name, () => {
         capacityBytes: 900,
         freeBytes: null,
       });
-      // the measured parts (5,000 bytes of originals, a 50,000-byte database) exceed the stale reading
-      expect(result.host.breakdown).toMatchObject({ otherBytes: 0, exceedsUsed: true });
+      // a stale volume is never mixed with live originals and database sizes
+      expect(result.host.breakdown).toBeNull();
+      expect(analyticsRepository.getDatabaseBytes).not.toHaveBeenCalled();
     });
 
     it('breaks the volume down for the whole server so the parts add up to the volume used', async () => {
@@ -365,6 +368,7 @@ describe(AnalyticsService.name, () => {
         originalsBytes: 5000,
         previewsBytes: 20_000,
         encodedVideoBytes: 30_000,
+        onOtherDisk: [],
         generatedObservedAt: '2026-09-19T00:05:00.000Z',
         databaseBytes: 50_000,
         otherBytes: 600_000 - 5000 - 20_000 - 30_000 - 50_000,
@@ -374,6 +378,40 @@ describe(AnalyticsService.name, () => {
       expect(originalsBytes + previewsBytes! + encodedVideoBytes! + databaseBytes + otherBytes).toBe(
         host.volumeUsedBytes,
       );
+    });
+
+    it('keeps a generated folder on another disk out of the volume subtraction', async () => {
+      analyticsRepository.getLatestHostSamples.mockImplementation((series?: AnalyticsSeriesId[]) =>
+        Promise.resolve(
+          series?.includes(AnalyticsSeriesId.HostThumbnailBytes)
+            ? [
+                // an older reading on the volume, then the folder moved to another disk
+                {
+                  series: AnalyticsSeriesId.HostThumbnailBytes,
+                  value: 20_000,
+                  observedAt: new Date('2026-09-17T00:05:00Z'),
+                },
+                {
+                  series: AnalyticsSeriesId.HostThumbnailOtherDiskBytes,
+                  value: 200_000,
+                  observedAt: new Date('2026-09-19T00:05:00Z'),
+                },
+                {
+                  series: AnalyticsSeriesId.HostEncodedVideoBytes,
+                  value: 30_000,
+                  observedAt: new Date('2026-09-19T00:06:00Z'),
+                },
+              ]
+            : [],
+        ),
+      );
+      const { host } = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      expect(host.breakdown).toMatchObject({
+        previewsBytes: 200_000,
+        onOtherDisk: ['previews'],
+        otherBytes: 600_000 - 5000 - 30_000 - 50_000,
+        exceedsUsed: false,
+      });
     });
 
     it('leaves generated sizes unknown before the first collection', async () => {
@@ -451,6 +489,37 @@ describe(AnalyticsService.name, () => {
   describe('handleCollect', () => {
     const written = () => analyticsRepository.upsertSamples.mock.calls[0][0] as AnalyticsSampleInsert[];
 
+    it('keeps one generated folder when the other cannot be read', async () => {
+      storageRepository.getFolderBytes.mockImplementation((folder: string) =>
+        folder.endsWith('thumbs') ? Promise.reject(new Error('EACCES')) : Promise.resolve(700),
+      );
+      await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
+      const samples = written();
+      expect(samples.find((row) => row.series === AnalyticsSeriesId.HostEncodedVideoBytes)?.value).toBe(700);
+      expect(samples.some((row) => row.series === AnalyticsSeriesId.HostThumbnailBytes)).toBe(false);
+    });
+
+    it('records a generated folder on another device as on another disk', async () => {
+      storageRepository.getDevice.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('thumbs') ? 2 : 1),
+      );
+      storageRepository.getFolderBytes.mockResolvedValue(500);
+      await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
+      const series = written().map((row) => row.series);
+      expect(series).toContain(AnalyticsSeriesId.HostThumbnailOtherDiskBytes);
+      expect(series).not.toContain(AnalyticsSeriesId.HostThumbnailBytes);
+      expect(series).toContain(AnalyticsSeriesId.HostEncodedVideoBytes);
+    });
+
+    it('still measures the generated folders when the volume cannot be read', async () => {
+      storageRepository.checkDiskUsage.mockRejectedValue(new Error('EIO'));
+      storageRepository.getFolderBytes.mockResolvedValue(10);
+      await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
+      const series = written().map((row) => row.series);
+      expect(series).not.toContain(AnalyticsSeriesId.HostVolumeUsedBytes);
+      expect(series).toContain(AnalyticsSeriesId.HostThumbnailBytes);
+    });
+
     it('records every scope with id-only keys, zero for empty accounts and libraries', async () => {
       analyticsRepository.getCollectorSnapshot.mockResolvedValue([
         {
@@ -480,6 +549,9 @@ describe(AnalyticsService.name, () => {
         '/data/thumbs',
         '/data/encoded-video',
       ]);
+      expect(samples.map((row) => row.series)).toEqual(
+        expect.arrayContaining([AnalyticsSeriesId.HostThumbnailBytes, AnalyticsSeriesId.HostEncodedVideoBytes]),
+      );
       expect(samples.every((row) => /^(host|account:[0-9a-f-]{36}|library:[0-9a-f-]{36})$/.test(row.scopeKey))).toBe(
         true,
       );
@@ -499,7 +571,11 @@ describe(AnalyticsService.name, () => {
     it('leaves a gap for the volume when it cannot be read, rather than writing zero', async () => {
       storageRepository.checkDiskUsage.mockRejectedValue(new Error('EIO'));
       await sut.handleCollect();
-      expect(written().some((row) => row.series.startsWith('host.'))).toBe(false);
+      expect(
+        written().some((row) =>
+          [AnalyticsSeriesId.HostVolumeUsedBytes, AnalyticsSeriesId.HostCapacityBytes].includes(row.series),
+        ),
+      ).toBe(false);
     });
 
     it('retries once automatically, then waits for the next run', async () => {
