@@ -187,6 +187,11 @@ export enum MediaPolicyViolation {
    * flattening it silently is not an option. See `selectEncoderPixelFormat` in `media-encode.ts`.
    */
   UnsupportedDelivery = 'unsupportedDelivery',
+  /**
+   * FL-39: the probed edited master does not match what its recipe and colour decision promised
+   * (display raster, orientation, precision or colour intent). It is never published.
+   */
+  MasterValidationFailed = 'masterValidationFailed',
 }
 
 /** How a render treats the source's colour volume. Recorded in lineage; never implicit. */
@@ -681,6 +686,76 @@ export const buildEditedMasterLineage = ({
   color,
   createdAt: createdAt.toISOString(),
 });
+
+/**
+ * FL-39: probe-backed validation of a rendered edited master, before anything references it.
+ *
+ * - The displayed raster (after any display matrix) must be the one the recipe produces, and the
+ *   stored rotation must be exactly the one the plan wrote: zero for a baked render, the display
+ *   rotation for a packet-preserving quarter turn.
+ * - A packet copy must carry the source's pixel format and colour tags unchanged.
+ * - A preserving render must not lose bit depth and must keep every colour tag the source
+ *   declared. A tone-mapped render must no longer be HDR.
+ */
+export const validateVideoMaster = ({
+  source,
+  output,
+  dimensions,
+  expectedRotation = 0,
+  colorDecision,
+  packetCopy = false,
+}: {
+  source: Pick<VideoStreamInfo, 'pixelFormat' | 'colorPrimaries' | 'colorMatrix' | 'colorTransfer'>;
+  output?: Pick<
+    VideoStreamInfo,
+    'width' | 'height' | 'rotation' | 'pixelFormat' | 'colorPrimaries' | 'colorMatrix' | 'colorTransfer'
+  >;
+  dimensions: { width: number; height: number };
+  expectedRotation?: number;
+  colorDecision: EditedMasterColorDecision;
+  packetCopy?: boolean;
+}): void => {
+  const fail = (message: string) => {
+    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed, message);
+  };
+  const quarterTurn = !!output && Math.abs(output.rotation) % 180 === 90;
+  if (
+    !output ||
+    (quarterTurn ? output.height : output.width) !== dimensions.width ||
+    (quarterTurn ? output.width : output.height) !== dimensions.height ||
+    (output.rotation - expectedRotation) % 360 !== 0
+  ) {
+    fail('Edited-master display dimensions do not match the recipe');
+    return;
+  }
+
+  const tags = ['colorPrimaries', 'colorMatrix', 'colorTransfer'] as const;
+  const unknown = {
+    colorPrimaries: ColorPrimaries.Unknown,
+    colorMatrix: ColorMatrix.Unknown,
+    colorTransfer: ColorTransfer.Unknown,
+  } as const;
+  if (packetCopy) {
+    if (output.pixelFormat !== source.pixelFormat || tags.some((tag) => output[tag] !== source[tag])) {
+      fail('Edited-master packet copy changed the source pixel format or colour intent');
+    }
+    return;
+  }
+
+  if (colorDecision.policy === EditedMasterColorPolicy.ToneMap) {
+    if (isHdrTransfer(output)) {
+      fail('Tone-mapped edited master is still tagged as HDR');
+    }
+    return;
+  }
+
+  if (isHighBitDepth(source) && !isHighBitDepth(output)) {
+    fail('Edited-master pixel format does not preserve source precision');
+  }
+  if (tags.some((tag) => source[tag] !== unknown[tag] && output[tag] !== source[tag])) {
+    fail('Edited-master color intent does not match the source');
+  }
+};
 
 /** The sidecar that carries an edited master's lineage, beside the master itself. */
 export const getEditedMasterLineagePath = (masterPath: string): string =>

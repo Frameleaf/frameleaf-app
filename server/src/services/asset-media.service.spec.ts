@@ -634,6 +634,46 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('downloadVideoEditVersion', () => {
+    it('requires download access before querying a version', async () => {
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.assetEdit.getVideoVersion).not.toHaveBeenCalled();
+    });
+
+    it.each(['pending', 'failed'])('refuses a %s master', async (status) => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        ownerId: authStub.admin.user.id,
+        status,
+        masterPath: '/master.mp4',
+      } as any);
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('downloads the retained master, independently of the playback proxy', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        id: 'version-1',
+        ownerId: authStub.admin.user.id,
+        status: 'ready',
+        masterPath: '/master.mp4',
+        proxyPath: '/proxy.mp4',
+      } as any);
+      await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).resolves.toEqual(
+        new ImmichFileResponse({
+          path: '/master.mp4',
+          fileName: 'asset-1-version-1.mp4',
+          contentType: 'video/mp4',
+          cacheControl: CacheControl.PrivateWithCache,
+        }),
+      );
+    });
+  });
+
   describe('downloadOriginal', () => {
     it('should require the asset.download permission', async () => {
       await expect(sut.downloadOriginal(authStub.admin, 'asset-1', {})).rejects.toBeInstanceOf(BadRequestException);

@@ -2,6 +2,12 @@
 
 -- AssetEditRepository.replaceAll
 begin
+select
+  "type"
+from
+  "asset"
+where
+  "id" = $1
 delete from "asset_edit"
 where
   "assetId" = $1

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
@@ -12,6 +12,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  Permission,
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -823,6 +824,10 @@ describe(AssetService.name, () => {
       vi.useFakeTimers();
     });
 
+    beforeEach(() => {
+      mocks.assetEdit.releaseOrphanedVideoVersions.mockResolvedValue([]);
+    });
+
     afterAll(() => {
       vi.useRealTimers();
     });
@@ -853,6 +858,19 @@ describe(AssetService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.AssetDelete, data: { id: asset.id, deleteOnDisk: true } },
       ]);
+    });
+
+    it('queues the files of orphaned video versions for deletion (FL-39)', async () => {
+      mocks.assetJob.streamForDeletedJob.mockReturnValue(makeStream([]));
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: true, days: 7 } });
+      mocks.assetEdit.releaseOrphanedVideoVersions.mockResolvedValue(['/v.master.mp4', '/v.master.mp4.lineage.json']);
+
+      await expect(sut.handleAssetDeletionCheck()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/v.master.mp4', '/v.master.mp4.lineage.json'] },
+      });
     });
   });
 
@@ -1131,7 +1149,199 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('video version operations', () => {
+    it('does not expose history without edit access', async () => {
+      await expect(sut.getVideoEditVersions(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.assetEdit.listVideoVersions).not.toHaveBeenCalled();
+    });
+
+    it('queues only the export version and hides internal paths from the response', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.createVideoExport.mockResolvedValue({
+        id: 'version-1',
+        assetId: 'asset-1',
+        purpose: 'export',
+        status: 'pending',
+        createdAt: new Date('2026-01-01'),
+        recipe: [],
+        sourcePath: '/private/original',
+      } as any);
+      mocks.job.queue.mockResolvedValue(undefined);
+      const result = await sut.exportVideoEditVersion(authStub.admin, 'asset-1');
+      expect(result).not.toHaveProperty('sourcePath');
+      expect(mocks.assetEdit.createVideoExport).toHaveBeenCalledWith('asset-1', authStub.admin.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', versionId: 'version-1' },
+      });
+    });
+
+    it('restores an original (empty-recipe) version with edit create permission only', async () => {
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        ownerId: authStub.admin.user.id,
+        status: 'ready',
+        recipe: [],
+      } as any);
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-1', type: AssetType.Video, files: [] } as any);
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-2' } as any);
+      const requireAccess = vi.spyOn(sut as any, 'requireAccess');
+      await sut.restoreVideoEditVersion(authStub.admin, 'asset-1', 'version-1');
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [], 'revert');
+      expect(requireAccess.mock.calls.map(([options]: any) => options.permission)).toEqual([
+        Permission.AssetEditCreate,
+      ]);
+    });
+
+    it('rejects a ready version owned by a different user before restoring its recipe', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({ ownerId: 'other', status: 'ready', recipe: [] } as any);
+      await expect(sut.restoreVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['video_version_selected_or_missing', BadRequestException],
+      ['video_version_inactive', BadRequestException],
+      ['video_version_not_found', NotFoundException],
+    ])('maps a %s refusal to a client error and deletes nothing', async (code, type) => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.pruneVideoVersion.mockRejectedValue(new Error(code));
+      await expect(sut.pruneVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(type);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('queues only the unreferenced files of a pruned version', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.pruneVideoVersion.mockResolvedValue(['/master.mp4', '/master.mp4.lineage.json']);
+      await sut.pruneVideoEditVersion(authStub.admin, 'asset-1', 'version-1');
+      expect(mocks.assetEdit.pruneVideoVersion).toHaveBeenCalledWith('asset-1', 'version-1', authStub.admin.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/master.mp4', '/master.mp4.lineage.json'] },
+      });
+    });
+
+    it('keeps history-owned edited files when reverting a retained video to the original', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getById.mockResolvedValue({
+        id: 'asset-1',
+        type: AssetType.Video,
+        files: [{ id: 'file-1', path: '/proxy.mp4', type: AssetFileType.EncodedVideo, isEdited: true }],
+      } as any);
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue({ id: 'version-2' } as any);
+      await sut.removeAssetEdits(authStub.admin, 'asset-1');
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [], 'save');
+      expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1' },
+      });
+    });
+  });
+
+  describe('original video edit metadata', () => {
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getById.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+      } as any);
+      mocks.assetEdit.getAll.mockResolvedValue([]);
+    });
+
+    it('returns the rotated original raster and timeline instead of current render metadata', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: -90 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { width: 1080, height: 1920, durationMs: 30_000 },
+      });
+      expect(mocks.media.probe).toHaveBeenCalledWith('/original.mp4');
+    });
+
+    it('validates a larger crop and longer trim against the original instead of edited metadata', async () => {
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 640,
+        exifImageHeight: 360,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+      } as any);
+      const edits: AssetEditActionItem[] = [
+        { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
+        { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', edits, 'save');
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1922, height: 1080 } }],
+        }),
+      ).rejects.toThrow('Crop parameters are out of bounds');
+    });
+
+    it.each([
+      { format: { duration: 30 }, videoStreams: [] },
+      { format: { duration: NaN }, videoStreams: [{ width: 1920, height: 1080, rotation: 0 }] },
+      { format: { duration: 30 }, videoStreams: [{ width: 0, height: 1080, rotation: 0 }] },
+    ])('omits unavailable original metadata when listing and refuses to save against it: %j', async (source) => {
+      mocks.media.probe.mockResolvedValue(source as any);
+      const listed = await sut.getAssetEdits(authStub.admin, 'asset-1');
+      expect(listed).toEqual({ assetId: 'asset-1', edits: [] });
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 640,
+        exifImageHeight: 360,
+        orientation: null,
+        projectionType: null,
+      });
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+        }),
+      ).rejects.toThrow('Original video metadata');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
+    it('swaps the raster for any quarter-turn display rotation', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 270 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { width: 1080, height: 1920 },
+      });
+    });
+  });
+
   describe('editAsset', () => {
+    beforeEach(() => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+        audioStreams: [],
+      } as any);
+    });
     it('should enforce crop first', async () => {
       await expect(
         sut.editAsset(authStub.admin, 'asset-1', {
@@ -1175,7 +1385,7 @@ describe(AssetService.name, () => {
         edits: [{ id: 'edit-1', ...edit }],
       });
 
-      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit]);
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit], 'save');
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },

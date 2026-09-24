@@ -864,7 +864,20 @@ export class PhysicalFileRepository {
       )
       .executeTakeFirstOrThrow();
 
-    return Number(assetRefs.count) + Number(fileRefs.count);
+    // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
+    // after they leave the current asset projection. A version's source is its asset's original,
+    // which the asset row already protects, so the recorded source path is not a reference.
+    const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.video_edit_version v
+      WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
+      UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
+      WHERE o."sourceTable"='video_edit_version' AND (
+        o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
+        OR (o.payload->>'masterPath') || '.lineage.json'=${path}
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
+    ) retained`.execute(trx);
+    return Number(assetRefs.count) + Number(fileRefs.count) + Number(historyRefs.rows[0].count);
   }
 
   /**
