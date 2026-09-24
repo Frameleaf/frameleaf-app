@@ -457,6 +457,22 @@ describe(WorkflowExecutionService.name, () => {
       });
     });
 
+    it('keeps credentials held in a definition’s extra fields out of run history (FL-82)', async () => {
+      const workflow = setup();
+      (workflow.definition.steps[1] as { extra: Record<string, unknown> }).extra = {
+        legacyAuth: { token: 'step-extra-token' },
+      };
+      (workflow.definition as { extra: Record<string, unknown> }).extra = { apiKey: 'workflow-extra-key' };
+      mocks.plugin.callMethod
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error('refused step-extra-token and workflow-extra-key'));
+
+      await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+
+      const [entry] = mocks.workflow.log.mock.calls[0]!;
+      expect(entry.error).toBe('refused [credential] and [credential]');
+    });
+
     it('runs the automatic retry from the failed step and does not retry it again', async () => {
       setup();
       mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValue(new Error('still failing'));

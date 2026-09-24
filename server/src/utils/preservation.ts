@@ -331,7 +331,14 @@ export const PreservationManifestSchema = z
       manifest.counts.selected === manifest.counts.exported + manifest.counts.failed + manifest.counts.skipped,
     'counts do not add up',
   )
-  .refine((manifest) => manifest.complete === (manifest.counts.failed === 0), 'completeness does not match the counts');
+  // A package with a failed copy is never complete. One without may still be incomplete: an original
+  // skipped because it was unavailable is missing too (FL-74), while a Locked item left out on
+  // purpose is not — so an incomplete package with no failures must at least have skipped something.
+  .refine(
+    (manifest) =>
+      manifest.complete ? manifest.counts.failed === 0 : manifest.counts.failed > 0 || manifest.counts.skipped > 0,
+    'completeness does not match the counts',
+  );
 export type PreservationManifest = z.infer<typeof PreservationManifestSchema>;
 
 const AssetTypeLiteral = z.enum(['IMAGE', 'VIDEO', 'AUDIO', 'OTHER']);

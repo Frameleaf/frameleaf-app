@@ -317,11 +317,16 @@ export function restoreCredentials(
   return next;
 }
 
-/** A failure message fit for run history: shortened, and without the step's credentials. */
-export function redactRunError(message: string, config: Record<string, unknown> | null, maxLength = 500): string {
+/**
+ * A failure message fit for run history: shortened, and without the step's credentials.
+ *
+ * `secrets` is everything the failing step could have echoed back — its parameters and the extra
+ * fields its definition carries (FL-82) — and every credential-named value anywhere in it is scrubbed.
+ */
+export function redactRunError(message: string, secrets: unknown, maxLength = 500): string {
   let result = message;
-  for (const path of credentialPaths(config)) {
-    const secret = readPath(config, path);
+  for (const path of credentialPaths(secrets)) {
+    const secret = readPath(secrets, path);
     if (typeof secret === 'string' && secret.length >= 4) {
       result = result.split(secret).join('[credential]');
     }
