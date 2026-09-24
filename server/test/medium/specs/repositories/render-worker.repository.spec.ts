@@ -52,8 +52,8 @@ describe(RenderWorkerRepository.name, () => {
       const found = (await sut.listLiveSessions()).filter((entry) => entry.worker.id === worker.id);
 
       expect(found).toHaveLength(1);
-      expect(found[0].session.id).toBe(live.id);
-      expect(found[0].worker).toMatchObject({ id: worker.id, engineDigest: 'sha256:engine' });
+      expect(found[0].session).toEqual(live);
+      expect(found[0].worker).toEqual(worker);
     });
 
     it('leaves out revoked sessions and every session of a revoked worker', async () => {
