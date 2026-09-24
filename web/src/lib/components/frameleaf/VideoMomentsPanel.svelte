@@ -8,9 +8,15 @@
    * queue a refresh (frames and the search index) or optional captions as a durable plan that
    * shows up in Activity and survives closing the page.
    *
+   * Any indexed frame can start a frame-to-moment search: the moments nearest that frame across the
+   * person's own videos, and at other times in this one, found from the embedding already stored
+   * (nothing is sent to a model). Choosing a result opens that video at that moment.
+   *
    * Everything goes through the enrichment endpoints; a Locked video's moments are only ever
    * returned to its owner's unlocked session, so the panel simply shows nothing otherwise.
    */
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import VideoMomentHits from '$lib/components/frameleaf/VideoMomentHits.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     captionRequestCount,
@@ -24,6 +30,7 @@
   } from '$lib/frameleaf/enrichment';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { handleError } from '$lib/utils/handle-error';
+  import { navigate } from '$lib/utils/navigation';
   import {
     AssetTypeEnum,
     createEnrichmentPlan,
@@ -33,6 +40,7 @@
     getBaseUrl,
     getEnrichmentPlan,
     getVideoMoments,
+    searchSimilarVideoMoments,
     setVideoMomentCover,
     updateVideoMoment,
     VideoMomentIndexState,
@@ -40,10 +48,12 @@
     type AssetResponseDto,
     type EnrichmentPlanResponseDto,
     type VideoMomentDto,
+    type VideoMomentFrameDto,
+    type VideoMomentSearchHitDto,
     type VideoMomentsResponseDto,
   } from '@immich/sdk';
-  import { Button, LoadingSpinner, Text } from '@immich/ui';
-  import { mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
+  import { Button, Icon, LoadingSpinner, Text } from '@immich/ui';
+  import { mdiClose, mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -59,6 +69,14 @@
   let busy = $state<string | null>(null);
   let plan = $state<EnrichmentPlanResponseDto | null>(null);
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** A frame-to-moment search: `hits` is null while it runs. */
+  let similar = $state<{
+    frameId: string;
+    timestampMs: number;
+    hits: VideoMomentSearchHitDto[] | null;
+    failed: boolean;
+  } | null>(null);
 
   let editing = $state<{ id: string | null; time: string; caption: string; transcript: string } | null>(null);
   let editError = $state<string | null>(null);
@@ -156,6 +174,34 @@
 
   const seek = (timestampMs: number) => videoSeek.request(asset.id, timestampMs);
 
+  const findSimilar = async (frame: Pick<VideoMomentFrameDto, 'id' | 'timestampMs'>) => {
+    const assetId = asset.id;
+    similar = { frameId: frame.id, timestampMs: frame.timestampMs, hits: null, failed: false };
+    const current = () => asset.id === assetId && similar?.frameId === frame.id;
+    try {
+      const { hits } = await searchSimilarVideoMoments({ id: frame.id, limit: 12 });
+      if (current()) {
+        similar = { frameId: frame.id, timestampMs: frame.timestampMs, hits, failed: false };
+      }
+    } catch (error) {
+      // Shown in place of the results with a retry, not as a toast.
+      handleError(error, $t('frameleaf_moments_similar_error'), { notify: false });
+      if (current()) {
+        similar = { frameId: frame.id, timestampMs: frame.timestampMs, hits: [], failed: true };
+      }
+    }
+  };
+
+  /** A hit in this video seeks it; a hit in another opens that video at the moment. */
+  const openSimilar = async (hit: VideoMomentSearchHitDto) => {
+    if (hit.assetId === asset.id) {
+      seek(hit.timestampMs);
+      return;
+    }
+    videoSeek.request(hit.assetId, hit.timestampMs);
+    await navigate({ targetRoute: 'current', assetId: hit.assetId });
+  };
+
   const startAdd = () => {
     editError = null;
     editing = { id: null, time: '', caption: '', transcript: '' };
@@ -227,6 +273,7 @@
     stopPolling();
     plan = null;
     editing = null;
+    similar = null;
     moments = null;
     if (isVideo) {
       void load(id);
@@ -285,9 +332,60 @@
                     {frame.isCover ? $t('frameleaf_moments_cover') : $t('frameleaf_moments_use_as_cover')}
                   </button>
                 {/if}
+                {#if frame.indexed}
+                  <button
+                    type="button"
+                    class="similar-toggle"
+                    aria-pressed={similar?.frameId === frame.id}
+                    aria-label={$t('frameleaf_moments_find_similar_at', {
+                      values: { time: formatMomentTime(frame.timestampMs) },
+                    })}
+                    onclick={() => findSimilar(frame)}
+                  >
+                    {$t('frameleaf_moments_find_similar')}
+                  </button>
+                {/if}
               </li>
             {/each}
           </ol>
+          {#if similar}
+            {@const search = similar}
+            <div class="similar" data-testid="frameleaf-similar-moments">
+              <VideoMomentHits
+                hits={search.hits ?? []}
+                title={$t('frameleaf_moments_similar_title', {
+                  values: { time: formatMomentTime(search.timestampMs) },
+                })}
+                onopen={openSimilar}
+              >
+                {#snippet actions()}
+                  <IconButton label={$t('close')} onclick={() => (similar = null)}>
+                    <Icon icon={mdiClose} size="1rem" />
+                  </IconButton>
+                {/snippet}
+                {#if search.hits === null}
+                  <p class="text-xs text-gray-500 dark:text-gray-400" role="status">
+                    {$t('frameleaf_moments_similar_loading')}
+                  </p>
+                {:else if search.failed}
+                  <p class="text-xs text-red-600 dark:text-red-400" role="alert">
+                    {$t('frameleaf_moments_similar_error')}
+                  </p>
+                  <button
+                    type="button"
+                    class="similar-toggle"
+                    onclick={() => findSimilar({ id: search.frameId, timestampMs: search.timestampMs })}
+                  >
+                    {$t('retry')}
+                  </button>
+                {:else}
+                  <p class="text-xs text-gray-500 dark:text-gray-400" role="status">
+                    {$t('frameleaf_moments_similar_none')}
+                  </p>
+                {/if}
+              </VideoMomentHits>
+            </div>
+          {/if}
           {#if isOwner && moments.coverTimestampMs !== null}
             <Button
               size="small"
@@ -555,6 +653,15 @@
     opacity: 0.8;
   }
   .cover-toggle[aria-pressed='true'] {
+    font-weight: 600;
+    opacity: 1;
+  }
+  .similar-toggle {
+    font-size: 11px;
+    text-align: start;
+    opacity: 0.8;
+  }
+  .similar-toggle[aria-pressed='true'] {
     font-weight: 600;
     opacity: 1;
   }
