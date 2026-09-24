@@ -734,15 +734,6 @@
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
-  /* The care area's "Tools" group heading (command-center.css `.cc-directory h2`). */
-  .cc-directory-group {
-    margin: 8px 0 -10px;
-    color: var(--fl-muted);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
   .cc-nav {
     display: flex;
     flex-direction: column;

@@ -124,7 +124,7 @@ const actions = {
   "custom-smart-album-filter-preset-snapshot": [
     "partial",
     ["AL-1", "AL-6", "AL-12", "S-14"],
-    "Per-album rules shipped with FL-60 (AL-1, AL-12); saved presets (S-14) and AL-6 remain",
+    "Per-album rules shipped with FL-60 (AL-1, AL-12) and saved presets in the rail (S-14); AL-6 remains",
   ],
   "delete-album-while-retaining-assets": [
     "fixed",
@@ -716,10 +716,20 @@ const actions = {
   ],
   "rating-favorites-archive-not-in-album-untagged": ["match", []],
   "save-update-delete-custom-server-queries": [
-    "partial",
+    "fixed",
     ["S-14"],
-    "RailSavedSearches is ready on codex/FL-49-search-palette for the shell to mount in LibraryRail; palette Save search (Smart album, Album snapshot, saved search) fixed there",
-    { prototype: [`${P}/App.jsx`, `${P}/FilterPanel.jsx`] },
+    "Palette Save search (Smart album, Album snapshot, saved search) and RailSavedSearches mounted in LibraryRail's Albums section",
+    {
+      prototype: [
+        `${P}/App.jsx`,
+        `${P}/FilterPanel.jsx`,
+        `${P}/LibraryRail.jsx`,
+      ],
+      production: [
+        `${W}/lib/components/frameleaf/RailSavedSearches.svelte`,
+        `${W}/lib/components/frameleaf/LibraryRail.svelte`,
+      ],
+    },
   ],
   "search-assets-inside-shared-spaces-or-named-pets": [
     "fixed",
