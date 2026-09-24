@@ -63,7 +63,7 @@ const sectionDefaults = {
       `${P}/search.mjs`,
     ],
     production: [
-      `${W}/lib/components/frameleaf/SearchDialog.svelte`,
+      `${W}/lib/components/frameleaf/SearchPalette.svelte`,
       `${W}/lib/components/frameleaf/FilterPanel.svelte`,
     ],
   },
@@ -582,8 +582,8 @@ const actions = {
   ],
   "clear-all-removable-chips-filter-presets": [
     "partial",
-    ["S-19", "FP-1", "SD-12"],
-    "Chips open their section, Clear all whenever active, Save preset, Frameleaf chips on the results page",
+    ["S-19", "SD-12"],
+    "Chips open their section and Clear all whenever active (S-19); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
     {
       production: [
         `${W}/lib/components/frameleaf/ResultsToolbar.svelte`,
@@ -601,26 +601,26 @@ const actions = {
     },
   ],
   "context-smart-versus-filename-text-description-ocr-path-search": [
-    "partial",
+    "fixed",
     ["SD-1", "SD-2", "SD-3"],
-    "Scope select, mode hints, All text mode (server)",
+    "Glass search palette: scope toggle with counts, per-mode placeholders, All text as an or over every text field (fixed on codex/FL-49-search-palette)",
   ],
   "country-state-city-facets": [
-    "partial",
+    "fixed",
     ["FP-3", "SD-7"],
-    "Facet counts need a server endpoint",
+    "Facet counts from POST /search/facets in the palette and its Advanced view (fixed on codex/FL-49-search-palette)",
   ],
   "dates-presets-custom-range": ["match", []],
   "dynamic-counts-facets-that-respect-access-privacy": [
-    "partial",
+    "fixed",
     ["FP-3", "SD-7"],
-    "Facet counts need a server endpoint",
+    "Server-scoped facet, histogram and scope counts, dropped on every access change (fixed on codex/FL-49-search-palette)",
   ],
   "enrichment-review-override-failure-missing-description-missing-detection-filters":
     [
-      "partial",
+      "fixed",
       ["FP-2", "SD-6"],
-      "Text & descriptions and Sensitivity review radiogroups (DTO permitting)",
+      "Text & descriptions and Sensitivity review radiogroups over the one enrichment enum; palette Enrichment quick filters with counts (fixed on codex/FL-49-search-palette)",
     ],
   "explore-empty-error-loading-states": [
     "partial",
@@ -716,20 +716,20 @@ const actions = {
   ],
   "rating-favorites-archive-not-in-album-untagged": ["match", []],
   "save-update-delete-custom-server-queries": [
-    "missing",
-    ["S-14", "FP-1"],
-    "Save query or collection dialog and rail presets",
+    "partial",
+    ["S-14"],
+    "RailSavedSearches is ready on codex/FL-49-search-palette for the shell to mount in LibraryRail; palette Save search (Smart album, Album snapshot, saved search) fixed there",
     { prototype: [`${P}/App.jsx`, `${P}/FilterPanel.jsx`] },
   ],
   "search-assets-inside-shared-spaces-or-named-pets": [
-    "partial",
+    "fixed",
     ["SD-1"],
-    "Scope select in the search dialog",
+    "Palette scope toggle: current album, pet or space and the entire library, each with its count (fixed on codex/FL-49-search-palette)",
   ],
   "search-input-recent-searches-clear-history-individual-term": [
-    "partial",
+    "fixed",
     ["SD-5"],
-    "Recent searches keep mode + filters; suggested fallback",
+    "Recent searches keep chips, mode and filters, with the Try a search fallback (fixed on codex/FL-49-search-palette)",
   ],
   "server-paging-load-more-and-large-result-sets": [
     "partial",
@@ -1605,9 +1605,9 @@ const routes = {
     ],
   ],
   "/search/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["SD-1", "SD-2", "SD-3", "SD-4", "SD-5", "SD-12", "FP-1", "FP-2"],
-    "Search dialog scope/hints/recents, results chips, filter panel presets and enrichment groups",
+    "fixed",
+    ["SD-12"],
+    "Search palette (SD-1..SD-11, FP-1..FP-5) and the results page's palette-style chips (SD-12) fixed on codex/FL-49-search-palette",
     [
       `${P}/SearchPalette.jsx`,
       `${P}/search-palette.mjs`,
@@ -1616,7 +1616,7 @@ const routes = {
     ],
     [
       `${W}/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
-      `${W}/lib/components/frameleaf/SearchDialog.svelte`,
+      `${W}/lib/components/frameleaf/SearchPalette.svelte`,
     ],
   ],
   "/share/[key]/[[photos=photos]]/[[assetId=id]]": [

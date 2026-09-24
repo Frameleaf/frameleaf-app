@@ -6,6 +6,7 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
+  import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import {
     DISCOVERY_QUERY_PARAMETER,
@@ -53,12 +54,11 @@
     type MetadataSearchDto,
     type SmartSearchDto,
   } from '@immich/sdk';
-  import { Button, Icon, LoadingSpinner } from '@immich/ui';
+  import { Button, Icon, LoadingSpinner, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
     mdiArrowLeft,
     mdiCalendarHeart,
-    mdiClose,
     mdiFileDocumentOutline,
     mdiImageAlbum,
     mdiImageOffOutline,
@@ -547,98 +547,64 @@
 <OnEvents {onAlbumAddAssets} />
 
 {#if hasSearchQuery}
+  <!-- SD-12: the results page's chips use the search palette's chip (SearchChip, search-palette.css .sp-token) -->
   <section
     id="search-chips"
-    class="mt-24 flex w-full flex-wrap place-content-center place-items-center gap-5 px-24 text-center"
+    class="frameleaf search-chips"
+    data-theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}
+    aria-label={$t('frameleaf_search_active_filters')}
   >
     {#each filterChips as chip (chip.field)}
-      <div class="flex place-content-center place-items-center items-stretch text-xs">
-        <div
-          class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
-        >
-          {chip.label}
-        </div>
-        <button
-          type="button"
-          class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
-          aria-label={$t('remove_filter')}
-          title={$t('remove_filter')}
-          onclick={() => removeFilterCondition(chip.field)}
-        >
-          <Icon icon={mdiClose} size="16" />
-        </button>
-      </div>
+      <SearchChip
+        label={chip.label}
+        removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.label } })}
+        onRemove={() => removeFilterCondition(chip.field)}
+      />
     {/each}
     {#if discoveryQuery}
       <!-- FL-48: the text, the similar-photo reference and the space are chips of their own. -->
       {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
-        <div class="flex place-content-center place-items-center items-stretch text-xs">
-          <div
-            class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
-          >
-            {$t(chip.labelKey)}
-          </div>
-          {#if chip.value}
-            <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">{chip.value}</div>
-          {/if}
-          <button
-            type="button"
-            class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
-            aria-label={$t('remove_filter')}
-            title={$t('remove_filter')}
-            onclick={() => removeContext(chip.key)}
-          >
-            <Icon icon={mdiClose} size="16" />
-          </button>
-        </div>
+        {@const label = chip.value ? `${$t(chip.labelKey)}: ${chip.value}` : $t(chip.labelKey)}
+        <SearchChip
+          {label}
+          removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
+          onRemove={() => removeContext(chip.key)}
+        />
       {/each}
     {:else}
       {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
         {@const value = terms[searchKey]}
-        <div class="flex place-content-center place-items-center items-stretch text-xs">
-          <div
-            class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
-          >
-            {getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
-          </div>
-
-          {#if value !== true}
-            <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">
-              {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
-                {getHumanReadableDate(value)}
-              {:else if searchKey === 'personIds' && Array.isArray(value)}
-                {#await getPersonName(value) then personName}
-                  {personName}
-                {/await}
-              {:else if searchKey === 'petIds' && Array.isArray(value)}
-                {#await getPetNames(value) then petNames}
-                  {petNames}
-                {/await}
-              {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
-                {#await getTagNames(value) then tagNames}
-                  {tagNames}
-                {/await}
-              {:else if searchKey === 'rating'}
-                {$t('rating_count', { values: { count: value ?? 0 } })}
-              {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
-                {getHumanReadableImageEnrichmentFilter(value)}
-              {:else if value === null || value === ''}
-                {$t('unknown')}
-              {:else}
-                {value}
-              {/if}
-            </div>
+        {@const name = getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
+        <SearchChip
+          removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: name } })}
+          onRemove={() => removeFilter(searchKey as keyof SearchTerms)}
+        >
+          {name}{#if value !== true}:
+            {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
+              {getHumanReadableDate(value)}
+            {:else if searchKey === 'personIds' && Array.isArray(value)}
+              {#await getPersonName(value) then personName}
+                {personName}
+              {/await}
+            {:else if searchKey === 'petIds' && Array.isArray(value)}
+              {#await getPetNames(value) then petNames}
+                {petNames}
+              {/await}
+            {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
+              {#await getTagNames(value) then tagNames}
+                {tagNames}
+              {/await}
+            {:else if searchKey === 'rating'}
+              {$t('rating_count', { values: { count: value ?? 0 } })}
+            {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
+              {getHumanReadableImageEnrichmentFilter(value)}
+            {:else if value === null || value === ''}
+              {$t('unknown')}
+            {:else}
+              {value}
+            {/if}
           {/if}
-          <button
-            type="button"
-            class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
-            aria-label={$t('remove_filter')}
-            title={$t('remove_filter')}
-            onclick={() => removeFilter(searchKey as keyof SearchTerms)}
-          >
-            <Icon icon={mdiClose} size="16" />
-          </button>
-        </div>
+        </SearchChip>
       {/each}
     {/if}
   </section>
@@ -772,3 +738,15 @@
   onRemove={(id) => onAssetDelete([id])}
   emptyRoute={previousRoute}
 />
+
+<style>
+  .search-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 6rem;
+    padding-inline: 1rem;
+    background: transparent;
+  }
+</style>

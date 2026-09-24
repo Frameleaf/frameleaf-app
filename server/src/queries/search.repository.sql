@@ -964,7 +964,10 @@ where
     )
     or "asset"."ownerId" = $2::uuid
   )
-  and f_unaccent ("asset_exif"."description") not ilike ('%' || f_unaccent ($3) || '%')
+  and (
+    "asset_exif"."description" is null
+    or f_unaccent ("asset_exif"."description") not ilike ('%' || f_unaccent ($3) || '%')
+  )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
@@ -1028,6 +1031,69 @@ where
     or "asset"."ownerId" = $2::uuid
   )
   and f_unaccent ("asset"."originalFileName") ilike (f_unaccent ($3) || '%')
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+limit
+  $4
+offset
+  $5
+
+-- SearchRepository.searchMetadataV3 (string-pattern-camera)
+select
+  "asset"."id",
+  "asset"."updateId",
+  "asset"."createdAt",
+  "asset"."updatedAt",
+  "asset"."deletedAt",
+  "asset"."status",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
+  "asset"."duplicateId",
+  "asset"."duration",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."isExternal",
+  "asset"."isFavorite",
+  "asset"."isOffline",
+  "asset"."isEdited",
+  "asset"."visibility",
+  "asset"."libraryId",
+  "asset"."livePhotoVideoId",
+  "asset"."localDateTime",
+  "asset"."originalFileName",
+  "asset"."originalPath",
+  "asset"."ownerId",
+  "asset"."stackId",
+  "asset"."thumbhash",
+  "asset"."type",
+  "asset"."width",
+  "asset"."height",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
+from
+  "asset"
+  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+where
+  "asset"."ownerId" = any ($1::uuid[])
+  and (
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or "asset"."ownerId" = $2::uuid
+  )
+  and f_unaccent ("asset_exif"."make") ilike ('%' || f_unaccent ($3) || '%')
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
@@ -1944,6 +2010,72 @@ where
   and (
     "asset"."fileCreatedAt" < $3
     and "asset"."fileCreatedAt" >= $4
+  )
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+limit
+  $5
+offset
+  $6
+
+-- SearchRepository.searchMetadataV3 (local-date-range)
+select
+  "asset"."id",
+  "asset"."updateId",
+  "asset"."createdAt",
+  "asset"."updatedAt",
+  "asset"."deletedAt",
+  "asset"."status",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
+  "asset"."duplicateId",
+  "asset"."duration",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."isExternal",
+  "asset"."isFavorite",
+  "asset"."isOffline",
+  "asset"."isEdited",
+  "asset"."visibility",
+  "asset"."libraryId",
+  "asset"."livePhotoVideoId",
+  "asset"."localDateTime",
+  "asset"."originalFileName",
+  "asset"."originalPath",
+  "asset"."ownerId",
+  "asset"."stackId",
+  "asset"."thumbhash",
+  "asset"."type",
+  "asset"."width",
+  "asset"."height",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
+from
+  "asset"
+  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+where
+  "asset"."ownerId" = any ($1::uuid[])
+  and (
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+    or "asset"."ownerId" = $2::uuid
+  )
+  and (
+    "asset"."localDateTime" < $3
+    and "asset"."localDateTime" >= $4
   )
 order by
   "asset"."fileCreatedAt" desc,

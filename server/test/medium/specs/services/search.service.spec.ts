@@ -532,6 +532,54 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('FL-49 search palette conditions', () => {
+    it('matches cameras and lenses by "contains", included or excluded', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: sony } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: sony.id, make: 'SONY', model: 'ILCE-7M4', lensModel: 'FE 24-70mm F2.8 GM II' });
+      const { asset: canon } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: canon.id, make: 'Canon', model: 'EOS R5', lensModel: 'RF 15-35mm' });
+      const auth = factory.auth({ user });
+      const ids = async (filter: object) =>
+        (await sut.searchMetadata(auth, { filter })).assets.items.map(({ id }) => id).sort();
+
+      await expect(ids({ make: { like: 'son' } })).resolves.toEqual([sony.id]);
+      await expect(ids({ model: { like: 'r5' } })).resolves.toEqual([canon.id]);
+      await expect(ids({ lensModel: { like: '24-70' } })).resolves.toEqual([sony.id]);
+      const { asset: noExif } = await ctx.newAsset({ ownerId: user.id });
+      // A photo with no lens does not contain "24-70", so an exclusion keeps it
+      await expect(ids({ lensModel: { notLike: '24-70' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(ids({ make: { notLike: 'son' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(sut.searchStatistics(auth, { filter: { make: { like: 'o' } } })).resolves.toEqual({ total: 2 });
+    });
+
+    it('narrows by the local capture date, which is what the histogram buckets by', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      // 23:30 on July 31 where it was taken, already August 1 in UTC
+      const { asset: lateJuly } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-01T05:30:00.000Z'),
+        localDateTime: new Date('2026-07-31T23:30:00.000Z'),
+      });
+      const { asset: august } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('2026-08-12T10:00:00.000Z'),
+        localDateTime: new Date('2026-08-12T12:00:00.000Z'),
+      });
+      const auth = factory.auth({ user });
+      const localDateTime = { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-09-01T00:00:00.000Z') };
+
+      const result = await sut.searchMetadata(auth, { filter: { localDateTime } });
+      expect(result.assets.items.map(({ id }) => id)).toEqual([august.id]);
+      const histogram = await sut.searchHistogram(auth, { filter: { localDateTime }, granularity: 'month' as never });
+      expect(histogram.total).toBe(1);
+      const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
+      expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
+    });
+  });
+
   describe('getSearchSuggestions', () => {
     it('should filter out empty search suggestions', async () => {
       const { sut, ctx } = setup();
