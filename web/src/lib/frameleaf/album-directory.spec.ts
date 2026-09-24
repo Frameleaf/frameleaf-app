@@ -16,6 +16,7 @@ import {
   orderGroupOf,
   othersOf,
   placeBefore,
+  removalOutcome,
 } from './album-directory';
 
 const me = userAdminFactory.build({ id: 'me' });
@@ -214,5 +215,16 @@ describe('album directory rules', () => {
       view: 'list',
       collapsed: ['a'],
     });
+  });
+
+  it('navigates once when someone leaves: the leave action, never the removal echo (FL-53)', () => {
+    const page = { albumId: 'a', userId: 'me', isOwner: false, leftLocally: false };
+    expect(removalOutcome({ albumId: 'b', userId: 'me' }, page)).toBe('ignore');
+    expect(removalOutcome({ albumId: 'a', userId: 'jamie' }, page)).toBe('refresh');
+    // Removed by the owner elsewhere: the page leaves and says so.
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, page)).toBe('exit');
+    // Left from this tab: the local announcement and the server echo are both ignored.
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, leftLocally: true })).toBe('ignore');
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, isOwner: true })).toBe('refresh');
   });
 });

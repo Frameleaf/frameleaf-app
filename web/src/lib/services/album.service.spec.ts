@@ -1,6 +1,6 @@
-import { moveAlbumToCollection, updateAlbumInfo } from '@immich/sdk';
+import { moveAlbumToCollection, removeUserFromAlbum, updateAlbumInfo } from '@immich/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { handleEditAlbumDetails } from '$lib/services/album.service';
+import { handleEditAlbumDetails, handleLeaveAlbum, leftLocally } from '$lib/services/album.service';
 import { handleError } from '$lib/utils/handle-error';
 import { albumFactory } from '@test-data/factories/album-factory';
 
@@ -8,7 +8,9 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   updateAlbumInfo: vi.fn(),
   moveAlbumToCollection: vi.fn(),
+  removeUserFromAlbum: vi.fn(),
 }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' }, params: {} } }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 describe('handleEditAlbumDetails', () => {
@@ -46,5 +48,31 @@ describe('handleEditAlbumDetails', () => {
 
     await handleEditAlbumDetails(album, draft);
     expect(moveAlbumToCollection).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleLeaveAlbum (FL-53)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('remembers the album this tab left, so the removal it caused is not handled as being removed', async () => {
+    vi.mocked(removeUserFromAlbum).mockResolvedValue(undefined as never);
+    const album = albumFactory.build({ id: 'left-album' });
+
+    expect(leftLocally('left-album')).toBe(false);
+    await expect(handleLeaveAlbum(album)).resolves.toBe(true);
+    expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'left-album', userId: 'me' });
+    expect(leftLocally('left-album')).toBe(true);
+    // Only for a short while: a later removal is handled normally again.
+    expect(leftLocally('left-album', Date.now() + 120_000)).toBe(false);
+  });
+
+  it('forgets a leave that failed', async () => {
+    vi.mocked(removeUserFromAlbum).mockRejectedValue(new Error('offline'));
+    const album = albumFactory.build({ id: 'stayed-album' });
+
+    await expect(handleLeaveAlbum(album)).resolves.toBe(false);
+    expect(leftLocally('stayed-album')).toBe(false);
   });
 });

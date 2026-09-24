@@ -213,14 +213,29 @@ export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUs
  * never be tricked into removing someone else. The confirmation is the Frameleaf dialog's
  * job; this only performs the removal and announces it so the page can navigate away.
  */
+/**
+ * Albums this tab left itself, and when (FL-53). The leave action navigates away on its own, so the
+ * "you were removed" handling on an open album or space page ignores the removal it caused — the
+ * local announcement and the server's websocket echo alike — and exactly one navigation happens.
+ */
+const localLeaves = new Map<string, number>();
+const LOCAL_LEAVE_WINDOW = 60_000;
+
+export const leftLocally = (albumId: string, now = Date.now()) => {
+  const at = localLeaves.get(albumId);
+  return at !== undefined && now - at < LOCAL_LEAVE_WINDOW;
+};
+
 export const handleLeaveAlbum = async (album: AlbumResponseDto) => {
   const $t = await getFormatter();
 
+  localLeaves.set(album.id, Date.now());
   try {
     await removeUserFromAlbum({ id: album.id, userId: 'me' });
     eventManager.emit('AlbumUserDelete', { albumId: album.id, userId: authManager.user.id });
     return true;
   } catch (error) {
+    localLeaves.delete(album.id);
     handleError(error, $t('errors.unable_to_remove_album_users'));
     return false;
   }

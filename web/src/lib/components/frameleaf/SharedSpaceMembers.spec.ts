@@ -12,11 +12,13 @@ import {
 } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import { albumFactory } from '@test-data/factories/album-factory';
 import en from '../../../../../i18n/en.json';
 import SharedSpaceMembers from './SharedSpaceMembers.svelte';
 
 vi.mock('$lib/utils');
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   addUsersToAlbum: vi.fn(),
@@ -166,7 +168,10 @@ describe('SharedSpaceMembers', () => {
 
     // The roster's own Leave and the dialog's confirm share the design's label; the confirm is the last.
     await fireEvent.click(screen.getAllByRole('button', { name: 'Leave shared space' }).at(-1)!);
-    await waitFor(() => expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'space-1', userId: 'bo' }));
+    // Leaving is the shared leave action (the server's own "remove myself"), and it alone navigates.
+    await waitFor(() => expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'space-1', userId: 'me' }));
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+    expect(goto).toHaveBeenCalledWith('/sharing');
   });
 
   it('never offers the owner role, and names roles as the design does', async () => {
