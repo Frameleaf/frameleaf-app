@@ -90,24 +90,32 @@ test.describe('Shared spaces', () => {
     await utils.setAuthCookies(context, editor.accessToken);
     await page.goto(`/sharing/${space.id}`);
     const section = page.getByRole('region', { name: 'Add everything matching' });
-    await section.getByRole('button', { name: 'Check the count' }).click();
-    await expect(section.getByText('2 items will be added.')).toBeVisible();
+    // The count is asked for once the page is interactive; a click before hydration does nothing.
+    // The whole library is the source, so the count includes the editor's items from earlier cases.
+    const counted = section.getByText(/^\d+ items will be added\.$/);
+    await expect(async () => {
+      await section.getByRole('button', { name: 'Check the count' }).click();
+      await expect(counted).toBeVisible({ timeout: 2000 });
+    }).toPass();
+    const countText = await counted.textContent();
+    const total = Number(countText?.match(/\d+/)?.[0]);
+    expect(total).toBeGreaterThanOrEqual(2);
 
     // Hold the "what matches" lookup so the operation is still resolving when it is cancelled.
     const gate: { release?: () => void } = {};
     const held = new Promise<void>((resolve) => (gate.release = resolve));
     await page.route('**/api/search/metadata', async (route) => {
       await held;
-      await route.continue();
+      await route.fallback();
     });
 
-    await section.getByRole('button', { name: 'Add 2 items' }).click();
+    await section.getByRole('button', { name: `Add ${total} items` }).click();
     await expect(section.getByText(/Working out what matches/)).toBeVisible();
     await section.getByRole('button', { name: 'Cancel' }).click();
     gate.release?.();
-    await page.unroute('**/api/search/metadata');
 
     await expect(section.getByText(/Stopped after/)).toBeVisible();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
     const after = await getAlbumInfo({ id: space.id }, { headers: asBearerAuth(owner.accessToken) });
     expect(after.assetCount).toBe(0);
   });
@@ -184,8 +192,14 @@ test.describe('Shared spaces', () => {
     await sheet.getByRole('checkbox', { name: /Eddie Editor/ }).uncheck();
     await sheet.getByRole('button', { name: 'Send 1 invitation' }).click();
 
-    await expect(page.getByText('Rita Recipient')).toBeVisible();
-    await expect(page.getByText('Invitation sent').first()).toBeVisible();
+    // The roster now lists Rita as an unanswered invitation, and nobody else was invited.
+    const members = page.getByRole('region', { name: 'Members' });
+    await expect(
+      members.getByRole('listitem').filter({ hasText: 'Rita Recipient' }).filter({ hasText: 'Invitation sent' }),
+    ).toBeVisible();
+    await expect(
+      members.getByRole('listitem').filter({ hasText: 'Eddie Editor' }).filter({ hasText: 'Invitation sent' }),
+    ).toHaveCount(0);
     const info = await getAlbumInfo({ id: space.id }, { headers: asBearerAuth(owner.accessToken) });
     // An invitation grants nothing until it is accepted.
     expect(info.albumUsers.map(({ user }) => user.id)).not.toContain(reviewer.userId);
