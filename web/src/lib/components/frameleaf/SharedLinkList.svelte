@@ -12,6 +12,7 @@
   import {
     getAllAlbums,
     getAllSharedLinks,
+    getSharedLinkById,
     removeSharedLink,
     SharedLinkType,
     type AlbumResponseDto,
@@ -20,7 +21,7 @@
   import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   // Mounted directly as route content (no Frameleaf ancestor supplies the token scope), so
@@ -63,23 +64,43 @@
     }
   };
 
-  /** `?edit={id}` (the old `/shared-links/{id}/edit` address) opens that link's form once loaded. */
-  const openRequestedEdit = () => {
-    const id = page.url.searchParams.get('edit');
-    if (!id) {
-      return;
-    }
-    const link = links.find((entry) => entry.id === id);
+  let loaded = $state(false);
+
+  /**
+   * `?edit={id}` (the old `/shared-links/{id}/edit` address) opens that link's form. It follows
+   * the address, so a later navigation to `?edit=` opens the form too. A link not in the loaded
+   * list is asked for by id; one that cannot be found says so.
+   */
+  const openRequestedEdit = async (id: string) => {
     const url = new URL(page.url);
     url.searchParams.delete('edit');
     replaceState(url, page.state);
+
+    let link = links.find((entry) => entry.id === id);
+    if (!link) {
+      try {
+        link = await getSharedLinkById({ id });
+      } catch {
+        link = undefined;
+      }
+    }
     if (link) {
       openEdit(link);
+    } else {
+      toastManager.warning($t('frameleaf_sharing.link_not_found'));
     }
   };
 
+  const requestedEdit = $derived(page.url.searchParams.get('edit'));
+  $effect(() => {
+    const id = requestedEdit;
+    if (id && loaded) {
+      untrack(() => void openRequestedEdit(id));
+    }
+  });
+
   onMount(() => {
-    void refresh().then(openRequestedEdit);
+    void refresh().finally(() => (loaded = true));
   });
 
   const onSharedLinkCreate = (link: SharedLinkResponseDto) => {
