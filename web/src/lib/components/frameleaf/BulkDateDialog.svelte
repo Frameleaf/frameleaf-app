@@ -1,46 +1,53 @@
 <script lang="ts">
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
+  import Picker from '$lib/components/frameleaf/Picker.svelte';
+  import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
-  import { t } from 'svelte-i18n';
+  import { splitLocalDateTime, timeZoneChoices } from '$lib/frameleaf/time-zones';
+  import { DateTime } from 'luxon';
+  import { locale, t } from 'svelte-i18n';
 
   /**
-   * Change date, ported from the prototype's `ChangeDateDialog`. Both modes bind to the one bulk
-   * update endpoint: "set the same date" sends `dateTimeOriginal` with an optional IANA time zone,
-   * and "shift all by" sends `dateTimeRelative` in minutes, which keeps each item's spacing.
+   * Change date, ported from the prototype's `ChangeDateDialog` (`SelectionBar.jsx`). Both modes bind
+   * to the one bulk update endpoint: "set the same date" sends `dateTimeOriginal` with an optional
+   * IANA time zone, and "shift all by" sends `dateTimeRelative` in minutes, which keeps each item's
+   * spacing.
+   *
+   * As in the prototype the dialog opens on the first selected item's own date and time, and the
+   * time zone list names places ("Vancouver (Pacific Time · UTC−07:00)") rather than raw IANA ids.
+   * Every zone the browser knows is offered, so the list is searchable (the Frameleaf `Picker`).
    */
   let {
     count,
-    initialDate = '',
-    initialTime = '12:00',
+    /** The first selected item's capture date and time on its own clock (`yyyy-MM-ddTHH:mm`). */
+    initialDateTime,
     open = $bindable(true),
     onSubmit,
   }: {
     count: number;
-    initialDate?: string;
-    initialTime?: string;
+    initialDateTime?: string;
     open?: boolean;
     onSubmit: (payload: BulkPayload) => void;
   } = $props();
 
-  const TIME_ZONES = [
-    'UTC',
-    'America/Vancouver',
-    'America/Edmonton',
-    'America/Toronto',
-    'Europe/London',
-    'Europe/Berlin',
-    'Asia/Tokyo',
-    'Australia/Sydney',
-  ];
   const MINUTES_PER_UNIT = { minutes: 1, hours: 60, days: 1440 };
+  const KEEP = 'keep';
 
+  const initial = splitLocalDateTime(initialDateTime);
   let mode = $state<'set' | 'shift'>('set');
-  let date = $state(initialDate);
-  let time = $state(initialTime);
-  let timeZone = $state('keep');
+  let date = $state(initial?.date ?? '');
+  let time = $state(initial?.time ?? '12:00');
   let amount = $state('1');
   let unit = $state<'minutes' | 'hours' | 'days'>('hours');
   let direction = $state<'later' | 'earlier'>('later');
+
+  const keepOption = $derived<ComboBoxOption>({
+    id: KEEP,
+    value: KEEP,
+    label: $t('frameleaf_bulk_date_keep_time_zone'),
+  });
+  let zone = $state<ComboBoxOption>();
+  const selectedZone = $derived(zone ?? keepOption);
 
   let minutes = $derived(MINUTES_PER_UNIT[unit] * Number(amount) * (direction === 'earlier' ? -1 : 1));
   let valid = $derived(
@@ -48,6 +55,21 @@
       ? /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time)
       : Number.isFinite(Number(amount)) && Number(amount) > 0,
   );
+
+  /** Offsets follow daylight saving on the date being set, as the upstream picker did. */
+  const moment = $derived.by(() => {
+    const parsed = valid && mode === 'set' ? DateTime.fromISO(`${date}T${time}`, { zone: 'utc' }) : null;
+    return parsed?.isValid ? parsed.toJSDate() : new Date();
+  });
+  const zoneOptions = $derived<ComboBoxOption[]>([
+    keepOption,
+    ...timeZoneChoices({ at: moment, locale: $locale ?? undefined }).map((choice) => ({
+      id: choice.value,
+      value: choice.value,
+      label: choice.label,
+    })),
+  ]);
+
   let preview = $derived(
     valid
       ? mode === 'set'
@@ -64,7 +86,7 @@
         ? {
             dateMode: 'set',
             dateTimeOriginal: `${date}T${time.length === 5 ? `${time}:00` : time}`,
-            ...(timeZone !== 'keep' && { timeZone }),
+            ...(selectedZone.value !== KEEP && { timeZone: selectedZone.value }),
           }
         : { dateMode: 'shift', minutes },
     );
@@ -94,15 +116,14 @@
         {$t('time')}
         <input type="time" bind:value={time} required />
       </label>
-      <label>
-        {$t('frameleaf_bulk_date_time_zone')}
-        <select bind:value={timeZone}>
-          <option value="keep">{$t('frameleaf_bulk_date_keep_time_zone')}</option>
-          {#each TIME_ZONES as zone (zone)}
-            <option value={zone}>{zone}</option>
-          {/each}
-        </select>
-      </label>
+    </div>
+    <div class="fl-zone">
+      <Picker
+        label={$t('frameleaf_bulk_date_time_zone')}
+        options={zoneOptions}
+        selectedOption={selectedZone}
+        onSelect={(option) => (zone = option ?? keepOption)}
+      />
     </div>
   {:else}
     <div class="fl-grid">
@@ -128,3 +149,10 @@
     </div>
   {/if}
 </BulkFormDialog>
+
+<style>
+  /* The zone names are long; the searchable list takes the dialog's full width. */
+  .fl-zone {
+    min-width: 0;
+  }
+</style>

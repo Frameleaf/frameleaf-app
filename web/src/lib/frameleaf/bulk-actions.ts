@@ -90,6 +90,11 @@ export type BulkAsset = {
   /** In the Locked folder. Such an item may sit in an album but is never its cover. */
   isLocked?: boolean;
   stackId?: string | null;
+  /**
+   * The capture date and time on the item's own clock (`yyyy-MM-ddTHH:mm`), which the Change date
+   * dialog opens on (prototype `ChangeDateDialog` reads the first selected item's `takenAt`).
+   */
+  localDateTime?: string;
 };
 
 export const toBulkAsset = (asset: AssetResponseDto): BulkAsset => ({
