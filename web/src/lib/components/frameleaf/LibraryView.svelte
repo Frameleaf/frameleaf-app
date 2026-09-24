@@ -65,7 +65,7 @@
   import { Icon, toastManager } from '@immich/ui';
   import { mdiCompare, mdiOpenInNew, mdiPencilOutline, mdiTuneVariant } from '@mdi/js';
   import { hasRouterStarted } from '$lib/utils/router-started';
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -711,6 +711,28 @@
 
   const showStatusBar = $derived(statusBar && !publicView && !selectionMode && !noSelectionBar);
 
+  /*
+   * The status bar's "X of Y items" (App.jsx footer: `visible.length of collectionAssets.length`).
+   * Y is the whole scope, which the timeline's buckets count up front. X is what the active filter
+   * leaves, counted by the server for the session's scope and query (`POST /search/statistics`);
+   * with no filter the two are the same.
+   */
+  const scopeTotal = $derived(manager.isInitialized ? manager.assetCount : null);
+  /** One count per result set, even when the server cannot count it (a smart search). */
+  let countedRevision = -1;
+  $effect(() => {
+    const revision = session.revision;
+    if (!showStatusBar || !session.filterActive || session.total !== null || countedRevision === revision) {
+      return;
+    }
+    countedRevision = revision;
+    const state = session.state;
+    void untrack(() => bulk.count(state)).then((total) => session.applyTotal(total, revision));
+  });
+  const resultCount = $derived(session.filterActive ? session.total : scopeTotal);
+  /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
+  const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
+
   const showTimeline = (grouping: LibraryGrouping) => {
     session.setLayout('timeline');
     if (session.state.grouping !== grouping) {
@@ -999,7 +1021,9 @@
   {/if}
   {#if showStatusBar}
     <LibraryStatusBar
-      count={selectAll === 'loaded' || !session.total ? (manager.assetCount ?? null) : session.total}
+      count={resultCount}
+      total={scopeTotal}
+      outside={selectedOutside}
       selected={session.selection.length}
       saved={savedOnDevice}
       hidden={selecting}
