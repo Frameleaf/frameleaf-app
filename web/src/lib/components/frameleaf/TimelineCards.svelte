@@ -1,0 +1,330 @@
+<script lang="ts">
+  /**
+   * The Timeline's curated Years and Months (FL-33, FL-50), ported from the September 24 template:
+   * `TimelineLibrary.jsx` `TimelineCard` and `timeline-library.css` "Curated Years and Months".
+   * One card per year or month with its key photo, count and top places; month cards add a strip of
+   * highlights. Opening a card steps one level finer (`onOpen`), as in Photos.
+   *
+   * The cards come from `GET /timeline/highlights` with the time buckets' own query, so they cover
+   * exactly what the grid would show, ranked on the server; the view's months are never walked here.
+   */
+  import {
+    cardTarget,
+    firstCardOfYear,
+    MONTH_HIGHLIGHT_COUNT,
+    placeSummary,
+    timelineCards,
+    type TimelineCard,
+    type TimelineCardTarget,
+  } from '$lib/frameleaf/timeline-cards';
+  import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { AssetMediaSize, getTimelineHighlights, TimelineHighlightGrouping } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
+  import { mdiImageOutline } from '@mdi/js';
+  import { DateTime } from 'luxon';
+  import { tick, type Snippet } from 'svelte';
+  import { locale, t } from 'svelte-i18n';
+
+  type Props = {
+    timelineManager: TimelineManager;
+    grouping: 'years' | 'months';
+    /** A card was opened: the grouping and period to show next. */
+    onOpen: (target: TimelineCardTarget) => void;
+    /** After a year opened Months, the year whose first month card is brought to the top. */
+    focusYear?: number | null;
+    /** Rendered above the cards, inside the same scroll container. */
+    header?: Snippet;
+    empty?: Snippet;
+  };
+
+  let { timelineManager, grouping, onOpen, focusYear = null, header, empty }: Props = $props();
+
+  const kind = $derived(grouping === 'years' ? 'year' : 'month');
+  let cards = $state<TimelineCard[]>([]);
+  let status = $state<'loading' | 'ready' | 'failed'>('loading');
+  let scroller = $state<HTMLElement>();
+  let request = 0;
+
+  $effect(() => {
+    // Refetch when the view's query is (re)initialised or the grouping changes.
+    if (!timelineManager.isInitialized) {
+      return;
+    }
+    const query = timelineManager.bucketQuery;
+    const wanted = kind;
+    const current = ++request;
+    status = 'loading';
+    const load = async () => {
+      try {
+        const highlights = await getTimelineHighlights({
+          ...query,
+          grouping: wanted === 'year' ? TimelineHighlightGrouping.Year : TimelineHighlightGrouping.Month,
+          highlightCount: wanted === 'month' ? MONTH_HIGHLIGHT_COUNT : 0,
+        });
+        if (current !== request) {
+          return;
+        }
+        cards = timelineCards(highlights, wanted);
+        status = 'ready';
+      } catch {
+        if (current !== request) {
+          return;
+        }
+        cards = [];
+        status = 'failed';
+      }
+    };
+    void load();
+  });
+
+  // Template `openCard`: a year opens Months scrolled to that year.
+  $effect(() => {
+    const year = focusYear;
+    if (year === null || status !== 'ready' || kind !== 'month') {
+      return;
+    }
+    const card = firstCardOfYear(cards, year);
+    void tick().then(() => {
+      const element = card && scroller?.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(card.id)}"]`);
+      if (element && scroller) {
+        scroller.scrollBy({ top: element.getBoundingClientRect().top - scroller.getBoundingClientRect().top });
+      }
+    });
+  });
+
+  const titleOf = (card: TimelineCard) =>
+    card.kind === 'year'
+      ? String(card.year)
+      : DateTime.fromObject({ year: card.year, month: card.month ?? 1 }).toLocaleString(
+          { month: 'long', year: 'numeric' },
+          { locale: $locale ?? undefined },
+        );
+
+  const metaOf = (card: TimelineCard) =>
+    [$t('items_count', { values: { count: card.count } }), placeSummary(card.places, $locale ?? undefined)]
+      .filter(Boolean)
+      .join(' · ');
+
+  const media = (id: string, size: AssetMediaSize) => getAssetMediaUrl({ id, size });
+</script>
+
+<section
+  class="fl-cards-scroll"
+  bind:this={scroller}
+  data-testid="frameleaf-timeline-cards"
+  aria-busy={status === 'loading'}
+>
+  {@render header?.()}
+  {#if status === 'failed'}
+    <p class="fl-cards-status" role="status">{$t('frameleaf_timeline_cards_failed')}</p>
+  {:else if status === 'ready' && cards.length === 0}
+    {@render empty?.()}
+  {:else}
+    <ul
+      class="fl-cards"
+      class:is-months={kind === 'month'}
+      aria-label={$t(grouping === 'years' ? 'frameleaf_library_grouping_years' : 'frameleaf_library_grouping_months')}
+    >
+      {#each cards as card (card.id)}
+        {@const title = titleOf(card)}
+        {@const meta = metaOf(card)}
+        <li class="fl-card" class:is-year={card.kind === 'year'} data-group-id={card.id}>
+          <button
+            type="button"
+            class="fl-card-open"
+            aria-label={$t(
+              card.kind === 'year' ? 'frameleaf_timeline_card_show_months' : 'frameleaf_timeline_card_show_days',
+              {
+                values: { title, meta },
+              },
+            )}
+            onclick={() => onOpen(cardTarget(card))}
+          >
+            <span class="fl-card-media">
+              {#if card.keyAssetId}
+                <img src={media(card.keyAssetId, AssetMediaSize.Preview)} alt="" loading="lazy" decoding="async" />
+              {:else}
+                <Icon icon={mdiImageOutline} size="32" aria-hidden />
+              {/if}
+              <span class="fl-card-caption">
+                <span class="fl-card-title">{title}</span>
+                <span class="fl-card-meta">{meta}</span>
+              </span>
+            </span>
+            {#if card.highlightAssetIds.length > 0}
+              <span class="fl-card-strip" aria-hidden="true">
+                {#each card.highlightAssetIds as id (id)}
+                  <img src={media(id, AssetMediaSize.Thumbnail)} alt="" loading="lazy" decoding="async" />
+                {/each}
+              </span>
+            {/if}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</section>
+
+<style>
+  .fl-cards-scroll {
+    container: fl-cards / inline-size;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  /* Template timeline-library.css "Curated Years and Months". */
+  .fl-cards {
+    display: grid;
+    gap: 16px;
+    margin: 0;
+    padding: 0 0 16px;
+    list-style: none;
+  }
+  .fl-cards.is-months {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  }
+  .fl-card {
+    min-width: 0;
+    animation: fl-card-in var(--fl-duration, 380ms) var(--fl-snappy, ease-out) both;
+  }
+  @keyframes fl-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+  }
+  .fl-card-open {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--fl-radius-card, 12px);
+    overflow: hidden;
+    background: var(--fl-panel);
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px var(--fl-material-edge, var(--fl-border));
+    transition:
+      transform var(--fl-duration, 380ms) var(--fl-spring, ease),
+      box-shadow var(--fl-motion-fast, 120ms) ease;
+  }
+  @supports (corner-shape: squircle) {
+    .fl-card-open {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card, 12px) * 1.8);
+    }
+  }
+  .fl-card-open:hover {
+    box-shadow:
+      0 0 0 1px var(--fl-material-edge, var(--fl-border)),
+      var(--fl-shadow-1);
+  }
+  .fl-card-open:active {
+    transform: scale(0.985);
+  }
+  .fl-card-open:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 3px;
+  }
+  .fl-card-media {
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    aspect-ratio: 16 / 10;
+    background: var(--fl-raised);
+    color: var(--fl-muted);
+  }
+  .is-year .fl-card-media {
+    aspect-ratio: 21 / 9;
+    max-height: min(440px, 55vh);
+    width: 100%;
+  }
+  .fl-card-media img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform calc(var(--fl-duration, 380ms) * 2) var(--fl-spring, ease);
+  }
+  .fl-card-open:hover .fl-card-media img {
+    transform: scale(1.03);
+  }
+  .fl-card-caption {
+    position: absolute;
+    inset: auto 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 40px 18px 14px;
+    color: #fff;
+    background: linear-gradient(transparent, rgb(0 0 0 / 62%));
+    text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+  }
+  /* Years put the title at the top, as in Photos, clear of the floating toolbar. */
+  .is-year .fl-card-caption {
+    inset: 0 0 auto;
+    padding: 18px 22px 56px;
+    background: linear-gradient(rgb(0 0 0 / 55%), transparent);
+  }
+  .fl-card-title {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .is-year .fl-card-title {
+    font-size: clamp(34px, 6cqi, 56px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .fl-card-meta {
+    font-size: var(--fl-font-small, 12px);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.9;
+  }
+  .fl-card-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2px;
+  }
+  .fl-card-strip img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+  }
+  .fl-cards-status {
+    padding: 45px 12px;
+    color: var(--fl-muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-card {
+      animation-name: fl-card-fade;
+    }
+    .fl-card-open,
+    .fl-card-media img {
+      transition: none;
+    }
+    .fl-card-open:active,
+    .fl-card-open:hover .fl-card-media img {
+      transform: none;
+    }
+  }
+  @keyframes fl-card-fade {
+    from {
+      opacity: 0;
+    }
+  }
+</style>
