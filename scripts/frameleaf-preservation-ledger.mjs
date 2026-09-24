@@ -1000,7 +1000,8 @@ async function buildLedger() {
     const row = shipped
       ? {
           ...sourceRow,
-          auditStatus: "mapped-unqualified",
+          // A removed action keeps its target only as the place it was removed from.
+          auditStatus: shipped.removed ? "Intentional change" : "mapped-unqualified",
           target: shipped.target,
           notes: shipped.notes,
         }

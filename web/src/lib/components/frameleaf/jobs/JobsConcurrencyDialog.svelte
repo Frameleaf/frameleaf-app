@@ -47,6 +47,15 @@
     }),
   );
   const pending = $derived(JOB_QUEUES.filter((definition) => isPending(definition)).length);
+  /** Text that is not a limit is never in the draft, so the review waits until every field is valid. */
+  const hasInvalid = $derived(Object.keys(typed).length > 0);
+
+  // Invalid text belongs to this visit; reopening shows the draft again.
+  $effect(() => {
+    if (!open) {
+      typed = {};
+    }
+  });
 
   const onInput = (definition: JobQueueDefinition, value: string) => {
     const entry = jobDraft?.[definition.name];
@@ -128,7 +137,7 @@
     <p class="jm-muted">{$t('frameleaf_jobs_concurrency_footer')}</p>
     <footer>
       <Button onclick={() => (open = false)}>{$t('frameleaf_jobs_detail_done')}</Button>
-      {#if pending > 0}
+      {#if pending > 0 && !hasInvalid}
         <Button variant="primary" onclick={review}>
           {$t('frameleaf_jobs_concurrency_review', { values: { count: pending } })}
         </Button>
