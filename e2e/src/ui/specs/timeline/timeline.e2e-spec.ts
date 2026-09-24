@@ -568,6 +568,27 @@ test.describe('Timeline', () => {
       await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(4);
     });
 
+    test('Chained shift-clicks all range from the first anchor', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await thumbnailUtils.selectAssetId(page, assets[2].id);
+      await page.keyboard.down('Shift');
+      await thumbnailUtils.selectButton(page, assets[4].id).click();
+      await page.keyboard.up('Shift');
+      await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(3);
+      // Deselecting inside the range keeps the anchor on the first item (prototype `nextAnchor`).
+      await thumbnailUtils.clickAssetId(page, assets[3].id);
+      await expect(thumbnailUtils.selectButton(page, assets[3].id)).not.toBeChecked();
+      // A shift-click never moves the anchor (prototype `App.jsx` toggleSelect), so this range runs
+      // from the first item again and brings the deselected one back.
+      await page.keyboard.down('Shift');
+      await thumbnailUtils.selectButton(page, assets[5].id).click();
+      await page.keyboard.up('Shift');
+      await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(4);
+      for (const asset of assets.slice(2, 6)) {
+        await expect(thumbnailUtils.selectButton(page, asset.id)).toBeChecked();
+      }
+    });
+
     test('Select focused asset - X', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       await thumbnailUtils.openButton(page, assets[0].id).focus();
