@@ -60,6 +60,10 @@ test.describe('Timeline', () => {
     adminUserId = faker.string.uuid();
     testContext.adminId = adminUserId;
     timelineRestData = generateTimelineData({ ...createDefaultTimelineConfig(), ownerId: adminUserId });
+    // beforeAll can run more than once in a worker (a repeat or a new suite run); start from empty
+    // lists so the assets and months of an earlier run are not listed twice
+    assets.length = 0;
+    yearMonths.length = 0;
     for (const timeBucket of timelineRestData.buckets.values()) {
       assets.push(...timeBucket);
     }
@@ -560,7 +564,9 @@ test.describe('Timeline', () => {
       await expect(thumbnailUtils.withAssetId(page, assetToTrash.id)).toHaveCount(0);
       await railLink(page, 'Trash').click();
       await restoreFromTrash(page, assetToTrash.id);
-      await railLink(page, 'Library').click();
+      // FL-71: Trash is a Command Center section, a full-screen settings screen without the
+      // library rail; the prototype returns through its "Back to library" link.
+      await page.getByRole('link', { name: 'Back to library', exact: true }).click();
       await thumbnailUtils.expectInViewport(page, assetToTrash.id);
     });
 
