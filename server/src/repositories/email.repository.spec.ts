@@ -37,6 +37,25 @@ describe(EmailRepository.name, () => {
       expect(result.html).not.toContain('raw.githubusercontent.com');
     });
 
+    it('should not use Immich as the product name or link app-store badges', async () => {
+      for (const request of [
+        { template: EmailTemplate.TEST_EMAIL, data: { displayName: 'Alen Turing', baseUrl: 'http://localhost' } },
+        {
+          template: EmailTemplate.WELCOME,
+          data: { displayName: 'Alen Turing', username: 'turing', baseUrl: 'http://localhost' },
+        },
+      ] as EmailRenderRequest[]) {
+        const { html, text } = await sut.renderEmail({ ...request, customTemplate: '' });
+
+        for (const output of [html, text]) {
+          expect(output).not.toMatch(/immich/i);
+          expect(output).not.toContain('play.google.com');
+          expect(output).not.toContain('apps.apple.com');
+        }
+        expect(text).toContain('Frameleaf');
+      }
+    });
+
     it('should render the email correctly for WELCOME template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.WELCOME,

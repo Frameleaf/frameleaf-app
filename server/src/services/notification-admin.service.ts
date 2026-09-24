@@ -47,7 +47,7 @@ export class NotificationAdminService extends BaseService {
     });
     const { messageId } = await this.emailRepository.sendEmail({
       to: user.email,
-      subject: 'Test email from Immich',
+      subject: 'Test email from Frameleaf',
       html,
       text,
       from: dto.from,
