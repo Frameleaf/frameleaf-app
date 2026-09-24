@@ -15,6 +15,7 @@
   import { browser } from '$app/environment';
   import { afterNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
@@ -24,6 +25,7 @@
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
+  import { preparesArchiveOnServer, type ArchiveOperationResponseDto } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
@@ -45,7 +47,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
-  import { onDestroy, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -407,7 +409,61 @@
     runDispatch(id, payload);
   };
 
+  /**
+   * FL-32: the view is the owner's own normal Timeline (the Photos page), the one scope whose
+   * "select everything matching" the server can count and freeze for an archive by itself.
+   */
+  const ownTimeline = $derived(
+    destination?.kind === 'library' &&
+      options?.visibility === AssetVisibility.Timeline &&
+      Object.keys(options).every((key) => ['visibility', 'withStacked', 'withPartners'].includes(key)),
+  );
+
+  /** A matching archive the server has counted and frozen, waiting for the person to confirm it. */
+  let archiveConfirm = $state<ArchiveOperationResponseDto | null>(null);
+  let archiveConfirmOpen = $state(false);
+
+  const prepareMatchingArchive = async () => {
+    const prepared = await bulk.prepareArchive();
+    if (!prepared) {
+      return;
+    }
+    if (prepared.count === 0) {
+      toastManager.primary($t('frameleaf_bulk_archive_nothing'));
+      return;
+    }
+    archiveConfirm = prepared;
+    archiveConfirmOpen = true;
+  };
+
+  const confirmMatchingArchive = async () => {
+    const prepared = archiveConfirm;
+    archiveConfirm = null;
+    archiveConfirmOpen = false;
+    if (prepared && (await bulk.confirmArchive(prepared))) {
+      session.clearSelection();
+    }
+  };
+
+  $effect(() => {
+    if (!archiveConfirmOpen && archiveConfirm) {
+      archiveConfirm = null;
+    }
+  });
+
+  // The server keeps the latest archive's Undo; a reload offers it again (FL-32).
+  onMount(() => {
+    if (!publicView && !noSelectionBar && authManager.authenticated && !authManager.isSharedLink) {
+      void bulk.restoreArchiveUndo();
+    }
+  });
+
   const runDispatch = (id: BulkActionId, payload?: BulkPayload) => {
+    if (snapshot && id === 'archive' && ownTimeline && preparesArchiveOnServer(snapshot)) {
+      // Counted and frozen by the server first; nothing changes until that exact count is confirmed.
+      void prepareMatchingArchive();
+      return;
+    }
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
       void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
@@ -725,6 +781,17 @@
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
 </div>
+
+{#if archiveConfirm}
+  <BulkConfirmDialog
+    count={archiveConfirm.count}
+    bind:open={archiveConfirmOpen}
+    labelKey="frameleaf_bulk_archive"
+    messageKey="frameleaf_bulk_archive_matching_confirm"
+    danger={false}
+    onConfirm={() => void confirmMatchingArchive()}
+  />
+{/if}
 
 {#if helpOpen}
   <ShortcutsHelp surface={session.openAssetId ? 'viewer' : 'timeline'} onClose={() => (helpOpen = false)} />
