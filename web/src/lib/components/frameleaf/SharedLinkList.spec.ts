@@ -1,5 +1,6 @@
 import type { ServerConfigDto } from '@immich/sdk';
-import { getAllSharedLinks, removeSharedLink, SharedLinkType } from '@immich/sdk';
+import { getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@immich/sdk';
+import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
@@ -10,8 +11,23 @@ vi.mock('$lib/utils');
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   getAllSharedLinks: vi.fn(),
+  getSharedLinkById: vi.fn(),
   getAllAlbums: vi.fn(),
   removeSharedLink: vi.fn(),
+}));
+const pageState = vi.hoisted(() => ({ url: new URL('http://localhost/shared-links') }));
+vi.mock('$app/state', () => ({
+  page: {
+    get url() {
+      return pageState.url;
+    },
+    state: {},
+  },
+}));
+vi.mock('$app/navigation', () => ({
+  replaceState: vi.fn((url: URL) => {
+    pageState.url = new URL(url);
+  }),
 }));
 vi.mock(import('$lib/managers/server-config-manager.svelte'), () => ({
   serverConfigManager: {
@@ -21,8 +37,18 @@ vi.mock(import('$lib/managers/server-config-manager.svelte'), () => ({
   },
 }));
 
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  pageState.url = new URL('http://localhost/shared-links');
   addMessages('dev', en);
 });
 
@@ -67,5 +93,32 @@ describe('SharedLinkList', () => {
     vi.mocked(getAllSharedLinks).mockResolvedValue([]);
     render(SharedLinkList);
     expect(await screen.findByText(en.frameleaf_sharing.empty_links_title)).toBeInTheDocument();
+  });
+
+  it('opens the edit form for ?edit= (the old edit address) and drops the parameter', async () => {
+    const link = sharedLinkFactory.build({ type: SharedLinkType.Individual, assets: [] });
+    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    pageState.url = new URL(`http://localhost/shared-links?edit=${link.id}`);
+
+    render(SharedLinkList);
+
+    expect(
+      await screen.findByRole('heading', { name: en.frameleaf_sharing.edit_shared_link_title }),
+    ).toBeInTheDocument();
+    expect(pageState.url.searchParams.has('edit')).toBe(false);
+    expect(getSharedLinkById).not.toHaveBeenCalled();
+  });
+
+  it('asks for a link missing from the list by id, and says so when it does not exist', async () => {
+    const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
+    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    vi.mocked(getSharedLinkById).mockRejectedValue(new Error('not found'));
+    pageState.url = new URL('http://localhost/shared-links?edit=missing-id');
+
+    render(SharedLinkList);
+
+    await waitFor(() => expect(getSharedLinkById).toHaveBeenCalledWith({ id: 'missing-id' }));
+    await waitFor(() => expect(warning).toHaveBeenCalledWith(en.frameleaf_sharing.link_not_found));
+    expect(screen.queryByRole('heading', { name: en.frameleaf_sharing.edit_shared_link_title })).toBeNull();
   });
 });

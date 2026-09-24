@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "d5311061f03858bcfb754738a9fa255707cd2cbc24f00cf980c46e7a217e15d2",
+  "sourceEvidenceSha256": "ba264e8ca10658bc49b181723d45409147f8094dba83861c0fe4f6747e0feefb",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -64935,7 +64935,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -64944,7 +64944,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -64983,7 +64983,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -64992,7 +64992,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65035,7 +65035,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65044,7 +65044,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65087,7 +65087,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65096,7 +65096,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65139,7 +65139,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65148,7 +65148,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65191,7 +65191,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65200,7 +65200,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65243,7 +65243,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65252,7 +65252,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65295,7 +65295,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65304,7 +65304,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65347,7 +65347,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65356,7 +65356,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65399,7 +65399,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65408,7 +65408,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65451,7 +65451,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65460,7 +65460,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65499,7 +65499,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65508,7 +65508,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65551,7 +65551,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65560,7 +65560,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65603,7 +65603,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65612,7 +65612,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65655,7 +65655,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65664,7 +65664,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65707,7 +65707,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65716,7 +65716,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65759,7 +65759,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65768,7 +65768,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65811,7 +65811,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65820,7 +65820,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65863,7 +65863,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65872,7 +65872,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65915,7 +65915,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65924,7 +65924,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]
@@ -65967,7 +65967,7 @@
             "web/src/routes/(user)/albums/+page.svelte",
             "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/lib/services/album.service.ts",
-            "web/src/lib/modals/AlbumOptionsModal.svelte",
+            "web/src/lib/components/frameleaf/AlbumShareDialog.svelte",
             "web/src/lib/components/album-page",
             "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte"
           ],
@@ -65976,7 +65976,7 @@
             "accepted-main:web/src/routes/(user)/albums/+page.svelte:8e8b93b6b335ae47b8de8f099ec3bdfa051a78c9ef78cc81e5c8f1606f16a0b7",
             "accepted-main:web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte:ec843efc31975e34c10f33fc8ae04c2f8e39a352a525fe56492d3699f60afe11",
             "accepted-main:web/src/lib/services/album.service.ts:b5f517c1dfd938e10d299b2c27df8052a51b8999ffe3ce7c0cd9f4fdaf2be6ae",
-            "accepted-main:web/src/lib/modals/AlbumOptionsModal.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
+            "accepted-main:web/src/lib/components/frameleaf/AlbumShareDialog.svelte:aec0b2119eeaf178d4b8e67f394f069511a7a6e464075bd1235fa3cf95263d01",
             "accepted-main-directory:web/src/lib/components/album-page:directory",
             "accepted-main:web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte:d1d89c09daaaf4fa034457b211307e603ffe156fc72607e48c2386f4a054cb80"
           ]

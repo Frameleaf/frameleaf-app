@@ -2,14 +2,8 @@
   import AlbumCardGroup from '$lib/components/album-page/AlbumCardGroup.svelte';
   import AlbumsTable from '$lib/components/album-page/AlbumsTable.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
-  import RightClickContextMenu from '$lib/components/shared-components/context-menu/RightClickContextMenu.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
-  import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-  import AlbumParentPickerModal from '$lib/modals/AlbumParentPickerModal.svelte';
   import { Route } from '$lib/route';
-  import { handleDeleteAlbum, handleDownloadAlbum, handleUpdateAlbum } from '$lib/services/album.service';
   import {
     AlbumFilter,
     AlbumGroupBy,
@@ -26,18 +20,9 @@
     stringToSortOrder,
     type AlbumGroup,
   } from '$lib/utils/album-utils';
-  import type { ContextMenuPosition } from '$lib/utils/context-menu';
   import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { modalManager } from '@immich/ui';
-  import {
-    mdiDeleteOutline,
-    mdiDownload,
-    mdiFolderMoveOutline,
-    mdiRenameOutline,
-    mdiShareVariantOutline,
-  } from '@mdi/js';
   import { groupBy } from 'lodash-es';
-  import { onMount, type Snippet } from 'svelte';
+  import { type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -45,9 +30,7 @@
     sharedAlbums?: AlbumResponseDto[];
     searchQuery?: string;
     userSettings: AlbumViewSettings;
-    allowEdit?: boolean;
     showOwner?: boolean;
-    showContextMenu?: boolean;
     albumGroupIds?: string[];
     getAlbumHref?: (album: AlbumResponseDto) => string;
     onAlbumDrop?: (draggedId: string, targetAlbum: AlbumResponseDto) => void;
@@ -61,9 +44,7 @@
     sharedAlbums = $bindable([]),
     searchQuery = '',
     userSettings,
-    allowEdit = false,
     showOwner = false,
-    showContextMenu = true,
     // eslint-disable-next-line no-useless-assignment
     albumGroupIds = $bindable([]),
     getAlbumHref = Route.viewAlbum,
@@ -177,85 +158,10 @@
     }));
   });
 
-  let contextMenuPosition: ContextMenuPosition = $state({ x: 0, y: 0 });
-  let selectedAlbum: AlbumResponseDto | undefined = $state();
-  let isOpen = $state(false);
-
   // TODO get rid of this
   $effect(() => {
     albumGroupIds = groupedAlbums.map(({ id }) => id);
   });
-
-  let showFullContextMenu = $derived(
-    allowEdit && selectedAlbum && selectedAlbum.albumUsers[0].user.id === authManager.user.id,
-  );
-
-  onMount(async () => {
-    if (allowEdit) {
-      await removeAlbumsIfEmpty();
-    }
-  });
-
-  const showAlbumContextMenu = (contextMenuDetail: ContextMenuPosition, album: AlbumResponseDto) => {
-    selectedAlbum = album;
-    contextMenuPosition = {
-      x: contextMenuDetail.x,
-      y: contextMenuDetail.y,
-    };
-    isOpen = true;
-  };
-
-  let albumContextMenuHandler = $derived(showContextMenu ? showAlbumContextMenu : undefined);
-
-  const closeAlbumContextMenu = () => {
-    isOpen = false;
-  };
-
-  const handleSelect = async (action: 'edit' | 'share' | 'download' | 'delete' | 'move') => {
-    closeAlbumContextMenu();
-
-    if (!selectedAlbum) {
-      return;
-    }
-
-    switch (action) {
-      case 'edit': {
-        await modalManager.show(AlbumEditModal, { album: selectedAlbum });
-        break;
-      }
-
-      case 'share': {
-        await modalManager.show(AlbumOptionsModal, { album: selectedAlbum });
-        break;
-      }
-
-      case 'download': {
-        await handleDownloadAlbum(selectedAlbum);
-        break;
-      }
-
-      case 'delete': {
-        await handleDeleteAlbum(selectedAlbum);
-        break;
-      }
-
-      case 'move': {
-        const result = await modalManager.show(AlbumParentPickerModal, {
-          albumId: selectedAlbum.id,
-          currentParentId: selectedAlbum.parentId,
-        });
-        if (result && result.parentId !== selectedAlbum.parentId) {
-          await handleUpdateAlbum(selectedAlbum, { parentId: result.parentId });
-        }
-        break;
-      }
-    }
-  };
-
-  const removeAlbumsIfEmpty = async () => {
-    const albumsToRemove = ownedAlbums.filter((album) => album.assetCount === 0 && !album.albumName);
-    await Promise.allSettled(albumsToRemove.map((album) => handleDeleteAlbum(album, { prompt: false, notify: false })));
-  };
 
   const findAndUpdate = (albums: AlbumResponseDto[], album: AlbumResponseDto) => {
     const target = albums.find(({ id }) => id === album.id);
@@ -295,7 +201,6 @@
         showDateRange
         showItemCount
         {getAlbumHref}
-        onShowContextMenu={albumContextMenuHandler}
         {onAlbumDrop}
         {canAcceptDrop}
         bind:draggedId
@@ -309,7 +214,6 @@
           showDateRange
           showItemCount
           {getAlbumHref}
-          onShowContextMenu={albumContextMenuHandler}
           {onAlbumDrop}
           {canAcceptDrop}
           bind:draggedId
@@ -318,24 +222,9 @@
     {/if}
   {:else if userSettings.view === AlbumViewMode.List}
     <!-- Album Table -->
-    <AlbumsTable {groupedAlbums} {albumGroupOption} onShowContextMenu={albumContextMenuHandler} />
+    <AlbumsTable {groupedAlbums} {albumGroupOption} />
   {/if}
 {:else}
   <!-- Empty Message -->
   {@render empty?.()}
-{/if}
-
-<!-- Context Menu -->
-{#if showContextMenu}
-  <RightClickContextMenu title={$t('album_options')} {...contextMenuPosition} {isOpen} onClose={closeAlbumContextMenu}>
-    {#if showFullContextMenu}
-      <MenuOption icon={mdiRenameOutline} text={$t('edit_album')} onClick={() => handleSelect('edit')} />
-      <MenuOption icon={mdiFolderMoveOutline} text={$t('move_to_folder')} onClick={() => handleSelect('move')} />
-      <MenuOption icon={mdiShareVariantOutline} text={$t('share')} onClick={() => handleSelect('share')} />
-    {/if}
-    <MenuOption icon={mdiDownload} text={$t('download')} onClick={() => handleSelect('download')} />
-    {#if showFullContextMenu}
-      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => handleSelect('delete')} />
-    {/if}
-  </RightClickContextMenu>
 {/if}

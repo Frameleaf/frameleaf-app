@@ -44,7 +44,7 @@
   const open = $derived(pendingInvitations(invitations));
 
   const roleLabel = (role: AlbumUserRole) =>
-    role === AlbumUserRole.Viewer ? $t('frameleaf_spaces_role_viewer') : $t('frameleaf_spaces_role_editor');
+    role === AlbumUserRole.Viewer ? $t('frameleaf_album_role_viewer') : $t('frameleaf_album_role_editor');
 
   const answer = async (invitation: SharedSpacePreviewResponseDto, accept: boolean) => {
     busyId = invitation.id;
