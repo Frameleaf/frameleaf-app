@@ -38801,11 +38801,7 @@
             "type": "string"
           },
           "scope": {
-            "description": "Only the owner’s own normal Timeline can be prepared on the server",
-            "enum": [
-              "matching-owned-timeline"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/ArchiveOperationPrepareScope"
           }
         },
         "required": [
@@ -38813,6 +38809,13 @@
           "scope"
         ],
         "type": "object"
+      },
+      "ArchiveOperationPrepareScope": {
+        "description": "Only the owner’s own normal Timeline can be prepared on the server",
+        "enum": [
+          "matching-owned-timeline"
+        ],
+        "type": "string"
       },
       "ArchiveOperationResponseDto": {
         "properties": {
