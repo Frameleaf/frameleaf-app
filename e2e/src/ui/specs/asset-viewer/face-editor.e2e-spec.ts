@@ -10,17 +10,17 @@ import { assetViewerUtils } from '../timeline/utils';
 import { setupAssetViewerFixture } from './utils';
 
 const waitForSelectorTransition = async (page: Page) => {
-  await page.waitForFunction(
-    () => {
-      const selector = document.querySelector('#face-selector') as HTMLElement | null;
-      if (!selector) {
-        return false;
-      }
-      return selector.getAnimations({ subtree: false }).every((animation) => animation.playState === 'finished');
-    },
-    undefined,
-    { timeout: 1000, polling: 50 },
-  );
+  // The selector glides (top/left transition) to its place beside the face box. Its settle time
+  // depends on how busy the page is: the detail panel is still sliding in and the people list is
+  // still loading when the editor opens, and each relayout retargets the transition. Wait for the
+  // transitions to actually finish instead of giving them a fixed 1s budget, which a loaded CI
+  // runner exceeds.
+  await page.locator('#face-selector').evaluate(async (selector) => {
+    for (let running = selector.getAnimations(); running.length > 0; running = selector.getAnimations()) {
+      // a retargeted transition is cancelled, so its promise rejects; either outcome means re-check
+      await Promise.allSettled(running.map((animation) => animation.finished));
+    }
+  });
 };
 
 const openFaceEditor = async (page: Page, asset: TimelineAssetConfig) => {
@@ -28,7 +28,7 @@ const openFaceEditor = async (page: Page, asset: TimelineAssetConfig) => {
   await assetViewerUtils.waitForViewerLoad(page, asset);
   await page.keyboard.press('i');
   await page.locator('#detail-panel').waitFor({ state: 'visible' });
-  await page.getByLabel('Tag people').click();
+  await page.getByRole('button', { name: 'Add person' }).click();
   await page.locator('#face-selector').waitFor({ state: 'visible' });
   await waitForSelectorTransition(page);
 };
