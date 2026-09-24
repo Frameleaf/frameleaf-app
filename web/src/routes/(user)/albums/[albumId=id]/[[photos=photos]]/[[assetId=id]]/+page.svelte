@@ -12,7 +12,7 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
-  import { canEdit, isOwner } from '$lib/frameleaf/album-directory';
+  import { canEdit, isOwner, removalOutcome } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
@@ -20,7 +20,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAlbumAssetsActions, handleDeleteAlbum } from '$lib/services/album.service';
+  import { getAlbumAssetsActions, handleDeleteAlbum, leftLocally } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
@@ -349,17 +349,20 @@
    * removed by the owner in another window, or leaving from another tab — the page can no longer
    * read the album, so it says so and goes back instead of failing on a refresh.
    */
-  const onAlbumUserDelete = async ({ albumId: id, userId }: { albumId: string; userId: string }) => {
-    if (id !== albumId) {
-      return;
-    }
-    if (userId === currentUserId && !isOwner(album, currentUserId)) {
+  const onAlbumUserDelete = async (removal: { albumId: string; userId: string }) => {
+    const outcome = removalOutcome(removal, {
+      albumId,
+      userId: currentUserId,
+      isOwner: isOwner(album, currentUserId),
+      leftLocally: leftLocally(removal.albumId),
+    });
+    if (outcome === 'exit') {
       activityOpen = false;
       toastManager.primary($t('frameleaf_album_access_removed', { values: { name: album.albumName } }));
       await goto(album.kind === AlbumKind.Space ? Route.sharing() : Route.albums());
-      return;
+    } else if (outcome === 'refresh') {
+      await refreshEverything();
     }
-    await refreshEverything();
   };
 
   const onAlbumUpdate = async (newAlbum: AlbumResponseDto) => {

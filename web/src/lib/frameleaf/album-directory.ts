@@ -373,3 +373,22 @@ export interface AlbumDetailsDraft {
   icon: string;
   parentId?: string | null;
 }
+
+/**
+ * What an open album or shared-space page does when somebody leaves or is taken out of it (FL-53):
+ * `refresh` when it is someone else; `exit` when the viewer was removed by someone else and can no
+ * longer read the page; `ignore` when the viewer left from this tab, because that leave action
+ * already navigates and a second navigation would race it. An owner is never removed.
+ */
+export const removalOutcome = (
+  removal: { albumId: string; userId: string },
+  page: { albumId: string; userId: string; isOwner: boolean; leftLocally: boolean },
+): 'ignore' | 'refresh' | 'exit' => {
+  if (removal.albumId !== page.albumId) {
+    return 'ignore';
+  }
+  if (removal.userId !== page.userId || page.isOwner) {
+    return 'refresh';
+  }
+  return page.leftLocally ? 'ignore' : 'exit';
+};

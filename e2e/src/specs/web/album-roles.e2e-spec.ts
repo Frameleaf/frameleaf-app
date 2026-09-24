@@ -136,6 +136,10 @@ test.describe('Album roles', () => {
     await confirm.getByRole('button', { name: /Leave album/ }).click();
     await member.waitForURL(/\/albums(?:\?|$)/);
     await expect(member.getByRole('article', { name: 'Last member' })).toHaveCount(0);
+    // Leaving is one navigation: the page's own removal handling ignores the leave it caused.
+    await member.waitForTimeout(1000);
+    await expect(member).toHaveURL(/\/albums(?:\?|$)/);
+    await expect(member.getByText('You are no longer a member of “Last member”.')).toHaveCount(0);
     await memberContext.close();
 
     const ownerContext = await browser.newContext();
