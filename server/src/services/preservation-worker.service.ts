@@ -89,6 +89,7 @@ import {
   preservationProgress,
   restorableRating,
   restoredAlbumParent,
+  sameReviewedDocuments,
   sanitizeDecisions,
   splitDescription,
   verificationStatus,
@@ -1165,6 +1166,8 @@ export class PreservationWorkerService {
               tags: tags.length,
               includeMetadata: manifest.scope.includeMetadata,
               packageCreatedAt: manifest.createdAt,
+              // What was reviewed is what may be applied: restore compares these digests (FL-74).
+              reviewedDocuments: manifest.files,
             },
           });
         } catch (error) {
@@ -1315,8 +1318,19 @@ export class PreservationWorkerService {
     try {
       const manifest = await this.readManifest(source);
       const identity = restore.packageIdentity ?? manifest.packageId;
-      if (identity !== manifest.packageId) {
-        throw new PreservationPackageError('package_changed', 'The package is not the one that was reviewed');
+      if (
+        identity !== manifest.packageId ||
+        !sameReviewedDocuments(asRecord(restore.summary).reviewedDocuments, manifest.files)
+      ) {
+        // A package rewritten in place since its review is never applied as changed; it is reviewed again.
+        const reasonKey = 'package_changed_since_review';
+        await this.repository.updateRestore(restore.id, {
+          status: 'unreadable',
+          summary: { ...asRecord(restore.summary), reasonKey },
+        });
+        await this.finish(operation.id, claimToken, { ...result, phase: 'done', reasonKey }, 0);
+        this.logger.warn(`Preservation restore ${restore.id} refused: the package changed after it was reviewed`);
+        return;
       }
       const albums =
         (await this.readCollection(source, manifest, PRESERVATION_ALBUMS_ENTRY, PreservationAlbumsSchema)) ?? [];
