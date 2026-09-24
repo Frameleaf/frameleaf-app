@@ -4896,6 +4896,7 @@
   "frameleaf_preservation_reason_original_offline": "The original is offline.",
   "frameleaf_preservation_reason_original_unreadable": "The original could not be read.",
   "frameleaf_preservation_reason_other": "Something went wrong with this item. The item report has the details.",
+  "frameleaf_preservation_reason_package_changed_since_review": "The package was changed after it was reviewed. Review it again before restoring.",
   "frameleaf_preservation_reason_package_corrupt": "The archive is damaged.",
   "frameleaf_preservation_reason_package_counts_changed": "The package index does not list what its manifest counts.",
   "frameleaf_preservation_reason_package_documents_changed": "The album, people or tag lists were changed after the package was written.",

@@ -892,6 +892,137 @@ describe(PreservationWorkerService.name, () => {
         expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       });
 
+      it('records the document digests it reviewed on the restoration (FL-74)', async () => {
+        const built = buildPackage(1);
+        useSource(built.entries);
+        const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+        const restore = restoreFor(found);
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.updateRestore).toHaveBeenCalledWith(
+          restore.id,
+          expect.objectContaining({
+            packageIdentity: built.manifest.packageId,
+            summary: expect.objectContaining({ reviewedDocuments: built.manifest.files }),
+          }),
+        );
+      });
+
+      describe('applying a reviewed restoration (FL-74)', () => {
+        const reviewed = (found: PreservationPackage, files: unknown, identity: string) =>
+          restoreFor(found, {
+            status: 'ready',
+            packageIdentity: identity,
+            summary: { albums: 0, people: 0, reviewedDocuments: files } as never,
+          });
+
+        const apply = async (restore: PreservationRestore, found: PreservationPackage) => {
+          repository.getRestoreById.mockResolvedValue(restore);
+          repository.getPackageById.mockResolvedValue(found);
+          const operation = operationOf(MediaOperationKind.PreservationRestore, {
+            packageId: found.id,
+            restoreId: restore.id,
+          });
+          await sut.run({ operation, claimToken: newUuid() });
+          return operation;
+        };
+
+        beforeEach(() => {
+          Object.assign(repository, {
+            countRestoreWork: vi.fn().mockResolvedValue(0),
+            restoreWork: vi.fn().mockResolvedValue([]),
+          });
+        });
+
+        it('refuses a package whose index was rewritten in place after the review', async () => {
+          const built = buildPackage(2);
+          const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+          const restore = reviewed(found, built.manifest.files, built.manifest.packageId);
+          // Rewritten between review and apply: one item dropped and the manifest re-digested to match.
+          const rewritten = Buffer.from(`${JSON.stringify(built.index[0])}\n`);
+          built.entries.set('assets.jsonl', rewritten);
+          built.entries.set(
+            'manifest.json',
+            preservationJson({
+              ...built.manifest,
+              files: { 'assets.jsonl': { sha256: hash(rewritten).sha256, bytes: rewritten.length } },
+            }),
+          );
+          useSource(built.entries);
+
+          const operation = await apply(restore, found);
+
+          expect(repository.updateRestore).toHaveBeenLastCalledWith(restore.id, {
+            status: 'unreadable',
+            summary: expect.objectContaining({ reasonKey: 'package_changed_since_review' }),
+          });
+          expect(repository.restoreWork).not.toHaveBeenCalled();
+          expect(albumRepository.create).not.toHaveBeenCalled();
+          expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+          expect(operations.fail).not.toHaveBeenCalled();
+          expect(operations.complete).toHaveBeenCalledWith(operation.id, expect.any(String), { resultAssetId: null });
+        });
+
+        it('refuses album or people lists added after the review', async () => {
+          const built = buildPackage(1);
+          const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+          const restore = reviewed(found, built.manifest.files, built.manifest.packageId);
+          const albums = preservationJson([]);
+          built.entries.set('albums.json', albums);
+          built.entries.set(
+            'manifest.json',
+            preservationJson({
+              ...built.manifest,
+              files: { ...built.manifest.files, 'albums.json': { sha256: hash(albums).sha256, bytes: albums.length } },
+            }),
+          );
+          useSource(built.entries);
+
+          await apply(restore, found);
+
+          expect(repository.updateRestore).toHaveBeenLastCalledWith(restore.id, {
+            status: 'unreadable',
+            summary: expect.objectContaining({ reasonKey: 'package_changed_since_review' }),
+          });
+          expect(repository.restoreWork).not.toHaveBeenCalled();
+        });
+
+        it('refuses a restoration whose review recorded no digests', async () => {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+
+          await apply(reviewed(found, undefined, built.manifest.packageId), found);
+
+          expect(repository.updateRestore).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.objectContaining({ status: 'unreadable' }),
+          );
+          expect(repository.restoreWork).not.toHaveBeenCalled();
+        });
+
+        it('applies a package that is byte-for-byte what was reviewed', async () => {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+          const restore = reviewed(found, built.manifest.files, built.manifest.packageId);
+
+          await apply(restore, found);
+
+          expect(repository.updateRestore).not.toHaveBeenCalledWith(
+            restore.id,
+            expect.objectContaining({ status: 'unreadable' }),
+          );
+          expect(repository.restoreWork).toHaveBeenCalled();
+        });
+      });
+
       it('never reviews or restores another account’s restoration', async () => {
         const found = packageOf();
         const restore = restoreFor(found, { ownerId: newUuid() });

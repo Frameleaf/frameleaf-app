@@ -252,6 +252,7 @@ const KNOWN_REASONS = new Set([
   'package_no_space',
   'package_entry_missing',
   'package_entry_changed',
+  'package_changed_since_review',
   'package_manifest_invalid',
   'package_manifest_changed',
   'package_index_invalid',
