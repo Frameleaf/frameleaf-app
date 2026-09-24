@@ -511,7 +511,7 @@
           </a>
         {/each}
 
-        <Text size="small">
+        <Text size="small" class="fl-tabular">
           {$t('x_of_total', {
             values: {
               x: (assetIndex + 1).toLocaleString($locale),

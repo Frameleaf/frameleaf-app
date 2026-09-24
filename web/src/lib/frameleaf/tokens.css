@@ -34,6 +34,14 @@
   /* Reserved for AI-produced content: the sparkle on a solid indigo tile (tokens.json `ai`). */
   --fl-ai: #5e5ce6;
   --fl-ai-text: #ffffff;
+  /*
+   * Foregrounds on the frosted material. The material lets a photograph show through, so it can
+   * be as bright as white or as dark as black behind the panel tint; only these tokens and
+   * --fl-text are checked at 4.5:1 across both extremes and the solid fallback. --fl-muted and
+   * --fl-accent are not: use the on-material pair for secondary text and accent marks on material.
+   */
+  --fl-on-material-muted: #d3dae0;
+  --fl-on-material-accent: #8be9ab;
   --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 27%);
   --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 47%);
   /*
@@ -75,6 +83,8 @@
   --fl-danger-text: #ffffff;
   --fl-ai: #5e5ce6;
   --fl-ai-text: #ffffff;
+  --fl-on-material-muted: #36434b;
+  --fl-on-material-accent: #0b4f28;
   --fl-shadow-1: 0 2px 8px rgb(0 0 0 / 13%);
   --fl-shadow-2: 0 14px 44px rgb(0 0 0 / 20%);
   --fl-viewer-canvas: #08090b;
@@ -141,6 +151,7 @@
   /*
    * Frosted materials (apple-style.css:41-44): the panel at 72% over a blurred backdrop, with
    * a hairline edge. Increase Contrast and Reduce Transparency swap in a solid panel below.
+   * Text on material uses --fl-text, --fl-on-material-muted or --fl-on-material-accent only.
    */
   --fl-material: color-mix(in srgb, var(--fl-panel) 72%, transparent);
   --fl-material-edge: color-mix(in srgb, var(--fl-text) 12%, transparent);

@@ -695,7 +695,7 @@
               >
                 <button
                   type="button"
-                  class="ft-face-move"
+                  class="ft-face-move fl-no-press"
                   aria-label={$t('frameleaf_face_tagger_face_label', { values: { index: index + 1, name: label } })}
                   aria-pressed={face.id === selectedId}
                   disabled={saving}
@@ -713,7 +713,7 @@
                 {#if face.id === selectedId && !face.detected}
                   <button
                     type="button"
-                    class="ft-resize"
+                    class="ft-resize fl-no-press"
                     aria-label={$t('frameleaf_face_tagger_resize', { values: { index: index + 1 } })}
                     title={$t('frameleaf_face_tagger_resize_hint')}
                     disabled={saving}

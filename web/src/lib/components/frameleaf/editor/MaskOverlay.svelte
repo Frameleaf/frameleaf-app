@@ -136,7 +136,7 @@
     </div>
     <button
       type="button"
-      class="ed-mask-handle centre"
+      class="ed-mask-handle fl-no-press centre"
       style="left:{pct(mask.x)};top:{pct(mask.y)}"
       aria-label={$t('frameleaf_editor_mask_move')}
       onpointerdown={beginDrag('centre')}
@@ -144,7 +144,7 @@
     ></button>
     <button
       type="button"
-      class="ed-mask-handle"
+      class="ed-mask-handle fl-no-press"
       style="left:{pct(mask.x + mask.radiusX)};top:{pct(mask.y)}"
       aria-label={$t('frameleaf_editor_mask_width')}
       onpointerdown={beginDrag('radiusX')}
@@ -152,7 +152,7 @@
     ></button>
     <button
       type="button"
-      class="ed-mask-handle"
+      class="ed-mask-handle fl-no-press"
       style="left:{pct(mask.x)};top:{pct(mask.y + mask.radiusY)}"
       aria-label={$t('frameleaf_editor_mask_height')}
       onpointerdown={beginDrag('radiusY')}
@@ -164,7 +164,7 @@
     </svg>
     <button
       type="button"
-      class="ed-mask-handle centre"
+      class="ed-mask-handle fl-no-press centre"
       style="left:{pct(mask.x)};top:{pct(mask.y)}"
       aria-label={$t('frameleaf_editor_mask_start')}
       onpointerdown={beginDrag('start')}
@@ -172,7 +172,7 @@
     ></button>
     <button
       type="button"
-      class="ed-mask-handle"
+      class="ed-mask-handle fl-no-press"
       style="left:{pct(mask.endX)};top:{pct(mask.endY)}"
       aria-label={$t('frameleaf_editor_mask_end')}
       onpointerdown={beginDrag('end')}
