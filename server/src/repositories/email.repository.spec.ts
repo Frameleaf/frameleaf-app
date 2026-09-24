@@ -24,6 +24,19 @@ describe(EmailRepository.name, () => {
       expect(result.text).toContain('test email');
     });
 
+    it('should serve the Frameleaf header logo from the configured server origin', async () => {
+      const result = await sut.renderEmail({
+        template: EmailTemplate.TEST_EMAIL,
+        data: { displayName: 'Alen Turing', baseUrl: 'https://photos.example.com/' },
+        customTemplate: '',
+      });
+
+      expect(result.html).toContain('src="https://photos.example.com/frameleaf/frameleaf-logo-light.png"');
+      expect(result.html).toContain('alt="Frameleaf"');
+      expect(result.html).not.toContain('immich-logo');
+      expect(result.html).not.toContain('raw.githubusercontent.com');
+    });
+
     it('should render the email correctly for WELCOME template', async () => {
       const request: EmailRenderRequest = {
         template: EmailTemplate.WELCOME,

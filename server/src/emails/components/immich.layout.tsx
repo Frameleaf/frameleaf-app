@@ -2,15 +2,17 @@ import { Body, Container, Font, Head, Hr, Html, Img, Preview, Section, Tailwind,
 import { createRequire } from 'node:module';
 import * as React from 'react';
 import { ImmichFooter } from 'src/emails/components/footer.template.js';
+import { getFrameleafEmailLogoUrl } from 'src/emails/components/frameleaf-logo.js';
 
 const emailPreset = createRequire(import.meta.url)('tailwindcss-preset-email');
 
 interface ImmichLayoutProps {
   children: React.ReactNode;
   preview: string;
+  baseUrl: string;
 }
 
-export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
+export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) => (
   <Html>
     <Tailwind
       config={{
@@ -51,9 +53,9 @@ export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
           <Section className="my-6 p-12 border border-red-400 rounded-[50px] bg-gray-50">
             <Section className="flex justify-center mb-12">
               <Img
-                src="https://immich.app/img/immich-logo-inline-light.png"
+                src={getFrameleafEmailLogoUrl(baseUrl)}
                 className="h-12 antialiased rounded-none w-full"
-                alt="Immich"
+                alt="Frameleaf"
               />
             </Section>
 
@@ -71,6 +73,7 @@ export const ImmichLayout = ({ children, preview }: ImmichLayoutProps) => (
 
 ImmichLayout.PreviewProps = {
   preview: 'This is the preview shown on some mail clients',
+  baseUrl: 'https://demo.immich.app',
   children: <Text>Email body goes here.</Text>,
 } as ImmichLayoutProps;
 

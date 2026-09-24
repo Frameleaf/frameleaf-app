@@ -36,7 +36,10 @@ export const AlbumUpdateEmail = ({
   );
 
   return (
-    <ImmichLayout preview={customTemplate ? emailContent.toString() : 'New media has been added to a shared album.'}>
+    <ImmichLayout
+      baseUrl={baseUrl}
+      preview={customTemplate ? emailContent.toString() : 'New media has been added to a shared album.'}
+    >
       {customTemplate && (
         <Text className="m-0">
           <div dangerouslySetInnerHTML={{ __html: emailContent }}></div>
