@@ -642,10 +642,13 @@ export class WorkflowExecutionService extends BaseService {
       } catch (error) {
         this.logger.error(`Error executing workflow ${workflowId} run ${runId} (attempt ${attempt}):`, error);
 
-        const message = redactRunError(
-          error instanceof Error ? error.message : String(error),
-          (step.config as Record<string, unknown> | null) ?? null,
-        );
+        // Imported definitions keep fields this server does not use; a credential can sit there as
+        // well as in the step's parameters, so both are scrubbed from what run history keeps.
+        const message = redactRunError(error instanceof Error ? error.message : String(error), {
+          config: step.config ?? null,
+          stepExtra: expectedDefinition.steps.find((item) => item.id === step.id)?.extra ?? null,
+          workflowExtra: expectedDefinition.extra ?? null,
+        });
         await log({
           result: WorkflowResult.Error,
           workflowStepId: step.id,
