@@ -394,8 +394,8 @@ const actions = {
   ],
   "show-offline-file-availability-and-ownership-context": [
     "partial",
-    ["V-6", "V-27"],
-    "Remove the legacy offline block; owner line for every non-owned asset",
+    ["V-27"],
+    "Owner line for every non-owned asset (the legacy offline block is gone, V-6 fixed in FL-35)",
     {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
@@ -916,9 +916,9 @@ const actions = {
     },
   ],
   "offline-asset-indicator-and-source-specific-behavior": [
-    "partial",
+    "fixed",
     ["V-6"],
-    "Remove the legacy Offline button and block",
+    "FL-35 September 24 viewer: the legacy Offline button and panel block are gone; the offline banner remains",
     {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
