@@ -247,4 +247,43 @@ describe('FaceTagger', () => {
 
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('makes one undo step per typed position edit', async () => {
+    await setup();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
+    const left = screen.getByLabelText(en.frameleaf_face_tagger_left);
+    const before = (left as HTMLInputElement).value;
+
+    await fireEvent.input(left, { target: { value: '1' } });
+    await fireEvent.input(left, { target: { value: '12' } });
+    await fireEvent.input(left, { target: { value: '12.5' } });
+    await fireEvent.change(left);
+    expect(left).toHaveValue(12.5);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.undo }));
+    expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toHaveValue(Number(before));
+  });
+
+  it('asks before discarding unsaved face tags and keeps editing on request', async () => {
+    const { onClose } = await setup();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
+
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: en.frameleaf_face_tagger_discard })).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_keep_editing }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await fireEvent.keyDown(screen.getByRole('heading', { name: en.frameleaf_face_tagger_title }), { key: 'Escape' });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_discard_confirm }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closes without asking when nothing changed', async () => {
+    const { onClose } = await setup();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
