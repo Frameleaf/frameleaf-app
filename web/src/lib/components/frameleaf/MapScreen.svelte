@@ -16,7 +16,7 @@
   import { mapSettings, type MapSettings } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
+  import { AssetMediaSize, getAlbumMapMarkers, getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
   import { Icon, Theme, themeManager } from '@immich/ui';
   import {
     mdiArrowExpandAll,
@@ -42,14 +42,14 @@
    * tile source, with the prototype's chrome — the in-view chip, "Search this area", the tools
    * column (zoom, show all, list, settings), the legend, the settings sheet and the "In view" list.
    *
-   * Markers come from the existing endpoints: `GET /map/markers` with the settings sheet's filters
-   * for the whole library, or the album's own `GET /albums/{id}/map-marker` when the screen is
-   * scoped to an album (`/map?albumId=`), where the library filters do not apply and the sheet is
-   * not offered.
+   * Markers come from the existing endpoints with the settings sheet's filters: `GET /map/markers`
+   * for the whole library, or the album's own `GET /albums/{id}/map-markers` when the screen is
+   * scoped to an album (`/map?albumId=`, prototype `setMapScope("collection")`), where each switch
+   * only narrows the album's own items.
    */
   interface Props {
-    /** An album's markers: the screen is scoped to that album and does not load its own. */
-    scopedMarkers?: MapMarkerResponseDto[];
+    /** Scope the screen to this album's located items. */
+    albumId?: string;
     /** Accessible name of the map region. */
     title: string;
     onOpenAsset: (assetId: string) => void;
@@ -57,7 +57,7 @@
     onSearchArea?: (area: MapArea) => void;
   }
 
-  let { scopedMarkers, title, onOpenAsset, onSearchArea }: Props = $props();
+  let { albumId, title, onOpenAsset, onSearchArea }: Props = $props();
 
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 18;
@@ -77,7 +77,7 @@
     { key: 'showAssetPanel', label: $t('frameleaf_map_asset_panel') },
   ]);
 
-  const scoped = $derived(scopedMarkers !== undefined);
+  const scoped = $derived(albumId !== undefined);
 
   let map = $state<Map>();
   let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
@@ -94,7 +94,7 @@
   let fitted = false;
   let abort: AbortController | undefined;
 
-  const markers = $derived(scopedMarkers ?? loadedMarkers);
+  const markers = $derived(loadedMarkers);
   const listOpen = $derived($mapSettings.showAssetPanel);
   const styleUrl = $derived(
     themeManager.value === Theme.Dark
@@ -112,25 +112,37 @@
   /* ------------------------------------------------------------------ */
   // A string, so toggling the list or the sheet (same store) does not refetch the markers.
   const filterKey = $derived(
-    JSON.stringify({
-      isArchived: $mapSettings.includeArchived || undefined,
-      isFavorite: $mapSettings.onlyFavorites || undefined,
-      withPartners: $mapSettings.withPartners || undefined,
-      withSharedAlbums: $mapSettings.withSharedAlbums || undefined,
-      ...mapDateWindow($mapSettings),
-    }),
+    JSON.stringify(
+      albumId
+        ? {
+            id: albumId,
+            // an album shows archived, partners' and other members' items unless the sheet leaves
+            // them out, so these are sent either way
+            isArchived: $mapSettings.includeArchived,
+            isFavorite: $mapSettings.onlyFavorites || undefined,
+            withPartners: $mapSettings.withPartners,
+            withSharedAlbums: $mapSettings.withSharedAlbums,
+            ...mapDateWindow($mapSettings),
+          }
+        : {
+            isArchived: $mapSettings.includeArchived || undefined,
+            isFavorite: $mapSettings.onlyFavorites || undefined,
+            withPartners: $mapSettings.withPartners || undefined,
+            withSharedAlbums: $mapSettings.withSharedAlbums || undefined,
+            ...mapDateWindow($mapSettings),
+          },
+    ),
   );
 
   $effect(() => {
-    if (scoped) {
-      loaded = true;
-      return;
-    }
-    const query = JSON.parse(filterKey) as Parameters<typeof getMapMarkers>[0];
+    const query: unknown = JSON.parse(filterKey);
     abort?.abort();
     const controller = new AbortController();
     abort = controller;
-    getMapMarkers(query, { signal: controller.signal })
+    const request = albumId
+      ? getAlbumMapMarkers(query as Parameters<typeof getAlbumMapMarkers>[0], { signal: controller.signal })
+      : getMapMarkers(query as Parameters<typeof getMapMarkers>[0], { signal: controller.signal });
+    request
       .then((result) => {
         loadedMarkers = result;
         loaded = true;
@@ -419,13 +431,11 @@
       >
         <Icon icon={mdiViewListOutline} size="20" />
       </IconButton>
-      {#if !scoped}
-        <span bind:this={gear} class="gear">
-          <IconButton label={$t('frameleaf_map_settings')} pressed={settingsOpen} onclick={() => void toggleSettings()}>
-            <Icon icon={mdiCogOutline} size="20" />
-          </IconButton>
-        </span>
-      {/if}
+      <span bind:this={gear} class="gear">
+        <IconButton label={$t('frameleaf_map_settings')} pressed={settingsOpen} onclick={() => void toggleSettings()}>
+          <Icon icon={mdiCogOutline} size="20" />
+        </IconButton>
+      </span>
     </div>
 
     <div class="overlay legend" role="group" aria-label={$t('frameleaf_map_legend')}>
@@ -560,8 +570,9 @@
   {#if loaded && markers.length === 0}
     <div class="empty" role="status">
       <Icon icon={mdiMapMarkerOutline} size="30" />
-      <strong>{scoped ? $t('frameleaf_map_empty_album') : $t('frameleaf_map_empty_title')}</strong>
-      {#if !scoped}<p>{$t('frameleaf_map_empty_help')}</p>{/if}
+      <!-- MapView.jsx has one empty state for both scopes: the settings sheet narrows an album too. -->
+      <strong>{$t('frameleaf_map_empty_title')}</strong>
+      <p>{$t('frameleaf_map_empty_help')}</p>
     </div>
   {/if}
 </div>

@@ -20,7 +20,7 @@ import {
   UpdateAlbumUserDto,
 } from 'src/dtos/album.dto.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
-import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
+import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -139,8 +139,12 @@ export class AlbumController {
     description: 'Retrieve map marker information for a specific album by its ID.',
     history: new HistoryBuilder().added('v3'),
   })
-  getAlbumMapMarkers(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<MapMarkerResponseDto[]> {
-    return this.service.getMapMarkers(auth, id);
+  getAlbumMapMarkers(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: AlbumMapMarkerDto,
+  ): Promise<MapMarkerResponseDto[]> {
+    return this.service.getMapMarkers(auth, id, dto);
   }
 
   @Authenticated({ permission: Permission.AlbumRead })

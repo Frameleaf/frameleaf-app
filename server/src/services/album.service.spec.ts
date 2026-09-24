@@ -7,9 +7,10 @@ import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { getForAlbum } from 'test/mappers.js';
+import { getForAlbum, getForPartner } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1166,6 +1167,101 @@ describe(AlbumService.name, () => {
         new Set(['album-123']),
         AlbumUserRole.Viewer,
       );
+    });
+  });
+
+  describe('getMapMarkers (FL-51)', () => {
+    const albumId = newUuid();
+    const after = new Date('2026-01-01T00:00:00.000Z');
+    const before = new Date('2026-06-30T00:00:00.000Z');
+
+    beforeEach(() => {
+      mocks.map.getAlbumMapMarkers.mockResolvedValue([]);
+    });
+
+    it('requires album read access before reading any markers', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getMapMarkers(auth, albumId, { isFavorite: true })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.map.getAlbumMapMarkers).not.toHaveBeenCalled();
+    });
+
+    it("narrows a member's album map by the settings sheet, with favorites scoped to the viewer", async () => {
+      const auth = AuthFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+
+      await sut.getMapMarkers(auth, albumId, {
+        isArchived: false,
+        isFavorite: true,
+        fileCreatedAfter: after,
+        fileCreatedBefore: before,
+      });
+
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, {
+        isArchived: false,
+        isFavorite: true,
+        fileCreatedAfter: after,
+        fileCreatedBefore: before,
+        favoriteOwnerId: auth.user.id,
+      });
+    });
+
+    it('keeps the album behaviour for a client that sends no filters', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+
+      await sut.getMapMarkers(auth, albumId);
+
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, { favoriteOwnerId: auth.user.id });
+    });
+
+    it("leaves partners' or other members' items out only when the sheet switches them off", async () => {
+      const auth = AuthFactory.create();
+      const partner = PartnerFactory.from().sharedBy(UserFactory.create()).sharedWith({ id: auth.user.id }).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
+
+      await sut.getMapMarkers(auth, albumId, { withPartners: false, withSharedAlbums: true });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
+        favoriteOwnerId: auth.user.id,
+        ownerScope: { viewerId: auth.user.id, partnerIds: [partner.sharedById], withPartners: false, withOthers: true },
+      });
+
+      await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: false });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
+        favoriteOwnerId: auth.user.id,
+        ownerScope: { viewerId: auth.user.id, partnerIds: [partner.sharedById], withPartners: true, withOthers: false },
+      });
+
+      mocks.partner.getAll.mockClear();
+      await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: true });
+      expect(mocks.partner.getAll).not.toHaveBeenCalled();
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, { favoriteOwnerId: auth.user.id });
+    });
+
+    it("ignores the filters on a shared link, which would otherwise reveal the owner's favorites", async () => {
+      const auth = AuthFactory.from().sharedLink({ showExif: true }).build();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+
+      await sut.getMapMarkers(auth, albumId, {
+        isFavorite: true,
+        isArchived: false,
+        fileCreatedAfter: after,
+        withPartners: false,
+        withSharedAlbums: false,
+      });
+
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, {});
+    });
+
+    it('returns nothing to a shared link that hides metadata, filters or not', async () => {
+      const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+
+      await expect(sut.getMapMarkers(auth, albumId, { isFavorite: false })).resolves.toEqual([]);
+      expect(mocks.map.getAlbumMapMarkers).not.toHaveBeenCalled();
     });
   });
 
