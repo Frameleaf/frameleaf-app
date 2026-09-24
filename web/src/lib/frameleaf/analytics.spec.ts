@@ -1,4 +1,4 @@
-import { AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
 import {
   analyticsCsv,
   analyticsTables,
@@ -8,6 +8,7 @@ import {
   dayRecords,
   punchcardPeak,
   rankRows,
+  volumeSegments,
   yearRows,
   columnTotal,
   CSV_HEADER,
@@ -254,7 +255,12 @@ describe('dashboard insights (FL-79)', () => {
           ),
         },
       };
-      const report = analyticsReportFixture({ insights });
+      // cameras leave out the same hidden items (server getCameras shares the insights privacy)
+      const cameras = [
+        { name: 'Apple iPhone 16 Pro', kind: AnalyticsCameraKind.Model, count: 80 - hiddenItems },
+        { name: null, kind: AnalyticsCameraKind.Unknown, count: 20 },
+      ];
+      const report = analyticsReportFixture({ insights, cameras });
       const tables = analyticsTables(report, 'items', t);
       const byId = (id: string) => tables.find((table) => table.id === id)!;
       const total = breakdownTotal(report);
@@ -264,6 +270,7 @@ describe('dashboard insights (FL-79)', () => {
         expect(columnTotal(table, table.columns.length - 1)).toBe(total);
       }
       expect(columnTotal(byId('photo-formats'), 1) + columnTotal(byId('video-resolutions'), 1)).toBe(total);
+      expect(columnTotal(byId('cameras'), 1)).toBe(total);
     }
   });
 
@@ -310,5 +317,87 @@ describe('dashboard insights (FL-79)', () => {
       perDay: 2,
     });
     expect(dayRecords([])).toEqual({ busiest: null, streak: null, perDay: 0 });
+  });
+
+  it('names every punchcard row by its weekday and hour in the CSV', () => {
+    const report = analyticsReportFixture();
+    const rows = csvRecords(analyticsCsv(report, 'items', t)).rows.filter(
+      (row) => row.section === 'frameleaf_analytics_punchcard_table',
+    );
+    expect(rows).toHaveLength(168);
+    expect(new Set(rows.map((row) => row.row)).size).toBe(168);
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        row: 'frameleaf_analytics_weekday_1 · 09:00',
+        column: 'frameleaf_analytics_col_items',
+        value: '50',
+      }),
+    );
+  });
+});
+
+describe('the storage donut (FL-79)', () => {
+  const base = analyticsReportFixture();
+  const sum = (segments: Array<{ bytes: number }>) => segments.reduce((total, segment) => total + segment.bytes, 0);
+
+  it('splits the used space by the breakdown, and every segment is a share of the capacity', () => {
+    const report = analyticsReportFixture({
+      host: {
+        ...base.host,
+        breakdown: {
+          originalsBytes: 300_000,
+          previewsBytes: 100_000,
+          encodedVideoBytes: 50_000,
+          generatedObservedAt: '2026-09-19T00:05:00.000Z',
+          databaseBytes: 30_000,
+          otherBytes: 120_000,
+          exceedsUsed: false,
+        },
+      },
+    });
+    const volume = volumeSegments(report, t)!;
+    expect(volume.segments.map((segment) => segment.id)).toEqual([
+      'originals',
+      'previews',
+      'encoded-video',
+      'database',
+      'other',
+      'free',
+      'reserved',
+    ]);
+    expect(sum(volume.segments)).toBe(report.host.capacityBytes);
+    expect(sum(volume.segments.filter((segment) => !segment.free))).toBe(report.host.volumeUsedBytes);
+    expect(volume.usedPercent).toBe(60);
+    const parts = analyticsTables(report, 'items', t).find((table) => table.id === 'volume-parts')!;
+    expect(columnTotal(parts, 2)).toBe(report.host.volumeUsedBytes);
+  });
+
+  it('shows the unused part when free space could not be read, with the same denominator', () => {
+    const report = analyticsReportFixture({ host: { ...base.host, freeBytes: null } });
+    const volume = volumeSegments(report, t)!;
+    expect(volume.segments.map((segment) => [segment.id, segment.bytes])).toEqual([
+      ['used', 600_000],
+      ['not-in-use', 400_000],
+    ]);
+    expect(sum(volume.segments)).toBe(report.host.capacityBytes);
+  });
+
+  it('shows used and free when the measured parts exceed the space used', () => {
+    const report = analyticsReportFixture({
+      host: {
+        ...base.host,
+        breakdown: {
+          originalsBytes: 500_000,
+          previewsBytes: null,
+          encodedVideoBytes: null,
+          generatedObservedAt: null,
+          databaseBytes: 900_000,
+          otherBytes: 0,
+          exceedsUsed: true,
+        },
+      },
+    });
+    expect(volumeSegments(report, t)!.segments.map((segment) => segment.id)).toEqual(['used', 'free', 'reserved']);
+    expect(volumeSegments(analyticsReportFixture({ host: { ...base.host, capacityBytes: null } }), t)).toBeNull();
   });
 });

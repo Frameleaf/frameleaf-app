@@ -67,6 +67,7 @@ const insights = (hiddenItems: number, owner: boolean) => ({
   ],
   livePhotos: 12,
   hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 },
+  coverage: { facesChecked: 90 - hiddenItems, searchIndexed: 95 - hiddenItems },
   peopleAndPlaces: owner
     ? {
         faces: 70,
@@ -131,6 +132,17 @@ const report = (scope: string, hiddenItems: number) => {
       volumeUsedBytes: 600_000,
       capacityBytes: 1_000_000,
       freeBytes: 400_000,
+      breakdown: owner
+        ? null
+        : {
+            originalsBytes: 300_000,
+            previewsBytes: 100_000,
+            encodedVideoBytes: 50_000,
+            generatedObservedAt: '2026-09-19T00:05:00.000Z',
+            databaseBytes: 30_000,
+            otherBytes: 120_000,
+            exceedsUsed: false,
+          },
     },
     history: {
       state: 'measured',
@@ -161,7 +173,7 @@ const report = (scope: string, hiddenItems: number) => {
       uploaded: day === '18' ? 4 : 0,
     })),
     cameras: [
-      { name: 'Apple iPhone 16 Pro', kind: 'model', count: 80 },
+      { name: 'Apple iPhone 16 Pro', kind: 'model', count: 80 - hiddenItems },
       { name: null, kind: 'unknown', count: 20 },
     ],
     metadata: [
@@ -241,6 +253,13 @@ test.describe('Library analytics dashboard', () => {
 
     await expect(page.getByRole('note')).toContainText('4 hidden items are left out of the breakdowns below');
     expect(await tableTotal(page, 'years')).toBe(96);
+    expect(await tableTotal(page, 'cameras')).toBe(96);
+    // the whole-server report splits the volume by what the server measured
+    const legend = page.locator('[data-panel="storage"] .an-legend');
+    for (const part of ['Originals', 'Previews & thumbnails', 'Encoded video', 'Database', 'Other files']) {
+      await expect(legend.getByText(part, { exact: true })).toBeVisible();
+    }
+    expect(await tableTotal(page, 'volume-parts')).toBe(600_000);
     await expect(page.getByText('People and places are shown only when you view your own library.')).toBeVisible();
     await expect(page.getByText('Emma')).toHaveCount(0);
   });
