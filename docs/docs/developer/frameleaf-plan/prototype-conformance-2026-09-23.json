@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 102,
+      "partial": 96,
       "missing": 5,
-      "fixed": 39,
+      "fixed": 45,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -884,7 +884,7 @@
       ],
       "status": "partial",
       "gaps": ["S-19", "SD-12"],
-      "followUp": "Chips open their section and Clear all whenever active (S-19); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
+      "followUp": "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
     },
     {
       "requirementId": "action:search-discovery:command-palette-across-assets-people-albums-places-settings-actions",
@@ -997,9 +997,9 @@
       "title": "Explore memories carousel and open memory story",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx", "design/frameleaf/template/src/Memories.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-15"],
-      "followUp": "Memory strip belongs to the Memories destination, not the library"
+      "followUp": "The upstream memory strip is gone from the library (FL-33 library gaps); memories open from the Memories destination"
     },
     {
       "requirementId": "action:search-discovery:explore-people-and-view-all",
@@ -1260,7 +1260,7 @@
       ],
       "status": "partial",
       "gaps": ["T-13", "T-19"],
-      "followUp": "Location place-name fields (server); friendly zones and pre-fill"
+      "followUp": "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)"
     },
     {
       "requirementId": "action:timeline-bulk:bulk-delete-undo-with-partial-failures",
@@ -1347,7 +1347,7 @@
       "production": ["web/src/lib/components/frameleaf/AssetTile.svelte"],
       "status": "partial",
       "gaps": ["T-4", "T-20"],
-      "followUp": "Tile hover quick actions; aria nits"
+      "followUp": "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)"
     },
     {
       "requirementId": "action:timeline-bulk:date-grouped-photos-browse-chronological-library",
@@ -1360,7 +1360,7 @@
       "production": ["web/src/lib/components/frameleaf/LibraryTimeline.svelte"],
       "status": "partial",
       "gaps": ["T-3", "T-7", "T-10"],
-      "followUp": "Grouping control, captions, Frameleaf empty states"
+      "followUp": "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)"
     },
     {
       "requirementId": "action:timeline-bulk:grid-list-compare-and-persisted-query-selection-layout",
@@ -1373,7 +1373,7 @@
       "production": ["web/src/lib/components/frameleaf/ResultsToolbar.svelte"],
       "status": "partial",
       "gaps": ["T-8", "S-15", "S-17"],
-      "followUp": "Browse/Work grid, thumbnail size, toolbar sort/view controls, bottom bar"
+      "followUp": "Toolbar count, Slideshow, information toggle, Sort and More library actions are in (S-15, FL-30 library gaps); Grid/List and the filename and rating sorts remain"
     },
     {
       "requirementId": "action:timeline-bulk:jump-scroll-to-time-restore-asset-position",
@@ -1418,7 +1418,7 @@
       ],
       "status": "partial",
       "gaps": ["T-5", "S-22", "T-14"],
-      "followUp": "Library shortcuts, arrow focus movement, Select all N"
+      "followUp": "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain"
     },
     {
       "requirementId": "action:timeline-bulk:stack-selected-photos",
@@ -1861,9 +1861,9 @@
         "web/src/routes/(user)/activity/+page.svelte",
         "web/src/lib/components/frameleaf/ActivityView.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["A-1", "A-6"],
-      "followUp": "Indicator, filter count and running line still say \"tasks\" (A-1); status line with percent, ETA and \"Paused at N%\" (A-6). A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port"
+      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port"
     },
     {
       "route": "/admin",
@@ -2127,9 +2127,9 @@
       "route": "/archive/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx", "design/frameleaf/template/src/App.jsx"],
       "production": ["web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-10", "S-10"],
-      "followUp": "Frameleaf empty state (S-10 fixed)"
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
     },
     {
       "route": "/auth/change-password",
@@ -2221,9 +2221,9 @@
       "route": "/favorites/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx", "design/frameleaf/template/src/App.jsx"],
       "production": ["web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-10", "S-10"],
-      "followUp": "Frameleaf empty state (S-10 fixed)"
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
     },
     {
       "route": "/folders/[[photos=photos]]/[[assetId=id]]",
@@ -2387,17 +2387,17 @@
       "route": "/recently-added/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx"],
       "production": ["web/src/routes/(user)/recently-added/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-10", "S-10"],
-      "followUp": "Frameleaf empty state (S-10 fixed)"
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
     },
     {
       "route": "/recently-added/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/TimelineLibrary.jsx"],
       "production": ["web/src/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-10", "S-10"],
-      "followUp": "Frameleaf empty state (S-10 fixed)"
+      "followUp": "Frameleaf empty state (T-10, FL-33 library gaps; S-10 fixed)"
     },
     {
       "route": "/s/[slug]/[[photos=photos]]/[[assetId=id]]",
