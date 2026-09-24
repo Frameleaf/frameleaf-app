@@ -29,7 +29,7 @@ vi.mock('@immich/sdk', () => ({
   getAssetInfo: sdk.getAssetInfo,
   isHttpError: (error: unknown) => !!(error as { isHttp?: boolean })?.isHttp,
 }));
-vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn() } }));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() } }));
 vi.mock('$lib/utils/session-privacy-guard', () => ({
   watchSessionPrivacy: (
     _isAuthenticated: () => boolean,

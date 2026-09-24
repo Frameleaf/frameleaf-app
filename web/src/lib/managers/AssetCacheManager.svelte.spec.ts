@@ -60,3 +60,16 @@ for (const family of families) {
     },
   );
 }
+
+it('lets a pending response resolve across a plain refresh', async () => {
+  let resolve!: (value: unknown) => void;
+  vi.mocked(getAssetOcr).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }) as never,
+  );
+  const pending = assetCacheManager.getAssetOcr('neighbour');
+  assetCacheManager.invalidate();
+  resolve([]);
+  await expect(pending).resolves.toEqual([]);
+});
