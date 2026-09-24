@@ -556,17 +556,27 @@
       month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
     );
 
-  const findAsset = (id: string): TimelineAsset | null => {
+  /**
+   * Every loaded asset by id, rebuilt when a month loads or changes. The selection is resolved
+   * through it id by id (the multi-select mirror, the selection bar's assets, Studio and Locked
+   * filters), so a whole-library selection costs one pass over the library instead of one pass
+   * per selected id, which kept the "All" checkbox busy for tens of seconds on a large library.
+   */
+  const loadedAssets = $derived.by(() => {
+    const index = new Map<string, TimelineAsset>();
     for (const month of manager.months) {
       for (const day of month.timelineDays) {
-        const match = day.viewerAssets.find((viewerAsset) => viewerAsset.id === id);
-        if (match?.asset) {
-          return match.asset;
+        for (const viewerAsset of day.viewerAssets) {
+          if (viewerAsset.asset && !index.has(viewerAsset.id)) {
+            index.set(viewerAsset.id, viewerAsset.asset);
+          }
         }
       }
     }
-    return null;
-  };
+    return index;
+  });
+
+  const findAsset = (id: string): TimelineAsset | null => loadedAssets.get(id) ?? null;
 
   /**
    * The session owns the selection; the multi-select manager is kept in step with it so the
