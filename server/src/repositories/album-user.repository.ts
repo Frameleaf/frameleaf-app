@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -19,6 +19,9 @@ export type AlbumPermissionId = {
   albumId: string;
   userId: string;
 };
+
+/** The most recipient groups one person may keep (FL-55). */
+export const RECIPIENT_GROUP_LIMIT = 100;
 
 /**
  * A named recipient shortcut (FL-55): the owner's own saved list of people to invite together.
@@ -159,6 +162,14 @@ export class AlbumUserRepository {
   async createRecipientGroup(ownerId: string, name: string, userIds: string[]): Promise<RecipientGroup> {
     return this.db.transaction().execute(async (tx) => {
       await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
+      // One owner's groups are counted under a per-owner lock, so two saves cannot both pass the cap.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`recipient_group:${ownerId}`}, 0))`.execute(tx);
+      const { rows: counted } = await sql<{ count: number }>`
+        SELECT count(*)::int AS count FROM immich_fork.recipient_group WHERE "ownerId" = ${ownerId}::uuid
+      `.execute(tx);
+      if ((counted[0]?.count ?? 0) >= RECIPIENT_GROUP_LIMIT) {
+        throw new BadRequestException(`You can keep up to ${RECIPIENT_GROUP_LIMIT} recipient groups`);
+      }
       const { rows } = await sql<RecipientGroup>`
         INSERT INTO immich_fork.recipient_group ("ownerId", name, "userIds")
         VALUES (${ownerId}::uuid, ${name}, ${userIds}::uuid[])
@@ -185,6 +196,25 @@ export class AlbumUserRepository {
         RETURNING id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
       `.execute(tx);
       return rows[0];
+    });
+  }
+
+  /**
+   * FL-55: a deleted account leaves no recipient data behind — its own groups go, and it is taken
+   * out of everyone else's. Skipped (never blocking the delete) while the fork schema is not
+   * writable; reading a group already leaves out people who no longer exist.
+   */
+  async forgetRecipient(userId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return;
+      }
+      await sql`DELETE FROM immich_fork.recipient_group WHERE "ownerId" = ${userId}::uuid`.execute(tx);
+      await sql`
+        UPDATE immich_fork.recipient_group
+        SET "userIds" = array_remove("userIds", ${userId}::uuid), "updatedAt" = clock_timestamp()
+        WHERE ${userId}::uuid = ANY("userIds")
+      `.execute(tx);
     });
   }
 
