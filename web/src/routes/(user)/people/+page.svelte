@@ -2,37 +2,50 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { scrollMemory } from '$lib/actions/scroll-memory';
-  import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
-  import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
+  import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import MergeSuggestionBanner from '$lib/components/frameleaf/people/MergeSuggestionBanner.svelte';
   import PersonCard from '$lib/components/frameleaf/people/PersonCard.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { QueryParameter, SessionStorageKey } from '$lib/constants';
+  import { QueryParameter } from '$lib/constants';
+  import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
   import { Route } from '$lib/route';
-  import { getPersonActions } from '$lib/services/person.service';
-  import { locale } from '$lib/stores/preferences.store';
   import { websocketEvents } from '$lib/stores/websocket';
-  import { normalizeSearchString } from '$lib/utils/string-utils';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { clearQueryParam } from '$lib/utils/navigation';
+  import { normalizeSearchString } from '$lib/utils/string-utils';
   import {
+    AssetVisibility,
+    deleteMergeVerdict,
     getAllPeople,
+    getAssetStatistics,
     getMergeSuggestions,
-    getPerson,
     mergePeople,
+    PersonMergeVerdict,
     searchPerson,
+    setMergeVerdict,
     updatePerson,
+    type PeopleListItemDto,
     type PersonMergeSuggestionDto,
     type PersonResponseDto,
   } from '@immich/sdk';
-  import { Button, Icon, toastManager } from '@immich/ui';
-  import { mdiAccountOff, mdiEyeOutline } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { Icon, toastManager } from '@immich/ui';
+  import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
   import type { PageData } from './$types';
+
+  /**
+   * The Frameleaf People library (FL-37), ported from `PeopleLibrary` in
+   * design/frameleaf/template/src/People.jsx:651-979: summary line, "Find a person", the
+   * Name / Photo count / Recently seen sort, Show hidden, "Show and hide people", per-card
+   * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
+   * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
+   * people is read up front rather than on scroll.
+   */
 
   interface Props {
     data: PageData;
@@ -40,24 +53,73 @@
 
   let { data }: Props = $props();
 
-  let searchName = $state('');
-  let currentPage = $state(1);
-  let nextPage = $state(data.people.hasNextPage ? 2 : null);
-  let searchedPeopleLocal: PersonResponseDto[] = $state([]);
-  let innerHeight = $state(0);
-  let searchPeopleElement = $state<ReturnType<typeof SearchPeople>>();
+  let people: PeopleListItemDto[] = $state(untrack(() => data.people.people));
+  let nextPage: number | null = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
+  let search = $state(untrack(() => $page.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE) ?? ''));
+  let sort: PeopleGridSort = $state('name');
+  let showHidden = $state(false);
+  let editingId: string | undefined = $state();
+  let status = $state('');
+  let librarySize: number | undefined = $state();
+  let dialog: { type: 'merge' | 'birthday'; person: PeopleListItemDto } | undefined = $state();
+  let dialogOpen = $state(false);
+
+  const nameOf = (person: { name: string }) =>
+    isUnnamedPerson(person) ? $t('frameleaf_people_unnamed_person') : person.name;
+
+  const visible = $derived(people.filter((person) => showHidden || !person.isHidden));
+  const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));
+  const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
+  const summary = $derived(
+    [
+      $t('frameleaf_people_count', { values: { count: visible.length } }),
+      librarySize === undefined ? '' : $t('frameleaf_people_library_size', { values: { count: librarySize } }),
+      hiddenCount > 0 && !showHidden ? $t('frameleaf_people_hidden_count', { values: { count: hiddenCount } }) : '',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  );
+
+  const loadAllPages = async () => {
+    try {
+      while (nextPage) {
+        const page = nextPage;
+        const result = await getAllPeople({ withHidden: true, page });
+        const known = new Set(people.map(({ id }) => id));
+        people = people.concat(result.people.filter(({ id }) => !known.has(id)));
+        nextPage = result.hasNextPage ? page + 1 : null;
+      }
+    } catch (error) {
+      nextPage = null;
+      handleError(error, $t('errors.failed_to_load_people'));
+    }
+  };
+
+  const reloadPeople = async () => {
+    try {
+      const result = await getAllPeople({ withHidden: true });
+      people = result.people;
+      nextPage = result.hasNextPage ? 2 : null;
+      await loadAllPages();
+    } catch (error) {
+      handleError(error, $t('errors.failed_to_load_people'));
+    }
+  };
+
+  const loadLibrarySize = async () => {
+    try {
+      const { images, videos } = await getAssetStatistics({ visibility: AssetVisibility.Timeline });
+      librarySize = images + videos;
+    } catch {
+      // The summary reads fine without the library size.
+    }
+  };
+
+  const allLoaded = loadAllPages();
 
   onMount(() => {
-    const getSearchedPeople = $page.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE);
-    if (getSearchedPeople) {
-      searchName = getSearchedPeople;
-      if (searchPeopleElement) {
-        handlePromiseError(searchPeopleElement.searchPeople(true, searchName));
-      }
-    }
-
-    // FL-57: guided merge-suggestion verdict flow.
     handlePromiseError(loadMergeSuggestions());
+    handlePromiseError(loadLibrarySize());
 
     return websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
@@ -68,11 +130,13 @@
     });
   });
 
-  // FL-57: guided merge-suggestion verdicts (accept/reject/skip). The endpoint recomputes
-  // suggestions from face-embedding similarity on every call — there is no persisted
-  // "reject" or "skip" state on the server (see the FL-57 handoff report), so both verdicts
-  // only affect what this session shows next: reject drops the pair, skip moves it behind
-  // the others so it can resurface later in the same session.
+  const replacePerson = (updated: PersonResponseDto) => {
+    people = people.map((person) => (person.id === updated.id ? { ...person, ...updated } : person));
+  };
+
+  // FL-57: guided merge-suggestion verdicts. "No" and "Ask me later" are stored on the server
+  // (`PUT /people/merge-suggestions/verdicts`: "different" never suggests the pair again,
+  // "later" skips it for 30 days) and can be undone from the toast (`DELETE` of the verdict).
   let mergeSuggestions: PersonMergeSuggestionDto[] = $state([]);
   let mergeSuggestionBusy = $state(false);
   const suggestionKey = (suggestion: PersonMergeSuggestionDto) =>
@@ -94,189 +158,85 @@
       // The named person's identity survives; between two named/two unnamed people the
       // order is otherwise arbitrary, matching `POST /people/merge`'s own "first defined
       // value wins" rule.
-      const [survivorId, mergedId] = suggestion.person.name
-        ? [suggestion.person.id, suggestion.suggestion.id]
-        : [suggestion.suggestion.id, suggestion.person.id];
-      await mergePeople({ mergePersonDto: { ids: [survivorId, mergedId] } });
+      const [survivor, merged] = suggestion.person.name
+        ? [suggestion.person, suggestion.suggestion]
+        : [suggestion.suggestion, suggestion.person];
+      await mergePeople({ mergePersonDto: { ids: [survivor.id, merged.id] } });
       mergeSuggestions = mergeSuggestions.filter(
-        (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
+        (entry) => entry.person.id !== merged.id && entry.suggestion.id !== merged.id,
       );
-      const survivor = await getPerson({ id: survivorId });
-      people = people
-        .filter((person) => person.id !== mergedId)
-        .map((person) => (person.id === survivorId ? survivor : person));
-      toastManager.primary($t('frameleaf_people_merge_suggestion_merged_toast', { values: { name: survivor.name } }));
+      status = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
+      await reloadPeople();
     } catch (error) {
-      handleError(error, $t('errors.unable_to_save_name'));
+      handleError(error, $t('errors.unable_to_merge_people'));
     } finally {
       mergeSuggestionBusy = false;
     }
   };
 
-  const handleRejectSuggestion = (suggestion: PersonMergeSuggestionDto) => {
-    mergeSuggestions = mergeSuggestions.filter((entry) => suggestionKey(entry) !== suggestionKey(suggestion));
-    toastManager.primary($t('frameleaf_people_merge_suggestion_rejected_toast'));
-  };
-
-  const handleSkipSuggestion = (suggestion: PersonMergeSuggestionDto) => {
-    const key = suggestionKey(suggestion);
-    const rest = mergeSuggestions.filter((entry) => suggestionKey(entry) !== key);
-    mergeSuggestions = [...rest, suggestion];
-  };
-
-  const loadInitialScroll = () =>
-    new Promise<void>((resolve) => {
-      // Load up to previously loaded page when returning.
-      let newNextPage = sessionStorage.getItem(SessionStorageKey.INFINITE_SCROLL_PAGE);
-      if (newNextPage && nextPage) {
-        let startingPage = nextPage,
-          pagesToLoad = Number.parseInt(newNextPage) - nextPage;
-
-        if (pagesToLoad) {
-          handlePromiseError(
-            Promise.all(
-              Array.from({ length: pagesToLoad }, (_, i) => {
-                return getAllPeople({ withHidden: true, page: startingPage + i });
-              }),
-            ).then((pages) => {
-              for (const page of pages) {
-                people = people.concat(page.people);
-              }
-              currentPage = startingPage + pagesToLoad - 1;
-              nextPage = pages.at(-1)?.hasNextPage ? startingPage + pagesToLoad : null;
-              resolve(); // wait until extra pages are loaded
-            }),
-          );
-        } else {
-          resolve();
-        }
-        sessionStorage.removeItem(SessionStorageKey.INFINITE_SCROLL_PAGE);
-      }
-    });
-
-  const loadNextPage = async () => {
-    if (!nextPage) {
-      return;
-    }
-
+  const recordVerdict = async (suggestion: PersonMergeSuggestionDto, verdict: PersonMergeVerdict) => {
+    const pair = { personId: suggestion.person.id, suggestionId: suggestion.suggestion.id };
+    mergeSuggestionBusy = true;
     try {
-      const { people: newPeople, hasNextPage } = await getAllPeople({ withHidden: true, page: nextPage });
-      people = people.concat(newPeople);
-      if (nextPage !== null) {
-        currentPage = nextPage;
-      }
-      nextPage = hasNextPage ? nextPage + 1 : null;
+      await setMergeVerdict({ personMergeVerdictCreateDto: { ...pair, verdict } });
     } catch (error) {
-      handleError(error, $t('errors.failed_to_load_people'));
+      handleError(error, $t('frameleaf_people_verdict_error'));
+      return;
+    } finally {
+      mergeSuggestionBusy = false;
     }
+
+    const key = suggestionKey(suggestion);
+    mergeSuggestions = mergeSuggestions.filter((entry) => suggestionKey(entry) !== key);
+    const message =
+      verdict === PersonMergeVerdict.Different
+        ? $t('frameleaf_people_merge_suggestion_rejected_toast')
+        : $t('frameleaf_people_merge_suggestion_later_toast');
+    status = message;
+
+    const undo = async () => {
+      try {
+        await deleteMergeVerdict({ personMergeVerdictDeleteDto: pair });
+        mergeSuggestions = [suggestion, ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key)];
+        status = $t('frameleaf_people_verdict_undone');
+      } catch (error) {
+        handleError(error, $t('frameleaf_people_verdict_error'));
+      }
+    };
+    toastManager.primary(
+      { description: message, button: { label: $t('undo'), color: 'secondary', onclick: () => void undo() } },
+      { timeout: 5000 },
+    );
   };
 
-  const handleSearch = async () => {
-    const getSearchedPeople = $page.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE);
-    if (getSearchedPeople !== searchName) {
-      $page.url.searchParams.set(QueryParameter.SEARCHED_PEOPLE, searchName);
-      await goto($page.url, { keepFocus: true });
-    }
-  };
-
-  const handleToggleHidden = async (detail: PersonResponseDto) => {
+  const handleToggleHidden = async (person: PeopleListItemDto) => {
     try {
-      const updatedPerson = await updatePerson({
-        id: detail.id,
-        personUpdateDto: { isHidden: !detail.isHidden },
-      });
-
-      people = people.map((person: PersonResponseDto) => (person.id === updatedPerson.id ? updatedPerson : person));
-
-      toastManager.primary($t('changed_visibility_successfully'));
+      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isHidden: !person.isHidden } }));
+      status = person.isHidden
+        ? $t('frameleaf_people_shown_status', { values: { name: nameOf(person) } })
+        : $t('frameleaf_people_hidden_status', { values: { name: nameOf(person) } });
     } catch (error) {
       handleError(error, $t('errors.unable_to_hide_person'));
     }
   };
 
-  const handleToggleFavorite = async (detail: PersonResponseDto) => {
+  const handleToggleFavorite = async (person: PeopleListItemDto) => {
     try {
-      const updatedPerson = await updatePerson({
-        id: detail.id,
-        personUpdateDto: { isFavorite: !detail.isFavorite },
-      });
-
-      people = people.map((person: PersonResponseDto) => {
-        if (person.id === updatedPerson.id) {
-          return updatedPerson;
-        }
-        return person;
-      });
-
-      toastManager.primary(updatedPerson.isFavorite ? $t('added_to_favorites') : $t('removed_from_favorites'));
+      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isFavorite: !person.isFavorite } }));
+      status = person.isFavorite
+        ? $t('frameleaf_people_unfavorited_status', { values: { name: nameOf(person) } })
+        : $t('frameleaf_people_favorited_status', { values: { name: nameOf(person) } });
     } catch (error) {
-      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: detail.isFavorite } }));
+      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: person.isFavorite } }));
     }
   };
 
-  const handleMergePeople = async (detail: PersonResponseDto) => {
-    await goto(Route.viewPerson(detail, { previousRoute: Route.people(), action: 'merge' }));
+  const openDialog = (type: 'merge' | 'birthday', person: PeopleListItemDto) => {
+    dialog = { type, person };
+    dialogOpen = true;
   };
 
-  const onResetSearchBar = async () => {
-    await clearQueryParam(QueryParameter.SEARCHED_PEOPLE, $page.url);
-  };
-
-  let people = $derived(data.people.people);
-
-  let countVisiblePeople = $derived(searchName ? searchedPeopleLocal.length : data.people.total - data.people.hidden);
-
-  // People grid (FL-37): a "show hidden" toggle over the `people` list. The search endpoint
-  // never returns hidden people (production does not pass `withHidden` to it), so a hidden
-  // person stays out of the grid while a search is active.
-  let showHiddenFrameleaf = $state(false);
-  let editingIdFrameleaf: string | undefined = $state();
-  let frameleafBase = $derived(searchName ? searchedPeopleLocal : people);
-  let frameleafCards = $derived(frameleafBase.filter((person) => showHiddenFrameleaf || !person.isHidden));
-  let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
-
-  // FL-57: a Frameleaf rename commits immediately (inline editing has no separate
-  // confirm step to gate on) rather than blocking on a legacy modal. If the new name
-  // collides with an existing person, surface it through the same guided
-  // accept/reject/skip verdict flow the merge-suggestion banner already offers, instead
-  // of a second, disconnected "did you mean to merge" dialog. This replaces the old
-  // `editingPerson`-gated `handleMerge` path, which only the deleted legacy name input
-  // ever satisfied and so silently dropped every Frameleaf rename collision.
-  const onNameChangeSubmit = async (name: string, targetPerson: PersonResponseDto) => {
-    try {
-      if (name === targetPerson.name) {
-        return;
-      }
-
-      if (name === '') {
-        await updateName(targetPerson.id, '');
-        return;
-      }
-
-      await updateName(targetPerson.id, name);
-
-      const personWithSimilarName = await findPeopleWithSimilarName(name, targetPerson.id);
-      if (personWithSimilarName) {
-        const renamed = { ...targetPerson, name };
-        const key = suggestionKey({ person: renamed, suggestion: personWithSimilarName, distance: 0 });
-        mergeSuggestions = [
-          { person: renamed, suggestion: personWithSimilarName, distance: 0 },
-          ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key),
-        ];
-      }
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_save_name'));
-    }
-  };
-
-  const updateName = async (id: string, name: string) => {
-    await updatePerson({
-      id,
-      personUpdateDto: { name },
-    });
-  };
-
-  const findPeopleWithSimilarName = async (name: string, personId: string) => {
+  const findPeopleWithSameName = async (name: string, personId: string) => {
     const searchResult = await searchPerson({ name, withHidden: true });
     const normalizedName = normalizeSearchString(name);
     return searchResult.find(
@@ -284,134 +244,175 @@
     );
   };
 
-  const onPersonUpdate = (response: PersonResponseDto) => {
-    people = people.map((person: PersonResponseDto) => {
-      if (person.id === response.id) {
-        return response;
+  // FL-57: a rename commits immediately. If the new name matches another person, that pair
+  // goes to the front of the merge-suggestion banner instead of a separate merge prompt.
+  const onNameChangeSubmit = async (name: string, person: PeopleListItemDto) => {
+    if (name === person.name) {
+      return;
+    }
+    try {
+      replacePerson(await updatePerson({ id: person.id, personUpdateDto: { name } }));
+      status = isUnnamedPerson(person)
+        ? $t('frameleaf_people_named_status', { values: { name } })
+        : $t('frameleaf_people_renamed_status', { values: { from: person.name, to: name } });
+      if (!name) {
+        return;
       }
-      return person;
-    });
+      const sameName = await findPeopleWithSameName(name, person.id);
+      if (sameName) {
+        const renamed = { ...person, name };
+        const entry = { person: renamed, suggestion: sameName, distance: 0 };
+        const key = suggestionKey(entry);
+        mergeSuggestions = [entry, ...mergeSuggestions.filter((other) => suggestionKey(other) !== key)];
+      }
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_save_name'));
+    }
   };
-</script>
 
-<svelte:window bind:innerHeight />
+  const onPersonUpdate = (response: PersonResponseDto) => replacePerson(response);
+</script>
 
 <OnEvents {onPersonUpdate} />
 
 <UserPageLayout
   title={$t('people')}
-  description={countVisiblePeople === 0 && !searchName ? undefined : `(${countVisiblePeople.toLocaleString($locale)})`}
-  use={[
-    [
-      scrollMemory,
-      {
-        routeStartsWith: Route.people(),
-        beforeSave: () => {
-          if (currentPage) {
-            sessionStorage.setItem(SessionStorageKey.INFINITE_SCROLL_PAGE, currentPage.toString());
-          }
-        },
-        beforeClear: () => {
-          sessionStorage.removeItem(SessionStorageKey.INFINITE_SCROLL_PAGE);
-        },
-        beforeLoad: loadInitialScroll,
-      },
-    ],
-  ]}
+  description={summary}
+  use={[[scrollMemory, { routeStartsWith: Route.people(), beforeScroll: () => allLoaded }]]}
 >
   {#snippet buttons()}
-    {#if people.length > 0}
-      <div class="flex items-center justify-center gap-2">
-        <div class="hidden sm:block">
-          <div class="h-10 w-40 lg:w-80">
-            <SearchPeople
-              bind:this={searchPeopleElement}
-              type="searchBar"
-              placeholder={$t('search_people')}
-              onReset={onResetSearchBar}
-              onSearch={handleSearch}
-              bind:searchName
-              bind:searchedPeopleLocal
-            />
-          </div>
-        </div>
-        <FrameleafButton
-          variant={showHiddenFrameleaf ? 'primary' : 'default'}
-          pressed={showHiddenFrameleaf}
-          onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
-        >
-          {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
-        </FrameleafButton>
-        <Button
-          leadingIcon={mdiEyeOutline}
-          onclick={() => goto('/people/manage')}
-          size="small"
-          variant="ghost"
-          color="secondary">{$t('show_and_hide_people')}</Button
-        >
-      </div>
-    {/if}
+    <div class="pl-toolbar">
+      <input
+        type="search"
+        aria-label={$t('frameleaf_people_find_a_person')}
+        placeholder={$t('frameleaf_people_find_a_person')}
+        bind:value={search}
+      />
+      <select aria-label={$t('frameleaf_people_sort')} bind:value={sort}>
+        <option value="name">{$t('name')}</option>
+        <option value="count">{$t('frameleaf_people_sort_count')}</option>
+        <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
+      </select>
+      <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
+        <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size="18" aria-hidden="true" />
+        {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
+      </FrameleafButton>
+      <FrameleafButton onclick={() => goto('/people/manage')}>
+        <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden="true" />
+        {$t('frameleaf_people_show_and_hide')}
+      </FrameleafButton>
+    </div>
   {/snippet}
 
-  {#if mergeSuggestions.length > 0}
-    <MergeSuggestionBanner
-      suggestion={mergeSuggestions[0]}
-      remaining={mergeSuggestions.length - 1}
-      busy={mergeSuggestionBusy}
-      onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
-      onReject={() => handleRejectSuggestion(mergeSuggestions[0])}
-      onSkip={() => handleSkipSuggestion(mergeSuggestions[0])}
-    />
-  {/if}
-  {#if frameleafCards.length > 0}
-    <p class="frameleaf-people-summary">
-      {$t('frameleaf_people_summary', {
-        values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
-      })}
-    </p>
-    <div class="frameleaf-people-grid">
-      <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
+  <section class="pl-page" aria-label={$t('frameleaf_people_library_label')}>
+    {#if mergeSuggestions.length > 0}
+      <MergeSuggestionBanner
+        suggestion={mergeSuggestions[0]}
+        remaining={mergeSuggestions.length - 1}
+        busy={mergeSuggestionBusy}
+        onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
+        onReject={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Different)}
+        onSkip={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Later)}
+      />
+    {/if}
+    <p class="pl-status" role="status" aria-live="polite">{status}</p>
+    {#if cards.length > 0}
+      <PeopleInfiniteScroll people={cards} hasNextPage={false} loadNextPage={() => {}}>
         {#snippet children({ person })}
           <PersonCard
             {person}
-            editing={editingIdFrameleaf === person.id}
+            editing={editingId === person.id}
             onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
-            onStartRename={() => (editingIdFrameleaf = person.id)}
+            onStartRename={() => (editingId = person.id)}
             onCommitRename={async (name) => {
-              editingIdFrameleaf = undefined;
+              editingId = undefined;
               await onNameChangeSubmit(name, person);
             }}
-            onCancelRename={() => (editingIdFrameleaf = undefined)}
+            onCancelRename={() => (editingId = undefined)}
             onToggleFavorite={() => handleToggleFavorite(person)}
             onToggleHide={() => handleToggleHidden(person)}
-            onMerge={() => handleMergePeople(person)}
-            onSetBirthday={() => {
-              const { SetDateOfBirth } = getPersonActions($t, person);
-              void SetDateOfBirth.onAction(SetDateOfBirth);
-            }}
+            onMerge={() => openDialog('merge', person)}
+            onSetBirthday={() => openDialog('birthday', person)}
           />
         {/snippet}
       </PeopleInfiniteScroll>
-    </div>
-  {:else}
-    <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
-      <div class="flex flex-col content-center items-center text-center">
-        <Icon icon={mdiAccountOff} size="3.5em" />
-        <p class="mt-5 line-clamp-2 max-w-lg overflow-hidden text-3xl font-medium">
-          {$t(searchName ? 'search_no_people_named' : 'search_no_people', { values: { name: searchName } })}
-        </p>
-      </div>
-    </div>
-  {/if}
+    {:else if !nextPage}
+      <p class="people-empty" role="status">
+        {#if search.trim()}
+          {$t('frameleaf_people_no_match')}
+        {:else if hiddenCount > 0}
+          {$t('frameleaf_people_everyone_hidden')}
+        {:else}
+          {$t('frameleaf_people_none_assigned')}
+        {/if}
+      </p>
+    {/if}
+  </section>
 </UserPageLayout>
 
+{#if dialog?.type === 'merge'}
+  <MergePeopleDialog
+    person={dialog.person}
+    candidates={people}
+    bind:open={dialogOpen}
+    onMerged={async (target) => {
+      status = $t('frameleaf_people_merged_status', {
+        values: { from: nameOf(dialog!.person), into: nameOf(target) },
+      });
+      await reloadPeople();
+    }}
+  />
+{:else if dialog?.type === 'birthday'}
+  <BirthdayDialog
+    person={dialog.person}
+    bind:open={dialogOpen}
+    onSaved={(updated, birthDate) => {
+      replacePerson(updated);
+      status = birthDate
+        ? $t('frameleaf_people_birthday_saved_for', { values: { name: nameOf(updated) } })
+        : $t('frameleaf_people_birthday_removed_for', { values: { name: nameOf(updated) } });
+    }}
+  />
+{/if}
+
 <style>
-  .frameleaf-people-summary {
-    padding: 0 0.5rem 0.5rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
+  /* template/src/people.css `.pl-page`, `.pl-toolbar`, `.pl-status`. */
+  .pl-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
-  .frameleaf-people-grid {
-    padding: 0 0.5rem 2rem;
+  .pl-toolbar input,
+  .pl-toolbar select {
+    min-height: 44px;
+    border-radius: var(--fl-radius-control);
+  }
+  .pl-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 0.5rem 2.5rem;
+  }
+  .pl-status {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .pl-status:empty {
+    display: none;
+  }
+  .people-empty {
+    padding: 3rem 1rem;
+    color: var(--fl-muted);
+    text-align: center;
+  }
+  @media (max-width: 700px) {
+    .pl-toolbar {
+      width: 100%;
+    }
+    .pl-toolbar input {
+      flex: 1 1 100%;
+    }
   }
 </style>

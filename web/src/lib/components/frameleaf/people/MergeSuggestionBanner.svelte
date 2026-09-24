@@ -7,11 +7,9 @@
    * for this story, which reuses the same face-embedding distance the facial-recognition
    * job already clusters faces with.
    *
-   * "Accept" calls the real `POST /people/merge` (via the caller's `onAccept`). "Reject"
-   * and "skip" have no server-side memory yet — see the FL-57 handoff report — so both
-   * only affect which suggestion the caller shows next in this browsing session:
-   * "reject" ("not the same person") drops the pair outright, "skip" ("ask me later")
-   * re-queues it behind the others so it can resurface later in the same session.
+   * "Accept" calls the real `POST /people/merge` (via the caller's `onAccept`). "Reject" and
+   * "skip" are stored on the server by the caller as merge verdicts ("different" never
+   * suggests the pair again, "later" skips it for 30 days) and can be undone from the toast.
    */
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
