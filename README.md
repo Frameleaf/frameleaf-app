@@ -9,17 +9,17 @@
 </p>
 
 <p align="center">
-<img src="design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+<picture><source media="(prefers-color-scheme: dark)" srcset="design/frameleaf/brand-kit/frameleaf-logo-dark.svg"><img src="design/frameleaf/derivatives/frameleaf-logo-light.svg" width="300" title="Frameleaf" alt="Frameleaf"></picture>
 </p>
 <h3 align="center">High performance self-hosted photo and video management solution</h3>
 
-# Immich Enhanced
+# Frameleaf
 
-A privacy-first, AI-aware Immich fork with Google Photos-like discovery for self-hosted family libraries.
+Frameleaf is a privacy-first, AI-aware self-hosted photo and video platform with Google Photos-like discovery for family libraries, built on [Immich](https://github.com/immich-app/immich).
 
 This repository is a maintained downstream fork of Immich for home-lab users who want more control over privacy, storage, search, and local ML-powered image enrichment.
 
-It is designed for users who want to keep the Immich experience they already know, while adding fork-only features for:
+It is designed for users who want to keep the Immich-based workflows they already know, while adding Frameleaf features for:
 
 - PIN-gated sensitive media hiding
 - Optional NSFW/sensitive-content detection
@@ -38,7 +38,7 @@ It is designed for users who want to keep the Immich experience they already kno
 - Natural-language local discovery
 - A "Recently Added" media view
 - A "Best Photos" view for locally ranked high-quality images
-- **Server-to-server migration** that moves a user's whole library between Immich servers, resumably, and audits the result
+- **Server-to-server migration** that moves a user's whole library between servers, resumably, and audits the result
 
 This fork is actively maintained and kept up to date with upstream Immich while preserving the additional features documented below.
 
@@ -93,13 +93,13 @@ That can include:
 
 Instead of requiring sensitive media to live only in a separate locked folder, this fork adds a PIN-gated privacy mode.
 
-When locked mode is active, sensitive media is hidden from the normal Immich web UI. Hidden assets do not appear in the timeline, albums, or standard browsing views. A lock icon near the upload button allows an authorized user to enter the PIN and temporarily reveal hidden content.
+When locked mode is active, sensitive media is hidden from the normal Frameleaf web UI. Hidden assets do not appear in the timeline, albums, or standard browsing views. A lock icon near the upload button allows an authorized user to enter the PIN and temporarily reveal hidden content.
 
-The fork uses the same PIN as Immich’s locked-folder feature.
+Frameleaf uses the same PIN as the locked-folder feature.
 
 ### What still works while media is hidden
 
-Hidden assets still remain part of the Immich library and can continue to participate in backend functionality such as:
+Hidden assets still remain part of your library and can continue to participate in backend functionality such as:
 
 - Deduplication
 - Indexing
@@ -111,7 +111,7 @@ Hidden assets still remain part of the Immich library and can continue to partic
 From the normal web UI, however, hidden media is not visible unless privacy mode is unlocked.
 
 > [!NOTE]
-> These controls are intended to reduce accidental exposure in the Immich UI. They are not a substitute for full-disk encryption, strong account security, network security, or proper server access controls.
+> These controls are intended to reduce accidental exposure in the Frameleaf UI. They are not a substitute for full-disk encryption, strong account security, network security, or proper server access controls.
 
 ---
 
@@ -182,7 +182,7 @@ Smart albums are disabled by default. See the [configurable descriptions, identi
 
 ## Nested Albums and Folder Organization
 
-Standard Immich albums are a single flat list. This fork lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
+Upstream Immich albums are a single flat list. This fork lets you organize them into **nested folders**, so a large family library can be grouped the way you actually think about it — for example, `2024 ▸ Summer ▸ Beach Trip` — instead of scrolling one long alphabetical wall of albums.
 
 - **Folders within folders** — nest albums to any depth and group related albums together by year, event, trip, person, or however you like
 - **Drag-and-drop organization** — drag one album onto another to nest it, or drag to reorder; works in both the album grid and the album tree
@@ -219,7 +219,7 @@ This fork adds admin tools for libraries with RAW camera files, external-library
 
 - Scans source media for decode failures
 - Shows timeline-style findings with thumbnails and error evidence
-- Moves recently revalidated corrupt assets to Immich trash only after PIN and typed confirmation
+- Moves recently revalidated corrupt assets to the Frameleaf trash only after PIN and typed confirmation
 - Separates unsupported RAW files and validation timeouts from confirmed corruption
 - Accepts validated matching iCloud recovery copies while preserving the existing asset ID and associations
 
@@ -229,15 +229,15 @@ See [Recover missing or corrupt media](docs/docs/guides/media-recovery.md) for L
 
 ## iCloud Photos Sync and Recovery
 
-Import iCloud Photos directly into your Immich account through **Utilities → iCloud Photos Sync**. Transfers run on the server and continue after you close the browser. Choose libraries/albums, schedule runs, pause/resume, retry failures, and review saved progress.
+Import iCloud Photos directly into your Frameleaf account through **Utilities → iCloud Photos Sync**. Transfers run on the server and continue after you close the browser. Choose libraries/albums, schedule runs, pause/resume, retry failures, and review saved progress.
 
 - **Recover the existing asset:** validated content-hash matches can repair missing, corrupt, unreadable, or offline media while preserving its ID and associations. Healthy matching assets are reused; intentionally trashed assets stay in Trash.
-- **Preserve Apple edits with Stacks:** available edited versions are separate Immich assets stacked with their originals. Apple edit/revert changes respect manual Stack choices and local edits.
+- **Preserve Apple edits with Stacks:** available edited versions are separate assets stacked with their originals. Apple edit/revert changes respect manual Stack choices and local edits.
 - **Keep Live Photos together:** still images and movies link through native Live Photo relationships using Apple source identities. A missing movie can recover independently of its healthy still.
 - **Keep album context:** source album identities, supported nesting, and managed memberships survive renames. Supported metadata includes favorites, hidden status, and capture dates.
 - **Choose recovery boundaries:** hidden-media import and conversion of damaged external-library matches to managed assets are opt-in. Recovery does not overwrite external files.
 
-Sync is one-way: it does not write back to iCloud or mirror source deletions into Immich. Exact duplicate detection may require an initial download. Retained edit versions are bounded; existing recovery copies are not automatically deleted.
+Sync is one-way: it does not write back to iCloud or mirror source deletions into Frameleaf. Exact duplicate detection may require an initial download. Retained edit versions are bounded; existing recovery copies are not automatically deleted.
 
 An administrator must install the private HTTPS bridge and staging storage. Live Apple-account verification remains outstanding for this implementation. Shared Albums, SMS verification, edited Live Photo pairing, and full Apple edit-effect fidelity are unsupported; see the guide for the complete scope.
 
@@ -247,7 +247,7 @@ An administrator must install the private HTTPS bridge and staging storage. Live
 
 ## Live Photo Relinking
 
-An Apple **Live Photo** is really two files — a still photo and a short video — stored together. When those parts get uploaded or imported separately (for example from a backup, a desktop sync, or a third-party export), Immich shows them as two unrelated items instead of one playable live photo.
+An Apple **Live Photo** is really two files — a still photo and a short video — stored together. When those parts get uploaded or imported separately (for example from a backup, a desktop sync, or a third-party export), they show up as two unrelated items instead of one playable live photo.
 
 This fork adds a utility that finds those separated pairs and reassembles them.
 
@@ -266,7 +266,7 @@ Note: the optional AAC audio track that some live photos include is not part of 
 
 This fork adds physical deduplication designed for family and multi-user home libraries.
 
-The goal is simple: if multiple users upload the same original file, Immich should not have to store the same bytes multiple times.
+The goal is simple: if multiple users upload the same original file, Frameleaf should not have to store the same bytes multiple times.
 
 Physical deduplication allows non-master users to share exact master-account file bytes while preserving separate:
 
@@ -278,7 +278,7 @@ Physical deduplication allows non-master users to share exact master-account fil
 
 This is useful when family members have overlapping camera rolls, shared vacation photos, copied phone backups, or imported Google Photos archives.
 
-For example, two family members can each have the same photo in their own Immich account, but the server only stores one physical copy of the file.
+For example, two family members can each have the same photo in their own Frameleaf account, but the server only stores one physical copy of the file.
 
 This does **not** require partner sharing, and it does **not** merge user libraries or permissions.
 
@@ -304,7 +304,7 @@ The result is better duplicate detection for real-world video libraries, especia
 
 When you review duplicates, this fork suggests keeping the **original** version of a photo instead of whichever copy happens to be the largest file.
 
-Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. Standard Immich would suggest keeping that bigger JPG; this fork knows the native original is the better one to keep.
+Apple devices capture in **HEIC**, and many cameras shoot **RAW** (DNG and similar). When those originals get re-saved or shared, they often become larger JPGs that look bigger on disk but are actually a lower-quality re-encode. Upstream Immich would suggest keeping that bigger JPG; this fork knows the native original is the better one to keep.
 
 - Prefers native originals when choosing which duplicate to keep — **RAW first, then HEIC/HEIF**, then everything else
 - Wins even when the JPG copy is larger in file size
@@ -319,7 +319,7 @@ This only changes which asset is pre-selected as the keeper in the duplicate rev
 
 This fork adds non-destructive editing for photos and videos.
 
-The original upload remains untouched. Edited results are saved as Immich-managed copies or derivatives linked to the same asset workflow.
+The original upload remains untouched. Edited results are saved as Frameleaf-managed copies or derivatives linked to the same asset workflow.
 
 ### Built-in video editor
 
@@ -361,7 +361,7 @@ This is useful after large imports, phone migrations, Google Photos takeouts, or
 
 ### Best Photos
 
-Best Photos ranks your highest-quality image assets using local scoring from Immich-generated previews.
+Best Photos ranks your highest-quality image assets using local scoring from Frameleaf-generated previews.
 
 Scores are computed and stored privately on your server. The feature does not call cloud APIs, create a physical album, duplicate files, or change favorites.
 
@@ -382,7 +382,7 @@ Videos are not scored or used to change thumbnails in this version, but the stor
 
 Ask Search adds a Google Photos-like way to search your self-hosted library using normal language.
 
-The goal is to make Immich easier to search without sending your photo library to a cloud photo service.
+The goal is to make Frameleaf easier to search without sending your photo library to a cloud photo service.
 
 Try searches like:
 
@@ -399,7 +399,7 @@ photos of Alice in Calgary from April 2024
 
 ## Server-to-Server Library Migration
 
-This fork adds an `immich migrate` command that moves **one user's entire library from one Immich server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
+This fork adds a `migrate` command to the CLI (run as `immich migrate`; the CLI keeps its upstream package name) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
 
 It is built for real migrations: consolidating two home-lab servers, moving to new hardware, or folding a second instance into your main one.
 
@@ -414,7 +414,7 @@ Nothing is ever deleted from the source server. This is a copy-then-verify opera
 
 You need an API key **for the user being migrated, on both servers**.
 
-An admin key will not work. In Immich an API key can only reach the library of the user it belongs to, and anything it uploads is owned by that same user — so an admin key would copy the library into the admin's own account instead. Migrate one user at a time, with that user's own key on each side.
+An admin key will not work. An API key can only reach the library of the user it belongs to, and anything it uploads is owned by that same user — so an admin key would copy the library into the admin's own account instead. Migrate one user at a time, with that user's own key on each side.
 
 Sign in as the user on each server, go to **Account Settings → API Keys**, and create a key with:
 
@@ -583,7 +583,7 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 > ⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!
 
 > [!NOTE]
-> You can find the main documentation, including installation guides, at https://immich.app/.
+> Frameleaf installation is covered [above](#frameleaf-container-installation). The upstream Immich documentation, including general installation guides, is at https://immich.app/.
 
 ## Links
 
@@ -601,7 +601,7 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list. The step
 
 ## Demo
 
-Access the demo [here](https://demo.immich.app). For the mobile app, you can use `https://demo.immich.app` for the `Server Endpoint URL`.
+Access the upstream Immich demo [here](https://demo.immich.app); it does not include Frameleaf features. For the mobile app, you can use `https://demo.immich.app` for the `Server Endpoint URL`.
 
 ### Login credentials
 
@@ -661,3 +661,7 @@ Read more about translations [here](https://docs.immich.app/developer/translatio
 <a href="https://github.com/immich-app/immich/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=immich-app/immich" width="100%"/>
 </a>
+
+## Attribution and licence
+
+Frameleaf is built on [Immich](https://github.com/immich-app/immich) and the work of its contributors. Immich and Frameleaf are available as open source under the terms of the [GNU AGPL v3 License](LICENSE).

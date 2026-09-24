@@ -1,19 +1,19 @@
 {
   "approvedReferences": [
     {
-      "bytes": 4380,
+      "bytes": 5242,
       "id": "reference:design/frameleaf/README.md",
       "path": "design/frameleaf/README.md",
       "role": "approved-design-handoff",
-      "sha256": "9c793aa8d72cd40b68e3a2979b47173279ab48744ab1e94eb8f496e180a03a30",
+      "sha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 7574,
+      "bytes": 13640,
       "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
       "role": "approved-interaction-contract",
-      "sha256": "8a821b6b1b84016ccc74a824a55ee16947df96add2d1e5aad007fea046145574",
+      "sha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
       "status": "reference-not-production-qualification"
     },
     {
@@ -25,11 +25,11 @@
       "status": "reference-not-production-qualification"
     },
     {
-      "bytes": 3782,
+      "bytes": 5051,
       "id": "reference:design/frameleaf/template/README.md",
       "path": "design/frameleaf/template/README.md",
       "role": "approved-prototype-usage-contract",
-      "sha256": "1f132c8c586ed22c48a914c785e4bcc2d1a86119b0e17e5dd6eea790c7e63b3c",
+      "sha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
       "status": "reference-not-production-qualification"
     },
     {
@@ -105,7 +105,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "984d7a2b33895202167d50da17d7490820be067e3e27ae0a2184270f0d084247",
+    "approvedReferenceLedgerSha256": "1551e00ff1a52856001b3128e6c8678fc8f933c8a7efc877347858717841632e",
     "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
   },
   "expectedDuplicateContent": [
