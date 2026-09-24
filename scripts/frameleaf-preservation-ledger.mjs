@@ -276,9 +276,10 @@ const commandCenterRouteHomes = {
     module:
       "web/src/routes/(user)/user-settings/sections/RenderWorkersSection.svelte",
   },
+  // The old page held the worker inventory (`#workers`) above the workload destinations.
   "/admin/processing-destinations": {
     area: "processing",
-    section: "routing",
+    sections: ["routing", "workers"],
     module:
       "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte",
   },

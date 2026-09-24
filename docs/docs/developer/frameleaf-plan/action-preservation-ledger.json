@@ -72466,7 +72466,7 @@
           "status": "not-qualified",
           "target": {
             "area": "processing",
-            "section": "routing",
+            "sections": ["routing", "workers"],
             "module": "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte"
           },
           "evidence": ["none-qualified"]
