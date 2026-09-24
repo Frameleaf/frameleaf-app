@@ -598,12 +598,16 @@
 
   /**
    * Shift-click selects a range. The range may reach across months that are not loaded, so the
-   * manager retrieves it — the component never walks the library itself.
+   * manager retrieves it — the component never walks the library itself. As in the prototype
+   * (`App.jsx` toggleSelect), the range leaves the anchor where it was, so a chain of shift-clicks
+   * all range from the same original anchor.
    */
   const selectRange = async (asset: TimelineAsset) => {
     const start = anchorAsset();
     if (!start) {
-      session.select(asset.id);
+      // No anchor: a plain toggle, which sets one. An anchor that is no longer in the timeline adds
+      // just the clicked item and stays the anchor (prototype `selectRange` outside visible order).
+      session.select(asset.id, { range: true, orderedIds: [asset.id] });
       return;
     }
     rangePending = true;

@@ -358,11 +358,16 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
     case 'scope': {
       return reduceLibrarySession(session, { type: 'view', patch: { scope: action.scope } });
     }
+    /*
+     * The shift-click anchor follows the prototype (`App.jsx` toggleSelect, selectGroupIds,
+     * clearSelection): only a plain tile toggle sets it. A shift-click range, a replaced selection,
+     * a group checkbox, select-all and clearing all leave it where it was, so chained shift-clicks
+     * all range from the same original anchor, even after that item was deselected.
+     */
     case 'selection': {
       return {
         ...session,
         selection: [...new Set(action.ids)],
-        anchorId: action.ids.at(-1) ?? null,
         selectionSnapshot: action.allMatching ? structuredClone(session.state) : undefined,
       };
     }
@@ -371,24 +376,21 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
       return withSelection(session, selection, nextAnchor(selection, action.id, session.anchorId));
     }
     case 'select-range': {
+      // With no anchor yet, a shift-click is a plain toggle, which sets the anchor.
+      if (session.anchorId === null) {
+        return reduceLibrarySession(session, { type: 'select', id: action.id });
+      }
       const selection = selectRange(action.orderedIds, session.anchorId, action.id, session.selection);
-      // As in the prototype, the clicked item becomes the anchor for the next shift-click.
-      return withSelection(session, selection, nextAnchor(selection, action.id, session.anchorId));
+      return withSelection(session, selection, session.anchorId);
     }
     case 'select-group': {
-      const selection = selectGroup(session.selection, action.ids, action.checked);
-      // As in the prototype, a day checkbox never moves the shift-click anchor: only a tile toggle
-      // sets one, so a shift-click after selecting a day with no anchor selects just that tile.
-      const anchor = session.anchorId;
-      return withSelection(session, selection, anchor && selection.includes(anchor) ? anchor : null);
+      return withSelection(session, selectGroup(session.selection, action.ids, action.checked), session.anchorId);
     }
     case 'select-all': {
       return withSelection(session, selectAll(action.orderedIds, session.selection), session.anchorId);
     }
     case 'clear-selection': {
-      return session.selection.length === 0 && session.anchorId === null
-        ? session
-        : withSelection(session, clearSelection(), null);
+      return session.selection.length === 0 ? session : withSelection(session, clearSelection(), session.anchorId);
     }
     case 'anchor': {
       return { ...session, scrollAnchor: action.id };
