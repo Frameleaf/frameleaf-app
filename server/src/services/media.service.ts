@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   AudioStreamInfo,
@@ -11,6 +13,7 @@ import type {
   JobOf,
   TranscodeCommand,
   VideoFormat,
+  VideoInfo,
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types.js';
@@ -61,6 +64,7 @@ import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,
   MediaPolicyError,
+  MediaPolicyViolation,
   applyEditedMasterAudioPolicy,
   applyEditedMasterPixelFormatPolicy,
   assertOriginalPreserved,
@@ -73,6 +77,7 @@ import {
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
   serializeEditedMasterLineage,
+  validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -807,7 +812,15 @@ export class MediaService extends BaseService {
   private async generateVideoThumbnails(
     asset: VideoThumbnailAsset,
     { ffmpeg, image }: SystemConfig,
-    options: { sourcePath?: string; isEdited?: boolean; fullsizeDimensions?: ImageDimensions } = {},
+    options: {
+      sourcePath?: string;
+      isEdited?: boolean;
+      fullsizeDimensions?: ImageDimensions;
+      /** FL-39: a retained version's thumbnails get unique paths, so history keeps its own files. */
+      pathSuffix?: string;
+      /** FL-39: receives every path this call may create, for cleanup if the version is not published. */
+      candidates?: string[];
+    } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
     const isEdited = options.isEdited ?? false;
@@ -825,6 +838,13 @@ export class MediaService extends BaseService {
       isProgressive: false,
       isTransparent: false,
     });
+    if (options.pathSuffix) {
+      for (const file of [previewFile, thumbnailFile]) {
+        const parsed = path.parse(file.path);
+        file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
+      }
+    }
+    options.candidates?.push(previewFile.path, thumbnailFile.path);
     const { videoStream, format } = asset;
     if (!videoStream || !format) {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
@@ -1005,7 +1025,7 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })
-  async handleAssetVideoEditGeneration({ id }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+  async handleAssetVideoEditGeneration({ id, versionId }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -1026,6 +1046,29 @@ export class MediaService extends BaseService {
       format,
     };
     const config = await this.getConfig({ withCache: true });
+
+    // FL-39: with fork writes enabled every save, revert and export is a retained version. The
+    // job renders the requested (or the named export) version into its own master and proxy, and
+    // publication decides — transactionally — whether it is still the one to show.
+    let version: VideoEditVersion | undefined;
+    try {
+      version = versionId
+        ? await this.assetEditRepository.getVideoVersion(id, versionId)
+        : await this.assetEditRepository.getRequestedVideoVersion(id);
+    } catch (error: any) {
+      this.logger.error(`Refusing to render a video version for asset ${asset.id}: ${error?.message ?? error}`);
+      return JobStatus.Failed;
+    }
+    if (versionId && !version) {
+      return JobStatus.Skipped;
+    }
+    if (version) {
+      if (version.status === 'ready') {
+        return JobStatus.Skipped;
+      }
+      return this.renderVideoVersion(version, { ...thumbnailAsset, files: asset.files }, config);
+    }
+
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
     const editedFiles = this.toExistingAssetFiles(asset.files.filter((file) => file.isEdited));
 
@@ -1053,33 +1096,14 @@ export class MediaService extends BaseService {
     // existing valid edited master in place.
     let colorDecision: EditedMasterColorDecision;
     try {
-      assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: output });
-      assertRenderSourceIsOriginal({
+      colorDecision = this.qualifyEditedMasterRender({
+        videoStream,
+        config: config.ffmpeg,
         originalPath: asset.originalPath,
         sourcePath: asset.originalPath,
+        outputPaths: [output],
         derivedPaths: asset.files.map((file) => file.path),
       });
-      // FL-101: the source has to be one this renderer can decode honestly before anything
-      // else is decided. Dolby Vision profile 5, an undescribable pixel format or a bit depth
-      // beyond what can be delivered all stop here — before ensureFolders, so an existing valid
-      // edited master survives the refusal untouched.
-      const qualification = qualifySourceDecode(videoStream, config.ffmpeg);
-      assertDecodeQualified(qualification);
-      colorDecision = resolveEditedMasterColorPolicy(videoStream, config.ffmpeg);
-      // FL-102: reject an incompatible output option here too — a 10-bit source aimed at an
-      // encoder with no qualified 10-bit path is refused rather than quietly flattened. This is
-      // the same call, under the same condition, that `getVideoEditCommand` makes; doing it here
-      // as well keeps the refusal ahead of ensureFolders, where nothing has been disturbed yet.
-      if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
-        const masterConfig = getEditedMasterFfmpegConfig(config.ffmpeg, videoStream);
-        selectEncoderPixelFormat({
-          codec: masterConfig.targetVideoCodec,
-          accel: masterConfig.accel,
-          layout: qualification.layout,
-          policy: colorDecision.policy,
-          colorMatrix: videoStream.colorMatrix,
-        });
-      }
     } catch (error) {
       if (error instanceof MediaPolicyError) {
         this.logger.error(`Refusing to render an edited master for asset ${asset.id}: ${error.message}`);
@@ -1090,36 +1114,19 @@ export class MediaService extends BaseService {
 
     this.storageCore.ensureFolders(output);
 
-    const plan = this.getVideoEditCommandPlan(config.ffmpeg, edits, videoStream, audioStream, format, colorDecision);
-    this.logVideoEditCommandPlan(asset.id, plan);
-
-    try {
-      await this.mediaRepository.transcode(asset.originalPath, output, plan.command);
-    } catch (error: any) {
-      const message = error?.message ?? error;
-      this.logger.error(`Error occurred during video edit generation: ${message}`);
-
-      if (plan.config.accel === TranscodeHardwareAcceleration.Disabled) {
-        return JobStatus.Failed;
-      }
-
-      const fallbackPlan = this.getVideoEditSoftwareFallbackCommandPlan(
-        config.ffmpeg,
-        edits,
-        videoStream,
-        audioStream,
-        format,
-        String(message),
-        colorDecision,
-      );
-      this.logVideoEditCommandPlan(asset.id, fallbackPlan);
-
-      try {
-        await this.mediaRepository.transcode(asset.originalPath, output, fallbackPlan.command);
-      } catch (error: any) {
-        this.logger.error(`Error occurred during software video edit generation fallback: ${error?.message ?? error}`);
-        return JobStatus.Failed;
-      }
+    const rendered = await this.transcodeEditedMaster({
+      assetId: asset.id,
+      input: asset.originalPath,
+      output,
+      config: config.ffmpeg,
+      edits,
+      videoStream,
+      audioStream,
+      format,
+      colorDecision,
+    });
+    if (!rendered) {
+      return JobStatus.Failed;
     }
 
     // FL-39: an edited master is a new file that records where it came from — the source asset and
@@ -1162,6 +1169,298 @@ export class MediaService extends BaseService {
     });
 
     return JobStatus.Success;
+  }
+
+  /**
+   * The checks every edited-master render passes before anything is created on disk (FL-39,
+   * FL-101, FL-102). Throws a {@link MediaPolicyError} when the render must not start.
+   */
+  private qualifyEditedMasterRender({
+    videoStream,
+    config,
+    originalPath,
+    sourcePath,
+    outputPaths,
+    derivedPaths,
+  }: {
+    videoStream: VideoStreamInfo;
+    config: ConfigFFmpegDto;
+    originalPath: string;
+    sourcePath: string;
+    outputPaths: string[];
+    derivedPaths: string[];
+  }): EditedMasterColorDecision {
+    for (const outputPath of outputPaths) {
+      assertOriginalPreserved({ originalPath, outputPath });
+    }
+    assertRenderSourceIsOriginal({ originalPath, sourcePath, derivedPaths });
+    // FL-101: the source has to be one this renderer can decode honestly before anything
+    // else is decided. Dolby Vision profile 5, an undescribable pixel format or a bit depth
+    // beyond what can be delivered all stop here — before ensureFolders, so an existing valid
+    // edited master survives the refusal untouched.
+    const qualification = qualifySourceDecode(videoStream, config);
+    assertDecodeQualified(qualification);
+    const colorDecision = resolveEditedMasterColorPolicy(videoStream, config);
+    // FL-102: reject an incompatible output option here too — a 10-bit source aimed at an
+    // encoder with no qualified 10-bit path is refused rather than quietly flattened. This is
+    // the same call, under the same condition, that `getVideoEditCommand` makes; doing it here
+    // as well keeps the refusal ahead of ensureFolders, where nothing has been disturbed yet.
+    if (qualification.layout && requiresFloatIntermediate(qualification.layout, qualification.transfer)) {
+      const masterConfig = getEditedMasterFfmpegConfig(config, videoStream);
+      selectEncoderPixelFormat({
+        codec: masterConfig.targetVideoCodec,
+        accel: masterConfig.accel,
+        layout: qualification.layout,
+        policy: colorDecision.policy,
+        colorMatrix: videoStream.colorMatrix,
+      });
+    }
+    return colorDecision;
+  }
+
+  /** Renders an edited master, falling back to software once when a hardware plan fails. */
+  private async transcodeEditedMaster({
+    assetId,
+    input,
+    output,
+    config,
+    edits,
+    videoStream,
+    audioStream,
+    format,
+    colorDecision,
+  }: {
+    assetId: string;
+    input: string;
+    output: string;
+    config: ConfigFFmpegDto;
+    edits: AssetEditActionItem[];
+    videoStream: VideoStreamInfo;
+    audioStream: AudioStreamInfo | undefined;
+    format: VideoFormat;
+    colorDecision: EditedMasterColorDecision;
+  }): Promise<boolean> {
+    const plan = this.getVideoEditCommandPlan(config, edits, videoStream, audioStream, format, colorDecision);
+    this.logVideoEditCommandPlan(assetId, plan);
+
+    try {
+      await this.mediaRepository.transcode(input, output, plan.command);
+      return true;
+    } catch (error: any) {
+      const message = error?.message ?? error;
+      this.logger.error(`Error occurred during video edit generation: ${message}`);
+
+      if (plan.config.accel === TranscodeHardwareAcceleration.Disabled) {
+        return false;
+      }
+
+      const fallbackPlan = this.getVideoEditSoftwareFallbackCommandPlan(
+        config,
+        edits,
+        videoStream,
+        audioStream,
+        format,
+        String(message),
+        colorDecision,
+      );
+      this.logVideoEditCommandPlan(assetId, fallbackPlan);
+
+      try {
+        await this.mediaRepository.transcode(input, output, fallbackPlan.command);
+        return true;
+      } catch (error: any) {
+        this.logger.error(`Error occurred during software video edit generation fallback: ${error?.message ?? error}`);
+        return false;
+      }
+    }
+  }
+
+  /**
+   * FL-39: renders one retained video version. The master is rendered from the version's own
+   * original with the current media policy, validated by probing it, and a separate playback
+   * proxy is transcoded from it — so master and proxy have independent paths and qualities.
+   * Nothing is referenced until {@link AssetEditRepository.publishVideoVersion} accepts the result;
+   * every file this render created is removed when it does not.
+   */
+  private async renderVideoVersion(
+    version: VideoEditVersion,
+    asset: VideoThumbnailAsset & { files: Array<{ path: string; type: AssetFileType; isEdited: boolean }> },
+    config: SystemConfig,
+  ): Promise<JobStatus> {
+    const suffix = `${version.id}_${randomUUID()}`;
+    const { dir, name } = path.parse(this.getEditedEncodedVideoPath(asset));
+    const master = path.join(dir, `${name}.${suffix}.master.mp4`);
+    const proxy = path.join(dir, `${name}.${suffix}.proxy.mp4`);
+    const candidates: string[] = [];
+    let published = false;
+    try {
+      // Bounds, orientation and audio come from the original this version was saved against,
+      // never from the current (possibly edited) asset metadata.
+      const original = await this.mediaRepository.probe(version.sourcePath);
+      const videoStream = original.videoStreams[0];
+      if (!videoStream) {
+        throw new Error('Original video metadata is unavailable');
+      }
+      const audioStream = original.audioStreams[0];
+      const source = { ...asset, videoStream, format: original.format };
+      const edits = version.recipe;
+
+      if (edits.length === 0 && version.purpose !== 'export') {
+        const originalPreview = asset.files.find((file) => file.type === AssetFileType.Preview && !file.isEdited);
+        published = await this.assetEditRepository.publishVideoVersion(version, {
+          files: [],
+          masterPath: null,
+          thumbhash: originalPreview
+            ? await this.mediaRepository.generateThumbhash(originalPreview.path, {
+                colorspace: config.image.colorspace,
+                processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+              })
+            : null,
+          ...this.getVideoEditDimensions([], videoStream),
+          duration: Math.round(original.format.duration * 1000),
+        });
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+
+      // FL-39: a master maps one audio track. Silently dropping the others is not an edit.
+      if (original.audioStreams.length > 1) {
+        throw new MediaPolicyError(
+          MediaPolicyViolation.UnsupportedPreservation,
+          'Edited masters with multiple audio tracks are not qualified; the original is preserved unchanged.',
+        );
+      }
+
+      const colorDecision = this.qualifyEditedMasterRender({
+        videoStream,
+        config: config.ffmpeg,
+        originalPath: version.sourcePath,
+        sourcePath: version.sourcePath,
+        outputPaths: [master, proxy],
+        derivedPaths: asset.files.map((file) => file.path),
+      });
+
+      candidates.push(master, getEditedMasterLineagePath(master), proxy);
+      this.storageCore.ensureFolders(master);
+      const rendered = await this.transcodeEditedMaster({
+        assetId: asset.id,
+        input: version.sourcePath,
+        output: master,
+        config: config.ffmpeg,
+        edits,
+        videoStream,
+        audioStream,
+        format: original.format,
+        colorDecision,
+      });
+      if (!rendered) {
+        throw new Error('Edited master render failed');
+      }
+
+      // FL-39: probe the master before anything can reference it.
+      const masterInfo = await this.mediaRepository.probe(master);
+      const masterVideo = masterInfo.videoStreams[0];
+      const dimensions = this.getVideoEditDimensions(edits, videoStream);
+      const metadataRotation = qualifyMetadataOnlyRotation({
+        edits,
+        videoStream,
+        audioStream,
+        format: original.format,
+      });
+      validateVideoMaster({
+        source: videoStream,
+        output: masterVideo,
+        dimensions,
+        expectedRotation: metadataRotation?.displayRotation ?? 0,
+        colorDecision,
+        packetCopy: !!metadataRotation,
+      });
+
+      await this.writeEditedMasterLineage({
+        masterPath: master,
+        assetId: asset.id,
+        originalPath: version.sourcePath,
+        checksum: version.sourceChecksum,
+        edits,
+        colorDecision,
+      });
+
+      // The playback proxy follows the playback policy. A packet-preserving master keeps its
+      // rotation in the display matrix, which hardware decoders do not apply, so it is decoded in
+      // software and auto-rotated into the proxy.
+      await this.transcodePlaybackProxy(master, proxy, masterInfo, config.ffmpeg);
+      const proxyInfo = await this.mediaRepository.probe(proxy);
+      if (!proxyInfo.videoStreams[0]?.width || !proxyInfo.videoStreams[0]?.height) {
+        throw new Error('Video version playback proxy is invalid');
+      }
+
+      const proxyFile = {
+        assetId: version.assetId,
+        type: AssetFileType.EncodedVideo,
+        path: proxy,
+        isEdited: true,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const duration = this.getVideoEditDurationMs(edits, original.format);
+
+      if (version.purpose === 'export') {
+        published = await this.assetEditRepository.publishVideoVersion(version, {
+          masterPath: master,
+          files: [proxyFile],
+          ...dimensions,
+          duration,
+        });
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+
+      const generated = await this.generateVideoThumbnails(
+        { ...source, videoStream: masterVideo, format: masterInfo.format },
+        config,
+        { sourcePath: master, isEdited: true, fullsizeDimensions: dimensions, pathSuffix: suffix, candidates },
+      );
+      published = await this.assetEditRepository.publishVideoVersion(version, {
+        masterPath: master,
+        files: [proxyFile, ...generated.files],
+        ...dimensions,
+        duration,
+        thumbhash: generated.thumbhash,
+      });
+      return published ? JobStatus.Success : JobStatus.Skipped;
+    } catch (error: any) {
+      this.logger.error(`Video version ${version.id} render failed for asset ${asset.id}: ${error?.message ?? error}`);
+      await this.assetEditRepository.failVideoVersion(version.assetId, version.id);
+      return JobStatus.Failed;
+    } finally {
+      if (!published) {
+        await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
+      }
+    }
+  }
+
+  private async transcodePlaybackProxy(input: string, output: string, master: VideoInfo, config: ConfigFFmpegDto) {
+    const video = master.videoStreams[0];
+    const proxyConfig = video.rotation === 0 ? config : { ...config, accelDecode: false };
+    const command = BaseConfig.create(proxyConfig, this.videoInterfaces).getCommand(
+      TranscodeTarget.All,
+      video,
+      master.audioStreams[0],
+      master.format,
+    );
+    try {
+      await this.mediaRepository.transcode(input, output, command);
+    } catch (error: any) {
+      if (proxyConfig.accel === TranscodeHardwareAcceleration.Disabled) {
+        throw error;
+      }
+      this.logger.error(
+        `Error occurred during playback proxy transcode, retrying in software: ${error?.message ?? error}`,
+      );
+      const software = BaseConfig.create(
+        { ...proxyConfig, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
+        this.videoInterfaces,
+      ).getCommand(TranscodeTarget.All, video, master.audioStreams[0], master.format);
+      await this.mediaRepository.transcode(input, output, software);
+    }
   }
 
   private isVideoThumbnailFile(type: AssetFileType) {
