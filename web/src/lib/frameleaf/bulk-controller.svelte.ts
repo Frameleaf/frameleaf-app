@@ -2,6 +2,15 @@ import type { MediaOperationDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+import {
+  ARCHIVE_OPERATION_MAX_ITEMS,
+  ARCHIVE_UNDO_RESTORE_MS,
+  archiveGateway,
+  ArchiveOperationError,
+  ArchiveOperationScope,
+  type ArchiveGateway,
+  type ArchiveOperationResponseDto,
+} from '$lib/frameleaf/archive-operations';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import {
   bulkResultSummary,
@@ -39,6 +48,11 @@ import { getFormatter } from '$lib/utils/i18n';
  * resolved here once and handed to the server as a durable job over that frozen id list: it keeps
  * going when this tab closes, and Activity is where it is followed, cancelled and retried. A filter
  * edit afterwards cannot change what it touches, because nothing is ever resolved again.
+ *
+ * An archive that runs in the background is a transactional archive operation (FL-32): the frozen
+ * ids — or, for the unfiltered library, every matching Timeline item counted by the server and
+ * confirmed at that exact count — become one operation whose durable job Activity follows, and its
+ * Undo is kept by the server, so it survives a reload and never overwrites a newer change.
  */
 export type BulkUndoEntry = {
   /** The past-tense summary of what will be reversed. */
@@ -46,7 +60,7 @@ export type BulkUndoEntry = {
   run: () => Promise<void>;
 };
 
-const requestKey = () =>
+const requestKey = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `fl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 export class BulkController {
@@ -57,9 +71,10 @@ export class BulkController {
   #queued: () => void;
   #tracker: Pick<DurableBulkTracker, 'track'>;
   #applied: (action: BulkActionId, ids: string[], payload?: BulkPayload) => void;
+  #archive: ArchiveGateway;
 
   /** The undo offered after the last reversible action, or null. */
-  undo = $state<BulkUndoEntry | null>(null);
+  undo = $state.raw<BulkUndoEntry | null>(null);
   /** True while a selected-id action is in flight, for disabling repeat clicks. */
   busy = $state(false);
 
@@ -70,6 +85,7 @@ export class BulkController {
     queued = () => void activitySession.refresh(),
     tracker = durableBulkTracker,
     applied = () => {},
+    archive = archiveGateway,
   }: {
     dispatch: (action: LibrarySessionAction) => void;
     gateway?: BulkGateway;
@@ -83,6 +99,8 @@ export class BulkController {
      * (a favorite's badge, an archived item leaving the library) without waiting for a reload.
      */
     applied?: (action: BulkActionId, ids: string[], payload?: BulkPayload) => void;
+    /** The transactional archive endpoints (FL-32). */
+    archive?: ArchiveGateway;
   }) {
     this.#dispatch = dispatch;
     this.#gateway = gateway;
@@ -90,6 +108,7 @@ export class BulkController {
     this.#queued = queued;
     this.#tracker = tracker;
     this.#applied = applied;
+    this.#archive = archive;
   }
 
   /**
@@ -195,10 +214,17 @@ export class BulkController {
     }
   }
 
-  /** Hand a large explicit selection to the server. There is no undo; Activity reports the outcome. */
+  /**
+   * Hand a large explicit selection to the server; Activity reports the outcome. Only an archive
+   * keeps an undo, because its operation records what it changed (FL-32).
+   */
   async #queue(action: BulkActionId, ids: string[], payload?: BulkPayload) {
     this.busy = true;
     try {
+      if (this.#archivesAsOperation(action, ids)) {
+        await this.#archiveIds(ids);
+        return;
+      }
       const created = await submitDurableBulk(action, ids, { payload, submittedTotal: ids.length }, this.#gateway);
       this.#follow(action, ids, created);
       await this.#announceQueued(action, ids.length);
@@ -336,6 +362,11 @@ export class BulkController {
         return;
       }
 
+      if (this.#archivesAsOperation(action, resolved.ids)) {
+        await this.#archiveIds(resolved.ids, requestId, () => this.#dispatch({ type: 'operation-dismiss', requestId }));
+        return;
+      }
+
       const created = await submitDurableBulk(
         action,
         resolved.ids,
@@ -358,6 +389,143 @@ export class BulkController {
           ? (reasonKey as Translations)
           : 'frameleaf_bulk_reason_failed',
       });
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Transactional archive (FL-32)                                             */
+  /* ------------------------------------------------------------------------ */
+
+  #archivesAsOperation(action: BulkActionId, ids: readonly string[]) {
+    return action === 'archive' && new Set(ids).size <= ARCHIVE_OPERATION_MAX_ITEMS;
+  }
+
+  /**
+   * Archive a frozen id list as one operation. The request key is the idempotency key: a retried
+   * hand-off finds the same operation and job instead of starting another.
+   */
+  async #archiveIds(ids: readonly string[], requestId = requestKey(), accepted?: () => void) {
+    const selection = [...new Set(ids)];
+    const operation = await this.#archive.createArchiveOperation({
+      archiveOperationCreateDto: { requestKey: requestId, assetIds: selection },
+    });
+    if (operation.archiveJobId) {
+      const view = this.#context().view;
+      if (view) {
+        this.#tracker.track('archive', operation.archiveJobId, selection, view);
+      } else {
+        this.#tracker.track('archive', operation.archiveJobId, selection);
+      }
+    }
+    accepted?.();
+    await this.#announceArchive(operation);
+  }
+
+  /**
+   * Count and freeze every matching item of the owner's Timeline on the server, without changing
+   * anything. The answer is the exact count the person confirms (`confirmArchive`).
+   */
+  async prepareArchive(): Promise<ArchiveOperationResponseDto | null> {
+    this.busy = true;
+    try {
+      return await this.#archive.prepareArchiveOperation({
+        archiveOperationPrepareDto: { requestKey: requestKey(), scope: ArchiveOperationScope.MatchingOwnedTimeline },
+      });
+    } catch (error) {
+      const translate = await getFormatter();
+      handleError(error, translate('frameleaf_bulk_reason_failed'));
+      return null;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Archive exactly the prepared selection. Returns false when nothing was started. */
+  async confirmArchive(prepared: ArchiveOperationResponseDto): Promise<boolean> {
+    this.busy = true;
+    try {
+      const operation = await this.#archive.confirmArchiveOperation({
+        id: prepared.id,
+        archiveOperationConfirmDto: { requestKey: prepared.requestKey },
+      });
+      await this.#announceArchive(operation);
+      return true;
+    } catch (error) {
+      const translate = await getFormatter();
+      if (error instanceof ArchiveOperationError && error.status === 410) {
+        toastManager.warning(translate('frameleaf_bulk_archive_expired'));
+      } else {
+        handleError(error, translate('frameleaf_bulk_reason_failed'));
+      }
+      return false;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** The prototype's toast: what was queued, with Undo on it. */
+  async #announceArchive(operation: ArchiveOperationResponseDto) {
+    const translate = await getFormatter();
+    this.undo = operation.undoable ? await this.#archiveUndo(operation) : null;
+    const undo = this.undo;
+    toastManager.primary({
+      description: translate('frameleaf_bulk_queued', {
+        values: { action: translate('frameleaf_bulk_archive'), count: operation.count },
+      }),
+      ...(undo && {
+        button: (close: () => void) => ({
+          label: translate('undo'),
+          onclick: () => {
+            close();
+            void undo.run();
+          },
+        }),
+      }),
+    });
+    this.#queued();
+  }
+
+  async #archiveUndo(operation: ArchiveOperationResponseDto): Promise<BulkUndoEntry> {
+    const translate = await getFormatter();
+    const entry: BulkUndoEntry = {
+      label: translate('frameleaf_bulk_archive'),
+      run: async () => {
+        if (this.undo === entry) {
+          this.undo = null;
+        }
+        try {
+          await this.#archive.undoArchiveOperation({
+            id: operation.id,
+            archiveOperationUndoDto: { requestKey: requestKey() },
+          });
+          toastManager.primary(translate('frameleaf_bulk_archive_undo_queued'));
+          this.#queued();
+        } catch (error) {
+          handleError(error, translate('frameleaf_bulk_archive_undo_failed'));
+        }
+      },
+    };
+    return entry;
+  }
+
+  /**
+   * Offer the Undo of the latest archive again after a reload. The server keeps what the archive
+   * changed, so the offer is only an entry point; the undo itself is still guarded item by item.
+   */
+  async restoreArchiveUndo(now = Date.now()) {
+    if (this.undo) {
+      return;
+    }
+    try {
+      const operations = await this.#archive.getArchiveOperations();
+      const latest = operations.find(
+        (operation) => operation.undoable && now - Date.parse(operation.createdAt) <= ARCHIVE_UNDO_RESTORE_MS,
+      );
+      if (latest && !this.undo) {
+        this.undo = await this.#archiveUndo(latest);
+      }
+    } catch {
+      // nothing to offer: the archive and its record are unaffected
     }
   }
 
