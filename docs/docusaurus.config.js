@@ -5,7 +5,7 @@ const prism = require('prism-react-renderer');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Immich',
+  title: 'Frameleaf',
   tagline: 'Self-hosted photo and video management solution',
   url: 'https://docs.immich.app',
   baseUrl: '/',
@@ -84,9 +84,9 @@ const config = {
       },
       navbar: {
         logo: {
-          alt: 'Immich Logo',
-          src: 'img/immich-logo-inline-light.png',
-          srcDark: 'img/immich-logo-inline-dark.png',
+          alt: 'Frameleaf Logo',
+          src: 'img/frameleaf-logo-inline-light.svg',
+          srcDark: 'img/frameleaf-logo-inline-dark.svg',
           className: 'rounded-none',
         },
         items: [

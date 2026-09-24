@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Đăng nhập bằng URL Tuỳ chỉnh">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../design/frameleaf/brand-kit/frameleaf-logo-dark.svg"><img src="../design/frameleaf/derivatives/frameleaf-logo-light.svg" width="300" title="Đăng nhập bằng URL Tuỳ chỉnh" alt="Frameleaf"></picture>
 </p>
 <h3 align="center">Giải pháp quản lý ảnh và video tự lưu trữ hiệu suất cao</h3>
 <br/>
