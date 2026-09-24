@@ -72,6 +72,21 @@ const withAlbumOwner = (eb: ExpressionBuilder<DB, 'album'>) => {
     .as('owner');
 };
 
+/**
+ * The link owner's display name, the only detail of the owner a link's viewers are told (FL-83,
+ * prototype "Shared by …"). Selecting the name alone keeps the owner's email, id lookups and profile
+ * image path out of what an anonymous visitor receives.
+ */
+const withSharedLinkOwner = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
+  return jsonObjectFrom(
+    eb
+      .selectFrom('user')
+      .select('user.name')
+      .whereRef('user.id', '=', 'shared_link.userId')
+      .where('user.deletedAt', 'is', null),
+  ).as('owner');
+};
+
 const withSharedLinkAlbum = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
   return eb
     .selectFrom('album')
@@ -96,6 +111,7 @@ export class SharedLinkRepository {
             .select((eb) => eb.fn.toJson('exifInfo').as('exifInfo')),
         ).as('assets'),
       )
+      .select(withSharedLinkOwner)
       .leftJoinLateral(
         (eb) =>
           withSharedLinkAlbum(eb)

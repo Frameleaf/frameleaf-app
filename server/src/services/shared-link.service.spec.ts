@@ -93,6 +93,50 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('public owner (FL-83)', () => {
+    it('tells a public viewer the link owner display name', async () => {
+      const sharedLink = SharedLinkFactory.from().owner({ name: 'Riley Owner' }).album().build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+
+      const response = await sut.getMine(authStub.adminSharedLink, []);
+
+      expect(response.owner).toEqual({ name: 'Riley Owner' });
+    });
+
+    it('exposes nothing about the owner beyond the display name', async () => {
+      const sharedLink = SharedLinkFactory.from()
+        .owner({
+          name: 'Riley Owner',
+          email: 'riley.private@example.com',
+          profileImagePath: '/data/profile/riley.jpg',
+          avatarColor: null,
+          isAdmin: true,
+          storageLabel: 'riley-label',
+          oauthId: 'oauth-riley',
+        })
+        .asset({}, (builder) => builder.exif())
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+
+      const response = await sut.getMine(authStub.adminSharedLink, []);
+
+      expect(Object.keys(response.owner ?? {})).toEqual(['name']);
+      const serialized = JSON.stringify(response);
+      for (const secret of ['riley.private@example.com', '/data/profile/riley.jpg', 'riley-label', 'oauth-riley']) {
+        expect(serialized).not.toContain(secret);
+      }
+    });
+
+    it('leaves the owner out when the repository found none', async () => {
+      const sharedLink = SharedLinkFactory.create();
+      mocks.sharedLink.get.mockResolvedValue({ ...getForSharedLink(sharedLink), owner: null });
+
+      const response = await sut.getMine(authStub.adminSharedLink, []);
+
+      expect(response.owner).toBeUndefined();
+    });
+  });
+
   describe('get', () => {
     it('should throw an error for an invalid shared link', async () => {
       mocks.sharedLink.get.mockResolvedValue(void 0);

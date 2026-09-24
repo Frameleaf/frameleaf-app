@@ -6712,6 +6712,10 @@ export type SessionUpdateDto = {
     /** Reset pending sync state */
     isPendingSyncReset?: boolean;
 };
+export type SharedLinkOwnerResponseDto = {
+    /** Display name of the user who created the link */
+    name: string;
+};
 export type SharedLinkResponseDto = {
     album?: AlbumResponseDto;
     /** Allow downloads */
@@ -6729,6 +6733,8 @@ export type SharedLinkResponseDto = {
     id: string;
     /** Encryption key (base64url) */
     key: string;
+    /** Display name of the user who created the link, for "Shared by" on the public page */
+    owner?: SharedLinkOwnerResponseDto;
     /** Has password */
     password: string | null;
     /** Show metadata */

@@ -93,7 +93,6 @@
 <PublicViewerShell
   {sharedLink}
   title={album.albumName}
-  ownerName={album.albumUsers[0]?.user.name}
   count={album.assetCount}
   {selecting}
   {selectedCount}

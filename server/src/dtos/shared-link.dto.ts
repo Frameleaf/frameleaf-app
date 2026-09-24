@@ -74,6 +74,18 @@ const SharedLinkLoginSchema = z
   })
   .meta({ id: 'SharedLinkLoginDto' });
 
+/**
+ * What a shared link's viewers learn about the person who shared it: the display name and nothing
+ * else (FL-83, prototype "Shared by …"). No email, no user id beyond the link's existing `userId`, and
+ * no profile image, which an anonymous viewer could not fetch anyway.
+ */
+const SharedLinkOwnerResponseSchema = z
+  .object({
+    name: z.string().describe('Display name of the user who created the link'),
+  })
+  .describe('Public details of the shared link owner')
+  .meta({ id: 'SharedLinkOwnerResponseDto' });
+
 const SharedLinkResponseSchema = z
   .object({
     id: z.uuidv4().describe('Shared link ID'),
@@ -90,6 +102,9 @@ const SharedLinkResponseSchema = z
     allowDownload: z.boolean().describe('Allow downloads'),
     showMetadata: z.boolean().describe('Show metadata'),
     slug: z.string().nullable().describe('Custom URL slug'),
+    owner: SharedLinkOwnerResponseSchema.optional().describe(
+      'Display name of the user who created the link, for "Shared by" on the public page',
+    ),
   })
   .describe('Shared link response')
   .meta({ id: 'SharedLinkResponseDto' });
@@ -118,6 +133,8 @@ export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetad
     allowDownload: sharedLink.allowDownload,
     showMetadata: sharedLink.showExif,
     slug: sharedLink.slug,
+    // pick the name explicitly so nothing else about the owner can ride along
+    owner: sharedLink.owner ? { name: sharedLink.owner.name } : undefined,
   };
 
   // unless we select sharedLink.album.sharedLinks this will be wrong
