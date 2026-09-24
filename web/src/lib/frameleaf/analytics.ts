@@ -12,11 +12,15 @@
  */
 import {
   AnalyticsCameraKind,
+  AnalyticsFocalLengthDtoKey,
   AnalyticsMeasurementScope,
+  AnalyticsNamedCountKind,
   AnalyticsScopeKind,
   AnalyticsState,
   type AnalyticsBucketDto,
   type AnalyticsDayDto,
+  type AnalyticsInsightsDto,
+  type AnalyticsNamedCountDto,
   type AnalyticsReportResponseDto,
   type AnalyticsScopeOptionDto,
 } from '@immich/sdk';
@@ -240,6 +244,8 @@ export const analyticsTables = (
     rows: report.days.map((day) => [day.date, day[kind]]),
   }));
 
+  const insights = report.insights ? insightTables(report.insights, t) : [];
+
   const inventory = inventoryRows(report);
   const inventoryTable: AnalyticsTable = {
     id: 'inventory',
@@ -281,8 +287,307 @@ export const analyticsTables = (
     views,
     albums,
     ...calendars,
+    ...insights,
     inventoryTable,
     ...estimate,
+  ];
+};
+
+// ── Formatting ────────────────────────────────────────────────────────────
+
+const TiB = 1024 ** 4;
+
+/** The dashboard's number, size, date and duration formats for one locale (AnalyticsDashboard.jsx:7-28). */
+export const analyticsFormats = (locale: string | undefined, t: Translate) => {
+  const number = (value: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
+  const compact = (value: number) =>
+    new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  const longDate = (value: string) =>
+    new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
+      new Date(`${value.slice(0, 10)}T00:00:00Z`),
+    );
+  /** Bytes in GiB, or TiB from one tebibyte up, as the prototype writes volume sizes. */
+  const size = (bytes: number) =>
+    bytes >= TiB
+      ? t('frameleaf_analytics_tib', {
+          value: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(bytes / TiB),
+        })
+      : t('frameleaf_analytics_gib', {
+          value: new Intl.NumberFormat(locale, { maximumFractionDigits: bytes >= 10 * GiB ? 0 : 1 }).format(
+            bytes / GiB,
+          ),
+        });
+  const percent = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : 0);
+  const duration = (milliseconds: number) => {
+    const seconds = Math.round(milliseconds / 1000);
+    return [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+      .map((part, index) => (index ? String(part).padStart(2, '0') : String(part)))
+      .join(':');
+  };
+  const hour = (value: number) =>
+    new Intl.DateTimeFormat(locale, { hour: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 5, value)));
+  return { number, compact, longDate, size, percent, duration, hour };
+};
+
+// ── Dashboard insights (FL-79, AnalyticsDashboard.jsx) ────────────────────
+
+/** The ISO weekdays in punchcard order, Monday first, as the server numbers them. */
+export const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
+
+/** A bucket row with an optional catch-all flag: the "other" and "not recorded" rows. */
+export type BreakdownRow = { id: string; label: string; count: number; catchAll: boolean };
+
+/**
+ * Leaderboard order (AnalyticsDashboard.jsx:143-173): real rows ranked by count, catch-all rows
+ * ("Everywhere else", "Not recorded") after them in their own order. The bar scale is the largest
+ * ranked row, so a catch-all never outshines the leaders.
+ */
+export const rankRows = (rows: BreakdownRow[]) => {
+  const ranked = rows.filter((row) => !row.catchAll).sort((a, b) => b.count - a.count);
+  const rest = rows.filter((row) => row.catchAll);
+  return { rows: [...ranked, ...rest], scale: Math.max(1, ...ranked.map((row) => row.count)) };
+};
+
+const namedRows = (
+  rows: AnalyticsNamedCountDto[],
+  labels: { other: string; unknown: string },
+  prefix: string,
+): BreakdownRow[] =>
+  rows.map((row, index) =>
+    row.kind === AnalyticsNamedCountKind.Named && row.name
+      ? { id: `${prefix}:${index}`, label: row.name, count: row.count, catchAll: false }
+      : {
+          id: `${prefix}:${row.kind}`,
+          label: row.kind === AnalyticsNamedCountKind.Other ? labels.other : labels.unknown,
+          count: row.count,
+          catchAll: true,
+        },
+  );
+
+export const lensRows = (insights: AnalyticsInsightsDto, t: Translate) =>
+  namedRows(
+    insights.lenses,
+    { other: t('frameleaf_analytics_lens_other'), unknown: t('frameleaf_analytics_not_recorded') },
+    'lens',
+  );
+
+export const placeRows = (insights: AnalyticsInsightsDto, t: Translate) =>
+  namedRows(
+    insights.peopleAndPlaces?.places ?? [],
+    { other: t('frameleaf_analytics_place_other'), unknown: t('frameleaf_analytics_place_unknown') },
+    'place',
+  );
+
+export const cameraRows = (report: AnalyticsReportResponseDto, t: Translate): BreakdownRow[] =>
+  report.cameras.map((row, index) => ({
+    id: `camera:${row.kind}:${index}`,
+    label: cameraLabel(row, t),
+    count: row.count,
+    catchAll: row.kind !== AnalyticsCameraKind.Model,
+  }));
+
+const FOCAL_LABELS: Record<AnalyticsFocalLengthDtoKey, string> = {
+  [AnalyticsFocalLengthDtoKey.$016]: '≤16',
+  [AnalyticsFocalLengthDtoKey.$1728]: '17–28',
+  [AnalyticsFocalLengthDtoKey.$2940]: '29–40',
+  [AnalyticsFocalLengthDtoKey.$4170]: '41–70',
+  [AnalyticsFocalLengthDtoKey.$71135]: '71–135',
+  [AnalyticsFocalLengthDtoKey.$136300]: '136–300',
+  [AnalyticsFocalLengthDtoKey.$301]: '300+',
+  [AnalyticsFocalLengthDtoKey.Unknown]: '',
+};
+
+/** Focal lengths in bucket order; the unrecorded bucket is the catch-all, last. */
+export const focalRows = (insights: AnalyticsInsightsDto, t: Translate): BreakdownRow[] =>
+  insights.focalLengths.map((row) => ({
+    id: `focal:${row.key}`,
+    label:
+      row.key === AnalyticsFocalLengthDtoKey.Unknown
+        ? t('frameleaf_analytics_not_recorded')
+        : t('frameleaf_analytics_focal_mm', { range: FOCAL_LABELS[row.key] }),
+    count: row.count,
+    catchAll: row.key === AnalyticsFocalLengthDtoKey.Unknown,
+  }));
+
+const keyedRows = (
+  rows: Array<{ key: string; count: number }>,
+  catchAll: readonly string[],
+  label: (key: string) => string,
+  prefix: string,
+): BreakdownRow[] => {
+  const mapped = rows.map((row) => ({
+    id: `${prefix}:${row.key}`,
+    label: label(row.key),
+    count: row.count,
+    catchAll: catchAll.includes(row.key),
+  }));
+  return [...mapped.filter((row) => !row.catchAll), ...mapped.filter((row) => row.catchAll)];
+};
+
+export const photoFormatRows = (insights: AnalyticsInsightsDto, t: Translate) =>
+  keyedRows(
+    insights.photoFormats,
+    ['OTHER'],
+    (key) => (key === 'OTHER' ? t('frameleaf_analytics_format_other') : key),
+    'format',
+  );
+
+export const videoResolutionRows = (insights: AnalyticsInsightsDto, t: Translate) =>
+  keyedRows(
+    insights.videoResolutions,
+    ['unknown'],
+    (key) => (key === 'unknown' ? t('frameleaf_analytics_not_recorded') : key),
+    'resolution',
+  );
+
+export const orientationRows = (insights: AnalyticsInsightsDto, t: Translate) =>
+  keyedRows(insights.orientation, ['unknown'], (key) => t(`frameleaf_analytics_orientation_${key}`), 'orientation');
+
+/**
+ * What every insight breakdown adds up to: the report's items less the ones this session keeps
+ * hidden (Locked people and tags, sensitive content), which the server leaves out of them.
+ */
+export const breakdownTotal = (report: AnalyticsReportResponseDto) =>
+  report.summary.items - (report.insights?.hiddenItems ?? 0);
+
+/** The capture years the library spans, first to last, or null with none recorded. */
+export const captureSpan = (insights: AnalyticsInsightsDto) => {
+  const years = insights.capturesByYear.filter((row) => row.count > 0).map((row) => row.year);
+  if (years.length === 0) {
+    return null;
+  }
+  const from = Math.min(...years);
+  const through = Math.max(...years);
+  return { from, through, years: through - from + 1 };
+};
+
+/** Every year from the first capture to the last, with the years in between as zero. */
+export const yearRows = (insights: AnalyticsInsightsDto) => {
+  const span = captureSpan(insights);
+  if (!span) {
+    return [];
+  }
+  const counts = new Map(insights.capturesByYear.map((row) => [row.year, row.count]));
+  return Array.from({ length: span.years }, (_, index) => ({
+    year: span.from + index,
+    count: counts.get(span.from + index) ?? 0,
+  }));
+};
+
+/** The busiest weekday and hour of the punchcard, or null for an empty one. */
+export const punchcardPeak = (insights: AnalyticsInsightsDto) => {
+  let peak: AnalyticsInsightsDto['punchcard'][number] | null = null;
+  for (const cell of insights.punchcard) {
+    if (cell.count > 0 && (!peak || cell.count > peak.count)) {
+      peak = cell;
+    }
+  }
+  return peak;
+};
+
+/** The busiest capture day and the longest run of days with captures, from the report's days. */
+export const dayRecords = (days: AnalyticsDayDto[]) => {
+  let busiest: AnalyticsDayDto | null = null;
+  let best = { length: 0, from: '', through: '' };
+  let run = { length: 0, from: '' };
+  let total = 0;
+  for (const day of days) {
+    total += day.captured;
+    if (day.captured > (busiest?.captured ?? 0)) {
+      busiest = day;
+    }
+    if (day.captured > 0) {
+      run = { length: run.length + 1, from: run.from || day.date };
+      if (run.length > best.length) {
+        best = { length: run.length, from: run.from, through: day.date };
+      }
+    } else {
+      run = { length: 0, from: '' };
+    }
+  }
+  return {
+    busiest: busiest ? { date: busiest.date, count: busiest.captured } : null,
+    streak: best.length > 0 ? best : null,
+    perDay: days.length > 0 ? Math.round(total / days.length) : 0,
+  };
+};
+
+/** The dashboard's breakdown tables, each adding up to `breakdownTotal` (or its photos/videos share). */
+const insightTables = (insights: AnalyticsInsightsDto, t: Translate): AnalyticsTable[] => {
+  const itemsColumn: AnalyticsColumn = { label: t('frameleaf_analytics_col_items'), unit: 'items' };
+  const breakdown = (id: string, title: string, label: string, rows: BreakdownRow[]): AnalyticsTable => ({
+    id,
+    title,
+    measurementScope: selection,
+    columns: [{ label, unit: 'text' }, itemsColumn],
+    rows: rows.map((row) => [row.label, row.count]),
+  });
+  const people = insights.peopleAndPlaces;
+  return [
+    {
+      id: 'years',
+      title: t('frameleaf_analytics_years_table'),
+      measurementScope: selection,
+      columns: [{ label: t('frameleaf_analytics_col_year'), unit: 'text' }, itemsColumn],
+      rows: insights.capturesByYear.map((row) => [String(row.year), row.count]),
+    },
+    {
+      id: 'punchcard',
+      title: t('frameleaf_analytics_punchcard_table'),
+      measurementScope: selection,
+      columns: [
+        { label: t('frameleaf_analytics_col_weekday'), unit: 'text' },
+        { label: t('frameleaf_analytics_col_hour'), unit: 'text' },
+        itemsColumn,
+      ],
+      rows: insights.punchcard.map((cell) => [
+        t(`frameleaf_analytics_weekday_${cell.weekday}`),
+        `${String(cell.hour).padStart(2, '0')}:00`,
+        cell.count,
+      ]),
+    },
+    breakdown('lenses', t('frameleaf_analytics_lenses'), t('frameleaf_analytics_col_lens'), lensRows(insights, t)),
+    breakdown(
+      'focal-lengths',
+      t('frameleaf_analytics_focal_lengths'),
+      t('frameleaf_analytics_col_focal_length'),
+      focalRows(insights, t),
+    ),
+    breakdown(
+      'photo-formats',
+      t('frameleaf_analytics_photo_formats'),
+      t('frameleaf_analytics_col_format'),
+      photoFormatRows(insights, t),
+    ),
+    breakdown(
+      'video-resolutions',
+      t('frameleaf_analytics_video_resolution'),
+      t('frameleaf_analytics_col_resolution'),
+      videoResolutionRows(insights, t),
+    ),
+    breakdown(
+      'orientation',
+      t('frameleaf_analytics_orientation'),
+      t('frameleaf_analytics_col_orientation'),
+      orientationRows(insights, t),
+    ),
+    ...(people
+      ? [
+          breakdown(
+            'places',
+            t('frameleaf_analytics_places'),
+            t('frameleaf_analytics_col_place'),
+            placeRows(insights, t),
+          ),
+          {
+            id: 'people',
+            title: t('frameleaf_analytics_top_people'),
+            measurementScope: selection,
+            columns: [{ label: t('frameleaf_analytics_col_person'), unit: 'text' }, itemsColumn],
+            rows: people.topPeople.map((person) => [person.name, person.count]),
+          } satisfies AnalyticsTable,
+        ]
+      : []),
   ];
 };
 

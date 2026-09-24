@@ -2,7 +2,13 @@ import { AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
 import {
   analyticsCsv,
   analyticsTables,
+  breakdownTotal,
   calendarWeeks,
+  captureSpan,
+  dayRecords,
+  punchcardPeak,
+  rankRows,
+  yearRows,
   columnTotal,
   CSV_HEADER,
   historyNotice,
@@ -10,7 +16,7 @@ import {
   scopeLabel,
   type Translate,
 } from '$lib/frameleaf/analytics';
-import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { analyticsInsightsFixture, analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
 
 /** Keys stand in for copy, so the checks do not depend on wording. */
 const t: Translate = (key, values) => (values ? `${key}(${Object.values(values).join(',')})` : key);
@@ -218,5 +224,91 @@ describe('states', () => {
       'frameleaf_analytics_scope_deleted_account(Jamie)',
     );
     expect(scopeLabel({ kind: AnalyticsScopeKind.Library, label: 'Trail', removed: false }, t)).toBe('Trail');
+  });
+});
+
+describe('dashboard insights (FL-79)', () => {
+  const INSIGHT_TABLES = ['years', 'punchcard', 'lenses', 'focal-lengths', 'orientation', 'places'];
+
+  it('adds every breakdown up to the items less the hidden ones', () => {
+    for (const hiddenItems of [0, 4]) {
+      const base = analyticsInsightsFixture();
+      const insights = {
+        ...base,
+        hiddenItems,
+        // take the hidden items out of one bucket of each breakdown, as the server leaves them out
+        capturesByYear: base.capturesByYear.map((row, i) =>
+          i === 2 ? { ...row, count: row.count - hiddenItems } : row,
+        ),
+        punchcard: base.punchcard.map((cell) =>
+          cell.weekday === 1 && cell.hour === 9 ? { ...cell, count: cell.count - hiddenItems } : cell,
+        ),
+        lenses: base.lenses.map((row, i) => (i === 0 ? { ...row, count: row.count - hiddenItems } : row)),
+        focalLengths: base.focalLengths.map((row, i) => (i === 1 ? { ...row, count: row.count - hiddenItems } : row)),
+        orientation: base.orientation.map((row, i) => (i === 0 ? { ...row, count: row.count - hiddenItems } : row)),
+        photoFormats: base.photoFormats.map((row, i) => (i === 0 ? { ...row, count: row.count - hiddenItems } : row)),
+        peopleAndPlaces: {
+          ...base.peopleAndPlaces!,
+          places: base.peopleAndPlaces!.places.map((row, i) =>
+            i === 3 ? { ...row, count: row.count - hiddenItems } : row,
+          ),
+        },
+      };
+      const report = analyticsReportFixture({ insights });
+      const tables = analyticsTables(report, 'items', t);
+      const byId = (id: string) => tables.find((table) => table.id === id)!;
+      const total = breakdownTotal(report);
+      expect(total).toBe(report.summary.items - hiddenItems);
+      for (const id of INSIGHT_TABLES) {
+        const table = byId(id);
+        expect(columnTotal(table, table.columns.length - 1)).toBe(total);
+      }
+      expect(columnTotal(byId('photo-formats'), 1) + columnTotal(byId('video-resolutions'), 1)).toBe(total);
+    }
+  });
+
+  it('leaves people and places out of the tables and CSV when the server does', () => {
+    const report = analyticsReportFixture({ insights: analyticsInsightsFixture({ peopleAndPlaces: null }) });
+    const ids = analyticsTables(report, 'items', t).map((table) => table.id);
+    expect(ids).not.toContain('places');
+    expect(ids).not.toContain('people');
+    expect(analyticsCsv(report, 'items', t)).not.toContain('Emma');
+  });
+
+  it('ranks real rows by count and keeps catch-alls last, out of the bar scale', () => {
+    const { rows, scale } = rankRows([
+      { id: 'a', label: 'A', count: 20, catchAll: false },
+      { id: 'rest', label: 'Everywhere else', count: 90, catchAll: true },
+      { id: 'b', label: 'B', count: 30, catchAll: false },
+    ]);
+    expect(rows.map((row) => row.id)).toEqual(['b', 'a', 'rest']);
+    expect(scale).toBe(30);
+  });
+
+  it('reads the span, the empty years between, and the punchcard peak', () => {
+    const insights = analyticsInsightsFixture();
+    expect(captureSpan(insights)).toEqual({ from: 2019, through: 2026, years: 8 });
+    const years = yearRows(insights);
+    expect(years).toHaveLength(8);
+    expect(years.find((row) => row.year === 2020)!.count).toBe(0);
+    expect(years.reduce((sum, row) => sum + row.count, 0)).toBe(100);
+    expect(punchcardPeak(insights)).toEqual({ weekday: 1, hour: 9, count: 50 });
+    expect(captureSpan(analyticsInsightsFixture({ capturesByYear: [] }))).toBeNull();
+  });
+
+  it('finds the busiest day, the longest streak and the daily average from the days', () => {
+    expect(
+      dayRecords([
+        { date: '2026-09-01', captured: 2, uploaded: 0 },
+        { date: '2026-09-02', captured: 5, uploaded: 0 },
+        { date: '2026-09-03', captured: 0, uploaded: 0 },
+        { date: '2026-09-04', captured: 1, uploaded: 0 },
+      ]),
+    ).toEqual({
+      busiest: { date: '2026-09-02', count: 5 },
+      streak: { length: 2, from: '2026-09-01', through: '2026-09-02' },
+      perDay: 2,
+    });
+    expect(dayRecords([])).toEqual({ busiest: null, streak: null, perDay: 0 });
   });
 });
