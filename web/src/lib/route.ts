@@ -251,7 +251,9 @@ export const Route = {
 
   // queues
   queues: () => commandCenterUrl('processing', 'queues'),
-  viewQueue: ({ name }: { name: QueueName }) => commandCenterUrl('processing', 'queues', { queue: asQueueSlug(name) }),
+  /** One queue in the Job manager, optionally on one of its job-state tabs (active, waiting, failed, history). */
+  viewQueue: ({ name, tab }: { name: QueueName; tab?: string }) =>
+    commandCenterUrl('processing', 'queues', { queue: asQueueSlug(name), tab }),
 
   // integrity checks
   integrityReportFile: (reportId: string) => `${getBaseUrl()}/admin/integrity/report/${reportId}/file`,

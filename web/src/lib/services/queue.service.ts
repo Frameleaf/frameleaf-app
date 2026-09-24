@@ -175,7 +175,7 @@ const handleRemoveFailedJobs = async (queue: QueueResponseDto) => {
 };
 
 export const asQueueItem = ($t: MessageFormatter, queue: { name: QueueName }): QueueItem => {
-  // TODO merge this mapping with data from QueuePanel.svelte
+  // The Job manager's own titles and categories are in $lib/frameleaf/job-queues (FL-71).
   const items: Record<QueueName, QueueItem> = {
     [QueueName.ThumbnailGeneration]: {
       icon: mdiFileJpgBox,
