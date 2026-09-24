@@ -4,7 +4,7 @@
   import { PlacesGroupBy, type PlacesViewSettings } from '$lib/stores/preferences.store';
   import { normalizeSearchString } from '$lib/utils/string-utils';
   import { type AssetResponseDto } from '@immich/sdk';
-  import { mdiChevronRight, mdiMapMarkerOff, mdiMapMarkerOutline } from '@mdi/js';
+  import { mdiChevronRight, mdiMapMarkerOutline, mdiMapSearchOutline } from '@mdi/js';
   import { groupBy } from 'lodash-es';
   import PlacesCardGroup from './PlacesCardGroup.svelte';
 
@@ -96,7 +96,27 @@
   });
 </script>
 
-{#if places.length > 0}
+<!-- FL-83 (PL-6/PL-7): the two empty states from the prototype's Places.jsx: nothing located
+     yet, or a search that matches nothing. -->
+{#if places.length === 0}
+  <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
+    <div class="flex flex-col content-center items-center gap-2 text-center" role="status">
+      <Icon icon={mdiMapMarkerOutline} size="3.5em" />
+      <p class="mt-3 text-2xl font-medium">{$t('frameleaf_places_empty_title')}</p>
+      <p class="text-gray-500 dark:text-gray-400">{$t('frameleaf_places_empty_help')}</p>
+    </div>
+  </div>
+{:else if filteredPlaces.length === 0}
+  <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
+    <div class="flex flex-col content-center items-center gap-2 text-center" role="status">
+      <Icon icon={mdiMapSearchOutline} size="3.5em" />
+      <p class="mt-3 text-2xl font-medium">
+        {$t('frameleaf_places_no_match_title', { values: { query: searchQuery.trim() } })}
+      </p>
+      <p class="text-gray-500 dark:text-gray-400">{$t('frameleaf_places_no_match_help')}</p>
+    </div>
+  </div>
+{:else}
   {#if isCountryState}
     <!-- Frameleaf (FL-51): country shelves, collapsible like the Country grouping, each with
          its states listed underneath and a "Show on map" link centred on that state. -->
@@ -152,11 +172,4 @@
       <PlacesCardGroup places={placeGroup.places} group={placeGroup} />
     {/each}
   {/if}
-{:else}
-  <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
-    <div class="flex flex-col content-center items-center text-center">
-      <Icon icon={mdiMapMarkerOff} size="3.5em" />
-      <p class="mt-5 text-3xl font-medium">{$t('no_places')}</p>
-    </div>
-  </div>
 {/if}

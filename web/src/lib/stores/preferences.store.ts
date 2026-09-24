@@ -145,8 +145,10 @@ export enum PlacesGroupBy {
   CountryState = 'CountryState',
 }
 
+// FL-83 (PL-1): grouped by country and state by default, as the prototype's Places opens
+// grouped (`Places.jsx`); the choice is still persisted once changed.
 export const placesViewSettings = persisted<PlacesViewSettings>('places-view-settings', {
-  groupBy: PlacesGroupBy.None,
+  groupBy: PlacesGroupBy.CountryState,
   collapsedGroups: {},
 });
 

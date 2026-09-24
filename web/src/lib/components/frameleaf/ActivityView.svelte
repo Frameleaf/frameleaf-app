@@ -240,7 +240,12 @@
   {:else if visible.length === 0}
     <div class="empty">
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
-      <p>{$t('frameleaf_activity_empty_help')}</p>
+      {#if filter === 'all' || filter === 'running'}
+        <p>{$t('frameleaf_activity_empty_help_running')}</p>
+        <Button onclick={() => void goto(Route.studioProjects())}>{$t('frameleaf_activity_open_studio')}</Button>
+      {:else}
+        <p>{$t('frameleaf_activity_empty_help_done')}</p>
+      {/if}
     </div>
   {/if}
 
@@ -508,6 +513,9 @@
     margin: 0.25rem 0 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  .empty :global(button) {
+    margin-block-start: 0.75rem;
   }
   .sr-only {
     position: absolute;
