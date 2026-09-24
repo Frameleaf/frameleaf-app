@@ -16,6 +16,7 @@
   import { AssetAction } from '$lib/constants';
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
+  import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -118,7 +119,11 @@
     slideshowState,
     slideshowRepeat,
     slideshowAutoplay,
+    slideshowTransition,
+    slideshowDelay,
   } = slideshowStore;
+  // FL-36: which way the slideshow last moved, so a Slide transition arrives from that side.
+  let slideshowDirection = $state<SlideshowDirection>('next');
 
   let previewStackedAsset: AssetResponseDto | undefined = $state();
   let stack: StackResponseDto | null = $state(null);
@@ -247,6 +252,7 @@
       }
     }
 
+    slideshowDirection = order;
     preloadManager.cancelBeforeNavigation(order);
 
     if (tracker.isActive()) {
@@ -568,6 +574,8 @@
     <div class="absolute inset-s-0 top-0 flex w-full justify-start">
       <SlideshowBar
         {isFullScreen}
+        {asset}
+        title={album?.albumName ?? person?.name}
         assetType={previewStackedAsset?.type ?? asset.type}
         onSetToFullScreen={() => assetViewerHtmlElement?.requestFullscreen?.()}
         onPrevious={() => navigateAsset('previous')}
@@ -584,7 +592,22 @@
   {/if}
 
   <!-- Asset Viewer -->
-  <div data-viewer-content class="relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1">
+  <!-- FL-36: while a slideshow runs, each item arrives with the chosen transition. -->
+  <div
+    data-viewer-content
+    class="relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1"
+    {@attach slideshowStage(
+      () => ({
+        active: $slideshowState !== SlideshowState.None,
+        assetId: asset.id,
+        transition: $slideshowTransition,
+        intervalSeconds: $slideshowDelay,
+        direction: slideshowDirection,
+        video: asset.type === AssetTypeEnum.Video,
+      }),
+      () => $slideshowState === SlideshowState.PauseSlideshow,
+    )}
+  >
     {#if viewerKind === 'StackVideoViewer'}
       <VideoViewer
         asset={previewStackedAsset!}

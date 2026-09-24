@@ -1,6 +1,7 @@
 <script lang="ts">
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
+  import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -10,6 +11,7 @@
   import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
   import { getAssetActions } from '$lib/services/asset.service';
   import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
+  import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
   import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
@@ -394,6 +396,28 @@
   $effect(() => {
     window.addEventListener('pagehide', onPagehide);
     return () => window.removeEventListener('pagehide', onPagehide);
+  });
+
+  // FL-36 (MediaViewer.jsx:886-923): media keys and the lock screen control the open video. A
+  // running slideshow owns the session itself (SlideshowBar), so this steps aside then.
+  const { slideshowState } = slideshowStore;
+  $effect(() => {
+    const player = videoPlayer;
+    if (!player || !extendedControls || $slideshowState !== SlideshowState.None) {
+      return;
+    }
+    return bindMediaSession({
+      title: asset.originalFileName,
+      artist: MEDIA_SESSION_ARTIST,
+      album: asset.exifInfo?.city ?? undefined,
+      artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey }),
+      controls: {
+        play: () => void player.play().catch(() => {}),
+        pause: () => player.pause(),
+        previous: onPreviousAsset,
+        next: onNextAsset,
+      },
+    });
   });
 
   onDestroy(() => {

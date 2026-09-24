@@ -1,5 +1,10 @@
 import { persisted } from 'svelte-persisted-store';
 import { writable } from 'svelte/store';
+import {
+  DEFAULT_SLIDESHOW_TRANSITION,
+  slideshowTransitionSerializer,
+  type SlideshowTransition,
+} from '$lib/frameleaf/slideshow-transitions';
 
 export enum SlideshowState {
   PlaySlideshow = 'play-slideshow',
@@ -38,7 +43,11 @@ function createSlideshowStore() {
 
   const showProgressBar = persisted<boolean>('slideshow-show-progressbar', true);
   const slideshowDelay = persisted<number>('slideshow-delay', 5, {});
-  const slideshowTransition = persisted<boolean>('slideshow-transition', true);
+  // FL-36: one of five transitions. The key is unchanged; a stored boolean from before reads
+  // as fade (true) or none (false) through the serializer.
+  const slideshowTransition = persisted<SlideshowTransition>('slideshow-transition', DEFAULT_SLIDESHOW_TRANSITION, {
+    serializer: slideshowTransitionSerializer,
+  });
   const slideshowAutoplay = persisted<boolean>('slideshow-autoplay', true, {});
   const slideshowRepeat = persisted<boolean>('slideshow-repeat', false);
   const slideshowShowMetadataOverlay = persisted<boolean>('slideshow-show-metadata-overlay', false);
