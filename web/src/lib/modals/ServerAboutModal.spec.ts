@@ -12,7 +12,7 @@ it('exposes the translated About title as the real dialog accessible name', asyn
   Element.prototype.animate = getAnimateMock();
   addMessages('dev', { frameleaf_about_menu_item: 'About Frameleaf' });
 
-  render(ServerAboutModal, {
+  const { unmount } = render(ServerAboutModal, {
     props: {
       onClose: vi.fn(),
       info: { version: 'v3.2.0', versionUrl: '', licensed: false },
@@ -21,4 +21,9 @@ it('exposes the translated About title as the real dialog accessible name', asyn
   });
 
   expect(await screen.findByRole('dialog', { name: 'About Frameleaf' })).toBeInTheDocument();
+
+  // bits-ui restores the body scroll 24 ms after the dialog goes; let that run while the document
+  // still exists, or it throws "document is not defined" after this file's environment is gone.
+  unmount();
+  await new Promise((resolve) => setTimeout(resolve, 50));
 });
