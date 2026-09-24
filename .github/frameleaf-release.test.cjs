@@ -622,6 +622,31 @@ test("reuse compares original inputs and ancestry, including non-obvious Docker 
   );
 });
 
+test("a reused candidate restates the index annotations validateIndex requires", () => {
+  const release = require("./frameleaf-release.cjs");
+  const spec = release.variant("frameleaf-server", "");
+  const image = {
+    buildSourceCommit: "a".repeat(40),
+    buildDigest: `sha256:${"b".repeat(64)}`,
+  };
+  const args = release.reuseAnnotations(spec, image, {
+    GITHUB_SHA: "c".repeat(40),
+    REUSE_RELEASE: "frameleaf-v1.0.0",
+  });
+  const values = args.filter((_, index) => index % 2 === 1);
+  assert.ok(
+    args.every((arg, index) => index % 2 === 1 || arg === "--annotation"),
+  );
+  assert.deepEqual(values, [
+    `index:org.opencontainers.image.source=${release.SOURCE}`,
+    `index:org.opencontainers.image.revision=${"a".repeat(40)}`,
+    `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
+    `index:org.frameleaf.qualification.revision=${"c".repeat(40)}`,
+    "index:org.frameleaf.qualification.release=frameleaf-v1.0.0",
+    `index:org.frameleaf.build.digest=sha256:${"b".repeat(64)}`,
+  ]);
+});
+
 test("release accepts truthful reused candidate index and rejects changed qualification or children", async () => {
   const { candidateImage } = require("./frameleaf-release.cjs");
   const f = fixture();
