@@ -1,6 +1,8 @@
 import {
+  createJob,
   emptyQueue,
   getQueueJobs,
+  ManualJobName,
   JobName,
   QueueCommand,
   QueueJobStatus,
@@ -32,7 +34,22 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
   updateQueue: vi.fn(),
   emptyQueue: vi.fn(),
   getQueue: vi.fn(),
+  createJob: vi.fn(),
 }));
+vi.mock('$lib/frameleaf/job-history', async (importOriginal) => {
+  const original = await importOriginal<typeof import('$lib/frameleaf/job-history')>();
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (k: string, v: string) => values.set(k, v),
+  };
+  return {
+    ...original,
+    readJobHistory: () => original.readJobHistory(storage),
+    recordJobHistory: (entry: Parameters<typeof original.recordJobHistory>[0]) =>
+      original.recordJobHistory(entry, storage),
+  };
+});
 vi.mock('$lib/managers/queue-manager.svelte', () => ({
   queueManager: {
     get queues() {
@@ -140,13 +157,29 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it('opens one queue on its failed jobs and removes them only after acknowledging the review', async () => {
     at('&queue=face-detection&tab=failed');
     vi.mocked(getQueueJobs).mockResolvedValue([
-      { id: 'job-1', name: JobName.AssetDetectFaces, timestamp: Date.UTC(2026, 8, 23, 10), data: { id: 'asset-1' } },
+      {
+        id: 'job-1',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.UTC(2026, 8, 23, 10),
+        data: { id: 'asset-1' },
+        attemptsMade: 3,
+        failedReason: 'Machine learning is unreachable',
+      },
     ]);
     render(JobsManager);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Face detection' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Failed\s*3/ })).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByRole('button', { name: /Asset detect faces\s*asset-1/ })).toBeInTheDocument();
+    const job = await screen.findByRole('button', {
+      name: /^Detect faces\s*asset-1\s*Machine learning is unreachable$/,
+    });
+    // The job detail shows its attempts and last error, as the template's does.
+    await fireEvent.click(job);
+    const detail = screen.getByRole('dialog', { name: 'Detect faces' });
+    expect(within(detail).getByText('Attempt').nextElementSibling).toHaveTextContent('3');
+    expect(within(detail).getByRole('heading', { name: 'Last error' })).toBeInTheDocument();
+    expect(within(detail).getByText('Machine learning is unreachable')).toBeInTheDocument();
+    await fireEvent.click(within(detail).getByRole('button', { name: 'Done' }));
     await waitFor(() =>
       expect(getQueueJobs).toHaveBeenCalledWith({ name: QueueName.FaceDetection, status: [QueueJobStatus.Failed] }),
     );
@@ -195,5 +228,55 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
 
     expect(screen.getByRole('button', { name: 'Run missing' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Clear waiting jobs' })).toBeEnabled();
+  });
+
+  it('states the server limit when more failed records exist than one removal clears', async () => {
+    queues.list = [queue(QueueName.FaceDetection, { failed: 1500 })];
+    at('&queue=face-detection&tab=failed');
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove failed records' }));
+    const review = screen.getByRole('dialog', { name: 'Remove failed records' });
+    expect(within(review).getByText('1,000 items')).toBeInTheDocument();
+    expect(
+      within(review).getByText(/removes up to 1,000 failed records at a time; this queue has 1,500/),
+    ).toBeInTheDocument();
+  });
+
+  it('creates a maintenance job from the template dialog through the review, and records it in the history', async () => {
+    render(JobsManager);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Create job' }));
+    const dialog = screen.getByRole('dialog', { name: 'Create a maintenance job' });
+    await fireEvent.input(within(dialog).getByRole('searchbox', { name: 'Search maintenance jobs' }), {
+      target: { value: 'deleted accounts' },
+    });
+    const task = within(dialog).getByRole('radio', { name: /Clean up deleted accounts/ });
+    expect(within(dialog).getByText('Background tasks · review required')).toBeInTheDocument();
+    await fireEvent.click(task);
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Review job' }));
+
+    const review = screen.getByRole('dialog', { name: 'Clean up deleted accounts' });
+    const confirm = within(review).getByRole('button', { name: 'Clean up deleted accounts' });
+    expect(confirm).toBeDisabled();
+    await fireEvent.click(within(review).getByRole('checkbox'));
+    await fireEvent.click(confirm);
+
+    await waitFor(() => expect(createJob).toHaveBeenCalledWith({ jobCreateDto: { name: ManualJobName.UserCleanup } }));
+    const history = screen.getByText('Queue action history').closest('details')!;
+    expect(within(history).getByText('Clean up deleted accounts')).toBeInTheDocument();
+    expect(within(history).getByText('Background tasks · 1 item')).toBeInTheDocument();
+  });
+
+  it('sends queue commands only through the review and never offers pausing background tasks', async () => {
+    queues.list = [queue(QueueName.BackgroundTask, { waiting: 2, failed: 1 })];
+    at('&queue=background-task&tab=failed');
+    render(JobsManager);
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeDisabled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove failed records' }));
+    expect(screen.getByRole('dialog', { name: 'Remove failed records' })).toBeInTheDocument();
+    expect(runQueueCommandLegacy).not.toHaveBeenCalled();
+    expect(emptyQueue).not.toHaveBeenCalled();
   });
 });
