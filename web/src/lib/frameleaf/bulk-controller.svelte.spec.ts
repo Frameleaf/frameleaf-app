@@ -54,6 +54,7 @@ describe('the bulk controller', () => {
     undone: 0,
     conflict: 0,
     undoable: true,
+    ...({ currentSession: true } as object),
     ...overrides,
   });
 
@@ -140,16 +141,16 @@ describe('the bulk controller', () => {
     expect(tracker.track).toHaveBeenCalledWith('delete', 'job-1', ids);
   });
 
-  it('follows each part of a set split across several jobs with its own ids, even an archive too large for one operation', async () => {
+  it('follows each part of a set split across several jobs with its own ids', async () => {
     vi.mocked(api.createBulkMediaOperation)
       .mockResolvedValueOnce({ id: 'job-1' } as never)
       .mockResolvedValueOnce({ id: 'job-2' } as never);
     const ids = Array.from({ length: 50_001 }, (_, index) => `id-${index}`);
 
-    await controller.run('archive', ids);
+    await controller.run('favorite', ids);
 
-    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-1', ids.slice(0, 50_000));
-    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-2', ids.slice(50_000));
+    expect(tracker.track).toHaveBeenCalledWith('favorite', 'job-1', ids.slice(0, 50_000));
+    expect(tracker.track).toHaveBeenCalledWith('favorite', 'job-2', ids.slice(50_000));
   });
 
   it('keeps a large download in this tab, because only this tab can receive it', async () => {
@@ -229,6 +230,7 @@ describe('the bulk controller', () => {
   describe('a transactional archive (FL-32)', () => {
     it('archives a large selection as one operation, follows its job and keeps an Undo', async () => {
       const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
+      archive.createArchiveOperation.mockResolvedValue(operationOf({ count: ids.length, pending: ids.length }));
 
       await controller.run('archive', ids);
 
@@ -320,6 +322,117 @@ describe('the bulk controller', () => {
       controller.undo = null;
       archive.getArchiveOperations.mockResolvedValue([operationOf({ createdAt: '2026-09-23T10:00:00.000Z' })]);
       await controller.restoreArchiveUndo(now);
+      expect(controller.undo).toBeNull();
+    });
+    it('refuses an archive larger than one operation instead of archiving it short (P2-2)', async () => {
+      const ids = Array.from({ length: 50_001 }, (_, index) => `id-${index}`);
+
+      await controller.run('archive', ids);
+
+      expect(archive.createArchiveOperation).not.toHaveBeenCalled();
+      expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
+      expect(toastManager.warning).toHaveBeenCalledWith('frameleaf_bulk_reason_archive_too_many');
+    });
+
+    it('refuses a filtered matching set that was cut short, keeping the truncated notice (P2-2)', async () => {
+      const ids = Array.from({ length: 50_001 }, (_, index) => `id-${index}`);
+      vi.mocked(api.searchAssets).mockResolvedValue(page(ids, null, 60_000) as never);
+
+      await controller.runMatching('archive', structuredClone(session.state), { submittedTotal: 60_000 });
+
+      expect(archive.createArchiveOperation).not.toHaveBeenCalled();
+      expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
+      expect(session.operations[0]).toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          errorKey: 'frameleaf_bulk_reason_archive_too_many',
+          truncated: true,
+        }),
+      );
+    });
+
+    it('does not follow tiles when the server left some of the selection out', async () => {
+      archive.createArchiveOperation.mockResolvedValue(operationOf({ count: 2, pending: 1, skipped: 1 }));
+
+      await controller.run(
+        'archive',
+        Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`),
+      );
+
+      expect(tracker.track).not.toHaveBeenCalled();
+    });
+
+    it('says nothing was queued when no job started', async () => {
+      archive.createArchiveOperation.mockResolvedValue(
+        operationOf({ archiveJobId: null, pending: 0, skipped: 2, undoable: false }),
+      );
+
+      await controller.run(
+        'archive',
+        Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`),
+      );
+
+      expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_bulk_archive_nothing_selected');
+      expect(queued).not.toHaveBeenCalled();
+      expect(controller.undo).toBeNull();
+    });
+
+    it('retries a hand-off whose answer was lost with the same selection under the same key', async () => {
+      const requestId = '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c';
+      archive.createArchiveOperation.mockRejectedValueOnce(new Error('offline'));
+      await controller.runMatching('archive', structuredClone(session.state), { submittedTotal: 2, requestId });
+      expect(session.operations[0].status).toBe('failed');
+
+      // the view changed meanwhile; the retry must not resolve it again
+      vi.mocked(api.searchAssets).mockResolvedValue(page(['a', 'b', 'c'], null, 3) as never);
+      await controller.retry(session.operations[0]);
+
+      expect(archive.createArchiveOperation).toHaveBeenLastCalledWith({
+        archiveOperationCreateDto: { requestKey: requestId, assetIds: ['a', 'b'] },
+      });
+    });
+
+    it('shows the expired notice when the prepared selection is gone (P3)', async () => {
+      archive.confirmArchiveOperation.mockRejectedValue(Object.assign(new Error('gone'), { status: 404 }));
+
+      expect(await controller.confirmArchive(operationOf({ prepared: true }))).toBe(false);
+      expect(toastManager.warning).toHaveBeenCalledWith('frameleaf_bulk_archive_expired');
+    });
+
+    it('sends one undo per offer, and keeps the offer under the same key when it fails (P2-6)', async () => {
+      await controller.run(
+        'archive',
+        Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`),
+      );
+      const undo = controller.undo!;
+      let answer!: () => void;
+      archive.undoArchiveOperation.mockReturnValueOnce(
+        new Promise((_resolve, reject) => (answer = () => reject(new Error('offline')))),
+      );
+
+      const clicks = [undo.run(), undo.run()];
+      answer();
+      await Promise.all(clicks);
+
+      expect(archive.undoArchiveOperation).toHaveBeenCalledTimes(1);
+      expect(controller.undo).toBe(undo);
+
+      await controller.undo!.run();
+      const keys = archive.undoArchiveOperation.mock.calls.map(
+        ([request]) =>
+          (request as { archiveOperationUndoDto: { requestKey: string } }).archiveOperationUndoDto.requestKey,
+      );
+      expect(keys).toHaveLength(2);
+      expect(keys[0]).toBe(keys[1]);
+    });
+
+    it('offers a restored Undo only for this session’s own archives (P2-3)', async () => {
+      archive.getArchiveOperations.mockResolvedValue([
+        operationOf({ id: 'other-device', currentSession: false } as never),
+      ]);
+
+      await controller.restoreArchiveUndo();
+
       expect(controller.undo).toBeNull();
     });
   });
