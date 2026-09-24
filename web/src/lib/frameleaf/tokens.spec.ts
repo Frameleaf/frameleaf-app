@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import tokens from '../../../../design/frameleaf/tokens.json';
 
 const css = readFileSync('src/lib/frameleaf/tokens.css', 'utf8');
+const baseline = readFileSync('src/lib/frameleaf/base.css', 'utf8');
 
 /** Reads one rule's custom properties. `selector` must be the literal text in the sheet. */
 const declarations = (selector: string) => {
@@ -140,10 +141,41 @@ describe('Frameleaf theme contract', () => {
     expect(css).toMatch(/@media \(pointer: coarse\)[\S\s]*min-height: 48px/);
   });
 
+  it('loads the bundled Inter weights through the prototype baseline', () => {
+    expect(css.trimStart().startsWith("@import './base.css';")).toBe(true);
+    const sources = new Map<string, string>();
+    for (const [, body] of baseline.matchAll(/@font-face\s*{([^}]+)}/g)) {
+      const [, weight] = /font-weight: (\d+);/.exec(body) ?? [];
+      const [, source] = /url\('([^']+)'\)/.exec(body) ?? [];
+      sources.set(weight, source);
+    }
+    for (const weight of [400, 500, 600]) {
+      const source = sources.get(String(weight));
+      expect(source).toBe(`../assets/fonts/Inter/inter-latin-${weight}-normal.woff2`);
+      expect(existsSync(`src/lib/frameleaf/${source}`)).toBe(true);
+    }
+    expect(existsSync('src/lib/assets/fonts/Inter/LICENSE')).toBe(true);
+  });
+
+  it('keeps the prototype baseline below component styles and the touch-target floor', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const selectors = [...withoutComments.matchAll(/([^{}]+)\{/g)]
+      .map(([, selector]) => selector.trim())
+      .filter((selector) => selector.length > 0 && !selector.startsWith('@'));
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const selector of selectors) {
+      // Zero specificity: a component's own rules, and the 44px/48px floors, always win.
+      expect(selector, 'baseline rule outside :where()').toMatch(/^:where\([\S\s]*\)$/);
+      expect(selector, 'unscoped baseline rule').toContain('.frameleaf');
+    }
+    // The prototype's 34px button height is not ported; nothing in the baseline shrinks a control.
+    expect(withoutComments).not.toMatch(/min-height:\s*(?:[0-3]?\d|4[0-3])px/);
+  });
+
   it('never leaks the prototype stylesheet into production', () => {
     // Every rule stays under the .frameleaf scope; no bare element, html/body or :root
     // rules, so mounting Theme.svelte cannot restyle the surrounding application.
-    const withoutComments = css.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const withoutComments = css.replaceAll(/\/\*[\S\s]*?\*\//g, '').replaceAll(/@import[^;]+;/g, '');
     const selectors = [...withoutComments.matchAll(/([^{}]+)\{/g)]
       .map(([, selector]) => selector.trim())
       .filter((selector) => selector.length > 0 && !selector.startsWith('@'));
