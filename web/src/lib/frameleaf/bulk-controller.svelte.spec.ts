@@ -54,7 +54,7 @@ describe('the bulk controller', () => {
     undone: 0,
     conflict: 0,
     undoable: true,
-    ...({ currentSession: true } as object),
+    currentSession: true,
     ...overrides,
   });
 
