@@ -63,6 +63,7 @@ const inventory = (overrides: Partial<AnalyticsInventory> = {}): AnalyticsInvent
 });
 
 const insightRows = (overrides: Partial<AnalyticsInsightRows> = {}): AnalyticsInsightRows => ({
+  items: 100,
   years: [
     { year: 2024, count: 60 },
     { year: 2026, count: 40 },
@@ -542,8 +543,22 @@ describe(AnalyticsService.name, () => {
       await read(auth, `account:${USER_ID}`);
       expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
         { kind: AnalyticsScopeKind.Account, userId: USER_ID },
-        { ownerId: USER_ID, suppressedPersonIds: ['person-locked'], suppressedPetIds: ['pet-locked'] },
+        {
+          ownerId: USER_ID,
+          suppressedPersonIds: ['person-locked'],
+          suppressedPetIds: ['pet-locked'],
+          privacy: { hiddenContent: auth.hiddenContent },
+        },
       );
+    });
+
+    it('reports the items the session keeps hidden, which the breakdowns leave out', async () => {
+      analyticsRepository.getInsights.mockResolvedValue(insightRows({ items: 97 }));
+      const auth = { ...user(), hideNsfwAssets: true };
+      const { insights, summary } = await read(auth, `account:${USER_ID}`);
+      expect(insights!.hiddenItems).toBe(3);
+      expect(summary.items - insights!.hiddenItems).toBe(97);
+      expect(analyticsRepository.getInsights.mock.calls[0][1].privacy).toEqual({ excludeNsfw: true });
     });
 
     it('reconciles people and places to the items', async () => {

@@ -575,4 +575,58 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
     expect(insights.photoFormats).toContainEqual({ format: 'PNG', count: 1 });
     expect(insights.people).toBeNull();
   });
+
+  it('never shows a locked session an item its hidden-content rules keep hidden', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    await library(ctx, db, user.id);
+    const secret = await newItem(
+      ctx,
+      user.id,
+      { originalFileName: 'kept-private.jpg', localDateTime: new Date('2001-01-01T00:00:00Z') },
+      { city: 'Private Town', country: 'Nowhere', fileSizeInByte: 50_000_000, lensModel: 'Private lens' },
+    );
+    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Kept Private' });
+    await ctx.newAssetFace({ assetId: secret.id, personGroupId: person.personGroupId });
+
+    const scope = account(user.id);
+    const hiddenContent = {
+      userId: user.id,
+      includeNsfw: false,
+      personIds: [person.personGroupId],
+      tagIds: [],
+      petIds: [],
+      scope: 'owned' as const,
+    };
+    const [inventory, unlocked, locked] = await Promise.all([
+      sut.getInventory(scope),
+      sut.getInsights(scope, { ownerId: user.id, suppressedPersonIds: [], suppressedPetIds: [] }),
+      sut.getInsights(scope, {
+        ownerId: user.id,
+        suppressedPersonIds: [person.personGroupId],
+        suppressedPetIds: [],
+        privacy: { hiddenContent },
+      }),
+    ]);
+
+    // unlocked, the item leads the records and the places
+    expect(inventory.photos + inventory.videos).toBe(6);
+    expect(unlocked.items).toBe(6);
+    expect(unlocked.records.oldest?.name).toBe('kept-private.jpg');
+    expect(unlocked.records.largest?.bytes).toBe(50_000_000);
+
+    // locked, nothing about it is left, and every breakdown adds up to the items it may see
+    expect(locked.items).toBe(5);
+    expect(locked.records.oldest).toEqual({ localDateTime: new Date('2009-06-14T08:30:00.000Z'), name: 'IMG_1.HEIC' });
+    expect(locked.records.largest).toEqual({ bytes: 9_000_000, name: 'IMG_2.jpg' });
+    expect(locked.years).not.toContainEqual(expect.objectContaining({ year: 2001 }));
+    expect(locked.people?.places).not.toContainEqual(expect.objectContaining({ name: 'Private Town' }));
+    expect(locked.people?.countries).toBe(2);
+    expect(locked.people?.faces).toBe(0);
+    expect(JSON.stringify(locked)).not.toMatch(/kept-private|Private Town|Private lens|Nowhere|Kept Private/);
+    for (const rows of [locked.years, locked.punchcard, locked.lenses, locked.focalLengths, locked.orientation]) {
+      expect(total(rows)).toBe(locked.items);
+    }
+    expect(total(locked.people!.places)).toBe(locked.items);
+  });
 });
