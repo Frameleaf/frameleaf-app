@@ -16,9 +16,13 @@
    * `controls` is the trailing slot for the Thumbnail size control (Packet 2i).
    */
   type Props = {
-    /** Items in the view, when known. */
+    /** Items these results show, when known. */
     count: number | null;
+    /** Items in the whole scope (library, person, partner) before any filter, when known. */
+    total?: number | null;
     selected: number;
+    /** Selected items these results do not show. */
+    outside?: number;
     /** Whether the view state was kept on this device (`LibrarySessionStore.persist`). */
     saved: boolean;
     /** Steps aside while the selection bar is open. */
@@ -26,7 +30,7 @@
     controls?: Snippet;
   };
 
-  let { count, selected, saved, hidden = false, controls }: Props = $props();
+  let { count, total = null, selected, saved, hidden = false, outside = 0, controls }: Props = $props();
 </script>
 
 <footer
@@ -37,11 +41,17 @@
   data-testid="library-status-bar"
 >
   <span class="fl-status-counts">
-    {#if count !== null}
-      {$t('frameleaf_status_items', { values: { count } })}
+    {#if count !== null && total !== null && total !== count}
+      {$t('frameleaf_status_items_of', { values: { count, total } })}
+      <i aria-hidden="true"></i>
+    {:else if (count ?? total) !== null}
+      {$t('frameleaf_status_items', { values: { count: count ?? total } })}
       <i aria-hidden="true"></i>
     {/if}
     {$t('selected_count', { values: { count: selected } })}
+    {#if outside > 0}
+      {$t('frameleaf_status_outside', { values: { count: outside } })}
+    {/if}
   </span>
   <span class="fl-status-saved" role="status" title={saved ? undefined : $t('frameleaf_status_not_saved_help')}>
     <Icon icon={saved ? mdiCheckCircle : mdiAlertCircleOutline} size="13" aria-hidden={true} />
