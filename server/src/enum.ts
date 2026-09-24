@@ -2021,6 +2021,8 @@ export enum QueueCleanType {
 export enum VectorIndex {
   Clip = 'clip_index',
   Face = 'face_index',
+  /** The frame index of video moments (FL-59, `2100000000500-AddVideoMomentFrameVectorIndex`). */
+  VideoMomentFrame = 'video_moment_frame_index',
 }
 
 export enum DatabaseLock {
