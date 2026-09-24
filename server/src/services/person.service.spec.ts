@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
 import {
@@ -808,6 +808,30 @@ describe(PersonService.name, () => {
       expect(mocks.person.delete).toHaveBeenCalledWith([person.personGroupId], undefined);
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
+      expect(mocks.person.deleteOrphanedMergeVerdicts).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('merge-suggestion verdict cleanup (FL-57)', () => {
+    it("should drop the owner's stale verdicts when a person is deleted", async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.delete.mockResolvedValue([person]);
+
+      await sut.delete(auth, person.personGroupId);
+
+      expect(mocks.person.deleteOrphanedMergeVerdicts).toHaveBeenCalledWith(auth.user.id);
+    });
+
+    it("should drop a deleted account's verdicts", async () => {
+      await sut.onUserDelete(UserFactory.create({ id: 'user-1' }));
+      expect(mocks.person.deleteOrphanedMergeVerdicts).toHaveBeenCalledWith('user-1');
+    });
+
+    it('should skip the cleanup during a database handoff', async () => {
+      mocks.person.deleteOrphanedMergeVerdicts.mockRejectedValue(new ConflictException('handoff'));
+      await expect(sut.onUserDelete(UserFactory.create({ id: 'user-1' }))).resolves.toBeUndefined();
     });
   });
 
