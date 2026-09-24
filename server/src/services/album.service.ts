@@ -137,20 +137,21 @@ export class AlbumService extends BaseService {
     if (new Set(albumIds).size !== albumIds.length) {
       throw new BadRequestException('Each album may appear only once');
     }
-    const visible = await this.albumRepository.getAll(auth.user.id, {});
-    const known = new Set(visible.map(({ id }) => id));
-    const group = albumOrderGroup(visible, dto.parentId, albumIds[0]);
-    if (!group) {
-      if (!known.has(albumIds[0])) {
-        throw new BadRequestException('Not found or no album.read access');
+    // The group is read and the order written in one transaction, with the albums locked against a
+    // concurrent move, so an order can never be saved for a group that changed in between.
+    await this.albumRepository.setPositions(auth.user.id, albumIds, (visible) => {
+      const group = albumOrderGroup(visible, dto.parentId, albumIds[0]);
+      if (!group) {
+        if (visible.every(({ id }) => id !== albumIds[0])) {
+          throw new BadRequestException('Not found or no album.read access');
+        }
+        throw new ConflictException('The album directory changed since it was loaded');
       }
-      throw new ConflictException('The album directory changed since it was loaded');
-    }
-    const expected = new Set(group);
-    if (expected.size !== albumIds.length || albumIds.some((id) => !expected.has(id))) {
-      throw new ConflictException('The album directory changed since it was loaded');
-    }
-    await this.albumRepository.setPositions(auth.user.id, albumIds);
+      const expected = new Set(group);
+      if (expected.size !== albumIds.length || albumIds.some((id) => !expected.has(id))) {
+        throw new ConflictException('The album directory changed since it was loaded');
+      }
+    });
   }
 
   /** The icon catalogue as data: every valid name plus the categorised suggested set. */

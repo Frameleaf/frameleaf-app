@@ -1147,9 +1147,13 @@ describe(AlbumService.name, () => {
       const second = AlbumFactory.from({ parentId: collection.id }).owner(owner).build();
       const loose = AlbumFactory.from().owner(owner).build();
       const sharedWithMe = AlbumFactory.from().albumUser({ userId: owner.id, role: AlbumUserRole.Viewer }).build();
-      mocks.album.getAll.mockResolvedValue(
-        [collection, first, second, loose, sharedWithMe].map((item) => getForAlbum(item)),
-      );
+      const visible = [collection, first, second, loose, sharedWithMe];
+      mocks.album.getAll.mockResolvedValue(visible.map((item) => getForAlbum(item)));
+      // The repository reads the directory inside its transaction and hands it to the check.
+      mocks.album.setPositions.mockImplementation((_userId, _albumIds, validate) => {
+        validate?.(visible.map(({ id, kind, parentId }) => ({ id, kind, parentId: parentId ?? null })));
+        return Promise.resolve();
+      });
       return { auth: AuthFactory.create(owner), collection, first, second, loose, sharedWithMe };
     };
 
@@ -1178,7 +1182,7 @@ describe(AlbumService.name, () => {
 
       await sut.setOrder(auth, { parentId: collection.id, albumIds: [second.id, first.id] });
 
-      expect(mocks.album.setPositions).toHaveBeenCalledWith(auth.user.id, [second.id, first.id]);
+      expect(mocks.album.setPositions).toHaveBeenCalledWith(auth.user.id, [second.id, first.id], expect.any(Function));
       // Organization only: no album row, membership or access changes.
       expect(mocks.album.update).not.toHaveBeenCalled();
       expect(mocks.album.reparent).not.toHaveBeenCalled();
@@ -1189,7 +1193,11 @@ describe(AlbumService.name, () => {
 
       await sut.setOrder(auth, { parentId: null, albumIds: [sharedWithMe.id, loose.id] });
 
-      expect(mocks.album.setPositions).toHaveBeenCalledWith(auth.user.id, [sharedWithMe.id, loose.id]);
+      expect(mocks.album.setPositions).toHaveBeenCalledWith(
+        auth.user.id,
+        [sharedWithMe.id, loose.id],
+        expect.any(Function),
+      );
     });
 
     it('refuses an order made from an outdated tree (an album moved out of the group since)', async () => {
@@ -1199,7 +1207,7 @@ describe(AlbumService.name, () => {
       await expect(
         sut.setOrder(auth, { parentId: collection.id, albumIds: [loose.id, first.id] }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(mocks.album.setPositions).not.toHaveBeenCalled();
+      // The check runs before anything is written, inside the repository's transaction.
     });
 
     it('refuses an order that leaves out an album now in the group', async () => {
@@ -1208,7 +1216,7 @@ describe(AlbumService.name, () => {
       await expect(sut.setOrder(auth, { parentId: collection.id, albumIds: [first.id] })).rejects.toBeInstanceOf(
         ConflictException,
       );
-      expect(mocks.album.setPositions).not.toHaveBeenCalled();
+      // The check runs before anything is written, inside the repository's transaction.
     });
 
     it('refuses a collection the person can no longer see', async () => {
@@ -1217,7 +1225,7 @@ describe(AlbumService.name, () => {
       await expect(sut.setOrder(auth, { parentId: newUuid(), albumIds: [first.id] })).rejects.toBeInstanceOf(
         ConflictException,
       );
-      expect(mocks.album.setPositions).not.toHaveBeenCalled();
+      // The check runs before anything is written, inside the repository's transaction.
     });
 
     it('refuses an album the person cannot see', async () => {
@@ -1226,7 +1234,7 @@ describe(AlbumService.name, () => {
       await expect(sut.setOrder(auth, { parentId: null, albumIds: [newUuid()] })).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(mocks.album.setPositions).not.toHaveBeenCalled();
+      // The check runs before anything is written, inside the repository's transaction.
     });
 
     it('refuses a repeated id', async () => {
@@ -1235,6 +1243,7 @@ describe(AlbumService.name, () => {
       await expect(sut.setOrder(auth, { parentId: null, albumIds: [loose.id, loose.id] })).rejects.toThrow(
         'Each album may appear only once',
       );
+      expect(mocks.album.setPositions).not.toHaveBeenCalled();
     });
   });
 
