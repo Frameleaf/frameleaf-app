@@ -185,7 +185,6 @@
       :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *):focus-visible
   ) {
     border-color: var(--fl-accent);
-    outline-offset: 1px;
   }
 
   :where(.frameleaf input::placeholder, .frameleaf textarea::placeholder) {
