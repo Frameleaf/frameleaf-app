@@ -1292,6 +1292,51 @@ describe(MediaOperationRepository.name, () => {
         }
       });
 
+      it('keeps a live retry over an older one that is already being cancelled', async () => {
+        const database = await getKyselyDB();
+        try {
+          const { ctx, sut } = setup(database);
+          const { user } = await ctx.newUser();
+          const failed = await newOperation(sut, user.id);
+          await sql`DROP INDEX "media_operation_retryOfId_active_uq"`.execute(database);
+          const input = {
+            ownerId: user.id,
+            kind: MediaOperationKind.StudioExport,
+            destination: MediaOperationDestination.Local,
+            label: 'retry',
+            retryOfId: failed.id,
+            snapshot: {},
+            settings: {},
+          };
+          const cancelling = await sut.create(input);
+          const rendering = await sut.create(input);
+          await database
+            .updateTable('media_operation')
+            .set({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() })
+            .where('id', '=', cancelling.id)
+            .execute();
+          await database
+            .updateTable('media_operation')
+            .set({ status: MediaOperationStatus.Rendering })
+            .where('id', '=', rendering.id)
+            .execute();
+
+          await migrateRetryIndex(database);
+
+          const rows = await database
+            .selectFrom('media_operation')
+            .select(['id', 'status'])
+            .where('id', 'in', [cancelling.id, rendering.id])
+            .execute();
+          expect(Object.fromEntries(rows.map((row) => [row.id, row.status]))).toEqual({
+            [rendering.id]: MediaOperationStatus.Rendering,
+            [cancelling.id]: MediaOperationStatus.Cancelled,
+          });
+        } finally {
+          await database.destroy();
+        }
+      });
+
       it('cancels a claimed duplicate without acknowledging it, so remote cleanup still runs', async () => {
         const database = await getKyselyDB();
         try {
