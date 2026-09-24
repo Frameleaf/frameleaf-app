@@ -138,9 +138,14 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
 
   if (context.isAdmin) {
     const adminPages: CommandInput[] = [
-      { id: 'admin:users', title: $t('admin.user_management'), icon: mdiAccountMultipleOutline, href: Route.users() },
+      {
+        id: 'admin:users',
+        title: $t('frameleaf_settings_area_users'),
+        icon: mdiAccountMultipleOutline,
+        href: Route.users(),
+      },
       { id: 'admin:settings', title: $t('admin.system_settings'), icon: mdiCogOutline, href: Route.systemSettings() },
-      { id: 'admin:queues', title: $t('admin.queues'), icon: mdiSync, href: Route.queues() },
+      { id: 'admin:queues', title: $t('frameleaf_cc_section_queues'), icon: mdiSync, href: Route.queues() },
       {
         id: 'admin:render-workers',
         title: $t('admin.render_workers'),
@@ -298,7 +303,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     descriptionKey: 'admin.integrity_checks_settings_description',
     icon: mdiFileCheckOutline,
   },
-  { key: 'job', titleKey: 'admin.job_settings', descriptionKey: 'admin.job_settings_description', icon: mdiSync },
   {
     key: 'external-library',
     titleKey: 'admin.library_settings',

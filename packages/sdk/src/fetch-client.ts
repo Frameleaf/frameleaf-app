@@ -5733,10 +5733,14 @@ export type QueueDeleteDto = {
     failed?: boolean;
 };
 export type QueueJobResponseDto = {
+    /** How many times the job has been attempted */
+    attemptsMade?: number;
     /** Job data payload */
     data: {
         [key: string]: any;
     };
+    /** Why the last attempt failed, for a failed job */
+    failedReason?: string;
     /** Job ID */
     id?: string;
     name: JobName;

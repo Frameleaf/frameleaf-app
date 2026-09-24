@@ -1,5 +1,6 @@
 import { BrowserContext } from '@playwright/test';
 import { playwrightHost } from 'src/../playwright.config.js';
+import { adminConfigDefaults } from 'src/ui/mock-network/admin-config.js';
 
 export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserId: string) => {
   await context.addCookies([
@@ -274,6 +275,34 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         diskUsagePercentage: 74.4,
       },
     });
+  });
+  // FL-71: the Command Center (`/user-settings`) is where the rail's Trash, the old `/trash` addresses
+  // and every settings area open. The mocked user is an administrator, and an administrator's
+  // Command Center loads the server settings with it, so the mocked server answers with its defaults.
+  await context.route('**/api/system-config', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', json: adminConfigDefaults });
+  });
+  await context.route('**/api/system-config/defaults', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: adminConfigDefaults });
+  });
+  await context.route('**/api/admin/config/revision', async (route) => {
+    if (route.request().method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { config: adminConfigDefaults, revision: 'e2e-defaults' },
+    });
+  });
+  await context.route('**/api/admin/config/history', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: { entries: [] } });
+  });
+  await context.route('**/api/analytics/scopes', async (route) => {
+    return route.fulfill({ status: 200, contentType: 'application/json', json: { scopes: [] } });
   });
   await context.route('**/api/server/version-history', async (route) => {
     return route.fulfill({

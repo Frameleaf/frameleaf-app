@@ -1,26 +1,39 @@
-import { mdiImageSearchOutline } from '@mdi/js';
-import { getQueuesActions } from '$lib/services/queue.service';
+import { emptyQueue, getQueue, QueueCommand, QueueName, runQueueCommandLegacy } from '@immich/sdk';
+import { handleClearFailedJobs, handleClearWaitingJobs } from '$lib/services/queue.service';
+
+vi.mock('@immich/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@immich/sdk')>()),
+  emptyQueue: vi.fn(),
+  getQueue: vi.fn(),
+  runQueueCommandLegacy: vi.fn(),
+}));
+vi.mock('$lib/managers/event-manager.svelte', () => ({ eventManager: { emit: vi.fn(), on: vi.fn() } }));
 
 /**
- * The Jobs manager's header actions (`/admin/queues`). The design template's `JobsManager.jsx`
- * places "Enrichment tasks" between Concurrency and Create job (FL-59 follow-up); this only
- * checks the action's shape, not what its dialog does — that is `EnrichmentTasksModal.svelte`'s
- * job, and the flows it delegates to (description requeue, smart album re-evaluation) already
- * have their own coverage.
+ * The Job manager's clear commands (FL-71): "Remove failed records" must leave waiting, delayed and
+ * active jobs alone, which only the queue command's ClearFailed does (`emptyQueue` with `failed`
+ * also drains the waiting jobs); "Clear waiting jobs" keeps the failed records.
  */
-describe('getQueuesActions', () => {
-  it('offers Enrichment tasks alongside Concurrency and Create job', () => {
-    const actions = getQueuesActions(String, undefined);
-
-    expect(actions.EnrichmentTasks).toBeDefined();
-    expect(actions.EnrichmentTasks.icon).toBe(mdiImageSearchOutline);
-    expect(actions.EnrichmentTasks.title).toBe('admin.enrichment_tasks');
-    expect(actions.EnrichmentTasks.description).toBe('admin.enrichment_tasks_description');
+describe('queue clear commands', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getQueue).mockResolvedValue({} as never);
   });
 
-  it('keeps every existing header action', () => {
-    const actions = getQueuesActions(String, undefined);
+  it('removes failed records without emptying the waiting jobs', async () => {
+    await handleClearFailedJobs({ name: QueueName.Ocr });
 
-    expect(Object.keys(actions)).toEqual(['ResumePaused', 'ManageConcurrency', 'EnrichmentTasks', 'CreateJob']);
+    expect(runQueueCommandLegacy).toHaveBeenCalledWith({
+      name: QueueName.Ocr,
+      queueCommandDto: { command: QueueCommand.ClearFailed, force: false },
+    });
+    expect(emptyQueue).not.toHaveBeenCalled();
+  });
+
+  it('clears waiting jobs and keeps the failed records', async () => {
+    await handleClearWaitingJobs({ name: QueueName.Ocr });
+
+    expect(emptyQueue).toHaveBeenCalledWith({ name: QueueName.Ocr, queueDeleteDto: { failed: false } });
+    expect(runQueueCommandLegacy).not.toHaveBeenCalled();
   });
 });

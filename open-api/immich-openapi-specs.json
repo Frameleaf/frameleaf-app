@@ -55796,10 +55796,20 @@
       },
       "QueueJobResponseDto": {
         "properties": {
+          "attemptsMade": {
+            "description": "How many times the job has been attempted",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "data": {
             "additionalProperties": {},
             "description": "Job data payload",
             "type": "object"
+          },
+          "failedReason": {
+            "description": "Why the last attempt failed, for a failed job",
+            "type": "string"
           },
           "id": {
             "description": "Job ID",

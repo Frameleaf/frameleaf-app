@@ -50,9 +50,11 @@ test.describe('Registration', () => {
     await utils.setAuthCookies(context, admin.accessToken);
 
     // create user
+    // FL-71: the old address opens the Command Center's Users manager.
     await page.goto('/admin/user-management');
-    await expect(page).toHaveTitle(/User Management/);
-    await page.getByRole('button', { name: 'Create user' }).click();
+    await page.waitForURL('**/user-settings?area=users&section=accounts');
+    await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create account' });
     await dialog.getByLabel('Email').fill('user@immich.cloud');
     await dialog.getByLabel('Initial password').fill('password');

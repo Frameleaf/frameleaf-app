@@ -234,11 +234,13 @@ export async function validateContracts(repository = root) {
   // Storage & originals. Both are placed where the September 22 prototype places them.
   // FL-71: 23 -> 22. The one Command Center mounts imports and preservation once, as account
   // sections of Import & protection (they were a server copy and an account copy: -2), and adds the
-  // template's Server & updates "Configuration transfer" section (+1).
+  // template's Server & updates "Configuration transfer" section (+1). 22 -> 21: queue concurrency
+  // is edited only in the Job manager's concurrency dialog, as in the template, so the separate
+  // job settings form is gone (FL-71 re-review).
   assert.equal(
     (systemSettings.match(/^\s{6}component:\s*[A-Za-z][A-Za-z0-9]*/gm) ?? [])
       .length,
-    22,
+    21,
   );
   // FL-71: the account settings are Command Center sections drawn one at a time, no longer
   // accordion groups; the same 16 sections (now counted by their section branch).
