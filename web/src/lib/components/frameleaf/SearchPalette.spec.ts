@@ -1,4 +1,4 @@
-import { AssetTypeEnum, SearchFacetField, type AssetResponseDto, type PersonResponseDto } from '@immich/sdk';
+import { AssetTypeEnum, SearchFacetField, type AssetResponseDto } from '@immich/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,7 +20,15 @@ const UNNAMED = '00000000-0000-4000-8000-000000000003';
 const ALBUM = '00000000-0000-4000-8000-000000000020';
 
 const person = (id: string, name: string) =>
-  ({ id, name, thumbnailPath: '/thumb', updatedAt: '2026-01-01T00:00:00.000Z', isHidden: false }) as PersonResponseDto;
+  ({
+    id,
+    name,
+    thumbnailPath: '/thumb',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    isHidden: false,
+    assetCount: 1,
+    lastSeenAt: null,
+  }) as never;
 
 const asset = (id: string, name: string) =>
   ({
