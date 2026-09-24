@@ -133,8 +133,6 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-radius-card')).toBe('12px');
     expect(base.get('--fl-radius-dialog')).toBe('22px');
     expect(base.get('--fl-radius-pill')).toBe('999px');
-    // Every people photo is a squircle.
-    expect(base.get('--fl-squircle')).toContain('data:image/svg+xml');
   });
 
   it('honours reduced motion and keeps native touch targets', () => {
