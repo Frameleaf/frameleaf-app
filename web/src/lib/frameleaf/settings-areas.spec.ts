@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsAreaUrl,
   areaForPersonalSection,
+  areaSectionKeys,
   areaForSection,
   commandCenterUrl,
   defaultSettingsArea,
@@ -22,7 +23,7 @@ const sections = [
     admin: true,
   },
   { key: 'trash', title: 'Trash settings', subtitle: 'Manage trash settings', admin: true },
-  { key: 'job', title: 'Job settings', subtitle: 'Manage job concurrency', admin: true },
+  { key: 'queues', title: 'Job manager', subtitle: 'Manage queues & jobs', admin: true },
   { key: 'authentication', title: 'Authentication settings', subtitle: 'Manage password, OAuth', admin: true },
 ];
 
@@ -38,6 +39,7 @@ describe('Frameleaf settings areas', () => {
 
   it('keeps every legacy accordion key that other pages deep link to', () => {
     // OpenQueryParam.JOB, OpenQueryParam.STORAGE_TEMPLATE, OpenQueryParam.OAUTH's section, OpenQueryParam.NOTIFICATIONS
+    // The old job settings key opens the Job manager, where queue concurrency is edited.
     expect(areaForSection('job')).toBe('processing');
     expect(areaForSection('storage-template')).toBe('storage');
     expect(areaForSection('authentication')).toBe('security');
@@ -81,7 +83,7 @@ describe('Frameleaf settings areas', () => {
   });
 
   it('opens Library analytics as a command center screen, as the template does (FL-79)', () => {
-    expect(SETTINGS_AREAS[0]).toMatchObject({ id: 'analytics', group: 'command', sections: [] });
+    expect(SETTINGS_AREAS[1]).toMatchObject({ id: 'analytics', group: 'command', sections: [] });
     expect(isScreenArea('analytics')).toBe(true);
     expect(isScreenArea('storage')).toBe(false);
     expect(resolveSettingsArea({ area: 'analytics' })).toBe('analytics');
@@ -93,19 +95,24 @@ describe('Frameleaf settings areas', () => {
 
   it('lists the areas in the template catalogue order', () => {
     expect(SETTINGS_AREAS.map((item) => item.id)).toEqual([
+      'overview',
       'analytics',
       'storage',
       'backup',
       'intelligence',
       'editing',
+      'sharing',
       'care',
       'processing',
       'security',
       'notifications',
       'server',
+      'maintenance',
       'preferences',
+      'users',
       'libraries',
       'utilities',
+      'trash',
       'history',
     ]);
   });
@@ -113,7 +120,16 @@ describe('Frameleaf settings areas', () => {
   describe(isAreaAvailable.name, () => {
     it('offers an account without administration only areas it has something in', () => {
       const offered = SETTINGS_AREAS.filter((item) => isAreaAvailable(item, false)).map((item) => item.id);
-      expect(offered).toEqual(['backup', 'security', 'notifications', 'preferences', 'utilities']);
+      expect(offered).toEqual([
+        'backup',
+        'sharing',
+        'care',
+        'security',
+        'notifications',
+        'preferences',
+        'utilities',
+        'trash',
+      ]);
       expect(SETTINGS_AREAS.every((item) => isAreaAvailable(item, true))).toBe(true);
     });
   });
@@ -134,7 +150,8 @@ describe('Frameleaf settings areas', () => {
       expect(resolveSettingsArea({ area: 'nope', isOpen: 'job' })).toBe('processing');
       expect(resolveSettingsArea({ isOpen: 'nope storage-template' })).toBe('storage');
       expect(resolveSettingsArea({ isOpen: 'nope' })).toBe(defaultSettingsArea(true));
-      expect(resolveSettingsArea({})).toBe('storage');
+      // The template's rail Settings opens the Overview (App.jsx onSettings).
+      expect(resolveSettingsArea({})).toBe('overview');
       expect(resolveSettingsArea({ isAdmin: false })).toBe('preferences');
     });
 
@@ -151,7 +168,7 @@ describe('Frameleaf settings areas', () => {
     it('opens the named section of the area, or the first isOpen key the area holds', () => {
       expect(resolveSettingsSection('server', { section: 'theme' })).toBe('theme');
       expect(resolveSettingsSection('server', { section: 'job' })).toBeUndefined();
-      expect(resolveSettingsSection('processing', { isOpen: 'library-watch job' })).toBe('job');
+      expect(resolveSettingsSection('processing', { isOpen: 'library-watch job' })).toBe('queues');
       expect(resolveSettingsSection('notifications', { isOpen: 'notifications' })).toBe('email-preferences');
       expect(resolveSettingsSection('backup', { isOpen: 'preservation' })).toBe('preservation');
       expect(resolveSettingsSection('storage', {})).toBeUndefined();
@@ -164,7 +181,7 @@ describe('Frameleaf settings areas', () => {
       expect(searchSettingsSections(sections, 'manage').map((s) => s.key)).toEqual([
         'storage-template',
         'trash',
-        'job',
+        'queues',
         'authentication',
       ]);
       expect(searchSettingsSections(sections, ' '.repeat(3))).toEqual([]);
@@ -181,6 +198,21 @@ describe('Frameleaf settings areas', () => {
         { key: 'takeout', title: 'Imports' },
       ];
       expect(sectionsForArea(backup, 'backup').map((s) => s.key)).toEqual(['backup', 'takeout', 'preservation']);
+    });
+
+    it("interleaves server and account sections where the template does (Library care's health, repair, enrichment)", () => {
+      const care = [
+        { key: 'enrichment-care', title: 'Enrichment completeness', admin: true },
+        { key: 'repair', title: 'Repair queues' },
+        { key: 'integrity-checks', title: 'Media health & integrity', admin: true },
+      ];
+      expect(sectionsForArea(care, 'care').map((s) => s.key)).toEqual([
+        'integrity-checks',
+        'repair',
+        'enrichment-care',
+      ]);
+      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'enrichment-care']);
+      expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });
 
     it('keeps the server and account notifications apart', () => {

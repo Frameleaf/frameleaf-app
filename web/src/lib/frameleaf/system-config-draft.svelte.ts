@@ -99,6 +99,8 @@ export class SystemConfigDraftStore {
   journalAvailable = $state(true);
 
   changes = $derived(diffConfig(this.baseline, this.draft));
+  /** Bumped when a page asks the settings bar to open its change review (the Job manager's concurrency). */
+  reviewRequests = $state(0);
 
   readonly defaults: AdminConfigDto;
   #options: SystemConfigDraftOptions;
@@ -111,6 +113,11 @@ export class SystemConfigDraftStore {
     this.#options = options;
     this.defaults = cloneConfig(options.defaults);
     this.#adopt(current);
+  }
+
+  /** Opens the settings bar's review of every pending change. */
+  requestReview() {
+    this.reviewRequests++;
   }
 
   get dirty() {

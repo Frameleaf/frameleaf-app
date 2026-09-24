@@ -190,7 +190,7 @@ describe('queueRow', () => {
 
     expect(row).toMatchObject({ done: 300, total: 400, percent: 75, active: 4, waiting: 96 });
     expect(row.control).toEqual({ kind: 'pause' });
-    expect(row.href).toBe('/admin/queues/thumbnail-generation');
+    expect(row.href).toBe('/user-settings?area=processing&section=queues&queue=thumbnail-generation');
   });
 
   it('never shows a total smaller than the work visibly in hand', () => {
