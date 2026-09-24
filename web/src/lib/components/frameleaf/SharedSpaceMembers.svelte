@@ -438,7 +438,9 @@
       ? $t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })
       : $t('frameleaf_album_remove_member_confirm')}
     bind:open={confirming.open}
-    onConfirm={() => remove(member)}
+    onConfirm={async () => {
+      await remove(member);
+    }}
   />
 {/if}
 
