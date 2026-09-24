@@ -115,6 +115,7 @@
       {downloadFileName}
       selectionMode={selecting}
       noSelectionBar
+      publicView
     >
       {#if album.description}
         <p class="pv-album-description">{album.description}</p>

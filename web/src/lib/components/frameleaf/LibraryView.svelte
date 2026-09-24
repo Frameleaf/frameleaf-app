@@ -123,6 +123,13 @@
     /** FL-36: the information panel. Work opens it above tablet width only. */
     infoPanel?: Snippet;
     empty?: Snippet;
+    /**
+     * A public shared-link page (prototype `PublicViewer.jsx`): header, select bar and grid only. The
+     * results toolbar (Timeline/Browse/Work, Filter) and the Work information panel are private-library
+     * chrome, so neither is drawn, and the grid keeps the plain Browse look whatever layout this device
+     * last used in the library.
+     */
+    publicView?: boolean;
   };
 
   let {
@@ -158,6 +165,7 @@
     viewer,
     infoPanel,
     empty,
+    publicView = false,
   }: Props = $props();
 
   timelineManager = new TimelineManager();
@@ -171,8 +179,10 @@
   });
 
   const manager = $derived(timelineManager as TimelineManager);
+  /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
+  const gridLayout = $derived(publicView ? 'browse' : session.layout);
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
-  const showInfoPanel = $derived(session.layout === 'work' && !mediaQueryManager.maxMd);
+  const showInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
   const selecting = $derived(session.selection.length > 0);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
@@ -521,7 +531,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={session.layout}>
+<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={gridLayout}>
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
@@ -530,8 +540,8 @@
         timelineManager={manager}
         {session}
         {ratingFor}
-        captionFor={session.layout === 'work' ? captionFor : undefined}
-        showDayHeaders={session.layout !== 'browse'}
+        captionFor={gridLayout === 'work' ? captionFor : undefined}
+        showDayHeaders={gridLayout !== 'browse'}
         {enableRouting}
         {selectionMode}
         {singleSelect}
@@ -543,12 +553,14 @@
       >
         {#snippet header()}
           {@render children?.()}
-          <ResultsToolbar {session} {onOpenFilterPanel}>
-            {@render toolbar?.()}
-            {#if session.selection.length >= 2 && !snapshot && !selectionMode}
-              <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
-            {/if}
-          </ResultsToolbar>
+          {#if !publicView}
+            <ResultsToolbar {session} {onOpenFilterPanel}>
+              {@render toolbar?.()}
+              {#if session.selection.length >= 2 && !snapshot && !selectionMode}
+                <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
+              {/if}
+            </ResultsToolbar>
+          {/if}
         {/snippet}
       </LibraryTimeline>
 
