@@ -76,7 +76,25 @@ export class AlbumService extends BaseService {
     }
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
-    return albums.map((album) => this.toListItem(album, albumMetadata));
+    const readable = await this.readableParents(auth, albums);
+    return albums.map((album) => this.withReadableParent(this.toListItem(album, albumMetadata), readable));
+  }
+
+  /**
+   * FL-52: an album's collection is the owner's organisation. Somebody the album is shared with
+   * sees `parentId` only when they can read that collection too; otherwise the album stands on its
+   * own for them and the private collection's id never leaves the server.
+   */
+  private async readableParents(auth: AuthDto, albums: { parentId: string | null }[]): Promise<Set<string>> {
+    const parentIds = [...new Set(albums.map(({ parentId }) => parentId).filter((id): id is string => !!id))];
+    if (parentIds.length === 0) {
+      return new Set();
+    }
+    return this.checkAccess({ auth, permission: Permission.AlbumRead, ids: parentIds });
+  }
+
+  private withReadableParent<T extends { parentId: string | null }>(album: T, readable: Set<string>): T {
+    return album.parentId && !readable.has(album.parentId) ? { ...album, parentId: null } : album;
   }
 
   /**
@@ -111,10 +129,11 @@ export class AlbumService extends BaseService {
 
     // Every group comes back in the person's own custom order (FL-52); the client's "Custom order"
     // sort shows it as is, the other sorts re-sort it.
+    const readable = await this.readableParents(auth, albums);
     return orderAlbumTree(
       buildAlbumTree(
         albums.map((album) => ({
-          ...this.toListItem(album, albumMetadata),
+          ...this.withReadableParent(this.toListItem(album, albumMetadata), readable),
           isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
           smartRuleId: ruleByAlbum.get(album.id) ?? null,
         })),
@@ -191,8 +210,9 @@ export class AlbumService extends BaseService {
       [album.id]: albumMetadataForIds,
     });
 
+    const readable = await this.readableParents(auth, [mappedAlbum]);
     return {
-      ...mapAlbum(mappedAlbum),
+      ...this.withReadableParent(mapAlbum(mappedAlbum), readable),
       startDate: asDateTimeString(albumMetadataForIds?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadataForIds?.endDate ?? undefined),
       assetCount: albumMetadataForIds?.assetCount ?? 0,

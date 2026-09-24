@@ -709,6 +709,46 @@ describe('/albums', () => {
         }
       });
 
+      it('shows a member an album shared from a private collection on its own, without the collection (FL-52)', async () => {
+        const privateCollection = await utils.createAlbum(user1.accessToken, {
+          albumName: 'PrivateShelfSecret',
+          kind: AlbumKind.Collection,
+        });
+        const shared = await utils.createAlbum(user1.accessToken, {
+          albumName: 'SharedFromPrivateShelf',
+          parentId: privateCollection.id,
+          albumUsers: [{ userId: user2.userId, role: AlbumUserRole.Viewer }],
+        });
+
+        const { status, body: tree } = await request(app)
+          .get('/albums/tree')
+          .set('Authorization', `Bearer ${user2.accessToken}`);
+        expect(status).toBe(200);
+
+        // The shared album stands on its own at the member's top level…
+        const standalone = tree.albums.find(({ id }: { id: string }) => id === shared.id);
+        expect(standalone).toBeDefined();
+        expect(standalone.parentId).toBeNull();
+        expect(
+          tree.collections.some(({ albums }: { albums: { id: string }[] }) =>
+            albums.some(({ id }) => id === shared.id),
+          ),
+        ).toBe(false);
+        // …and nothing about the owner's private collection reaches them.
+        const serialized = JSON.stringify(tree);
+        expect(serialized).not.toContain(privateCollection.id);
+        expect(serialized).not.toContain('PrivateShelfSecret');
+
+        // The owner still sees it inside the collection.
+        const { body: ownerTree } = await request(app)
+          .get('/albums/tree')
+          .set('Authorization', `Bearer ${user1.accessToken}`);
+        const shelf = ownerTree.collections.find(
+          ({ collection }: { collection: { id: string } }) => collection.id === privateCollection.id,
+        );
+        expect(shelf.albums.map(({ id }: { id: string }) => id)).toContain(shared.id);
+      });
+
       it('saves a personal custom order and refuses one from a stale tree (FL-52)', async () => {
         const shelf = await utils.createAlbum(user1.accessToken, {
           albumName: 'OrderShelf',
