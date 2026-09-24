@@ -748,6 +748,10 @@ export class PreservationWorkerService {
     const counts = (await this.repository.countItems([found.id])).get(found.id);
     const failed = counts?.states.failed ?? 0;
     const skipped = counts?.states.skipped ?? 0;
+    // An original that could not be read is missing from the package just as a failed copy is.
+    // Only a Locked item the package was asked to leave out is a skip that keeps it complete.
+    const unavailable = counts?.unavailable ?? 0;
+    const complete = failed === 0 && unavailable === 0;
     const support = Object.fromEntries(
       PRESERVATION_SUPPORT_CATEGORIES.map((category) => [
         category,
@@ -769,7 +773,7 @@ export class PreservationWorkerService {
         includeMetadata: found.includeMetadata,
       },
       counts: { selected: exported + failed + skipped, exported, failed, skipped, locked, bytes },
-      complete: failed === 0,
+      complete,
       files,
       support,
     };
@@ -781,7 +785,7 @@ export class PreservationWorkerService {
     await this.removeLeftovers(found.path, keep);
 
     await this.repository.updatePackage(found.id, {
-      status: failed > 0 ? 'incomplete' : 'ready',
+      status: complete ? 'ready' : 'incomplete',
       sizeBytes: bytes,
       manifest: {
         packageId: manifest.packageId,
