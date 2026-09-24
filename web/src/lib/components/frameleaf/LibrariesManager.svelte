@@ -14,6 +14,7 @@
   import LibraryDetail from '$lib/components/frameleaf/LibraryDetail.svelte';
   import LibraryFormDialog from '$lib/components/frameleaf/LibraryFormDialog.svelte';
   import LibraryRemoveDialog from '$lib/components/frameleaf/LibraryRemoveDialog.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import {
     LIBRARY_QUERY_MAX_LENGTH,
     LIBRARY_SCAN_POLL_MS,
@@ -156,7 +157,7 @@
 <section class="fl-libraries" aria-label={$t('frameleaf_libraries_title')}>
   <header class="resource-heading">
     <div>
-      <p class="resource-eyebrow">{$t('frameleaf_libraries_eyebrow')}</p>
+      <SettingsOverline>{$t('frameleaf_libraries_eyebrow')}</SettingsOverline>
       <h1>{$t('frameleaf_libraries_title')}</h1>
       <p>{$t('frameleaf_libraries_subtitle')}</p>
     </div>

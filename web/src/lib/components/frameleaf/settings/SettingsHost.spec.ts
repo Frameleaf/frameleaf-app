@@ -154,6 +154,50 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
+  it('draws an area directory as grouped lists without repeated icons (FL-71, FL-10)', () => {
+    open('/user-settings?area=storage');
+    const { container } = render(SettingsHost, { sections });
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    expect(
+      within(directory)
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Storage', 'Trash']);
+    // Only the chevron: no area icon repeated on every row.
+    for (const row of within(directory).getAllByRole('button')) {
+      expect(row.querySelectorAll('svg')).toHaveLength(1);
+    }
+    // Every row is a server setting, like the area, so none carries a scope tag.
+    expect(directory.querySelector('.cc-directory-scope')).toBeNull();
+  });
+
+  it('tags only the rows whose scope differs from the rest of the area', () => {
+    open('/user-settings?area=notifications');
+    const { container } = render(SettingsHost, { sections });
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    const tags = [...directory.querySelectorAll('.cc-directory-scope')].map((tag) => tag.textContent);
+    expect(tags).toEqual(['Just you']);
+    expect(within(directory).getByRole('button', { name: /Your email notifications/ })).toHaveTextContent('Just you');
+    expect(within(directory).getByRole('button', { name: /Email delivery/ })).not.toHaveTextContent('Just you');
+  });
+
+  it("lists Library care's repair tools after its sections", async () => {
+    open('/user-settings?area=care');
+    const { container } = render(SettingsHost, { sections });
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    expect(within(directory).getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
+    await userEvent.click(within(directory).getByRole('button', { name: /Missing media/ }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
+  });
+
+  it('does not repeat a page name that matches its area in the overline', () => {
+    open('/user-settings?area=trash');
+    render(SettingsHost, { sections });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Trash' }).parentElement!;
+    expect(within(heading).queryByRole('button', { name: 'Trash' })).toBeNull();
+    expect(heading.querySelector('.cc-overline')).toHaveTextContent('Your library');
+  });
+
   it("links Storage → Trash & retention to the account's own trash", async () => {
     open('/user-settings?area=storage&section=trash');
     render(SettingsHost, { sections });

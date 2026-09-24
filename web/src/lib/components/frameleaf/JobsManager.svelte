@@ -24,6 +24,7 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import JobsConcurrencyDialog from '$lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte';
   import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
   import QueueGraph from '$lib/components/frameleaf/jobs/QueueGraph.svelte';
@@ -564,7 +565,7 @@
 <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
   <header class="jm-header">
     <div>
-      <p class="jm-eyebrow">{$t('frameleaf_jobs_eyebrow')}</p>
+      <SettingsOverline>{$t('frameleaf_jobs_eyebrow')}</SettingsOverline>
       <h1>{selected ? title(selected.definition) : $t('frameleaf_jobs_title')}</h1>
       <p>{selected ? description(selected.definition) : $t('frameleaf_jobs_description')}</p>
     </div>
@@ -1143,12 +1144,6 @@
     margin: 0;
     color: var(--fl-muted);
     max-width: 610px;
-  }
-  .jm-header .jm-eyebrow {
-    font-size: 10px;
-    letter-spacing: 1.6px;
-    color: var(--jm-green);
-    font-weight: 700;
   }
   .jm-header-actions {
     display: flex;
