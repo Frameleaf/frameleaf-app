@@ -152,7 +152,7 @@ export class SearchController {
   @Endpoint({
     summary: 'Retrieve asset counts by city',
     description:
-      'Retrieve how many timeline photos and videos the user can see in each city listed by GET /search/cities. Locked, hidden and trashed media are never counted.',
+      'Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.',
     history: new HistoryBuilder().added('v3'),
   })
   getCityAssetCounts(@Auth() auth: AuthDto): Promise<SearchCityCountResponseDto[]> {

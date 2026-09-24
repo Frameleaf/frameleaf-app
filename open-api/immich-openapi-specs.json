@@ -23397,7 +23397,7 @@
     },
     "/search/cities/counts": {
       "get": {
-        "description": "Retrieve how many timeline photos and videos the user can see in each city listed by GET /search/cities. Locked, hidden and trashed media are never counted.",
+        "description": "Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.",
         "operationId": "getCityAssetCounts",
         "parameters": [],
         "responses": {
@@ -59692,7 +59692,7 @@
       "SearchCityCountResponseDto": {
         "properties": {
           "city": {
-            "description": "City name, as grouped by GET /search/cities",
+            "description": "City name, grouped as in GET /search/cities (which lists only cities with a photo)",
             "type": "string"
           },
           "count": {
