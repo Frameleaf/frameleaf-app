@@ -277,6 +277,9 @@
     bottom: 6px;
     width: 26px;
     height: 26px;
+    /* Its own size, not the global touch-target floor, so it never covers the row's text. */
+    min-width: 26px;
+    min-height: 26px;
     opacity: 0;
     transition: opacity var(--fl-motion-fast) var(--fl-ease);
   }

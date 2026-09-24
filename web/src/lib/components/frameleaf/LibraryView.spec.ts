@@ -1,3 +1,4 @@
+import { AssetVisibility } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
@@ -145,6 +146,7 @@ describe('LibraryView', () => {
 
     afterEach(() => {
       librarySession.clearSelection();
+      navigation.goto.mockClear();
     });
 
     it('shows the status bar with nothing selected and no Compare in the results toolbar', async () => {
@@ -167,6 +169,21 @@ describe('LibraryView', () => {
 
       await fireEvent.click(screen.getByTestId('selection-leading-studio'));
       expect(navigation.goto).toHaveBeenCalledWith('/studio?assets=a%2Cb');
+    });
+
+    it('never hands Locked items to Studio', async () => {
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Locked },
+        destination: { kind: 'library' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.dispatch({ type: 'selection', ids: ['a', 'b'] });
+      await tick();
+
+      expect(screen.getByTestId('selection-leading-studio')).toBeDisabled();
+      await fireEvent.click(screen.getByTestId('selection-leading-studio'));
+      expect(navigation.goto).not.toHaveBeenCalled();
     });
 
     it('offers Compare only for two or more items', async () => {
