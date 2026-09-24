@@ -189,6 +189,20 @@ describe(TranscodingService.name, () => {
       expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
     });
 
+    it('respawns inside the lookahead after ffmpeg was killed externally', async () => {
+      const first = mockSpawn(0, '', '');
+      const second = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      const onCalls = vi.mocked(first.on).mock.calls as unknown as [string, (code: number | null) => void][];
+      onCalls.find(([event]) => event === 'exit')?.[1](null);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 2 });
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(2);
+    });
+
     it('does not spawn when the session is unknown', async () => {
       await sut.onSegmentRequest({ sessionId: 'never-created', assetId, variantIndex: 0, segmentIndex: 0 });
 
