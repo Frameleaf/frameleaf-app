@@ -155,5 +155,100 @@ test.describe('Detail Panel', () => {
       const timezone = page.getByRole('combobox', { name: 'Timezone' });
       await expect(timezone).toHaveValue(test.expected.timeZoneWithOffset);
     });
+
+    // FL-83 (ported from abe5d9e470, b832bb19bd, 6b68cfbfe2): a failed lock keeps everything behind the
+    // root shield with Retry; a successful retry closes private editors and dialogs, then replaces the
+    // whole document (the PR131 boundary) before anything is revealed again.
+    test('retries a failed lock above native modality and closes private editors before revealing the app', async ({
+      context,
+      page,
+    }) => {
+      await utils.setAuthCookies(context, admin.accessToken);
+      const pin = { pinCode: '123456' };
+      const pinSetup = await page.request.post('/api/auth/pin-code', { data: pin });
+      if (!pinSetup.ok()) {
+        expect(pinSetup.status()).toBe(400);
+        expect(await pinSetup.text()).toContain('User already has a PIN code');
+      }
+      const unlocked = await page.request.post('/api/auth/session/unlock', { data: pin });
+      expect(unlocked.ok()).toBe(true);
+      await page.goto(`/photos/${asset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByRole('button', { name: 'Information (I)' }).click();
+      await page.getByTestId('detail-panel-edit-date-button').click();
+      await expect(page.locator('#datetime')).toBeVisible();
+      const lock = page.getByRole('button', { name: 'Hide Locked content' }).first();
+      await expect(lock).toBeVisible();
+
+      await page.evaluate(() => {
+        const dialog = document.createElement('dialog');
+        dialog.id = 'native-dialog-during-lock';
+        dialog.textContent = 'Private dialog draft';
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      const nativeDialog = page.locator('#native-dialog-during-lock');
+      await expect(nativeDialog).toHaveJSProperty('open', true);
+
+      let attempts = 0;
+      const lockStatuses: number[] = [];
+      page.on('response', (response) => {
+        if (response.url().endsWith('/api/auth/session/lock')) {
+          lockStatuses.push(response.status());
+        }
+      });
+      await page.route('**/api/auth/session/lock', async (route) => {
+        attempts++;
+        if (attempts === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"offline"}' });
+        } else {
+          await route.continue();
+        }
+      });
+      // The native dialog blocks ordinary controls, so trigger the same lock handler as tab hiding.
+      await lock.evaluate((button: HTMLButtonElement) => button.click());
+      const shield = page.locator('dialog.session-lock-shield[open]');
+      await expect(shield).toHaveCount(1);
+      await expect.poll(() => attempts).toBe(1);
+      await expect(page.locator('#datetime')).toBeHidden();
+      await expect
+        .poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending')))
+        .toBe('true');
+
+      await page.getByRole('button', { name: 'Retry', exact: true }).click({ timeout: 3000 });
+      await expect.poll(() => attempts).toBe(2);
+      await expect.poll(() => lockStatuses).toContain(204);
+      await expect(page).toHaveURL(/\/photos(?:\?|$)/);
+      await expect(shield).toHaveCount(0);
+      await expect(page.locator('#datetime')).toHaveCount(0);
+      await expect(nativeDialog).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending'))).toBeNull();
+    });
+
+    test('offers lock retry on the PIN prompt without a top bar', async ({ context, page }) => {
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto('/auth/pin-prompt');
+      await page.evaluate(() => sessionStorage.setItem('frameleaf:session-lock-pending', 'true'));
+      let attempts = 0;
+      await page.route('**/api/auth/session/lock', async (route) => {
+        attempts++;
+        if (attempts === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"offline"}' });
+        } else {
+          await route.continue();
+        }
+      });
+      await page.reload();
+      await expect.poll(() => attempts).toBe(1);
+      await expect(page.locator('#dashboard-navbar')).toHaveCount(0);
+      await expect(page.locator('dialog.session-lock-shield[open]')).toHaveCount(1);
+
+      await page.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect.poll(() => attempts).toBe(2);
+      await expect(page.locator('dialog.session-lock-shield[open]')).toHaveCount(0);
+      // the PIN prompt is already a locked-only page: the lock settles in place, without a reload
+      await expect(page).toHaveURL(/\/auth\/pin-prompt/);
+      await expect.poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending'))).toBeNull();
+    });
   });
 });

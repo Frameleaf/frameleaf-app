@@ -22,9 +22,11 @@
     autofocus = false,
     describedBy,
     oncomplete,
+    context = 'auth',
   }: {
     /** Current digits, most-recent-first is not applied: left-to-right entry order. */
     value?: string;
+    context?: 'auth' | 'locked';
     /** Number of digits the PIN requires. */
     length?: number;
     /** Translated accessible name for the hidden input, e.g. "Six-digit PIN". */
@@ -40,6 +42,12 @@
   } = $props();
 
   let focused = $state(false);
+  let shaking = $state(false);
+  $effect(() => {
+    if (error && context === 'auth') {
+      shaking = true;
+    }
+  });
 
   const cells = $derived(Array.from({ length }, (_, index) => index));
   const activeIndex = $derived(Math.min(value.length, length - 1));
@@ -56,7 +64,14 @@
   };
 </script>
 
-<div class="pin-cells" class:error class:focused>
+<div
+  class="pin-cells"
+  class:locked-pin-cells={context === 'locked'}
+  class:pin-shake={shaking}
+  class:error
+  class:focused
+  onanimationend={() => (shaking = false)}
+>
   {#each cells as index (index)}
     <span
       aria-hidden="true"
@@ -118,6 +133,36 @@
   }
   .pin-cells.error .pin-cell {
     border-color: var(--fl-danger);
+  }
+  .locked-pin-cells {
+    margin: 16px 0 10px;
+    justify-content: flex-start;
+  }
+  .locked-pin-cells .pin-cell {
+    width: 46px;
+    height: 56px;
+  }
+  .pin-shake {
+    animation: pin-shake 420ms var(--fl-ease);
+  }
+  @keyframes pin-shake {
+    10%,
+    90% {
+      transform: translateX(-2px);
+    }
+    20%,
+    80% {
+      transform: translateX(4px);
+    }
+    30%,
+    50%,
+    70% {
+      transform: translateX(-6px);
+    }
+    40%,
+    60% {
+      transform: translateX(6px);
+    }
   }
   .pin-input {
     position: absolute;

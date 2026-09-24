@@ -1,121 +1,88 @@
 <script lang="ts">
-  /**
-   * The Frameleaf auth/onboarding shell (FL-80).
-   *
-   * The card `AuthPageLayout` renders for every public/auth route (login, register, forced
-   * password change, the PIN prompt, the maintenance splash) and the onboarding card,
-   * without changing what any of them do: this component only ever wraps children the
-   * route already produces from its own load function and form handlers.
-   *
-   * Theme follows the shell theme (`themeManager`), the same signal `LibraryRail`/`TopBar`
-   * read, so a PIN prompt reached mid-session matches the rest of the app rather than
-   * flashing to a default.
-   */
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
+  import summit from '$lib/assets/frameleaf/auth-summit.webp';
+  import cabin from '$lib/assets/frameleaf/auth-cabin.webp';
   import '$lib/frameleaf/tokens.css';
-  import { Icon, Theme as AppTheme, ThemePreference, ThemeSwitcher, themeManager } from '@immich/ui';
+  import '$lib/frameleaf/auth.css';
+  import { mdiMoonWaningCrescent, mdiWhiteBalanceSunny } from '@mdi/js';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import type { Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
 
   let {
     title,
-    icon,
     withHeader = true,
     children,
     footer,
+    hero,
+    attribution = false,
+    keypad = 'auto',
   }: {
     title?: string;
-    icon?: string;
     withHeader?: boolean;
     children?: Snippet;
     footer?: Snippet;
+    hero?: 'summit' | 'cabin';
+    attribution?: boolean;
+    keypad?: 'auto' | 'always' | 'never';
   } = $props();
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  const heroImage = $derived(hero === 'summit' ? summit : cabin);
+  const heroTitle = $derived(
+    hero === 'summit' ? $t('frameleaf_auth_hero_summit_title') : $t('frameleaf_auth_hero_cabin_title'),
+  );
+  const heroSubtitle = $derived(
+    hero === 'summit' ? $t('frameleaf_auth_hero_summit_place') : $t('frameleaf_auth_hero_cabin_place'),
+  );
 </script>
 
-<section class="frameleaf fl-auth-screen" data-theme={appTheme}>
-  <div class="fl-auth-panel">
-    <div class="fl-auth-top">
-      <FrameleafLogo variant="inline" theme={appTheme} class="h-7" />
-      {#if themeManager.preference !== ThemePreference.System}
-        <ThemeSwitcher size="medium" color="secondary" />
-      {/if}
+<section
+  class="frameleaf auth-screen"
+  class:split={!!hero}
+  class:single={!hero}
+  data-theme={appTheme}
+  data-keypad={keypad}
+>
+  <div class="auth-pane">
+    <div class="auth-pane-top">
+      <div class="auth-brand-plate">
+        <FrameleafLogo variant="inline" theme="dark" />
+      </div>
+      <button
+        type="button"
+        class="button auth-theme-toggle"
+        aria-label={appTheme === 'dark' ? $t('frameleaf_auth_switch_to_light') : $t('frameleaf_auth_switch_to_dark')}
+        onclick={() => themeManager.toggle()}
+      >
+        <Icon icon={appTheme === 'dark' ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent} size="20" />
+      </button>
     </div>
 
-    <div class="fl-auth-body">
-      {#if withHeader && (title || icon)}
-        <div class="fl-auth-heading">
-          {#if icon}
-            <Icon {icon} size="30" />
-          {/if}
-          {#if title}
-            <h1>{title}</h1>
-          {/if}
-        </div>
+    <div class="auth-pane-body">
+      {#if withHeader && title}
+        <div class="auth-heading"><h1>{title}</h1></div>
       {/if}
       {@render children?.()}
     </div>
 
-    {#if footer}
-      <footer class="fl-auth-foot">
-        {@render footer()}
+    {#if footer || attribution}
+      <footer class="auth-foot">
+        {#if attribution}
+          <span
+            >{$t('frameleaf_auth_built_on')}
+            <a href="https://immich.app" target="_blank" rel="noreferrer">Immich</a></span
+          >
+        {/if}
+        {#if footer}{@render footer()}{/if}
       </footer>
     {/if}
   </div>
-</section>
 
-<style>
-  .fl-auth-screen {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100dvh;
-    min-width: 100dvw;
-    padding: 1rem;
-  }
-  .fl-auth-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    width: 100%;
-    max-width: 30rem;
-    padding: 2rem;
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-dialog);
-    box-shadow: var(--fl-shadow-2);
-  }
-  .fl-auth-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .fl-auth-body {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .fl-auth-heading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--fl-text);
-    text-align: center;
-  }
-  .fl-auth-heading h1 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
-  .fl-auth-foot {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-    text-align: center;
-  }
-</style>
+  {#if hero}
+    <figure class="auth-hero" aria-hidden="true">
+      <img src={heroImage} alt="" />
+      <figcaption><strong>{heroTitle}</strong><span>{heroSubtitle}</span></figcaption>
+    </figure>
+  {/if}
+</section>
