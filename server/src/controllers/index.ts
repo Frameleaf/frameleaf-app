@@ -3,6 +3,7 @@ import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
 import { AppController } from 'src/controllers/app.controller.js';
+import { ArchiveOperationController } from 'src/controllers/archive-operation.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
@@ -77,6 +78,7 @@ export const controllers = [
   ActivityController,
   AlbumController,
   AppController,
+  ArchiveOperationController,
   AssetController,
   AssetDevelopController,
   AssetFilesController,
