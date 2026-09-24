@@ -192,6 +192,21 @@ describe('LibraryView', () => {
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
+    it('carries Thumbnail size on the library, not on a person’s page', async () => {
+      const first = render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      expect(screen.getByTestId('frameleaf-thumbnail-size')).toBeInTheDocument();
+      first.unmount();
+
+      render(LibraryView, {
+        options: { personId: 'p1' },
+        destination: { kind: 'person', id: 'p1' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      expect(screen.queryByTestId('frameleaf-thumbnail-size')).not.toBeInTheDocument();
+    });
+
     it('never hands Locked items to Studio', async () => {
       render(LibraryView, {
         options: { visibility: AssetVisibility.Locked },
