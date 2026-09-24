@@ -4769,6 +4769,7 @@
   "frameleaf_people_sort_recent": "Recently seen",
   "frameleaf_people_state_hidden": "hidden",
   "frameleaf_people_state_shown": "shown",
+  "frameleaf_people_truncated": "Showing the first {count, plural, one {# person} other {# people}}. Search or sort covers only these.",
   "frameleaf_people_unfavorited_status": "{name} removed from favorites.",
   "frameleaf_people_unhidden_detail_status": "{name} is shown on the People page again.",
   "frameleaf_people_unhide": "Unhide",
