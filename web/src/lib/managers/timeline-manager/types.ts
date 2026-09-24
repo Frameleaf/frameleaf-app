@@ -83,3 +83,10 @@ export interface UpdateGeometryOptions {
   invalidateHeight: boolean;
   noDefer?: boolean;
 }
+
+/**
+ * How the Frameleaf timeline groups what it shows (prototype `TimelineLibrary.jsx` MODES). Months
+ * are loaded a bucket at a time, so a month, year or "all" group is laid out month by month: one
+ * justified flow per month, with the group header over the first month the group covers.
+ */
+export type TimelineGrouping = 'days' | 'months' | 'years' | 'all';

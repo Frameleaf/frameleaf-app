@@ -1,3 +1,4 @@
+import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { UpdateGeometryOptions } from '../types';
@@ -12,7 +13,7 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
     if (!month.isHeightActual) {
       const unwrappedWidth = (3 / 2) * month.assetsCount * timelineManager.rowHeight * (7 / 10);
       const rows = Math.ceil(unwrappedWidth / viewportWidth);
-      const height = timelineManager.headerHeight + Math.max(1, rows) * timelineManager.rowHeight;
+      const height = month.groupHeaderHeight + Math.max(1, rows) * timelineManager.rowHeight;
       month.height = height;
     }
     return;
@@ -21,6 +22,10 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
 }
 
 export function layoutTimelineMonth(timelineManager: TimelineManager, month: TimelineMonth, noDefer: boolean = false) {
+  if (timelineManager.grouping !== 'days') {
+    layoutGroupedMonth(timelineManager, month);
+    return;
+  }
   let cumulativeHeight = 0;
   let cumulativeWidth = 0;
   let currentRowHeight = 0;
@@ -64,5 +69,41 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
   cumulativeHeight += currentRowHeight;
 
   month.height = cumulativeHeight;
+  month.isHeightActual = true;
+}
+
+/**
+ * Month, year and "all" grouping: the whole month is one justified flow under its group header, as
+ * the prototype lays out a group (`TimelineLibrary.jsx` justifiedRows over `group.assets`). The
+ * days stay the data model, so selection, navigation and live updates keep working by day; each
+ * day holds its share of the month's positions, all measured from the month's first row.
+ *
+ * A year or "all" group spans several months, and each month is laid out on its own, so a row can
+ * end short at a month boundary where the prototype runs the whole group as one flow. Recorded as a
+ * deviation for the owner in `frameleaf-plan/13-agent-handoff-2026-09-23-evening.md` §6.
+ */
+function layoutGroupedMonth(timelineManager: TimelineManager, month: TimelineMonth) {
+  const days = month.timelineDays;
+  const viewerAssets = days.flatMap((day) => day.viewerAssets);
+  const geometry = getJustifiedLayoutFromAssets(
+    viewerAssets.map((viewerAsset) => viewerAsset.asset),
+    timelineManager.justifiedLayoutOptions,
+  );
+  const height = viewerAssets.length === 0 ? 0 : geometry.containerHeight;
+  let index = 0;
+  for (const day of days) {
+    for (const viewerAsset of day.viewerAssets) {
+      viewerAsset.position = geometry.getPosition(index++);
+    }
+    day.deferredLayout = false;
+    day.row = 0;
+    day.col = 0;
+    day.start = 0;
+    day.top = 0;
+    day.width = geometry.containerWidth;
+    day.height = height;
+    day.updateAssetBoundaries();
+  }
+  month.height = viewerAssets.length === 0 ? 0 : month.groupHeaderHeight + height;
   month.isHeightActual = true;
 }
