@@ -3,6 +3,7 @@ import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
+import { ArchiveOperationService } from 'src/services/archive-operation.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
@@ -110,6 +111,7 @@ export const services = [
   ICloudStagingService,
   ICloudSyncService,
   ApiKeyService,
+  ArchiveOperationService,
   ActivityService,
   AlbumService,
   ApiService,

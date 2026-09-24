@@ -1993,6 +1993,57 @@ export type ApiKeyUpdateDto = {
     /** List of permissions */
     permissions?: Permission[];
 };
+export type ArchiveOperationResponseDto = {
+    /** The durable bulk job that archives the frozen set */
+    archiveJobId: string | null;
+    /** Archived by this operation and not undone */
+    archived: number;
+    /** Changed after the archive, so Undo left them as they are */
+    conflict: number;
+    /** Assets frozen into this operation */
+    count: number;
+    createdAt: string;
+    /** The operation was submitted or confirmed from the session asking, so it may offer its Undo */
+    currentSession: boolean;
+    /** When an unconfirmed prepared selection stops being confirmable */
+    expiresAt: string | null;
+    /** Archive operation ID */
+    id: string;
+    /** Not reached yet */
+    pending: number;
+    /** Counted and frozen, waiting for the owner to confirm; nothing has changed yet */
+    prepared: boolean;
+    /** The request key the operation was created with */
+    requestKey: string;
+    scope: ArchiveOperationScope;
+    /** Left as they were: no longer in the Timeline, or stopped before they were reached */
+    skipped: number;
+    /** The durable bulk job that undoes it, once requested */
+    undoJobId: string | null;
+    /** Undo is available for this operation */
+    undoable: boolean;
+    /** Restored by Undo */
+    undone: number;
+};
+export type ArchiveOperationCreateDto = {
+    /** The selection, in order */
+    assetIds: string[];
+    /** Client idempotency key; the same key answers with the same operation instead of starting another */
+    requestKey: string;
+};
+export type ArchiveOperationPrepareDto = {
+    /** Client idempotency key; the same key answers with the same operation instead of starting another */
+    requestKey: string;
+    scope: ArchiveOperationPrepareScope;
+};
+export type ArchiveOperationConfirmDto = {
+    /** The request key the selection was prepared with */
+    requestKey: string;
+};
+export type ArchiveOperationUndoDto = {
+    /** Client idempotency key; the same key answers with the same operation instead of starting another */
+    requestKey: string;
+};
 export type AssetFileResponseDto = {
     /** Creation date */
     createdAt: string;
@@ -9854,6 +9905,92 @@ export function rotateApiKey({ id }: {
     }));
 }
 /**
+ * List recent archive operations
+ */
+export function getArchiveOperations(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto[];
+    }>("/archive-operations", {
+        ...opts
+    }));
+}
+/**
+ * Archive a selection in the background
+ */
+export function createArchiveOperation({ archiveOperationCreateDto }: {
+    archiveOperationCreateDto: ArchiveOperationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>("/archive-operations", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationCreateDto
+    })));
+}
+/**
+ * Count and freeze every matching Timeline asset
+ */
+export function prepareArchiveOperation({ archiveOperationPrepareDto }: {
+    archiveOperationPrepareDto: ArchiveOperationPrepareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>("/archive-operations/prepare", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationPrepareDto
+    })));
+}
+/**
+ * Retrieve an archive operation
+ */
+export function getArchiveOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Confirm a prepared archive selection
+ */
+export function confirmArchiveOperation({ id, archiveOperationConfirmDto }: {
+    id: string;
+    archiveOperationConfirmDto: ArchiveOperationConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}/confirm`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationConfirmDto
+    })));
+}
+/**
+ * Undo an archive operation
+ */
+export function undoArchiveOperation({ id, archiveOperationUndoDto }: {
+    id: string;
+    archiveOperationUndoDto: ArchiveOperationUndoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}/undo`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationUndoDto
+    })));
+}
+/**
  * Search asset files
  */
 export function searchAssetFiles({ assetId, isEdited, isProgressive, isTransparent, $type }: {
@@ -17442,6 +17579,13 @@ export enum Permission {
     AdminSessionRead = "adminSession.read",
     AdminSessionDelete = "adminSession.delete",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
+}
+export enum ArchiveOperationScope {
+    SelectedOwnedAssets = "selected-owned-assets",
+    MatchingOwnedTimeline = "matching-owned-timeline"
+}
+export enum ArchiveOperationPrepareScope {
+    MatchingOwnedTimeline = "matching-owned-timeline"
 }
 export enum AssetFileType {
     Fullsize = "fullsize",

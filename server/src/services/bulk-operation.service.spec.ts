@@ -45,7 +45,14 @@ describe(BulkOperationService.name, () => {
   let sut: BulkOperationService;
   let mocks: ServiceMocks;
   let operations: MediaOperationRepository;
-  let assets: { updateAll: any; shiftDateTimeOriginalFrom: any; run: any; deleteAll: any; lock: any };
+  let assets: {
+    updateAll: any;
+    shiftDateTimeOriginalFrom: any;
+    run: any;
+    deleteAll: any;
+    lock: any;
+    notifyVisibilityChanged: any;
+  };
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
@@ -57,6 +64,7 @@ describe(BulkOperationService.name, () => {
   let duplicateDecisions: { applyGroup: any; undoGroup: any; getLockedIds: any };
   let mediaHealth: { applyBulkEntry: any };
   let classification: { applyBulkBatch: any };
+  let archiveOperations: { publish: any; restore: any; skipUnreached: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
@@ -84,6 +92,7 @@ describe(BulkOperationService.name, () => {
       run: vi.fn().mockResolvedValue(undefined),
       deleteAll: vi.fn().mockResolvedValue(undefined),
       lock: vi.fn().mockResolvedValue(undefined),
+      notifyVisibilityChanged: vi.fn().mockResolvedValue(undefined),
     };
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
@@ -115,6 +124,8 @@ describe(BulkOperationService.name, () => {
         ),
     };
 
+    archiveOperations = { publish: vi.fn(), restore: vi.fn(), skipUnreached: vi.fn().mockResolvedValue(0) };
+
     sut = new BulkOperationService(
       mocks.logger as never,
       operations,
@@ -131,6 +142,7 @@ describe(BulkOperationService.name, () => {
       duplicateDecisions as never,
       mediaHealth as never,
       classification as never,
+      archiveOperations as never,
     );
   });
 
@@ -159,6 +171,130 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('applyBatch', () => {
+    describe('a transactional archive (FL-32)', () => {
+      const archiveOperationId = newUuid();
+      const jobId = '0195e2a0-0000-7000-8000-0000000000b1';
+
+      it('publishes through the operation and reports what each item answered', async () => {
+        const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive, payload: { archiveOperationId } });
+        const [archived, moved, gone] = snapshot.assetIds;
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+        archiveOperations.publish.mockResolvedValue(
+          new Map([
+            [archived, 'archived'],
+            [moved, 'skipped'],
+            [gone, 'missing'],
+          ]),
+        );
+
+        const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+        expect(archiveOperations.publish).toHaveBeenCalledWith(
+          authStub.user1.user.id,
+          archiveOperationId,
+          jobId,
+          snapshot.assetIds,
+        );
+        expect(assets.updateAll).not.toHaveBeenCalled();
+        expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([archived], authStub.user1.user.id);
+        expect(outcomes).toEqual([
+          { id: archived, status: MediaOperationItemStatus.Ok },
+          { id: moved, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_archive_moved' },
+          { id: gone, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+        ]);
+      });
+
+      it('undoes through the operation, leaving changed and unreached items as they are', async () => {
+        const snapshot = snapshotOf({ action: MediaOperationBulkAction.Unarchive, payload: { archiveOperationId } });
+        const [restored, changed, unreached] = snapshot.assetIds;
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+        archiveOperations.restore.mockResolvedValue(
+          new Map([
+            [restored, 'undone'],
+            [changed, 'conflict'],
+            [unreached, 'cancelled'],
+          ]),
+        );
+
+        const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+        expect(archiveOperations.restore).toHaveBeenCalledWith(
+          authStub.user1.user.id,
+          archiveOperationId,
+          jobId,
+          snapshot.assetIds,
+        );
+        expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([restored], authStub.user1.user.id);
+        expect(outcomes).toEqual([
+          { id: restored, status: MediaOperationItemStatus.Ok },
+          {
+            id: changed,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_archive_undo_changed',
+          },
+          { id: unreached, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_cancelled' },
+        ]);
+      });
+
+      it('never lets an item the owner may not change reach the operation', async () => {
+        const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive, payload: { archiveOperationId } });
+        const [mine, theirs] = snapshot.assetIds;
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine]));
+        archiveOperations.publish.mockResolvedValue(new Map([[mine, 'archived']]));
+
+        const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+        expect(archiveOperations.publish).toHaveBeenCalledWith(authStub.user1.user.id, archiveOperationId, jobId, [
+          mine,
+        ]);
+        expect(outcomes).toContainEqual(
+          expect.objectContaining({ id: theirs, reasonKey: 'frameleaf_bulk_reason_no_permission' }),
+        );
+      });
+
+      it('records an item Locked since the job started as skipped in the operation, for either direction', async () => {
+        for (const action of [MediaOperationBulkAction.Archive, MediaOperationBulkAction.Unarchive]) {
+          archiveOperations.skipUnreached.mockClear();
+          const snapshot = snapshotOf({ action, payload: { archiveOperationId } });
+          const [lockedSince, ...rest] = snapshot.assetIds;
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+          vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([lockedSince]));
+          archiveOperations.publish.mockResolvedValue(new Map(rest.map((id) => [id, 'archived'])));
+          archiveOperations.restore.mockResolvedValue(new Map(rest.map((id) => [id, 'undone'])));
+
+          const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+          expect(archiveOperations.skipUnreached).toHaveBeenCalledWith(
+            authStub.user1.user.id,
+            archiveOperationId,
+            jobId,
+            [lockedSince],
+          );
+          const touched =
+            action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
+          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest);
+          expect(outcomes).toContainEqual({
+            id: lockedSince,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_locked',
+          });
+        }
+      });
+
+      it('archives an ordinary job without an operation as before', async () => {
+        const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+        await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+        expect(archiveOperations.publish).not.toHaveBeenCalled();
+        expect(assets.updateAll).toHaveBeenCalledWith(
+          authStub.user1,
+          expect.objectContaining({ visibility: AssetVisibility.Archive }),
+        );
+      });
+    });
+
     it('skips items the owner may not change and sends only the rest', async () => {
       const snapshot = snapshotOf();
       const [mine, theirs, gone] = snapshot.assetIds;
