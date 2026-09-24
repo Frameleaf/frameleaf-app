@@ -10,7 +10,7 @@ The owner reported that Codex, working on the same integration branch (`claude/f
 
 - **Prototype only.** Screens are built from `design/frameleaf/template/src`. Never apply old Immich placement, never use an interim home or a dialog in place of a prototype page. Utilities are sections of the Command Center `utilities` area; Library Care is the prototype `care` screen; settings pages come from `settings-catalog.mjs`. Reviewers treat violations as P1.
 - **Owner-confirmed product decisions:** FL-64 Masks and "Your presets" stay in the quick editor; FL-106 exports become Locked when a source later becomes Locked; FL-75 migration lives in Settings → Storage & originals → "Move or export your library".
-- **Jsonb:** raw inserts cast `sql\`${JSON.stringify(v)}::text::jsonb\``; a unit guard fails on `::jsonb`after`JSON.stringify`.
+- **Jsonb:** raw inserts cast the JSON text through `::text::jsonb` (for example `` sql`${JSON.stringify(v)}::text::jsonb` ``); a unit guard fails on `::jsonb` directly after `JSON.stringify`.
 - **Old PRs #127–#133** are recovery sources, not superseded; do not close them.
 - **Local runs:** this machine may run full suites; hosted Actions remains the merge authority. When several agents run e2e, each uses its own Docker compose project and ports (specs reset the database).
 
@@ -50,7 +50,9 @@ Codex worktree retirement for FL-71: `cc-shell` adapted Codex's `CommandCenterOv
 - **FL-60 rule matches in the info panel** (`DetailPanelClassification`): required by FL-60 acceptance but absent from the prototype's info panel. Kept as built pending the owner.
 - **FL-78 `DELETE /libraries/{id}`:** stable public endpoint that bypasses FL-78's two-stage review. Recommendation: keep it for official clients but apply the same permission recheck and consequence handling; alternatives are requiring the review token or retiring it.
 - **Codex coordination:** Codex has unpushed work in `~/.codex/worktrees` for FL-71 (now taken over by `cc-shell`), FL-80 auth, FL-32 prepared archive, FL-39 video history, FL-29 prototype foundation and FL-83 browser privacy. Before pushing, Codex must merge the current head; expect conflicts in `web/src/routes/+layout.svelte` (command palette removed), `e2e/src/specs/web/auth.e2e-spec.ts`, Locked navigation (`navigation.ts`, `AccountMenu.svelte`, `TopBar.svelte`), and the settings host (`SettingsHost.svelte`, `settings-areas.ts`, `routes/admin/system-settings/+page.ts`). FL-71 should not be built twice.
-- **Account usage and supporter status** have no home in the prototype Command Center; they stay under Your preferences for now.\n- **FL-51 Map:** the map still loads tiles from the configured server (prototype asks for an offline base), and markers carry no file name, date or media type, so hover cards and the legend are thinner than the prototype.\n- Earlier open questions on page 12 §5 still stand (FL-74 limits and Confluence mirror of `preservation.md`, FL-66 P3s, FL-79 host-files row, FL-82 All-accounts filter, FL-75 intro wording).
+- **Account usage and supporter status** have no home in the prototype Command Center; they stay under Your preferences for now.
+- **FL-51 Map:** the map still loads tiles from the configured server (prototype asks for an offline base), and markers carry no file name, date or media type, so hover cards and the legend are thinner than the prototype.
+- Earlier open questions on page 12 §5 still stand (FL-74 limits and Confluence mirror of `preservation.md`, FL-66 P3s, FL-79 host-files row, FL-82 All-accounts filter, FL-75 intro wording).
 
 ## 7. Other follow-ups
 
