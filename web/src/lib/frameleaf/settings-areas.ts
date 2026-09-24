@@ -137,6 +137,32 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'history', group: 'personal', sections: [], adminOnly: true },
 ]);
 
+/**
+ * Each area's coloured icon tile in the settings navigation, like System Settings (FL-76; the
+ * template's apple-style.css:565-640 `--tile` per area). The icon is drawn white on the tile.
+ */
+export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object.freeze({
+  overview: '#0a84ff',
+  analytics: '#bf5af2',
+  storage: '#8e8e93',
+  backup: '#30b0c7',
+  intelligence: '#5e5ce6',
+  editing: '#ff9f0a',
+  sharing: '#0a84ff',
+  care: '#30d158',
+  libraries: '#64d2ff',
+  utilities: '#636366',
+  trash: '#8e8e93',
+  processing: '#636366',
+  security: '#0a84ff',
+  notifications: '#ff453a',
+  server: '#8e8e93',
+  maintenance: '#636366',
+  users: '#0a84ff',
+  preferences: '#8e8e93',
+  history: '#636366',
+});
+
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
   'command',
   'library',

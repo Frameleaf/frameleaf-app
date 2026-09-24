@@ -28,6 +28,7 @@
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
+    AREA_TILE_COLORS,
     commandCenterUrl,
     isAreaAvailable,
     isScreenArea,
@@ -446,7 +447,10 @@
               aria-current={item.id === area ? 'page' : undefined}
               onclick={() => navigate(item.id)}
             >
-              <Icon icon={areaCopy[item.id].icon} size="1.125rem" aria-hidden />
+              <!-- FL-76: a coloured icon tile per area, like System Settings (apple-style.css:565-640). -->
+              <span class="tile" style:--tile={AREA_TILE_COLORS[item.id]}>
+                <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
+              </span>
               <span>{areaCopy[item.id].title}</span>
               {#if item.id === 'history' && history && history.length > 0}
                 <small class="count">{history.length}</small>
@@ -726,18 +730,17 @@
     padding-bottom: 6px;
     border-top: 1px solid var(--fl-border);
   }
+  /* apple-style.css:641-648: sentence-case group labels beside the coloured tiles. */
   .cc-nav-group > p {
     margin: 12px 22px 6px;
     color: var(--fl-muted);
     font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 1.1px;
-    text-transform: uppercase;
+    font-weight: 600;
   }
   .area {
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 10px;
     width: 100%;
     min-height: 34px;
     padding: 8px 22px;
@@ -756,8 +759,27 @@
     color: var(--fl-text);
     box-shadow: inset 3px 0 var(--fl-accent);
   }
-  .area.selected :global(svg) {
-    color: var(--fl-accent);
+  .tile {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: #fff;
+    background: var(--tile, #8e8e93);
+    border-radius: 7px;
+    box-shadow: inset 0 0 0 0.5px #ffffff40;
+  }
+  @supports (corner-shape: squircle) {
+    .tile {
+      corner-shape: squircle;
+      border-radius: 10px;
+    }
+  }
+  @media (prefers-contrast: more) {
+    .tile {
+      box-shadow: inset 0 0 0 1px var(--fl-text);
+    }
   }
   .count {
     margin-inline-start: auto;
@@ -1027,7 +1049,7 @@
     .cc-collapsed .cc-nav-title > span,
     .cc-collapsed .cc-back > span,
     .cc-collapsed .cc-nav-group > p,
-    .cc-collapsed .area > span,
+    .cc-collapsed .area > span:not(.tile),
     .cc-collapsed .area > small,
     .cc-collapsed .cc-nav-foot > span {
       display: none;
