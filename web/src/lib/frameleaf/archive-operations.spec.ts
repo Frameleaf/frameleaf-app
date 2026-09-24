@@ -1,13 +1,7 @@
-import { defaults } from '@immich/sdk';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
-import {
-  ArchiveOperationError,
-  ArchiveOperationScope,
-  confirmArchiveOperation,
-  prepareArchiveOperation,
-  preparesArchiveOnServer,
-} from '$lib/frameleaf/archive-operations';
+import { isExpiredSelection, preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
 
 const stateOf = (patch: Partial<LibraryViewState> = {}): LibraryViewState => ({
@@ -30,35 +24,11 @@ describe('preparesArchiveOnServer', () => {
   });
 });
 
-describe('archive operation calls', () => {
-  const original = { fetch: defaults.fetch, baseUrl: defaults.baseUrl, headers: defaults.headers };
-
-  afterEach(() => {
-    Object.assign(defaults, original);
-  });
-
-  it('go through the SDK defaults, as a generated call does', async () => {
-    const fetch = vi.fn().mockResolvedValue(Response.json({ id: 'op-1' }, { status: 201 }));
-    Object.assign(defaults, { fetch, baseUrl: '/api', headers: { 'x-immich-client': 'web' } });
-
-    await prepareArchiveOperation({
-      archiveOperationPrepareDto: { requestKey: 'key', scope: ArchiveOperationScope.MatchingOwnedTimeline },
-    });
-
-    expect(fetch).toHaveBeenCalledWith('/api/archive-operations/prepare', {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'x-immich-client': 'web' },
-      body: JSON.stringify({ requestKey: 'key', scope: 'matching-owned-timeline' }),
-    });
-  });
-
-  it('report a refusal with its status, so an expired selection can be told apart', async () => {
-    const fetch = vi.fn().mockResolvedValue(Response.json({ message: 'This selection expired' }, { status: 410 }));
-    Object.assign(defaults, { fetch, baseUrl: '/api' });
-
-    const request = confirmArchiveOperation({ id: 'op-1', archiveOperationConfirmDto: { requestKey: 'key' } });
-
-    await expect(request).rejects.toEqual(new ArchiveOperationError('This selection expired', 410));
-    await expect(request).rejects.toMatchObject({ status: 410 });
+describe('isExpiredSelection', () => {
+  it('recognises the server refusing an expired selection', () => {
+    sdkMock.isHttpError.mockImplementation((error) => error instanceof Error && 'status' in error);
+    expect(isExpiredSelection(Object.assign(new Error('gone'), { status: 410 }))).toBe(true);
+    expect(isExpiredSelection(Object.assign(new Error('conflict'), { status: 409 }))).toBe(false);
+    expect(isExpiredSelection(new Error('offline'))).toBe(false);
   });
 });
