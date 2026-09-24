@@ -22,17 +22,25 @@ export async function up(db: Kysely<any>): Promise<void> {
     db,
   );
   // A database that ran the retry path before this index existed can already hold two unfinished
-  // retries of one job, and the unique index cannot be built over them. Keep one per job — a claimed
-  // retry before a queued or paused one, then the oldest — and cancel the rest. A cancelled
-  // duplicate's claim is dropped, so a worker still running it can no longer write to it; one that
-  // was claimed is left unacknowledged, so the remote cleanup pass still releases what it started.
+  // retries of one job, and the unique index cannot be built over them. Keep one per job — a live
+  // claimed retry first, then a queued or paused one, and one already being cancelled last, then
+  // the oldest — and cancel the rest. A cancelled duplicate's claim is dropped, so a worker still
+  // running it can no longer write to it; one that was claimed is left unacknowledged, so the
+  // remote cleanup pass still releases what it started.
   await sql`
     WITH "ranked" AS (
       SELECT
         "id",
         row_number() OVER (
           PARTITION BY "retryOfId"
-          ORDER BY CASE WHEN "status" IN ('queued', 'paused') THEN 1 ELSE 0 END, "createdAt", "id"
+          ORDER BY
+            CASE
+              WHEN "status" IN ('queued', 'paused') THEN 2
+              WHEN "status" = 'cancelling' THEN 3
+              ELSE 1
+            END,
+            "createdAt",
+            "id"
         ) AS "rank"
       FROM "media_operation"
       WHERE "retryOfId" IS NOT NULL AND "status" NOT IN ('completed', 'cancelled', 'failed')
