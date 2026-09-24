@@ -3,8 +3,12 @@
    * The photo-dominant library tile shared by the Timeline, Browse and Work layouts.
    *
    * Ported for FL-33 from `design/frameleaf/template/src/AssetTile.jsx`. The September 22, 2026
-   * revision fixes what it must do: badges for what the item is, a hover scrub for video, a press
-   * to play a Live Photo, and ratings that appear on hover or selection only.
+   * revision fixes what it must do: badges for what the item is, a hover scrub for video and a press
+   * to play a Live Photo. The September 24 decisions set the variants per layout (`apple-style.css`
+   * "grids per tab"): Browse is a square cell with no rating and no caption; Work always shows the
+   * rating (and Rejected) and a caption under the photo whose file name shows on request, inset so
+   * one tile's time never runs into the next tile's name; Timeline shows the rating on hover or
+   * selection, as before.
    *
    * Media sources are the production ones. The hover scrub plays the existing preview transcode
    * (`/assets/:id/video/playback`), never the original file, and a Live Photo plays its own motion
@@ -14,12 +18,14 @@
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
+  import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
+  import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
   import { AssetMediaSize, AssetVisibility } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -35,7 +41,8 @@
     mdiStar,
   } from '@mdi/js';
   import { onDestroy, type Snippet } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { DateTime } from 'luxon';
+  import { locale, t } from 'svelte-i18n';
 
   type Props = {
     asset: TimelineAsset;
@@ -44,13 +51,17 @@
     selected?: boolean;
     /** True while a multi-select is in progress, so a plain click selects instead of opening. */
     selecting?: boolean;
-    /** Rating for this asset, supplied by the caller; the timeline model does not carry one. */
+    /** The layout the tile is drawn in; decides the rating and caption variants. */
+    layout?: TileLayout;
+    /** Rating override; by default the asset's own rating (from its time bucket or its details). */
     rating?: number | null;
     /** Marked sensitive. Metadata only — the asset is never relocated. */
     sensitive?: boolean;
     offline?: boolean;
-    /** Show the capture caption under the tile (Work layout). */
-    caption?: string | null;
+    /** Work: space under the photo for the caption; `height` includes it. */
+    captionHeight?: number;
+    /** Work: show the file name in the caption (a per-device toggle, off by default). */
+    showFileName?: boolean;
     onOpen?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onFocus?: (asset: TimelineAsset) => void;
@@ -68,10 +79,12 @@
     height,
     selected = false,
     selecting = false,
-    rating = null,
+    layout = 'timeline',
+    rating,
     sensitive = false,
     offline = false,
-    caption = null,
+    captionHeight = 0,
+    showFileName = false,
     onOpen,
     onToggleSelect,
     onFocus,
@@ -100,10 +113,27 @@
   const isArchived = $derived(asset.visibility === AssetVisibility.Archive);
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
-  const stars = $derived(typeof rating === 'number' ? rating : 0);
-  // Ratings are chrome, not content: they show on hover or while the item is selected.
-  const showRating = $derived(stars !== 0 && (hovered || selected || !!previewMode));
+  const stars = $derived(typeof rating === 'number' ? rating : typeof asset.rating === 'number' ? asset.rating : 0);
+  // Browse never shows ratings and Work always does (September 24); in the Timeline they are chrome,
+  // not content, and show on hover or while the item is selected.
+  const showRating = $derived(
+    stars !== 0 && layout !== 'browse' && (layout === 'work' || hovered || selected || !!previewMode),
+  );
   const title = $derived($getAltText(asset));
+  const withCaption = $derived(layout === 'work' && captionHeight > 0);
+  /** Template `assetTitle`: the file name without its extension. */
+  const fileName = $derived(asset.originalFileName ? asset.originalFileName.replace(/\.[^.]+$/, '') : null);
+  /** Template `localCaptureTime`: the capture time on the photo's own clock. */
+  const captureTime = $derived.by(() => {
+    try {
+      return fromTimelinePlainDateTime(asset.localDateTime).toLocaleString(DateTime.TIME_SIMPLE, {
+        locale: $locale ?? undefined,
+      });
+    } catch {
+      return null;
+    }
+  });
+  const imageHeight = $derived(withCaption ? Math.max(1, height - captionHeight) : height);
   // A durable bulk job working on this item (owner decision, September 22, 2026): a loader until
   // the job answers for it, then a failure mark if it did not work.
   const job = $derived(durableBulkTracker.stateOf(asset.id));
@@ -242,11 +272,13 @@
 
 <article
   class="fl-tile"
+  class:has-caption={withCaption}
   class:is-selected={selected}
   class:is-selecting={selecting}
   class:is-previewing={!!previewMode}
   aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
+  data-layout={layout}
   data-testid="frameleaf-asset-tile"
   style:width="{width}px"
   style:height="{height}px"
@@ -254,7 +286,9 @@
   <button
     type="button"
     class="fl-tile-open"
+    style:height={withCaption ? `${imageHeight}px` : undefined}
     {tabindex}
+    title={layout === 'work' && fileName && !showFileName ? (asset.originalFileName ?? undefined) : undefined}
     aria-label={jobLabel ? `${title}, ${jobLabel}` : title}
     aria-pressed={selecting ? selected : undefined}
     onclick={activate}
@@ -275,7 +309,7 @@
       url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
       altText={title}
       widthStyle="{width}px"
-      heightStyle="{height}px"
+      heightStyle="{imageHeight}px"
       class="fl-tile-image"
     />
     {#if previewMode && previewSource}
@@ -386,8 +420,18 @@
     </span>
   </label>
 
-  {#if caption}
-    <div class="fl-tile-caption"><span title={caption}>{caption}</span></div>
+  {#if withCaption}
+    <!-- Template `.at-caption`: the name (on request) and the capture time, inset from the tile edges. -->
+    <div class="fl-tile-caption" style:height="{captionHeight}px">
+      {#if showFileName && fileName}
+        <span title={asset.originalFileName}>{fileName}</span>
+      {/if}
+      {#if captureTime}
+        <time datetime={fromTimelinePlainDateTime(asset.localDateTime).toISO({ includeOffset: false }) ?? undefined}
+          >{captureTime}</time
+        >
+      {/if}
+    </div>
   {/if}
 </article>
 
@@ -396,7 +440,31 @@
     position: relative;
     display: block;
     overflow: hidden;
-    border-radius: var(--fl-radius-card, 10px);
+    border-radius: var(--fl-radius-card, 12px);
+    background: var(--fl-raised);
+  }
+  /* Browse: the Photos-style dense grid has square corners (apple-style.css "grids per tab"). */
+  .fl-tile[data-layout='browse'] {
+    border-radius: 0;
+  }
+  @supports (corner-shape: squircle) {
+    .fl-tile:not([data-layout='browse']),
+    .fl-tile.has-caption .fl-tile-open {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card, 12px) * 1.8);
+    }
+  }
+  /* Work: the caption sits under the photo, so the tile itself draws no surface. */
+  .fl-tile.has-caption {
+    overflow: visible;
+    background: transparent;
+    border-radius: 0;
+    corner-shape: round;
+  }
+  .fl-tile.has-caption .fl-tile-open {
+    overflow: hidden;
+    bottom: auto;
+    border-radius: var(--fl-radius-card, 12px);
     background: var(--fl-raised);
   }
   .fl-tile-open {
@@ -439,7 +507,8 @@
   .fl-tile.is-selected .fl-tile-scrim {
     opacity: 1;
   }
-  .fl-tile.is-selected {
+  .fl-tile.is-selected:not(.has-caption),
+  .fl-tile.is-selected .fl-tile-open {
     outline: 3px solid var(--fl-accent);
     outline-offset: -3px;
   }
@@ -525,21 +594,36 @@
     background: var(--fl-accent);
     border-color: var(--fl-accent);
   }
+  /*
+   * Template asset-tile.css `.at-caption`: inset from the tile edges so one tile's time never runs
+   * into the next tile's name across the gutter.
+   */
   .fl-tile-caption {
     position: absolute;
     inset-inline: 0;
     bottom: 0;
-    padding: 14px 6px 4px;
-    background: linear-gradient(transparent, rgb(0 0 0 / 60%));
-    color: #fff;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 6px 0;
+    color: var(--fl-text);
     font-size: var(--fl-font-small, 12px);
+    line-height: 1.4;
     pointer-events: none;
   }
   .fl-tile-caption span {
-    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .fl-tile-caption time {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro, 11px);
+    font-variant-numeric: tabular-nums;
   }
   .fl-sr {
     position: absolute;

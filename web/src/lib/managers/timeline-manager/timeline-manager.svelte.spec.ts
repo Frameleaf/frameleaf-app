@@ -7,6 +7,7 @@ import {
 } from '@immich/sdk';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { cellGrid, cellGridOptions } from '$lib/frameleaf/library-grid';
 import {
   markSessionLockSucceeded,
   sessionAccess,
@@ -1241,6 +1242,99 @@ describe('TimelineManager', () => {
       timelineManager.grouping = 'months';
       timelineManager.grouping = 'days';
       expect(timelineManager.months.map((month) => month.height)).toEqual(dayHeights);
+    });
+  });
+
+  describe('cell grids (FL-33 Browse and Work)', () => {
+    let timelineManager: TimelineManager;
+    const inMonth = (month: string, count: number) =>
+      timelineAssetFactory.buildList(count).map((asset, index) =>
+        deriveLocalDateTimeFromFileCreatedAt({
+          ...asset,
+          fileCreatedAt: fromISODateTimeUTCToObject(
+            `${month}-${String(1 + (index % 20)).padStart(2, '0')}T12:00:00.000Z`,
+          ),
+        }),
+      );
+    const buckets: Record<string, TimelineAsset[]> = {
+      '2024-03-01': inMonth('2024-03', 200),
+      '2024-02-01': inMonth('2024-02', 40),
+      '2023-12-01': inMonth('2023-12', 7),
+    };
+    const browse = cellGridOptions('browse', 200, false);
+
+    beforeEach(async () => {
+      timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue(
+        Object.entries(buckets).map(([timeBucket, assets]) => ({ timeBucket, count: assets.length })),
+      );
+      sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+        Promise.resolve(toResponseDto(...buckets[timeBucket.slice(0, 10)])),
+      );
+      timelineManager.setLayoutOptions({
+        headerHeight: browse.gap,
+        gap: browse.gap,
+        fillRowWidth: true,
+        cells: browse,
+      });
+      // A short viewport: only the newest month is loaded, the others stay placeholders.
+      await timelineManager.updateViewport({ width: 1000, height: 200 });
+      await tick();
+    });
+
+    it('gives every month its exact grid height, loaded or not', () => {
+      const [march, february, december] = timelineManager.months;
+      expect(march.isLoaded).toBe(true);
+      expect(december.isLoaded).toBe(false);
+      for (const [month, count] of [
+        [march, 200],
+        [february, 40],
+        [december, 7],
+      ] as const) {
+        expect(month.height).toBe(browse.gap + cellGrid(count, 1000, browse).height);
+      }
+    });
+
+    it('lays a loaded month out as one grid of square cells, row by row', () => {
+      const [march] = timelineManager.months;
+      const grid = cellGrid(200, 1000, browse);
+      const positions = march.timelineDays.flatMap((day) =>
+        day.viewerAssets.map((viewerAsset) => viewerAsset.position!),
+      );
+      expect(positions).toHaveLength(200);
+      for (const [index, position] of positions.entries()) {
+        expect(position).toEqual(grid.position(index));
+        expect(position.width).toBeGreaterThan(0);
+      }
+      // Square cells: the image height matches the cell width.
+      expect(grid.imageHeight).toBe(Math.round(grid.cellWidth));
+    });
+
+    it('mounts only the cells near the viewport, not the whole month', () => {
+      const [march] = timelineManager.months;
+      const active = march.timelineDays.reduce((total, day) => total + day.activeViewerAssets.length, 0);
+      expect(active).toBeGreaterThan(0);
+      expect(active).toBeLessThan(200);
+    });
+
+    it('reflows every month when the Thumbnail size changes', () => {
+      const before = timelineManager.months.map((month) => month.height);
+      const larger = cellGridOptions('browse', 290, false);
+      timelineManager.setLayoutOptions({
+        headerHeight: larger.gap,
+        gap: larger.gap,
+        fillRowWidth: true,
+        cells: larger,
+      });
+      const after = timelineManager.months.map((month) => month.height);
+      expect(after.every((height, index) => height > before[index])).toBe(true);
+    });
+
+    it('goes back to justified rows without cells', () => {
+      timelineManager.setLayoutOptions({ fillRowWidth: true });
+      expect(timelineManager.cells).toBeNull();
+      const [march] = timelineManager.months;
+      expect(new Set(march.timelineDays.map((day) => day.top)).size).toBeGreaterThan(1);
     });
   });
 });
