@@ -2,6 +2,7 @@ import { updateAsset } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import type { DescriptionReview } from '$lib/frameleaf/info-panel';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import DetailPanelDescription from './DetailPanelDescription.svelte';
 
@@ -122,5 +123,51 @@ describe('DetailPanelDescription', () => {
     await waitFor(() => expect(screen.getByText('frameleaf_info_error_stale')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'frameleaf_info_reload' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'frameleaf_info_retry' })).not.toBeInTheDocument();
+  });
+
+  // FL-36 AI provenance (MediaViewer.jsx:2574-2592): the sparkle "AI" badge, or "Yours".
+  describe('provenance badge', () => {
+    const review = (overrides: Partial<DescriptionReview>): DescriptionReview => ({
+      source: 'generated',
+      status: 'success',
+      modelName: 'vision-model',
+      confidencePercent: 87,
+      suggestion: null,
+      canAccept: false,
+      canClear: true,
+      error: null,
+      ...overrides,
+    });
+    const asset = assetFactory.build({ exifInfo: { description: 'A lake at dusk' } });
+
+    it('marks an AI-written description with the model and confidence', () => {
+      render(DetailPanelDescription, { props: { asset, isOwner: true, review: review({}) } });
+      const badge = screen.getByTestId('frameleaf-description-provenance');
+      expect(badge).toHaveClass('fl-provenance-ai');
+      expect(badge).toHaveTextContent('frameleaf_info_description_ai');
+      expect(badge).toHaveAttribute('title', 'frameleaf_info_written_by_ai · vision-model · frameleaf_info_confidence');
+    });
+
+    it('drops the confidence when none was reported', () => {
+      render(DetailPanelDescription, {
+        props: { asset, isOwner: true, review: review({ confidencePercent: null }) },
+      });
+      expect(screen.getByTestId('frameleaf-description-provenance')).toHaveAttribute(
+        'title',
+        'frameleaf_info_written_by_ai · vision-model',
+      );
+    });
+
+    it('says "Yours" for a description the owner wrote, and nothing without one', async () => {
+      const { rerender } = render(DetailPanelDescription, {
+        props: { asset, isOwner: true, review: review({ source: 'manual' }) },
+      });
+      const badge = screen.getByTestId('frameleaf-description-provenance');
+      expect(badge).not.toHaveClass('fl-provenance-ai');
+      expect(badge).toHaveTextContent('frameleaf_info_description_yours');
+
+      await rerender({ asset, isOwner: true, review: review({ source: 'none' }) });
+      expect(screen.queryByTestId('frameleaf-description-provenance')).toBeNull();
+    });
   });
 });
