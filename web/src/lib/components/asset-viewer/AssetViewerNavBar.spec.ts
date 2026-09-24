@@ -308,4 +308,53 @@ describe('AssetViewerNavBar component', () => {
     expect(queryByLabelText('frameleaf_viewer_more_actions')).toBeInTheDocument();
     expect(queryByLabelText('frameleaf_viewer_play_slideshow')).not.toBeInTheDocument();
   });
+
+  // FL-35: the template's top row (MediaViewer.jsx:1023-1200), without the legacy Offline and zoom buttons (V-6).
+  describe('toolbar', () => {
+    it('follows the template order and leaves out the legacy Offline and zoom buttons', () => {
+      const ownerId = 'id-of-the-user';
+      authManager.setUser(userAdminFactory.build({ id: ownerId }));
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        isOffline: true,
+        hasMetadata: true,
+        type: AssetTypeEnum.Image,
+      });
+
+      const { getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const toolbar = getByRole('toolbar', { name: 'frameleaf_viewer_actions' });
+      const names = [...toolbar.querySelectorAll('button')].map(
+        (button) => button.getAttribute('aria-label') ?? button.textContent?.trim(),
+      );
+
+      expect(names).not.toContain('zoom_image');
+      expect(names).not.toContain('asset_offline');
+      // Download lives in the More menu's Download group; only a shared link, which has no menu, keeps it here.
+      expect(names).not.toContain('download');
+      const order = ['share', 'frameleaf_viewer_information', 'delete', 'frameleaf_viewer_more_actions'].map((name) =>
+        names.indexOf(name),
+      );
+      expect(order.every((index) => index >= 0)).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+    });
+
+    it('offers Send a copy in a shared link’s bar only where the browser can share files', () => {
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
+      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+
+      const withoutShare = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(withoutShare.queryByLabelText('frameleaf_send_copy')).not.toBeInTheDocument();
+      withoutShare.unmount();
+
+      vi.stubGlobal('navigator', { ...navigator, share: vi.fn(), canShare: () => true });
+      const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(getByLabelText('frameleaf_send_copy')).toBeInTheDocument();
+      vi.unstubAllGlobals();
+      vi.stubGlobal('ResizeObserver', getResizeObserverMock());
+      setSharedLink(undefined);
+    });
+  });
 });

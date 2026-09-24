@@ -181,4 +181,63 @@ describe('AssetViewer', () => {
     );
     await waitFor(() => expect(getByLabelText('unfavorite')).toBeInTheDocument());
   });
+
+  // FL-35 hands-on viewer (apple-style.css:366-407, MediaViewer.jsx:524-578).
+  describe('hands-on viewer', () => {
+    const renderImage = (props: Record<string, unknown> = {}) => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, ...props });
+      const viewer = view.container.ownerDocument.querySelector<HTMLElement>('#immich-asset-viewer')!;
+      const canvas = viewer.querySelector<HTMLElement>('[data-viewer-content]')!;
+      return { asset, viewer, canvas };
+    };
+
+    it('draws a pure black canvas with the viewer tokens', () => {
+      const { viewer } = renderImage();
+      expect(viewer).toHaveClass('fl-media-viewer');
+      expect(viewer).toHaveAttribute('data-theme', 'dark');
+    });
+
+    it('hides and shows the chrome on a tap on the photo', async () => {
+      const { viewer, canvas } = renderImage();
+      await fireEvent.pointerDown(canvas, { clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { clientX: 201, clientY: 200 });
+      expect(viewer).toHaveClass('chrome-hidden');
+
+      await fireEvent.pointerDown(canvas, { clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { clientX: 200, clientY: 200 });
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+
+    it('closes on a downward swipe at normal zoom', async () => {
+      const onClose = vi.fn();
+      const { asset, viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { clientX: 200, clientY: 300 });
+      expect(viewer).toHaveClass('dragging');
+      expect(canvas.style.transform).toContain('scale(');
+      await fireEvent.pointerUp(document, { clientX: 200, clientY: 340 });
+      expect(onClose).toHaveBeenCalledWith(asset.id);
+    });
+
+    it('springs back from a short swipe and ignores presses on controls', async () => {
+      const onClose = vi.fn();
+      const { viewer, canvas } = renderImage({ onClose });
+      await fireEvent.pointerDown(canvas, { clientX: 200, clientY: 200 });
+      await fireEvent.pointerMove(document, { clientX: 200, clientY: 250 });
+      await fireEvent.pointerUp(document, { clientX: 200, clientY: 250 });
+      expect(onClose).not.toHaveBeenCalled();
+      expect(viewer).not.toHaveClass('dragging');
+      expect(canvas.style.transform).toBe('');
+
+      const button = document.createElement('button');
+      canvas.append(button);
+      await fireEvent.pointerDown(button, { clientX: 200, clientY: 200 });
+      await fireEvent.pointerUp(document, { clientX: 200, clientY: 200 });
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+  });
 });

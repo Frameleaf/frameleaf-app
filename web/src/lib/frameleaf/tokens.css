@@ -12,6 +12,12 @@
  * hues themselves stay in design/frameleaf/tokens.json.
  * web/src/lib/frameleaf/tokens.spec.ts enforces both contracts.
  */
+/*
+ * The asset viewer (`.fl-media-viewer`) is portaled outside every .frameleaf root, yet the
+ * prototype gives `.media-viewer` the same motion, material and type tokens (apple-style.css:4-7).
+ * It always takes the dark set: the viewer is black in both themes (apple-style.css:366-370).
+ */
+.fl-media-viewer,
 .frameleaf[data-theme='dark'] {
   --fl-accent: #22c55e;
   --fl-border: #303940;
@@ -96,6 +102,7 @@
   --fl-viewer-focus: #a5d4ef;
   color-scheme: light;
 }
+.fl-media-viewer,
 .frameleaf {
   --fl-radius: 9px;
   --fl-radius-control: 9px;
@@ -181,6 +188,7 @@
  * nothing behind it is blurred.
  */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .fl-media-viewer,
   .frameleaf {
     --fl-material: var(--fl-panel);
     --fl-material-edge: var(--fl-border);
