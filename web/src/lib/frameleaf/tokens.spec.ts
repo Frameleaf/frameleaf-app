@@ -201,19 +201,28 @@ describe('Frameleaf theme contract', () => {
     expect(fallback).toContain('--fl-material-blur: none;');
 
     for (const theme of ['dark', 'light'] as const) {
-      // Over the brightest and darkest photograph the blur can show, body text stays readable.
-      for (const backdrop of ['#000000', '#ffffff']) {
-        const fill = composite(hex(theme, 'panel'), backdrop, 0.72);
-        expect(
-          contrast(hex(theme, 'text'), fill),
-          `text on material over ${backdrop} (${theme})`,
-        ).toBeGreaterThanOrEqual(4.5);
+      // Over the brightest and darkest photograph the blur can show, and on the solid fallback,
+      // every foreground allowed on material stays readable. --fl-muted and --fl-accent are not
+      // allowed there; the on-material pair replaces them.
+      const fills = {
+        'material over black': composite(hex(theme, 'panel'), '#000000', 0.72),
+        'material over white': composite(hex(theme, 'panel'), '#ffffff', 0.72),
+        'solid fallback': hex(theme, 'panel'),
+      };
+      for (const foreground of ['text', 'on-material-muted', 'on-material-accent']) {
+        for (const [fill, color] of Object.entries(fills)) {
+          expect(contrast(hex(theme, foreground), color), `${foreground} on ${fill} (${theme})`).toBeGreaterThanOrEqual(
+            4.5,
+          );
+        }
       }
       // The fallback is the opaque panel, so every foreground keeps the surface contract.
       for (const foreground of foregrounds) {
         expect(contrast(hex(theme, foreground), hex(theme, 'panel'))).toBeGreaterThanOrEqual(4.5);
       }
     }
+    // The rule is written down where the tokens are.
+    expect(css).toContain('only these tokens and');
   });
 
   it('uses the Display P3 accent on wide-gamut screens without losing contrast', () => {
@@ -267,12 +276,25 @@ describe('Frameleaf theme contract', () => {
 
   it('balances titles, uses tabular numbers, continuous corners and a springy press', () => {
     const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
-    expect(withoutComments).toMatch(/:where\(\.frameleaf h1, \.frameleaf h2, \.frameleaf h3\) {\s*text-wrap: balance;/);
+    expect(withoutComments).toMatch(
+      /:where\(\.frameleaf h1, \.frameleaf h2, \.frameleaf h3\) {\s*text-wrap: balance;\s*letter-spacing: -0\.015em;/,
+    );
+    // One transition list: the spring press and the colour/border changes of `.button` together.
+    const transitions = [...withoutComments.matchAll(/transition:\s*([^;]+);/g)].map(([, value]) => value);
+    const buttonTransition = transitions.find((value) => value.includes('var(--fl-spring)')) ?? '';
+    for (const property of ['transform', 'background-color', 'border-color', 'color', 'box-shadow']) {
+      expect(buttonTransition).toMatch(new RegExp(String.raw`(^|\s)${property} `));
+    }
+    expect(transitions.filter((value) => value.includes('transform'))).toHaveLength(1);
+    // Drag handles never scale.
+    expect(withoutComments).toMatch(/button:active:not\(:disabled, \.fl-no-press\)/);
     expect(withoutComments).toContain('font-variant-numeric: tabular-nums;');
     const corners = blockAfter(withoutComments, '@supports (corner-shape: squircle)');
     expect(corners).toContain('corner-shape: squircle;');
     expect(corners).toContain('calc(var(--fl-radius-sheet) * 1.8)');
-    expect(withoutComments).toMatch(/button:active:not\(:disabled\)[^{]*{\s*transform: scale\(0\.96\);/);
+    expect(withoutComments).toMatch(
+      /\.button:active:not\(:disabled, \.fl-no-press\)\s*\) {\s*transform: scale\(0\.96\);/,
+    );
     const reduced = blockAfter(withoutComments, '@media (prefers-reduced-motion: reduce)');
     expect(reduced).toMatch(/transform: none;/);
     // The materials other packets reuse, solid under the tokens.css fallback.
