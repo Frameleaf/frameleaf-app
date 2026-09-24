@@ -7,7 +7,8 @@ import {
   type ApiKeyResponseDto,
   type ApiKeyUpdateDto,
 } from '@immich/sdk';
-import { modalManager, toastManager } from '@immich/ui';
+import { toastManager } from '@immich/ui';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
@@ -73,7 +74,7 @@ export const handleUpdateApiKey = async (apiKey: { id: string }, dto: ApiKeyUpda
 export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({
+  const confirmed = await confirmFrameleaf({
     title: $t('frameleaf_access_key_rotate_title', { values: { name: apiKey.name } }),
     prompt: $t('frameleaf_access_key_rotate_prompt', { values: { name: apiKey.name } }),
     confirmText: $t('frameleaf_access_key_rotate'),
@@ -94,11 +95,11 @@ export const handleRotateApiKey = async (apiKey: ApiKeyResponseDto) => {
 export const handleDeleteApiKey = async (apiKey: ApiKeyResponseDto) => {
   const $t = await getFormatter();
 
-  const confirmed = await modalManager.showDialog({
+  const confirmed = await confirmFrameleaf({
     title: $t('frameleaf_access_key_delete_title', { values: { name: apiKey.name } }),
     prompt: $t('frameleaf_access_key_delete_prompt', { values: { name: apiKey.name } }),
     confirmText: $t('frameleaf_access_key_delete'),
-    confirmColor: 'danger',
+    danger: true,
   });
   if (!confirmed) {
     return;

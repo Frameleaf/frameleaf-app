@@ -10,7 +10,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import { deleteAllSessions, deleteSession, getSessions, type SessionResponseDto } from '@immich/sdk';
-  import { modalManager, toastManager } from '@immich/ui';
+  import { toastManager } from '@immich/ui';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
   import './access.css';
@@ -34,13 +35,13 @@
   };
 
   const signOut = async (session: SessionResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_device_sign_out'),
       prompt: $t('frameleaf_access_device_sign_out_prompt', {
         values: { device: sessionDeviceName(session, $t('frameleaf_access_device_unknown')) },
       }),
       confirmText: $t('frameleaf_access_device_sign_out'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -59,11 +60,11 @@
   };
 
   const signOutOthers = async () => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_devices_sign_out_others'),
       prompt: $t('frameleaf_access_devices_sign_out_others_prompt', { values: { count: others.length } }),
       confirmText: $t('frameleaf_access_devices_sign_out_others'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;

@@ -29,6 +29,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { deleteUserSessionAdmin, type SessionResponseDto, type UserAdminResponseDto } from '@immich/sdk';
   import { modalManager, toastManager } from '@immich/ui';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -52,7 +53,12 @@
   const visibleSessions = $derived(sessions.filter((session) => !revokedIds.has(session.id)));
 
   const revoke = async (session: SessionResponseDto) => {
-    const confirmed = await modalManager.showDialog({ prompt: $t('frameleaf_users_device_revoke_confirm') });
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_users_device_revoke_title'),
+      prompt: $t('frameleaf_users_device_revoke_confirm'),
+      confirmText: $t('frameleaf_users_device_revoke'),
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
