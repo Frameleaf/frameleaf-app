@@ -9,8 +9,10 @@
    * photo recorded (`createProfileImage`), as "Set as profile picture" does, so the picture is replaced
    * if that photo is later Locked. Saving a colour removes any profile picture and sets the colour.
    *
-   * Privacy: the photo choices are ordinary timeline photos from a search, and none are offered while
-   * this session reveals Locked content, so a Locked photo is never shown here nor made an avatar.
+   * Privacy: profile pictures are shown to every account, so the choices are only this account's own
+   * timeline photos (a timeline search also returns partners' photos, which are dropped; the server
+   * refuses another account's photo too), and none are offered while this session reveals Locked
+   * content. Re-cropping the current picture keeps the photo it was copied from (`keepSource`).
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -39,6 +41,8 @@
 
   const OUTPUT_SIZE = 512;
   const PHOTO_COUNT = 8;
+  /** A timeline search includes partners' photos; read more so up to eight of the account's own remain. */
+  const SEARCH_SIZE = 48;
 
   let open = $state(true);
   $effect(() => {
@@ -80,15 +84,18 @@
           type: AssetTypeEnum.Image,
           visibility: AssetVisibility.Timeline,
           order: AssetOrder.Desc,
-          size: PHOTO_COUNT,
+          size: SEARCH_SIZE,
         },
       });
-      photos = assets.items.slice(0, PHOTO_COUNT).map((asset: AssetResponseDto) => ({
-        id: asset.id,
-        assetId: asset.id,
-        name: asset.originalFileName,
-        src: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
-      }));
+      photos = assets.items
+        .filter((asset: AssetResponseDto) => asset.ownerId === user.id)
+        .slice(0, PHOTO_COUNT)
+        .map((asset: AssetResponseDto) => ({
+          id: asset.id,
+          assetId: asset.id,
+          name: asset.originalFileName,
+          src: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
+        }));
       if (!selected && photos.length > 0 && mode === 'photo') {
         selected = photos[0];
       }
@@ -189,7 +196,9 @@
         if (!unchanged) {
           const blob = await renderCrop(image);
           const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
-          await createProfileImage({ createProfileImageDto: { file, assetId: selected.assetId } });
+          await createProfileImage({
+            createProfileImageDto: selected.assetId ? { file, assetId: selected.assetId } : { file, keepSource: true },
+          });
           await authManager.refresh();
         }
       }
