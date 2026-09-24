@@ -128,6 +128,12 @@ export type EncoderPixelFormatPlan = {
   reducedChroma: boolean;
   /** Stated justification, recorded with the render rather than inferred from the command. */
   reason: string;
+  /**
+   * The signal range {@link filters} convert to (`out_range`), or null when the plan emits no
+   * conversion of its own. Only a range the filter graph actually states may be tagged on the
+   * output: a tag the pixels were never converted to makes a decoder stretch or squeeze them.
+   */
+  statedRange: VideoColorRange | null;
 };
 
 /**
@@ -207,6 +213,7 @@ export const selectEncoderPixelFormat = ({
     args: software ? ['-pix_fmt', pixelFormat] : [],
     reducedBitDepth,
     reducedChroma,
+    statedRange: software ? range : null,
     reason: software
       ? `Float frames (${FLOAT_INTERMEDIATE_PIXEL_FORMAT}) are converted to ${pixelFormat} with ` +
         `${matrix ? `matrix ${matrix}, ` : ''}range ${range} and ${FLOAT_TO_INTEGER_DITHER} dither${loss}.`

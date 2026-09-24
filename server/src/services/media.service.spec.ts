@@ -2827,6 +2827,21 @@ describe(MediaService.name, () => {
         expect(outputOptions[outputOptions.indexOf('-color_range') + 1]).toBe('pc');
       });
 
+      it('does not tag a range the plain 8-bit chain never converted to (FL-102)', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: { ...probeStub.videoStreamH264.videoStream, colorRange: 'pc' } }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(getFilterOption(outputOptions) ?? '').not.toContain('out_range=');
+        expect(outputOptions).not.toContain('-color_range');
+      });
+
       it('delivers limited range when the source does not state its range (FL-102)', async () => {
         mocks.assetJob.getForVideoConversion.mockResolvedValue(
           editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
@@ -2839,7 +2854,7 @@ describe(MediaService.name, () => {
 
         const outputOptions = lastTranscodeOptions();
         expect(getFilterOption(outputOptions)).toContain('out_range=tv');
-        expect(outputOptions).not.toContain('-color_range');
+        expect(outputOptions[outputOptions.indexOf('-color_range') + 1]).toBe('tv');
       });
 
       it('tags a tone-mapped master as Rec. 709 rather than copying the source HDR tags', async () => {

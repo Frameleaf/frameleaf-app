@@ -1852,7 +1852,11 @@ export class MediaService extends BaseService {
       // FL-16: rational timing and any variable-frame-rate mapping survive the render.
       ...getEditedMasterTimingArgs(videoStream),
       // FL-16: the master's colour intent is tagged explicitly, never inferred.
-      ...getEditedMasterColorArgs(videoStream, colorDecision),
+      ...getEditedMasterColorArgs(
+        videoStream,
+        colorDecision,
+        colorDecision.policy === EditedMasterColorPolicy.Preserve ? (encodePlan?.statedRange ?? null) : null,
+      ),
     );
 
     return {
