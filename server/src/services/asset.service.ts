@@ -323,6 +323,15 @@ export class AssetService extends BaseService {
   }
 
   /**
+   * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
+   * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
+   */
+  async notifyVisibilityChanged(ids: string[], ownerId: string): Promise<void> {
+    const siblingIds = (await this.assetRepository.getStackSiblingIds(ids)) ?? [];
+    await this.notifyAssetsUpdated([...new Set([...ids, ...siblingIds])], ownerId);
+  }
+
+  /**
    * Lock (FL-34): the owner's own lock, recorded as `marked`. A lock is metadata: the assets keep their
    * albums, favourites, tags, faces and stored visibility, and every read except the owner's elevated
    * session stops showing them. Stacks and live photos lock as a whole. No elevated session is needed
