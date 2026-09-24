@@ -270,6 +270,15 @@ const AssetEditActionItemResponseSchema = z
 const AssetEditsResponseSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID these edits belong to'),
+    originalVideo: z
+      .object({
+        width: z.number().int().positive().describe('Displayed width of the original, after its rotation'),
+        height: z.number().int().positive().describe('Displayed height of the original, after its rotation'),
+        durationMs: z.number().int().positive().describe('Duration of the original in milliseconds'),
+      })
+      .meta({ id: 'AssetEditsOriginalVideoDto' })
+      .optional()
+      .describe('Original video display raster and timeline, independent of the current edited version'),
     edits: z.array(AssetEditActionItemResponseSchema).describe('List of edit actions applied to the asset'),
   })
   .meta({ id: 'AssetEditsResponseDto' });
@@ -278,3 +287,42 @@ export class AssetEditActionItemResponseDto extends createZodDto(AssetEditAction
 export class AssetEditsCreateDto extends createZodDto(AssetEditsCreateSchema) {}
 export class AssetEditsResponseDto extends createZodDto(AssetEditsResponseSchema) {}
 export type CropParameters = z.infer<typeof CropParametersSchema>;
+
+const VideoEditVersionParamsSchema = z.object({
+  id: z.uuid(),
+  versionId: z.uuid(),
+});
+
+const VideoEditExportProfileSchema = z
+  .enum(['master'])
+  .describe('Export profile. Only the edited master is exported; the playback proxy is never offered for download.')
+  .meta({ id: 'VideoEditExportProfile' });
+
+const VideoEditVersionPurposeSchema = z
+  .enum(['save', 'export', 'revert'])
+  .describe('Why the version was created')
+  .meta({ id: 'VideoEditVersionPurpose' });
+
+const VideoEditVersionStatusSchema = z
+  .enum(['pending', 'ready', 'failed'])
+  .describe('Render status of the version')
+  .meta({ id: 'VideoEditVersionStatus' });
+
+const VideoEditExportSchema = z.object({ profile: VideoEditExportProfileSchema }).meta({ id: 'VideoEditExportDto' });
+
+const VideoEditVersionResponseSchema = z
+  .object({
+    id: z.uuid().describe('Video edit version ID'),
+    assetId: z.uuid().describe('Asset ID'),
+    purpose: VideoEditVersionPurposeSchema,
+    status: VideoEditVersionStatusSchema,
+    createdAt: z.iso.datetime().describe('When the version was saved'),
+    isCurrent: z.boolean().describe('Whether this version is the one currently published for playback'),
+    isRequested: z.boolean().describe('Whether this version is the latest requested save or revert'),
+    edits: z.array(AssetEditActionItemSchema).describe('The recipe rendered from the original'),
+  })
+  .meta({ id: 'VideoEditVersionResponseDto' });
+
+export class VideoEditVersionParamsDto extends createZodDto(VideoEditVersionParamsSchema) {}
+export class VideoEditExportDto extends createZodDto(VideoEditExportSchema) {}
+export class VideoEditVersionResponseDto extends createZodDto(VideoEditVersionResponseSchema) {}

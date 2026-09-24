@@ -31,6 +31,7 @@ import {
 } from 'src/dtos/asset-media.dto.js';
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
+import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
 import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
@@ -88,6 +89,22 @@ export class AssetMediaController {
     }
 
     return responseDto;
+  }
+
+  @Get(':id/edit-versions/:versionId/download')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetDownload })
+  @Endpoint({
+    summary: 'Download a video version master',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  async downloadVideoEditVersion(
+    @Auth() auth: AuthDto,
+    @Param() { id, versionId }: VideoEditVersionParamsDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.downloadVideoEditVersion(auth, id, versionId), this.logger);
   }
 
   @Get(':id/original')

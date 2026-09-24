@@ -1,8 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
+import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import type { JobItem } from 'src/types.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, ImmichWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
+import { getForAsset } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -46,6 +49,52 @@ describe(JobService.name, () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('JobComplete', QueueName.BackgroundTask, job);
       expect(mocks.logger.error).not.toHaveBeenCalled();
     });
+
+    it.each(['save', 'revert'] as const)('publishes a global asset update after a ready video %s', async (purpose) => {
+      const asset = getForAsset(AssetFactory.create({ type: AssetType.Video }));
+      const versionId = newUuid();
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+      mocks.asset.getById.mockResolvedValue(asset);
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...asset, faces: [] }]);
+      mocks.assetEdit.getWithSyncInfo.mockResolvedValue([]);
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({
+        id: versionId,
+        purpose,
+        status: 'ready',
+      } as VideoEditVersion);
+
+      await sut.onJobRun(QueueName.VideoConversion, {
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: asset.id, versionId },
+      });
+
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_asset_update', asset.ownerId, mapAsset(asset));
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AssetEditReadyV2', asset.ownerId, expect.anything());
+    });
+
+    it.each([{ purpose: 'export', status: 'ready' }, { purpose: 'save', status: 'pending' }, undefined])(
+      'does not publish a playback update for export, stale or removed versions: %j',
+      async (version) => {
+        const asset = getForAsset(AssetFactory.create({ type: AssetType.Video }));
+        mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+        mocks.asset.getById.mockResolvedValue(asset);
+        mocks.assetEdit.getWithSyncInfo.mockResolvedValue([]);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as VideoEditVersion | undefined);
+
+        await sut.onJobRun(QueueName.VideoConversion, {
+          name: JobName.AssetVideoEditGeneration,
+          data: { id: asset.id, versionId: newUuid() },
+        });
+
+        expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
+          'on_asset_update',
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
+        expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AssetEditReadyV2', asset.ownerId, expect.anything());
+      },
+    );
 
     it('should not run duplicate detection follow-up when video duplicate frame generation is skipped', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Skipped);
