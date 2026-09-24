@@ -13,6 +13,9 @@
     sortMembers,
     SPACE_ROLE_OPTIONS,
   } from '$lib/frameleaf/shared-space';
+  import { goto } from '$app/navigation';
+  import { Route } from '$lib/route';
+  import { handleLeaveAlbum } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
     addUsersToAlbum,
@@ -198,8 +201,21 @@
     confirming = { open: true, member };
   };
 
-  const remove = (member: SharedSpaceMemberResponseDto) => {
+  const remove = async (member: SharedSpaceMemberResponseDto) => {
     const leaving = member.user.id === currentUserId;
+    if (leaving && !member.pending) {
+      // Leaving is the shared leave action (FL-53): it alone navigates, and the page's
+      // "you were removed" handling ignores the removal this tab made.
+      busy = true;
+      try {
+        if (await handleLeaveAlbum(space)) {
+          await goto(Route.sharing());
+        }
+      } finally {
+        busy = false;
+      }
+      return;
+    }
     return run(
       () =>
         member.pending

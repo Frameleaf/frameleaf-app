@@ -31,13 +31,14 @@
     SPACE_PANELS,
     type SpacePanel,
   } from '$lib/frameleaf/shared-space';
-  import type { AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
+  import { removalOutcome, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { Route } from '$lib/route';
   import {
     handleDeleteAlbum,
     handleDownloadAlbum,
     handleEditAlbumDetails,
     handleLeaveAlbum,
+    leftLocally,
   } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -219,12 +220,17 @@
         }
       },
       // Taken out of the space while it is open: nothing loaded for it stays on screen.
-      AlbumUserDelete: ({ albumId, userId }) => {
-        if (albumId !== space.id) {
-          return;
-        }
-        if (userId !== currentUserId) {
+      AlbumUserDelete: (removal) => {
+        const outcome = removalOutcome(removal, {
+          albumId: space.id,
+          userId: currentUserId,
+          isOwner: isSpaceOwner(space, currentUserId),
+          leftLocally: leftLocally(removal.albumId),
+        });
+        if (outcome === 'refresh') {
           void onRefresh();
+        }
+        if (outcome !== 'exit') {
           return;
         }
         assetViewerManager.showAssetViewer(false);
