@@ -2,7 +2,13 @@ import { Controller, Get, Header, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { TimeBucketAssetDto, TimeBucketAssetResponseDto, TimeBucketDto } from 'src/dtos/time-bucket.dto.js';
+import {
+  TimeBucketAssetDto,
+  TimeBucketAssetResponseDto,
+  TimeBucketDto,
+  TimelineHighlightResponseDto,
+  TimelineHighlightsDto,
+} from 'src/dtos/time-bucket.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { TimelineService } from 'src/services/timeline.service.js';
@@ -34,5 +40,21 @@ export class TimelineController {
   })
   getTimeBucket(@Auth() auth: AuthDto, @Query() dto: TimeBucketAssetDto) {
     return this.service.getTimeBucket(auth, dto);
+  }
+
+  @Get('highlights')
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @ApiOkResponse({ type: TimelineHighlightResponseDto, isArray: true })
+  @Endpoint({
+    summary: 'Get timeline highlights',
+    description:
+      'Curated Years and Months cards for the same filters as the time buckets: per year or month the count, a key photo (highest Best Photos score, then rating, then most recent), highlights for months and the top three places.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getTimelineHighlights(
+    @Auth() auth: AuthDto,
+    @Query() dto: TimelineHighlightsDto,
+  ): Promise<TimelineHighlightResponseDto[]> {
+    return this.service.getTimelineHighlights(auth, dto);
   }
 }

@@ -4,6 +4,7 @@ import {
   Insertable,
   Kysely,
   NotNull,
+  RawBuilder,
   SelectQueryBuilder,
   Selectable,
   ShallowDehydrateObject,
@@ -34,7 +35,7 @@ import {
 } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
-import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
+import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -169,6 +170,25 @@ export interface TimeBucketOptions extends AssetBuilderOptions {
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
+}
+
+/** FL-33: how many places a curated timeline card names */
+export const TIMELINE_HIGHLIGHT_PLACES = 3;
+
+export interface TimelineHighlightOptions {
+  grouping: 'year' | 'month';
+  /** highlights besides the key photo */
+  highlightCount: number;
+  /** false for a shared link that hides EXIF: no card names a place */
+  withPlaces: boolean;
+}
+
+export interface TimelineHighlightItem {
+  timeBucket: string;
+  count: number;
+  keyAssetId: string | null;
+  highlightAssetIds: string[];
+  places: string[];
 }
 
 export interface YearMonthDay {
@@ -1474,83 +1494,182 @@ export class AssetRepository {
     );
   }
 
+  /**
+   * The assets a timeline request may show, with the bucket each one falls in. Shared by the bucket
+   * counts and the curated highlights (FL-33) so both apply the very same owner, partner, album,
+   * visibility, Locked and hidden-content rules.
+   */
+  private timelineAssets(options: TimeBucketOptions, auth: AuthDto | undefined, timeBucketDate: RawBuilder<Date>) {
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(timeBucketDate.as('timeBucket'))
+        .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
+        .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
+        .$if(!!options.bbox, (qb) => {
+          const bbox = options.bbox!;
+          const circle = getBoundingCircle(bbox);
+
+          const withBoundingCircle = qb
+            .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+            .where(
+              sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
+              '@>',
+              sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
+            );
+
+          return withBoundingBox(withBoundingCircle, bbox);
+        })
+        .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+        .$if(!!options.visibility, (qb) =>
+          qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+        )
+        .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
+          qb.where(lockedForReason(options.lockReasons!, 'asset')),
+        )
+        // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+        .$if(options.visibility === AssetVisibility.Hidden, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .$if(!!options.albumId, (qb) =>
+          qb
+            .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+            .where('album_asset.albumId', '=', asUuid(options.albumId!)),
+        )
+        .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
+        .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
+        .$if(!!options.withStacked, (qb) =>
+          qb
+            .leftJoin('stack', (join) =>
+              join.onRef('stack.id', '=', 'asset.stackId').onRef('stack.primaryAssetId', '=', 'asset.id'),
+            )
+            .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
+        )
+        .$if(!!options.userIds, (qb) =>
+          qb.where((eb) => {
+            // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
+            const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+            // a person's shared-album media widens the owner scope, except for a Locked request:
+            // Locked media is owner-private, so other members' Locked items never join it
+            const widenToSharedAlbums = !!options.personId && !!auth && options.visibility !== AssetVisibility.Locked;
+            return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth!.user.id)]) : isOwner;
+          }),
+        )
+        .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+        .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
+        .$if(options.isDuplicate !== undefined, (qb) =>
+          qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
+        )
+        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+    );
+  }
+
+  private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
+    return options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
+      ? sql<Date>`date_trunc(${sql.lit(size)}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
+      : sql<Date>`date_trunc(${sql.lit(size)}, "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+  }
+
   @GenerateSql({ params: [{}, { user: { id: DummyValue.UUID } }] })
   async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
-    const timeBucketDate =
-      options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
-        ? sql<Date>`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
-        : truncatedDate<Date>();
-
     return this.db
-      .with('asset', (qb) =>
-        qb
-          .selectFrom('asset')
-          .select(timeBucketDate.as('timeBucket'))
-          .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-          .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(!!options.bbox, (qb) => {
-            const bbox = options.bbox!;
-            const circle = getBoundingCircle(bbox);
-
-            const withBoundingCircle = qb
-              .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-              .where(
-                sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
-                '@>',
-                sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
-              );
-
-            return withBoundingBox(withBoundingCircle, bbox);
-          })
-          .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) =>
-            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
-          )
-          .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
-            qb.where(lockedForReason(options.lockReasons!, 'asset')),
-          )
-          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
-          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
-            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
-          )
-          .$call((qb) => withHiddenContentFilter(qb, options))
-          .$if(!!options.albumId, (qb) =>
-            qb
-              .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
-              .where('album_asset.albumId', '=', asUuid(options.albumId!)),
-          )
-          .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
-          .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
-          .$if(!!options.withStacked, (qb) =>
-            qb
-              .leftJoin('stack', (join) =>
-                join.onRef('stack.id', '=', 'asset.stackId').onRef('stack.primaryAssetId', '=', 'asset.id'),
-              )
-              .where((eb) => eb.or([eb('asset.stackId', 'is', null), eb(eb.table('stack'), 'is not', null)])),
-          )
-          .$if(!!options.userIds, (qb) =>
-            qb.where((eb) => {
-              // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
-              const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              // a person's shared-album media widens the owner scope, except for a Locked request:
-              // Locked media is owner-private, so other members' Locked items never join it
-              const widenToSharedAlbums = !!options.personId && !!auth && options.visibility !== AssetVisibility.Locked;
-              return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth!.user.id)]) : isOwner;
-            }),
-          )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
-          .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
-          .$if(options.isDuplicate !== undefined, (qb) =>
-            qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
-          )
-          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!)),
-      )
+      .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
       .selectFrom('asset')
       .select(sql<string>`("timeBucket" AT TIME ZONE 'UTC')::date::text`.as('timeBucket'))
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .groupBy('timeBucket')
       .orderBy('timeBucket', options.order ?? 'desc')
       .execute() as any as Promise<TimeBucketItem[]>;
+  }
+
+  /**
+   * FL-33: one curated card per year or month of a timeline request. Each card carries its count,
+   * its key photo (highest Best Photos score, then highest star rating, then the most recent
+   * capture, then id), up to `highlightCount` more highlights in capture order, and its three
+   * busiest places (city, else state, else country). The set of assets is exactly the one the
+   * matching `getTimeBuckets` request counts; places leave out owners who hide their locations from
+   * the viewer (`locationHiddenOwnerIds`) and every place when `withPlaces` is false.
+   */
+  @GenerateSql({
+    params: [{}, { user: { id: DummyValue.UUID } }, { grouping: 'month', highlightCount: 4, withPlaces: true }],
+  })
+  async getTimelineHighlights(
+    options: TimeBucketOptions,
+    auth: AuthDto | undefined,
+    { grouping, highlightCount, withPlaces }: TimelineHighlightOptions,
+  ): Promise<TimelineHighlightItem[]> {
+    const phase = await getForkSchemaPhase(this.db);
+    const scoreTable = sql.table(`${readsForkSidecar(phase) ? 'immich_fork' : 'public'}.asset_best_photo_score`);
+    const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
+    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
+    const size = grouping === 'year' ? 'YEAR' : 'MONTH';
+    const place = sql`coalesce(nullif(trim(e.city), ''), nullif(trim(e.state), ''), nullif(trim(e.country), ''))`;
+    const locationShared = hiddenOwnerIds.length > 0 ? sql`not (a."ownerId" = ${anyUuid(hiddenOwnerIds)})` : sql`true`;
+
+    const { rows } = await sql<{
+      timeBucket: string;
+      count: string;
+      keyAssetId: string | null;
+      highlightAssetIds: string[] | null;
+      places: string[] | null;
+    }>`
+      with asset as (
+        ${this.timelineAssets(options, auth, this.timelineBucketDate(options, size)).select([
+          'asset.id',
+          'asset.ownerId',
+          'asset.localDateTime',
+        ])}
+      ),
+      ranked as (
+        select
+          a.id,
+          a."timeBucket",
+          a."localDateTime",
+          row_number() over (
+            partition by a."timeBucket"
+            order by
+              s.score desc nulls last,
+              nullif(greatest(e.rating, 0), 0) desc nulls last,
+              a."localDateTime" desc,
+              a.id asc
+          ) as rank
+        from asset a
+        left join asset_exif e on e."assetId" = a.id
+        left join ${scoreTable} s on s."assetId" = a.id
+      ),
+      places as (
+        select
+          a."timeBucket",
+          ${place} as place,
+          row_number() over (partition by a."timeBucket" order by count(*) desc, ${place} asc) as rank
+        from asset a
+        inner join asset_exif e on e."assetId" = a.id
+        where ${withPlaces ? sql`true` : sql`false`} and ${locationShared} and ${place} is not null
+        group by a."timeBucket", ${place}
+      )
+      select
+        (r."timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+        count(*) as count,
+        (array_agg(r.id::text) filter (where r.rank = 1))[1] as "keyAssetId",
+        array_agg(r.id::text order by r."localDateTime" ${order}, r.id) filter (
+          where r.rank > 1 and r.rank <= ${1 + highlightCount}
+        ) as "highlightAssetIds",
+        (
+          select array_agg(p.place order by p.rank)
+          from places p
+          where p."timeBucket" = r."timeBucket" and p.rank <= ${TIMELINE_HIGHLIGHT_PLACES}
+        ) as places
+      from ranked r
+      group by r."timeBucket"
+      order by r."timeBucket" ${order}
+    `.execute(this.db);
+
+    return rows.map((row) => ({
+      timeBucket: row.timeBucket,
+      count: Number(row.count),
+      keyAssetId: row.keyAssetId,
+      highlightAssetIds: row.highlightAssetIds ?? [],
+      places: row.places ?? [],
+    }));
   }
 
   @GenerateSql({
