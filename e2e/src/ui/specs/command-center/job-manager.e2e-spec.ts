@@ -124,7 +124,7 @@ test.describe('Job manager', () => {
   test('shows the header, metrics and queues, and pauses and resumes a queue through its review', async ({ page }) => {
     await page.goto(jobManager);
 
-    await expect(page.getByText('PROCESSING', { exact: true })).toBeVisible();
+    await expect(page.locator('.jobs-manager').getByText('Compute & jobs', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeVisible();
     for (const action of ['Concurrency', 'Enrichment tasks', 'Create job']) {
       await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();

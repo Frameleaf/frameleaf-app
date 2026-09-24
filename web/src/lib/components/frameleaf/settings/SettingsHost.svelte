@@ -445,6 +445,17 @@
     ),
   );
 
+  // The template's library-scope note (CommandCenter.jsx:772-779): queues filter by account, not library.
+  const libraryScope = $derived(
+    scopes.find((option) => option.kind === AnalyticsScopeKind.Library && option.value === scope),
+  );
+  const libraryScopeOwner = $derived(
+    libraryScope
+      ? scopes.find((option) => option.kind === AnalyticsScopeKind.Account && option.userId === libraryScope.userId)
+          ?.label
+      : undefined,
+  );
+
   const areaTitles = $derived(
     Object.fromEntries(Object.entries(areaCopy).map(([id, copy]) => [id, copy.title])) as Record<string, string>,
   );
@@ -627,6 +638,9 @@
         {/if}
         {#if settingsDraft}
           <SettingsDraftNotices store={settingsDraft} />
+        {/if}
+        {#if libraryScopeOwner && (area === 'processing' || area === 'utilities')}
+          <p class="cc-subtle">{$t('frameleaf_cc_library_scope_note', { values: { name: libraryScopeOwner } })}</p>
         {/if}
         {#if area === 'analytics'}
           <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
@@ -1035,6 +1049,13 @@
   /* The ported forms still carry the legacy inset; keep them flush inside the card. */
   .cc-section :global(.ms-4) {
     margin-inline-start: 0;
+  }
+  /* command-center.css `.cc-subtle`. */
+  .cc-subtle {
+    color: var(--fl-muted);
+    font-size: 11px;
+    line-height: 1.65;
+    margin: 12px 0 0;
   }
   .cc-notice {
     margin: 0 0 16px;
