@@ -5,7 +5,13 @@ import { bulkActionGroups, bulkActions } from "./selection.mjs";
 import { isTypingTarget } from "./shortcuts.mjs";
 import "./selection-bar.css";
 
-const PRIMARY = ["favorite", "add-to-album", "create-shared-link", "download", "delete"];
+const PRIMARY = [
+  "favorite",
+  "add-to-album",
+  "create-shared-link",
+  "download",
+  "delete",
+];
 const TRASH_PRIMARY = ["restore", "download", "delete-permanently"];
 const MENU_GROUPS = ["organize", "visibility", "album", "jobs"];
 const TIMEZONES = [
@@ -31,7 +37,8 @@ const slug = (text) =>
 /**
  * Floating bulk-action bar. Props: count, total, context {albumId?, trash?,
  * sharedLink?}, assets (selected assets), tagOptions, onAction(actionId, payload),
- * onClear(), onSelectAll().
+ * onClear(), onSelectAll(), leading ([{id, label, icon, onClick, disabled, primary}],
+ * shown before the bulk actions).
  */
 export function SelectionBar({
   count = 0,
@@ -42,6 +49,7 @@ export function SelectionBar({
   onAction,
   onClear,
   onSelectAll,
+  leading = [],
 }) {
   const open = count > 0;
   const trash = Boolean(context.trash);
@@ -156,7 +164,9 @@ export function SelectionBar({
 
   const primary = (trash ? TRASH_PRIMARY : PRIMARY)
     .map((id) =>
-      id === "favorite" && !byId.favorite?.available && byId.unfavorite?.available
+      id === "favorite" &&
+      !byId.favorite?.available &&
+      byId.unfavorite?.available
         ? byId.unfavorite
         : byId[id],
     )
@@ -201,7 +211,28 @@ export function SelectionBar({
             <span>Deselect</span>
           </button>
         </div>
-        <div className="sb-actions" role="group" aria-label="Actions for selected items">
+        <div
+          className="sb-actions"
+          role="group"
+          aria-label="Actions for selected items"
+        >
+          {leading.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              className={`sb-action${action.primary ? " is-primary" : ""}`}
+              aria-label={action.label}
+              title={action.label}
+              disabled={action.disabled}
+              onClick={action.onClick}
+            >
+              <Icon name={action.icon} size={18} />
+              <span>{action.label}</span>
+            </button>
+          ))}
+          {leading.length > 0 && (
+            <span className="sb-divider" aria-hidden="true" />
+          )}
           {primary.map((action) => (
             <button
               key={action.id}
@@ -252,7 +283,10 @@ export function SelectionBar({
                       role="group"
                       aria-labelledby={`${menuId}-${group.id}`}
                     >
-                      <div className="sb-menu-title" id={`${menuId}-${group.id}`}>
+                      <div
+                        className="sb-menu-title"
+                        id={`${menuId}-${group.id}`}
+                      >
                         {group.title}
                       </div>
                       {group.items.map((action) => (
@@ -321,7 +355,9 @@ export function SelectionBar({
 
 function ChangeDateDialog({ assets, count, close, submit }) {
   const first = assets[0];
-  const initial = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(first?.takenAt || "");
+  const initial = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(
+    first?.takenAt || "",
+  );
   const [mode, setMode] = useState("set");
   const [date, setDate] = useState(initial?.[1] || first?.date || "");
   const [time, setTime] = useState(initial?.[2] || "12:00");
@@ -450,7 +486,10 @@ function ChangeDateDialog({ assets, count, close, submit }) {
             </label>
             <label>
               Unit
-              <select value={unit} onChange={(event) => setUnit(event.target.value)}>
+              <select
+                value={unit}
+                onChange={(event) => setUnit(event.target.value)}
+              >
                 <option value="minutes">Minutes</option>
                 <option value="hours">Hours</option>
                 <option value="days">Days</option>
@@ -592,7 +631,10 @@ function ChangeLocationDialog({ assets, count, close, submit }) {
           </label>
           <label>
             State or region
-            <input value={state} onChange={(event) => setState(event.target.value)} />
+            <input
+              value={state}
+              onChange={(event) => setState(event.target.value)}
+            />
           </label>
           <label>
             Country
@@ -624,7 +666,10 @@ function ChangeLocationDialog({ assets, count, close, submit }) {
             />
           </label>
         </div>
-        <p className={`sb-preview${coordinateError ? " sb-error" : ""}`} aria-live="polite">
+        <p
+          className={`sb-preview${coordinateError ? " sb-error" : ""}`}
+          aria-live="polite"
+        >
           {coordinateError ||
             (count > 1
               ? `Applies the same place to all ${plural(count)}.`
@@ -666,7 +711,9 @@ function TagDialog({ count, options, close, submit }) {
     !chosenIds.has(slug(query));
   const suggestions = [
     ...matches,
-    ...(canCreate ? [{ id: slug(query), label: query.trim(), isNew: true }] : []),
+    ...(canCreate
+      ? [{ id: slug(query), label: query.trim(), isNew: true }]
+      : []),
   ];
   const highlighted = Math.min(active, Math.max(0, suggestions.length - 1));
   const add = (tag) => {
@@ -719,7 +766,10 @@ function TagDialog({ count, options, close, submit }) {
       >
         <div className="sb-chips" aria-label="Chosen tags">
           {chosen.map((tag) => (
-            <span key={tag.id} className={`sb-chip${tag.isNew ? " is-new" : ""}`}>
+            <span
+              key={tag.id}
+              className={`sb-chip${tag.isNew ? " is-new" : ""}`}
+            >
               {tag.label}
               <button
                 type="button"
@@ -730,7 +780,9 @@ function TagDialog({ count, options, close, submit }) {
               </button>
             </span>
           ))}
-          {!chosen.length && <span className="sb-preview">No tags chosen yet.</span>}
+          {!chosen.length && (
+            <span className="sb-preview">No tags chosen yet.</span>
+          )}
         </div>
         <label className="sb-combobox">
           Add tags
@@ -752,7 +804,12 @@ function TagDialog({ count, options, close, submit }) {
             }}
             onKeyDown={onKeyDown}
           />
-          <ul id={listId} role="listbox" className="sb-listbox" aria-label="Tag suggestions">
+          <ul
+            id={listId}
+            role="listbox"
+            className="sb-listbox"
+            aria-label="Tag suggestions"
+          >
             {suggestions.map((tag, index) => (
               <li
                 key={tag.id}
@@ -791,15 +848,19 @@ function DeletePermanentlyDialog({ count, close, submit }) {
           <Button onClick={close} data-initial-focus>
             Cancel
           </Button>
-          <Button className="danger" icon="mdiDeleteForeverOutline" onClick={submit}>
+          <Button
+            className="danger"
+            icon="mdiDeleteForeverOutline"
+            onClick={submit}
+          >
             Delete permanently
           </Button>
         </>
       }
     >
       <p className="sb-confirm">
-        Permanently delete {plural(count)}? They will be removed from every album
-        and shared link, and this cannot be undone.
+        Permanently delete {plural(count)}? They will be removed from every
+        album and shared link, and this cannot be undone.
       </p>
     </Dialog>
   );

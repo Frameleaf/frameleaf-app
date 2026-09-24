@@ -27,6 +27,7 @@ import {
   groupIsDefault,
   groupReset,
   histogramBins,
+  isCompareKey,
   isFullRect,
   paramsInGroup,
   pickSettings,
@@ -369,7 +370,7 @@ function Group({ group, open, toggle, edit, changeEdit }) {
           aria-controls={bodyId}
           onClick={toggle}
         >
-          <Icon name={open ? "mdiChevronDown" : "mdiChevronRight"} size={18} />
+          <Icon name="mdiChevronRight" size={18} className="ed-chevron" />
           <span>{group.label}</span>
           {!isDefault && <i className="ed-dot" aria-hidden="true" />}
         </button>
@@ -623,6 +624,17 @@ function QuickEditor(props) {
     draw();
     return () => cancelAnimationFrame(frame);
   }, [split, isVideo, videoError]);
+  useEffect(() => {
+    // A held compare key or pointer can lose its release when the window loses focus.
+    if (!before) return undefined;
+    const release = () => setBefore(false);
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", release);
+    return () => {
+      window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", release);
+    };
+  }, [before]);
 
   const seek = (time) => {
     const value = round(clamp(time, 0, duration), 2);
@@ -643,16 +655,19 @@ function QuickEditor(props) {
   /* Geometry */
   const rect = dragRect || edit.cropRect || FULL_RECT;
   const cropping = tool === "crop";
+  // Holding compare on a photo shows the untouched original, geometry included,
+  // like Apple Photos. Split view and video keep the edited framing.
+  const showingOriginal = before && !split && !isVideo;
   const frame = useMemo(() => {
     if (!stage.w || !stage.h) return null;
     const source = natural || {
       w: selected.width || 16,
       h: selected.height || 9,
     };
-    const rotated = edit.rotation % 180 !== 0;
+    const rotated = !showingOriginal && edit.rotation % 180 !== 0;
     const ow = rotated ? source.h : source.w;
     const oh = rotated ? source.w : source.h;
-    const view = cropping ? FULL_RECT : rect;
+    const view = cropping || showingOriginal ? FULL_RECT : rect;
     const scale = Math.min(stage.w / (ow * view.w), stage.h / (oh * view.h));
     const fw = ow * scale;
     const fh = oh * scale;
@@ -663,7 +678,7 @@ function QuickEditor(props) {
       dx: (view.x + view.w / 2 - 0.5) * fw,
       dy: (view.y + view.h / 2 - 0.5) * fh,
     };
-  }, [stage.w, stage.h, natural, selected.width, selected.height, edit.rotation, cropping, rect]);
+  }, [stage.w, stage.h, natural, selected.width, selected.height, edit.rotation, cropping, showingOriginal, rect]);
 
   const timeAt = isVideo ? playhead : 0;
   const visibleTexts = (edit.textOverlays || []).filter(
@@ -677,7 +692,7 @@ function QuickEditor(props) {
     let right = 0;
     let bottom = 0;
     let left = 0;
-    if (!cropping) {
+    if (!cropping && !showingOriginal) {
       top = rect.y * fh;
       left = rect.x * fw;
       right = (1 - rect.x - rect.w) * fw;
@@ -708,13 +723,17 @@ function QuickEditor(props) {
     return {
       width,
       height,
-      transform: `translate(-50%, -50%) scale(${edit.flipH ? -1 : 1}, ${edit.flipV ? -1 : 1}) rotate(${edit.rotation}deg)`,
+      transform: showingOriginal
+        ? "translate(-50%, -50%) scale(1, 1) rotate(0deg)"
+        : `translate(-50%, -50%) scale(${edit.flipH ? -1 : 1}, ${edit.flipV ? -1 : 1}) rotate(${edit.rotation}deg)`,
       filter: plain ? "none" : filterInfo.filter,
     };
   };
   const straightenStyle = frame
     ? {
-        transform: `rotate(${edit.straighten}deg) scale(${straightenScale(frame.fw, frame.fh, edit.straighten)})`,
+        transform: showingOriginal
+          ? "rotate(0deg) scale(1)"
+          : `rotate(${edit.straighten}deg) scale(${straightenScale(frame.fw, frame.fh, edit.straighten)})`,
       }
     : undefined;
 
@@ -1059,12 +1078,17 @@ function QuickEditor(props) {
 
   /* Keyboard */
   const keyDown = (event) => {
-    if (event.key === "Escape" || isEditable(event.target)) return;
-    const key = event.key.toLowerCase();
-    if (key === "y" && !event.metaKey && !event.ctrlKey) {
+    if (event.key === "Escape") return;
+    // Compare also works while an adjustment slider has focus, so you can nudge and check.
+    const typing = isEditable(event.target) && event.target.type !== "range";
+    if (!typing && isCompareKey(event)) {
       event.preventDefault();
       if (!event.repeat) setBefore(true);
-    } else if (
+      return;
+    }
+    if (isEditable(event.target)) return;
+    const key = event.key.toLowerCase();
+    if (
       key === " " &&
       isVideo &&
       event.target.tagName !== "BUTTON" &&
@@ -1076,7 +1100,7 @@ function QuickEditor(props) {
     else if (key === "o" && isVideo && !event.metaKey && !event.ctrlKey) setOut(timeAt);
   };
   const keyUp = (event) => {
-    if (event.key.toLowerCase() === "y") setBefore(false);
+    if (isCompareKey(event, { release: true })) setBefore(false);
   };
   const railKey = (event) => {
     const index = tools.findIndex((item) => item.id === tool);
@@ -1800,8 +1824,8 @@ function QuickEditor(props) {
     enhance: enhancePanel,
   };
 
-  const cropVisible = cropping && frame;
-  const previewLabel = split ? null : before ? "Before" : null;
+  const cropVisible = cropping && frame && !showingOriginal;
+  const previewLabel = split ? null : before ? "Original" : null;
 
   return (
     <dialog
@@ -1844,7 +1868,7 @@ function QuickEditor(props) {
           <span className="ed-sep" aria-hidden="true" />
           <Tool
             icon="mdiCompare"
-            label="Hold to show the original (Y)"
+            label="Hold to show the original (\ or Y)"
             aria-pressed={before}
             onPointerDown={(event) => {
               if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -1924,7 +1948,7 @@ function QuickEditor(props) {
 
         <div className="ed-stage-wrap">
           <div
-            className={`ed-stage ${cropping ? "cropping" : ""} ${dragging ? "dragging" : ""}`}
+            className={`ed-stage ${cropping ? "cropping" : ""} ${dragging ? "dragging" : ""} ${before && !split ? "comparing" : ""}`}
             aria-label="Preview"
           >
             <div className="ed-canvas" ref={canvasRef} style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -1994,7 +2018,7 @@ function QuickEditor(props) {
                 <span className="ed-badge right">After</span>
               </>
             )}
-            {previewLabel && <span className="ed-badge">{previewLabel}</span>}
+            {previewLabel && <span className="ed-badge ed-original">{previewLabel}</span>}
             {isVideo && videoError && <span className="ed-badge centre">Preview still</span>}
           </div>
           {isVideo && (

@@ -860,7 +860,7 @@ export function AccountsLibraries({
       <header className="resource-heading">
         <div>
           <p className="resource-eyebrow">
-            Command center / {usersView ? "Users" : "Libraries"}
+            {usersView ? "Your server" : "Your library"}
           </p>
           <h1>{usersView ? "Users" : "Libraries"}</h1>
           <p>

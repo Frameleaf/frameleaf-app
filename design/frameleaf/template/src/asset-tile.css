@@ -244,8 +244,14 @@
   justify-content: space-between;
   gap: 8px;
   margin-top: 6px;
+  /* Inset from the tile edges so one tile's time never runs into the next
+     tile's name across the narrow justified-row gap. */
+  padding-inline: 6px;
   font-size: var(--fl-font-small);
   line-height: 1.4;
+}
+.asset-tile[data-layout="list"] .at-caption {
+  padding-inline: 0;
 }
 .asset-tile .at-caption > span {
   min-width: 0;
