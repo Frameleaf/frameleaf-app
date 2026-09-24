@@ -82,3 +82,36 @@ it('refuses to write while the fork schema is not writable', async () => {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
 });
+
+it('forgets positions when an album or its owner is deleted (FL-52)', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { user: viewer } = await ctx.newUser();
+  const { album: kept } = await ctx.newAlbum({ ownerId: user.id });
+  const { album: gone } = await ctx.newAlbum({ ownerId: user.id });
+  await sut.setPositions(user.id, [gone.id, kept.id]);
+  await sut.setPositions(viewer.id, [gone.id, kept.id]);
+
+  await sut.delete(gone.id);
+
+  await expect(sut.getPositions(user.id)).resolves.toEqual(new Map([[kept.id, 1]]));
+  await expect(sut.getPositions(viewer.id)).resolves.toEqual(new Map([[kept.id, 1]]));
+
+  // Deleting the owner's albums with the account also drops the owner's own order rows.
+  await sut.deleteAll(user.id);
+  await expect(sut.getPositions(user.id)).resolves.toEqual(new Map());
+  await expect(sut.getPositions(viewer.id)).resolves.toEqual(new Map());
+});
+
+it('never blocks an album delete while the fork schema is not writable', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { album } = await ctx.newAlbum({ ownerId: user.id });
+  await sut.setPositions(user.id, [album.id]);
+  await sql`UPDATE immich_fork.state SET phase='failed' WHERE id=1`.execute(db);
+  try {
+    await expect(sut.delete(album.id)).resolves.toBeUndefined();
+  } finally {
+    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
+  }
+});

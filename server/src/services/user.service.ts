@@ -391,6 +391,7 @@ export class UserService extends BaseService {
     }
 
     await this.albumRepository.deleteAll(user.id);
+    await this.albumUserRepository.forgetRecipient(user.id);
     await this.userRepository.delete(user, true);
 
     await this.eventRepository.emit('UserDelete', user);
