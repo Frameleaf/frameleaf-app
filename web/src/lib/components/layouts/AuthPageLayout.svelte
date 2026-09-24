@@ -5,12 +5,15 @@
     title?: string;
     children?: Snippet;
     withHeader?: boolean;
+    hero?: 'summit' | 'cabin';
+    attribution?: boolean;
+    keypad?: 'auto' | 'always' | 'never';
   }
 
-  // The Frameleaf auth shell has no logo backdrop, so there is no `withBackdrop` to pass.
-  let { title, children, withHeader = true }: Props = $props();
+  // Legacy public/maintenance callers stay on the single pane; auth routes opt into prototype hero art.
+  let { title, children, withHeader = true, hero, attribution = false, keypad = 'auto' }: Props = $props();
 </script>
 
-<AuthShell {title} {withHeader}>
+<AuthShell {title} {withHeader} {hero} {attribution} {keypad}>
   {@render children?.()}
 </AuthShell>

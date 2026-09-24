@@ -1,6 +1,9 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
+  import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
+  import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
@@ -38,6 +41,8 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import '../app.css';
+
+  trackSessionModals(modalManager);
 
   interface Props {
     children?: Snippet;
@@ -181,8 +186,21 @@
   onMount(() => {
     const element = document.querySelector('#stencil');
     element?.remove();
+    // FL-83: the root owns lock retries even when a PIN route or dialog has unmounted.
+    sessionAccess.retryLock = requestSessionLock;
+    const stopWatchingLockOwner = watchSessionLockOwner();
+    // Only a signed-in session has anything to lock; a signed-out tab keeps the flag until the next
+    // sign-in or sign-out drops it.
+    if (sessionAccess.lockPending && authManager.authenticated) {
+      void requestSessionLock();
+    }
     // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
-    return installSearchShortcuts();
+    const removeSearchShortcuts = installSearchShortcuts();
+    return () => {
+      sessionAccess.retryLock = undefined;
+      stopWatchingLockOwner();
+      removeSearchShortcuts?.();
+    };
   });
 
   eventManager.emit('AppInit');
@@ -267,21 +285,24 @@
 </svelte:head>
 
 <!-- FL-34: nothing (panels included) renders until the session's elevated access is verified -->
-<SessionPrivacyGuard>
-  <TooltipProvider>
-    {#if page.data.error}
-      <ErrorLayout error={page.data.error}></ErrorLayout>
-    {:else}
-      {@render children?.()}
-    {/if}
+<!-- FL-83: a pending local lock (persisted across reloads) keeps everything behind the root shield -->
+<TooltipProvider>
+  <SessionLockShield active={sessionAccess.lockPending && authManager.authenticated}>
+    <SessionPrivacyGuard>
+      {#if page.data.error}
+        <ErrorLayout error={page.data.error}></ErrorLayout>
+      {:else}
+        {@render children?.()}
+      {/if}
 
-    {#if showNavigationLoadingBar}
-      <NavigationLoadingBar />
-    {/if}
+      {#if showNavigationLoadingBar}
+        <NavigationLoadingBar />
+      {/if}
 
-    <PanelDock>
-      <DownloadPanel />
-      <UploadPanel />
-    </PanelDock>
-  </TooltipProvider>
-</SessionPrivacyGuard>
+      <PanelDock>
+        <DownloadPanel />
+        <UploadPanel />
+      </PanelDock>
+    </SessionPrivacyGuard>
+  </SessionLockShield>
+</TooltipProvider>
