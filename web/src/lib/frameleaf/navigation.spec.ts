@@ -142,7 +142,6 @@ describe('Frameleaf rail destinations', () => {
     expect(active(Route.utilities())).toEqual(['libraryCare']);
     expect(active(Route.duplicatesUtility())).toEqual(['libraryCare']);
     expect(active(Route.libraryCare())).toEqual(['libraryCare']);
-    expect(active('/user-settings?screen=care')).toEqual(['libraryCare']);
     expect(active(commandCenterUrl('care', 'repair'))).toEqual(['libraryCare']);
     expect(active(Route.workflows())).toEqual(['workflows']);
     expect(active(Route.userSettings())).toEqual(['settings']);

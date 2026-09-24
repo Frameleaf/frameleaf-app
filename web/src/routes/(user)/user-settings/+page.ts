@@ -1,4 +1,6 @@
 import { getAdminConfigWithRevision, getConfigDefaults } from '@immich/sdk';
+import { redirect } from '@sveltejs/kit';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
 import { authenticate } from '$lib/utils/auth';
@@ -14,11 +16,14 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url);
 
+  // The old separate Library Care screen is gone (September 24): Library care is a settings area,
+  // the hub for fixes, so older links land there.
+  if (url.searchParams.get('screen') === 'care') {
+    redirect(307, commandCenterUrl('care'));
+  }
+
   const $t = await getFormatter();
   const meta = { title: $t('settings') };
-  if (url.searchParams.get('screen') === 'care') {
-    return { screen: 'care' as const, system: null, meta };
-  }
 
   if (!authManager.user.isAdmin) {
     return { screen: 'settings' as const, system: null, meta };
