@@ -39135,6 +39135,12 @@
             "description": "Null when no video stream has been read, so HDR cannot be told",
             "nullable": true
           },
+          "hiddenItems": {
+            "description": "Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "lenses": {
             "description": "Items per lens model, then every other lens, then no lens",
             "items": {
@@ -39192,6 +39198,7 @@
           "capturesByYear",
           "focalLengths",
           "hdr",
+          "hiddenItems",
           "lenses",
           "livePhotos",
           "orientation",
@@ -39396,7 +39403,7 @@
             "type": "integer"
           },
           "itemsWithoutFaces": {
-            "description": "itemsWithFaces plus itemsWithoutFaces is summary.items",
+            "description": "itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -61089,10 +61096,11 @@
             "type": "integer"
           },
           "facets": {
-            "description": "Facets to count; every facet when omitted",
+            "description": "Facets to count, each once (repeats are ignored); every facet when omitted",
             "items": {
               "$ref": "#/components/schemas/SearchFacetField"
             },
+            "maxItems": 10,
             "minItems": 1,
             "type": "array"
           },
