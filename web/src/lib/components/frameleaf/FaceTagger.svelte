@@ -266,6 +266,37 @@
     change(draft.map((face) => (face.id === id ? { ...face, box } : face)));
   };
 
+  // A typed position edit is one undo step: the draft follows every keystroke, and the state
+  // from before the field was touched is checkpointed once when the edit is committed (change
+  // or blur), never per keystroke.
+  let fieldBefore: DraftFace[] | null = null;
+  const typeBox = (id: string, box: FaceBox) => {
+    fieldBefore ??= snapshot();
+    draft = draft.map((face) => (face.id === id ? { ...face, box } : face));
+    error = '';
+  };
+  const commitField = () => {
+    if (fieldBefore && JSON.stringify(fieldBefore) !== JSON.stringify(snapshot())) {
+      checkpoint(fieldBefore);
+    }
+    fieldBefore = null;
+  };
+
+  // Escape, the close button, Cancel and the dialog's own cancel ask before throwing away
+  // unsaved face tags.
+  let confirmDiscard = $state(false);
+  const requestClose = () => {
+    if (saving) {
+      return;
+    }
+    commitField();
+    if (changed) {
+      confirmDiscard = true;
+      return;
+    }
+    onClose();
+  };
+
   const addBox = async (box: FaceBox = DEFAULT_FACE_BOX) => {
     if (!natural || saving || loading || draft.length >= MAX_FACES) {
       return;
@@ -411,7 +442,9 @@
     }
     draft = previous;
     history = history.slice(0, -1);
-    selectedId = previous[0]?.id ?? null;
+    // FaceTagger.jsx:440 reselects the first face; keeping the face being edited selected
+    // when it still exists lets repeated Undo walk back one region's edits.
+    selectedId = previous.some((face) => face.id === selectedId) ? selectedId : (previous[0]?.id ?? null);
     error = '';
   };
 
@@ -530,8 +563,10 @@
     event.stopPropagation();
     if (event.key === 'Escape') {
       event.preventDefault();
-      if (!cancelGesture() && !saving) {
-        onClose();
+      if (confirmDiscard) {
+        confirmDiscard = false;
+      } else if (!cancelGesture()) {
+        requestClose();
       }
       return;
     }
@@ -585,9 +620,7 @@
   onkeydown={onKeydown}
   oncancel={(event) => {
     event.preventDefault();
-    if (!saving) {
-      onClose();
-    }
+    requestClose();
   }}
 >
   <header class="ft-header">
@@ -600,7 +633,7 @@
       </p>
     </div>
     <div bind:this={closeButton}>
-      <IconButton label={$t('frameleaf_face_tagger_close')} disabled={saving} onclick={onClose}>
+      <IconButton label={$t('frameleaf_face_tagger_close')} disabled={saving} onclick={requestClose}>
         <Icon icon={mdiClose} size="1.125rem" />
       </IconButton>
     </div>
@@ -754,9 +787,11 @@
                   oninput={(event) => {
                     const value = event.currentTarget.value;
                     if (value !== '') {
-                      setBox(current.id, adjustFaceBox(current.box, key, Number(value) / 100));
+                      typeBox(current.id, adjustFaceBox(current.box, key, Number(value) / 100));
                     }
                   }}
+                  onchange={commitField}
+                  onblur={commitField}
                 />
               </label>
             {/each}
@@ -838,9 +873,16 @@
   {#if error}
     <div class="ft-message error" role="alert">{error}</div>
   {/if}
+  {#if confirmDiscard}
+    <div class="ft-message confirm" role="alertdialog" aria-label={$t('frameleaf_face_tagger_discard')}>
+      <span>{$t('frameleaf_face_tagger_discard')}</span>
+      <Button onclick={() => (confirmDiscard = false)}>{$t('frameleaf_face_tagger_keep_editing')}</Button>
+      <Button variant="primary" onclick={onClose}>{$t('frameleaf_face_tagger_discard_confirm')}</Button>
+    </div>
+  {/if}
   <footer class="ft-footer">
     <span>{statusText}</span>
-    <Button disabled={saving} onclick={onClose}>{$t('cancel')}</Button>
+    <Button disabled={saving} onclick={requestClose}>{$t('cancel')}</Button>
     <Button variant="primary" disabled={!valid || saving} onclick={save}>
       {saving ? $t('frameleaf_face_tagger_saving') : $t('frameleaf_face_tagger_save')}
     </Button>
@@ -1161,6 +1203,15 @@
   }
   .ft-message.error {
     color: var(--fl-danger);
+  }
+  .ft-message.confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .ft-message.confirm > span {
+    margin-right: auto;
   }
   .ft-image-error {
     color: var(--fl-muted);
