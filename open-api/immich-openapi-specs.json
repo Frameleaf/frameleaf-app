@@ -60805,8 +60805,9 @@
             "type": "boolean"
           },
           "reason": {
-            "description": "Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters)",
+            "description": "Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it",
             "maxLength": 200,
+            "nullable": true,
             "type": "string"
           },
           "restoreBackupFilename": {
