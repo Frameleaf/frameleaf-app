@@ -975,7 +975,7 @@
         onCancelOperation={(requestId) => bulk.cancel(requestId)}
         onRetryOperation={(operation) => void bulk.retry(operation)}
         onDismissOperation={(requestId) => bulk.dismiss(requestId)}
-        leading={selectionMode ? [] : leadingActions}
+        leading={selectionMode || publicView ? [] : leadingActions}
       />
     {/if}
   {/if}
