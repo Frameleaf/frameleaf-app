@@ -5658,6 +5658,7 @@
     "library_summary": "{count, plural, one {# item} other {# items}} · shared with you · originals stay in {possessive} account",
     "link_address": "Link address",
     "link_copied": "Link copied.",
+    "link_not_found": "That shared link could not be found. It may have been deleted.",
     "link_option_description": "Anyone with the address can view. Add a password or an expiry.",
     "link_ready_body": "Anyone with this address can view {name}.",
     "link_ready_body_password": "Anyone with this address can view {name} after entering the password.",
