@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 122,
+      "partial": 120,
       "missing": 7,
-      "fixed": 17,
+      "fixed": 19,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1914,8 +1914,8 @@
         "web/src/routes/(user)/user-settings/sections/MaintenanceSection.svelte"
       ],
       "status": "partial",
-      "gaps": ["CC-14", "CC-15", "CC-16", "CC-17", "CC-18", "CC-19", "CC-20", "CC-21", "CC-22", "CC-24"],
-      "followUp": "Maintenance area conformance"
+      "gaps": ["CC-21"],
+      "followUp": "Per-check last run time (the server records none); mode card, reason, backups, integrity checks and reports fixed by FL-81 (CC-14..CC-20, CC-22, CC-24)"
     },
     {
       "route": "/admin/maintenance/integrity-report/[type]",
@@ -1924,9 +1924,9 @@
         "web/src/routes/admin/maintenance/integrity-report/[type]/+page.ts",
         "web/src/routes/(user)/user-settings/sections/IntegrityReportSection.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["CC-23"],
-      "followUp": "Report viewer summary, downloads, delete confirm"
+      "followUp": "Report viewer summary, downloads, delete confirm (fixed by FL-81)"
     },
     {
       "route": "/admin/physical-deduplication",
@@ -2010,22 +2010,8 @@
         "web/src/lib/components/frameleaf/settings/SettingsHost.svelte"
       ],
       "status": "partial",
-      "gaps": [
-        "CC-1",
-        "CC-2",
-        "CC-3",
-        "CC-4",
-        "CC-5",
-        "CC-6",
-        "CC-7",
-        "CC-8",
-        "CC-11",
-        "CC-12",
-        "CC-46",
-        "CC-47",
-        "CC-48"
-      ],
-      "followUp": "Command-center rail, areas, search, directory, draft/review (FL-66), configuration transfer"
+      "gaps": ["CC-1", "CC-2", "CC-3", "CC-4", "CC-5", "CC-6", "CC-7", "CC-8", "CC-11", "CC-12"],
+      "followUp": "Command-center rail, areas, search, directory, draft/review (FL-66); configuration transfer fixed by FL-71 (CC-46..CC-48)"
     },
     {
       "route": "/admin/user-management",
@@ -2059,8 +2045,8 @@
         "web/src/lib/components/frameleaf/AccountDetailTabs.svelte"
       ],
       "status": "partial",
-      "gaps": ["CC-28", "CC-29", "CC-30", "CC-31", "CC-32", "CC-33"],
-      "followUp": "Account detail header, snapshot, security tab, dialogs"
+      "gaps": ["CC-28", "CC-30", "CC-32"],
+      "followUp": "Account detail header, PIN labels, typed email on delete (owner question); snapshot, sign-in provider and device dialog fixed by FL-76 (CC-29, CC-31, CC-33)"
     },
     {
       "route": "/admin/users/[id]/edit",
@@ -2152,8 +2138,8 @@
       "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
       "production": ["web/src/routes/auth/onboarding/+page.svelte"],
       "status": "partial",
-      "gaps": ["ON-1", "O-1", "O-2", "O-3", "O-4", "O-5", "O-6", "O-7", "O-8", "O-9", "O-10", "O-11", "O-12"],
-      "followUp": "Frameleaf onboarding"
+      "gaps": ["O-8", "O-12"],
+      "followUp": "Version check stays off by privacy policy; app store links await the owner. Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)"
     },
     {
       "route": "/auth/pin-prompt",
@@ -2251,9 +2237,9 @@
       "route": "/maintenance",
       "prototype": ["design/frameleaf/template/src/AuthScreens.jsx", "design/frameleaf/template/src/system-data.mjs"],
       "production": ["web/src/routes/maintenance/+page.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["MS-1", "M-1", "M-2", "M-3", "M-4", "M-5", "M-6"],
-      "followUp": "Maintenance splash"
+      "followUp": "Maintenance splash (fixed by FL-80)"
     },
     {
       "route": "/map/[[photos=photos]]/[[assetId=id]]",
@@ -2553,8 +2539,8 @@
       ],
       "production": ["web/src/routes/(user)/user-settings/+page.svelte"],
       "status": "partial",
-      "gaps": ["CC-49", "CC-50", "CC-51", "CC-52", "CC-53", "CC-54", "AL-46", "US-2"],
-      "followUp": "Personal preferences inside the command center; sharing settings"
+      "gaps": ["CC-49", "AL-46", "US-2"],
+      "followUp": "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54)"
     },
     {
       "route": "/utilities",
