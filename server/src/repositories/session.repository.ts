@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
@@ -92,6 +93,24 @@ export class SessionRepository {
       .where('session.id', '=', asUuid(id))
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  /**
+   * Extends a still-elevated session's PIN expiry (FL-34). The update only applies while the session
+   * is elevated and unexpired at write time: PostgreSQL rechecks this predicate after a concurrent
+   * row update, so a lock (or `lockAll`) that cleared the expiry after the caller read the session
+   * wins over the caller's stale snapshot. Returns whether the session is still elevated.
+   */
+  async refreshPinExpiry(id: string, pinExpiresAt: Date): Promise<boolean> {
+    const result = await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt })
+      .where('id', '=', asUuid(id))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .returning('id')
+      .executeTakeFirst();
+    return !!result;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

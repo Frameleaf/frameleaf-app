@@ -682,7 +682,7 @@ describe(AuthService.name, () => {
       };
 
       mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      mocks.session.update.mockResolvedValue(session);
+      mocks.session.refreshPinExpiry.mockResolvedValue(true);
 
       await expect(
         sut.authenticate({
@@ -699,9 +699,51 @@ describe(AuthService.name, () => {
         }),
       );
 
-      expect(mocks.session.update).toHaveBeenCalledWith(session.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
+      vi.useRealTimers();
+    });
+
+    it('does not elevate a request whose refresh loses to a concurrent lock (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+      mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          session: {
+            id: session.id,
+            hasElevatedPermission: false,
+          },
+        }),
+      );
+
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
       vi.useRealTimers();
     });
 
