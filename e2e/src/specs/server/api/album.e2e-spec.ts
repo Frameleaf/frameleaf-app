@@ -708,6 +708,58 @@ describe('/albums', () => {
           expect(body.parentId).toBeNull();
         }
       });
+
+      it('saves a personal custom order and refuses one from a stale tree (FL-52)', async () => {
+        const shelf = await utils.createAlbum(user1.accessToken, {
+          albumName: 'OrderShelf',
+          kind: AlbumKind.Collection,
+        });
+        const a = await utils.createAlbum(user1.accessToken, { albumName: 'OrderA', parentId: shelf.id });
+        const b = await utils.createAlbum(user1.accessToken, { albumName: 'OrderB', parentId: shelf.id });
+        const auth = `Bearer ${user1.accessToken}`;
+
+        const saved = await request(app)
+          .put('/albums/order')
+          .set('Authorization', auth)
+          .send({ parentId: shelf.id, albumIds: [b.id, a.id] });
+        expect(saved.status).toBe(204);
+
+        const { body: tree } = await request(app).get('/albums/tree').set('Authorization', auth);
+        const node = tree.collections.find(
+          ({ collection }: { collection: { id: string } }) => collection.id === shelf.id,
+        );
+        expect(node.albums.map(({ id }: { id: string }) => id)).toEqual([b.id, a.id]);
+
+        // `a` leaves the collection; an order still listing it inside is refused.
+        await request(app).put(`/albums/${a.id}/collection`).set('Authorization', auth).send({ collectionId: null });
+        const stale = await request(app)
+          .put('/albums/order')
+          .set('Authorization', auth)
+          .send({ parentId: shelf.id, albumIds: [a.id, b.id] });
+        expect(stale.status).toBe(409);
+      });
+
+      it('refuses a move of an album that was moved since the client saw it (FL-52)', async () => {
+        const one = await utils.createAlbum(user1.accessToken, { albumName: 'StaleOne', kind: AlbumKind.Collection });
+        const two = await utils.createAlbum(user1.accessToken, { albumName: 'StaleTwo', kind: AlbumKind.Collection });
+        const album = await utils.createAlbum(user1.accessToken, { albumName: 'StaleAlbum' });
+        const auth = `Bearer ${user1.accessToken}`;
+
+        const first = await request(app)
+          .put(`/albums/${album.id}/collection`)
+          .set('Authorization', auth)
+          .send({ collectionId: one.id, expectedParentId: null });
+        expect(first.status).toBe(200);
+
+        const second = await request(app)
+          .put(`/albums/${album.id}/collection`)
+          .set('Authorization', auth)
+          .send({ collectionId: two.id, expectedParentId: null });
+        expect(second.status).toBe(409);
+
+        const { body } = await request(app).get(`/albums/${album.id}`).set('Authorization', auth);
+        expect(body.parentId).toBe(one.id);
+      });
     });
 
     it('should not be able to update as a viewer', async () => {

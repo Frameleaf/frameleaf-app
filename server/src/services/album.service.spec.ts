@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, UserMetadataKey } from 'src/enum.js';
@@ -19,6 +19,7 @@ describe(AlbumService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AlbumService));
+    mocks.album.getPositions.mockResolvedValue(new Map());
   });
 
   it('should work', () => {
@@ -727,6 +728,23 @@ describe(AlbumService.name, () => {
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId: user1.id });
     });
 
+    it('lets the last member leave: the album stays with its owner and everyone is told (FL-53)', async () => {
+      const member = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: member.id }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.delete.mockResolvedValue();
+
+      await sut.removeUser(AuthFactory.create(member), album.id, 'me');
+
+      expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId: member.id });
+      // Leaving never deletes the album or its items.
+      expect(mocks.album.delete).not.toHaveBeenCalled();
+      const payload = { albumId: album.id, userId: member.id, role: null };
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', member.id, payload);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', owner.id, payload);
+    });
+
     it('should allow a shared user to remove themselves using "me"', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
@@ -779,6 +797,21 @@ describe(AlbumService.name, () => {
         { albumId: album.id, userId: user.id },
         { role: AlbumUserRole.Viewer },
       );
+    });
+
+    it('tells the downgraded member and the album at once, so open pages drop controls (FL-53)', async () => {
+      const user = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.update.mockResolvedValue();
+
+      await sut.updateUser(AuthFactory.create(owner), album.id, user.id, { role: AlbumUserRole.Viewer });
+
+      const payload = { albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer };
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', user.id, payload);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', owner.id, payload);
     });
   });
 
@@ -912,6 +945,35 @@ describe(AlbumService.name, () => {
       await sut.moveToCollection(AuthFactory.create(owner), album.id, { collectionId: null });
 
       expect(mocks.album.reparent).toHaveBeenCalledWith(album.id, null);
+    });
+
+    it('refuses a move decided on an outdated directory (stale moved node)', async () => {
+      // The client saw the album standing on its own, but it was moved into a collection since.
+      const album = AlbumFactory.from({ parentId: newUuid() }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.moveToCollection(AuthFactory.create(owner), album.id, { collectionId: newUuid(), expectedParentId: null }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.album.reparent).not.toHaveBeenCalled();
+    });
+
+    it('passes the expected parent on so the move is checked again inside its transaction', async () => {
+      const previous = newUuid();
+      const album = AlbumFactory.from({ parentId: previous }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getMetadataForIds.mockResolvedValue([emptyMetadata(album.id)]);
+
+      await sut.moveToCollection(AuthFactory.create(owner), album.id, {
+        collectionId: null,
+        expectedParentId: previous,
+      });
+
+      expect(mocks.album.reparent).toHaveBeenCalledWith(album.id, null, previous);
     });
 
     it('does not reparent when the album is already in the destination', async () => {
@@ -1074,6 +1136,114 @@ describe(AlbumService.name, () => {
 
       expect(tree.albums[0].albumThumbnailAssetId).toBeNull();
       expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { excludeNsfw: true });
+    });
+  });
+
+  describe('custom order (FL-52)', () => {
+    const setup = () => {
+      const collection = AlbumFactory.from({ albumName: 'Family', kind: AlbumKind.Collection }).build();
+      const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const first = AlbumFactory.from({ parentId: collection.id }).owner(owner).build();
+      const second = AlbumFactory.from({ parentId: collection.id }).owner(owner).build();
+      const loose = AlbumFactory.from().owner(owner).build();
+      const sharedWithMe = AlbumFactory.from().albumUser({ userId: owner.id, role: AlbumUserRole.Viewer }).build();
+      const visible = [collection, first, second, loose, sharedWithMe];
+      mocks.album.getAll.mockResolvedValue(visible.map((item) => getForAlbum(item)));
+      // The repository reads the directory inside its transaction and hands it to the check.
+      mocks.album.setPositions.mockImplementation((_userId, _albumIds, validate) => {
+        validate?.(visible.map(({ id, kind, parentId }) => ({ id, kind, parentId: parentId ?? null })));
+        return Promise.resolve();
+      });
+      return { auth: AuthFactory.create(owner), collection, first, second, loose, sharedWithMe };
+    };
+
+    it("returns every group of the tree in the person's own order", async () => {
+      const { auth, first, second, loose, sharedWithMe } = setup();
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+      mocks.album.getPositions.mockResolvedValue(
+        new Map([
+          [second.id, 0],
+          [first.id, 1],
+          [sharedWithMe.id, 0],
+          [loose.id, 1],
+        ]),
+      );
+
+      const tree = await sut.getTree(auth);
+
+      expect(mocks.album.getPositions).toHaveBeenCalledWith(auth.user.id);
+      expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([second.id, first.id]);
+      expect(tree.albums.map(({ id }) => id)).toEqual([sharedWithMe.id, loose.id]);
+    });
+
+    it('saves the order of the albums inside a collection for this person only', async () => {
+      const { auth, collection, first, second } = setup();
+
+      await sut.setOrder(auth, { parentId: collection.id, albumIds: [second.id, first.id] });
+
+      expect(mocks.album.setPositions).toHaveBeenCalledWith(auth.user.id, [second.id, first.id], expect.any(Function));
+      // Organization only: no album row, membership or access changes.
+      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.album.reparent).not.toHaveBeenCalled();
+    });
+
+    it('orders a top-level group, including albums shared with the person', async () => {
+      const { auth, loose, sharedWithMe } = setup();
+
+      await sut.setOrder(auth, { parentId: null, albumIds: [sharedWithMe.id, loose.id] });
+
+      expect(mocks.album.setPositions).toHaveBeenCalledWith(
+        auth.user.id,
+        [sharedWithMe.id, loose.id],
+        expect.any(Function),
+      );
+    });
+
+    it('refuses an order made from an outdated tree (an album moved out of the group since)', async () => {
+      const { auth, collection, first, loose } = setup();
+
+      // `loose` is not in the collection any more (or never was): the client's tree is stale.
+      await expect(
+        sut.setOrder(auth, { parentId: collection.id, albumIds: [loose.id, first.id] }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      // The check runs before anything is written, inside the repository's transaction.
+    });
+
+    it('refuses an order that leaves out an album now in the group', async () => {
+      const { auth, collection, first } = setup();
+
+      await expect(sut.setOrder(auth, { parentId: collection.id, albumIds: [first.id] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      // The check runs before anything is written, inside the repository's transaction.
+    });
+
+    it('refuses a collection the person can no longer see', async () => {
+      const { auth, first } = setup();
+
+      await expect(sut.setOrder(auth, { parentId: newUuid(), albumIds: [first.id] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      // The check runs before anything is written, inside the repository's transaction.
+    });
+
+    it('refuses an album the person cannot see', async () => {
+      const { auth } = setup();
+
+      await expect(sut.setOrder(auth, { parentId: null, albumIds: [newUuid()] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // The check runs before anything is written, inside the repository's transaction.
+    });
+
+    it('refuses a repeated id', async () => {
+      const { auth, loose } = setup();
+
+      await expect(sut.setOrder(auth, { parentId: null, albumIds: [loose.id, loose.id] })).rejects.toThrow(
+        'Each album may appear only once',
+      );
+      expect(mocks.album.setPositions).not.toHaveBeenCalled();
     });
   });
 

@@ -261,7 +261,17 @@ async function fileUploader({
 
     if (albumId && !authManager.isSharedLink && responseData.id) {
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_adding_to_album') });
-      await addAssetsToAlbums([albumId], [responseData.id], { notify: false });
+      const added = await addAssetsToAlbums([albumId], [responseData.id], { notify: false });
+      if (!added) {
+        // FL-53: the file is safely in the library, but it is not in the album. Say exactly that,
+        // rather than "added to album"; retrying finds the uploaded original and only adds it.
+        uploadAssetsStore.updateItem(deviceAssetId, {
+          state: UploadState.ERROR,
+          assetId: responseData.id,
+          error: $t('frameleaf_upload_album_add_failed'),
+        });
+        return responseData.id;
+      }
       uploadAssetsStore.updateItem(deviceAssetId, { message: $t('asset_added_to_album') });
     }
 

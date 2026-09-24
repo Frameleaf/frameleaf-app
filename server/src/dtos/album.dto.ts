@@ -258,8 +258,33 @@ const MoveAlbumSchema = z
       .uuidv4()
       .nullable()
       .describe('Collection to move the album into, or null to take it out so it stands on its own'),
+    expectedParentId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.',
+      ),
   })
   .meta({ id: 'MoveAlbumDto' });
+
+const AlbumOrderSchema = z
+  .object({
+    parentId: z
+      .uuidv4()
+      .nullable()
+      .describe(
+        'Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces)',
+      ),
+    albumIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(5000)
+      .describe(
+        'Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409.',
+      ),
+  })
+  .meta({ id: 'AlbumOrderDto' });
 
 const AlbumCollectionResponseSchema = z
   .object({
@@ -332,6 +357,7 @@ export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
 export class AlbumDescendantCountResponseDto extends createZodDto(AlbumDescendantCountResponseSchema) {}
 export class MoveAlbumDto extends createZodDto(MoveAlbumSchema) {}
+export class AlbumOrderDto extends createZodDto(AlbumOrderSchema) {}
 export class AlbumCollectionResponseDto extends createZodDto(AlbumCollectionResponseSchema) {}
 export class AlbumTreeResponseDto extends createZodDto(AlbumTreeResponseSchema) {}
 export class AlbumIconCatalogueResponseDto extends createZodDto(AlbumIconCatalogueResponseSchema) {}

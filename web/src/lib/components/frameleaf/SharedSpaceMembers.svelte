@@ -1,7 +1,10 @@
 <script lang="ts">
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import PersonPhoto from '$lib/components/frameleaf/PersonPhoto.svelte';
+  import RecipientGroupsDialog from '$lib/components/frameleaf/RecipientGroupsDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     alreadyInvolvedIds,
@@ -10,20 +13,25 @@
     sortMembers,
     SPACE_ROLE_OPTIONS,
   } from '$lib/frameleaf/shared-space';
+  import { goto } from '$app/navigation';
+  import { Route } from '$lib/route';
+  import { handleLeaveAlbum } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
     addUsersToAlbum,
+    getRecipientGroups,
     removeSharedSpaceInvitation,
     removeUserFromAlbum,
     searchUsers,
     updateAlbumUser,
     AlbumUserRole,
     type AlbumResponseDto,
+    type RecipientGroupResponseDto,
     type SharedSpaceMemberResponseDto,
     type UserResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAccountPlusOutline, mdiClockOutline, mdiClose } from '@mdi/js';
+  import { mdiAccountGroupOutline, mdiAccountPlusOutline, mdiClockOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -39,6 +47,14 @@
    * A row is either a member or an unanswered invitation. Withdrawing an
    * invitation removes an offer, never a membership, so it uses its own
    * endpoint; the two are not the same act and are not shown as the same act.
+   *
+   * Inviting follows the prototype's share dialog (`ShareDialog`, CollectionHeader.jsx:556-700):
+   * "Invite someone", a searchable "People to invite" list, a role and one primary Invite. Above it
+   * sit the owner's named recipient shortcuts (FL-55): applying one opens a review sheet listing
+   * the people it would invite — anyone already in the space or invited is shown and left out — and
+   * nothing is sent until the owner confirms ("Review recipients when using a group",
+   * settings-catalog.mjs:873-878). A shortcut never grants anything by itself, and its name stays
+   * with its owner: invitations carry no group name.
    */
   interface Props {
     space: AlbumResponseDto;
@@ -59,6 +75,13 @@
   let candidates: UserResponseDto[] = $state([]);
   let query = $state('');
   let inviteRole: AlbumUserRole = $state(AlbumUserRole.Editor);
+  let picked = $state<string | undefined>();
+  let groups: RecipientGroupResponseDto[] = $state([]);
+  let groupsOpen = $state(false);
+  let review = $state<{ open: boolean; group?: RecipientGroupResponseDto; userIds: string[] }>({
+    open: false,
+    userIds: [],
+  });
 
   const involved = $derived(alreadyInvolvedIds(members));
   const needle = $derived(query.trim().toLowerCase());
@@ -82,12 +105,54 @@
     }
   };
 
+  const others = $derived(candidates.filter((user) => user.id !== currentUserId));
+
+  const loadGroups = async () => {
+    try {
+      groups = await getRecipientGroups();
+    } catch (error) {
+      handleError(error, $t('frameleaf_recipient_groups_error'));
+    }
+  };
+
   const openInvite = async () => {
     inviting = true;
     try {
-      candidates = await searchUsers();
+      [candidates] = await Promise.all([searchUsers(), loadGroups()]);
     } catch (error) {
       handleError(error, $t('frameleaf_spaces_error_members'));
+    }
+  };
+
+  /** Applying a shortcut proposes its people for review; everyone already involved is left out. */
+  const applyGroup = (group: RecipientGroupResponseDto) => {
+    review = {
+      open: true,
+      group,
+      userIds: group.users.filter((user) => !involved.has(user.id) && user.id !== currentUserId).map(({ id }) => id),
+    };
+  };
+  const toggleReviewed = (userId: string) => {
+    review.userIds = review.userIds.includes(userId)
+      ? review.userIds.filter((id) => id !== userId)
+      : [...review.userIds, userId];
+  };
+  const sendReviewed = async () => {
+    const userIds = review.userIds;
+    if (userIds.length === 0) {
+      return;
+    }
+    const sent = await run(
+      () =>
+        addUsersToAlbum({
+          id: space.id,
+          addUsersDto: { albumUsers: userIds.map((userId) => ({ userId, role: inviteRole })) },
+        }).then(() => {}),
+      $t('frameleaf_recipient_groups_invites_sent', { values: { count: userIds.length } }),
+    );
+    // A failed send keeps the sheet open with the same people picked, so it can be retried.
+    if (sent) {
+      review = { open: false, userIds: [] };
     }
   };
 
@@ -97,15 +162,21 @@
       await work();
       status = message;
       await onChanged();
+      return true;
     } catch (error) {
       handleError(error, $t('frameleaf_spaces_error_members'));
+      return false;
     } finally {
       busy = false;
     }
   };
 
-  const invite = (user: UserResponseDto) =>
-    run(
+  const invite = async () => {
+    const user = candidates.find(({ id }) => id === picked);
+    if (!user) {
+      return;
+    }
+    await run(
       () =>
         addUsersToAlbum({
           id: space.id,
@@ -113,6 +184,9 @@
         }).then(() => {}),
       $t('frameleaf_spaces_invite_sent', { values: { name: user.name } }),
     );
+    picked = undefined;
+    query = '';
+  };
 
   const changeRole = (member: SharedSpaceMemberResponseDto, role: AlbumUserRole) =>
     run(
@@ -132,8 +206,21 @@
     confirming = { open: true, member };
   };
 
-  const remove = (member: SharedSpaceMemberResponseDto) => {
+  const remove = async (member: SharedSpaceMemberResponseDto) => {
     const leaving = member.user.id === currentUserId;
+    if (leaving && !member.pending) {
+      // Leaving is the shared leave action (FL-53): it alone navigates, and the page's
+      // "you were removed" handling ignores the removal this tab made.
+      busy = true;
+      try {
+        if (await handleLeaveAlbum(space)) {
+          await goto(Route.sharing());
+        }
+      } finally {
+        busy = false;
+      }
+      return;
+    }
     return run(
       () =>
         member.pending
@@ -163,7 +250,7 @@
   <ul class="roster">
     {#each roster as member (member.user.id)}
       <li class:pending={member.pending}>
-        <UserAvatar user={member.user} size="sm" />
+        <PersonPhoto user={member.user} />
         <span class="name">
           <strong>{member.user.name}</strong>
           <small>{member.user.email}</small>
@@ -215,14 +302,111 @@
   </ul>
 
   {#if owner && inviting}
-    <div class="invite" aria-label={$t('frameleaf_spaces_invite')}>
-      <div class="invite-controls">
+    <div class="cl-invite" role="group" aria-label={$t('frameleaf_spaces_invite')}>
+      <div class="shortcuts">
+        <span class="field-label">{$t('frameleaf_recipient_groups_title')}</span>
+        {#if groups.length > 0}
+          <div class="shortcut-list">
+            {#each groups as group (group.id)}
+              <Button
+                label={$t('frameleaf_recipient_groups_apply', {
+                  values: { name: group.name, count: group.users.length },
+                })}
+                onclick={() => applyGroup(group)}
+              >
+                <Icon icon={mdiAccountGroupOutline} size="16" aria-hidden={true} />
+                {group.name}
+                <small>{group.users.length}</small>
+              </Button>
+            {/each}
+          </div>
+        {/if}
+        <button type="button" class="link" onclick={() => (groupsOpen = true)}>
+          {groups.length > 0 ? $t('frameleaf_recipient_groups_manage') : $t('frameleaf_recipient_groups_new')}
+        </button>
+      </div>
+
+      <label class="cl-field">
+        <span>{$t('frameleaf_spaces_invite_someone')}</span>
+        <input data-initial-focus type="search" bind:value={query} placeholder={$t('frameleaf_spaces_invite_search')} />
+      </label>
+      <ul class="cl-people" role="listbox" aria-label={$t('frameleaf_spaces_people_to_invite')}>
+        {#each matches as user (user.id)}
+          <li>
+            <button
+              type="button"
+              role="option"
+              aria-selected={picked === user.id}
+              onclick={() => (picked = picked === user.id ? undefined : user.id)}
+            >
+              <PersonPhoto {user} />
+              <span>
+                {user.name}
+                <small>{user.email}</small>
+              </span>
+            </button>
+          </li>
+        {:else}
+          <li class="cl-empty-row">
+            {needle ? $t('frameleaf_spaces_invite_no_match') : $t('frameleaf_spaces_invite_none')}
+          </li>
+        {/each}
+      </ul>
+      <div class="cl-invite-row">
         <label>
-          <span class="visually-hidden">{$t('frameleaf_spaces_invite_search')}</span>
-          <input type="search" bind:value={query} placeholder={$t('frameleaf_spaces_invite_search')} />
+          {$t('role')}
+          <select bind:value={inviteRole}>
+            {#each SPACE_ROLE_OPTIONS as role (role)}
+              <option value={role}>{roleLabel(role)}</option>
+            {/each}
+          </select>
         </label>
+        <Button variant="primary" disabled={busy || !picked} onclick={() => void invite()}>
+          <Icon icon={mdiAccountPlusOutline} size="16" aria-hidden={true} />
+          {$t('frameleaf_spaces_invite_send')}
+        </Button>
+      </div>
+    </div>
+  {/if}
+</section>
+
+{#if owner}
+  <RecipientGroupsDialog bind:open={groupsOpen} {groups} people={others} onChanged={loadGroups} />
+{/if}
+
+{#if review.group}
+  {@const group = review.group}
+  <!-- The review sheet a shortcut opens: the people it would invite, before anything is sent. -->
+  <Dialog
+    title={$t('frameleaf_recipient_groups_review_title', { values: { name: group.name } })}
+    closeLabel={$t('close')}
+    bind:open={review.open}
+  >
+    <div class="review">
+      <p class="note">{$t('frameleaf_recipient_groups_review_note')}</p>
+      <ul class="cl-people" role="group" aria-label={$t('frameleaf_spaces_people_to_invite')}>
+        {#each group.users as user (user.id)}
+          {@const already = involved.has(user.id)}
+          <li>
+            <label class="review-row" class:already>
+              <input
+                type="checkbox"
+                checked={review.userIds.includes(user.id)}
+                disabled={already}
+                onchange={() => toggleReviewed(user.id)}
+              />
+              <PersonPhoto {user} />
+              <span>
+                {user.name}
+                <small>{already ? $t('frameleaf_recipient_groups_already_in') : user.email}</small>
+              </span>
+            </label>
+          </li>
+        {/each}
+      </ul>
+      <div class="cl-invite-row">
         <label>
-          <span class="visually-hidden">{$t('role')}</span>
+          {$t('role')}
           <select bind:value={inviteRole}>
             {#each SPACE_ROLE_OPTIONS as role (role)}
               <option value={role}>{roleLabel(role)}</option>
@@ -230,25 +414,15 @@
           </select>
         </label>
       </div>
-      <ul class="candidates">
-        {#each matches as user (user.id)}
-          <li>
-            <UserAvatar {user} size="sm" />
-            <span class="name">
-              <strong>{user.name}</strong>
-              <small>{user.email}</small>
-            </span>
-            <button type="button" disabled={busy} onclick={() => invite(user)}>
-              {$t('frameleaf_spaces_invite_send')}
-            </button>
-          </li>
-        {:else}
-          <li class="empty">{$t('frameleaf_spaces_invite_none')}</li>
-        {/each}
-      </ul>
     </div>
-  {/if}
-</section>
+    {#snippet actions()}
+      <Button onclick={() => (review.open = false)}>{$t('cancel')}</Button>
+      <Button variant="primary" disabled={busy || review.userIds.length === 0} onclick={() => void sendReviewed()}>
+        {$t('frameleaf_recipient_groups_send', { values: { count: review.userIds.length } })}
+      </Button>
+    {/snippet}
+  </Dialog>
+{/if}
 
 {#if confirming.member}
   {@const member = confirming.member}
@@ -264,7 +438,9 @@
       ? $t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })
       : $t('frameleaf_album_remove_member_confirm')}
     bind:open={confirming.open}
-    onConfirm={() => remove(member)}
+    onConfirm={async () => {
+      await remove(member);
+    }}
   />
 {/if}
 
@@ -376,32 +552,128 @@
   button:disabled {
     opacity: 0.6;
   }
-  .invite {
+  /* The prototype share dialog's invite controls (collections.css:127-160, 387-445). */
+  .cl-invite {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 10px;
     padding: 0.75rem;
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
   }
-  .invite-controls {
+  .cl-field {
     display: flex;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
   }
-  .invite-controls label:first-child {
-    flex: 1;
+  .cl-field > span,
+  .field-label {
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    color: var(--fl-muted);
+    letter-spacing: 0.01em;
   }
-  .invite-controls input {
+  .cl-field input,
+  .cl-invite-row select {
     width: 100%;
+    box-sizing: border-box;
   }
-  .candidates {
+  .cl-people {
     max-height: 14rem;
     overflow-y: auto;
   }
-  .candidates .empty {
+  .cl-people li {
+    padding: 0;
+  }
+  .cl-people button,
+  .review-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius-control);
+    background: none;
+    color: var(--fl-text);
+    font: inherit;
+    font-weight: 400;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cl-people button:hover {
+    background: var(--fl-raised);
+  }
+  .cl-people button[aria-selected='true'] {
+    border-color: var(--fl-accent);
+    background: var(--fl-accent-soft);
+  }
+  .cl-people small {
+    display: block;
     color: var(--fl-muted);
-    font-size: 0.8125rem;
+    font-size: var(--fl-font-micro);
+  }
+  .cl-empty-row {
+    padding: 8px;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .cl-invite-row {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+  }
+  .cl-invite-row label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  /* Named recipient shortcuts: the prototype's compact buttons in a wrapping row, like its chips. */
+  .shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .shortcut-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .shortcut-list small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+    font-variant-numeric: tabular-nums;
+  }
+  button.link {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+  }
+  .review {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: min(24rem, 100%);
+  }
+  .review .note {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+  .review-row.already {
+    color: var(--fl-muted);
+    cursor: default;
   }
   .visually-hidden {
     position: absolute;

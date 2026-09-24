@@ -3,6 +3,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerDirection, PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -15,7 +16,8 @@ const setup = (db?: Kysely<DB>) => {
   return newMediumService(PartnerService, {
     database: db || defaultDatabase,
     real: [AccessRepository, PartnerRepository, UserRepository],
-    mock: [LoggingRepository],
+    // FL-54: removing a partner tells both people's open pages
+    mock: [LoggingRepository, WebsocketRepository],
   });
 };
 

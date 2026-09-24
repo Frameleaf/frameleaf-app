@@ -34,6 +34,13 @@ export class PartnerService extends BaseService {
     }
 
     await this.partnerRepository.remove(partnerId);
+
+    // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
+    // so this only tells the clients to drop what they already loaded (timeline months, the partner
+    // page, an open viewer) instead of showing it until the next reload.
+    for (const userId of [sharedWithId, auth.user.id]) {
+      this.websocketRepository.clientSend('PartnerRevokeV1', userId, partnerId);
+    }
   }
 
   async search(auth: AuthDto, { direction }: PartnerSearchDto): Promise<PartnerResponseDto[]> {

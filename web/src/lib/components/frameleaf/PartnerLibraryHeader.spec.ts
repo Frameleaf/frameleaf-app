@@ -8,9 +8,13 @@ import {
 } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import en from '../../../../../i18n/en.json';
 import PartnerLibraryHeader from './PartnerLibraryHeader.svelte';
 
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: { authenticated: true, user: { id: 'me', name: 'Me', email: 'me@example.com' }, params: {} },
+}));
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   getPartners: vi.fn(),
@@ -70,6 +74,19 @@ describe('PartnerLibraryHeader', () => {
 
     expect(removePartner).toHaveBeenCalledWith({ id: 'partner-1' });
     await waitFor(() => expect(onStopped).toHaveBeenCalledOnce());
+  });
+
+  it('tells this tab’s open pages that sharing stopped (FL-54)', async () => {
+    vi.mocked(removePartner).mockResolvedValue(undefined as never);
+    const emit = vi.spyOn(eventManager, 'emit');
+    render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.stop_sharing_photos_with_user }));
+    await fireEvent.click(screen.getAllByRole('button', { name: en.stop_sharing_photos_with_user })[1]);
+
+    await waitFor(() =>
+      expect(emit).toHaveBeenCalledWith('PartnerRevoke', { sharedById: 'me', sharedWithId: 'partner-1' }),
+    );
   });
 
   describe('location sharing', () => {

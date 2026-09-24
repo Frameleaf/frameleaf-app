@@ -13,6 +13,7 @@ import {
   setSessionLockPending,
   waitForSessionLockRefreshes,
 } from '$lib/frameleaf/session-access.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getTimelineMonthByDate } from '$lib/managers/timeline-manager/internal/search-support.svelte';
 import { AbortError } from '$lib/utils';
@@ -74,6 +75,60 @@ describe('TimelineManager', () => {
     expect(timelineManager.months.map((month) => month.yearMonth.month)).toEqual([2]);
     timelineManager.destroy();
     setSessionLockPending(false);
+  });
+
+  describe('partner revocation (FL-54)', () => {
+    const signedInAs = (id: string) => {
+      vi.spyOn(authManager, 'authenticated', 'get').mockReturnValue(true);
+      vi.spyOn(authManager, 'user', 'get').mockReturnValue({ id } as never);
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('drops and reloads a timeline that includes partners when one stops sharing with me', async () => {
+      signedInAs('me');
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1, timeBucket: '2024-01-01' }]);
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, withPartners: true });
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(1);
+
+      eventManager.emit('PartnerRevoke', { sharedById: 'partner', sharedWithId: 'me' });
+
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+      timelineManager.destroy();
+    });
+
+    it('drops the partner’s own library page timeline too', async () => {
+      signedInAs('me');
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1, timeBucket: '2024-01-01' }]);
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, userId: 'partner' });
+
+      eventManager.emit('PartnerRevoke', { sharedById: 'partner', sharedWithId: 'me' });
+
+      await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
+      timelineManager.destroy();
+    });
+
+    it('leaves a timeline alone when the revocation is not mine or it holds no partner photos', async () => {
+      signedInAs('me');
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1, timeBucket: '2024-01-01' }]);
+      const withPartners = new TimelineManager();
+      await withPartners.updateOptions({ visibility: AssetVisibility.Timeline, withPartners: true });
+      const ownOnly = new TimelineManager();
+      await ownOnly.updateOptions({ visibility: AssetVisibility.Timeline });
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
+
+      // I stopped sharing with somebody: my own timeline shows nothing of theirs to drop.
+      eventManager.emit('PartnerRevoke', { sharedById: 'me', sharedWithId: 'partner' });
+      await tick();
+
+      expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
+      withPartners.destroy();
+      ownOnly.destroy();
+    });
   });
 
   describe('init', () => {

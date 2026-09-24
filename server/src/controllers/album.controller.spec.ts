@@ -113,5 +113,55 @@ describe(AlbumController.name, () => {
       expect(status).toEqual(200);
       expect(service.moveToCollection).toHaveBeenCalledWith(auth, id, { collectionId: null });
     });
+
+    it('should pass the position the client last saw through, for the stale-move check', async () => {
+      const id = factory.uuid();
+      const previous = factory.uuid();
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
+      service.moveToCollection.mockResolvedValue({ id } as never);
+      const { status } = await request(ctx.getHttpServer())
+        .put(`/albums/${id}/collection`)
+        .send({ collectionId: null, expectedParentId: previous });
+      expect(status).toEqual(200);
+      expect(service.moveToCollection).toHaveBeenCalledWith(auth, id, {
+        collectionId: null,
+        expectedParentId: previous,
+      });
+    });
+  });
+
+  describe('PUT /albums/order', () => {
+    it('should be an authenticated route', async () => {
+      await request(ctx.getHttpServer())
+        .put('/albums/order')
+        .send({ parentId: null, albumIds: [factory.uuid()] });
+      expect(ctx.authenticate).toHaveBeenCalled();
+    });
+
+    it('should require at least one album id', async () => {
+      const { status } = await request(ctx.getHttpServer()).put('/albums/order').send({ parentId: null, albumIds: [] });
+      expect(status).toEqual(400);
+      expect(service.setOrder).not.toHaveBeenCalled();
+    });
+
+    it('should require uuids', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/albums/order')
+        .send({ parentId: 'family', albumIds: [factory.uuid()] });
+      expect(status).toEqual(400);
+      expect(service.setOrder).not.toHaveBeenCalled();
+    });
+
+    it('should save the order for the group', async () => {
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
+      service.setOrder.mockResolvedValue();
+      const parentId = factory.uuid();
+      const albumIds = [factory.uuid(), factory.uuid()];
+      const { status } = await request(ctx.getHttpServer()).put('/albums/order').send({ parentId, albumIds });
+      expect(status).toEqual(204);
+      expect(service.setOrder).toHaveBeenCalledWith(auth, { parentId, albumIds });
+    });
   });
 });

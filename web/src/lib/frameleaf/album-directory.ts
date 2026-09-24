@@ -18,7 +18,15 @@ import {
 export const albumDirectoryFilters = ['all', 'owned', 'shared', 'smart'] as const;
 export type AlbumDirectoryFilter = (typeof albumDirectoryFilters)[number];
 
-export const albumDirectorySorts = ['modified', 'created', 'title', 'items', 'recent-photo', 'oldest-photo'] as const;
+export const albumDirectorySorts = [
+  'modified',
+  'created',
+  'title',
+  'items',
+  'recent-photo',
+  'oldest-photo',
+  'custom',
+] as const;
 export type AlbumDirectorySort = (typeof albumDirectorySorts)[number];
 
 export const albumDirectoryViews = ['grid', 'list'] as const;
@@ -146,6 +154,10 @@ export const compareAlbums = (sort: AlbumDirectorySort) => (a: AlbumResponseDto,
     case 'modified': {
       return compareDates(a.updatedAt, b.updatedAt, 'desc') || a.albumName.localeCompare(b.albumName);
     }
+    case 'custom': {
+      // The server returns every group in the person's own order (FL-52); a stable sort keeps it.
+      return 0;
+    }
   }
 };
 
@@ -236,6 +248,56 @@ export const arrangeAlbumDirectory = (
   };
 };
 
+/**
+ * One group of the directory a custom order applies to (FL-52): the albums inside a collection, or
+ * at the top level the collections, the albums on their own or the shared spaces. `ids` is the
+ * whole group in the order the server returned it, which is the order a reorder must send back.
+ */
+export interface AlbumOrderGroup {
+  parentId: string | null;
+  ids: string[];
+}
+
+export const orderGroupOf = (tree: AlbumTreeResponseDto, albumId: string): AlbumOrderGroup | undefined => {
+  if (tree.collections.some(({ collection }) => collection.id === albumId)) {
+    return { parentId: null, ids: tree.collections.map(({ collection }) => collection.id) };
+  }
+  for (const node of tree.collections) {
+    if (node.albums.some(({ id }) => id === albumId)) {
+      return { parentId: node.collection.id, ids: node.albums.map(({ id }) => id) };
+    }
+  }
+  if (tree.albums.some(({ id }) => id === albumId)) {
+    return { parentId: null, ids: tree.albums.map(({ id }) => id) };
+  }
+  if (tree.spaces.some(({ id }) => id === albumId)) {
+    return { parentId: null, ids: tree.spaces.map(({ id }) => id) };
+  }
+};
+
+/** The group's ids with `albumId` moved `step` places (−1 earlier, +1 later); undefined at an end. */
+export const moveInOrder = (ids: string[], albumId: string, step: -1 | 1): string[] | undefined => {
+  const from = ids.indexOf(albumId);
+  const to = from + step;
+  if (from === -1 || to < 0 || to >= ids.length) {
+    return undefined;
+  }
+  const next = [...ids];
+  next.splice(from, 1);
+  next.splice(to, 0, albumId);
+  return next;
+};
+
+/** The group's ids with `albumId` placed just before `targetId` (a drop on the target); undefined when nothing moves. */
+export const placeBefore = (ids: string[], albumId: string, targetId: string): string[] | undefined => {
+  if (albumId === targetId || !ids.includes(albumId) || !ids.includes(targetId)) {
+    return undefined;
+  }
+  const next = ids.filter((id) => id !== albumId);
+  next.splice(next.indexOf(targetId), 0, albumId);
+  return next.every((id, index) => id === ids[index]) ? undefined : next;
+};
+
 /** Only the owner reorganises an album, only an album moves, and only into a collection the user can edit. */
 export const canDropOnCollection = (
   album: AlbumResponseDto | undefined,
@@ -311,3 +373,22 @@ export interface AlbumDetailsDraft {
   icon: string;
   parentId?: string | null;
 }
+
+/**
+ * What an open album or shared-space page does when somebody leaves or is taken out of it (FL-53):
+ * `refresh` when it is someone else; `exit` when the viewer was removed by someone else and can no
+ * longer read the page; `ignore` when the viewer left from this tab, because that leave action
+ * already navigates and a second navigation would race it. An owner is never removed.
+ */
+export const removalOutcome = (
+  removal: { albumId: string; userId: string },
+  page: { albumId: string; userId: string; isOwner: boolean; leftLocally: boolean },
+): 'ignore' | 'refresh' | 'exit' => {
+  if (removal.albumId !== page.albumId) {
+    return 'ignore';
+  }
+  if (removal.userId !== page.userId || page.isOwner) {
+    return 'refresh';
+  }
+  return page.leftLocally ? 'ignore' : 'exit';
+};

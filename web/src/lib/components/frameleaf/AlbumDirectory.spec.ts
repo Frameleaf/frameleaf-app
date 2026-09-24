@@ -144,7 +144,8 @@ describe('AlbumDirectory', () => {
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
         id: 'rockies',
-        moveAlbumDto: { collectionId: null },
+        // Where this page last saw it, so a move from an outdated directory is refused (FL-52).
+        moveAlbumDto: { collectionId: null, expectedParentId: 'family' },
       }),
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
@@ -248,6 +249,179 @@ describe('AlbumDirectory', () => {
     const people = await dialog.findByRole('listbox', { name: 'People to invite' });
     expect(within(people).getByRole('option', { name: /Jamie/ })).toBeInTheDocument();
     expect(dialog.queryByRole('combobox', { name: /search/i })).toBeNull();
+  });
+
+  describe('custom order (FL-52)', () => {
+    const useCustomOrder = () => albumDirectoryView.set({ ...defaultAlbumDirectoryView, sort: 'custom' });
+
+    it('offers “Custom order” in the Frameleaf sort menu and shows the server’s own order', async () => {
+      const reordered: AlbumTreeResponseDto = {
+        ...tree,
+        collections: [{ ...tree.collections[0], albums: [winter, rockies] }],
+      };
+      renderWithTooltips(AlbumDirectory, { tree: reordered, onRefresh: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Sort albums' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Sort albums' }));
+      expect(menu.getByRole('menuitemcheckbox', { name: 'Last modified' })).toHaveAttribute('aria-checked', 'true');
+      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Custom order' }));
+
+      const shelf = screen.getByRole('region', { name: 'Family' });
+      const names = [...shelf.querySelectorAll('article')].map((tile) => tile.getAttribute('aria-label'));
+      expect(names).toEqual(['Winter 2026', 'Summer in the Rockies']);
+    });
+
+    it('moves an album earlier from its menu (the keyboard alternative) and saves the whole group', async () => {
+      useCustomOrder();
+      const onRefresh = vi.fn();
+      sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Winter 2026' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Winter 2026' }));
+      // Winter is last in its collection, so it can only go earlier.
+      expect(menu.queryByRole('menuitem', { name: 'Move later' })).toBeNull();
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Move earlier' }));
+
+      await waitFor(() =>
+        expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
+          albumOrderDto: { parentId: 'family', albumIds: ['winter', 'rockies'] },
+        }),
+      );
+      await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+      expect(screen.getByRole('status')).toHaveTextContent('“Winter 2026” is now 1 of 2');
+    });
+
+    it('arranges collections at the top level too', async () => {
+      useCustomOrder();
+      const trips = owned({ id: 'trips', albumName: 'Trips', kind: AlbumKind.Collection });
+      sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+      renderWithTooltips(AlbumDirectory, {
+        tree: {
+          ...tree,
+          collections: [...tree.collections, { collection: trips, albums: [], albumCount: 0, assetCount: 0 }],
+        },
+        onRefresh: vi.fn(),
+      });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Trips' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Trips' }));
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Move earlier' }));
+
+      await waitFor(() =>
+        expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
+          albumOrderDto: { parentId: null, albumIds: ['trips', 'family'] },
+        }),
+      );
+    });
+
+    it('drops a dragged album on another in its group to put it just before', async () => {
+      useCustomOrder();
+      sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      const dataTransfer = {
+        types: ['application/x-immich-album-id'],
+        getData: () => 'winter',
+        setData: vi.fn(),
+        effectAllowed: 'move',
+        dropEffect: 'none',
+      };
+      const dragged = screen.getByRole('article', { name: 'Winter 2026' });
+      const target = screen.getByRole('article', { name: 'Summer in the Rockies' });
+
+      await fireEvent.dragStart(dragged, { dataTransfer });
+      await fireEvent.dragOver(target, { dataTransfer });
+      expect(target).toHaveClass('drop-before');
+      await fireEvent.drop(target, { dataTransfer });
+
+      await waitFor(() =>
+        expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
+          albumOrderDto: { parentId: 'family', albumIds: ['winter', 'rockies'] },
+        }),
+      );
+      // Arranging inside the collection never moves the album anywhere.
+      expect(sdkMock.moveAlbumToCollection).not.toHaveBeenCalled();
+    });
+
+    it('lets anyone arrange their own view, including albums shared with them', () => {
+      useCustomOrder();
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      expect(screen.getByRole('article', { name: 'Trail camera' })).toHaveAttribute('draggable', 'true');
+    });
+
+    it('offers no arranging while a filter or a search hides part of a group', async () => {
+      useCustomOrder();
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search albums' }), { target: { value: 'winter' } });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Winter 2026' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Winter 2026' }));
+      expect(menu.queryByRole('menuitem', { name: 'Move earlier' })).toBeNull();
+    });
+
+    it('reloads and says so when the server refuses an order from a stale tree', async () => {
+      useCustomOrder();
+      const onRefresh = vi.fn();
+      sdkMock.setAlbumOrder.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Winter 2026' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Winter 2026' }));
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Move earlier' }));
+
+      await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+      expect(screen.getByRole('status')).toHaveTextContent('Your albums changed since this page loaded');
+    });
+
+    it('reloads and says so when a move is refused because the album was moved since (stale moved node)', async () => {
+      const onRefresh = vi.fn();
+      sdkMock.moveAlbumToCollection.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+      await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
+      const dialog = within(await screen.findByRole('dialog', { name: /Move “Summer in the Rockies”/ }));
+      await fireEvent.click(dialog.getByRole('radio', { name: /On its own/ }));
+      await fireEvent.click(dialog.getByRole('button', { name: 'Move' }));
+
+      await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+      expect(screen.getByRole('status')).toHaveTextContent('Your albums changed since this page loaded');
+    });
+  });
+
+  it('reparents with the keyboard through Move to…, without dragging', async () => {
+    const onRefresh = vi.fn();
+    const trips = owned({ id: 'trips', albumName: 'Trips', kind: AlbumKind.Collection });
+    sdkMock.moveAlbumToCollection.mockResolvedValue({ ...rockies, parentId: 'trips' });
+    renderWithTooltips(AlbumDirectory, {
+      tree: {
+        ...tree,
+        collections: [...tree.collections, { collection: trips, albums: [], albumCount: 0, assetCount: 0 }],
+      },
+      onRefresh,
+    });
+
+    const trigger = screen.getByRole('button', { name: 'Actions for Summer in the Rockies' });
+    trigger.focus();
+    await fireEvent.click(trigger);
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
+
+    const dialog = within(await screen.findByRole('dialog', { name: /Move “Summer in the Rockies”/ }));
+    const destination = dialog.getByRole('radio', { name: /Trips/ });
+    destination.focus();
+    await fireEvent.click(destination);
+    await fireEvent.submit(dialog.getByRole('button', { name: 'Move' }).closest('form')!);
+
+    await waitFor(() =>
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
+        id: 'rockies',
+        moveAlbumDto: { collectionId: 'trips', expectedParentId: 'family' },
+      }),
+    );
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(screen.getByRole('status')).toHaveTextContent('Trips');
   });
 
   it('never lets a viewer drag someone else’s album', () => {
