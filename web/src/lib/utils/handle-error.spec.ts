@@ -34,6 +34,22 @@ describe('handleError', () => {
     expect(toastManager.danger).not.toHaveBeenCalled();
   });
 
+  it('logs a refused action rather than swallowing it', () => {
+    setUnauthorizedHandler(vi.fn());
+
+    handleError(httpError(401), 'Unable to download');
+
+    expect(console.error).toHaveBeenCalledOnce();
+  });
+
+  it('lets the handler show the normal toast when the link turns out to be valid', () => {
+    setUnauthorizedHandler((showError) => showError());
+
+    handleError(httpError(401, 'Not permitted'), 'Unable to download');
+
+    expect(toastManager.danger).toHaveBeenCalledWith(expect.stringContaining('Not permitted'));
+  });
+
   it('still toasts other failures while a handler is registered', () => {
     const onUnauthorized = vi.fn();
     setUnauthorizedHandler(onUnauthorized);
