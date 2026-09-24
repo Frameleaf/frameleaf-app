@@ -70,7 +70,7 @@ describe('Frameleaf selection bar', () => {
 
   it('collects a payload before dispatching an action that needs one', async () => {
     mount();
-    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Change description' }));
     expect(onAction).not.toHaveBeenCalled();
 
@@ -82,7 +82,7 @@ describe('Frameleaf selection bar', () => {
 
   it('groups the rest of the bulk set in the More menu, including both sensitive actions', async () => {
     const { unmount } = mount();
-    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     for (const name of ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Refresh metadata']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
@@ -91,7 +91,7 @@ describe('Frameleaf selection bar', () => {
     // As in the prototype's selection.mjs, Unmark Sensitive is offered only when a selected item is
     // marked, so a selection mixing a marked and an unmarked item offers both.
     mount({ assets: [photo('a'), photo('b', { isLocked: true })] });
-    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     for (const name of ['Mark Sensitive', 'Unmark Sensitive']) {
       expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
     }
@@ -99,7 +99,7 @@ describe('Frameleaf selection bar', () => {
 
   it('offers no Unmark Sensitive when nothing selected is marked', async () => {
     mount();
-    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     expect(screen.getByRole('menuitem', { name: 'Mark Sensitive' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Unmark Sensitive' })).not.toBeInTheDocument();
   });
@@ -113,7 +113,7 @@ describe('Frameleaf selection bar', () => {
         onClear,
       },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Unstack' }));
     expect(onAction).toHaveBeenCalledWith('unstack', { stackIds: ['stack-1'] });
   });

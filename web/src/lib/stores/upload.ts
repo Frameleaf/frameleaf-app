@@ -120,6 +120,19 @@ function createUploadStore() {
       value.filter((e) => e.state !== UploadState.ERROR && e.state !== UploadState.DUPLICATED),
     );
 
+  /**
+   * "Clear finished" (FL-45, UploadPanel.jsx `clearFinishedUploads`): drops the uploads that are
+   * done or turned out to be duplicates while the rest keep going. Failed ones stay for a retry.
+   */
+  const clearFinished = () =>
+    uploadAssets.update((value) => {
+      const duplicates = value.filter((item) => item.state === UploadState.DUPLICATED).length;
+      if (duplicates > 0) {
+        stats.update((current) => ({ ...current, duplicates: current.duplicates - duplicates }));
+      }
+      return value.filter((item) => item.state !== UploadState.DONE && item.state !== UploadState.DUPLICATED);
+    });
+
   const reset = () => {
     uploadAssets.set([]);
     stats.set({ errors: 0, duplicates: 0, success: 0, total: 0 });
@@ -155,6 +168,7 @@ function createUploadStore() {
     isUploading,
     track,
     dismissErrors,
+    clearFinished,
     reset,
     markStarted,
     addItem,

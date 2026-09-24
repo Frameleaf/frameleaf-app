@@ -12,10 +12,15 @@
 
   interface Props {
     ariaLabel?: string;
+    /**
+     * Replaces the collapse button at the top (desktop only). The Frameleaf rail draws its own
+     * "Library" header with the double-chevron toggle (LibraryRail.jsx `rail-header`).
+     */
+    header?: Snippet<[{ collapsed: boolean; toggle: () => void }]>;
     children?: Snippet;
   }
 
-  let { ariaLabel, children }: Props = $props();
+  let { ariaLabel, header, children }: Props = $props();
 
   const isHidden = $derived(!sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
   const isExpanded = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
@@ -54,15 +59,19 @@
   use:focusTrap={{ active: isExpanded }}
 >
   <div class="flex h-max min-h-full flex-col gap-1 pe-6">
-    <button
-      type="button"
-      onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
-      aria-label={isCollapsed ? $t('expand') : $t('collapse')}
-      aria-pressed={isCollapsed}
-      class="mb-1 hidden w-full place-items-center gap-4 rounded-e-full py-3 ps-5 hover:bg-subtle hover:text-primary sidebar:flex"
-    >
-      <Icon icon={mdiMenu} size="1.375em" class="shrink-0" aria-hidden={true} />
-    </button>
+    {#if header}
+      {@render header({ collapsed: isCollapsed, toggle: () => ($sidebarCollapsed = !$sidebarCollapsed) })}
+    {:else}
+      <button
+        type="button"
+        onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
+        aria-label={isCollapsed ? $t('expand') : $t('collapse')}
+        aria-pressed={isCollapsed}
+        class="mb-1 hidden w-full place-items-center gap-4 rounded-e-full py-3 ps-5 hover:bg-subtle hover:text-primary sidebar:flex"
+      >
+        <Icon icon={mdiMenu} size="1.375em" class="shrink-0" aria-hidden={true} />
+      </button>
+    {/if}
     <div class="nav-items contents">
       {@render children?.()}
     </div>

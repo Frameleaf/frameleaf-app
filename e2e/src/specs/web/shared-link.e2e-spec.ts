@@ -81,6 +81,14 @@ test.describe('Shared Links', () => {
     ]);
   });
 
+  test('a public page has no sticky toolbar, so its header scrolls away with the photos', async ({ page }) => {
+    await page.goto(`/share/${sharedLink.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    // Only a private library page pins its header block under the frosted results toolbar.
+    await expect(page.getByTestId('frameleaf-library')).not.toHaveClass(/has-sticky-toolbar/);
+    await expect(page.locator('.fl-timeline-top')).toHaveCSS('position', 'absolute');
+  });
+
   test('download all from shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
@@ -312,7 +320,7 @@ test.describe('Shared Links', () => {
 
     // The floating selection bar (SelectionBar.jsx) keeps the less common actions under More.
     const selectionBar = page.getByRole('region', { name: 'Selected items' });
-    await selectionBar.getByRole('button', { name: 'More' }).click();
+    await selectionBar.getByRole('button', { name: 'More actions' }).click();
     // Pruning a link is immediate and reported in the bar, like every other bulk action.
     await page.getByRole('menuitem', { name: 'Remove from shared link' }).click();
 

@@ -43,7 +43,7 @@
   } from '$lib/frameleaf/settings-areas';
   import { sectionForConfigPath } from '$lib/frameleaf/system-config-draft';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
+  import { libraryCareToolsFor, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { sidebarCollapsed } from '$lib/stores/preferences.store';
@@ -243,6 +243,17 @@
   const selected = $derived(areaSections.find((section) => section.key === selectedKey));
   // As in the template, the Users manager and the Job manager carry their own headings.
   const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
+
+  /** Library care is the hub for fixes (September 24): it also lists the repair tools. */
+  const careTools = $derived<SettingsHostSection[]>(
+    libraryCareToolsFor(isAdmin).map((tool) => ({
+      key: tool.id,
+      title: $t(tool.titleKey),
+      subtitle: $t(tool.descriptionKey),
+      icon: tool.icon,
+      admin: tool.adminOnly,
+    })),
+  );
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
@@ -636,6 +647,15 @@
               icon={areaCopy[area].icon}
               onSelect={(key) => navigate(area, key)}
             />
+            {#if area === 'care' && careTools.length > 0}
+              <!-- CommandCenter.jsx `SectionDirectory`: the care area's "Tools" group opens each tool in Utilities. -->
+              <h2 class="cc-directory-group">{$t('frameleaf_tools')}</h2>
+              <SettingsDirectory
+                sections={careTools}
+                icon={areaCopy[area].icon}
+                onSelect={(key) => navigate('utilities', key)}
+              />
+            {/if}
           {/if}
         {/if}
       {/if}
@@ -672,6 +692,15 @@
   a:focus-visible {
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
+  }
+  /* The care area's "Tools" group heading (command-center.css `.cc-directory h2`). */
+  .cc-directory-group {
+    margin: 8px 0 -10px;
+    color: var(--fl-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
   .cc-nav {
     display: flex;
