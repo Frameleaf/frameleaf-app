@@ -89,7 +89,9 @@ limit
 
 -- PersonRepository.getAllForUser
 select
-  "person".*
+  "person".*,
+  count(distinct "asset_face"."assetId") as "assetCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
 from
   "person"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
