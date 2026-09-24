@@ -66,10 +66,14 @@ const waitForWriter = async (db: Kysely<DB>, writerPid: number, tableName: strin
 const waitForBackendBlock = async (db: Kysely<DB>, writerPid: number, blockerPid: number) => {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
+    // pg_stat_activity samples wait_event_type when the view materializes,
+    // before pg_blocking_pids() runs in the filter. A poll that lands while the
+    // writer is still between BEGIN and its locking SELECT can therefore pair a
+    // stale Client wait with a live blocker; keep polling until both agree.
     const waiting = await sql<{ blockers: number[]; waitEvent: string; waitEventType: string }>`
       SELECT pg_blocking_pids(pid) AS blockers, wait_event_type AS "waitEventType", wait_event AS "waitEvent"
       FROM pg_catalog.pg_stat_activity
-      WHERE pid = ${writerPid} AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+      WHERE pid = ${writerPid} AND wait_event_type = 'Lock' AND ${blockerPid} = ANY(pg_blocking_pids(pid))
     `.execute(db);
     if (waiting.rows[0]) {
       return waiting.rows[0];
@@ -1070,9 +1074,10 @@ describe('certified fork return evidence', () => {
     const workerPid = await authorityReached.promise;
 
     const writer = await connectToSameDatabase(db);
+    let completion: Promise<void> | undefined;
     try {
       const writerPid = await sql<{ pid: number }>`SELECT pg_backend_pid()::int AS pid`.execute(writer);
-      const completion = new ForkSchemaRepository(writer).completeBatch('storage', first!.cursor, 1, 'd'.repeat(64));
+      completion = new ForkSchemaRepository(writer).completeBatch('storage', first!.cursor, 1, 'd'.repeat(64));
       await expect(waitForBackendBlock(db, writerPid.rows[0]!.pid, workerPid)).resolves.toMatchObject({
         waitEventType: 'Lock',
       });
@@ -1081,6 +1086,11 @@ describe('certified fork return evidence', () => {
       await completion;
     } finally {
       releaseRun.resolve();
+      // postgres.js end() never resolves once it is requested while a Kysely
+      // transaction still holds a reserved connection, so destroying the
+      // writer before both transactions settle turns any failure above into
+      // an indefinite hang (reported only as the test timeout).
+      await Promise.allSettled([run, completion]);
       await writer.destroy();
     }
 
