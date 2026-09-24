@@ -1,4 +1,10 @@
-import { getNotifications, updateNotification, updateNotifications, type NotificationDto } from '@immich/sdk';
+import {
+  deleteNotification,
+  getNotifications,
+  updateNotification,
+  updateNotifications,
+  type NotificationDto,
+} from '@immich/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -32,6 +38,22 @@ class NotificationStore {
     const ids = this.notifications.map(({ id }) => id);
     this.notifications = [];
     await updateNotifications({ notificationUpdateAllDto: { ids, readAt: new Date().toISOString() } });
+  };
+
+  /**
+   * Dismisses one notification for good (`DELETE /notifications/:id`), as the prototype's per-row
+   * dismiss does (`dismissNotification`, SystemPanels.jsx). It leaves the list at once and comes
+   * back if the server refuses, so a failed dismiss never loses a notification silently.
+   */
+  dismiss = async (id: string) => {
+    const previous = this.notifications;
+    this.notifications = previous.filter((notification) => notification.id !== id);
+    try {
+      await deleteNotification({ id });
+    } catch (error) {
+      this.notifications = previous;
+      throw error;
+    }
   };
 
   clear = () => {
