@@ -83,6 +83,8 @@ export type ValidateRequest = {
     /** `false` explicitly means no permission is required, which otherwise defaults to `all` */
     permission?: Permission | false;
     uri: string;
+    /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
+    refreshElevation?: boolean;
   };
 };
 
@@ -249,7 +251,7 @@ export class AuthService extends BaseService {
   }
 
   async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {
-    const authDto = await this.validate({ headers, queryParams });
+    const authDto = await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
@@ -301,7 +303,10 @@ export class AuthService extends BaseService {
     };
   }
 
-  private async validate({ headers, queryParams }: Omit<ValidateRequest, 'metadata'>): Promise<AuthDto> {
+  private async validate(
+    { headers, queryParams }: Omit<ValidateRequest, 'metadata'>,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
     const shareKey = (headers[ImmichHeader.SharedLinkKey] || queryParams[ImmichQuery.SharedLinkKey]) as string;
     const shareSlug = (headers[ImmichHeader.SharedLinkSlug] || queryParams[ImmichQuery.SharedLinkSlug]) as string;
     const session = (headers[ImmichHeader.UserToken] ||
@@ -320,7 +325,7 @@ export class AuthService extends BaseService {
     }
 
     if (session) {
-      return this.validateSession(session, headers);
+      return this.validateSession(session, headers, refreshElevation);
     }
 
     if (apiKey) {
@@ -625,7 +630,11 @@ export class AuthService extends BaseService {
     return this.cryptoRepository.compareBcrypt(inputSecret, existingHash);
   }
 
-  private async validateSession(token: string, headers: IncomingHttpHeaders): Promise<AuthDto> {
+  private async validateSession(
+    token: string,
+    headers: IncomingHttpHeaders,
+    refreshElevation = true,
+  ): Promise<AuthDto> {
     const hashed = this.cryptoRepository.hashSha256(token);
     const session = await this.sessionRepository.getByToken(hashed);
     if (session?.user) {
@@ -650,7 +659,11 @@ export class AuthService extends BaseService {
         const pinExpiresAt = DateTime.fromJSDate(session.pinExpiresAt);
         hasElevatedPermission = pinExpiresAt > now;
 
-        if (hasElevatedPermission && now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt) {
+        if (
+          refreshElevation &&
+          hasElevatedPermission &&
+          now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt
+        ) {
           // FL-34: conditional, so a lock that lands after the read above is never reversed; if the
           // refresh finds the session locked, this request is not elevated either
           hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
