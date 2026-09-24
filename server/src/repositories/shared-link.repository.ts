@@ -232,7 +232,8 @@ export class SharedLinkRepository {
   async update(entity: Updateable<SharedLinkTable> & { id: string; assetIds?: string[] }) {
     const { id } = await this.db
       .updateTable('shared_link')
-      .set(omit(entity, 'assets', 'album', 'assetIds'))
+      // callers spread a link loaded by `get`, whose relations (including the read-only `owner` name) are not columns
+      .set(omit(entity, 'assets', 'album', 'owner', 'assetIds'))
       .where('shared_link.id', '=', entity.id)
       .returningAll()
       .executeTakeFirstOrThrow();
