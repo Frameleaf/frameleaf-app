@@ -63,7 +63,7 @@
   const Close: ActionItem = $derived({
     title: $t('frameleaf_viewer_close'),
     icon: languageManager.rtl ? mdiArrowRight : mdiArrowLeft,
-    $if: () => !!onClose && !assetViewerManager.isFaceEditMode && !assetViewerManager.isEditFacesPanelOpen,
+    $if: () => !!onClose && !assetViewerManager.isFaceEditMode,
     onAction: () => onClose?.(),
     shortcuts: [{ key: 'Escape' }],
   });
