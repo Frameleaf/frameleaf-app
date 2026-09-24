@@ -346,6 +346,9 @@ export class ImageEnrichmentService extends BaseService {
       // every other action still fails closed on it.
       const isManualMark =
         dto.action === AssetImageEnrichmentAction.MarkNsfw || dto.action === AssetImageEnrichmentAction.MarkSafe;
+      if (isManualMark || dto.action === AssetImageEnrichmentAction.AcceptNsfwResult) {
+        await this.lockGroupRows(id, trx);
+      }
       const m = await this.getEnrichmentMetadata(id, trx, isManualMark);
 
       switch (dto.action) {
@@ -549,6 +552,17 @@ export class ImageEnrichmentService extends BaseService {
     await this.afterSensitiveLock(await this.assetRepository.lock(assetIds, reason, lockedBy));
   }
 
+  /**
+   * FL-34: first in a metadata transaction that may lock or unlock `id`, takes its whole group's rows
+   * in a fixed order, so parallel reviews or detections of two members of one stack or live photo
+   * cannot deadlock. The unit tests' stand-in transaction is absent; there is nothing to order then.
+   */
+  private async lockGroupRows(id: string, trx: Kysely<DB> | undefined) {
+    if (trx) {
+      await this.assetRepository.lockGroupRows([id], trx);
+    }
+  }
+
   /** Once a sensitive lock is committed: releases what a locked photo may no longer be (FL-53). */
   private async afterSensitiveLock(locked: string[]) {
     if (locked.length > 0) {
@@ -687,6 +701,9 @@ export class ImageEnrichmentService extends BaseService {
     // actions and parallel description jobs. Side effects (tag application,
     // sidecar queueing) run afterwards on the regular pool.
     const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      if (isNsfwHidingEnabled(machineLearning)) {
+        await this.lockGroupRows(id, trx);
+      }
       const m = await this.getEnrichmentMetadata(id, trx);
       const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
       const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
@@ -894,6 +911,9 @@ export class ImageEnrichmentService extends BaseService {
     // description (and vice versa). ML inference is already done above.
     const { metadata, previousDescription, previousTagValues, locked } =
       await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+        if (isNsfwHidingEnabled(machineLearning)) {
+          await this.lockGroupRows(id, trx);
+        }
         const m = await this.getEnrichmentMetadata(id, trx);
         const previousDescription =
           m.description?.status === 'success' && m.description.appliedDescriptionHash
