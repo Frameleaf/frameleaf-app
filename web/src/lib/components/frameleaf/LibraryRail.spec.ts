@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { Route } from '$lib/route';
 import { sidebarCollapsed } from '$lib/stores/preferences.store';
+import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import LibraryRail from './LibraryRail.svelte';
@@ -34,6 +36,7 @@ beforeEach(() => {
   authManager.setUser(userAdminFactory.build());
   sdkMock.getAlbumTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
   sdkMock.getPartners.mockResolvedValue([]);
+  sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r0' } as never);
 });
 
 afterEach(() => {
@@ -45,6 +48,21 @@ describe('LibraryRail', () => {
     render(LibraryRail);
 
     expect(headings()).toEqual(['Explore', 'Albums', 'Shared spaces', 'Tools']);
+  });
+
+  it('lists saved searches in Albums, after the album tree', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({
+      savedSearches: [{ name: 'Lisbon', query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Lisbon' } } } }],
+      revision: 'r1',
+    } as never);
+    await savedSearchesStore.load(true); // a singleton; earlier tests loaded none
+    render(LibraryRail);
+    const albums = screen.getByRole('button', { name: 'Albums' }).getAttribute('aria-controls')!;
+    const section = within(document.querySelector<HTMLElement>(`#${albums}`)!);
+    await section.findByRole('link', { name: 'Lisbon' });
+    const names = section.getAllByRole('link').map((link) => link.textContent?.trim());
+    // Shared links (off here) is the next destination, so the saved searches sit between them.
+    expect(names.slice(-2)).toEqual(['All albums', 'Lisbon']);
   });
 
   it('folds a section from its heading and remembers it on this device', async () => {

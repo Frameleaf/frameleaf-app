@@ -108,7 +108,7 @@ Packet 3 of the September 24 port is on `codex/FL-49-search-palette`, based on `
   - Album snapshot: the matching ids, collected through the authenticated search with the timeline default. The exact number is confirmed before the album is created: smart search saves its top ranked page, and a truncated metadata search says it saves only the first N of M. Nothing is created when nothing matches. The ids are added in chunks; if one fails, Retry continues with the rest or Delete album removes the half-filled album, and the result reports added, skipped and failed items.
   - Saved search: the compiled query in the `savedSearches` preference.
 
-  `RailSavedSearches.svelte` and the shared `savedSearchesStore` are ready for the shell to mount in `LibraryRail.svelte` (S-14 stays partial until it is mounted).
+  `RailSavedSearches.svelte` and the shared `savedSearchesStore` are mounted in `LibraryRail.svelte`'s Albums section, after the album tree and before Shared links (`LibraryRail.jsx` presets), in the full and icon-only rail.
 
 - **Privacy.**
   - Saved and recent searches store only the compiled query, with person, pet and tag ids and never typed names. The server can therefore withhold a saved search that names something Locked while the session is locked; a unit test pins this.
@@ -121,7 +121,7 @@ Packet 3 of the September 24 port is on `codex/FL-49-search-palette`, based on `
 - **Command palette.** It takes the same glass (`apple-style.css:649-710`), with a JS-checked crossfade under Reduce Motion and a solid panel under Increase Contrast or Reduce Transparency.
 - **SD-12.** The results page's chip row uses `SearchChip` inside a Frameleaf token scope instead of the legacy Tailwind pills.
 
-Closed: SD-1 … SD-12, FP-1 … FP-5 (FP-6 intentional). Partial: S-14 (the rail component is built; mounting it belongs to the shell). Validation: unit, component and server (unit and medium) specs. The e2e spec `e2e/src/ui/specs/search/search-palette.e2e-spec.ts` was not run.
+Closed: SD-1 … SD-12, FP-1 … FP-5 (FP-6 intentional). S-14 is closed once the rail mounts the saved searches (after the shell merge). Validation: unit, component and server (unit and medium) specs. The e2e spec `e2e/src/ui/specs/search/search-palette.e2e-spec.ts` was not run.
 
 ## 1. Coverage
 
