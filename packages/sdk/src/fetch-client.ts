@@ -2032,8 +2032,7 @@ export type ArchiveOperationCreateDto = {
 export type ArchiveOperationPrepareDto = {
     /** Client idempotency key; the same key answers with the same operation instead of starting another */
     requestKey: string;
-    /** Only the owner’s own normal Timeline can be prepared on the server */
-    scope: Scope;
+    scope: ArchiveOperationPrepareScope;
 };
 export type ArchiveOperationConfirmDto = {
     /** The request key the selection was prepared with */
@@ -17487,7 +17486,7 @@ export enum ArchiveOperationScope {
     SelectedOwnedAssets = "selected-owned-assets",
     MatchingOwnedTimeline = "matching-owned-timeline"
 }
-export enum Scope {
+export enum ArchiveOperationPrepareScope {
     MatchingOwnedTimeline = "matching-owned-timeline"
 }
 export enum AssetFileType {
