@@ -40,6 +40,12 @@
   let { store, sections, areaTitles, disabled = false }: Props = $props();
 
   let reviewing = $state(false);
+  // A page can ask for the review (the Job manager's "Review n pending settings").
+  $effect(() => {
+    if (store.reviewRequests > 0) {
+      untrack(() => (reviewing = store.changes.length > 0));
+    }
+  });
   let pendingNavigation = $state<URL | null>(null);
 
   const count = $derived(store.changes.length);

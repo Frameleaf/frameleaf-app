@@ -44,6 +44,8 @@ const QueueJobResponseSchema = z
     name: JobNameSchema,
     data: z.record(z.string(), z.unknown()).describe('Job data payload'),
     timestamp: z.int().describe('Job creation timestamp'),
+    attemptsMade: z.int().optional().describe('How many times the job has been attempted'),
+    failedReason: z.string().optional().describe('Why the last attempt failed, for a failed job'),
   })
   .meta({ id: 'QueueJobResponseDto' });
 

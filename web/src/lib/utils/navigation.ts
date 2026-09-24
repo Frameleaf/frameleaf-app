@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import type { RouteId } from '$app/types';
+import { COMMAND_CENTER_PATH } from '$lib/frameleaf/settings-areas';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { Route } from '$lib/route';
 
@@ -25,8 +26,11 @@ export function getAssetInfoFromParam({ assetId, slug, key }: { assetId?: string
   return assetId ? assetCacheManager.getAsset({ id: assetId, slug, key }, false) : undefined;
 }
 
+/** The Command Center (FL-71) opens an item over its page with `?assetId=`, for utilities and Trash alike. */
+const isCommandCenter = () => page.url.pathname === COMMAND_CENTER_PATH;
+
 function currentUrlWithoutAsset() {
-  if (page.url.searchParams.get('area') === 'utilities') {
+  if (isCommandCenter()) {
     const params = new URLSearchParams(page.url.search);
     params.delete('assetId');
     return `${page.url.pathname}?${params}`;
@@ -46,7 +50,7 @@ function currentUrlWithoutAsset() {
 
 export function currentUrlReplaceAssetId(assetId: string) {
   const params = new URLSearchParams(page.url.search);
-  if (params.get('area') === 'utilities') {
+  if (isCommandCenter()) {
     params.delete('at');
     params.set('assetId', assetId);
     return `${page.url.pathname}?${params}`;

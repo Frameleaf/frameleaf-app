@@ -22,6 +22,7 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
+  | 'overview'
   | 'analytics'
   | 'storage'
   | 'backup'
@@ -32,9 +33,13 @@ export type SettingsAreaId =
   | 'security'
   | 'notifications'
   | 'server'
+  | 'sharing'
+  | 'maintenance'
   | 'preferences'
+  | 'users'
   | 'libraries'
   | 'utilities'
+  | 'trash'
   | 'history';
 
 export type SettingsAreaDefinition = {
@@ -46,22 +51,52 @@ export type SettingsAreaDefinition = {
   personal?: string[];
   /** Areas only an administrator opens (screens of their own, or areas holding only server settings). */
   adminOnly?: boolean;
+  /**
+   * The display order when the template interleaves server and account sections; otherwise server
+   * sections come first. Lists every key of `sections` and `personal`.
+   */
+  order?: string[];
 };
 
 /** The template's area order (`settingsAreas` in settings-catalog.mjs); the rail groups them by `group`. */
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
-  // FL-79: the template's Command center group. Library analytics is a screen, not a set of
-  // config forms, so it owns no sections; the host renders it in place of the directory.
+  // The template's Command center group: the Overview (status, storage and what needs attention)
+  // and, FL-79, Library analytics. Both are screens of their own rather than section directories.
+  { id: 'overview', group: 'command', sections: [], adminOnly: true },
   { id: 'analytics', group: 'command', sections: [], adminOnly: true },
-  // FL-75: `migration` is the template's "Move or export your library", last in this area.
-  { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings', 'migration'] },
+  // FL-75: `migration` is the template's "Move or export your library", last in this area. FL-71:
+  // physical deduplication (the old /admin/physical-deduplication page) is the template's
+  // `deduplication` section, after the folder layout.
+  {
+    id: 'storage',
+    group: 'library',
+    sections: ['storage-template', 'deduplication', 'trash', 'user-settings', 'migration'],
+  },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
   { id: 'backup', group: 'library', sections: ['backup'], personal: ['takeout', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
-  { id: 'care', group: 'library', sections: ['integrity-checks'] },
-  { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
+  // The template's People & sharing: partner sharing moved out of the personal settings list.
+  { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
+  // The template's Library care (settings-catalog.mjs:905-977): media health & integrity with its
+  // integrity check settings, repair queues and enrichment completeness.
+  {
+    id: 'care',
+    group: 'library',
+    sections: ['integrity-checks', 'enrichment-care'],
+    personal: ['repair'],
+    order: ['integrity-checks', 'repair', 'enrichment-care'],
+  },
+  // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
+  // and /admin/render-workers pages are sections of Compute & jobs, with the nightly settings. As in
+  // the template, queue concurrency is edited only in the Job manager's concurrency dialog; the old
+  // job settings key (`isOpen=job`) opens the Job manager.
+  {
+    id: 'processing',
+    group: 'server',
+    sections: ['workers', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
+  },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
   {
@@ -77,28 +112,26 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'server',
     sections: ['server', 'version-check', 'logging', 'location', 'theme', 'configuration'],
   },
+  // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
+  { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
   // The signed-in account's own settings (the template's "Your preferences").
   {
     id: 'preferences',
     group: 'personal',
     sections: [],
-    // Profile, appearance, downloads and library features, as in the template. Usage, supporter
-    // status and partner sharing have no other home yet (sharing moves with People & sharing).
-    personal: [
-      'account',
-      'app-settings',
-      'download-settings',
-      'feature',
-      'sharing',
-      'user-usage-info',
-      'user-purchase-settings',
-    ],
+    // Profile, appearance, downloads and library features, as in the template. Usage and supporter
+    // status have no other home in the template yet.
+    personal: ['account', 'app-settings', 'download-settings', 'feature', 'user-usage-info', 'user-purchase-settings'],
   },
+  // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
+  { id: 'users', group: 'server', sections: ['accounts'] },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
   // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
   { id: 'libraries', group: 'library', sections: ['external-library'], adminOnly: true },
   // FL-69: utilities belong to every account; the area draws its own tool directory.
   { id: 'utilities', group: 'library', sections: [] },
+  // FL-71: the account's Trash (the old /trash page); the rail's Trash opens it.
+  { id: 'trash', group: 'library', sections: [], personal: ['contents'] },
   // FL-66: the template's "Change history" area. It holds no settings form; the host shows the
   // saved settings changes there.
   { id: 'history', group: 'personal', sections: [], adminOnly: true },
@@ -112,13 +145,19 @@ export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
 ]);
 
 /** Where the Command Center opens without an area: the first area the account can use. */
-export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'storage' : 'preferences');
+export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'overview' : 'preferences');
 
 export const isSettingsAreaId = (value: string | null | undefined): value is SettingsAreaId =>
   SETTINGS_AREAS.some((area) => area.id === value);
 
 /** Areas that are screens of their own rather than directories of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'utilities', 'history']);
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'utilities', 'history']);
+
+/** Areas whose one section opens directly, as the template's `navigate()` does for them. */
+export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({
+  users: 'accounts',
+  trash: 'contents',
+});
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
@@ -155,9 +194,15 @@ export const commandCenterUrl = (
 export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) =>
   commandCenterUrl('analytics', undefined, { scope: params.scope, range: params.range });
 
+/** Server section keys older links use for a section that now has another key. */
+const SERVER_ALIASES: Record<string, string> = { job: 'queues' };
+
+/** The server section a legacy key names. */
+export const serverSectionKey = (key: string) => SERVER_ALIASES[key] ?? key;
+
 /** The area that owns a server settings section key, for `?isOpen=` links written before the areas existed. */
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>
-  SETTINGS_AREAS.find((area) => area.sections.includes(sectionKey))?.id;
+  SETTINGS_AREAS.find((area) => area.sections.includes(serverSectionKey(sectionKey)))?.id;
 
 /** Account section keys the older personal settings page used under another name. */
 const PERSONAL_ALIASES: Record<string, string> = { notifications: 'email-preferences' };
@@ -169,10 +214,14 @@ export const personalSectionKey = (key: string) => PERSONAL_ALIASES[key] ?? key;
 export const areaForPersonalSection = (sectionKey: string): SettingsAreaId | undefined =>
   SETTINGS_AREAS.find((area) => area.personal?.includes(personalSectionKey(sectionKey)))?.id;
 
-/** Every section key of an area, server sections first, in display order. */
+/** Orders an area's keys as it displays them: its `order`, else server sections first. */
+const inDisplayOrder = <T>(area: SettingsAreaDefinition, items: T[], key: (item: T) => string): T[] =>
+  area.order ? [...items].sort((a, b) => area.order!.indexOf(key(a)) - area.order!.indexOf(key(b))) : items;
+
+/** Every section key of an area, in display order (server sections first unless the area orders them). */
 export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
   const area = SETTINGS_AREAS.find((item) => item.id === areaId);
-  return area ? [...area.sections, ...(area.personal ?? [])] : [];
+  return area ? inDisplayOrder(area, [...area.sections, ...(area.personal ?? [])], (key) => key) : [];
 };
 
 /**
@@ -214,11 +263,11 @@ export const resolveSettingsSection = (
     if (area_?.personal?.includes(personalSectionKey(key))) {
       return personalSectionKey(key);
     }
-    if (area_?.sections.includes(key)) {
-      return key;
+    if (area_?.sections.includes(serverSectionKey(key))) {
+      return serverSectionKey(key);
     }
   }
-  return undefined;
+  return DIRECT_SECTION[area];
 };
 
 export type SearchableSection = { key: string; title: string; subtitle?: string };
@@ -237,7 +286,7 @@ export const searchSettingsSections = <T extends SearchableSection>(sections: re
   );
 };
 
-/** Sections of one area that the caller offers, ordered as the area lists them; unknown keys are ignored. */
+/** Sections of one area that the caller offers, in the area's display order; unknown keys are ignored. */
 export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
   sections: readonly T[],
   areaId: SettingsAreaId,
@@ -250,5 +299,5 @@ export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
     keys
       .map((key) => sections.find((section) => section.key === key && Boolean(section.admin) === admin))
       .filter((section): section is T => section !== undefined);
-  return [...pick(area.sections, true), ...pick(area.personal ?? [], false)];
+  return inDisplayOrder(area, [...pick(area.sections, true), ...pick(area.personal ?? [], false)], ({ key }) => key);
 };

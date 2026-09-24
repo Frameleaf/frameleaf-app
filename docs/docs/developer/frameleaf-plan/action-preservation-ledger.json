@@ -72100,7 +72100,14 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/+page.svelte", "web/src/routes/admin/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "overview",
+            "module": "web/src/lib/components/frameleaf/settings/CommandCenterOverview.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72129,7 +72136,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/jobs-status/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/jobs-status", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "processing",
+            "section": "queues",
+            "module": "web/src/lib/components/frameleaf/JobsManager.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72159,7 +72174,11 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/library-management/(list)/+page.svelte"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/library-management", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": { "area": "libraries", "module": "web/src/lib/components/frameleaf/LibrariesManager.svelte" },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72198,7 +72217,7 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/library-management/[id]",
+          "target": { "area": "libraries", "module": "web/src/lib/components/frameleaf/LibraryDetail.svelte" },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72239,7 +72258,7 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/library-management/[id]/edit",
+          "target": { "area": "libraries", "module": "web/src/lib/components/frameleaf/LibraryFormDialog.svelte" },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72280,7 +72299,7 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/library-management/new",
+          "target": { "area": "libraries", "module": "web/src/lib/components/frameleaf/LibraryFormDialog.svelte" },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72312,7 +72331,14 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/maintenance/+page.svelte", "web/src/routes/admin/maintenance/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/maintenance", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "maintenance",
+            "module": "web/src/routes/(user)/user-settings/sections/MaintenanceSection.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72350,7 +72376,11 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/maintenance/integrity-report/[type]",
+          "target": {
+            "area": "maintenance",
+            "section": "integrity",
+            "module": "web/src/routes/(user)/user-settings/sections/IntegrityReportSection.svelte"
+          },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72390,7 +72420,11 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/physical-deduplication",
+          "target": {
+            "area": "storage",
+            "section": "deduplication",
+            "module": "web/src/routes/(user)/user-settings/sections/DeduplicationSection.svelte"
+          },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72430,7 +72464,11 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/admin/processing-destinations",
+          "target": {
+            "area": "processing",
+            "sections": ["routing", "workers"],
+            "module": "web/src/routes/(user)/user-settings/sections/ProcessingSection.svelte"
+          },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -72462,7 +72500,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/queues/+page.svelte", "web/src/routes/admin/queues/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/queues", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "processing",
+            "section": "queues",
+            "module": "web/src/lib/components/frameleaf/JobsManager.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72492,7 +72538,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/queues/[name]/+page.svelte", "web/src/routes/admin/queues/[name]/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/queues/[name]", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "processing",
+            "section": "queues",
+            "module": "web/src/lib/components/frameleaf/JobsManager.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72525,7 +72579,15 @@
             "web/src/routes/admin/render-workers/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/render-workers", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "processing",
+            "section": "render-workers",
+            "module": "web/src/routes/(user)/user-settings/sections/RenderWorkersSection.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72555,7 +72617,14 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/server-status/+page.svelte", "web/src/routes/admin/server-status/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/server-status", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "analytics",
+            "module": "web/src/lib/components/frameleaf/analytics/AnalyticsArea.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72591,7 +72660,11 @@
             "web/src/routes/admin/system-settings/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/system-settings", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": { "area": "overview", "module": "web/src/routes/(user)/user-settings/SystemSettings.svelte" },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72620,7 +72693,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/user-management/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/user-management", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "users",
+            "section": "accounts",
+            "module": "web/src/routes/(user)/user-settings/sections/UsersSection.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72650,7 +72731,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/users/(list)/+page.svelte"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/users", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "users",
+            "section": "accounts",
+            "module": "web/src/routes/(user)/user-settings/sections/UsersSection.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72681,7 +72770,15 @@
           "access": "admin",
           "evidence": ["web/src/routes/admin/users/[id]/+page.svelte", "web/src/routes/admin/users/[id]/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/users/[id]", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "users",
+            "section": "accounts",
+            "module": "web/src/routes/(user)/user-settings/sections/UserDetail.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72718,7 +72815,15 @@
             "web/src/routes/admin/users/[id]/edit/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/users/[id]/edit", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "users",
+            "section": "accounts",
+            "module": "web/src/lib/components/frameleaf/AccountFormDialog.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72755,7 +72860,15 @@
             "web/src/routes/admin/users/(list)/new/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/admin/users/new", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": {
+            "area": "users",
+            "section": "accounts",
+            "module": "web/src/lib/components/frameleaf/AccountFormDialog.svelte"
+          },
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -74744,7 +74857,11 @@
         },
         "newUi": {
           "status": "not-qualified",
-          "target": "/trash/[[photos=photos]]/[[assetId=id]]",
+          "target": {
+            "area": "trash",
+            "section": "contents",
+            "module": "web/src/routes/(user)/user-settings/sections/TrashSection.svelte"
+          },
           "evidence": ["none-qualified"]
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },

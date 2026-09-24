@@ -16,8 +16,7 @@
   import BackupSettings from '../../admin/system-settings/BackupSettings.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
-  import IntegrityChecksSettings from '../../admin/system-settings/IntegrityChecksSettings.svelte';
-  import JobSettings from '../../admin/system-settings/JobSettings.svelte';
+  import CareHealthSection from './sections/CareHealthSection.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
   import MachineLearningSettings from '../../admin/system-settings/MachineLearningSettings.svelte';
@@ -59,7 +58,14 @@
   } from '@immich/sdk';
   import { CommandPaletteDefaultProvider, modalManager } from '@immich/ui';
   import {
+    mdiAccountMultipleOutline,
     mdiAccountOutline,
+    mdiAutoFix,
+    mdiContentDuplicate,
+    mdiMemory,
+    mdiServerNetwork,
+    mdiTrayFull,
+    mdiWrench,
     mdiBackupRestore,
     mdiBellOutline,
     mdiBookshelf,
@@ -75,7 +81,6 @@
     mdiPaletteOutline,
     mdiRobotOutline,
     mdiServerOutline,
-    mdiSync,
     mdiTrashCanOutline,
     mdiTruckOutline,
     mdiUpdate,
@@ -83,7 +88,7 @@
     mdiVideoOutline,
   } from '@mdi/js';
   import { onMount, untrack, type Snippet } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   import { clampEnhancedVideoFrames } from '../../admin/system-settings/machine-learning/machine-learning-helpers';
 
   type Props = {
@@ -184,20 +189,13 @@
       icon: mdiImageOutline,
     },
     {
+      // The template's Library care → Media health & integrity: the integrity check settings.
       admin: true,
-      component: IntegrityChecksSettings,
-      title: $t('admin.integrity_checks_settings'),
-      subtitle: $t('admin.integrity_checks_settings_description'),
+      component: CareHealthSection,
+      title: $t('frameleaf_cc_section_health'),
+      subtitle: $t('frameleaf_cc_section_health_description'),
       key: 'integrity-checks',
       icon: mdiFileCheckOutline,
-    },
-    {
-      admin: true,
-      component: JobSettings,
-      title: $t('admin.job_settings'),
-      subtitle: $t('admin.job_settings_description'),
-      key: 'job',
-      icon: mdiSync,
     },
     {
       admin: true,
@@ -335,6 +333,33 @@
       subtitle: $t('frameleaf_cc_config_transfer_description'),
       key: 'configuration',
       icon: mdiSwapVertical,
+    },
+    // FL-71: the old administration pages, as sections drawn by `sections/SectionBody.svelte`.
+    ...(
+      [
+        ['deduplication', 'frameleaf_cc_section_deduplication', mdiContentDuplicate],
+        ['enrichment-care', 'frameleaf_cc_section_enrichment', mdiAutoFix],
+        ['workers', 'frameleaf_cc_section_workers', mdiServerNetwork],
+        ['routing', 'frameleaf_cc_section_routing', mdiRobotOutline],
+        ['queues', 'frameleaf_cc_section_queues', mdiTrayFull],
+        ['mode', 'frameleaf_cc_section_mode', mdiWrench],
+        ['backups', 'frameleaf_cc_section_backups', mdiDatabaseOutline],
+        ['integrity', 'frameleaf_cc_section_integrity', mdiFileCheckOutline],
+        ['accounts', 'frameleaf_cc_section_accounts', mdiAccountMultipleOutline],
+      ] as const
+    ).map(([key, titleKey, icon]) => ({
+      admin: true,
+      key,
+      title: $t(titleKey),
+      subtitle: $t(`${titleKey}_description` as Translations),
+      icon,
+    })),
+    {
+      admin: true,
+      key: 'render-workers',
+      title: $t('admin.render_workers'),
+      subtitle: $t('frameleaf_cc_section_render_workers_description'),
+      icon: mdiMemory,
     },
   ]);
   // Server sections first, so a key both lists use (notifications) resolves to the server's form.

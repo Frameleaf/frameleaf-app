@@ -241,7 +241,10 @@ describe('Frameleaf primary destinations', () => {
 
   it("treats /admin and /user-settings as the prototype's one settings screen", () => {
     expect(isSettingsRoute(Route.systemSettings())).toBe(true);
-    expect(isSettingsRoute(Route.users())).toBe(true);
+    // Users, Trash and every old administration page are Command Center sections now (FL-71).
+    expect(isSettingsRoute(new URL(Route.users(), 'https://frameleaf.local').pathname)).toBe(true);
+    expect(isSettingsRoute(new URL(Route.trash(), 'https://frameleaf.local').pathname)).toBe(true);
+    expect(isSettingsRoute('/admin/users')).toBe(true);
     expect(isSettingsRoute(Route.userSettings())).toBe(true);
     expect(isSettingsRoute(Route.photos())).toBe(false);
   });

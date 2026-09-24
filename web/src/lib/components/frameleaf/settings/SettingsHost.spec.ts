@@ -33,6 +33,9 @@ vi.mock('$lib/frameleaf/system-config-draft.svelte', () => ({ getSystemConfigDra
 vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
@@ -69,10 +72,14 @@ const sections = [
   serverSection('integrity-checks', 'Integrity checks'),
   serverSection('external-library', 'External libraries'),
   serverSection('notifications', 'Email delivery'),
+  serverSection('queues', 'Job manager'),
+  serverSection('accounts', 'People with server access'),
   accountSection('account', 'Your profile'),
   accountSection('takeout', 'Google Photos imports'),
   accountSection('email-preferences', 'Your email notifications'),
   accountSection('oauth', 'Sign-in provider'),
+  accountSection('contents', 'Trash'),
+  accountSection('sharing', 'Partners & recipient groups'),
 ];
 
 const open = (href: string, isAdmin = true) => {
@@ -130,6 +137,13 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
+  it("links Storage → Trash & retention to the account's own trash", async () => {
+    open('/user-settings?area=storage&section=trash');
+    render(SettingsHost, { sections });
+    await userEvent.click(screen.getByRole('button', { name: 'Open your trash' }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
+  });
+
   it('keeps the Viewing scope when moving between areas', async () => {
     open('/user-settings?area=storage&scope=user%3Aada');
     render(SettingsHost, { sections });
@@ -158,7 +172,9 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
     expect(areaNames()).toEqual([
       'Import & protection',
+      'People & sharing',
       'Utilities',
+      'Trash',
       'Access & security',
       'Notifications',
       'Your preferences',
@@ -192,5 +208,37 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     expect(screen.getByRole('button', { name: 'Watch library' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  });
+
+  it('opens on the Overview for an administrator, as the rail Settings does in the template', () => {
+    open('/user-settings');
+    render(SettingsHost, { sections });
+    expect(screen.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+    expect(areaNames()[0]).toBe('Overview');
+  });
+
+  it('opens Users and Trash on their one section, leaving the headings to the managers that carry them', () => {
+    open('/user-settings?area=users');
+    const { unmount } = render(SettingsHost, { sections });
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.getByLabelText('Users pages')).toBeInTheDocument();
+    unmount();
+    open('/user-settings?area=trash');
+    const { container } = render(SettingsHost, { sections });
+    expect(container.querySelector('#setting-contents')).not.toBeNull();
+    // As in the template, Trash lists no pages under it in the navigation.
+    expect(screen.queryByLabelText('Trash pages')).toBeNull();
+  });
+
+  it('gives an account without administration its own sharing and Trash but none of the server pages', () => {
+    open('/user-settings?area=users', false);
+    render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
+    const names = areaNames();
+    expect(names).toContain('People & sharing');
+    expect(names).toContain('Trash');
+    expect(names).not.toContain('Users');
+    expect(names).not.toContain('Overview');
+    expect(names).not.toContain('Compute & jobs');
   });
 });

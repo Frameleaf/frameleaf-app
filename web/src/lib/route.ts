@@ -8,12 +8,24 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
-import { analyticsAreaUrl, areaForSection, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+import {
+  analyticsAreaUrl,
+  areaForSection,
+  commandCenterUrl,
+  serverSectionKey as legacyServerSectionKey,
+} from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
+/** The sections of the Command Center's Maintenance area (FL-71), as the old maintenance page's `isOpen` named them. */
+export const MAINTENANCE_SECTIONS = ['mode', 'backups', 'integrity'] as const;
+export type MaintenanceSectionKey = (typeof MAINTENANCE_SECTIONS)[number];
+export const asMaintenanceSection = (value: string | null | undefined): MaintenanceSectionKey | undefined =>
+  MAINTENANCE_SECTIONS.find((key) => key === value);
+
 /** The server settings section an `isOpen` key opens; the OAuth group sits in the sign-in methods form. */
-const serverSectionKey = (key: string) => (key === OpenQueryParam.OAUTH ? 'authentication' : key);
+const serverSectionKey = (key: string) =>
+  key === OpenQueryParam.OAUTH ? 'authentication' : legacyServerSectionKey(key);
 
 const asQueueSlug = (name: QueueName) => {
   return name.replaceAll(/[A-Z]/g, (m) => '-' + m.toLowerCase());
@@ -135,8 +147,9 @@ export const Route = {
   locked: (params?: { reason?: string }) => '/locked' + asQueryString(params),
   suppressed: (params?: { tab?: 'timeline' | 'albums' }) => '/suppressed' + asQueryString(params),
   suppressedAlbum: ({ id }: { id: string }) => `/suppressed/albums/${id}`,
-  trash: () => '/trash',
-  viewTrashedAsset: ({ id }: { id: string }) => `/trash/photos/${id}`,
+  // FL-71: the account's Trash is a Command Center area (the rail's Trash opens it); `/trash` redirects.
+  trash: () => commandCenterUrl('trash', 'contents'),
+  viewTrashedAsset: ({ id }: { id: string }) => commandCenterUrl('trash', 'contents', { assetId: id }),
 
   // search
   search: (dto?: MetadataSearchDto | SmartSearchDto) => {
@@ -189,14 +202,17 @@ export const Route = {
     ),
   /** Library analytics in the command center (FL-79); `/admin/server-status` redirects here. */
   libraryAnalytics: (params?: { scope?: string; range?: string }) => analyticsAreaUrl(params),
-  physicalDeduplication: () => '/admin/physical-deduplication',
-  systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
+  // FL-71: the old administration pages are Command Center sections; their addresses redirect.
+  physicalDeduplication: () => commandCenterUrl('storage', 'deduplication'),
+  /** Maintenance (FL-71): the area's directory, or one of its sections (mode, database backups, integrity checks). */
+  systemMaintenance: (params?: { section?: MaintenanceSectionKey; continue?: string }) =>
+    commandCenterUrl('maintenance', params?.section, { continue: params?.continue }),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
-  systemProcessingDestinations: () => '/admin/processing-destinations',
+  systemProcessingDestinations: () => commandCenterUrl('processing', 'routing'),
   /** Workers & endpoints (FL-72): the worker inventory at the top of the same page. */
-  systemWorkers: () => '/admin/processing-destinations#workers',
+  systemWorkers: () => commandCenterUrl('processing', 'workers'),
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
-    `/admin/maintenance/integrity-report/${reportType}`,
+    commandCenterUrl('maintenance', 'integrity', { report: reportType }),
 
   // studio
   /**
@@ -214,10 +230,10 @@ export const Route = {
   tags: (params?: { path?: string }) => '/tags' + asQueryString(params),
 
   // users
-  users: () => '/admin/users',
-  newUser: () => `/admin/users/new`,
-  viewUser: ({ id }: { id: string }) => `/admin/users/${id}`,
-  editUser: ({ id }: { id: string }) => `/admin/users/${id}/edit`,
+  users: () => commandCenterUrl('users', 'accounts'),
+  newUser: () => commandCenterUrl('users', 'accounts', { new: 1 }),
+  viewUser: ({ id }: { id: string }) => commandCenterUrl('users', 'accounts', { user: id }),
+  editUser: ({ id }: { id: string }) => commandCenterUrl('users', 'accounts', { user: id, edit: 1 }),
 
   // utilities
   utilities: () => utilitiesUrl(),
@@ -238,11 +254,13 @@ export const Route = {
   viewWorkflow: ({ id }: { id: string }) => utilitiesUrl('workflows', { workflowId: id }),
 
   // render workers
-  renderWorkers: () => '/admin/render-workers',
+  renderWorkers: () => commandCenterUrl('processing', 'render-workers'),
 
   // queues
-  queues: () => '/admin/queues',
-  viewQueue: ({ name }: { name: QueueName }) => `/admin/queues/${asQueueSlug(name)}`,
+  queues: () => commandCenterUrl('processing', 'queues'),
+  /** One queue in the Job manager, optionally on one of its job-state tabs (active, waiting, failed, history). */
+  viewQueue: ({ name, tab }: { name: QueueName; tab?: string }) =>
+    commandCenterUrl('processing', 'queues', { queue: asQueueSlug(name), tab }),
 
   // integrity checks
   integrityReportFile: (reportId: string) => `${getBaseUrl()}/admin/integrity/report/${reportId}/file`,
