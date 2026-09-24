@@ -175,8 +175,18 @@ test.describe('face tagger', () => {
     const asset = pickAsset();
     let dialog = await openFaceTagger(page, asset);
     await addFace(dialog);
+    // Unsaved face tags ask before they are thrown away; keeping them leaves the dialog open.
     await dialog.getByRole('button', { name: 'Cancel' }).click();
+    const discard = dialog.getByRole('alertdialog', { name: 'Discard your face tag changes?' });
+    await expect(discard).toBeVisible();
+    await discard.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(discard).toBeHidden();
+    await expect(dialog.getByText('1 face', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await discard.getByRole('button', { name: 'Discard changes' }).click();
     await expect(dialog).toBeHidden();
+
+    // With nothing changed, Escape closes straight away.
 
     await page.getByRole('button', { name: 'Add person' }).click();
     dialog = page.getByRole('dialog', { name: 'Tag people' });
