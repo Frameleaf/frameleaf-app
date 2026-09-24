@@ -69,4 +69,20 @@ describe('SettingField component', () => {
 
     expect(getByText('unsaved_change')).toBeTruthy();
   });
+
+  it('is one compact row: label and help first, then the control column (Sept 24 settings)', () => {
+    const { container } = render(SettingField, {
+      props: {
+        label: 'Keep for',
+        description: 'Days before removal',
+        inputType: SettingInputFieldType.NUMBER,
+        value: 30,
+        isEdited: true,
+      },
+    });
+    const field = container.querySelector('.field')!;
+    expect([...field.children].map((child) => child.className.split(' ', 1)[0])).toEqual(['copy', 'control']);
+    expect(field.querySelector('.control')).toHaveClass('number');
+    expect(field).toHaveClass('edited');
+  });
 });
