@@ -2,6 +2,7 @@ import { lockAuthSession } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionAccess, setSessionLockPending } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
+import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 import { revokeSessionView } from '$lib/utils/session-privacy';
@@ -9,7 +10,9 @@ import { revokeSessionView } from '$lib/utils/session-privacy';
 vi.mock('@immich/sdk', async (original) => ({ ...(await original<object>()), lockAuthSession: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/photos'), params: {} } }));
-vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() } }));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({
+  assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() },
+}));
 vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn(), revokeSessionView: vi.fn() }));
 vi.mock('$lib/utils/navigation', () => ({ isAssetViewerRoute: () => false, navigate: vi.fn() }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
@@ -68,5 +71,8 @@ describe('requestSessionLock', () => {
     expect(sessionAccess.lockPending).toBe(false);
     expect(sessionAccess.lockStatus).toBe('idle');
     expect(revokeSessionView).toHaveBeenCalledWith('/photos');
+    // an access boundary: fetches still in flight must be rejected, not just uncached
+    expect(assetCacheManager.revoke).toHaveBeenCalled();
+    expect(assetCacheManager.invalidate).not.toHaveBeenCalled();
   });
 });

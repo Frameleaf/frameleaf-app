@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet, flushSync } from 'svelte';
+import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
 
 type Status = 'pending' | 'ready' | 'error';
@@ -29,7 +30,9 @@ vi.mock('@immich/sdk', () => ({
   getAssetInfo: sdk.getAssetInfo,
   isHttpError: (error: unknown) => !!(error as { isHttp?: boolean })?.isHttp,
 }));
-vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() } }));
+vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({
+  assetCacheManager: { invalidate: vi.fn(), revoke: vi.fn() },
+}));
 vi.mock('$lib/utils/session-privacy-guard', () => ({
   watchSessionPrivacy: (
     _isAuthenticated: () => boolean,
@@ -124,6 +127,7 @@ describe('SessionPrivacyGuard', () => {
     await expect(guard.revalidatePreloaded?.()).rejects.toThrow('Failed to fetch');
 
     expect(replace).not.toHaveBeenCalled();
+    expect(assetCacheManager.revoke).toHaveBeenCalled();
     replace.mockRestore();
   });
 
