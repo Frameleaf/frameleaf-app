@@ -11,6 +11,8 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getSystemConfigActions } from '$lib/services/system-config.service';
   import { redactConfigForExport } from '$lib/frameleaf/system-config-draft';
+  import { Icon } from '@immich/ui';
+  import { mdiDownload } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   const settingsDraft = getSystemConfigDraft();
@@ -31,7 +33,11 @@
     <h3>{$t('frameleaf_cc_config_transfer_heading')}</h3>
     <p>{$t('frameleaf_cc_config_transfer_help')}</p>
     <div class="actions">
-      <Button onclick={() => actions.Download.onAction(actions.Download)}>{$t('frameleaf_cc_config_export')}</Button>
+      <Button onclick={() => actions.Download.onAction(actions.Download)}>
+        <!-- ConfigurationTransfer.jsx:31 -->
+        <Icon icon={mdiDownload} size="1rem" aria-hidden={true} />
+        {$t('frameleaf_cc_config_export')}
+      </Button>
       <Button onclick={() => actions.CopyToClipboard.onAction(actions.CopyToClipboard)}
         >{$t('frameleaf_cc_config_copy')}</Button
       >

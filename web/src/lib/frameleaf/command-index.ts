@@ -223,8 +223,8 @@ export const USER_SETTINGS_AREAS: readonly {
   },
   {
     key: 'download-settings',
-    titleKey: 'download_settings',
-    descriptionKey: 'download_settings_description',
+    titleKey: 'frameleaf_cc_section_downloads',
+    descriptionKey: 'frameleaf_cc_section_downloads_description',
     icon: mdiDownload,
   },
   {
@@ -281,20 +281,20 @@ export const ADMIN_SETTINGS_AREAS: readonly {
 }[] = [
   {
     key: 'authentication',
-    titleKey: 'admin.authentication_settings',
-    descriptionKey: 'admin.authentication_settings_description',
+    titleKey: 'frameleaf_cc_section_signin',
+    descriptionKey: 'frameleaf_cc_section_signin_description',
     icon: mdiLockOutline,
   },
   {
     key: 'backup',
-    titleKey: 'admin.backup_settings',
-    descriptionKey: 'admin.backup_settings_description',
+    titleKey: 'frameleaf_cc_section_database_backup',
+    descriptionKey: 'frameleaf_cc_section_database_backup_description',
     icon: mdiBackupRestore,
   },
   {
     key: 'image',
-    titleKey: 'admin.image_settings',
-    descriptionKey: 'admin.image_settings_description',
+    titleKey: 'frameleaf_cc_section_previews',
+    descriptionKey: 'frameleaf_cc_section_previews_description',
     icon: mdiImageOutline,
   },
   {
@@ -311,8 +311,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'logging',
-    titleKey: 'admin.logging_settings',
-    descriptionKey: 'admin.manage_log_settings',
+    titleKey: 'frameleaf_cc_section_diagnostics',
+    descriptionKey: 'frameleaf_cc_section_diagnostics_description',
     icon: mdiFileDocumentOutline,
   },
   {
@@ -323,8 +323,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'location',
-    titleKey: 'admin.map_gps_settings',
-    descriptionKey: 'admin.map_gps_settings_description',
+    titleKey: 'frameleaf_cc_section_maps',
+    descriptionKey: 'frameleaf_cc_section_maps_description',
     icon: mdiMapMarkerOutline,
   },
   {
@@ -335,20 +335,20 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'nightly-tasks',
-    titleKey: 'admin.nightly_tasks_settings',
-    descriptionKey: 'admin.nightly_tasks_settings_description',
+    titleKey: 'frameleaf_cc_section_schedules',
+    descriptionKey: 'frameleaf_cc_section_schedules_description',
     icon: mdiClockOutline,
   },
   {
     key: 'notifications',
-    titleKey: 'admin.notification_settings',
-    descriptionKey: 'admin.notification_settings_description',
+    titleKey: 'frameleaf_cc_section_email',
+    descriptionKey: 'frameleaf_cc_section_email_description',
     icon: mdiBellOutline,
   },
   {
     key: 'server',
-    titleKey: 'admin.server_settings',
-    descriptionKey: 'admin.server_settings_description',
+    titleKey: 'frameleaf_cc_section_identity',
+    descriptionKey: 'frameleaf_cc_section_identity_description',
     icon: mdiServerOutline,
   },
   {
@@ -359,20 +359,20 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'storage-template',
-    titleKey: 'admin.storage_template_settings',
-    descriptionKey: 'admin.storage_template_settings_description',
+    titleKey: 'frameleaf_cc_section_organization',
+    descriptionKey: 'frameleaf_cc_section_organization_description',
     icon: mdiFolderOutline,
   },
   {
     key: 'theme',
-    titleKey: 'admin.theme_settings',
-    descriptionKey: 'admin.theme_settings_description',
+    titleKey: 'frameleaf_cc_section_branding',
+    descriptionKey: 'frameleaf_cc_section_branding_description',
     icon: mdiPaletteOutline,
   },
   {
     key: 'trash',
-    titleKey: 'admin.trash_settings',
-    descriptionKey: 'admin.trash_settings_description',
+    titleKey: 'frameleaf_cc_section_retention',
+    descriptionKey: 'frameleaf_cc_section_retention_description',
     icon: mdiTrashCanOutline,
   },
   {
@@ -389,8 +389,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'video-transcoding',
-    titleKey: 'admin.transcoding_settings',
-    descriptionKey: 'admin.transcoding_settings_description',
+    titleKey: 'frameleaf_cc_section_playback',
+    descriptionKey: 'frameleaf_cc_section_playback_description',
     icon: mdiVideoOutline,
   },
 ] as const;

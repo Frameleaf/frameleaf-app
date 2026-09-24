@@ -108,7 +108,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it("shows the template's header, metrics and queue table on the server's queues", () => {
     render(JobsManager);
 
-    expect(screen.getByText('PROCESSING')).toBeInTheDocument();
+    expect(screen.getByText('Compute & jobs')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeInTheDocument();
     for (const label of ['Concurrency', 'Enrichment tasks', 'Create job', 'Resume 1 paused']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();

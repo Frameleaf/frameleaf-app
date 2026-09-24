@@ -155,10 +155,9 @@
       ><span>{$t('frameleaf_cc_filesystem')}</span><strong
         >{storage ? storage.diskUse : $t('frameleaf_cc_unmeasured')}</strong
       ><small
-        >{storage ? `${storage.diskAvailable} / ${storage.diskSize}` : $t('frameleaf_cc_unmeasured')}<Icon
-          icon={mdiChevronRight}
-          size="16"
-        /></small
+        >{storage
+          ? $t('frameleaf_cc_available', { values: { size: storage.diskAvailable } })
+          : $t('frameleaf_cc_unmeasured')}<Icon icon={mdiChevronRight} size="16" /></small
       ></a
     >
     <!-- As in the template, the latest backup opens Import & protection → Database backups. -->
@@ -215,19 +214,27 @@
             size="18"
           /></a
         >{:else}<p class="subtle">{$t(queues ? 'frameleaf_cc_no_attention' : 'frameleaf_cc_unmeasured')}</p>{/if}
+      <!-- CommandCenter.jsx:1807 -->
+      <p class="subtle">{$t('frameleaf_cc_attention_footer')}</p>
     </section>
     <section class="panel">
       <header>
         <div>
           <h2>{$t('storage')}</h2>
-          <p>{$t('frameleaf_cc_filesystem')}</p>
+          <p>{$t('frameleaf_cc_storage_subtitle')}</p>
         </div>
         <a href={href('storage')}>{$t('frameleaf_cc_manage')} ›</a>
       </header>
       {#if storage}<div class="storage-value">
-          <strong>{storage.diskUsagePercentage}%</strong><span>{storage.diskUse} / {storage.diskSize}</span>
+          <strong>{storage.diskUsagePercentage}%</strong><span
+            >{$t('frameleaf_cc_storage_of_used', { values: { size: storage.diskSize } })}</span
+          >
         </div>
-        <meter min="0" max={storage.diskSizeRaw} value={storage.diskUseRaw} aria-label={$t('frameleaf_cc_filesystem')}
+        <meter
+          min="0"
+          max={storage.diskSizeRaw}
+          value={storage.diskUseRaw}
+          aria-label={$t('frameleaf_cc_storage_meter', { values: { used: storage.diskUse, size: storage.diskSize } })}
         ></meter>{/if}
       <dl>
         <div>

@@ -46,6 +46,7 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
     scopes: [
       { kind: 'host', value: 'all', label: '', libraryId: null, removed: false, userId: null },
       { kind: 'account', value: 'user:ada', label: 'Ada', libraryId: null, removed: false, userId: 'ada' },
+      { kind: 'library', value: 'library:l1', label: 'Archive', libraryId: 'l1', removed: false, userId: 'ada' },
     ],
   }),
 }));
@@ -252,6 +253,17 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     await userEvent.click(screen.getByRole('button', { name: 'Library analytics' }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=analytics&scope=user%3Aada', expect.any(Object));
+  });
+
+  it('notes that queues filter by account when a library is the Viewing scope (CommandCenter.jsx:772-779)', async () => {
+    open('/user-settings?area=processing&section=queues&scope=library%3Al1');
+    render(SettingsHost, { sections });
+
+    expect(
+      await screen.findByText(
+        'Job and utility queues are filtered by account. This view includes all libraries owned by Ada.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('opens a section an older isOpen link names, and a bare key as the account section', async () => {
