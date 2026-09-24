@@ -28,6 +28,7 @@ export const load = (async ({ parent, url }) => {
       title: $t('login'),
     },
     continueUrl,
+    serverUrl: url.origin,
     publicConfig,
   };
 }) satisfies PageLoad;

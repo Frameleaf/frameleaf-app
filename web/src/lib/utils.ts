@@ -358,8 +358,8 @@ export const oauth = {
       return false;
     }
   },
-  login: (location: Location) => {
-    return finishOAuth({ oAuthCallbackDto: { url: location.href } });
+  login: (location: Location, rememberMe = true) => {
+    return finishOAuth({ oAuthCallbackDto: { url: location.href, rememberMe } });
   },
   link: (location: Location) => {
     return linkOAuthAccount({ oAuthCallbackDto: { url: location.href } });

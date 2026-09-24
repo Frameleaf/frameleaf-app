@@ -7,7 +7,7 @@ import type { PageLoad } from './$types';
 export const load = (async ({ url }) => {
   await authenticate(url);
 
-  const { pinCode } = await getAuthStatus();
+  const { pinCode, password } = await getAuthStatus();
 
   const $t = await getFormatter();
 
@@ -16,6 +16,7 @@ export const load = (async ({ url }) => {
       title: $t('pin_verification'),
     },
     hasPinCode: !!pinCode,
+    hasPassword: !!password,
     continueUrl: Route.continue(url.searchParams.get('continue'), Route.locked()),
   };
 }) satisfies PageLoad;
