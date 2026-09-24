@@ -6,7 +6,6 @@ import {
   BulkIdErrorReason,
   createAlbum,
   deleteAlbum,
-  getAlbumDescendantCount,
   moveAlbumToCollection,
   removeUserFromAlbum,
   updateAlbumInfo,
@@ -20,15 +19,13 @@ import {
   type UpdateAlbumDto,
   type UserResponseDto,
 } from '@immich/sdk';
-import { modalManager, toastManager, type ActionItem } from '@immich/ui';
-import { mdiImageOutline, mdiLink, mdiPlus, mdiPlusBoxOutline, mdiShareVariantOutline, mdiUpload } from '@mdi/js';
+import { toastManager, type ActionItem } from '@immich/ui';
+import { mdiImageOutline, mdiPlusBoxOutline, mdiUpload } from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
+import { type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import AlbumAddUsersModal from '$lib/modals/AlbumAddUsersModal.svelte';
-import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
-import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { createAlbumAndRedirect } from '$lib/utils/album-utils';
 import { downloadArchive } from '$lib/utils/asset-utils';
@@ -44,33 +41,6 @@ export const getAlbumsActions = ($t: MessageFormatter) => {
   };
 
   return { Create };
-};
-
-export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
-  const isOwned = album.albumUsers[0].user.id === authManager.user.id;
-
-  const Share: ActionItem = {
-    title: $t('share'),
-    icon: mdiShareVariantOutline,
-    $if: () => isOwned,
-    onAction: () => modalManager.show(AlbumOptionsModal, { album }),
-  };
-
-  const AddUsers: ActionItem = {
-    title: $t('invite_people'),
-    icon: mdiPlus,
-    color: 'primary',
-    onAction: () => modalManager.show(AlbumAddUsersModal, { album }),
-  };
-
-  const CreateSharedLink: ActionItem = {
-    title: $t('create_link'),
-    icon: mdiLink,
-    color: 'primary',
-    onAction: () => modalManager.show(SharedLinkCreateModal, { albumId: album.id }),
-  };
-
-  return { Share, AddUsers, CreateSharedLink };
 };
 
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: AssetResponseDto) => {
@@ -217,24 +187,21 @@ export const handleInviteAlbumUsers = async (album: AlbumResponseDto, albumUsers
   }
 };
 
+/**
+ * Remove a member from an album, a collection or a shared space. The Frameleaf share dialog
+ * removes at once, as the design's `ShareDialog` does (`CollectionHeader.jsx:643-649`): the
+ * owner can invite the person again, and nothing in anyone's library changes.
+ */
 export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
   const $t = await getFormatter();
-
-  const confirmed = await modalManager.showDialog({
-    title: $t('album_remove_user'),
-    prompt: $t('album_remove_user_confirmation', { values: { user: albumUser.name } }),
-    confirmText: $t('remove_user'),
-  });
-
-  if (!confirmed) {
-    return;
-  }
 
   try {
     await removeUserFromAlbum({ id: album.id, userId: albumUser.id });
     eventManager.emit('AlbumUserDelete', { albumId: album.id, userId: albumUser.id });
+    return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_remove_album_users'));
+    return false;
   }
 };
 
@@ -314,6 +281,27 @@ export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbum
 };
 
 /**
+ * Save the Frameleaf edit dialog (`CollectionFormDialog`, FL-52): name, description and icon
+ * through `PATCH /albums/{id}`, then the move when the dialog offered the collection field and
+ * it changed. Returns the album as the server stored it.
+ */
+export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: AlbumDetailsDraft) => {
+  const $t = await getFormatter();
+  const { parentId, ...details } = draft;
+
+  try {
+    let saved = await updateAlbumInfo({ id: album.id, updateAlbumDto: details });
+    if (parentId !== undefined && parentId !== (album.parentId ?? null)) {
+      saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
+    }
+    eventManager.emit('AlbumUpdate', saved);
+    return saved;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/**
  * Move an album into a collection, or out of one (`collectionId: null`) so it
  * stands on its own. The server enforces the one-level rule and ownership; the
  * caller decides whether to refresh the directory.
@@ -343,34 +331,13 @@ export const handleCreateAlbumEntry = async (dto: CreateAlbumDto) => {
   }
 };
 
-export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { prompt?: boolean; notify?: boolean }) => {
+/**
+ * Delete an album, a collection or a shared space. Every caller asks first in the Frameleaf
+ * `AlbumConfirmDialog` (the design's `DeleteDialog`, AL-4), so this only performs the delete.
+ */
+export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { notify?: boolean }) => {
   const $t = await getFormatter();
-  const { prompt = true, notify = true } = options ?? {};
-
-  if (prompt) {
-    let descendantCount = 0;
-    try {
-      const result = await getAlbumDescendantCount({ id: album.id });
-      descendantCount = result.count;
-    } catch {
-      // Permission denied or network error — fall back to the simple confirmation
-      // rather than blocking the delete on the count lookup.
-    }
-
-    const baseConfirmation =
-      album.albumName.length > 0
-        ? $t('album_delete_confirmation', { values: { album: album.albumName } })
-        : $t('unnamed_album_delete_confirmation');
-    const description = $t('album_delete_confirmation_description');
-    const nestedNotice =
-      descendantCount > 0 ? $t('album_delete_confirmation_nested', { values: { count: descendantCount } }) : '';
-
-    const promptText = [baseConfirmation, nestedNotice, description].filter(Boolean).join(' ');
-    const success = await modalManager.showDialog({ prompt: promptText });
-    if (!success) {
-      return false;
-    }
-  }
+  const { notify = true } = options ?? {};
 
   try {
     await deleteAlbum({ id: album.id });
