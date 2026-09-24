@@ -11,6 +11,7 @@ import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -36,7 +37,15 @@ const setup = async (visibility = AssetVisibility.Timeline) => {
   const { sut, ctx } = newMediumService(ImageEnrichmentService, {
     database,
     real: [AccessRepository, AssetRepository, DatabaseRepository, ConfigRepository, PersonRepository, UserRepository],
-    mock: [JobRepository, LoggingRepository, AssetJobRepository, MachineLearningRepository, SystemMetadataRepository],
+    // detection is routed to an ML destination (FL-110, after PR127); the mock routes it to a healthy local one
+    mock: [
+      JobRepository,
+      LoggingRepository,
+      AssetJobRepository,
+      MachineLearningRepository,
+      MlDestinationRepository,
+      SystemMetadataRepository,
+    ],
   });
   Object.assign(sut, { db: database });
   const { user } = await ctx.newUser();
@@ -163,7 +172,13 @@ it.each([true, false])(
       return inference.promise;
     });
     const pending = sut.handleNsfwDetection({ id: asset.id });
-    await started.promise;
+    // fail fast, with the job's result, if the job ends without ever reaching the detector
+    await Promise.race([
+      started.promise,
+      pending.then((status) => {
+        throw new Error(`detection finished (${status}) without reaching the detector`);
+      }),
+    ]);
     await mark(isNsfw ? AssetImageEnrichmentAction.MarkNsfw : AssetImageEnrichmentAction.MarkSafe);
     inference.resolve({ isNsfw: !isNsfw, score: 0.99, labels: {} });
     await expect(pending).resolves.toBe(JobStatus.Success);
