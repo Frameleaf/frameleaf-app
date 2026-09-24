@@ -1,57 +1,97 @@
 <script lang="ts">
   /**
-   * Retained video versions (FL-39), in the quick editor's Versions panel.
+   * The video Versions menu (FL-39), ported from the Versions popover in
+   * `design/frameleaf/template/src/Editor.jsx`.
    *
-   * Follows the prototype's Versions surface (`design/frameleaf/template/src/Editor.jsx`: an
-   * Original entry plus one entry per saved version, Revert to original) and the photo editor's
-   * version cards. Every save, revert and export is its own server-side version rendered from the
-   * original; making one current queues a new render of its recipe, and the current video stays
-   * available until that render is published. Downloads are the version's edited master, never
-   * the playback proxy.
+   * Choosing Original or a saved version loads its recipe into the open draft; the editor's Save
+   * version then publishes it as a new version rendered from the original. Every retained version
+   * lists its render status, and ready masters (saved or exported) can be downloaded. Export master
+   * queues a separate render of the current version's master; the playback proxy is never offered.
    */
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import {
+    VideoEditExportProfile,
+    VideoEditVersionPurpose,
+    VideoEditVersionStatus,
     exportVideoEditVersion,
     getBaseUrl,
     getVideoEditVersions,
-    removeAssetEdits,
-    restoreVideoEditVersion,
     type AssetResponseDto,
-    type VideoEditExportDto,
     type VideoEditVersionResponseDto,
   } from '@immich/sdk';
   import { ConfirmModal, Icon, modalManager, toastManager } from '@immich/ui';
-  import { mdiCheck, mdiDownload, mdiExport, mdiImageOutline, mdiRefresh, mdiRestore } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { mdiDownload, mdiExport, mdiHistory, mdiImageOutline } from '@mdi/js';
+  import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
     asset: AssetResponseDto;
-    /** The open video draft differs from what was loaded; version actions confirm before discarding it. */
+    /** The draft recipe, as the JSON of the edits Save version would send. */
+    draftKey: string;
+    /** The draft differs from what the editor opened with; loading a version asks first. */
     hasUnsavedChanges: boolean;
-    /** Called after a restore or revert was queued, so the editor can close and the viewer refresh. */
-    onRestore: () => void;
+    /** Loads a recipe into the open draft. */
+    onApply: (edits: VideoEditVersionResponseDto['edits']) => void;
   }
 
-  let { asset, hasUnsavedChanges, onRestore }: Props = $props();
+  let { asset, draftKey, hasUnsavedChanges, onApply }: Props = $props();
 
+  let open = $state(false);
   let versions = $state<VideoEditVersionResponseDto[]>([]);
   let loading = $state(true);
   let busy = $state(false);
   let error = $state(false);
+  let trigger = $state<HTMLButtonElement>();
+  let menu = $state<HTMLDivElement>();
   let request = 0;
   let disposed = false;
 
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item) => canonical(item));
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, entry]) => entry !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, entry]) => [key, canonical(entry)]),
+      );
+    }
+    return value;
+  };
+  const recipeKey = (edits: unknown) => JSON.stringify(canonical(edits));
+  const draftRecipe = $derived.by(() => {
+    try {
+      return recipeKey(JSON.parse(draftKey));
+    } catch {
+      return '';
+    }
+  });
+
   const current = $derived(versions.find((version) => version.isCurrent));
-  // Before any retained version exists, an edit made without history still counts as not-original.
-  const originalIsCurrent = $derived(current ? current.edits.length === 0 : !asset.isEdited);
-  const pending = $derived(versions.some((version) => version.isRequested && version.status === 'pending'));
-  const exporting = $derived(versions.some((version) => version.purpose === 'export' && version.status === 'pending'));
-  const unavailable = $derived(loading || busy || error);
+  // Saved versions a person can go back to; an empty recipe is the Original entry.
+  const saved = $derived(
+    versions.filter((version) => version.purpose !== VideoEditVersionPurpose.Export && version.edits.length > 0),
+  );
+  const downloads = $derived(
+    versions.filter(
+      (version) =>
+        version.status === VideoEditVersionStatus.Ready &&
+        (version.purpose === VideoEditVersionPurpose.Export || version.edits.length > 0),
+    ),
+  );
+  const pending = $derived(versions.some((version) => version.status === VideoEditVersionStatus.Pending));
   const canExport = $derived(
-    !unavailable && !hasUnsavedChanges && !pending && !exporting && !!current && current.edits.length > 0,
+    !loading &&
+      !busy &&
+      !error &&
+      !hasUnsavedChanges &&
+      !pending &&
+      !!current &&
+      current.status === VideoEditVersionStatus.Ready &&
+      current.edits.length > 0,
   );
 
   async function refresh() {
@@ -90,33 +130,66 @@
     };
   });
 
-  const confirmDiscard = async () =>
-    !hasUnsavedChanges ||
-    (await modalManager.show(ConfirmModal, {
-      title: $t('editor_discard_edits_title'),
-      prompt: $t('editor_discard_edits_prompt'),
-      confirmText: $t('editor_discard_edits_confirm'),
-    }));
+  const items = () => [
+    ...(menu?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])') ?? []),
+  ];
 
-  async function restore(version?: VideoEditVersionResponseDto) {
-    if (unavailable) {
+  async function toggle() {
+    open = !open;
+    if (open) {
+      void refresh();
+      await tick();
+      (items().find((item) => item.getAttribute('aria-checked') === 'true') ?? items()[0])?.focus();
+    }
+  }
+
+  function close(restoreFocus: boolean) {
+    open = false;
+    if (restoreFocus) {
+      trigger?.focus();
+    }
+  }
+
+  function onMenuKeyDown(event: KeyboardEvent) {
+    const options = items();
+    const index = options.indexOf(document.activeElement as HTMLElement);
+    const target = new Map([
+      ['ArrowDown', index + 1],
+      ['ArrowUp', index - 1],
+      ['Home', 0],
+      ['End', options.length - 1],
+    ]).get(event.key);
+    if (target !== undefined) {
+      event.preventDefault();
+      options[(target + options.length) % options.length]?.focus();
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    }
+  }
+
+  function onWindowPointerDown(event: PointerEvent) {
+    if (open && !menu?.contains(event.target as Node) && !trigger?.contains(event.target as Node)) {
+      close(false);
+    }
+  }
+
+  async function choose(edits: VideoEditVersionResponseDto['edits']) {
+    if (recipeKey(edits) === draftRecipe) {
+      close(true);
       return;
     }
-    busy = true;
-    try {
-      if (!(await confirmDiscard())) {
-        return;
-      }
-      await (version
-        ? restoreVideoEditVersion({ id: asset.id, versionId: version.id })
-        : removeAssetEdits({ id: asset.id }));
-      eventManager.emit('AssetEditsApplied', asset.id);
-      toastManager.primary($t('editor_video_restore_queued'));
-      onRestore();
-    } catch {
-      toastManager.danger($t('editor_edits_applied_error'));
-    } finally {
-      busy = false;
+    close(true);
+    const confirmed =
+      !hasUnsavedChanges ||
+      (await modalManager.show(ConfirmModal, {
+        title: $t('editor_discard_edits_title'),
+        prompt: $t('editor_discard_edits_prompt'),
+        confirmText: $t('editor_discard_edits_confirm'),
+      }));
+    if (confirmed) {
+      onApply(edits);
     }
   }
 
@@ -125,9 +198,9 @@
       return;
     }
     busy = true;
+    close(true);
     try {
-      const videoEditExportDto = { profile: 'master' } as VideoEditExportDto;
-      await exportVideoEditVersion({ id: asset.id, videoEditExportDto });
+      await exportVideoEditVersion({ id: asset.id, videoEditExportDto: { profile: VideoEditExportProfile.Master } });
       toastManager.primary($t('editor_video_export_queued'));
       await refresh();
     } catch {
@@ -147,107 +220,89 @@
     return `${getBaseUrl()}/assets/${encodeURIComponent(asset.id)}/edit-versions/${encodeURIComponent(versionId)}/download?${search.toString()}`;
   }
 
-  const versionLabel = (version: VideoEditVersionResponseDto) => {
-    if (version.purpose === 'export') {
-      return $t('editor_video_export_master');
-    }
-    return version.edits.length === 0 ? $t('frameleaf_editor_version_original') : $t('editor_video_saved_version');
-  };
+  const date = (version: VideoEditVersionResponseDto) => new Date(version.createdAt).toLocaleString();
 
-  const statusLabel = (version: VideoEditVersionResponseDto) => {
+  const note = (version: VideoEditVersionResponseDto) => {
     if (version.isCurrent) {
       return $t('editor_video_version_current');
     }
     switch (version.status) {
-      case 'pending': {
+      case VideoEditVersionStatus.Pending: {
         return $t('editor_video_version_pending');
       }
-      case 'failed': {
+      case VideoEditVersionStatus.Failed: {
         return $t('editor_video_version_failed');
       }
       default: {
-        return $t('editor_video_version_ready');
+        return date(version);
       }
     }
   };
 </script>
 
-<div class="ed-panel-body">
-  <div class="ed-panel-head">
-    <h2>{$t('editor_video_versions')}</h2>
-    <button
-      type="button"
-      class="ed-icon"
-      aria-label={$t('refresh')}
-      title={$t('refresh')}
-      disabled={loading || busy}
-      onclick={refresh}
-    >
-      <Icon icon={mdiRefresh} size="18" />
-    </button>
-  </div>
-  <p>{$t('frameleaf_editor_versions_help')}</p>
+<svelte:window onpointerdown={onWindowPointerDown} />
 
-  <div class="ed-row">
-    <button type="button" class="ed-chip accent" disabled={!canExport} onclick={exportMaster}>
-      <Icon icon={mdiExport} size="16" />
-      {$t('editor_video_export_master')}
-    </button>
-  </div>
-  {#if hasUnsavedChanges}
-    <p>{$t('editor_video_export_save_first')}</p>
-  {:else if !loading && !error && (!current || current.edits.length === 0)}
-    <p>{$t('editor_video_export_version_first')}</p>
-  {/if}
-  {#if pending || exporting}
-    <p role="status">{$t('editor_video_version_pending_hint')}</p>
-  {/if}
-  {#if error}
-    <p class="ed-empty" role="alert">{$t('editor_video_versions_error')}</p>
-  {/if}
-
-  <div class={['ed-version', originalIsCurrent && 'current']}>
-    <strong><Icon icon={mdiImageOutline} size="16" /> {$t('frameleaf_editor_version_original')}</strong>
-    {#if originalIsCurrent}
-      <span class="ed-status">{$t('editor_video_version_current')}</span>
-    {/if}
-    <small>{$t('frameleaf_editor_version_original_help')}</small>
-    {#if !originalIsCurrent || hasUnsavedChanges}
-      <div class="ed-row">
-        <button type="button" class="ed-chip" disabled={unavailable} onclick={() => restore()}>
-          <Icon icon={mdiRestore} size="16" />
-          {$t('editor_video_revert_original')}
-        </button>
-      </div>
-    {/if}
-  </div>
-
-  {#each versions as version (version.id)}
-    <div class={['ed-version', version.isCurrent && 'current']}>
-      <strong>{versionLabel(version)}</strong>
-      <span class={['ed-status', version.status === 'pending' && 'busy', version.status === 'failed' && 'failed']}>
-        {statusLabel(version)}
-      </span>
-      <small><time datetime={version.createdAt}>{new Date(version.createdAt).toLocaleString()}</time></small>
-      {#if version.status === 'ready'}
-        <div class="ed-row">
-          {#if !version.isCurrent && version.purpose !== 'export'}
-            <button type="button" class="ed-chip" disabled={unavailable} onclick={() => restore(version)}>
-              <Icon icon={mdiCheck} size="16" />
-              {$t('frameleaf_editor_make_current')}
-            </button>
-          {/if}
-          {#if version.purpose === 'export' || version.edits.length > 0}
-            <a class="ed-chip" href={downloadUrl(version.id)} download>
-              <Icon icon={mdiDownload} size="16" />
-              {$t('frameleaf_editor_download_master')}
-            </a>
-          {/if}
-        </div>
+<div class="ed-menu">
+  <button
+    bind:this={trigger}
+    type="button"
+    class="ed-tool labelled"
+    aria-haspopup="menu"
+    aria-expanded={open}
+    title={$t('frameleaf_editor_tool_versions')}
+    onclick={toggle}
+  >
+    <Icon icon={mdiHistory} size="20" />
+    <span>{$t('frameleaf_editor_tool_versions')}</span>
+  </button>
+  {#if open}
+    <div bind:this={menu} role="menu" tabindex="-1" aria-label={$t('editor_video_versions')} onkeydown={onMenuKeyDown}>
+      <h3>{$t('editor_video_versions')}</h3>
+      {#if error}
+        <p role="alert">{$t('editor_video_versions_error')}</p>
+      {:else if !loading && saved.length === 0}
+        <p>{$t('frameleaf_editor_no_versions')}</p>
       {/if}
+      <button type="button" role="menuitemradio" aria-checked={draftRecipe === '[]'} onclick={() => choose([])}>
+        <Icon icon={mdiImageOutline} size="18" />
+        {$t('frameleaf_editor_version_original')}
+        {#if !current || current.edits.length === 0}
+          <small>{$t('editor_video_version_current')}</small>
+        {/if}
+      </button>
+      {#each saved as version (version.id)}
+        <button
+          type="button"
+          role="menuitemradio"
+          aria-checked={recipeKey(version.edits) === draftRecipe}
+          title={date(version)}
+          onclick={() => choose(version.edits)}
+        >
+          <Icon icon={mdiHistory} size="18" />
+          {$t('editor_video_saved_version')}
+          <small>{note(version)}</small>
+        </button>
+      {/each}
+      {#if pending}
+        <p role="status">{$t('editor_video_version_pending_hint')}</p>
+      {/if}
+      <button
+        type="button"
+        role="menuitem"
+        aria-disabled={!canExport}
+        title={hasUnsavedChanges ? $t('editor_video_export_save_first') : undefined}
+        onclick={exportMaster}
+      >
+        <Icon icon={mdiExport} size="18" />
+        {$t('editor_video_export_master')}
+      </button>
+      {#each downloads as version (version.id)}
+        <a role="menuitem" href={downloadUrl(version.id)} download onclick={() => close(true)}>
+          <Icon icon={mdiDownload} size="18" />
+          {$t('frameleaf_editor_download_master')}
+          <small>{date(version)}</small>
+        </a>
+      {/each}
     </div>
-  {/each}
-  {#if !loading && !error && versions.length === 0}
-    <p class="ed-empty">{$t('editor_video_versions_empty')}</p>
   {/if}
 </div>

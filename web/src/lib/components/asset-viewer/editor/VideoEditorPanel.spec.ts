@@ -1,6 +1,6 @@
-import { AssetEditAction, AssetTypeEnum, editAsset, getAssetEdits } from '@immich/sdk';
+import { AssetEditAction, AssetTypeEnum, editAsset, getAssetEdits, removeAssetEdits } from '@immich/sdk';
 import '@testing-library/jest-dom';
-import { fireEvent, waitFor } from '@testing-library/svelte';
+import { act, fireEvent, waitFor } from '@testing-library/svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import VideoEditorPanel from './VideoEditorPanel.svelte';
@@ -59,6 +59,34 @@ describe('VideoEditorPanel component', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('loads a chosen version recipe into the draft and publishes it only on Save version (FL-39)', async () => {
+    const onDraftChange = vi.fn();
+    const onClose = vi.fn();
+    const onReady = vi.fn();
+    const view = renderWithTooltips(VideoEditorPanel, { asset, onClose, onDraftChange, onReady });
+    await waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onDraftChange).toHaveBeenLastCalledWith('[]'));
+    const recipe = [{ action: 'rotate', parameters: { angle: 90 } }];
+    await act(() => onReady.mock.calls[0][0].applyRecipe(recipe));
+    await waitFor(() => expect(onDraftChange).toHaveBeenLastCalledWith(JSON.stringify(recipe)));
+    expect(editAsset).not.toHaveBeenCalled();
+    await fireEvent.click(view.getByRole('button', { name: 'editor_video_save_version' }));
+    await waitFor(() =>
+      expect(editAsset).toHaveBeenCalledWith({ id: asset.id, assetEditsCreateDto: { edits: recipe } }),
+    );
+  });
+
+  it('does not save the original over an unedited original', async () => {
+    const onClose = vi.fn();
+    const view = renderWithTooltips(VideoEditorPanel, { asset: { ...asset, isEdited: false }, onClose });
+    const save = await view.findByRole('button', { name: 'editor_video_save_version' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await fireEvent.click(save);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(removeAssetEdits).not.toHaveBeenCalled();
+    expect(editAsset).not.toHaveBeenCalled();
   });
 
   it('shows the focused video editor tools', async () => {
