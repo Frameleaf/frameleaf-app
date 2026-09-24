@@ -413,9 +413,15 @@
    */
   let focusedGroupKey = $state<string | null>(null);
   $effect(() => {
-    void bandHosts;
+    const hosts = bandHosts;
     const key = untrack(() => focusedGroupKey);
     if (!key) {
+      return;
+    }
+    // The group scrolled away entirely: its header is gone, so the claim ends rather than pulling
+    // focus back when the group returns much later.
+    if (!hosts.has(key)) {
+      focusedGroupKey = null;
       return;
     }
     void tick().then(() => {
