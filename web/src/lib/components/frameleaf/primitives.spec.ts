@@ -112,10 +112,18 @@ it.each([false, true])('honors reduced motion (%s) when introducing a picker', a
   vi.stubGlobal('visualViewport', null);
   const preference = vi.spyOn(mediaQueryManager, 'reducedMotion', 'get').mockReturnValue(reducedMotion);
   const fly = vi.spyOn(transitions, 'fly');
+  const fade = vi.spyOn(transitions, 'fade');
   try {
     render(PickerHarness, { props: { theme: 'dark' }, intro: true });
-    await waitFor(() => expect(fly).toHaveBeenCalled());
-    expect(fly.mock.calls.every(([, options]) => options?.duration === (reducedMotion ? 0 : 250))).toBe(true);
+    // The listbox flies in, or crossfades under Reduce Motion ($lib/frameleaf/motion.ts).
+    if (reducedMotion) {
+      await waitFor(() => expect(fade).toHaveBeenCalled());
+      expect(fly).not.toHaveBeenCalled();
+      expect(fade.mock.calls.every(([, options]) => options?.duration === 150)).toBe(true);
+    } else {
+      await waitFor(() => expect(fly).toHaveBeenCalled());
+      expect(fly.mock.calls.every(([, options]) => options?.duration === 250)).toBe(true);
+    }
     const input = screen.getByRole('combobox', { name: 'Outer camera' });
     await fireEvent.focus(input);
     await fireEvent.keyDown(input, { key: 'ArrowDown' });
@@ -123,6 +131,7 @@ it.each([false, true])('honors reduced motion (%s) when introducing a picker', a
     expect((input as HTMLInputElement).value).toBe('Camera A (12)');
   } finally {
     fly.mockRestore();
+    fade.mockRestore();
     preference.mockRestore();
   }
 });
