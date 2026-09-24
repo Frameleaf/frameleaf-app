@@ -1,4 +1,5 @@
 import {
+  type AlbumUserRole,
   MaintenanceAction,
   type AssetResponseDto,
   type MaintenanceStatusResponseDto,
@@ -46,6 +47,8 @@ export interface Events {
   AssetEditReadyV2: (data: { asset: SyncAssetV2; edit: SyncAssetEditV1[] }) => void;
   /** Fork-only (FL-39): a video edit render settled without publishing anything. */
   VideoEditVersionFailedV1: (data: { assetId: string; versionId: string | null }) => void;
+  /** Fork-only (FL-53): somebody's album role changed, or they left or were removed (`role: null`). */
+  AlbumUserUpdateV1: (data: { albumId: string; userId: string; role: AlbumUserRole | null }) => void;
 }
 
 const websocket: Socket<Events> = io({
@@ -91,6 +94,12 @@ websocket
   .on('on_asset_update', (asset) => eventManager.emit('AssetUpdate', asset))
   .on('on_person_thumbnail', (id) => eventManager.emit('PersonThumbnailReady', { id }))
   .on('on_notification', () => notificationManager.refresh())
+  // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.
+  .on('AlbumUserUpdateV1', ({ albumId, userId, role }) =>
+    role
+      ? eventManager.emit('AlbumUserUpdate', { albumId, userId, role })
+      : eventManager.emit('AlbumUserDelete', { albumId, userId }),
+  )
   .on('connect_error', (e) => console.log('Websocket Connect Error', e));
 
 export const openWebsocketConnection = () => {

@@ -680,6 +680,7 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
+    this.sendAccessChange(album, userId, null);
 
     if (space) {
       // The feed says who left on their own and who was taken out (FL-55).
@@ -689,6 +690,22 @@ export class AlbumService extends BaseService {
         type: auth.user.id === userId ? SharedSpaceEventType.MemberLeft : SharedSpaceEventType.MemberRemoved,
         targetUserId: userId,
       });
+    }
+  }
+
+  /**
+   * Tell open pages at once that somebody's access to an album changed (FL-53): the person
+   * concerned, so a downgraded or removed member loses controls and open dialogs without a reload,
+   * and everyone else still in the album, so their member lists follow.
+   */
+  private sendAccessChange(
+    album: { id: string; albumUsers: { user: { id: string } }[] },
+    userId: string,
+    role: AlbumUserRole | null,
+  ) {
+    const recipients = new Set([userId, ...album.albumUsers.map(({ user }) => user.id)]);
+    for (const recipient of recipients) {
+      this.websocketRepository.clientSend('AlbumUserUpdateV1', recipient, { albumId: album.id, userId, role });
     }
   }
 
@@ -723,6 +740,7 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
+    this.sendAccessChange(album, userId, dto.role);
 
     if (space) {
       // Only a member's actual role change is news; a changed offer to somebody

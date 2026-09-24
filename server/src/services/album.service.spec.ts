@@ -728,6 +728,23 @@ describe(AlbumService.name, () => {
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId: user1.id });
     });
 
+    it('lets the last member leave: the album stays with its owner and everyone is told (FL-53)', async () => {
+      const member = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: member.id }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.delete.mockResolvedValue();
+
+      await sut.removeUser(AuthFactory.create(member), album.id, 'me');
+
+      expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId: member.id });
+      // Leaving never deletes the album or its items.
+      expect(mocks.album.delete).not.toHaveBeenCalled();
+      const payload = { albumId: album.id, userId: member.id, role: null };
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', member.id, payload);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', owner.id, payload);
+    });
+
     it('should allow a shared user to remove themselves using "me"', async () => {
       const user = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
@@ -780,6 +797,21 @@ describe(AlbumService.name, () => {
         { albumId: album.id, userId: user.id },
         { role: AlbumUserRole.Viewer },
       );
+    });
+
+    it('tells the downgraded member and the album at once, so open pages drop controls (FL-53)', async () => {
+      const user = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.update.mockResolvedValue();
+
+      await sut.updateUser(AuthFactory.create(owner), album.id, user.id, { role: AlbumUserRole.Viewer });
+
+      const payload = { albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer };
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', user.id, payload);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', owner.id, payload);
     });
   });
 
