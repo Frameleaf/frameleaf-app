@@ -6,8 +6,6 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { Icon } from '@immich/ui';
   import { mdiFolderMultipleOutline, mdiHistory, mdiImageMultipleOutline, mdiMagnify } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -21,8 +19,9 @@
    *
    * Search opens the one search entry in the top bar (the same event ⌘K sends), so there is still
    * exactly one search surface. Memories and Search follow the same switches as the rail (the
-   * account's Memories preference, the server's search feature). While the ☰ drawer is open the tab
-   * bar steps away so the drawer's footer (Library Care, Settings, Support) stays reachable.
+   * account's Memories preference, the server's search feature). The ☰ drawer ends above the tab bar
+   * (the template's `.sidebar.mobile-open { bottom: 64px }`), so its footer — Library Care,
+   * Settings, Support — stays reachable while the tab bar stays in place.
    */
 
   let { theme }: { theme: 'dark' | 'light' } = $props();
@@ -47,8 +46,7 @@
       (tab) => (tab.id !== 'memories' || memories) && (tab.id !== 'search' || featureFlagsManager.value.search),
     ),
   );
-  const drawerOpen = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
-  const visible = $derived(showsTabBar(page.url.pathname) && !drawerOpen);
+  const visible = $derived(showsTabBar(page.url.pathname));
   const current = $derived(currentTab(page.url.pathname));
 
   const openSearch = () => dispatchEvent(new CustomEvent(SEARCH_SHORTCUT_EVENT));
@@ -123,6 +121,8 @@
     /* Room for the tab bar under the scrolling content (apple-style.css: `padding-bottom: 96px`). */
     :global(:root:has(.fl-tabbar)) {
       --fl-tabbar-space: calc(96px + env(safe-area-inset-bottom, 0px));
+      /* What the bar covers from the bottom edge: its inset, 66px of bar and an 8px gap. */
+      --fl-tabbar-height: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 74px);
     }
   }
 </style>

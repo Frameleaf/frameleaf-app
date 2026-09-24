@@ -317,15 +317,31 @@ test.describe('Timeline', () => {
       expect(offset).toBeGreaterThan(0);
     });
 
-    test('on a phone the drawer footer stays reachable over the tab bar', async ({ page }) => {
+    test('on a phone the drawer ends above the tab bar and its footer stays reachable', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await pageUtils.openPhotosPage(page);
-      await expect(page.getByRole('navigation', { name: 'Sections' })).toBeVisible();
+      const tabBar = page.getByRole('navigation', { name: 'Sections' });
+      await expect(tabBar).toBeVisible();
       await page.getByRole('button', { name: 'Main menu' }).click();
-      // The tab bar steps away while the drawer is open.
-      await expect(page.getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
-      await railLink(page, 'Library Care').click();
+      // The tab bar stays; the drawer stops above it (template `.sidebar.mobile-open`).
+      await expect(tabBar).toBeVisible();
+      const [drawer, bar] = await Promise.all([page.getByTestId('sidebar-parent').boundingBox(), tabBar.boundingBox()]);
+      expect(drawer!.y + drawer!.height).toBeLessThanOrEqual(bar!.y);
+      const care = railLink(page, 'Library Care');
+      await care.scrollIntoViewIfNeeded();
+      await care.click();
       await expect(page).toHaveURL(/area=care/);
+    });
+
+    test('Timeline: only the results toolbar stays; the grouping row scrolls away', async ({ page }) => {
+      await pageUtils.openPhotosPage(page);
+      await timelineUtils.setLayout(page, 'Timeline');
+      const grouping = page.getByRole('group', { name: 'Timeline grouping' });
+      await expect(grouping).toBeVisible();
+      await page.locator('.fl-timeline-scroll').evaluate((element) => element.scrollBy(0, 2000));
+      await expect(page.getByTestId('frameleaf-results-toolbar')).toBeInViewport();
+      // timeline-library.css: `.tl-toolbar` is not sticky (browsers with scroll-driven animation).
+      await expect(grouping).toBeHidden();
     });
   });
 
