@@ -126,8 +126,13 @@ test.describe('Album', () => {
     menu = await openActions('Dialogs album, renamed');
     await menu.getByRole('menuitem', { name: 'Create link' }).click();
     const link = page.getByRole('dialog', { name: 'Create shared link' });
-    await expect(link.getByRole('switch', { name: /Show metadata/ })).not.toBeChecked();
-    await expect(link.getByRole('switch', { name: /Allow download/ })).toBeChecked();
+    await expect(link.getByRole('switch', { name: /^Show metadata/ })).not.toBeChecked();
+    // Originals carry their EXIF and GPS, so download follows metadata (off and disabled until it is on).
+    const download = link.getByRole('switch', { name: /^Allow download/ });
+    await expect(download).not.toBeChecked();
+    await expect(download).toBeDisabled();
+    await link.getByRole('switch', { name: /^Show metadata/ }).check();
+    await expect(download).toBeEnabled();
     await link.getByRole('button', { name: 'Create link', exact: true }).click();
     const ready = page.getByRole('dialog', { name: 'Link ready' });
     await expect(ready.getByLabel('Link address')).toHaveValue(/\/share\//);

@@ -11,8 +11,10 @@
   /**
    * Create or edit a shared link: the design's `SharedLinkForm` (`SharedLinkForm.jsx:88-509`).
    *
-   * As in the design, a new link does not show camera and location details unless asked, and
-   * downloads are their own choice rather than tied to metadata (`SharedLinkForm.jsx:106-108`).
+   * As in the design, a new link does not show camera and location details unless asked
+   * (`SharedLinkForm.jsx:108`). Downloads stay tied to metadata, as upstream: the server serves
+   * originals byte for byte, embedded EXIF and GPS included, so a link that hides metadata must
+   * not offer downloads. With metadata off by default, download is off by default too.
    * Creating ends on the design's "Link ready" step (address, Copy, QR code, Open) in place of
    * the legacy QR modal; editing saves and closes.
    */
@@ -59,7 +61,7 @@
   let showPassword = $state(false);
   let removePassword = $state(false);
   let slug = $state('');
-  let allowDownload = $state(true);
+  let allowDownload = $state(false);
   let allowUpload = $state(false);
   let showMetadata = $state(false);
   let preset = $state('never');
@@ -96,7 +98,7 @@
     showPassword = false;
     removePassword = false;
     slug = link?.slug ?? '';
-    allowDownload = link ? link.allowDownload : true;
+    allowDownload = link ? link.allowDownload && link.showMetadata : false;
     allowUpload = link ? link.allowUpload : false;
     showMetadata = link ? link.showMetadata : false;
     preset = link?.expiresAt ? 'custom' : 'never';
@@ -127,6 +129,13 @@
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
+
+  // Originals carry their embedded metadata, so hiding metadata turns downloads off (upstream rule).
+  $effect(() => {
+    if (!showMetadata && allowDownload) {
+      allowDownload = false;
+    }
+  });
 
   const expiresAt = $derived.by(() => {
     if (preset === 'never') {
@@ -343,9 +352,20 @@
         <label class="slf-toggle">
           <span>
             <strong>{$t('frameleaf_sharing.allow_download')}</strong>
-            <small>{$t('frameleaf_sharing.allow_download_description')}</small>
+            <small id="{ids}-download-hint">
+              {showMetadata
+                ? $t('frameleaf_sharing.allow_download_description')
+                : $t('frameleaf_sharing.download_needs_metadata')}
+            </small>
           </span>
-          <input type="checkbox" role="switch" class="slf-switch" bind:checked={allowDownload} />
+          <input
+            type="checkbox"
+            role="switch"
+            class="slf-switch"
+            bind:checked={allowDownload}
+            disabled={!showMetadata}
+            aria-describedby="{ids}-download-hint"
+          />
         </label>
         <label class="slf-toggle">
           <span>
