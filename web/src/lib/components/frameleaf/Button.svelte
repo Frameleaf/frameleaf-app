@@ -60,7 +60,7 @@
     border-color: var(--fl-accent);
   }
   button.primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--fl-accent), white 10%);
+    background: var(--fl-accent-hover);
   }
   button.quiet {
     background: transparent;

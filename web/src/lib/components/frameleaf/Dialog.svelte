@@ -154,6 +154,12 @@
   .dialog-body {
     overflow: auto;
     min-height: 0;
+    /*
+     * Room for the 2px focus ring (outline-offset 1px) of a full-width field, which the
+     * scrolling body would otherwise clip; the negative margin keeps the prototype's edges.
+     */
+    padding: 4px;
+    margin: -4px;
   }
   @media (max-width: 700px) {
     .dialog {
