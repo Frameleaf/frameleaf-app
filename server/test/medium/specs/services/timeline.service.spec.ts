@@ -143,10 +143,31 @@ describe(TimelineService.name, () => {
         localOffsetHours: [],
         ownerId: [],
         projectionType: [],
+        rating: [],
         ratio: [],
         status: [],
         thumbhash: [],
       });
+    });
+
+    it('should return the exif rating for each asset (FL-33)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: rated } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1970-02-13'),
+        localDateTime: new Date('1970-02-13'),
+      });
+      const { asset: unrated } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1970-02-12'),
+        localDateTime: new Date('1970-02-12'),
+      });
+      await ctx.newExif({ assetId: rated.id, rating: 4 });
+      await ctx.newExif({ assetId: unrated.id, make: 'Canon' });
+      const auth = factory.auth({ user: { id: user.id } });
+      const response = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1970-02-01' }));
+      expect(response).toEqual(expect.objectContaining({ id: [rated.id, unrated.id], rating: [4, null] }));
     });
 
     it('should handle 5 digit years', async () => {
@@ -248,6 +269,7 @@ describe(TimelineService.name, () => {
     const rawResponse = await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: '1970-02-01', isTrashed: true });
     const response = JSON.parse(rawResponse);
     expect(response).not.toEqual(expect.objectContaining({ city: expect.any(Array), country: expect.any(Array) }));
+    expect(response).not.toHaveProperty('rating');
   });
 
   describe('Locked media in album timelines (FL-32)', () => {

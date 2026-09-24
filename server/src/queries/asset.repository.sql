@@ -605,6 +605,7 @@ with
         end,
         1
       ) as "ratio",
+      "asset_exif"."rating",
       "asset_exif"."city",
       "asset_exif"."country",
       "stack"
@@ -684,6 +685,7 @@ with
       coalesce(array_agg("thumbhash"), '{}') as "thumbhash",
       coalesce(array_agg("city"), '{}') as "city",
       coalesce(array_agg("country"), '{}') as "country",
+      coalesce(array_agg("rating"), '{}') as "rating",
       coalesce(json_agg("stack"), '[]') as "stack"
     from
       "cte"

@@ -7924,6 +7924,8 @@ export type TimeBucketAssetResponseDto = {
     ownerId: string[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */
     projectionType: (string | null)[];
+    /** Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF */
+    rating?: (number | null)[];
     /** Array of aspect ratios (width/height) for each asset */
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
