@@ -40,6 +40,23 @@ Validation: the web unit suites for `src/lib/frameleaf`, `src/lib/components/fra
 
 Open: `viewport-fit=cover` is not yet set in `app.html`, because the top bar does not pad for the notch yet (Packet 2). Whether pets get the squircle is still an owner decision; they follow the people pattern for now. The global Reduce Motion clamp in `tokens.css` still reduces descendant CSS animations to an instant change; the Dialog (which is its own `.frameleaf` scope) and Menu opt back into a crossfade.
 
+### September 24 settings and Library analytics (Packet 5: FL-71, FL-76, FL-10, FL-79, FL-81)
+
+Packet 5 is on `codex/FL-71-sept24-settings`, based on `master/frameleaf-implementation` @ `6fec45adcd`. No September 23 gap id is closed by it: the Sept 24 settings and dashboard layer postdates the audit. The prototype (`CommandCenter.jsx`, `AnalyticsDashboard.jsx`, `library-insights.mjs`, `command-center.css`, `analytics-dashboard.css`, apple-style.css:565-648 and 1014-1045) was followed; where production disagreed, production changed.
+
+- **Area tiles and directories** (`SettingsHost.svelte`, `SettingsDirectory.svelte`, `settings-areas.ts`): a coloured icon tile per area (`AREA_TILE_COLORS`); each area directory is one inset grouped list per group (`directoryGroup`, the template's `directoryGroups` mapped onto production section keys), rows carry no repeated area icon, and a scope tag ("Just you", "This device", "Whole server") appears only on rows whose scope differs from the rest of the area. Library care lists the repair tools; Utilities uses the same directory. The navigation group labels stay uppercase, as the running template renders them (command-center.css loads after apple-style.css).
+- **One overline** (`SettingsOverline.svelte`) for every Command Center heading: area pages, Utilities, Users, Libraries, the Job manager and Library analytics. A page named like its area shows the area group instead of repeating the name.
+- **Compact settings rows** in the shared `Setting*` components: label and help left, control right (180–280 px), hairline separators, inside a single 820 px column; stacked in narrow containers, dialogs and onboarding.
+- **Library analytics dashboard** (`LibraryHero`, `LibraryInsights`, `analytics.ts`) on the real report and its `insights`. Every breakdown reconciles to `summary.items − insights.hiddenItems`, with a quiet note when items are hidden; catch-all rows come last and never set a bar scale; every panel keeps an accessible exact-count table and the CSV carries the new breakdowns.
+- **Section D administration surfaces** (render workers, workers and ML destinations, restoration models, credentials, deduplication, maintenance, queues): no card around their own grouped containers, no repeated page heading, tabular numbers, token radii, Frameleaf confirmations for clearing a credential and unlinking every OAuth account.
+
+Recorded deviations (privacy and truthfulness; production behaviour kept):
+
+- People and places are only shown to the owner reading their own scope (`insights.peopleAndPlaces` is null otherwise); the section is replaced by an explanation, and record file names read "Name shown only to its owner". Host scope stays administrator-only.
+- The storage donut shows the whole volume as used and free only. Originals, previews and the database are not measured separately, so nothing is subtracted to invent the template's categories.
+- Coverage rings show Dated, Located, Described by AI and Checksummed. "Faces checked" and "Search indexed" are not in the report and are left out rather than estimated.
+- HDR and Dolby Vision appear only when the server has read a video stream (`insights.hdr` not null), with a note when only some videos have been read.
+
 ## 1. Coverage
 
 | Slice                                                                                                           | Prototype modules                                                                                                                                                                                                                                                                                               | Status                               |
