@@ -51,7 +51,21 @@ export type ArchiveOperationSummary = ArchiveOperationRow & {
   conflict: number;
   /** Status of the archive job, when there is one. */
   archiveJobStatus: string | null;
+  /** Status of the undo job, when there is one. */
+  undoJobStatus: string | null;
 };
+
+/** Which job of an operation: the archive, or its undo. */
+export type ArchiveJobKind = 'archive' | 'undo';
+
+/** Who is reading a summary: counts leave out what this session may not see (FL-34). */
+export type ArchiveOperationReader = { elevated: boolean };
+
+/** Job statuses that are not finished; a paused job is waiting, not over. */
+const LIVE_JOB_STATUSES = ['queued', 'preparing', 'rendering', 'validating', 'cancelling', 'paused'];
+
+/** Job statuses after which the job will never touch its items again. */
+export const ENDED_UNFINISHED_JOB_STATUSES: readonly string[] = ['cancelled', 'failed'];
 
 /** What one item of a batch answered, for the bulk worker to report. */
 export type ArchiveItemAnswer =
@@ -94,7 +108,12 @@ export const archiveAnswerOutcome = (answer: ArchiveItemAnswer): { status: 'ok' 
  *   the item rows and assets locked, and records each item's previous visibility and the
  *   `updateId` the archive published.
  * - **Undo never overwrites newer work.** An item is restored only while it is still archived with
- *   the `updateId` this operation published; anything else is a conflict and is left alone. An item
+ *   the `updateId` this operation published; anything else is a conflict and is left alone.
+ *   `asset.updateId` is rewritten by the asset table's update trigger on every change to the row —
+ *   a favourite, a rating, a date or location edit, a lock record's follow-up, another archive or
+ *   unarchive — so any change after the archive, however unrelated it looks, makes the item a
+ *   conflict. That is deliberate: the undo cannot tell a harmless edit from one that depends on the
+ *   item being archived, so it only reverts rows that are exactly as the archive left them. An item
  *   the archive has not reached yet is marked skipped under the same lock, so a cancelled archive
  *   that is still finishing its last batch can never archive it after the undo.
  * - **No writes during a database handoff** or while the fork schema is inactive, the same guard
@@ -149,9 +168,15 @@ export class ArchiveOperationRepository {
       `.execute(tx);
 
       if (rows[0]) {
+        // Items that are not the owner's own, or are gone or trashed, are frozen as skipped: the job
+        // never reaches them, and the counts say so without naming anything.
         await sql`
-          INSERT INTO immich_fork.archive_operation_item ("operationId", "assetId", ordinal)
-          SELECT ${rows[0].id}::uuid, item.id, item.ordinal::int
+          INSERT INTO immich_fork.archive_operation_item ("operationId", "assetId", ordinal, status)
+          SELECT ${rows[0].id}::uuid, item.id, item.ordinal::int,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM asset WHERE asset.id = item.id AND asset."ownerId" = ${auth.user.id}::uuid
+                AND asset."deletedAt" IS NULL
+            ) THEN 'pending' ELSE 'skipped' END
           FROM unnest(${ids}::uuid[]) WITH ORDINALITY AS item(id, ordinal)
         `.execute(tx);
         return rows[0].id;
@@ -328,7 +353,10 @@ export class ArchiveOperationRepository {
     return this.db.transaction().execute(async (tx) => {
       await this.lockWrites(tx);
       const operation = await this.lockOwned(tx, ownerId, operationId);
-      if (!operation || (operation.archiveJobId !== jobId && operation.undoJobId !== jobId)) {
+      if (
+        !operation ||
+        !((await this.ownsJob(tx, operation, 'archive', jobId)) || (await this.ownsJob(tx, operation, 'undo', jobId)))
+      ) {
         return 0;
       }
       const { rows } = await sql`
@@ -379,68 +407,156 @@ export class ArchiveOperationRepository {
     });
   }
 
-  /** Summaries, newest first. No asset identity leaves this method; counts share one snapshot. */
-  async list(ownerId: string, id?: string): Promise<ArchiveOperationSummary[]> {
+  /**
+   * Summaries, newest first. No asset identity leaves this method; counts share one snapshot.
+   *
+   * - The newest operations are chosen first and only they are aggregated.
+   * - Without the PIN, items whose asset is Locked now are left out of every count (FL-34), so a
+   *   selection prepared in an unlocked session never tells a locked one how many Locked items exist.
+   * - An item still `pending` after its job has ended — cancelled, failed or done without reaching
+   *   it — can never be reached any more, and counts as skipped. It is stored as `pending` so a retry
+   *   of that job (which takes over the link, `relinkJob`) can still reach it.
+   */
+  async list(ownerId: string, reader: ArchiveOperationReader, id?: string): Promise<ArchiveOperationSummary[]> {
     const { rows } = await sql<ArchiveOperationSummary>`
-      SELECT o.*,
-        count(i."assetId")::int AS count,
-        count(*) FILTER (WHERE i.status = 'pending')::int AS pending,
-        count(*) FILTER (WHERE i.status = 'archived')::int AS archived,
-        count(*) FILTER (WHERE i.status = 'skipped')::int AS skipped,
-        count(*) FILTER (WHERE i.status = 'undone')::int AS undone,
-        count(*) FILTER (WHERE i.status = 'conflict')::int AS conflict,
-        (SELECT job.status FROM media_operation job WHERE job.id = o."archiveJobId") AS "archiveJobStatus"
-      FROM immich_fork.archive_operation o
-      LEFT JOIN immich_fork.archive_operation_item i ON i."operationId" = o.id
-      WHERE o."ownerId" = ${ownerId}::uuid AND (${id ?? null}::uuid IS NULL OR o.id = ${id ?? null}::uuid)
-      GROUP BY o.id
-      ORDER BY o."createdAt" DESC
-      LIMIT ${ARCHIVE_OPERATION_LIST_LIMIT}
+      WITH recent AS (
+        SELECT op.*,
+          archive_job.status AS "archiveJobStatus",
+          undo_job.status AS "undoJobStatus",
+          (op.prepared OR op."archiveJobId" IS NULL
+            OR COALESCE(archive_job.status = ANY(${LIVE_JOB_STATUSES}::text[]), false)
+            OR COALESCE(undo_job.status = ANY(${LIVE_JOB_STATUSES}::text[]), false)) AS live
+        FROM immich_fork.archive_operation op
+        LEFT JOIN media_operation archive_job ON archive_job.id = op."archiveJobId"
+        LEFT JOIN media_operation undo_job ON undo_job.id = op."undoJobId"
+        WHERE op."ownerId" = ${ownerId}::uuid AND (${id ?? null}::uuid IS NULL OR op.id = ${id ?? null}::uuid)
+        ORDER BY op."createdAt" DESC
+        LIMIT ${ARCHIVE_OPERATION_LIST_LIMIT}
+      ), items AS (
+        SELECT item."operationId", item.status
+        FROM recent
+        JOIN immich_fork.archive_operation_item item ON item."operationId" = recent.id
+        LEFT JOIN asset ON asset.id = item."assetId"
+        WHERE ${reader.elevated} OR asset.id IS NULL OR NOT ${isLocked('asset')}
+      )
+      SELECT recent.id, recent."ownerId", recent."sessionId", recent."requestKey", recent.scope, recent.descriptor,
+        recent.prepared, recent."preparedElevated", recent."expiresAt", recent."archiveJobId", recent."undoJobId",
+        recent."createdAt", recent."archiveJobStatus", recent."undoJobStatus",
+        count(items.status)::int AS count,
+        count(*) FILTER (WHERE items.status = 'pending' AND recent.live)::int AS pending,
+        count(*) FILTER (WHERE items.status = 'archived')::int AS archived,
+        count(*) FILTER (WHERE items.status = 'skipped' OR (items.status = 'pending' AND NOT recent.live))::int
+          AS skipped,
+        count(*) FILTER (WHERE items.status = 'undone')::int AS undone,
+        count(*) FILTER (WHERE items.status = 'conflict')::int AS conflict
+      FROM recent
+      LEFT JOIN items ON items."operationId" = recent.id
+      GROUP BY recent.id, recent."ownerId", recent."sessionId", recent."requestKey", recent.scope, recent.descriptor,
+        recent.prepared, recent."preparedElevated", recent."expiresAt", recent."archiveJobId", recent."undoJobId",
+        recent."createdAt", recent."archiveJobStatus", recent."undoJobStatus"
+      ORDER BY recent."createdAt" DESC
     `.execute(this.db);
     return rows;
   }
 
-  async get(ownerId: string, id: string): Promise<ArchiveOperationSummary | undefined> {
-    const [operation] = await this.list(ownerId, id);
+  async get(ownerId: string, reader: ArchiveOperationReader, id: string): Promise<ArchiveOperationSummary | undefined> {
+    const [operation] = await this.list(ownerId, reader, id);
     return operation;
   }
 
-  /** Record the archive job; a second link to a different job is refused. */
-  async linkArchiveJob(id: string, jobId: string): Promise<boolean> {
-    const { rows } = await sql`
-      UPDATE immich_fork.archive_operation SET "archiveJobId" = ${jobId}::uuid
-      WHERE id = ${id}::uuid AND NOT prepared AND ("archiveJobId" IS NULL OR "archiveJobId" = ${jobId}::uuid)
-      RETURNING id
-    `.execute(this.db);
-    return rows.length > 0;
+  /**
+   * Start one of an operation's jobs, once, even when the same request arrives twice at the same
+   * moment: the operation row stays locked while `start` creates the job and until it is linked, so
+   * a second request waits and then finds the link. `start` answers with the new job's id, or null
+   * when there is nothing to start (it sees the row as it is under the lock).
+   */
+  async startJob(
+    ownerId: string,
+    id: string,
+    kind: ArchiveJobKind,
+    start: (operation: ArchiveOperationRow & { jobStatus: string | null }) => Promise<string | null>,
+  ): Promise<string | null> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockWrites(tx);
+      const operation = await this.lockOwned(tx, ownerId, id);
+      if (!operation) {
+        throw new NotFoundException();
+      }
+      const linked = kind === 'archive' ? operation.archiveJobId : operation.undoJobId;
+      const { rows } = await sql<{ status: string }>`
+        SELECT status FROM media_operation WHERE id = ${linked}::uuid
+      `.execute(tx);
+      const jobId = await start({ ...operation, jobStatus: rows[0]?.status ?? null });
+      if (jobId) {
+        await (
+          kind === 'archive'
+            ? sql`UPDATE immich_fork.archive_operation SET "archiveJobId" = ${jobId}::uuid WHERE id = ${id}::uuid`
+            : sql`UPDATE immich_fork.archive_operation SET "undoJobId" = ${jobId}::uuid WHERE id = ${id}::uuid`
+        ).execute(tx);
+      }
+      return jobId;
+    });
   }
 
-  /** Record the undo job; only the first undo is ever linked. */
-  async linkUndoJob(id: string, jobId: string): Promise<boolean> {
+  /** A retry of one of the operation's jobs (Activity) takes over that job's link. */
+  async relinkJob(id: string, fromJobId: string, toJobId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockWrites(tx);
+      await sql`
+        UPDATE immich_fork.archive_operation SET
+          "archiveJobId" = CASE WHEN "archiveJobId" = ${fromJobId}::uuid THEN ${toJobId}::uuid ELSE "archiveJobId" END,
+          "undoJobId" = CASE WHEN "undoJobId" = ${fromJobId}::uuid THEN ${toJobId}::uuid ELSE "undoJobId" END
+        WHERE id = ${id}::uuid AND ${fromJobId}::uuid IN ("archiveJobId", "undoJobId")
+      `.execute(tx);
+    });
+  }
+
+  /**
+   * Whether `jobId` is the operation's linked job of this kind, or a retry (at any depth) of it —
+   * a retry may be claimed by a worker before `relinkJob` has run. A retry found this way takes over
+   * the link, so the job it replaced can never publish again.
+   */
+  private async ownsJob(tx: Transaction<DB>, operation: ArchiveOperationRow, kind: ArchiveJobKind, jobId: string) {
+    const linked = kind === 'archive' ? operation.archiveJobId : operation.undoJobId;
+    if (!linked) {
+      return false;
+    }
+    if (linked === jobId) {
+      return true;
+    }
     const { rows } = await sql`
-      UPDATE immich_fork.archive_operation SET "undoJobId" = ${jobId}::uuid
-      WHERE id = ${id}::uuid AND ("undoJobId" IS NULL OR "undoJobId" = ${jobId}::uuid)
-      RETURNING id
-    `.execute(this.db);
-    return rows.length > 0;
+      WITH RECURSIVE chain(id, "retryOfId", depth) AS (
+        SELECT id, "retryOfId", 0 FROM media_operation WHERE id = ${jobId}::uuid AND "ownerId" = ${operation.ownerId}::uuid
+        UNION ALL
+        SELECT job.id, job."retryOfId", chain.depth + 1
+        FROM media_operation job JOIN chain ON job.id = chain."retryOfId"
+        WHERE chain.depth < 32
+      )
+      SELECT 1 FROM chain WHERE id = ${linked}::uuid LIMIT 1
+    `.execute(tx);
+    if (rows.length === 0) {
+      return false;
+    }
+    await (
+      kind === 'archive'
+        ? sql`UPDATE immich_fork.archive_operation SET "archiveJobId" = ${jobId}::uuid WHERE id = ${operation.id}::uuid`
+        : sql`UPDATE immich_fork.archive_operation SET "undoJobId" = ${jobId}::uuid WHERE id = ${operation.id}::uuid`
+    ).execute(tx);
+    operation[kind === 'archive' ? 'archiveJobId' : 'undoJobId'] = jobId;
+    return true;
   }
 
   /**
    * One archive batch of the bulk job, in one transaction. The job must be the operation's own
-   * (claimed here if the link was not written yet). Returns what each id answered.
+   * (`ownsJob`: linked when it was started, or a retry of that job). Returns what each id answered.
    */
   async publish(ownerId: string, operationId: string, jobId: string, ids: string[]) {
     return this.db.transaction().execute(async (tx) => {
       await this.lockWrites(tx);
       const answers = new Map<string, ArchiveItemAnswer>(ids.map((id) => [id, 'missing']));
       const operation = await this.lockOwned(tx, ownerId, operationId);
-      if (!operation || operation.prepared || (operation.archiveJobId && operation.archiveJobId !== jobId)) {
+      if (!operation || operation.prepared || !(await this.ownsJob(tx, operation, 'archive', jobId))) {
         return answers;
-      }
-      if (!operation.archiveJobId) {
-        await sql`UPDATE immich_fork.archive_operation SET "archiveJobId" = ${jobId}::uuid WHERE id = ${operationId}::uuid`.execute(
-          tx,
-        );
       }
 
       const items = await this.lockItems(tx, operationId, ids);
@@ -501,13 +617,8 @@ export class ArchiveOperationRepository {
       await this.lockWrites(tx);
       const answers = new Map<string, ArchiveItemAnswer>(ids.map((id) => [id, 'missing']));
       const operation = await this.lockOwned(tx, ownerId, operationId);
-      if (!operation || (operation.undoJobId && operation.undoJobId !== jobId)) {
+      if (!operation || !(await this.ownsJob(tx, operation, 'undo', jobId))) {
         return answers;
-      }
-      if (!operation.undoJobId) {
-        await sql`UPDATE immich_fork.archive_operation SET "undoJobId" = ${jobId}::uuid WHERE id = ${operationId}::uuid`.execute(
-          tx,
-        );
       }
 
       const items = await this.lockItems(tx, operationId, ids);
