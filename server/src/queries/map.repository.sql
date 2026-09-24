@@ -7,7 +7,17 @@ select
   "asset_exif"."longitude" as "lon",
   "asset_exif"."city",
   "asset_exif"."state",
-  "asset_exif"."country"
+  "asset_exif"."country",
+  "asset"."originalFileName",
+  "asset"."type",
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "fileCreatedAt",
+  to_char(
+    "asset"."localDateTime" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "localDateTime"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -29,7 +39,7 @@ where
     )
   )
 order by
-  "fileCreatedAt" desc
+  "asset"."fileCreatedAt" desc
 
 -- MapRepository.getMapMarkers
 select
@@ -38,7 +48,17 @@ select
   "asset_exif"."longitude" as "lon",
   "asset_exif"."city",
   "asset_exif"."state",
-  "asset_exif"."country"
+  "asset_exif"."country",
+  "asset"."originalFileName",
+  "asset"."type",
+  to_char(
+    "asset"."fileCreatedAt" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "fileCreatedAt",
+  to_char(
+    "asset"."localDateTime" at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+  ) as "localDateTime"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -69,4 +89,4 @@ where
     )
   )
 order by
-  "fileCreatedAt" desc
+  "asset"."fileCreatedAt" desc

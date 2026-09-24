@@ -493,6 +493,26 @@ describe('/search', () => {
     });
   });
 
+  describe('GET /search/cities/counts', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app).get('/search/cities/counts');
+      expect(status).toBe(401);
+    });
+
+    it('should count the media in every city listed by GET /search/cities', async () => {
+      const [cities, counts] = await Promise.all([
+        request(app).get('/search/cities').set('Authorization', `Bearer ${admin.accessToken}`),
+        request(app).get('/search/cities/counts').set('Authorization', `Bearer ${admin.accessToken}`),
+      ]);
+
+      expect(counts.status).toBe(200);
+      const countByCity = new Map(counts.body.map(({ city, count }: { city: string; count: number }) => [city, count]));
+      for (const asset of cities.body) {
+        expect(countByCity.get(asset.exifInfo.city)).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
+
   describe('GET /search/suggestions', () => {
     it('should get suggestions for country (including null)', async () => {
       const { status, body } = await request(app)

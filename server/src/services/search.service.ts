@@ -12,6 +12,7 @@ import {
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
+  SearchCityCountResponseDto,
   SearchFilter,
   SearchPeopleDto,
   SearchPlacesDto,
@@ -280,6 +281,13 @@ export class SearchService extends BaseService {
     const userIds = await this.getUserIdsToSearch(auth, undefined, true);
     const assets = await this.searchRepository.getAssetsByCity(userIds, getHiddenContentQueryOptions(auth));
     return assets.map((asset) => mapAsset(asset));
+  }
+
+  async getCityAssetCounts(auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
+    // same owners as getAssetsByCity: partners who hide their locations contribute nothing
+    const userIds = await this.getUserIdsToSearch(auth, undefined, true);
+    const rows = await this.searchRepository.getCityAssetCounts(userIds, getHiddenContentQueryOptions(auth));
+    return rows.map(({ city, count }) => ({ city, count: Number(count) }));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {

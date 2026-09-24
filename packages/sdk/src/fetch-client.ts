@@ -1751,14 +1751,21 @@ export type MapMarkerResponseDto = {
     city: string | null;
     /** Country name */
     country: string | null;
+    /** UTC timestamp when the asset was captured */
+    fileCreatedAt?: string;
     /** Asset ID */
     id: string;
     /** Latitude */
     lat: number;
+    /** Capture date and time in the local time zone where it was taken, encoded as UTC */
+    localDateTime?: string;
     /** Longitude */
     lon: number;
+    /** Original file name */
+    originalFileName?: string;
     /** State/Province name */
     state: string | null;
+    "type"?: AssetTypeEnum;
 };
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
@@ -6201,6 +6208,12 @@ export type AskSearchResponseDto = {
     results: SearchResponseDto;
     /** Unsupported or ambiguous parts of the query */
     warnings: string[];
+};
+export type SearchCityCountResponseDto = {
+    /** City name, as grouped by GET /search/cities */
+    city: string;
+    /** Number of timeline photos and videos in this city */
+    count: number;
 };
 export type SearchExploreItem = {
     data: AssetResponseDto;
@@ -14299,6 +14312,17 @@ export function getAssetsByCity(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: AssetResponseDto[];
     }>("/search/cities", {
+        ...opts
+    }));
+}
+/**
+ * Retrieve asset counts by city
+ */
+export function getCityAssetCounts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchCityCountResponseDto[];
+    }>("/search/cities/counts", {
         ...opts
     }));
 }

@@ -119,6 +119,13 @@ const PlacesResponseSchema = z
   })
   .meta({ id: 'PlacesResponseDto' });
 
+const SearchCityCountResponseSchema = z
+  .object({
+    city: z.string().describe('City name, as grouped by GET /search/cities'),
+    count: z.int().min(1).describe('Number of timeline photos and videos in this city'),
+  })
+  .meta({ id: 'SearchCityCountResponseDto' });
+
 export enum SearchSuggestionType {
   COUNTRY = 'country',
   STATE = 'state',
@@ -426,6 +433,7 @@ export class SmartSearchDto extends createZodDto(SmartSearchSchema) {}
 export class SearchPlacesDto extends createZodDto(SearchPlacesSchema) {}
 export class SearchPeopleDto extends createZodDto(SearchPeopleSchema) {}
 export class PlacesResponseDto extends createZodDto(PlacesResponseSchema) {}
+export class SearchCityCountResponseDto extends createZodDto(SearchCityCountResponseSchema) {}
 export class SearchSuggestionRequestDto extends createZodDto(SearchSuggestionRequestSchema) {}
 
 export function mapPlaces(place: Place): PlacesResponseDto {

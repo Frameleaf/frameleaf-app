@@ -23292,6 +23292,50 @@
         "x-immich-state": "Stable"
       }
     },
+    "/search/cities/counts": {
+      "get": {
+        "description": "Retrieve how many timeline photos and videos the user can see in each city listed by GET /search/cities. Locked, hidden and trashed media are never counted.",
+        "operationId": "getCityAssetCounts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SearchCityCountResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve asset counts by city",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/search/explore": {
       "get": {
         "description": "Retrieve data for the explore section, such as popular people and places.",
@@ -49079,6 +49123,11 @@
             "nullable": true,
             "type": "string"
           },
+          "fileCreatedAt": {
+            "description": "UTC timestamp when the asset was captured",
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "description": "Asset ID",
             "format": "uuid",
@@ -49090,15 +49139,27 @@
             "format": "double",
             "type": "number"
           },
+          "localDateTime": {
+            "description": "Capture date and time in the local time zone where it was taken, encoded as UTC",
+            "format": "date-time",
+            "type": "string"
+          },
           "lon": {
             "description": "Longitude",
             "format": "double",
             "type": "number"
           },
+          "originalFileName": {
+            "description": "Original file name",
+            "type": "string"
+          },
           "state": {
             "description": "State/Province name",
             "nullable": true,
             "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
           }
         },
         "required": [
@@ -59433,6 +59494,25 @@
           "nextCursor",
           "nextPage",
           "total"
+        ],
+        "type": "object"
+      },
+      "SearchCityCountResponseDto": {
+        "properties": {
+          "city": {
+            "description": "City name, as grouped by GET /search/cities",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of timeline photos and videos in this city",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "city",
+          "count"
         ],
         "type": "object"
       },
