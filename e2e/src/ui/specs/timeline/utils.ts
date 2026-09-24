@@ -282,8 +282,9 @@ export const selectionBarUtils = {
     return selectionBarUtils.locator(page).getByRole('button', { name, exact: true });
   },
   async menuAction(page: Page, name: string) {
-    await selectionBarUtils.action(page, 'More').click();
-    await page.getByRole('menu', { name: 'More' }).getByRole('menuitem', { name, exact: true }).click();
+    // SelectionBar.jsx: the overflow button and its menu are both named "More actions".
+    await selectionBarUtils.action(page, 'More actions').click();
+    await page.getByRole('menu', { name: 'More actions' }).getByRole('menuitem', { name, exact: true }).click();
   },
 };
 

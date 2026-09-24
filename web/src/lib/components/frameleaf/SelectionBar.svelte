@@ -413,7 +413,7 @@
               class="menu"
               role="menu"
               tabindex="-1"
-              aria-label={$t('more')}
+              aria-label={$t('frameleaf_selection_more_actions')}
               onkeydown={menuKeydown}
             >
               {#each menuGroups as group (group.id)}

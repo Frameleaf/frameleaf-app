@@ -177,6 +177,22 @@ describe('LibraryView', () => {
       expect(screen.getByTestId('selection-leading-compare')).toBeDisabled();
     });
 
+    it('keeps the private library actions and the status bar off a public shared-link page', async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        publicView: true,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.dispatch({ type: 'selection', ids: ['a', 'b'] });
+      await tick();
+
+      expect(screen.queryByTestId('selection-leading-compare')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('selection-leading-studio')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
     it('draws no status bar for a picking step', async () => {
       render(LibraryView, {
         options: { albumId: 'album-1' },
