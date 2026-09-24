@@ -16,6 +16,7 @@ import {
   QueueJobResponseDto,
   QueueJobSearchDto,
   QueueResponseDto,
+  QueueRetryFailedResponseDto,
   QueueUpdateDto,
 } from 'src/dtos/queue.dto.js';
 import {
@@ -24,12 +25,52 @@ import {
   DatabaseLock,
   ImmichWorker,
   JobName,
+  MlDestinationKind,
+  MlWorkload,
   QueueCleanType,
   QueueCommand,
+  QueueJobStatus,
+  QueueJobWorkerKind,
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
+
+/** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
+const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
+  [QueueName.FaceDetection]: MlWorkload.Face,
+  [QueueName.SmartSearch]: MlWorkload.Clip,
+  [QueueName.Ocr]: MlWorkload.Ocr,
+  [QueueName.ImageEnrichment]: MlWorkload.Enrichment,
+  [QueueName.ImageDescription]: MlWorkload.Enrichment,
+  [QueueName.NsfwDetection]: MlWorkload.Enrichment,
+};
+
+/** Statuses whose job has been claimed by a worker, so its accounting names where it ran. */
+const RAN_STATUSES = new Set<QueueJobStatus>([QueueJobStatus.Active, QueueJobStatus.Complete, QueueJobStatus.Failed]);
+
+const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+const workerKindOf = (kind: MlDestinationKind): QueueJobWorkerKind => {
+  switch (kind) {
+    case MlDestinationKind.Local: {
+      return QueueJobWorkerKind.Local;
+    }
+    case MlDestinationKind.Lan: {
+      return QueueJobWorkerKind.Lan;
+    }
+    default: {
+      return QueueJobWorkerKind.RunPod;
+    }
+  }
+};
+
+/** The ids a job's data names, in the order the owner lookup prefers them. */
+const subjectIdsOf = (data: Record<string, unknown> | undefined): string[] =>
+  ['id', 'assetId', 'personId', 'libraryId', 'ownerId', 'userId'].flatMap((key) => {
+    const value = data?.[key];
+    return typeof value === 'string' && UUID_PATTERN.test(value) ? [value.toLowerCase()] : [];
+  });
 
 const asNightlyTasksCron = (config: SystemConfig) => {
   const [hours, minutes] = config.nightlyTasks.startTime.split(':').map(Number);
@@ -165,8 +206,71 @@ export class QueueService extends BaseService {
     return this.getByName(name);
   }
 
-  searchJobs(auth: AuthDto, name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
-    return this.jobRepository.searchJobs(name, dto);
+  /**
+   * The jobs of one queue, with the Job manager's Account and Worker columns (FL-71,
+   * `JobsManager.jsx` 758-796). The account is the owner of the asset, person, library or account
+   * the job's data names. The worker is the server itself for queues that do not call machine
+   * learning; for those that do, a job that has run names the destination its latest accounted
+   * request went to, and any other job the destination its workload is routed to now.
+   */
+  async searchJobs(auth: AuthDto, name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
+    const jobs = await this.jobRepository.searchJobs(name, dto);
+    if (jobs.length === 0) {
+      return [];
+    }
+
+    const subjects = jobs.map((job) => subjectIdsOf(job.data));
+    const ids = [...new Set(subjects.flat())];
+    const owners = new Map((await this.userRepository.getJobSubjectOwners(ids)).map((row) => [row.subjectId, row]));
+
+    const workload = QUEUE_ML_WORKLOADS[name];
+    let routed: QueueJobResponseDto['worker'] = { kind: QueueJobWorkerKind.Server, name: null };
+    const ran = new Map<string, QueueJobResponseDto['worker']>();
+    if (workload) {
+      const route = await this.mlDestinationRepository.getRoute(workload);
+      const destination = route ? await this.mlDestinationRepository.getById(route.destinationId) : undefined;
+      routed = destination
+        ? { kind: workerKindOf(destination.kind), name: destination.name }
+        : { kind: QueueJobWorkerKind.Server, name: null };
+
+      const claimed = jobs.filter((job, index) => RAN_STATUSES.has(job.status) && subjects[index].length > 0);
+      const accounted =
+        claimed.length === 0
+          ? []
+          : await this.mlDestinationRepository.getLatestJobDestinations(
+              [...new Set(claimed.map((job) => subjectIdsOf(job.data)[0]))],
+              [...new Set(claimed.map((job) => job.name))],
+            );
+      for (const row of accounted) {
+        ran.set(`${row.jobName}:${row.jobId.toLowerCase()}`, {
+          kind: workerKindOf(row.destinationKind),
+          name: row.destinationName,
+        });
+      }
+    }
+
+    return jobs.map(({ status, ...job }, index) => {
+      const owner = subjects[index].map((id) => owners.get(id)).find(Boolean);
+      const subject = subjects[index][0];
+      const worker = (RAN_STATUSES.has(status) && subject && ran.get(`${job.name}:${subject}`)) || routed;
+      return {
+        ...job,
+        ...(owner && { account: { id: owner.ownerId, name: owner.ownerName } }),
+        worker,
+      };
+    });
+  }
+
+  /**
+   * FL-71 "Retry failed" (`jobs-data.mjs` 906-919): put every failed job of the queue back in it
+   * with its saved data. Returns how many were failed when the command ran.
+   */
+  async retryFailedJobs(auth: AuthDto, name: QueueName): Promise<QueueRetryFailedResponseDto> {
+    const { failed } = await this.jobRepository.getJobCounts(name);
+    if (failed > 0) {
+      await this.jobRepository.retryFailed(name);
+    }
+    return { count: failed };
   }
 
   async emptyQueue(auth: AuthDto, name: QueueName, dto: QueueDeleteDto) {

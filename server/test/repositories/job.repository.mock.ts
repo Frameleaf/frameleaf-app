@@ -23,6 +23,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     hasDedupJob: vitest.fn(),
     getRollingAvgMs: vitest.fn().mockReturnValue(null),
     clear: vitest.fn(),
+    retryFailed: vitest.fn(),
     waitForQueueCompletion: vitest.fn(),
     removeJob: vitest.fn(),
   };

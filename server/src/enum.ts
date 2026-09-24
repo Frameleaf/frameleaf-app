@@ -476,6 +476,8 @@ export enum SystemMetadataKey {
    * their values before and after; credentials only as replaced or cleared, never a value).
    */
   SystemConfigHistory = 'system-config-history',
+  /** FL-81 (CC-21): when each integrity check last ran in full, for "Last run …" in Maintenance. */
+  IntegrityCheckRuns = 'integrity-check-runs',
 }
 
 export enum UserMetadataKey {
@@ -1865,6 +1867,22 @@ export enum QueueJobStatus {
 }
 
 export const QueueJobStatusSchema = z.enum(QueueJobStatus).describe('Queue job status').meta({ id: 'QueueJobStatus' });
+
+/**
+ * FL-71: where a queue job runs, for the Job manager's Worker column: the server itself, or the
+ * machine-learning destination (local container, a LAN machine or RunPod) its workload is routed to.
+ */
+export enum QueueJobWorkerKind {
+  Server = 'server',
+  Local = 'local',
+  Lan = 'lan',
+  RunPod = 'runpod',
+}
+
+export const QueueJobWorkerKindSchema = z
+  .enum(QueueJobWorkerKind)
+  .describe('Where a queue job runs')
+  .meta({ id: 'QueueJobWorkerKind' });
 
 export enum JobName {
   ICloudSync = 'ICloudSync',

@@ -17,6 +17,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
@@ -139,6 +140,23 @@ export class IntegrityService extends BaseService {
 
   getIntegrityReportSummary(): Promise<IntegrityReportSummaryResponseDto> {
     return this.integrityRepository.getIntegrityReportSummary();
+  }
+
+  /** FL-81 (CC-21): when each check last ran in full, for "Last run …" in Maintenance. */
+  async getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
+    const runs = (await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns)) ?? {};
+    return {
+      [IntegrityReport.ChecksumFail]: runs[IntegrityReport.ChecksumFail]?.lastRunAt ?? null,
+      [IntegrityReport.MissingFile]: runs[IntegrityReport.MissingFile]?.lastRunAt ?? null,
+      [IntegrityReport.UntrackedFile]: runs[IntegrityReport.UntrackedFile]?.lastRunAt ?? null,
+    };
+  }
+
+  /** A full (not refresh-only) run of `type` finished its pass: record it for "Last run …". */
+  private recordCheckRun(type: IntegrityReport) {
+    return this.systemMetadataRepository.merge(SystemMetadataKey.IntegrityCheckRuns, {
+      [type]: { lastRunAt: new Date().toISOString() },
+    });
   }
 
   getIntegrityReport(dto: IntegrityGetReportDto): Promise<IntegrityReportResponseDto> {
@@ -269,6 +287,7 @@ export class IntegrityService extends BaseService {
       this.logger.log(`Queued untracked check of ${count} file(s) (${total} so far)`);
     }
 
+    await this.recordCheckRun(IntegrityReport.UntrackedFile);
     return JobStatus.Success;
   }
 
@@ -409,6 +428,7 @@ export class IntegrityService extends BaseService {
       this.logger.log(`Queued missing check of ${batchPaths.length} file(s) (${total} so far)`);
     }
 
+    await this.recordCheckRun(IntegrityReport.MissingFile);
     return JobStatus.Success;
   }
 
@@ -656,6 +676,7 @@ export class IntegrityService extends BaseService {
       this.logger.log(`Finished checksum job, covered all assets.`);
     }
 
+    await this.recordCheckRun(IntegrityReport.ChecksumFail);
     return JobStatus.Success;
   }
 

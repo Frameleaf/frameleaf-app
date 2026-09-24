@@ -4,6 +4,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
@@ -33,6 +34,17 @@ export class IntegrityAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   getIntegrityReportSummary(): Promise<IntegrityReportSummaryResponseDto> {
     return this.service.getIntegrityReportSummary();
+  }
+
+  @Get('runs')
+  @Endpoint({
+    summary: 'Get integrity check runs',
+    description: 'Get when each integrity check last ran in full',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
+    return this.service.getIntegrityCheckRuns();
   }
 
   @Get('report')
