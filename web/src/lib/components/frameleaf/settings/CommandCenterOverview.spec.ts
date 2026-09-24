@@ -1,8 +1,10 @@
+import type { AnalyticsVolumeBreakdownDto } from '@immich/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { formatBytes } from '$lib/frameleaf/physical-dedup';
 import en from '../../../../../../i18n/en.json';
 import CommandCenterOverview from './CommandCenterOverview.svelte';
 
@@ -70,7 +72,36 @@ describe('Command Center measured Overview', () => {
     expect(screen.getByText('GPU Studio')).toBeInTheDocument();
     expect(screen.getByText('1 thing needs attention')).toBeInTheDocument();
     expect(screen.getAllByText(en.frameleaf_cc_unmeasured).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(en.frameleaf_cc_storage_unmeasured)).toBeInTheDocument();
+    // an account or library report has no volume breakdown: the parts stay unmeasured here
+    expect(screen.getByText(en.frameleaf_cc_storage_whole_server)).toBeInTheDocument();
+  });
+  const breakdown: AnalyticsVolumeBreakdownDto = {
+    originalsBytes: 300 * 1024 ** 2,
+    previewsBytes: 100 * 1024 ** 2,
+    encodedVideoBytes: 50 * 1024 ** 2,
+    generatedObservedAt: '2026-09-19T00:05:00.000Z',
+    databaseBytes: 30 * 1024 ** 2,
+    otherBytes: 120 * 1024 ** 2,
+    exceedsUsed: false,
+  };
+  const withBreakdown = (parts: Partial<AnalyticsVolumeBreakdownDto>) => {
+    const base = analyticsReportFixture();
+    return analyticsReportFixture({ host: { ...base.host, breakdown: { ...breakdown, ...parts } } });
+  };
+  const storageRow = (label: string) => screen.getByText(label).closest('div')!.querySelector('dd')!.textContent;
+  it("reads thumbnails & proxies and database & other from the whole server's measured breakdown (FL-79)", async () => {
+    sdk.getAnalyticsReport.mockResolvedValue(withBreakdown({}));
+    render(CommandCenterOverview);
+    await screen.findByText(en.frameleaf_cc_storage_note);
+    expect(storageRow(en.frameleaf_cc_derivatives)).toBe(formatBytes(150 * 1024 ** 2));
+    expect(storageRow(en.frameleaf_cc_other)).toBe(formatBytes(150 * 1024 ** 2));
+  });
+  it('shows both as not yet measured before the first nightly reading', async () => {
+    sdk.getAnalyticsReport.mockResolvedValue(withBreakdown({ previewsBytes: null, encodedVideoBytes: null }));
+    render(CommandCenterOverview);
+    await screen.findByText(en.frameleaf_cc_storage_pending);
+    expect(storageRow(en.frameleaf_cc_derivatives)).toBe(en.frameleaf_cc_not_yet_measured);
+    expect(storageRow(en.frameleaf_cc_other)).toBe(en.frameleaf_cc_not_yet_measured);
   });
   it('never turns failed subsystem requests into zero usage or no backups', async () => {
     sdk.getStorage.mockRejectedValue(new Error('unavailable'));
