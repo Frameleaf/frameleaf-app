@@ -572,7 +572,7 @@ with
         date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "timeBucket",
         "asset"."id",
         "asset"."ownerId",
-        "asset"."localDateTime"
+        asset."localDateTime" as "sortDate"
       from
         "asset"
       where
@@ -594,14 +594,14 @@ with
     select
       a.id,
       a."timeBucket",
-      a."localDateTime",
+      a."sortDate",
       row_number() over (
         partition by
           a."timeBucket"
         order by
           s.score desc nulls last,
           nullif(greatest(e.rating, 0), 0) desc nulls last,
-          a."localDateTime" desc,
+          a."sortDate" desc,
           a.id asc
       ) as rank
     from
@@ -659,7 +659,7 @@ select
   array_agg(
     r.id::text
     order by
-      r."localDateTime" desc,
+      r."sortDate" desc,
       r.id
   ) filter (
     where
