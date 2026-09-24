@@ -1,7 +1,12 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { HistoryBuilder } from 'src/decorators.js';
 import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
-import { type FrameleafUserPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
+import {
+  type FrameleafUserPreferences,
+  getPreferencesRevision,
+  withoutLockedSavedSearches,
+} from 'src/utils/preferences.js';
 
 const AlbumsUpdateSchema = z
   .object({
@@ -133,6 +138,34 @@ const RecentlyAddedUpdateSchema = z
   .optional()
   .meta({ id: 'RecentlyAddedUpdate' });
 
+/** FL-49: limits for saved searches, kept small because every preferences read carries them */
+export const SAVED_SEARCH_MAX_COUNT = 50;
+export const SAVED_SEARCH_NAME_MAX_LENGTH = 100;
+export const SAVED_SEARCH_QUERY_MAX_BYTES = 8192;
+
+const SavedSearchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(SAVED_SEARCH_NAME_MAX_LENGTH).describe('Name shown in the search palette'),
+    query: z
+      .record(z.string(), z.unknown())
+      .refine((query) => Buffer.byteLength(JSON.stringify(query)) <= SAVED_SEARCH_QUERY_MAX_BYTES, {
+        message: `Saved search query must be at most ${SAVED_SEARCH_QUERY_MAX_BYTES} bytes of JSON`,
+      })
+      .describe('The search body to run, as the client sends it to the search endpoints'),
+  })
+  .meta({ id: 'SavedSearch' });
+
+const SavedSearchesUpdateSchema = z
+  .array(SavedSearchSchema)
+  .max(SAVED_SEARCH_MAX_COUNT)
+  .refine((items) => new Set(items.map(({ name }) => name.toLocaleLowerCase())).size === items.length, {
+    message: 'Saved search names must be unique',
+  })
+  .optional()
+  .describe(
+    `Saved searches, replacing the whole list (at most ${SAVED_SEARCH_MAX_COUNT}). Only the account itself can change them`,
+  );
+
 const UserPreferencesUpdateSchema = z
   .object({
     albums: AlbumsUpdateSchema,
@@ -149,6 +182,7 @@ const UserPreferencesUpdateSchema = z
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     expectedRevision: z
       .string()
       .optional()
@@ -274,6 +308,14 @@ const UserPreferencesResponseSchema = z
     purchase: PurchaseResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    // always sent; optional in the schema so clients built before FL-49 keep compiling
+    savedSearches: z
+      .array(SavedSearchSchema)
+      .optional()
+      .describe(
+        'Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked',
+      )
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     revision: z
       .string()
       .describe(
@@ -308,6 +350,12 @@ export const mapPreferences = (
       audience === 'self'
         ? preferences.privacy
         : { suppression: { tagIds: [], personIds: [], petIds: [], scope: suppression.scope } },
+    savedSearches:
+      audience === 'admin'
+        ? []
+        : audience === 'locked'
+          ? withoutLockedSavedSearches(preferences.savedSearches, suppression)
+          : preferences.savedSearches,
     revision: getPreferencesRevision(preferences),
   };
 };

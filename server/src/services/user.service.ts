@@ -115,7 +115,9 @@ export class UserService extends BaseService {
 
     const updated = await this.databaseRepository.withUserPreferencesLock(auth.user.id, async (trx) => {
       const metadata = await this.userRepository.getMetadata(auth.user.id, trx);
-      const merged = mergePreferences(getPreferences(metadata), dto, 'user');
+      const merged = mergePreferences(getPreferences(metadata), dto, 'user', {
+        lockedSession: !auth.session?.hasElevatedPermission,
+      });
       await this.userRepository.upsertMetadata(
         auth.user.id,
         { key: UserMetadataKey.Preferences, value: getPreferencesPartial(merged) },
