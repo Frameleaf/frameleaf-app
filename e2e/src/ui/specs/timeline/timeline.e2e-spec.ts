@@ -464,6 +464,26 @@ test.describe('Timeline', () => {
         .toBe(true);
     });
 
+    test('The scrubber stays beside the cards and jumps to a month card', async ({ page }) => {
+      await openTimeline(page);
+      await groupingUtils.choose(page, 'Months');
+      await expect(scrubberUtils.slider(page)).toBeVisible();
+      const olderMonth = yearMonths.find((yearMonth) => !yearMonth.startsWith(`${newestYear()}-`))!;
+      await scrubberUtils.clickMonth(page, olderMonth);
+      await expect(page.locator(`[data-group-id="${olderMonth.replace(/-(\d)$/, '-0$1')}"]`)).toBeInViewport();
+    });
+
+    test('Days, then Years, then Days comes back to the same place', async ({ page }) => {
+      await openTimeline(page);
+      const target = deepAssets()[0];
+      await scrubberUtils.clickMonth(page, getYearMonth(assets, target.id));
+      await expect.poll(() => thumbnailUtils.idsInViewport(page)).not.toEqual([]);
+      const before = await thumbnailUtils.idsInViewport(page);
+      await groupingUtils.choose(page, 'Years');
+      await groupingUtils.choose(page, 'Days');
+      await expect.poll(() => thumbnailUtils.idsInViewport(page)).toContain(before[0]);
+    });
+
     test('The All header comes before its tiles, in reading and Tab order, and names them', async ({ page }) => {
       // Prototype `TimelineLibrary.jsx`: <section aria-labelledby={headingId}> opens with the header.
       await openTimeline(page);

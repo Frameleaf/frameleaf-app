@@ -17,13 +17,16 @@
     type TimelineCard,
     type TimelineCardTarget,
   } from '$lib/frameleaf/timeline-cards';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { websocketEvents } from '$lib/stores/websocket';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, getTimelineHighlights, TimelineHighlightGrouping } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiImageOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { tick, type Snippet } from 'svelte';
+  import { debounce } from 'lodash-es';
+  import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
   type Props = {
@@ -33,28 +36,63 @@
     onOpen: (target: TimelineCardTarget) => void;
     /** After a year opened Months, the year whose first month card is brought to the top. */
     focusYear?: number | null;
+    /**
+     * The period at the top of the cards as they scroll, for the scrubber's marker: a month card's
+     * year and month, or a year card's year alone.
+     */
+    onCurrentPeriod?: (period: { year: number; month?: number } | undefined) => void;
     /** Rendered above the cards, inside the same scroll container. */
     header?: Snippet;
     empty?: Snippet;
   };
 
-  let { timelineManager, grouping, onOpen, focusYear = null, header, empty }: Props = $props();
+  let { timelineManager, grouping, onOpen, focusYear = null, onCurrentPeriod, header, empty }: Props = $props();
+
+  /** Library changes that can move a key photo, a count or a place settle for this long before a refetch. */
+  const REFRESH_DELAY_MS = 1500;
 
   const kind = $derived(grouping === 'years' ? 'year' : 'month');
   let cards = $state<TimelineCard[]>([]);
   let status = $state<'loading' | 'ready' | 'failed'>('loading');
   let scroller = $state<HTMLElement>();
   let request = 0;
+  /** Bumped (debounced) by uploads, deletes, trash and restore, and edits such as a rating change. */
+  let revision = $state(0);
+  const refresh = debounce(() => revision++, REFRESH_DELAY_MS);
+  const unsubscribers = [
+    websocketEvents.on('on_upload_success', refresh),
+    websocketEvents.on('on_asset_delete', refresh),
+    websocketEvents.on('on_asset_trash', refresh),
+    websocketEvents.on('on_asset_restore', refresh),
+    websocketEvents.on('on_asset_update', refresh),
+    eventManager.on({
+      AssetUpdate: refresh,
+      AssetsDelete: refresh,
+      AssetsArchive: refresh,
+      AssetsUnarchive: refresh,
+      AssetsMarkNsfw: refresh,
+    }),
+  ];
+  onDestroy(() => {
+    refresh.cancel();
+    for (const unsubscribe of unsubscribers) {
+      unsubscribe();
+    }
+  });
 
   $effect(() => {
-    // Refetch when the view's query is (re)initialised or the grouping changes.
+    // Refetch when the view's query is (re)initialised, the grouping changes or the library changed.
     if (!timelineManager.isInitialized) {
       return;
     }
+    void revision;
     const query = timelineManager.bucketQuery;
     const wanted = kind;
     const current = ++request;
-    status = 'loading';
+    // A refresh keeps the cards on screen until the new ones arrive; only a new view shows loading.
+    if (untrack(() => cards.length === 0 || cards[0]?.kind !== wanted)) {
+      status = 'loading';
+    }
     const load = async () => {
       try {
         const highlights = await getTimelineHighlights({
@@ -93,6 +131,56 @@
     });
   });
 
+  /** Template `jumpTo`: card views have no tiles, so a month goes to its month card, then its year's. */
+  export const jumpTo = ({ year, month }: { year: number; month: number }) => {
+    const monthId = `${year}-${String(month).padStart(2, '0')}`;
+    const element =
+      scroller?.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(monthId)}"]`) ??
+      scroller?.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(String(year))}"]`);
+    if (!element || !scroller) {
+      return false;
+    }
+    scroller.scrollBy({ top: element.getBoundingClientRect().top - scroller.getBoundingClientRect().top });
+    return true;
+  };
+
+  /** Template "keep the scrubber marker in step": the first card still showing below the top edge. */
+  const reportPeriod = () => {
+    if (!scroller || !onCurrentPeriod) {
+      return;
+    }
+    const top = scroller.getBoundingClientRect().top;
+    for (const element of scroller.querySelectorAll<HTMLElement>('[data-group-id]')) {
+      if (element.getBoundingClientRect().bottom > top) {
+        const [year, month] = (element.dataset.groupId ?? '').split('-').map(Number);
+        onCurrentPeriod(
+          Number.isFinite(year) ? { year, month: Number.isFinite(month) ? month : undefined } : undefined,
+        );
+        return;
+      }
+    }
+    onCurrentPeriod(undefined);
+  };
+
+  let frame = 0;
+  const scheduleReport = () => {
+    if (!frame) {
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        reportPeriod();
+      });
+    }
+  };
+  onDestroy(() => cancelAnimationFrame(frame));
+
+  $effect(() => {
+    if (status !== 'ready') {
+      return;
+    }
+    void cards;
+    void tick().then(reportPeriod);
+  });
+
   const titleOf = (card: TimelineCard) =>
     card.kind === 'year'
       ? String(card.year)
@@ -112,6 +200,7 @@
 <section
   class="fl-tl-cards-scroll"
   bind:this={scroller}
+  onscroll={scheduleReport}
   data-testid="frameleaf-timeline-cards"
   aria-busy={status === 'loading'}
 >
@@ -171,7 +260,8 @@
     container: fl-tl-cards / inline-size;
     height: 100%;
     overflow-y: auto;
-    scrollbar-width: thin;
+    outline: none;
+    scrollbar-width: none;
   }
   /* Template timeline-library.css "Curated Years and Months". */
   .fl-tl-cards {

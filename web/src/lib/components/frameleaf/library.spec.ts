@@ -267,8 +267,12 @@ describe('AssetGrid', () => {
 
   // The grid lays out once it has measured its width (`bind:clientWidth`, through a ResizeObserver).
   const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')!;
+  const clientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')!;
   beforeEach(() => {
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1000 });
+    Object.defineProperties(HTMLElement.prototype, {
+      clientWidth: { configurable: true, get: () => 1000 },
+      clientHeight: { configurable: true, get: () => 800 },
+    });
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -287,7 +291,7 @@ describe('AssetGrid', () => {
     );
   });
   afterEach(() => {
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidth);
+    Object.defineProperties(HTMLElement.prototype, { clientWidth, clientHeight });
     vi.unstubAllGlobals();
   });
 
@@ -305,6 +309,36 @@ describe('AssetGrid', () => {
     expect(px(second.style.insetInlineStart) - px(first.style.width)).toBe(2);
     expect(container.querySelector('.fl-tile-caption')).toBeNull();
     expect(container.querySelector('[data-layout="browse"]')).not.toBeNull();
+  });
+
+  it('mounts only the rows near the viewport, not every result', async () => {
+    const { container } = renderGrid('browse', 5000);
+    await waitFor(() => expect(cells(container).length).toBeGreaterThan(0));
+    // 6 columns of ~165px square cells: 800px is about 5 rows, plus 3 rows of overscan.
+    expect(cells(container).length).toBeLessThanOrEqual(6 * 9);
+  });
+
+  it('zooms with + and −, but not while a viewer is open or on a public page', async () => {
+    const { libraryGridPreferences } = await import('$lib/frameleaf/library-grid-preferences.svelte');
+    const { assetViewerManager } = await import('$lib/managers/asset-viewer-manager.svelte');
+    libraryGridPreferences.thumbnailSize = 200;
+    const { unmount } = renderGrid('browse');
+    await fireEvent.keyDown(document.body, { key: '+' });
+    expect(libraryGridPreferences.thumbnailSize).toBe(230);
+
+    const viewing = vi.spyOn(assetViewerManager, 'isViewing', 'get').mockReturnValue(true);
+    await fireEvent.keyDown(document.body, { key: '+' });
+    expect(libraryGridPreferences.thumbnailSize).toBe(230);
+    viewing.mockRestore();
+    unmount();
+
+    const session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+    const { container } = render(AssetGrid, { assets: results(3), session, layout: 'work', publicView: true });
+    await fireEvent.keyDown(document.body, { key: '+' });
+    expect(libraryGridPreferences.thumbnailSize).toBe(230);
+    // A public page keeps the plain Browse grid.
+    expect(container.querySelector('[data-testid="frameleaf-asset-grid"]')).toHaveAttribute('data-layout', 'browse');
+    libraryGridPreferences.thumbnailSize = 200;
   });
 
   it('draws Work as 3:2 cells with a caption row under each', async () => {
