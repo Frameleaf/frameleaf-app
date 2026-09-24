@@ -5,21 +5,19 @@ import {
   NotNull,
   Selectable,
   ShallowDehydrateObject,
-  Transaction,
   Updateable,
   sql,
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
-import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
+import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -624,7 +622,7 @@ export class AlbumRepository {
       return;
     }
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx);
+      await lockForkWrites(tx, 'Album order is unavailable during database handoff');
       await sql`
         INSERT INTO immich_fork.album_position ("userId", "albumId", position)
         SELECT ${userId}::uuid, ordered.id, (ordered.ordinality - 1)::integer
@@ -635,20 +633,6 @@ export class AlbumRepository {
     });
   }
 
-  private async lockForkWrites(tx: Transaction<DB>) {
-    const { rows } = await sql<{ phase: ForkSchemaPhase }>`
-      SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
-    `.execute(tx);
-    const handoff = await sql`
-      SELECT 1 FROM immich_fork.migration_audit
-      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
-      LIMIT 1
-    `.execute(tx);
-    const phase = rows[0]?.phase;
-    if (!phase || !(isLegacyAuthoritative(phase) || isForkWriteEnabled(phase)) || handoff.rows.length > 0) {
-      throw new ConflictException('Album order is unavailable during database handoff');
-    }
-  }
 
   @Chunked({ chunkSize: 30_000 })
   async addAssetIdsToAlbums(values: { albumId: string; assetId: string }[]): Promise<void> {

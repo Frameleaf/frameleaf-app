@@ -6980,6 +6980,30 @@ export type SharedSpacePreviewResponseDto = {
     /** Earliest item date, sensitive and Locked media excluded */
     startDate?: string;
 };
+export type RecipientGroupResponseDto = {
+    /** When the group was saved */
+    createdAt: string;
+    /** Recipient group ID */
+    id: string;
+    /** Name, visible to its owner only */
+    name: string;
+    /** When the group last changed */
+    updatedAt: string;
+    /** People in the group who still have an account, by name */
+    users: UserResponseDto[];
+};
+export type RecipientGroupCreateDto = {
+    /** Name, visible to its owner only */
+    name: string;
+    /** People in the group. Yourself and repeats are dropped. */
+    userIds: string[];
+};
+export type RecipientGroupUpdateDto = {
+    /** Name, visible to its owner only */
+    name?: string;
+    /** People in the group. Yourself and repeats are dropped. */
+    userIds?: string[];
+};
 export type SharedSpaceEventResponseDto = {
     /** The comment or like this event announces, if any */
     activityId: string | null;
@@ -15053,6 +15077,59 @@ export function getSharedSpaceInvitations(opts?: Oazapfts.RequestOpts) {
     }>("/shared-spaces/invitations", {
         ...opts
     }));
+}
+/**
+ * List recipient groups
+ */
+export function getRecipientGroups(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RecipientGroupResponseDto[];
+    }>("/shared-spaces/recipient-groups", {
+        ...opts
+    }));
+}
+/**
+ * Create a recipient group
+ */
+export function createRecipientGroup({ recipientGroupCreateDto }: {
+    recipientGroupCreateDto: RecipientGroupCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RecipientGroupResponseDto;
+    }>("/shared-spaces/recipient-groups", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: recipientGroupCreateDto
+    })));
+}
+/**
+ * Delete a recipient group
+ */
+export function deleteRecipientGroup({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/recipient-groups/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a recipient group
+ */
+export function updateRecipientGroup({ id, recipientGroupUpdateDto }: {
+    id: string;
+    recipientGroupUpdateDto: RecipientGroupUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RecipientGroupResponseDto;
+    }>(`/shared-spaces/recipient-groups/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: recipientGroupUpdateDto
+    })));
 }
 /**
  * Accept a shared space invitation
