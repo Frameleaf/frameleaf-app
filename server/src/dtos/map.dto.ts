@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { AssetTypeSchema } from 'src/enum.js';
 import { isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const MapReverseGeocodeSchema = z
@@ -63,6 +64,18 @@ const MapMarkerResponseSchema = z
     city: z.string().nullable().describe('City name'),
     state: z.string().nullable().describe('State/Province name'),
     country: z.string().nullable().describe('Country name'),
+    originalFileName: z.string().optional().describe('Original file name'),
+    fileCreatedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .optional()
+      .describe('UTC timestamp when the asset was captured'),
+    localDateTime: z
+      .string()
+      .meta({ format: 'date-time' })
+      .optional()
+      .describe('Capture date and time in the local time zone where it was taken, encoded as UTC'),
+    type: AssetTypeSchema.optional(),
   })
   .meta({ id: 'MapMarkerResponseDto' });
 

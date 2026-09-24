@@ -811,10 +811,24 @@ from
   "candidates"
 where
   "candidates"."distance" < $4
+  and not exists (
+    select
+      1
+    from
+      immich_fork.person_merge_verdict verdict
+    where
+      verdict."ownerId" = $5::uuid
+      and verdict."personId" = "candidates"."personId"
+      and verdict."suggestionId" = "candidates"."suggestionId"
+      and (
+        verdict.verdict = 'different'
+        or verdict."createdAt" > now() - interval '30 days'
+      )
+  )
 order by
   "candidates"."distance" asc
 limit
-  $5
+  $6
 
 -- PersonRepository.getCorrections
 select

@@ -1,15 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import type { Insertable, Selectable, Updateable } from 'kysely';
 import type { Person } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type { PersonId, UpdateFacesData } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import type { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import type { PersonTable } from 'src/schema/tables/person.table.js';
 import type { JobItem, JobOf } from 'src/types.js';
-import { Chunked, OnJob } from 'src/decorators.js';
+import { Chunked, OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   AssetFaceCreateDto,
@@ -24,6 +25,9 @@ import {
   PersonCorrectionsResponseDto,
   PersonCreateDto,
   PersonMergeSuggestionDto,
+  PersonMergeVerdictCreateDto,
+  PersonMergeVerdictDeleteDto,
+  PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
@@ -48,6 +52,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
+import { asDateTimeString } from 'src/utils/date.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -100,8 +105,9 @@ export class PersonService extends BaseService {
    * (`machineLearning.facialRecognition.maxDistance`) rather than a second, invented
    * threshold, so a suggestion here is calibrated the same way automatic clustering is.
    *
-   * "Accept" is just the existing `POST /people/merge`. "Reject"/"skip" have no server
-   * state of their own yet — see the FL-57 handoff report for that gap.
+   * "Accept" is just the existing `POST /people/merge`. "Different people" and "decide later" are
+   * recorded with `setMergeVerdict`, which keeps the pair out of these suggestions (for good, or for
+   * 30 days); `deleteMergeVerdict` is the undo.
    */
   async getMergeSuggestions(auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
     const { machineLearning } = await this.getConfig({ withCache: true });
@@ -140,6 +146,60 @@ export class PersonService extends BaseService {
     }
 
     return { suggestions };
+  }
+
+  /** FL-57: records "different people" or "decide later" for a suggested pair of the user's people. */
+  async setMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictCreateDto): Promise<PersonMergeVerdictResponseDto> {
+    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const { verdict, createdAt } = await this.personRepository.setMergeVerdict(
+      auth.user.id,
+      personId,
+      suggestionId,
+      dto.verdict,
+    );
+    return { personId, suggestionId, verdict, createdAt: asDateTimeString(createdAt) };
+  }
+
+  /** FL-57: undoes a recorded merge-suggestion verdict, so the pair can be suggested again. */
+  async deleteMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictDeleteDto): Promise<void> {
+    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const deleted = await this.personRepository.deleteMergeVerdict(auth.user.id, personId, suggestionId);
+    if (!deleted) {
+      throw new NotFoundException('Merge suggestion verdict not found');
+    }
+  }
+
+  /** Both people of a pair must be the user's own (and visible to this session), stored in id order. */
+  private async requireMergePair(auth: AuthDto, { personId, suggestionId }: PersonMergeVerdictDeleteDto) {
+    if (personId === suggestionId) {
+      throw new BadRequestException('A merge suggestion pairs two different people');
+    }
+    await this.requirePerson(auth, Permission.PersonRead, personId);
+    await this.requirePerson(auth, Permission.PersonRead, suggestionId);
+    // uuids compare bytewise in Postgres, which is the order of their lowercase hex form
+    const [first, second] = [personId.toLowerCase(), suggestionId.toLowerCase()];
+    return first < second ? [first, second] : [second, first];
+  }
+
+  /** A deleted account's merge-suggestion verdicts go with it (FL-57). */
+  @OnEvent({ name: 'UserDelete' })
+  async onUserDelete({ id }: ArgOf<'UserDelete'>) {
+    await this.purgeMergeVerdicts(id);
+  }
+
+  /**
+   * Verdicts naming a person that no longer exists are dropped. Like the other fork-owned writes this
+   * waits out a database handoff: it is skipped then and the next cleanup catches up.
+   */
+  private async purgeMergeVerdicts(ownerId?: string) {
+    try {
+      await this.personRepository.deleteOrphanedMergeVerdicts(ownerId);
+    } catch (error) {
+      if (!(error instanceof ConflictException)) {
+        throw error;
+      }
+      this.logger.warn('Skipped removing stale merge-suggestion verdicts during a database handoff');
+    }
   }
 
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
@@ -358,6 +418,8 @@ export class PersonService extends BaseService {
     const people = await this.personRepository.delete(groupIds, ownerId);
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
     await this.personRepository.deleteEmptyGroups();
+    // deleting, merging away and cleaning up people all come through here (FL-57)
+    await this.purgeMergeVerdicts(ownerId);
     this.logger.debug(`Deleted ${groupIds.length} people`);
   }
 

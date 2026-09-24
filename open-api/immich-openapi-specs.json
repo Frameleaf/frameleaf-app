@@ -18987,6 +18987,109 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/people/merge-suggestions/verdicts": {
+      "delete": {
+        "description": "Remove the recorded verdict for a pair of people, so the pair can be suggested again.",
+        "operationId": "deleteMergeVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeVerdictDeleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a merge suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Record that a suggested pair of people are different people (never suggested again) or should be decided later (not suggested for 30 days). Replaces an earlier verdict for the same pair; the pair may be given in either order.",
+        "operationId": "setMergeVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeVerdictCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMergeVerdictResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a merge suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/people/{id}": {
       "delete": {
         "description": "Delete an individual person.",
@@ -23290,6 +23393,50 @@
         ],
         "x-immich-permission": "asset.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/search/cities/counts": {
+      "get": {
+        "description": "Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.",
+        "operationId": "getCityAssetCounts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SearchCityCountResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve asset counts by city",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
       }
     },
     "/search/explore": {
@@ -48983,6 +49130,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "reason": {
+            "description": "Why the server is in maintenance, as set by the administrator (public)",
+            "type": "string"
+          },
           "task": {
             "type": "string"
           }
@@ -49079,6 +49230,11 @@
             "nullable": true,
             "type": "string"
           },
+          "fileCreatedAt": {
+            "description": "UTC timestamp when the asset was captured",
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "description": "Asset ID",
             "format": "uuid",
@@ -49090,15 +49246,27 @@
             "format": "double",
             "type": "number"
           },
+          "localDateTime": {
+            "description": "Capture date and time in the local time zone where it was taken, encoded as UTC",
+            "format": "date-time",
+            "type": "string"
+          },
           "lon": {
             "description": "Longitude",
             "format": "double",
             "type": "number"
           },
+          "originalFileName": {
+            "description": "Original file name",
+            "type": "string"
+          },
           "state": {
             "description": "State/Province name",
             "nullable": true,
             "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
           }
         },
         "required": [
@@ -53984,6 +54152,91 @@
           "distance",
           "person",
           "suggestion"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdict": {
+        "description": "\"different\": never suggest this pair again; \"later\": skip it for 30 days",
+        "enum": [
+          "different",
+          "later"
+        ],
+        "type": "string"
+      },
+      "PersonMergeVerdictCreateDto": {
+        "properties": {
+          "personId": {
+            "description": "One person of the suggested pair (either order)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the suggested pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonMergeVerdict"
+          }
+        },
+        "required": [
+          "personId",
+          "suggestionId",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdictDeleteDto": {
+        "properties": {
+          "personId": {
+            "description": "One person of the suggested pair (either order)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the suggested pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "suggestionId"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdictResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the verdict was recorded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person of the pair whose id sorts first",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonMergeVerdict"
+          }
+        },
+        "required": [
+          "createdAt",
+          "personId",
+          "suggestionId",
+          "verdict"
         ],
         "type": "object"
       },
@@ -59436,6 +59689,25 @@
         ],
         "type": "object"
       },
+      "SearchCityCountResponseDto": {
+        "properties": {
+          "city": {
+            "description": "City name, grouped as in GET /search/cities (which lists only cities with a photo)",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of timeline photos and videos in this city",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "city",
+          "count"
+        ],
+        "type": "object"
+      },
       "SearchExploreItem": {
         "properties": {
           "data": {
@@ -60531,6 +60803,12 @@
           "keepSafetyBackup": {
             "description": "Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails",
             "type": "boolean"
+          },
+          "reason": {
+            "description": "Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it",
+            "maxLength": 200,
+            "nullable": true,
+            "type": "string"
           },
           "restoreBackupFilename": {
             "description": "Restore backup filename",
@@ -67305,6 +67583,13 @@
             "description": "Tag name",
             "pattern": "^[^/]*$",
             "type": "string"
+          },
+          "parentId": {
+            "description": "Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "type": "object"
@@ -68455,6 +68740,16 @@
             "items": {
               "nullable": true,
               "type": "string"
+            },
+            "type": "array"
+          },
+          "rating": {
+            "description": "Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF",
+            "items": {
+              "maximum": 5,
+              "minimum": -1,
+              "nullable": true,
+              "type": "integer"
             },
             "type": "array"
           },
