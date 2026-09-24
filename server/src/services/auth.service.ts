@@ -646,9 +646,12 @@ export class AuthService extends BaseService {
         hasElevatedPermission = pinExpiresAt > now;
 
         if (hasElevatedPermission && now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt) {
-          await this.sessionRepository.update(session.id, {
-            pinExpiresAt: DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
-          });
+          // FL-34: conditional, so a lock that lands after the read above is never reversed; if the
+          // refresh finds the session locked, this request is not elevated either
+          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
+            session.id,
+            DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+          );
         }
       }
 
