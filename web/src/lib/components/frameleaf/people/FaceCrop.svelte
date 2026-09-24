@@ -2,9 +2,9 @@
   import type { FaceBox } from '$lib/frameleaf/people';
 
   /**
-   * A circular crop of one face (FL-37), ported from `FaceCrop` in
+   * A squircle crop of one face (FL-37; apple-style.css:137-148 masks every people photo), ported from `FaceCrop` in
    * design/frameleaf/template/src/People.jsx:130-170: the image is scaled so the face box
-   * fills the circle and translated so the box centre sits in the middle, keeping the
+   * fills the shape and translated so the box centre sits in the middle, keeping the
    * source aspect ratio. Without a usable box it shows the whole image, cropped to cover.
    */
   interface Props {
@@ -22,7 +22,7 @@
 </script>
 
 <span
-  class="face-crop"
+  class="face-crop fl-squircle"
   class:plain={!valid}
   style:width="{size}px"
   style:height="{size}px"
@@ -53,7 +53,6 @@
     overflow: hidden;
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: 50%;
   }
   .face-crop img {
     position: absolute;

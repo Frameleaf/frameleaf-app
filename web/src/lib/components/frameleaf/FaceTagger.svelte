@@ -806,7 +806,7 @@
               {@const active = current.personId === person.id}
               <button type="button" disabled={saving} aria-pressed={active} class:active onclick={() => choose(person)}>
                 {#if isNewPerson(person)}
-                  <span class="ft-avatar-placeholder" aria-hidden="true">{person.name.charAt(0)}</span>
+                  <span class="ft-avatar-placeholder fl-squircle" aria-hidden="true">{person.name.charAt(0)}</span>
                 {:else}
                   <PersonAvatar {person} size={36} />
                 {/if}
@@ -1149,7 +1149,6 @@
     flex-shrink: 0;
     width: 36px;
     height: 36px;
-    border-radius: 50%;
     background: var(--fl-raised);
     color: var(--fl-muted);
   }
