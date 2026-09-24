@@ -146,10 +146,10 @@ export const thumbnailUtils = {
   async expectTopIsTimelineTop(page: Page, assetId: string) {
     await expect
       .poll(async () => {
+        // The toolbar's real bottom edge, not --fl-sticky-offset: the app positions tiles by that value.
         const box = await thumbnailUtils.withAssetId(page, assetId).boundingBox();
-        const gridBox = await timelineUtils.locator(page).boundingBox();
-        const covered = await timelineUtils.stickyOffset(page);
-        return Math.abs(box!.y - (gridBox!.y + covered));
+        const toolbarBox = await page.getByTestId('frameleaf-results-toolbar').boundingBox();
+        return Math.abs(box!.y - (toolbarBox!.y + toolbarBox!.height));
       })
       .toBeLessThan(2);
   },
@@ -159,13 +159,6 @@ export const timelineUtils = {
   /** The timeline's scroll area. */
   locator(page: Page) {
     return page.locator('[data-testid="frameleaf-timeline"] .fl-timeline-scroll');
-  },
-  /** Height of the sticky results toolbar over the top of the scroll area (`--fl-sticky-offset`). */
-  async stickyOffset(page: Page) {
-    const value = await page
-      .getByTestId('frameleaf-library')
-      .evaluate((element) => getComputedStyle(element).getPropertyValue('--fl-sticky-offset'));
-    return Number(value.trim().replace('px', '')) || 0;
   },
   async waitForTimelineLoad(page: Page) {
     await expect(timelineUtils.locator(page)).toHaveCount(1);
