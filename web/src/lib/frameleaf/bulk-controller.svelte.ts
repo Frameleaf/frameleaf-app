@@ -1,4 +1,4 @@
-import { Scope, type ArchiveOperationResponseDto, type MediaOperationDto } from '@immich/sdk';
+import { ArchiveOperationPrepareScope, type ArchiveOperationResponseDto, type MediaOperationDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
@@ -430,7 +430,10 @@ export class BulkController {
     this.busy = true;
     try {
       return await this.#archive.prepareArchiveOperation({
-        archiveOperationPrepareDto: { requestKey: requestKey(), scope: Scope.MatchingOwnedTimeline },
+        archiveOperationPrepareDto: {
+          requestKey: requestKey(),
+          scope: ArchiveOperationPrepareScope.MatchingOwnedTimeline,
+        },
       });
     } catch (error) {
       const translate = await getFormatter();

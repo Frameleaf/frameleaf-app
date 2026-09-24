@@ -35,7 +35,8 @@ export const ArchiveOperationPrepareSchema = z
     requestKey: RequestKeySchema,
     scope: z
       .literal(ArchiveOperationScope.MatchingOwnedTimeline)
-      .describe('Only the owner’s own normal Timeline can be prepared on the server'),
+      .describe('Only the owner’s own normal Timeline can be prepared on the server')
+      .meta({ id: 'ArchiveOperationPrepareScope' }),
   })
   .meta({ id: 'ArchiveOperationPrepareDto' });
 
