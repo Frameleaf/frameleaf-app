@@ -86,6 +86,16 @@ describe('ActivityPanel', () => {
     expect(screen.getByRole('button', { name: 'Delete Jamie’s comment' })).toBeInTheDocument();
   });
 
+  it('keeps the history readable but offers no like or comment when comments are turned off (FL-53)', () => {
+    render(ActivityPanel, { album: { ...album, isActivityEnabled: false }, assetId: 'asset-1', onClose: vi.fn() });
+
+    expect(screen.getByText(/Likes and comments are turned off here/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Like' })).toBeDisabled();
+    expect(screen.queryByRole('textbox', { name: 'Write a comment' })).toBeNull();
+    // Earlier comments stay on the record.
+    expect(screen.getByText('Lovely')).toBeInTheDocument();
+  });
+
   it('offers a member no delete on someone else’s like or comment', async () => {
     signedIn = 'jamie';
     state.activities = [like('l1', me, 'asset-1'), comment('c1', me, 'Hi')];

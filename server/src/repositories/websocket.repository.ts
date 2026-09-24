@@ -8,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AlbumUserRole } from 'src/enum.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { NotificationDto } from 'src/dtos/notification.dto.js';
 import { ReleaseEventV1, ServerVersionResponseDto } from 'src/dtos/server.dto.js';
@@ -56,6 +57,12 @@ export interface ClientEventMap {
    * never subscribe to it, so a failure never looks like an "edit ready" to them.
    */
   VideoEditVersionFailedV1: [{ assetId: string; versionId: string | null }];
+  /**
+   * Fork-only (FL-53): somebody's role in an album changed, or they left or were removed (`role:
+   * null`). Sent to that person and to the album's remaining members, so open pages drop controls
+   * and dialogs the new role no longer allows without waiting for a reload.
+   */
+  AlbumUserUpdateV1: [{ albumId: string; userId: string; role: AlbumUserRole | null }];
 }
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;

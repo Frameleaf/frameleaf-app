@@ -257,6 +257,45 @@ describe('partial failures are reported per item', () => {
     expect(result.undo).toEqual({ action: 'remove-from-album', ids: ['a'], payload: { albumId: 'album-1' } });
   });
 
+  it('removes from an album per item, reports the ones it could not, and never touches originals (FL-53)', async () => {
+    vi.mocked(api.removeAssetFromAlbum).mockResolvedValue([
+      { id: 'a', success: true },
+      { id: 'b', success: false, error: 'not_found' },
+      { id: 'c', success: false, error: 'no_permission' },
+    ] as never);
+
+    const result = await runBulkAction('remove-from-album', ['a', 'b', 'c'], {
+      gateway: api,
+      payload: { albumId: 'album-1' },
+    });
+
+    expect(result.succeeded).toEqual(['a']);
+    expect(result.failed.map(({ id, reasonKey }) => [id, reasonKey])).toEqual([
+      ['b', 'frameleaf_bulk_reason_not_found'],
+      ['c', 'frameleaf_bulk_reason_no_permission'],
+    ]);
+    // Membership only: the items stay in the library.
+    expect(api.deleteAssets).not.toHaveBeenCalled();
+    expect(result.undo).toEqual({ action: 'add-to-album', ids: ['a'], payload: { albumId: 'album-1' } });
+    expect(bulkResultSummary(result).key).toBe('frameleaf_bulk_summary_partial');
+  });
+
+  it('keeps what was added when a later batch of an album add fails outright (FL-53)', async () => {
+    vi.mocked(api.addAssetsToAlbum).mockImplementation((({ bulkIdsDto }: { bulkIdsDto: { ids: string[] } }) =>
+      bulkIdsDto.ids.includes('b')
+        ? Promise.reject(new Error('album went away'))
+        : Promise.resolve(bulkIdsDto.ids.map((id) => ({ id, success: true })))) as never);
+
+    const result = await runBulkAction('add-to-album', ['a', 'b', 'c'], {
+      gateway: api,
+      payload: { albumId: 'album-1' },
+    });
+
+    expect(result.succeeded).toEqual(['a', 'c']);
+    expect(result.failed.map(({ id }) => id)).toEqual(['b']);
+    expect(result.undo).toEqual({ action: 'remove-from-album', ids: ['a', 'c'], payload: { albumId: 'album-1' } });
+  });
+
   it('isolates the failing item when a batch endpoint rejects the whole batch', async () => {
     type UpdateArgument = { assetBulkUpdateDto: { ids: string[] } };
     vi.mocked(api.updateAssets).mockImplementation((({ assetBulkUpdateDto }: UpdateArgument) =>
