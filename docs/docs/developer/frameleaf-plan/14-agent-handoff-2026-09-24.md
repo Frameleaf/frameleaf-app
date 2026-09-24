@@ -2,6 +2,17 @@
 
 Continues [13-agent-handoff-2026-09-23-evening.md](13-agent-handoff-2026-09-23-evening.md). Read `AGENTS.md`, `CODEX-HANDOFF.md`, page 12 and page 13 first; their rules still apply. Verify every SHA below with `git fetch frameleaf` before acting on it.
 
+## 0. For a local agent on another computer
+
+This page lives on GitHub in `Frameleaf/frameleaf-app` on branch `claude/frameleaf-implementation` (PR #137) at `docs/docs/developer/frameleaf-plan/14-agent-handoff-2026-09-24.md`. The cloud session that wrote it may be gone; everything you need is in the repository.
+
+1. Get the repository and name its remote `frameleaf` (AGENTS.md forbids pushing to a remote named `origin`). With an existing clone: `git remote add frameleaf https://github.com/Frameleaf/frameleaf-app` if it is missing, then `git fetch frameleaf`. Without one: `git clone -o frameleaf https://github.com/Frameleaf/frameleaf-app`. Check `git remote -v` names `Frameleaf/frameleaf-app` and nothing upstream.
+2. Read without switching branches: `git show frameleaf/claude/frameleaf-implementation:docs/docs/developer/frameleaf-plan/14-agent-handoff-2026-09-24.md`. Or check out the branch: `git switch -c claude/frameleaf-implementation --track frameleaf/claude/frameleaf-implementation` (use `git switch claude/frameleaf-implementation && git pull --ff-only` if it already exists). Never reset or clean a working tree that has someone else's uncommitted work; use a separate worktree instead (`git worktree add ../fl-integration frameleaf/claude/frameleaf-implementation`).
+3. Read in this order: `AGENTS.md`, `CODEX-HANDOFF.md`, `docs/docs/developer/frameleaf-plan/12-agent-handoff-2026-09-23.md`, `13-agent-handoff-2026-09-23-evening.md`, then this page.
+4. Fetch the in-flight branches in §3 (`git fetch frameleaf codex/FL-71-command-center-areas codex/FL-83-timeline-grouping`) and compare their heads with the SHAs below. If they moved, someone continued the work; read their new commit messages before touching them.
+5. Commit as author and committer `AJ Taylor <aj@ajtaylor.net>` (`git config user.name "AJ Taylor"` and `git config user.email aj@ajtaylor.net` in the repository), put the Jira key in the subject and one `FL-n #comment` line per issue in the body, add no trailers, push only to `frameleaf`, never force-push, and never merge to `fork/main`, publish or deploy without the owner's say-so. Do not touch `mobile/`.
+6. On a small machine (the owner's Mac has 7 GB) do not run builds or full suites; push and let GitHub Actions run them (AGENTS.md "Review and CI").
+
 ## 1. State at the time of writing
 
 - **Integration branch:** `claude/frameleaf-implementation` (PR #137, draft, base `fork/main`) at `9e70eb589f`, plus this page. The session branch `claude/frameleaf-implementation-faumg1` is kept identical.

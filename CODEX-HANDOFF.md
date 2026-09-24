@@ -1,5 +1,7 @@
 # Frameleaf implementation handoff (September 23, 2026)
 
+> **Latest handoff (2026-09-24):** read [`docs/docs/developer/frameleaf-plan/14-agent-handoff-2026-09-24.md`](docs/docs/developer/frameleaf-plan/14-agent-handoff-2026-09-24.md) after this file; its section 0 explains how an agent on another computer fetches and reads it. Where it and this file disagree about branch state, page 14 is newer.
+
 For the Codex agent picking up this work. You will not have the original machine, its memory files or the Claude session. Everything you need is in this repository, Jira project **FL** (cloud `heroit.atlassian.net`) and Confluence space **FR**.
 
 ## 1. Where things stand
