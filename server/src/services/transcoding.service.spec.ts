@@ -201,6 +201,28 @@ describe(TranscodingService.name, () => {
       await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 2 });
 
       expect(mocks.process.spawn).toHaveBeenCalledTimes(2);
+      expect(mocks.process.spawn.mock.calls[1][1]).toEqual(expect.arrayContaining(['-start_number', '2']));
+    });
+
+    it('keeps a seek restart when an older start finishes before it', async () => {
+      let resolveA!: (value: typeof eiffelTower) => void;
+      let resolveB!: (value: typeof eiffelTower) => void;
+      mocks.videoStream.getForTranscoding
+        .mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)))
+        .mockReturnValueOnce(new Promise((resolve) => (resolveB = resolve)));
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+
+      const a = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      const b = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 20 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledTimes(2));
+      resolveA(eiffelTower);
+      await a;
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 22 });
+      resolveB(eiffelTower);
+      await b;
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
+      expect(mocks.process.spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['-start_number', '20']));
     });
 
     it('does not spawn when the session is unknown', async () => {
