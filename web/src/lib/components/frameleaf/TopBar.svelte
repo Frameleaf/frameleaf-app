@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
+  import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
@@ -11,7 +12,8 @@
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination, isSettingsRoute } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
-  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
+  import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -21,12 +23,12 @@
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
-  import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
-  import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { ActionButton, Icon, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
+  import { getAuthStatus } from '@immich/sdk';
+  import { ActionButton, Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellOutline,
+    mdiChevronRight,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
@@ -35,6 +37,8 @@
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+
+  trackSessionModals(modalManager);
 
   /**
    * Frameleaf top bar (FL-30), ported from the prototype's `App.jsx` header.
@@ -78,6 +82,8 @@
   };
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
+  let sessionRevision = 0;
+  let lockFlight: Promise<void> | undefined;
   // FL-34: views that reveal the owner's marks to an unlocked session read it from here
   $effect(() => {
     sessionAccess.isElevated = isElevated;
@@ -100,33 +106,55 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The prototype's theme control is always present and names the theme it switches to.
   const themeLabel = $derived(appTheme === 'dark' ? $t('light_theme') : $t('dark_theme'));
+  // The prototype's Locked control: "Unlock Locked content" / "Hide Locked content", with the state
+  // spelled out as Locked / Revealed beside the icon (LockedContent.jsx).
+  const lockedLabel = $derived(
+    isElevated ? $t('frameleaf_locked_hide_content') : $t('frameleaf_locked_unlock_content'),
+  );
+  let unlockDialogOpen = $state(false);
   // The prototype's one "admin" screen covers account preferences and system administration
   // alike (`openSettings()` in App.jsx always sets `screen("admin")`), so both roots hide
   // Upload and switch the search entry to settings search.
   const isAdminRoute = $derived(isSettingsRoute(page.url.pathname));
-  const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
+  // Casting is an existing production capability; the new bar keeps it rather than
+  // dropping an action the legacy bar offered.
+  const { Cast } = $derived(getGlobalActions($t));
   // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
   // page join that album, and uploads made from the Locked area stay locked.
   const uploadAlbumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
   const uploadIsLocked = $derived(isLockedFolderRoute(page.route?.id));
-  // Casting is an existing production capability; the new bar keeps it rather than
-  // dropping an action the legacy bar offered.
-  const { Cast } = $derived(getGlobalActions($t));
 
   onMount(() => {
     void refreshNotifications();
-    void refreshAuthStatus();
+    sessionAccess.retryLock = requestSessionLock;
+    if (sessionAccess.lockPending) {
+      void lockSession();
+    } else {
+      void refreshAuthStatus();
+    }
 
     // One poll for everything running; fast only while the panel is open or something runs.
     const stopRunningJobs = runningJobsSession.watch();
     const stopEvents = eventManager.on({
       SessionLocked: () => (isElevated = false),
-      SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated),
+      SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated && !sessionAccess.lockPending),
     });
+
+    // The prototype hides Locked content as soon as the tab is left ("Content hides when you
+    // leave this tab or after one hour"); the hour is the server's elevated-session lifetime.
+    const onVisibilityChange = () => {
+      if ((document.hidden && (isElevated || isSessionLoading)) || sessionAccess.lockPending) {
+        handlePromiseError(lockSession());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    addEventListener('online', onVisibilityChange);
 
     return () => {
       stopRunningJobs();
       stopEvents();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      removeEventListener('online', onVisibilityChange);
     };
   });
 
@@ -145,10 +173,17 @@
   };
 
   const refreshAuthStatus = async () => {
+    const revision = sessionRevision;
+    const privacyRevision = sessionAccess.revision;
     isSessionLoading = true;
     try {
       const status = await getAuthStatus();
-      isElevated = status.isElevated;
+      if (revision === sessionRevision && privacyRevision === sessionAccess.revision && !sessionAccess.lockPending) {
+        isElevated = status.isElevated;
+        if (document.hidden && isElevated) {
+          void lockSession();
+        }
+      }
     } catch (error) {
       console.error('Failed to load elevated session status', error);
     } finally {
@@ -156,41 +191,36 @@
     }
   };
 
-  const isSensitiveRoute = (pathname: string) => {
-    // /suppressed is unlinked but still PIN-guarded until the Locked union lands (FL-34).
-    const roots = [Route.locked(), Route.suppressed()];
-    return roots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
-  };
-
+  // Unlocking happens in place (the prototype's PIN dialog on the control); the PIN prompt route
+  // stays for deep links that need an elevated session before they can render.
   const unlockSession = () => {
-    // The PIN prompt is the only way into an elevated session; it returns here.
-    handlePromiseError(goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search })));
+    unlockDialogOpen = true;
   };
 
-  const lockSession = async () => {
-    const pathname = page.url.pathname;
-    isSessionLoading = true;
-
-    try {
-      await lockAuthSession();
-      isElevated = false;
-
-      if (isSensitiveRoute(pathname)) {
-        // Never leave sensitive media on screen after locking.
-        await goto(Route.photos());
-      } else if (isAssetViewerRoute(page)) {
-        await navigate({ targetRoute: 'current', assetId: null }, { replaceState: true, invalidateAll: true });
-      } else {
-        await invalidateAll();
-      }
-
-      eventManager.emit('SessionAccessChanged', { isElevated: false });
-      eventManager.emit('SessionLocked');
-    } catch (error) {
-      handleError(error, $t('errors.something_went_wrong'));
-    } finally {
-      isSessionLoading = false;
+  const onUnlocked = async () => {
+    sessionRevision++;
+    if (document.hidden || sessionAccess.lockPending) {
+      await lockSession();
+      return;
     }
+    isElevated = true;
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    await invalidateAll();
+  };
+
+  const lockSession = (): Promise<void> => {
+    if (lockFlight) {
+      return lockFlight;
+    }
+    sessionRevision++;
+    isElevated = false;
+    isSessionLoading = true;
+    unlockDialogOpen = false;
+    lockFlight = requestSessionLock().finally(() => {
+      isSessionLoading = false;
+      lockFlight = undefined;
+    });
+    return lockFlight;
   };
 
   const toggleSession = () => {
@@ -317,17 +347,31 @@
         {/if}
       </div>
 
-      <IconButton
-        color={isElevated ? 'primary' : 'secondary'}
-        shape="round"
-        variant="ghost"
-        size="medium"
-        icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline}
-        disabled={isSessionLoading}
-        onclick={toggleSession}
-        title={lockedLabel}
-        aria-label={lockedLabel}
-      />
+      <div class="fl-locked-control" class:is-revealed={isElevated}>
+        <button
+          type="button"
+          class="fl-locked-toggle"
+          disabled={isSessionLoading}
+          onclick={toggleSession}
+          title={lockedLabel}
+          aria-label={lockedLabel}
+        >
+          <Icon icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline} size="18" aria-hidden="true" />
+          <span class="fl-locked-state"
+            >{isElevated ? $t('frameleaf_locked_revealed_short') : $t('frameleaf_locked')}</span
+          >
+        </button>
+        {#if isElevated}
+          <a
+            class="fl-locked-open"
+            href={Route.locked()}
+            title={$t('frameleaf_open_locked')}
+            aria-label={$t('frameleaf_open_locked')}
+          >
+            <Icon icon={mdiChevronRight} size="17" aria-hidden="true" />
+          </a>
+        {/if}
+      </div>
 
       <!-- Casting is contextual: the button shows only while a cast device is available. -->
       <ActionButton action={Cast} />
@@ -352,6 +396,8 @@
     </section>
   </div>
 </nav>
+
+<LockedUnlockDialog bind:open={unlockDialogOpen} onUnlocked={() => handlePromiseError(onUnlocked())} />
 
 <style>
   /*
@@ -487,6 +533,57 @@
     .fl-topbar-actions {
       grid-area: actions;
       gap: 0.125rem;
+    }
+  }
+  /* The prototype's bordered Locked control (locked-content.css): icon + state, accent when revealed. */
+  .fl-locked-control {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 34px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-panel);
+    color: var(--fl-text);
+  }
+  .fl-locked-control.is-revealed {
+    color: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .fl-locked-toggle,
+  .fl-locked-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
+  .fl-locked-toggle {
+    gap: 7px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .fl-locked-toggle:disabled {
+    opacity: 0.6;
+  }
+  .fl-locked-open {
+    width: 29px;
+    border-inline-start: 1px solid var(--fl-border);
+  }
+  .fl-locked-control.is-revealed .fl-locked-open {
+    border-color: var(--fl-accent);
+  }
+  .fl-locked-toggle:hover:not(:disabled),
+  .fl-locked-open:hover {
+    background: var(--fl-raised);
+  }
+  @media (max-width: 700px) {
+    .fl-locked-state {
+      display: none;
     }
   }
   .fl-notif-bell {
