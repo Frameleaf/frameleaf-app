@@ -283,22 +283,38 @@ export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbum
 /**
  * Save the Frameleaf edit dialog (`CollectionFormDialog`, FL-52): name, description and icon
  * through `PATCH /albums/{id}`, then the move when the dialog offered the collection field and
- * it changed. Returns the album as the server stored it.
+ * it changed. Returns the album as the server stored it, or nothing when anything failed.
+ *
+ * The two writes are separate requests. If the details save but the move fails, the saved
+ * details are still announced (`AlbumUpdate`) so every view shows them, and the move error is
+ * reported on its own; the dialog stays open so the move can be tried again.
  */
 export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: AlbumDetailsDraft) => {
   const $t = await getFormatter();
   const { parentId, ...details } = draft;
 
+  let saved: AlbumResponseDto;
   try {
-    let saved = await updateAlbumInfo({ id: album.id, updateAlbumDto: details });
-    if (parentId !== undefined && parentId !== (album.parentId ?? null)) {
-      saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
-    }
-    eventManager.emit('AlbumUpdate', saved);
-    return saved;
+    saved = await updateAlbumInfo({ id: album.id, updateAlbumDto: details });
   } catch (error) {
     handleError(error, $t('errors.unable_to_update_album_info'));
+    return;
   }
+
+  if (parentId === undefined || parentId === (album.parentId ?? null)) {
+    eventManager.emit('AlbumUpdate', saved);
+    return saved;
+  }
+
+  try {
+    saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
+  } catch (error) {
+    eventManager.emit('AlbumUpdate', saved);
+    handleError(error, $t('frameleaf_albums_move_failed'));
+    return;
+  }
+  eventManager.emit('AlbumUpdate', saved);
+  return saved;
 };
 
 /**

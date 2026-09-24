@@ -2364,6 +2364,7 @@
   "frameleaf_albums_left": "You left “{name}”",
   "frameleaf_albums_members": "Members",
   "frameleaf_albums_move_cancelled": "Move cancelled",
+  "frameleaf_albums_move_failed": "The details were saved, but the album could not be moved.",
   "frameleaf_albums_move_no_collections": "You have no collections yet. Create one from the New menu first.",
   "frameleaf_albums_move_on_its_own": "On its own, in no collection",
   "frameleaf_albums_move_title": "Move “{name}”",
