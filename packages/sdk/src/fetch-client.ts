@@ -2736,6 +2736,8 @@ export type AssetEditsCreateDto = {
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
     appliedTags: boolean;
+    /** The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise */
+    confidence?: number | null;
     context?: string;
     description?: string;
     /** The processing destination that generated the description */

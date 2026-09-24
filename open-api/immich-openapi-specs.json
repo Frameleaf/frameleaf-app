@@ -48394,6 +48394,20 @@
           "appliedTags": {
             "type": "boolean"
           },
+          "confidence": {
+            "description": "The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "context": {
             "type": "string"
           },
