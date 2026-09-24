@@ -297,6 +297,9 @@
     return () => document.removeEventListener('pointerdown', onPointerDown);
   });
 
+  /** Run an action as if chosen from the bar, for the library's keyboard shortcuts and tile actions. */
+  export const performAction = (id: BulkActionId) => perform(id);
+
   /** Escape closes the menu before it clears the selection, as the prototype does. */
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());
   const deleteKey = () => perform(trash || locked ? 'delete-permanently' : 'delete');
@@ -442,7 +445,12 @@
 </div>
 
 {#if dialog === 'change-date'}
-  <BulkDateDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('change-date', payload)} />
+  <BulkDateDialog
+    {count}
+    initialDateTime={assets[0]?.localDateTime}
+    bind:open={dialogOpen}
+    onSubmit={(payload) => submitDialog('change-date', payload)}
+  />
 {:else if dialog === 'change-description'}
   <BulkDescriptionDialog
     {count}

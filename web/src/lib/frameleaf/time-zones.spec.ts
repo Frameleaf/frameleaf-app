@@ -1,0 +1,42 @@
+import { describe, expect, it } from 'vitest';
+import { formatUtcOffset, splitLocalDateTime, timeZoneChoices, timeZoneCity, timeZoneLabel } from './time-zones';
+
+describe('friendly time zones (FL-32, T-19)', () => {
+  const winter = new Date('2026-01-15T12:00:00Z');
+  const summer = new Date('2026-07-15T12:00:00Z');
+
+  it('names a zone by its city, its region and the offset on the date being set', () => {
+    expect(timeZoneLabel('America/Vancouver', winter, 'en').label).toBe('Vancouver (Pacific Time · UTC−08:00)');
+    expect(timeZoneLabel('America/Vancouver', summer, 'en').label).toBe('Vancouver (Pacific Time · UTC−07:00)');
+    expect(timeZoneLabel('Asia/Kolkata', winter, 'en').offsetMinutes).toBe(330);
+    expect(timeZoneCity('America/Argentina/Buenos_Aires')).toBe('Buenos Aires');
+  });
+
+  it('formats offsets with a real minus sign and plain UTC at zero', () => {
+    expect(formatUtcOffset(0)).toBe('UTC');
+    expect(formatUtcOffset(330)).toBe('UTC+05:30');
+    expect(formatUtcOffset(-420)).toBe('UTC−07:00');
+  });
+
+  it('lists UTC first, then places west to east, without raw Etc offsets', () => {
+    const choices = timeZoneChoices({
+      at: winter,
+      locale: 'en',
+      zones: ['Europe/London', 'Etc/GMT+5', 'America/Vancouver', 'UTC', 'Asia/Tokyo', 'America/Toronto'],
+    });
+    expect(choices.map((choice) => choice.value)).toEqual([
+      'UTC',
+      'America/Vancouver',
+      'America/Toronto',
+      'Europe/London',
+      'Asia/Tokyo',
+    ]);
+    expect(choices.every((choice) => !choice.label.includes('/'))).toBe(true);
+  });
+
+  it('reads the pre-fill from the first selected item', () => {
+    expect(splitLocalDateTime('2024-12-11T18:42')).toEqual({ date: '2024-12-11', time: '18:42' });
+    expect(splitLocalDateTime(undefined)).toBeNull();
+    expect(splitLocalDateTime('garbage')).toBeNull();
+  });
+});
