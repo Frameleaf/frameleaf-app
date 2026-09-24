@@ -117,6 +117,8 @@ export const ANALYTICS_SERIES: readonly AnalyticsSeriesDefinition[] = Object.fre
   ),
   hostSeries(AnalyticsSeriesId.HostVolumeUsedBytes, 'library volume file system, nightly collector'),
   hostSeries(AnalyticsSeriesId.HostCapacityBytes, 'library volume file system, nightly collector'),
+  hostSeries(AnalyticsSeriesId.HostThumbnailBytes, 'thumbnail and preview folder, nightly collector'),
+  hostSeries(AnalyticsSeriesId.HostEncodedVideoBytes, 'encoded video folder, nightly collector'),
   liveSeries(AnalyticsSeriesId.Arrivals, AnalyticsUnit.Items, 'asset table, by the day each item was added', 'library'),
   liveSeries(
     AnalyticsSeriesId.Captures,

@@ -14,6 +14,7 @@ import {
   AnalyticsReportResponseDto,
   AnalyticsScopeOption,
   AnalyticsScopesResponseDto,
+  AnalyticsVolumeBreakdownDto,
 } from 'src/dtos/analytics.dto.js';
 import {
   AnalyticsSampleGrain,
@@ -89,6 +90,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
     livePhotos: rows.livePhotos,
     // HDR is only known from a read video stream; with none read the breakdown is left out
     hdr: rows.hdr.probedVideos > 0 ? rows.hdr : null,
+    coverage: rows.coverage,
     peopleAndPlaces: people
       ? {
           faces: people.faces,
@@ -207,7 +209,7 @@ export class AnalyticsService {
       this.analyticsRepository.getPhysical(scope),
       this.analyticsRepository.getArrivalsByDay(scope, window.from, window.through),
       this.analyticsRepository.getCapturesByDay(scope, window.from, window.through),
-      this.analyticsRepository.getCameras(scope),
+      this.analyticsRepository.getCameras(scope, getHiddenContentQueryOptions(auth)),
       this.analyticsRepository.getAlbums(scope, auth.user.id),
       isHost ? this.analyticsRepository.getProcessingByDay(window.from, window.through) : Promise.resolve(null),
       this.analyticsRepository.getSamples(scopeKey, GROWTH_SERIES, parseIsoDay(window.from)),
@@ -222,6 +224,10 @@ export class AnalyticsService {
     ]);
 
     const items = inventory.photos + inventory.videos;
+    // FL-79: what uses the volume, for the administrator's whole-server report only
+    if (isHost) {
+      host.breakdown = await this.readVolumeBreakdown(host.volumeUsedBytes, physical.uploadedPhysicalBytes);
+    }
     const growth = bindGrowth(window.buckets, samples);
     const arrivalTotals = sumIntoBuckets(window.buckets, arrivals, ['photos', 'videos'] as const);
     const processingTotals = processing
@@ -448,6 +454,18 @@ export class AnalyticsService {
       const disk = await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library));
       add({ kind: AnalyticsScopeKind.Host }, AnalyticsSeriesId.HostVolumeUsedBytes, disk.total - disk.free);
       add({ kind: AnalyticsScopeKind.Host }, AnalyticsSeriesId.HostCapacityBytes, disk.total);
+      // FL-79: the generated files (thumbnails and previews, encoded video) behind the storage donut
+      const folders = [
+        [AnalyticsSeriesId.HostThumbnailBytes, StorageFolder.Thumbnails],
+        [AnalyticsSeriesId.HostEncodedVideoBytes, StorageFolder.EncodedVideo],
+      ] as const;
+      for (const [series, folder] of folders) {
+        add(
+          { kind: AnalyticsScopeKind.Host },
+          series,
+          await this.storageRepository.getFolderBytes(StorageCore.getBaseFolder(folder)),
+        );
+      }
     } catch (error) {
       // A volume that cannot be read tonight is a gap in its history, never a zero.
       this.logger.warn(
@@ -473,6 +491,43 @@ export class AnalyticsService {
     this.logger.log(
       `Analytics collected ${samples.length} readings; downsampled ${retention.downsampled}, removed ${retention.deleted}`,
     );
+  }
+
+  /**
+   * What uses the library volume (FL-79, the template's storage donut): uploaded originals,
+   * generated previews and encoded video (measured by the nightly collector), the database, and
+   * the rest of the volume used. The parts and `otherBytes` add up to `volumeUsedBytes`; when the
+   * measured parts are larger (a database on another disk, say) `otherBytes` is 0 and
+   * `exceedsUsed` says so. Nothing here is estimated.
+   */
+  private async readVolumeBreakdown(
+    volumeUsedBytes: number | null,
+    originalsBytes: number,
+  ): Promise<AnalyticsVolumeBreakdownDto | null> {
+    if (volumeUsedBytes === null) {
+      return null;
+    }
+    const [databaseBytes, generated] = await Promise.all([
+      this.analyticsRepository.getDatabaseBytes(),
+      this.analyticsRepository.getLatestHostSamples([
+        AnalyticsSeriesId.HostThumbnailBytes,
+        AnalyticsSeriesId.HostEncodedVideoBytes,
+      ]),
+    ]);
+    const previews = generated.find((sample) => sample.series === AnalyticsSeriesId.HostThumbnailBytes);
+    const encoded = generated.find((sample) => sample.series === AnalyticsSeriesId.HostEncodedVideoBytes);
+    const observed = [previews, encoded].filter((sample) => sample !== undefined).map((sample) => sample.observedAt);
+    const measured = originalsBytes + (previews?.value ?? 0) + (encoded?.value ?? 0) + databaseBytes;
+    return {
+      originalsBytes,
+      previewsBytes: previews?.value ?? null,
+      encodedVideoBytes: encoded?.value ?? null,
+      generatedObservedAt:
+        observed.length > 0 ? new Date(Math.min(...observed.map((date) => date.getTime()))).toISOString() : null,
+      databaseBytes,
+      otherBytes: Math.max(0, volumeUsedBytes - measured),
+      exceedsUsed: measured > volumeUsedBytes,
+    };
   }
 
   /**

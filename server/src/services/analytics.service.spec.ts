@@ -95,6 +95,7 @@ const insightRows = (overrides: Partial<AnalyticsInsightRows> = {}): AnalyticsIn
   ],
   livePhotos: 12,
   hdr: { probedVideos: 0, hdrVideos: 0, dolbyVisionVideos: 0 },
+  coverage: { facesChecked: 90, searchIndexed: 95 },
   records: {
     oldest: { localDateTime: new Date('2009-06-14T08:00:00.000Z'), name: 'IMG_0001.JPG' },
     largest: { bytes: 9000, name: 'clip.mov' },
@@ -123,8 +124,9 @@ describe(AnalyticsService.name, () => {
     upsertSamples: vitest.fn(),
     applyRetention: vitest.fn(),
     getInsights: vitest.fn(),
+    getDatabaseBytes: vitest.fn(),
   };
-  const storageRepository = { checkDiskUsage: vitest.fn() };
+  const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
 
   let sut: AnalyticsService;
@@ -163,6 +165,8 @@ describe(AnalyticsService.name, () => {
     analyticsRepository.getCollectorSnapshot.mockResolvedValue([]);
     analyticsRepository.applyRetention.mockResolvedValue({ downsampled: 0, deleted: 0 });
     analyticsRepository.getInsights.mockResolvedValue(insightRows());
+    analyticsRepository.getDatabaseBytes.mockResolvedValue(50_000);
+    storageRepository.getFolderBytes.mockResolvedValue(0);
     storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 400_000, available: 350_000 });
     sut = new AnalyticsService(
       logger as never,
@@ -326,13 +330,69 @@ describe(AnalyticsService.name, () => {
         { series: AnalyticsSeriesId.HostCapacityBytes, value: 900, observedAt: new Date('2026-09-10T00:00:00Z') },
       ]);
       const result = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
-      expect(result.host).toEqual({
+      expect(result.host).toMatchObject({
         state: AnalyticsState.Stale,
         observedAt: '2026-09-10T00:00:00.000Z',
         volumeUsedBytes: 500,
         capacityBytes: 900,
         freeBytes: null,
       });
+      // the measured parts (5,000 bytes of originals, a 50,000-byte database) exceed the stale reading
+      expect(result.host.breakdown).toMatchObject({ otherBytes: 0, exceedsUsed: true });
+    });
+
+    it('breaks the volume down for the whole server so the parts add up to the volume used', async () => {
+      analyticsRepository.getLatestHostSamples.mockImplementation((series?: AnalyticsSeriesId[]) =>
+        Promise.resolve(
+          series?.includes(AnalyticsSeriesId.HostThumbnailBytes)
+            ? [
+                {
+                  series: AnalyticsSeriesId.HostThumbnailBytes,
+                  value: 20_000,
+                  observedAt: new Date('2026-09-19T00:05:00Z'),
+                },
+                {
+                  series: AnalyticsSeriesId.HostEncodedVideoBytes,
+                  value: 30_000,
+                  observedAt: new Date('2026-09-19T00:06:00Z'),
+                },
+              ]
+            : [],
+        ),
+      );
+      const { host } = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      expect(host.breakdown).toEqual({
+        originalsBytes: 5000,
+        previewsBytes: 20_000,
+        encodedVideoBytes: 30_000,
+        generatedObservedAt: '2026-09-19T00:05:00.000Z',
+        databaseBytes: 50_000,
+        otherBytes: 600_000 - 5000 - 20_000 - 30_000 - 50_000,
+        exceedsUsed: false,
+      });
+      const { originalsBytes, previewsBytes, encodedVideoBytes, databaseBytes, otherBytes } = host.breakdown!;
+      expect(originalsBytes + previewsBytes! + encodedVideoBytes! + databaseBytes + otherBytes).toBe(
+        host.volumeUsedBytes,
+      );
+    });
+
+    it('leaves generated sizes unknown before the first collection', async () => {
+      const { host } = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      expect(host.breakdown).toMatchObject({ previewsBytes: null, encodedVideoBytes: null, generatedObservedAt: null });
+    });
+
+    it('never reads the database size or the breakdown for an account or library', async () => {
+      const { host } = await sut.getReport(user(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
+      expect(host.breakdown ?? null).toBeNull();
+      expect(analyticsRepository.getDatabaseBytes).not.toHaveBeenCalled();
+    });
+
+    it('reads cameras with the same hidden-content rules as the insights, and passes coverage through', async () => {
+      const result = await sut.getReport(user(), { scope: `account:${USER_ID}`, range: AnalyticsRange.Year });
+      expect(analyticsRepository.getCameras.mock.calls[0][1]).toEqual(
+        analyticsRepository.getInsights.mock.calls[0][1].privacy,
+      );
+      expect(result.insights!.coverage).toEqual({ facesChecked: 90, searchIndexed: 95 });
     });
 
     it('shows the volume as unknown with neither a live nor a collected reading', async () => {
@@ -414,8 +474,12 @@ describe(AnalyticsService.name, () => {
       ]);
       await expect(sut.handleCollect()).resolves.toBe(JobStatus.Success);
       const samples = written();
-      // host 5 library series + 2 volume series; 3 accounts and 2 libraries × 5 series
-      expect(samples).toHaveLength(7 + 5 * 5);
+      // host 5 library series + 2 volume series + 2 generated folders; 3 accounts and 2 libraries × 5 series
+      expect(samples).toHaveLength(9 + 5 * 5);
+      expect(storageRepository.getFolderBytes.mock.calls.map(([folder]) => folder)).toEqual([
+        '/data/thumbs',
+        '/data/encoded-video',
+      ]);
       expect(samples.every((row) => /^(host|account:[0-9a-f-]{36}|library:[0-9a-f-]{36})$/.test(row.scopeKey))).toBe(
         true,
       );
