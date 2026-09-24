@@ -1852,7 +1852,24 @@ export type AnalyticsHistoryDto = {
     state: AnalyticsState;
     weekRetentionDays: number;
 };
+export type AnalyticsVolumeBreakdownDto = {
+    /** This server database on disk (pg_database_size) */
+    databaseBytes: number;
+    /** Encoded video folder, from the nightly collector; null before its first reading */
+    encodedVideoBytes: number | null;
+    /** The measured parts add up to more than the volume used, for example a database on another disk; otherBytes is then 0 */
+    exceedsUsed: boolean;
+    /** When the generated folders were last measured */
+    generatedObservedAt: string | null;
+    /** Uploaded original files on the volume, each shared file counted once (Locked excluded) */
+    originalsBytes: number;
+    /** volumeUsedBytes minus every measured part: other files on the volume, Locked originals and anything unmeasured */
+    otherBytes: number;
+    /** Thumbnail and preview folder, from the nightly collector; null before its first reading */
+    previewsBytes: number | null;
+};
 export type AnalyticsHostDto = {
+    breakdown?: (AnalyticsVolumeBreakdownDto) | null;
     /** Bytes */
     capacityBytes: number | null;
     /** Bytes */
@@ -1865,6 +1882,12 @@ export type AnalyticsHostDto = {
 export type AnalyticsYearCountDto = {
     count: number;
     year: number;
+};
+export type AnalyticsCoverageDto = {
+    /** Items face detection has run on */
+    facesChecked: number;
+    /** Items with a smart-search embedding */
+    searchIndexed: number;
 };
 export type AnalyticsFocalLengthDto = {
     count: number;
@@ -1955,6 +1978,7 @@ export type AnalyticsVideoResolutionDto = {
 export type AnalyticsInsightsDto = {
     /** Items per local capture year, all time */
     capturesByYear: AnalyticsYearCountDto[];
+    coverage: AnalyticsCoverageDto;
     /** Every bucket, in order; adds up to summary.items */
     focalLengths: AnalyticsFocalLengthDto[];
     /** Null when no video stream has been read, so HDR cannot be told */
@@ -17892,6 +17916,8 @@ export enum AnalyticsSeriesId {
     LibraryPhysicalBytes = "library.physicalBytes",
     HostVolumeUsedBytes = "host.volumeUsedBytes",
     HostCapacityBytes = "host.capacityBytes",
+    HostThumbnailBytes = "host.thumbnailBytes",
+    HostEncodedVideoBytes = "host.encodedVideoBytes",
     LibraryArrivals = "library.arrivals",
     LibraryCaptures = "library.captures",
     ProcessingCompleted = "processing.completed",

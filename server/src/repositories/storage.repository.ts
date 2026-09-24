@@ -249,6 +249,43 @@ export class StorageRepository {
     };
   }
 
+  /**
+   * The bytes of every regular file under a folder, symbolic links not followed (FL-79: the
+   * nightly analytics collector's generated-file sizes). A missing folder is empty.
+   */
+  async getFolderBytes(folder: string): Promise<number> {
+    let total = 0;
+    const pending = [folder];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+      } catch (error: any) {
+        if (error?.code === 'ENOENT') {
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of entries) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(entryPath);
+        } else if (entry.isFile()) {
+          try {
+            total += (await fs.lstat(entryPath)).size;
+          } catch (error: any) {
+            // a file removed while the folder is read no longer counts
+            if (error?.code !== 'ENOENT') {
+              throw error;
+            }
+          }
+        }
+      }
+    }
+    return total;
+  }
+
   crawl(crawlOptions: CrawlOptionsDto): Promise<string[]> {
     const { pathsToCrawl, exclusionPatterns, includeHidden } = crawlOptions;
     if (pathsToCrawl.length === 0) {
