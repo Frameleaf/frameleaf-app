@@ -299,3 +299,15 @@ export const defaultIconFor = (kind: AlbumKind | string | undefined): string => 
     }
   }
 };
+
+/**
+ * What the Frameleaf edit dialog saves for an album, a collection or a shared space
+ * (`CollectionFormDialog` in the design's `CollectionHeader.jsx`). `parentId` is present only
+ * when the collection field was offered, so leaving it out never moves the album.
+ */
+export interface AlbumDetailsDraft {
+  albumName: string;
+  description: string | null;
+  icon: string;
+  parentId?: string | null;
+}

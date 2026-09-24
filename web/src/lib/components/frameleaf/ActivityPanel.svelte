@@ -13,7 +13,16 @@
     type AlbumResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiArrowUp, mdiClose, mdiCommentOutline, mdiDeleteOutline, mdiHeart, mdiHeartOutline } from '@mdi/js';
+  import {
+    mdiArrowUp,
+    mdiChevronDown,
+    mdiChevronUp,
+    mdiClose,
+    mdiCommentOutline,
+    mdiDeleteOutline,
+    mdiHeart,
+    mdiHeartOutline,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -35,9 +44,14 @@
      * absent, a comment on a photo shows no picture to open.
      */
     onOpenAsset?: (assetId: string) => void;
+    /**
+     * One item's likes and comments in the viewer (AL-18). The caller has initialised
+     * `activityManager` for this album and item, so the list and the like are the item's.
+     */
+    assetId?: string;
   }
 
-  let { album, onClose, onOpenAsset }: Props = $props();
+  let { album, onClose, onOpenAsset, assetId }: Props = $props();
 
   let draft = $state('');
   let sending = $state(false);
@@ -57,6 +71,13 @@
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
   );
   const likeCount = $derived(activityManager.likeCount);
+  /** Who liked this album, or this item in the viewer: the likes at this panel's level only. */
+  const likers = $derived(
+    activityManager.activities.filter(
+      (entry) => entry.type === ReactionType.Like && (assetId ? entry.assetId === assetId : !entry.assetId),
+    ),
+  );
+  let likersOpen = $state(false);
   const liked = $derived(!!activityManager.isLiked);
 
   const likeLabel = $derived(
@@ -104,7 +125,7 @@
     }
     sending = true;
     try {
-      await activityManager.addActivity({ albumId: album.id, type: ReactionType.Comment, comment });
+      await activityManager.addActivity({ albumId: album.id, assetId, type: ReactionType.Comment, comment });
       draft = '';
       note = $t('frameleaf_album_activity_comment_added');
       composer?.focus();
@@ -118,7 +139,10 @@
   const remove = async (activity: ActivityResponseDto) => {
     try {
       await activityManager.deleteActivity(activity);
-      note = $t('frameleaf_album_activity_comment_deleted');
+      note =
+        activity.type === ReactionType.Like
+          ? $t('frameleaf_album_activity_unliked')
+          : $t('frameleaf_album_activity_comment_deleted');
     } catch (error) {
       handleError(error, $t('errors.unable_to_remove_reaction'));
     }
@@ -157,8 +181,49 @@
       <Icon icon={liked ? mdiHeart : mdiHeartOutline} size="18" />
       <span>{liked ? $t('frameleaf_album_activity_liked_label') : $t('frameleaf_album_activity_like')}</span>
     </button>
-    <span class="count">{likeLabel}</span>
+    {#if likers.length > 0}
+      <button
+        type="button"
+        class="count likers-toggle"
+        aria-expanded={likersOpen}
+        aria-controls="activity-likers"
+        onclick={() => (likersOpen = !likersOpen)}
+      >
+        {likeLabel}
+        <Icon icon={likersOpen ? mdiChevronUp : mdiChevronDown} size="16" />
+      </button>
+    {:else}
+      <span class="count">{likeLabel}</span>
+    {/if}
   </div>
+
+  {#if likersOpen && likers.length > 0}
+    <!-- Who liked it, as the legacy activity list showed; the owner may remove someone's like. -->
+    <ul id="activity-likers" class="likers" aria-label={$t('frameleaf_album_activity_likers')}>
+      {#each likers as entry (entry.id)}
+        {@const own = entry.user.id === currentUserId}
+        <li>
+          <span class="avatar" aria-hidden="true"><UserAvatar user={entry.user} size="sm" /></span>
+          <span class="liker-name">{own ? $t('frameleaf_album_you') : entry.user.name}</span>
+          {#if own || isAlbumOwner}
+            <button
+              type="button"
+              class="delete"
+              aria-label={own
+                ? $t('frameleaf_album_activity_delete_own_like')
+                : $t('frameleaf_album_activity_delete_like', { values: { name: entry.user.name } })}
+              title={own
+                ? $t('frameleaf_album_activity_delete_own_like')
+                : $t('frameleaf_album_activity_delete_like', { values: { name: entry.user.name } })}
+              onclick={() => void remove(entry)}
+            >
+              <Icon icon={mdiDeleteOutline} size="16" />
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
 
   {#if !enabled}
     <p class="off">
@@ -183,7 +248,9 @@
               <button
                 type="button"
                 class="delete"
-                aria-label={$t('frameleaf_album_activity_delete_comment')}
+                aria-label={own
+                  ? $t('frameleaf_album_activity_delete_comment')
+                  : $t('frameleaf_album_activity_delete_comment_by', { values: { name: entry.user.name } })}
                 onclick={() => void remove(entry)}
               >
                 <Icon icon={mdiDeleteOutline} size="16" />
@@ -314,6 +381,39 @@
   .count {
     color: var(--fl-muted);
     font-size: 0.875rem;
+  }
+  .likers-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 44px;
+    padding: 0 0.25rem;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .likers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0.375rem;
+    list-style: none;
+    max-height: 10rem;
+    overflow-y: auto;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-raised);
+  }
+  .likers li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+  }
+  .liker-name {
+    flex: 1;
+    min-width: 0;
   }
   .off {
     display: flex;

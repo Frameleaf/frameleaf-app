@@ -15,12 +15,26 @@
   let {
     open = $bindable(false),
     assetIds,
+    onClosed,
   }: {
     open?: boolean;
     assetIds: string[];
+    /** Called once the sheet and the link form it opened have both closed. */
+    onClosed?: () => void;
   } = $props();
 
   let linkFormOpen = $state(false);
+
+  let wasActive = false;
+  $effect(() => {
+    const active = open || linkFormOpen;
+    if (active) {
+      wasActive = true;
+    } else if (wasActive) {
+      wasActive = false;
+      onClosed?.();
+    }
+  });
 
   const subject = $derived($t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }));
   const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });

@@ -4,7 +4,7 @@
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
   import RuleBuilder from '$lib/components/frameleaf/RuleBuilder.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import { defaultIconFor } from '$lib/frameleaf/album-directory';
+  import { defaultIconFor, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { emptyRule, ruleProblem, toCreate, type RuleDraft } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
   import { AlbumKind, type AlbumResponseDto, type ClassificationRuleCreateDto, type CreateAlbumDto } from '@immich/sdk';
@@ -12,9 +12,13 @@
   import { t } from 'svelte-i18n';
 
   /**
-   * Create an album, a collection or a shared space. The icon chooser over the
-   * whole Material catalogue is embedded instead of a small fixed grid; an
-   * album may be placed inside a collection the user can edit.
+   * Create or edit an album, a collection or a shared space: the design's `CollectionFormDialog`
+   * (`CollectionHeader.jsx:330-455`), which serves both "New …" and "Edit …". The icon chooser
+   * over the whole Material catalogue is embedded instead of a small fixed grid; an album may be
+   * placed inside a collection the user can edit.
+   *
+   * Editing (`album` + `onSave`) prefills the saved details and saves them through the caller;
+   * a smart album's rule is edited in `SmartAlbumRuleDialog`, so the switch is not offered here.
    *
    * An album can be a smart album (FL-60): the Smart album switch and rule builder from the
    * design's `CollectionFormDialog`. A smart album is created with its rule in one request and
@@ -32,6 +36,15 @@
     smart?: boolean;
     /** Create a smart album with its rule. Without it the switch is not offered. */
     onCreateSmart?: (dto: ClassificationRuleCreateDto) => Promise<boolean>;
+    /** The album, collection or space being edited. With it the dialog is "Edit …" and calls `onSave`. */
+    album?: AlbumResponseDto;
+    /**
+     * Save the edited details. `parentId` is sent only when the collection field was offered
+     * (`canMove`), so a member who may not move the album never changes where it lives.
+     */
+    onSave?: (dto: AlbumDetailsDraft) => Promise<boolean>;
+    /** Offer the collection field while editing; moving an album is the owner's (server rule). */
+    canMove?: boolean;
   }
 
   let {
@@ -42,13 +55,19 @@
     onCreate,
     smart: smartDefault = false,
     onCreateSmart,
+    album,
+    onSave,
+    canMove = false,
   }: Props = $props();
+
+  const editing = $derived(!!album && !!onSave);
+  const formKind = $derived(album?.kind ?? kind);
 
   let smart = $state(false);
   let rule = $state<RuleDraft>(emptyRule());
   let sources = $state<RuleSources>({ people: [], tags: [] });
   let sourcesLoaded = false;
-  const canBeSmart = $derived(kind === AlbumKind.Album && !!onCreateSmart);
+  const canBeSmart = $derived(!editing && kind === AlbumKind.Album && !!onCreateSmart);
   const smartOn = $derived(canBeSmart && smart);
 
   $effect(() => {
@@ -76,22 +95,32 @@
       return;
     }
 
-    albumName = '';
-    description = '';
-    icon = defaultIconFor(kind);
-    parentId = kind === AlbumKind.Album ? defaultParentId : null;
+    const current = untrack(() => (editing ? album : undefined));
+    albumName = current?.albumName ?? '';
+    description = current?.description ?? '';
+    icon = current?.icon ?? defaultIconFor(current?.kind ?? kind);
+    parentId = current ? (current.parentId ?? null) : kind === AlbumKind.Album ? defaultParentId : null;
     error = '';
     smart = smartDefault;
     rule = emptyRule(untrack(() => sources.settings?.defaultAction));
   });
 
   const title = $derived(
-    kind === AlbumKind.Collection
-      ? $t('frameleaf_albums_create_collection')
-      : kind === AlbumKind.Space
-        ? $t('frameleaf_albums_create_space')
-        : $t('frameleaf_albums_create_album'),
+    editing
+      ? formKind === AlbumKind.Collection
+        ? $t('frameleaf_albums_edit_collection')
+        : formKind === AlbumKind.Space
+          ? $t('frameleaf_albums_edit_space')
+          : $t('frameleaf_albums_edit_album')
+      : kind === AlbumKind.Collection
+        ? $t('frameleaf_albums_create_collection')
+        : kind === AlbumKind.Space
+          ? $t('frameleaf_albums_create_space')
+          : $t('frameleaf_albums_create_album'),
   );
+  /** Collections the album may live in; never itself (CollectionHeader.jsx `parentOptions`). */
+  const parents = $derived(collections.filter((collection) => collection.id !== album?.id));
+  const showParent = $derived(formKind === AlbumKind.Album && parents.length > 0 && (!editing || canMove));
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -110,6 +139,18 @@
     busy = true;
     error = '';
     try {
+      if (editing) {
+        const saved = await onSave!({
+          albumName: name,
+          description: description.trim() || null,
+          icon,
+          ...(showParent && { parentId: parentId ?? null }),
+        });
+        if (saved) {
+          open = false;
+        }
+        return;
+      }
       const ok = smartOn
         ? await onCreateSmart!(
             toCreate(rule, {
@@ -137,7 +178,7 @@
 
 <Dialog {title} closeLabel={$t('close')} wide={smartOn} bind:open>
   <form class="create" class:smart={smartOn} onsubmit={submit}>
-    {#if kind === AlbumKind.Space}
+    {#if kind === AlbumKind.Space && !editing}
       <p class="hint">{$t('frameleaf_albums_space_description')}</p>
     {/if}
     <label class="field">
@@ -155,12 +196,12 @@
       </span>
       <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
     </div>
-    {#if kind === AlbumKind.Album && collections.length > 0}
+    {#if showParent}
       <label class="field">
         <span>{$t('frameleaf_albums_in_collection')}</span>
         <select bind:value={parentId}>
           <option value={null}>{$t('frameleaf_albums_no_collection')}</option>
-          {#each collections as collection (collection.id)}
+          {#each parents as collection (collection.id)}
             <option value={collection.id}>{collection.albumName || $t('unnamed_album')}</option>
           {/each}
         </select>
@@ -187,7 +228,7 @@
     {/if}
     <div class="buttons">
       <button type="button" onclick={() => (open = false)} disabled={busy}>{$t('cancel')}</button>
-      <button type="submit" class="primary" disabled={busy}>{$t('create')}</button>
+      <button type="submit" class="primary" disabled={busy}>{editing ? $t('save') : $t('create')}</button>
     </div>
   </form>
 </Dialog>

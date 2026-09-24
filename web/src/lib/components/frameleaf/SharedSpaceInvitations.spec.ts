@@ -53,7 +53,7 @@ describe('SharedSpaceInvitations', () => {
 
     expect(screen.getByRole('article', { name: 'Family Space' })).toBeInTheDocument();
     expect(screen.getByText('Ada invited you')).toBeInTheDocument();
-    expect(screen.getByText(en.frameleaf_spaces_role_viewer)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_album_role_viewer)).toBeInTheDocument();
     expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
   });

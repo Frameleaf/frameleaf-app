@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -19,7 +20,7 @@
     type UserResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAccountPlusOutline, mdiLinkVariant } from '@mdi/js';
+  import { mdiAccountPlusOutline, mdiClose, mdiLinkVariant } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -48,6 +49,7 @@
   let loading = $state(false);
   let busy = $state(false);
   let invitee = $state('');
+  let query = $state('');
   let inviteRole = $state<AlbumUserRole>(AlbumUserRole.Editor);
   let linkFormOpen = $state(false);
 
@@ -58,6 +60,11 @@
   const members = $derived(album.albumUsers);
   const memberIds = $derived(new Set(album.albumUsers.map(({ user }) => user.id)));
   const available = $derived(candidates.filter((user) => !memberIds.has(user.id)));
+  const needle = $derived(query.trim().toLowerCase());
+  /** The design's invite search (`ShareDialog`): by name or email, never offering a member. */
+  const matches = $derived(
+    available.filter((user) => !needle || `${user.name} ${user.email}`.toLowerCase().includes(needle)),
+  );
 
   const kindLabel = $derived(
     album.kind === AlbumKind.Collection
@@ -94,6 +101,7 @@
     }
 
     invitee = '';
+    query = '';
     inviteRole = AlbumUserRole.Editor;
     void loadCandidates();
   });
@@ -108,6 +116,7 @@
       const added = await handleInviteAlbumUsers(album, [{ userId: user.id, role: inviteRole }]);
       if (added) {
         invitee = '';
+        query = '';
         await onChanged();
       }
     } finally {
@@ -124,6 +133,13 @@
       busy = false;
     }
   };
+
+  /**
+   * Removing a member asks first, as the space's Members panel does. The design removes at once,
+   * but re-adding cannot undo it: a shared space member comes back only by accepting a new
+   * invitation, so an Undo would not restore what was there.
+   */
+  let removing = $state<{ open: boolean; user?: UserResponseDto }>({ open: false });
 
   const remove = async (user: UserResponseDto) => {
     busy = true;
@@ -148,8 +164,64 @@
   bind:open
 >
   <div class="share">
-    <section aria-label={$t('frameleaf_albums_members')}>
-      <h3>{$t('frameleaf_albums_members')}</h3>
+    {#if isOwner}
+      <section aria-label={$t('invite_people')}>
+        {#if loading}
+          <Status message={$t('loading')} busy />
+        {:else}
+          <div class="invite">
+            <label class="field">
+              <span>{$t('frameleaf_album_share_invite_label')}</span>
+              <input
+                type="search"
+                bind:value={query}
+                data-initial-focus
+                placeholder={$t('frameleaf_album_share_invite_search')}
+                disabled={busy}
+              />
+            </label>
+            <ul class="people" role="listbox" aria-label={$t('frameleaf_album_share_people')}>
+              {#each matches as user (user.id)}
+                <li>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={invitee === user.id}
+                    onclick={() => (invitee = invitee === user.id ? '' : user.id)}
+                  >
+                    <span class="avatar" aria-hidden="true"><UserAvatar {user} size="sm" /></span>
+                    <span class="who">
+                      <strong>{user.name}</strong>
+                      <small>{user.email}</small>
+                    </span>
+                  </button>
+                </li>
+              {:else}
+                <li class="empty-row">
+                  {needle ? $t('frameleaf_album_share_no_match') : $t('frameleaf_album_share_everyone')}
+                </li>
+              {/each}
+            </ul>
+            <div class="invite-row">
+              <label>
+                {$t('role')}
+                <select bind:value={inviteRole} disabled={busy}>
+                  <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
+                  <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
+                </select>
+              </label>
+              <button type="button" class="primary" disabled={busy || !invitee} onclick={() => void invite()}>
+                <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="18" /></span>
+                {$t('frameleaf_album_share_invite')}
+              </button>
+            </div>
+          </div>
+        {/if}
+      </section>
+    {/if}
+
+    <section aria-label={$t('frameleaf_album_share_access')}>
+      <h3>{$t('frameleaf_album_share_access')}</h3>
       <ul class="members">
         {#each members as member (member.user.id)}
           {@const self = member.user.id === currentUserId}
@@ -173,8 +245,15 @@
                   <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
                 </select>
               </label>
-              <button type="button" class="remove" disabled={busy} onclick={() => void remove(member.user)}>
-                {$t('remove')}
+              <button
+                type="button"
+                class="remove icon"
+                disabled={busy}
+                aria-label={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
+                title={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
+                onclick={() => (removing = { open: true, user: member.user })}
+              >
+                <Icon icon={mdiClose} size="18" />
               </button>
             {/if}
             {#if self && member.role !== AlbumUserRole.Owner}
@@ -195,38 +274,6 @@
     </section>
 
     {#if isOwner}
-      <section aria-label={$t('invite_people')}>
-        <h3>{$t('invite_people')}</h3>
-        {#if loading}
-          <Status message={$t('loading')} busy />
-        {:else if available.length === 0}
-          <Status message={$t('album_share_no_users')} />
-        {:else}
-          <div class="invite">
-            <label class="grow">
-              <span class="sr-only">{$t('search_people')}</span>
-              <select bind:value={invitee} disabled={busy}>
-                <option value="">{$t('search_people')}</option>
-                {#each available as user (user.id)}
-                  <option value={user.id}>{user.name} · {user.email}</option>
-                {/each}
-              </select>
-            </label>
-            <label>
-              <span class="sr-only">{$t('role')}</span>
-              <select bind:value={inviteRole} disabled={busy}>
-                <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
-                <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
-              </select>
-            </label>
-            <button type="button" class="primary" disabled={busy || !invitee} onclick={() => void invite()}>
-              <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="18" /></span>
-              {$t('frameleaf_album_share_invite')}
-            </button>
-          </div>
-        {/if}
-      </section>
-
       <section aria-label={$t('shared_links')}>
         <h3>{$t('shared_links')}</h3>
         <p class="hint">{$t('frameleaf_album_links_description')}</p>
@@ -251,6 +298,17 @@
 </Dialog>
 
 <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
+
+{#if removing.user}
+  {@const user = removing.user}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_remove_member_title', { values: { name: user.name } })}
+    body={$t('frameleaf_album_remove_member_body', { values: { name: album.albumName || $t('unnamed_album') } })}
+    confirmLabel={$t('frameleaf_album_remove_member_confirm')}
+    bind:open={removing.open}
+    onConfirm={() => remove(user)}
+  />
+{/if}
 
 <style>
   .share {
@@ -307,14 +365,60 @@
   }
   .invite {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 0.5rem;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--fl-muted);
+  }
+  .people {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem;
+    max-height: 12rem;
+    overflow-y: auto;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+  }
+  .people button {
+    width: 100%;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    text-align: start;
+    gap: 0.625rem;
+  }
+  .people button[aria-selected='true'] {
+    background: var(--fl-selected, var(--fl-raised));
+    outline: 2px solid var(--fl-accent);
+    outline-offset: -2px;
+  }
+  .empty-row {
+    padding: 0.5rem;
+    color: var(--fl-muted);
+    font-size: 0.875rem;
+  }
+  .invite-row {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
-  .grow {
-    flex: 1;
-    min-width: 10rem;
+  .invite-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
   }
+  .invite-row select {
+    width: auto;
+  }
+  input,
   select {
     width: 100%;
     padding: 0.5rem 0.5rem;
@@ -355,6 +459,11 @@
   .remove {
     min-height: 36px;
     color: var(--fl-muted);
+  }
+  .remove.icon {
+    justify-content: center;
+    min-width: 36px;
+    padding: 0;
   }
   button:disabled {
     opacity: 0.6;
