@@ -49,8 +49,6 @@
     namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
   );
 
-  const ownerName = $derived(assets.find((asset) => asset.owner)?.owner?.name);
-
   dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
       return;
@@ -99,7 +97,6 @@
 <PublicViewerShell
   {sharedLink}
   title={sharedLink.description || $t('frameleaf_public_default_title')}
-  {ownerName}
   count={assets.length}
   {selecting}
   {selectedCount}

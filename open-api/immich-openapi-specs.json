@@ -59669,6 +59669,19 @@
         ],
         "type": "object"
       },
+      "SharedLinkOwnerResponseDto": {
+        "description": "Public details of the shared link owner",
+        "properties": {
+          "name": {
+            "description": "Display name of the user who created the link",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "SharedLinkResponseDto": {
         "description": "Shared link response",
         "properties": {
@@ -59718,6 +59731,10 @@
           "key": {
             "description": "Encryption key (base64url)",
             "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/SharedLinkOwnerResponseDto",
+            "description": "Display name of the user who created the link, for \"Shared by\" on the public page"
           },
           "password": {
             "description": "Has password",

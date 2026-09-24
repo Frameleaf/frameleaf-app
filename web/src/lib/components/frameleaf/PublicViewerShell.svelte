@@ -18,11 +18,13 @@
    *
    * Every action is gated on the link exactly as the server returned it: Add photos only with
    * `allowUpload`, the download button only with `allowDownload`. The server enforces both again.
+   *
+   * "Shared by" reads the link's own `owner`, which carries only the owner's display name (FL-83). The
+   * avatar is the name's initial: a public visitor cannot fetch the owner's profile image.
    */
   interface Props {
     sharedLink: SharedLinkResponseDto;
     title: string;
-    ownerName?: string;
     count: number;
     /** Select mode; a tile picked some other way (its checkbox) turns it on too. */
     selecting: boolean;
@@ -39,7 +41,6 @@
   let {
     sharedLink,
     title,
-    ownerName,
     count,
     selecting,
     selectedCount,
@@ -52,6 +53,7 @@
     children,
   }: Props = $props();
 
+  const ownerName = $derived(sharedLink.owner?.name?.trim() || undefined);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const expires = $derived(
     sharedLink.expiresAt ? DateTime.fromISO(sharedLink.expiresAt).toRelative({ locale: $locale }) : null,
