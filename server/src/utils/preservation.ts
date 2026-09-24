@@ -556,6 +556,27 @@ export const checkPreservationEntry = (line: string): PreservationDocumentCheck<
 export const matchesDigest = (bytes: Buffer, expected: PreservationFileDigest | undefined): boolean =>
   !!expected && bytes.length === expected.bytes && createHash('sha256').update(bytes).digest('hex') === expected.sha256;
 
+/**
+ * Whether the manifest's document digests (index, albums, people, tags) are the ones a review recorded.
+ * A package read from a server folder can be rewritten in place between review and apply; what was
+ * reviewed is what may be applied (FL-74). A review that recorded nothing never matches.
+ */
+export const sameReviewedDocuments = (reviewed: unknown, current: PreservationManifest['files']): boolean => {
+  if (!reviewed || typeof reviewed !== 'object' || Array.isArray(reviewed)) {
+    return false;
+  }
+  const recorded = reviewed as Record<string, { sha256?: unknown; bytes?: unknown } | undefined>;
+  const names = new Set([...Object.keys(recorded), ...Object.keys(current)]);
+  for (const name of names) {
+    const was = recorded[name];
+    const now = current[name as PreservationDocument];
+    if (!was || !now || was.sha256 !== now.sha256 || was.bytes !== now.bytes) {
+      return false;
+    }
+  }
+  return true;
+};
+
 /** Serialize a document the way the export writes it, so its digest is reproducible. */
 export const preservationJson = (value: unknown): Buffer =>
   Buffer.from(`${JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? String(item) : item), 2)}\n`);

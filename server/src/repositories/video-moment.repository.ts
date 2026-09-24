@@ -1,14 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetStatus, AssetType, AssetVisibility, VectorIndex, VideoMomentSource } from 'src/enum.js';
+import { probes } from 'src/repositories/database.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   VideoMomentFrameTable,
   VideoMomentIndexTable,
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
-import { anyUuid, asUuid, withVideoFormat, withVideoStream } from 'src/utils/database.js';
+import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -29,6 +32,8 @@ export type VideoMomentSourceRow = NonNullable<Awaited<ReturnType<VideoMomentRep
 export type VideoMomentSearchHit = {
   assetId: string;
   frameId: string;
+  /** The frame's generated moment, when it has one. */
+  momentId: string | null;
   timestampMs: number;
   distance: number;
   caption: string | null;
@@ -48,7 +53,11 @@ export type VideoMomentSearchScope = {
   ownerId: string;
   /** The same owner, only when their session is unlocked; otherwise Locked videos are left out. */
   lockedOwnerId?: string;
+  /** The session's hidden-content filter: suppressed people, pets and tags, and sensitive media while locked. */
+  privacy?: HiddenContentQueryOptions;
   limit: number;
+  /** A frame never returned: the one a frame-to-moment search started from. */
+  excludeFrameId?: string;
 };
 
 /**
@@ -98,6 +107,30 @@ export class VideoMomentRepository {
       .where('asset.id', '=', anyUuid(assetIds))
       .execute();
     return new Map(rows.map((row) => [row.id, sourceFingerprint(row as Parameters<typeof sourceFingerprint>[0])]));
+  }
+
+  /**
+   * Whether the frames on record were cut from the original as it is now, read inside the caller's
+   * transaction. Holds off a replacement of the original until the caller commits, as `replaceFrames`
+   * does, so embeddings or captions of frames from a replaced original are never published.
+   */
+  private async framesMatchSource(trx: Kysely<DB>, assetId: string): Promise<boolean> {
+    const current = await trx
+      .selectFrom('asset')
+      .select(['asset.checksum', 'asset.fileModifiedAt'])
+      .where('asset.id', '=', asUuid(assetId))
+      .forShare()
+      .executeTakeFirst();
+    const index = await trx
+      .selectFrom('video_moment_index')
+      .select('sourceFingerprint')
+      .where('assetId', '=', asUuid(assetId))
+      .executeTakeFirst();
+    return (
+      !!current &&
+      !!index &&
+      sourceFingerprint(current as Parameters<typeof sourceFingerprint>[0]) === index.sourceFingerprint
+    );
   }
 
   /** Kind and owner of each asset, for a plan deciding which stages apply. Missing assets are left out. */
@@ -164,6 +197,24 @@ export class VideoMomentRepository {
         'asset.ownerId',
       ])
       .where('video_moment_frame.id', '=', asUuid(frameId))
+      .executeTakeFirst();
+  }
+
+  /**
+   * A frame's stored search embedding and the model it came from, with its video, for a search that
+   * starts from the frame (FL-59). Undefined when the frame has not been indexed.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFrameEmbedding(frameId: string) {
+    return this.db
+      .selectFrom('video_moment_frame_embedding')
+      .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+      .select([
+        'video_moment_frame.assetId',
+        'video_moment_frame_embedding.embedding',
+        'video_moment_frame_embedding.modelName',
+      ])
+      .where('video_moment_frame_embedding.frameId', '=', asUuid(frameId))
       .executeTakeFirst();
   }
 
@@ -304,7 +355,8 @@ export class VideoMomentRepository {
   /**
    * Store frame embeddings and make sure every frame has its generated moment, only while the
    * frames are still the ones the embeddings were computed from: a frame replaced in the meantime
-   * has a new id, so its stale embedding matches nothing and is not written.
+   * has a new id, so its stale embedding matches nothing and is not written. Nothing is written
+   * either when the original was replaced after the frames were cut and before they were invalidated.
    */
   async publishIndex(
     assetId: string,
@@ -312,6 +364,9 @@ export class VideoMomentRepository {
     patch: { embeddingModel: string; embeddingDestinationId: string | null },
   ): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
+      if (!(await this.framesMatchSource(trx, assetId))) {
+        return 0;
+      }
       const frames = await trx
         .selectFrom('video_moment_frame')
         .select(['id', 'timestampMs'])
@@ -368,7 +423,8 @@ export class VideoMomentRepository {
 
   /**
    * Store generated captions for frames that are still current, creating their generated moment
-   * when the index stage has not. Manual moments are never written here.
+   * when the index stage has not. Manual moments are never written here, and nothing is written
+   * when the original was replaced after the frames were cut.
    */
   async publishCaptions(
     assetId: string,
@@ -382,6 +438,9 @@ export class VideoMomentRepository {
     },
   ): Promise<number> {
     return this.db.transaction().execute(async (trx) => {
+      if (!(await this.framesMatchSource(trx, assetId))) {
+        return 0;
+      }
       const frames = await trx
         .selectFrom('video_moment_frame')
         .select(['id', 'timestampMs'])
@@ -499,45 +558,73 @@ export class VideoMomentRepository {
   }
 
   /**
-   * Frames nearest a text embedding in one library. Only embeddings from `modelName`, the model the
-   * text was encoded with: vectors from another model are not comparable. Only videos an ordinary
+   * Frames nearest a text or frame embedding in one library. Only embeddings from `modelName`, the
+   * model the query was encoded with: vectors from another model are not comparable. Only videos an ordinary
    * read may show: active, not deleted, Timeline or Archive, and not Locked unless the owner's
    * session is unlocked.
    */
+  @GenerateSql({
+    params: [
+      DummyValue.VECTOR,
+      DummyValue.STRING,
+      {
+        ownerId: DummyValue.UUID,
+        lockedOwnerId: DummyValue.UUID,
+        privacy: { excludeNsfw: true },
+        limit: 24,
+        excludeFrameId: DummyValue.UUID,
+      },
+    ],
+  })
   async searchFrames(
     embedding: string,
     modelName: string,
     scope: VideoMomentSearchScope,
   ): Promise<VideoMomentSearchHit[]> {
-    const rows = await this.db
-      .selectFrom('video_moment_frame_embedding')
-      .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
-      .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
-      .leftJoin('video_moment', (join) =>
-        join
-          .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
-          .on('video_moment.source', '=', VideoMomentSource.Generated),
-      )
-      .select([
-        'video_moment_frame.assetId',
-        'video_moment_frame.id as frameId',
-        'video_moment_frame.timestampMs',
-        'video_moment.caption',
-        sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
-      ])
-      .where('video_moment_frame_embedding.modelName', '=', modelName)
-      .where('asset.ownerId', '=', asUuid(scope.ownerId))
-      .where('asset.status', '=', AssetStatus.Active)
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
-      .where(notLockedOrOwnedBy(scope.lockedOwnerId))
-      .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
-      .limit(scope.limit)
-      .execute();
+    const rows = await this.db.transaction().execute(async (trx) => {
+      // Like every other vector search, set the probes here rather than relying on a database default.
+      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.VideoMomentFrame])}`.execute(trx);
+      return trx
+        .selectFrom('video_moment_frame_embedding')
+        .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+        .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+        .leftJoin('video_moment', (join) =>
+          join
+            .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
+            .on('video_moment.source', '=', VideoMomentSource.Generated),
+        )
+        .select([
+          'video_moment_frame.assetId',
+          'video_moment_frame.id as frameId',
+          'video_moment.id as momentId',
+          'video_moment_frame.timestampMs',
+          'video_moment.caption',
+          sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
+        ])
+        .where('video_moment_frame_embedding.modelName', '=', modelName)
+        .where('asset.ownerId', '=', asUuid(scope.ownerId))
+        .where('asset.status', '=', AssetStatus.Active)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+        .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+        .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
+        .$if(!!scope.excludeFrameId, (qb) =>
+          qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
+        )
+        .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
+        .limit(scope.limit)
+        .execute();
+    });
     return rows.map((row) => ({ ...row, distance: Number(row.distance) }));
   }
 
   /** Moments whose caption or typed transcript mentions the text, under the same visibility rules. */
+  @GenerateSql({
+    params: [
+      DummyValue.STRING,
+      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, privacy: { excludeNsfw: true }, limit: 24 },
+    ],
+  })
   searchMomentText(text: string, scope: VideoMomentSearchScope): Promise<VideoMomentTextHit[]> {
     const pattern = `%${text.replaceAll(/[%_\\]/g, (match) => `\\${match}`)}%`;
     return this.db
@@ -556,6 +643,7 @@ export class VideoMomentRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
       .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
       .where((eb) =>
         eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
       )

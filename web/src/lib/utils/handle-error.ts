@@ -35,15 +35,20 @@ export function standardizeError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-export function handleError(error: unknown, localizedMessage: string, options?: { notify?: boolean }) {
-  const { notify = true } = options ?? {};
-  const standardizedError = standardizeError(error);
-  if (standardizedError.name === 'AbortError') {
-    return;
-  }
+/**
+ * FL-56: a public share registers what to do when an action is refused because its link was revoked
+ * or expired while the page was open. The share page reloads into its unavailable state instead of
+ * leaving the viewer on stale content with a raw server toast. The handler is given `showError`, the
+ * normal error toast, for when the reload finds the link still valid and the 401 had another cause.
+ */
+type UnauthorizedHandler = (showError: () => void) => void;
+let unauthorizedHandler: UnauthorizedHandler | undefined;
 
-  console.error(`[handleError]: ${standardizedError}`, error, standardizedError.stack);
+export const setUnauthorizedHandler = (handler: UnauthorizedHandler | undefined) => {
+  unauthorizedHandler = handler;
+};
 
+const notifyError = (error: unknown, localizedMessage: string, notify: boolean) => {
   try {
     let serverMessage = getServerErrorMessage(error);
     if (serverMessage) {
@@ -61,6 +66,23 @@ export function handleError(error: unknown, localizedMessage: string, options?: 
     console.error(error);
     return localizedMessage;
   }
+};
+
+export function handleError(error: unknown, localizedMessage: string, options?: { notify?: boolean }) {
+  const { notify = true } = options ?? {};
+  const standardizedError = standardizeError(error);
+  if (standardizedError.name === 'AbortError') {
+    return;
+  }
+
+  console.error(`[handleError]: ${standardizedError}`, error, standardizedError.stack);
+
+  if (unauthorizedHandler && isHttpError(error) && error.status === 401) {
+    unauthorizedHandler(() => notifyError(error, localizedMessage, notify));
+    return localizedMessage;
+  }
+
+  return notifyError(error, localizedMessage, notify);
 }
 
 export async function handleErrorAsync<T>(fn: () => Promise<T>, localizedMessage: string): Promise<T | undefined> {

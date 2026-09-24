@@ -189,6 +189,47 @@ export const evaluateSessionAdmission = ({ worker, report, now }: SessionAdmissi
   return ADMIT;
 };
 
+export type LiveRenderSessionInput = {
+  worker: {
+    revoked: boolean;
+    engineDigest: string | null;
+    conformanceMaxAgeMs: number;
+  };
+  session: {
+    revoked: boolean;
+    expiresAt: Date;
+    engineDigest: string | null;
+    conformanceReportedAt: Date;
+    scopes: readonly MediaOperationKind[];
+  };
+  now: Date;
+};
+
+/**
+ * Is this admitted session still evidence of a qualified renderer (FL-42)? It must be live
+ * (unrevoked, unexpired, its worker active), its conformance report still within the worker's
+ * freshness window, and — when the worker is pinned to an engine digest — admitted on that digest.
+ * A digest the administrator changed after admission disqualifies the session until it re-admits.
+ * Admission already refuses software renderers, so a qualified session is a GPU renderer.
+ */
+export const isQualifiedRenderSession = ({ worker, session, now }: LiveRenderSessionInput): boolean => {
+  if (worker.revoked || session.revoked || session.expiresAt.getTime() <= now.getTime()) {
+    return false;
+  }
+  const reportedAt = session.conformanceReportedAt.getTime();
+  if (
+    Number.isNaN(reportedAt) ||
+    reportedAt > now.getTime() + CLOCK_SKEW_MS ||
+    now.getTime() - reportedAt > worker.conformanceMaxAgeMs
+  ) {
+    return false;
+  }
+  if (worker.engineDigest && worker.engineDigest !== session.engineDigest) {
+    return false;
+  }
+  return session.scopes.some((kind) => isRenderWorkerMediaOperationKind(kind));
+};
+
 /** How far ahead of the server a worker's clock may be before its report is treated as invalid. */
 export const CLOCK_SKEW_MS = 5 * 60 * 1000;
 

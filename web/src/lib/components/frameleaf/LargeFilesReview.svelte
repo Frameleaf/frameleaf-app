@@ -192,6 +192,28 @@
     }
   };
 
+  /**
+   * The server trashed or deleted items elsewhere. When the one open in the evidence view left the
+   * list, show the item that followed it (or the one before, at the end) rather than a gone item.
+   */
+  const leaveGone = (ids: readonly string[], before: readonly AssetResponseDto[]) => {
+    const current = inspect;
+    if (!inspectOpen || !current || !ids.includes(current.id) || rows.some((asset) => asset.id === current.id)) {
+      return;
+    }
+    const still = new Set(rows.map((asset) => asset.id));
+    const at = before.findIndex((asset) => asset.id === current.id);
+    const next =
+      before.slice(at + 1).find((asset) => still.has(asset.id)) ??
+      before.slice(0, Math.max(at, 0)).findLast((asset) => still.has(asset.id));
+    if (next) {
+      inspect = next;
+    } else {
+      inspectOpen = false;
+      inspect = null;
+    }
+  };
+
   const exportList = () => downloadJson(largeFileExport(rows, { owner, ownerName }), 'large-file-review.json');
 
   onMount(() => {
@@ -206,6 +228,7 @@
     const unsubscribers = [
       // the server's word on trash, restore and permanent deletion: from the viewer, another tab or device
       websocketEvents.on('on_asset_trash', (ids) => {
+        const before = rows;
         const known = new Set(assets.map((asset) => asset.id));
         for (const id of ids) {
           if (known.has(id)) {
@@ -213,6 +236,7 @@
           }
         }
         selected = selected.filter((id) => !ids.includes(id));
+        leaveGone(ids, before);
       }),
       websocketEvents.on('on_asset_restore', (ids) => {
         for (const id of ids) {
@@ -220,12 +244,14 @@
         }
       }),
       websocketEvents.on('on_asset_delete', (id) => {
+        const before = rows;
         removed.add(id);
         trashed.delete(id);
         selected = selected.filter((value) => value !== id);
         if (undoIds?.includes(id)) {
           undoIds = null;
         }
+        leaveGone([id], before);
       }),
     ];
     return () => {

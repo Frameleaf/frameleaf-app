@@ -240,6 +240,8 @@ export async function getVectorExtension(runner: Kysely<DB>): Promise<VectorExte
 export const probes: Record<VectorIndex, number> = {
   [VectorIndex.Clip]: 1,
   [VectorIndex.Face]: 1,
+  // Built with a single list; never reindexed to more (FL-59).
+  [VectorIndex.VideoMomentFrame]: 1,
 };
 
 @Injectable()

@@ -1,6 +1,8 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
-import { AssetLockReason, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetLockReason, AssetVisibility, Permission, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -9,6 +11,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { checkAccess, requireUploadAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -738,5 +741,87 @@ describe(SharedLinkService.name, () => {
       const updated = await sut.update(auth, sharedLink.id, { description: 'Lake day' });
       expect(updated?.assets.map(({ id }) => id)).toEqual([mine.id]);
     });
+  });
+});
+
+// FL-56: what a link allows is decided by the server's access checks against the real database.
+describe('shared link permissions (FL-56)', () => {
+  const linkAuth = async (
+    allow: { allowDownload: boolean; allowUpload: boolean },
+    sharedAssets: 'album' | 'none' = 'album',
+  ) => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id });
+    const { album: otherAlbum } = await ctx.newAlbum({ ownerId: user.id });
+    const { asset: shared } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: outside } = await ctx.newAsset({ ownerId: user.id });
+    if (sharedAssets === 'album') {
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: shared.id });
+    }
+    await ctx.newAlbumAsset({ albumId: otherAlbum.id, assetId: outside.id });
+    const link = await ctx.get(SharedLinkRepository).create({
+      key: randomBytes(16),
+      id: factory.uuid(),
+      userId: user.id,
+      albumId: album.id,
+      type: SharedLinkType.Album,
+      ...allow,
+    });
+    const auth = { ...factory.auth({ user }), sharedLink: link } as unknown as AuthDto;
+    return { access: ctx.get(AccessRepository), auth, album, otherAlbum, shared, outside };
+  };
+
+  it('refuses originals and archives when the link does not allow download', async () => {
+    const { access, auth, album, shared } = await linkAuth({ allowDownload: false, allowUpload: false });
+
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AssetDownload, ids: [shared.id] }),
+    ).resolves.toEqual(new Set());
+    await expect(checkAccess(access, { auth, permission: Permission.AlbumDownload, ids: [album.id] })).resolves.toEqual(
+      new Set(),
+    );
+    // Viewing is still allowed.
+    await expect(checkAccess(access, { auth, permission: Permission.AssetView, ids: [shared.id] })).resolves.toEqual(
+      new Set([shared.id]),
+    );
+  });
+
+  it('lets a link that allows download take only what it shares', async () => {
+    const { access, auth, album, otherAlbum, shared, outside } = await linkAuth({
+      allowDownload: true,
+      allowUpload: false,
+    });
+
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AssetDownload, ids: [shared.id, outside.id] }),
+    ).resolves.toEqual(new Set([shared.id]));
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AlbumDownload, ids: [album.id, otherAlbum.id] }),
+    ).resolves.toEqual(new Set([album.id]));
+  });
+
+  it('refuses uploads when the link does not allow them', async () => {
+    const { access, auth, album } = await linkAuth({ allowDownload: true, allowUpload: false });
+
+    expect(() => requireUploadAccess(auth)).toThrow(UnauthorizedException);
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AssetUpload, ids: [auth.user.id] }),
+    ).resolves.toEqual(new Set());
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AlbumAssetCreate, ids: [album.id] }),
+    ).resolves.toEqual(new Set());
+  });
+
+  it('allows uploads into the link album only', async () => {
+    const { access, auth, album, otherAlbum, outside } = await linkAuth({ allowDownload: false, allowUpload: true });
+
+    expect(requireUploadAccess(auth)).toBe(auth);
+    await expect(
+      checkAccess(access, { auth, permission: Permission.AlbumAssetCreate, ids: [album.id, otherAlbum.id] }),
+    ).resolves.toEqual(new Set([album.id]));
+    await expect(checkAccess(access, { auth, permission: Permission.AssetRead, ids: [outside.id] })).resolves.toEqual(
+      new Set(),
+    );
   });
 });

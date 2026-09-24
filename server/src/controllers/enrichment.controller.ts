@@ -1,4 +1,17 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Put, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -15,6 +28,7 @@ import {
   VideoMomentParamDto,
   VideoMomentSearchDto,
   VideoMomentSearchResponseDto,
+  VideoMomentSimilarDto,
   VideoMomentUpdateDto,
   VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
@@ -128,6 +142,22 @@ export class EnrichmentController {
     @Param() { id }: UUIDv7ParamDto,
   ) {
     await sendFile(res, next, () => this.moments.getFrameFile(auth, id), this.logger);
+  }
+
+  @Get('frames/:id/similar')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Find moments like a video frame',
+    description:
+      "Finds the moments nearest one frame's stored search embedding across your videos, including other times in the same video, never the frame itself. Nothing is sent to a model and nothing is written.",
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  searchSimilarVideoMoments(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: VideoMomentSimilarDto,
+  ): Promise<VideoMomentSearchResponseDto> {
+    return this.moments.searchSimilar(auth, id, dto);
   }
 
   @Get('videos/:id/moments')

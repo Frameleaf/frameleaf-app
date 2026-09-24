@@ -257,6 +257,12 @@ const VideoMomentSearchSchema = z
   })
   .meta({ id: 'VideoMomentSearchDto' });
 
+const VideoMomentSimilarSchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(24).optional().describe('Most moments to return'),
+  })
+  .meta({ id: 'VideoMomentSimilarDto' });
+
 const VideoMomentSearchHitSchema = z
   .object({
     assetId: z.uuidv4(),
@@ -289,6 +295,7 @@ export class VideoMomentCoverDto extends createZodDto(VideoMomentCoverSchema) {}
 export class VideoMomentCreateDto extends createZodDto(VideoMomentCreateSchema) {}
 export class VideoMomentUpdateDto extends createZodDto(VideoMomentUpdateSchema) {}
 export class VideoMomentSearchDto extends createZodDto(VideoMomentSearchSchema) {}
+export class VideoMomentSimilarDto extends createZodDto(VideoMomentSimilarSchema) {}
 export class VideoMomentSearchResponseDto extends createZodDto(VideoMomentSearchResponseSchema) {}
 export class VideoMomentParamDto extends createZodDto(VideoMomentParamSchema) {}
 
