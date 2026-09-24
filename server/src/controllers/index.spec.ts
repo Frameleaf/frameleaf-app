@@ -108,6 +108,8 @@ const SHARED_LINK_ROUTES = new Set([
   'GET shared-links/me',
   'GET timeline/bucket',
   'GET timeline/buckets',
+  // FL-33: curated cards for the same album-scoped request as the buckets; places follow showExif
+  'GET timeline/highlights',
   'POST assets',
   'POST download/archive',
   'POST download/info',
