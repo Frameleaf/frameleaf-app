@@ -1,9 +1,15 @@
-import { getAuthStatus } from '@immich/sdk';
+import { getAuthStatus, lockAuthSession } from '@immich/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 
 export type SessionPrivacyStatus = 'pending' | 'ready' | 'error';
+
+/**
+ * What re-checking the preloaded route data found: `'replaced'` means the caller already left the
+ * page (for example the asset in the URL is no longer the caller's to see), so nothing is released.
+ */
+export type PreloadedDataResult = void | 'replaced';
 
 /**
  * FL-34 (ported from PR131 bebfed12ff and 25990c373c): keeps what an elevated (PIN-unlocked) session
@@ -21,13 +27,18 @@ export type SessionPrivacyStatus = 'pending' | 'ready' | 'error';
  *   elevated session that can no longer be verified) discards the whole document through
  *   `revokeSessionView`, which clears media, Picture-in-Picture and downloads first. A session that
  *   was not elevated has nothing unlocked to discard and only revalidates.
+ * - A first check that finds the session elevated but cannot establish how long for (no usable
+ *   server `Date`) ends the elevation on the server and continues locked, instead of reloading:
+ *   a reload would find the same answer and loop.
+ * - Passive rechecks (navigation, focus, visibility) share a check already in flight; the status
+ *   read never extends the elevation itself (`refreshElevation: false` on the server).
  *
  * Event-driven: the expiry deadline never waits for a network response.
  */
 export const watchSessionPrivacy = (
   isAuthenticated: () => boolean,
   onInitialStatus: (status: SessionPrivacyStatus) => void = () => {},
-  revalidatePreloadedData: () => Promise<void> = async () => {},
+  revalidatePreloadedData: () => Promise<PreloadedDataResult> = async () => {},
   destination: () => string = () => Route.photos(),
 ) => {
   let verified = false;
@@ -37,6 +48,7 @@ export const watchSessionPrivacy = (
   let deadline: number | undefined;
   let wallDeadline: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let inFlight: Promise<void> | undefined;
 
   const revoke = () => {
     if (stopped) {
@@ -51,7 +63,20 @@ export const watchSessionPrivacy = (
   // Only an elevated view holds anything a lock takes away; any other view just rechecks.
   const revokeIfElevated = () => (elevated ? revoke() : refresh());
 
-  const refresh = async () => {
+  const refresh = () => {
+    const current = check().finally(() => {
+      if (inFlight === current) {
+        inFlight = undefined;
+      }
+    });
+    inFlight = current;
+    return current;
+  };
+
+  // navigation, focus and visibility carry no news of their own: join a check already running
+  const revalidate = () => inFlight ?? refresh();
+
+  const check = async () => {
     if (stopped) {
       return;
     }
@@ -90,11 +115,20 @@ export const watchSessionPrivacy = (
       // and the entire request duration; a slow or changed client clock cannot
       // extend elevation. Fail closed if the server time cannot be established.
       const remaining = expiresAt - serverTime - 1000 - (performance.now() - started);
-      if (status.isElevated && !Number.isFinite(remaining)) {
+      let isElevated = status.isElevated;
+      if (isElevated && !verified && !elevated && !(Number.isFinite(remaining) && remaining > 0)) {
+        // An elevation this view cannot bound: end it rather than reload into the same answer.
+        await lockAuthSession();
+        if (stopped || request !== generation) {
+          return;
+        }
+        isElevated = false;
+      }
+      if (isElevated && !Number.isFinite(remaining)) {
         throw new Error('Unable to verify session expiry');
       }
-      const active = status.isElevated && remaining > 0;
-      if ((elevated || status.isElevated) && !active) {
+      const active = isElevated && remaining > 0;
+      if ((elevated || isElevated) && !active) {
         revoke();
         return;
       }
@@ -112,7 +146,12 @@ export const watchSessionPrivacy = (
       if (!verified && !active) {
         // Layout loaders can have completed while the session was elevated.
         // Do not mount those results merely because the first status is locked.
-        await revalidatePreloadedData();
+        const result = await revalidatePreloadedData();
+        if (result === 'replaced') {
+          // the caller is leaving this document; nothing of it is released
+          stopped = true;
+          return;
+        }
         if (stopped || request !== generation) {
           return;
         }
@@ -130,7 +169,7 @@ export const watchSessionPrivacy = (
 
   const onVisible = () => {
     if (document.visibilityState === 'visible') {
-      void refresh();
+      void revalidate();
     }
   };
   const unsubscribe = eventManager.on({
@@ -150,9 +189,10 @@ export const watchSessionPrivacy = (
     WebsocketConnect: refresh,
     SessionAccessChanged: ({ isElevated }) => (isElevated ? refresh() : revokeIfElevated()),
     SessionLocked: revokeIfElevated,
+    SessionLockedRemote: revokeIfElevated,
     UserPinCodeReset: revokeIfElevated,
   });
-  const onRefresh = () => void refresh();
+  const onRefresh = () => void revalidate();
   addEventListener('focus', onRefresh);
   addEventListener('pageshow', onRefresh);
   document.addEventListener('visibilitychange', onVisible);
@@ -160,6 +200,7 @@ export const watchSessionPrivacy = (
 
   return {
     refresh,
+    revalidate,
     dispose: () => {
       stopped = true;
       generation++;
