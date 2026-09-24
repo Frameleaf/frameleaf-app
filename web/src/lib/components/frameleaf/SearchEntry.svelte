@@ -3,7 +3,7 @@
   import { page } from '$app/state';
   import { shortcuts } from '$lib/actions/shortcut';
   import CommandPalette from '$lib/components/frameleaf/CommandPalette.svelte';
-  import SearchDialog from '$lib/components/frameleaf/SearchDialog.svelte';
+  import SearchPalette from '$lib/components/frameleaf/SearchPalette.svelte';
   import type { DiscoveryFilterSection } from '$lib/components/discovery/query';
   import {
     buildCatalogueCommands,
@@ -30,9 +30,10 @@
    * The library's single search entry point (FL-49).
    *
    * The September 22, 2026 revision leaves exactly one place to start a search: this control in
-   * the top bar. It opens the Frameleaf search dialog, and a ">" prefix — or the palette
-   * shortcut — opens the command palette over the same index. The legacy search bar with its
-   * inline suggestion dropdown and the separate search-options modal are gone.
+   * the top bar. Since the September 24 Apple-style refinements it opens the glass search palette
+   * (`SearchPalette.jsx`, ⌘K or "/"), and a ">" prefix — or the palette shortcut — opens the command
+   * palette over the same index. The legacy search bar with its inline suggestion dropdown, the
+   * separate search-options modal and the September 22 search dialog are gone.
    *
    * The command index is assembled here because this is where the account context lives: the
    * server's feature flags and the account's own feature preferences decide which rail
@@ -41,7 +42,7 @@
    */
 
   let {
-    /** Deep-links the dialog's filter panel into a section, for the results toolbar's Filter control. */
+    /** Deep-links the palette's Advanced filters into a section, for the results toolbar's Filter control. */
     section,
     onOpen,
   }: { section?: DiscoveryFilterSection; onOpen?: () => void } = $props();
@@ -106,7 +107,7 @@
   const paletteIndex = $derived(paletteScope === 'settings' ? settingsCommandIndex : commandIndex);
 
   /**
-   * The query the dialog opens on: the search the page already shows, or the scope it stands for,
+   * The query the palette opens on: the search the page already shows, or the scope it stands for,
    * together with its session's filters (FL-48). Nothing the page is narrowed by is reset.
    */
   const currentContext = $derived(searchContextFor(page.url));
@@ -114,7 +115,7 @@
 
   /**
    * The prototype's `screen === "admin"` branch (App.jsx): the top bar's one search entry hides
-   * the library search dialog and searches settings instead, on every settings/administration
+   * the library search palette and searches settings instead, on every settings/administration
    * page, not only server administration (`openSettings()` sets the same screen for account
    * preferences too).
    */
@@ -158,7 +159,7 @@
    * `CommandCenter.jsx` search, which `screen === "admin"` always focuses in App.jsx) when the
    * current page has one. Not every admin page does yet, so where it is missing this opens the
    * command palette filtered to the settings-only entries `buildSettingsCommands` already
-   * contributes to the index, rather than the library search dialog.
+   * contributes to the index, rather than the library search palette.
    */
   const openSettingsSearch = () => {
     const input = document.querySelector('#settings-search');
@@ -211,7 +212,7 @@
 </button>
 
 {#if showSearch}
-  <SearchDialog
+  <SearchPalette
     query={currentQuery}
     unsupported={currentContext.unsupported}
     {commandIndex}
