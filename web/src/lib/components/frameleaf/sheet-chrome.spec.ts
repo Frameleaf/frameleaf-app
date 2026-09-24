@@ -26,7 +26,7 @@ describe('September 24 sheet chrome', () => {
   it('turns the dialog rise into a crossfade under Reduce Motion and drops the blur for Increase Contrast', () => {
     const css = styles('Dialog.svelte');
     expect(css).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) {\s*\.dialog {\s*animation: fl-sheet-fade 200ms ease both;/,
+      /@media \(prefers-reduced-motion: reduce\) {\s*\.dialog {\s*animation: fl-sheet-fade 200ms ease both !important;/,
     );
     expect(css).toMatch(
       /@media \(prefers-contrast: more\), \(prefers-reduced-transparency: reduce\) {\s*\.dialog::backdrop {[^}]*backdrop-filter: none;/,
@@ -36,6 +36,9 @@ describe('September 24 sheet chrome', () => {
   it('opens menus on the spring and crossfades them under Reduce Motion', () => {
     const css = styles('Menu.svelte');
     expect(css).toMatch(/animation: fl-menu-in 320ms var\(--fl-spring\);/);
+    // Logical origin: the corner the popup hangs from flips in right-to-left layouts.
+    expect(css).toMatch(/\[role='menu'\]:dir\(rtl\) {\s*transform-origin: top right;/);
+    expect(css).toMatch(/\[role='menu'\]\.end:dir\(rtl\) {\s*transform-origin: top left;/);
     expect(css).toMatch(/@keyframes fl-menu-in {\s*from {\s*opacity: 0;\s*scale: 0\.9;/);
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\) {\s*\[role='menu'\] {\s*animation: fl-menu-fade 150ms ease !important;/,
@@ -56,5 +59,17 @@ describe('September 24 sheet chrome', () => {
     await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('keeps drag handles out of the button press scale', () => {
+    const tagger = readFileSync('src/lib/components/frameleaf/FaceTagger.svelte', 'utf8');
+    expect(tagger).toContain('class="ft-face-move fl-no-press"');
+    expect(tagger).toContain('class="ft-resize fl-no-press"');
+    const mask = readFileSync('src/lib/components/frameleaf/editor/MaskOverlay.svelte', 'utf8');
+    const handles = [...mask.matchAll(/class="ed-mask-handle[^"]*"/g)].map(([value]) => value);
+    expect(handles.length).toBeGreaterThan(0);
+    for (const handle of handles) {
+      expect(handle).toContain('fl-no-press');
+    }
   });
 });
