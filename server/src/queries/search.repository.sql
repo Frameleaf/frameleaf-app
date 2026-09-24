@@ -2738,3 +2738,552 @@ where
         "album_asset"."assetId" = "asset"."id"
     )
   )
+
+-- SearchRepository.searchFacets
+with
+  matched as (
+    (
+      select
+        "asset"."id",
+        "asset"."ownerId",
+        "asset"."type",
+        "asset"."isFavorite"
+      from
+        "asset"
+      where
+        (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $1::uuid
+        )
+        and "asset"."fileCreatedAt" >= $2
+        and "asset"."ownerId" = any ($3::uuid[])
+        and "asset"."deletedAt" is null
+    )
+  ),
+  facet_rows as (
+    select
+      $4::text as field,
+      m.type::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+    group by
+      2
+    union all
+    select
+      $5::text as field,
+      (
+        m."isFavorite"
+        and m."ownerId" = $6::uuid
+      )::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+    group by
+      2
+    union all
+    select
+      $7::text as field,
+      case
+        when e.rating between 1 and 5  then e.rating::text
+        else 'unrated'
+      end as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      left join asset_exif e on e."assetId" = m.id
+    group by
+      2
+    union all
+    select
+      $8::text as field,
+      nullif(trim("e"."city"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."city"), '') is not null
+      and not (m."ownerId" = any ($9::uuid[]))
+    group by
+      2
+    union all
+    select
+      $10::text as field,
+      nullif(trim("e"."country"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."country"), '') is not null
+      and not (m."ownerId" = any ($11::uuid[]))
+    group by
+      2
+    union all
+    select
+      $12::text as field,
+      nullif(trim("e"."make"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."make"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $13::text as field,
+      nullif(trim("e"."model"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."model"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $14::text as field,
+      nullif(trim("e"."lensModel"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."lensModel"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $15::text as field,
+      f."personGroupId"::text as value,
+      max(nullif(p.name, '')) as label,
+      count(distinct m.id) as count
+    from
+      matched m
+      inner join asset_face f on f."assetId" = m.id
+      and f."deletedAt" is null
+      and f."isVisible" is true
+      inner join person p on p."personGroupId" = f."personGroupId"
+      and p."ownerId" = $16::uuid
+      and not p."isHidden"
+    where
+      not (f."personGroupId" = any ($17::uuid[]))
+    group by
+      f."personGroupId"
+    union all
+    select
+      $18::text as field,
+      t.id::text as value,
+      max(t.value) as label,
+      count(distinct m.id) as count
+    from
+      matched m
+      inner join tag_asset ta on ta."assetId" = m.id
+      inner join tag_closure tc on tc.id_descendant = ta."tagId"
+      inner join tag t on t.id = tc.id_ancestor
+      and t."userId" = $19::uuid
+    where
+      not exists (
+        select
+          1
+        from
+          tag_closure
+        where
+          tag_closure.id_descendant = "t"."id"
+          and tag_closure.id_ancestor = any ($20::uuid[])
+      )
+    group by
+      t.id
+  ),
+  ranked as (
+    select
+      *,
+      row_number() over (
+        partition by
+          field
+        order by
+          count desc,
+          value asc
+      ) as rank
+    from
+      facet_rows
+  )
+select
+  field,
+  value,
+  label,
+  count
+from
+  ranked
+where
+  rank <= $21
+order by
+  field,
+  rank
+
+-- SearchRepository.searchFacetsV3
+with
+  matched as (
+    (
+      select
+        "asset"."id",
+        "asset"."ownerId",
+        "asset"."type",
+        "asset"."isFavorite"
+      from
+        "asset"
+        left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      where
+        "asset"."ownerId" = any ($1::uuid[])
+        and (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $2::uuid
+        )
+        and "asset"."isFavorite" = $3
+    )
+  ),
+  facet_rows as (
+    select
+      $4::text as field,
+      m.type::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+    group by
+      2
+    union all
+    select
+      $5::text as field,
+      (
+        m."isFavorite"
+        and m."ownerId" = $6::uuid
+      )::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+    group by
+      2
+    union all
+    select
+      $7::text as field,
+      case
+        when e.rating between 1 and 5  then e.rating::text
+        else 'unrated'
+      end as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      left join asset_exif e on e."assetId" = m.id
+    group by
+      2
+    union all
+    select
+      $8::text as field,
+      nullif(trim("e"."city"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."city"), '') is not null
+      and not (m."ownerId" = any ($9::uuid[]))
+    group by
+      2
+    union all
+    select
+      $10::text as field,
+      nullif(trim("e"."country"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."country"), '') is not null
+      and not (m."ownerId" = any ($11::uuid[]))
+    group by
+      2
+    union all
+    select
+      $12::text as field,
+      nullif(trim("e"."make"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."make"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $13::text as field,
+      nullif(trim("e"."model"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."model"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $14::text as field,
+      nullif(trim("e"."lensModel"), '') as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched m
+      inner join asset_exif e on e."assetId" = m.id
+    where
+      nullif(trim("e"."lensModel"), '') is not null
+      and true
+    group by
+      2
+    union all
+    select
+      $15::text as field,
+      f."personGroupId"::text as value,
+      max(nullif(p.name, '')) as label,
+      count(distinct m.id) as count
+    from
+      matched m
+      inner join asset_face f on f."assetId" = m.id
+      and f."deletedAt" is null
+      and f."isVisible" is true
+      inner join person p on p."personGroupId" = f."personGroupId"
+      and p."ownerId" = $16::uuid
+      and not p."isHidden"
+    where
+      not (f."personGroupId" = any ($17::uuid[]))
+    group by
+      f."personGroupId"
+    union all
+    select
+      $18::text as field,
+      t.id::text as value,
+      max(t.value) as label,
+      count(distinct m.id) as count
+    from
+      matched m
+      inner join tag_asset ta on ta."assetId" = m.id
+      inner join tag_closure tc on tc.id_descendant = ta."tagId"
+      inner join tag t on t.id = tc.id_ancestor
+      and t."userId" = $19::uuid
+    where
+      not exists (
+        select
+          1
+        from
+          tag_closure
+        where
+          tag_closure.id_descendant = "t"."id"
+          and tag_closure.id_ancestor = any ($20::uuid[])
+      )
+    group by
+      t.id
+  ),
+  ranked as (
+    select
+      *,
+      row_number() over (
+        partition by
+          field
+        order by
+          count desc,
+          value asc
+      ) as rank
+    from
+      facet_rows
+  )
+select
+  field,
+  value,
+  label,
+  count
+from
+  ranked
+where
+  rank <= $21
+order by
+  field,
+  rank
+
+-- SearchRepository.searchHistogram
+with
+  matched as (
+    (
+      select
+        "asset"."localDateTime"
+      from
+        "asset"
+      where
+        (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $1::uuid
+        )
+        and "asset"."fileCreatedAt" >= $2
+        and "asset"."ownerId" = any ($3::uuid[])
+        and "asset"."deletedAt" is null
+    )
+  )
+select
+  to_char(
+    date_trunc(
+      'month',
+      matched."localDateTime" at time zone 'UTC'
+    ),
+    'YYYY-MM-DD'
+  ) as date,
+  count(*) as count
+from
+  matched
+group by
+  1
+order by
+  1
+
+-- SearchRepository.searchHistogramV3
+with
+  matched as (
+    (
+      select
+        "asset"."localDateTime"
+      from
+        "asset"
+        left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      where
+        "asset"."ownerId" = any ($1::uuid[])
+        and (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $2::uuid
+        )
+        and true
+    )
+  )
+select
+  to_char(
+    date_trunc('day', matched."localDateTime" at time zone 'UTC'),
+    'YYYY-MM-DD'
+  ) as date,
+  count(*) as count
+from
+  matched
+group by
+  1
+order by
+  1
+
+-- SearchRepository.searchSmartCount
+select
+  count(*) as total
+from
+  (
+    (
+      select
+        "asset"."id"
+      from
+        "asset"
+        inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
+      where
+        (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $1::uuid
+        )
+        and "asset"."fileCreatedAt" >= $2
+        and "asset"."ownerId" = any ($3::uuid[])
+        and "asset"."deletedAt" is null
+      limit
+        $4
+    )
+  ) capped
+
+-- SearchRepository.searchSmartCountV3
+select
+  count(*) as total
+from
+  (
+    (
+      select
+        "asset"."id"
+      from
+        "asset"
+        left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+        inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
+      where
+        "asset"."ownerId" = any ($1::uuid[])
+        and (
+          not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+          or "asset"."ownerId" = $2::uuid
+        )
+        and true
+      limit
+        $3
+    )
+  ) capped

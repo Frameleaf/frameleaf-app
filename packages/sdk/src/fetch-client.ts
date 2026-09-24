@@ -1329,6 +1329,14 @@ export type RecentlyAddedResponse = {
     /** Whether the recently added page appears in the web sidebar */
     sidebarWeb: boolean;
 };
+export type SavedSearch = {
+    /** Name shown in the search palette */
+    name: string;
+    /** The search body to run, as the client sends it to the search endpoints */
+    query: {
+        [key: string]: any;
+    };
+};
 export type SharedLinksResponse = {
     /** Whether shared links are enabled */
     enabled: boolean;
@@ -1355,6 +1363,8 @@ export type UserPreferencesResponseDto = {
     recentlyAdded: RecentlyAddedResponse;
     /** Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves */
     revision: string;
+    /** Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked */
+    savedSearches?: SavedSearch[];
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
 };
@@ -1460,6 +1470,8 @@ export type UserPreferencesUpdateDto = {
     purchase?: PurchaseUpdate;
     ratings?: RatingsUpdate;
     recentlyAdded?: RecentlyAddedUpdate;
+    /** Saved searches, replacing the whole list (at most 50). Only the account itself can change them */
+    savedSearches?: SavedSearch[];
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
 };
@@ -6215,6 +6227,8 @@ export type AskSearchPlanDto = {
 export type SearchFacetCountResponseDto = {
     /** Number of assets with this facet value */
     count: number;
+    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
+    label?: string | null;
     /** Facet value */
     value: string;
 };
@@ -6272,6 +6286,154 @@ export type SearchExploreResponseDto = {
     /** Explore field name */
     fieldName: string;
     items: SearchExploreItem[];
+};
+export type SearchFacetsDto = {
+    /** Filter by album IDs */
+    albumIds?: string[];
+    /** Filter by city name */
+    city?: string | null;
+    /** Filter by country name */
+    country?: string | null;
+    /** Filter by creation date (after) */
+    createdAfter?: string;
+    /** Filter by creation date (before) */
+    createdBefore?: string;
+    /** Filter by description text */
+    description?: string;
+    /** Most frequent values per facet (default 10) */
+    facetLimit?: number;
+    /** Facets to count; every facet when omitted */
+    facets?: SearchFacetField[];
+    filter?: SearchFilter;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by encoded status */
+    isEncoded?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** Filter by motion photo status */
+    isMotion?: boolean;
+    /** Filter assets not in any album */
+    isNotInAlbum?: boolean;
+    /** Filter by offline status */
+    isOffline?: boolean;
+    /** Filter by lens model */
+    lensModel?: string | null;
+    /** Library ID to filter by */
+    libraryId?: string | null;
+    /** Filter by camera make */
+    make?: string | null;
+    /** Filter by camera model */
+    model?: string | null;
+    /** Filter by OCR text content */
+    ocr?: string;
+    /** Filter by person IDs */
+    personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
+    /** Filter by rating [1-5], or null for unrated */
+    rating?: number | null;
+    /** Filter by state/province name */
+    state?: string | null;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter by tag IDs */
+    tagIds?: string[] | null;
+    /** Filter by taken date (after) */
+    takenAfter?: string;
+    /** Filter by taken date (before) */
+    takenBefore?: string;
+    /** Filter by trash date (after) */
+    trashedAfter?: string;
+    /** Filter by trash date (before) */
+    trashedBefore?: string;
+    "type"?: AssetTypeEnum;
+    /** Filter by update date (after) */
+    updatedAfter?: string;
+    /** Filter by update date (before) */
+    updatedBefore?: string;
+    visibility?: AssetVisibility;
+};
+export type SearchFacetsResponseDto = {
+    /** Per facet, the most frequent values, busiest first. type, rating and isFavorite always add up to total; people, places, cameras, lenses and tags count assets that have a value */
+    facets: SearchFacetResponseDto[];
+    /** Number of assets the search body matches, as POST /search/statistics reports */
+    total: number;
+};
+export type SearchHistogramDto = {
+    /** Filter by album IDs */
+    albumIds?: string[];
+    /** Filter by city name */
+    city?: string | null;
+    /** Filter by country name */
+    country?: string | null;
+    /** Filter by creation date (after) */
+    createdAfter?: string;
+    /** Filter by creation date (before) */
+    createdBefore?: string;
+    /** Filter by description text */
+    description?: string;
+    filter?: SearchFilter;
+    /** Bucket size */
+    granularity?: SearchHistogramGranularity;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by encoded status */
+    isEncoded?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** Filter by motion photo status */
+    isMotion?: boolean;
+    /** Filter assets not in any album */
+    isNotInAlbum?: boolean;
+    /** Filter by offline status */
+    isOffline?: boolean;
+    /** Filter by lens model */
+    lensModel?: string | null;
+    /** Library ID to filter by */
+    libraryId?: string | null;
+    /** Filter by camera make */
+    make?: string | null;
+    /** Filter by camera model */
+    model?: string | null;
+    /** Filter by OCR text content */
+    ocr?: string;
+    /** Filter by person IDs */
+    personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
+    /** Filter by rating [1-5], or null for unrated */
+    rating?: number | null;
+    /** Filter by state/province name */
+    state?: string | null;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter by tag IDs */
+    tagIds?: string[] | null;
+    /** Filter by taken date (after) */
+    takenAfter?: string;
+    /** Filter by taken date (before) */
+    takenBefore?: string;
+    /** Filter by trash date (after) */
+    trashedAfter?: string;
+    /** Filter by trash date (before) */
+    trashedBefore?: string;
+    "type"?: AssetTypeEnum;
+    /** Filter by update date (after) */
+    updatedAfter?: string;
+    /** Filter by update date (before) */
+    updatedBefore?: string;
+    visibility?: AssetVisibility;
+};
+export type SearchHistogramBucketDto = {
+    count: number;
+    /** First local capture date of the bucket (YYYY-MM-DD) */
+    date: string;
+};
+export type SearchHistogramResponseDto = {
+    /** Non-empty buckets by local capture date, oldest first */
+    buckets: SearchHistogramBucketDto[];
+    granularity: SearchHistogramGranularity;
+    /** Sum of every bucket; equals POST /search/statistics for the same body */
+    total: number;
 };
 export type MetadataSearchDto = {
     /** Filter by album IDs */
@@ -6521,6 +6683,12 @@ export type SmartSearchDto = {
     withDeleted?: boolean;
     /** Include EXIF data in response */
     withExif?: boolean;
+};
+export type SmartSearchStatisticsResponseDto = {
+    /** More than 1000 assets match; total is the cap */
+    capped: boolean;
+    /** Assets smart search would rank for this body, counted up to 1000 */
+    total: number;
 };
 export type StatisticsSearchDto = {
     /** Filter by album IDs */
@@ -14445,6 +14613,36 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Search facet counts
+ */
+export function searchFacets({ searchFacetsDto }: {
+    searchFacetsDto: SearchFacetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchFacetsResponseDto;
+    }>("/search/facets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: searchFacetsDto
+    })));
+}
+/**
+ * Search date histogram
+ */
+export function searchHistogram({ searchHistogramDto }: {
+    searchHistogramDto: SearchHistogramDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchHistogramResponseDto;
+    }>("/search/histogram", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: searchHistogramDto
+    })));
+}
+/**
  * Search large assets
  */
 export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
@@ -14603,6 +14801,21 @@ export function searchSmart({ smartSearchDto }: {
         status: 200;
         data: SearchResponseDto;
     }>("/search/smart", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: smartSearchDto
+    })));
+}
+/**
+ * Smart search statistics
+ */
+export function searchSmartStatistics({ smartSearchDto }: {
+    smartSearchDto: SmartSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartSearchStatisticsResponseDto;
+    }>("/search/smart/statistics", oazapfts.json({
         ...opts,
         method: "POST",
         body: smartSearchDto
@@ -18505,6 +18718,23 @@ export enum SearchOrderField {
 export enum Mode2 {
     Smart = "smart",
     Metadata = "metadata"
+}
+export enum SearchFacetField {
+    People = "people",
+    Type = "type",
+    City = "city",
+    Country = "country",
+    Make = "make",
+    Model = "model",
+    LensModel = "lensModel",
+    Rating = "rating",
+    IsFavorite = "isFavorite",
+    Tags = "tags"
+}
+export enum SearchHistogramGranularity {
+    Day = "day",
+    Month = "month",
+    Year = "year"
 }
 export enum SearchSuggestionType {
     Country = "country",
