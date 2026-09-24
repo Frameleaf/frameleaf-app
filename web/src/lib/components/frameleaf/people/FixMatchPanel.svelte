@@ -46,7 +46,7 @@
    * Faces are read a page of the person's timeline photos at a time (metadata search filtered
    * to the person, Locked photos left out) and `getFaces` for each photo. Every action calls
    * the existing face endpoints: `reassignFacesById`, `createPerson` + `reassignFacesById`,
-   * and `deleteFace` (permanent).
+   * and `deleteFace` without `force` (a recoverable soft delete).
    */
   interface Props {
     person: PersonResponseDto;
@@ -63,7 +63,7 @@
   type Row = { asset: AssetResponseDto; face: AssetFaceResponseDto };
   let rows: Row[] = $state([]);
   let others: PeopleListItemDto[] = $state([]);
-  let nextPage: string | null = $state(null);
+  let hasMore = $state(false);
   let loading = $state(false);
   const resolved = new SvelteMap<string, string>();
   let naming: string | null = $state(null);
@@ -75,24 +75,44 @@
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
   const open = $derived(rows.filter(({ face }) => !resolved.has(face.id)).length);
 
-  const loadPage = async (page?: string) => {
+  // Photos already listed (or skipped as Locked), so a later page never repeats one.
+  const seen = new Set<string>();
+
+  /**
+   * Reads the next photos of this person. Moving a face away can drop a photo out of the
+   * person's results and shift every later page, so paging by number alone would skip photos.
+   * Each "Show more" instead starts at a page that cannot be past the first unseen photo (the
+   * number of photos seen, less one per face resolved here, which is the most that can have
+   * left the results) and skips any photo it has already listed.
+   */
+  const loadPage = async () => {
     loading = true;
     try {
-      const { assets } = await searchAssets({
-        metadataSearchDto: {
-          personIds: [person.id],
-          visibility: AssetVisibility.Timeline,
-          size: PAGE_SIZE,
-          page: page ? Number(page) : undefined,
-        },
-      });
-      const photos = assets.items.filter((asset) => asset.visibility !== AssetVisibility.Locked);
+      let page = Math.floor(Math.max(0, seen.size - resolved.size) / PAGE_SIZE) + 1;
+      const photos: AssetResponseDto[] = [];
+      let more = true;
+      while (photos.length < PAGE_SIZE && more) {
+        const { assets } = await searchAssets({
+          metadataSearchDto: { personIds: [person.id], visibility: AssetVisibility.Timeline, size: PAGE_SIZE, page },
+        });
+        for (const asset of assets.items) {
+          if (seen.has(asset.id)) {
+            continue;
+          }
+          seen.add(asset.id);
+          if (asset.visibility !== AssetVisibility.Locked) {
+            photos.push(asset);
+          }
+        }
+        more = !!assets.nextPage;
+        page++;
+      }
       const faces = await Promise.all(photos.map((asset) => getFaces({ id: asset.id })));
       const next = photos.flatMap((asset, index) =>
         faces[index].filter((face) => face.person?.id === person.id).map((face) => ({ asset, face })),
       );
       rows = [...rows, ...next];
-      nextPage = assets.nextPage;
+      hasMore = more;
     } catch (error) {
       handleError(error, $t('errors.cant_get_faces'));
     } finally {
@@ -180,7 +200,10 @@
   const remove = (row: Row) =>
     act(
       row,
-      () => deleteFace({ id: row.face.id, assetFaceDeleteDto: { force: true } }),
+      // Recoverable, as the old side panel: a soft delete (`force: false`) takes the face off
+      // this person without destroying the detection. A permanent removal stays behind the
+      // confirmation in the viewer's face menu (`PersonFaceActions`).
+      () => deleteFace({ id: row.face.id, assetFaceDeleteDto: { force: false } }),
       $t('frameleaf_people_fix_removed'),
     );
 
@@ -275,9 +298,9 @@
     <p class="note" role="status">{$t('loading')}</p>
   {:else if rows.length === 0}
     <p class="note">{$t('frameleaf_people_fix_empty')}</p>
-  {:else if nextPage}
+  {:else if hasMore}
     <div class="more">
-      <Button onclick={() => void loadPage(nextPage!)}>{$t('frameleaf_people_show_more')}</Button>
+      <Button onclick={() => void loadPage()}>{$t('frameleaf_people_show_more')}</Button>
     </div>
   {/if}
   <footer class="pd-fix-footer">
