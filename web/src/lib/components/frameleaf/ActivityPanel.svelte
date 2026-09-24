@@ -35,9 +35,14 @@
      * absent, a comment on a photo shows no picture to open.
      */
     onOpenAsset?: (assetId: string) => void;
+    /**
+     * One item's likes and comments in the viewer (AL-18). The caller has initialised
+     * `activityManager` for this album and item, so the list and the like are the item's.
+     */
+    assetId?: string;
   }
 
-  let { album, onClose, onOpenAsset }: Props = $props();
+  let { album, onClose, onOpenAsset, assetId }: Props = $props();
 
   let draft = $state('');
   let sending = $state(false);
@@ -104,7 +109,7 @@
     }
     sending = true;
     try {
-      await activityManager.addActivity({ albumId: album.id, type: ReactionType.Comment, comment });
+      await activityManager.addActivity({ albumId: album.id, assetId, type: ReactionType.Comment, comment });
       draft = '';
       note = $t('frameleaf_album_activity_comment_added');
       composer?.focus();
