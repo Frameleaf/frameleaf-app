@@ -381,7 +381,16 @@
   $effect(() => {
     const elevated = sessionAccess.isElevated;
     if (lastElevated !== undefined && lastElevated !== elevated) {
-      untrack(() => resetView());
+      untrack(() => {
+        // Locked media leaves the page at once, not when the reload answers.
+        if (!elevated) {
+          items = items.filter((row) => !row.isLocked);
+          if (inspect?.isLocked) {
+            inspect = null;
+          }
+        }
+        resetView();
+      });
     }
     lastElevated = elevated;
   });
