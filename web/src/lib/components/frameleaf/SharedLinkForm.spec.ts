@@ -8,13 +8,16 @@ import SharedLinkForm from './SharedLinkForm.svelte';
 
 vi.mock('$lib/services/shared-link.service', () => ({
   asUrl: () => 'https://frameleaf.local/s/test',
-  handleCreateSharedLink: vi.fn().mockResolvedValue(true),
+  handleCreateSharedLink: vi.fn(),
   handleUpdateSharedLink: vi.fn().mockResolvedValue(true),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
+  vi.mocked(handleCreateSharedLink).mockResolvedValue(
+    sharedLinkFactory.build({ type: SharedLinkType.Album, assets: [], password: null }),
+  );
 });
 
 describe('SharedLinkForm', () => {
@@ -37,9 +40,9 @@ describe('SharedLinkForm', () => {
       }),
     );
 
-    // The password never appears anywhere in the rendered form after submission.
+    // The password never appears anywhere after submission, on the Link ready step either.
+    await screen.findByRole('heading', { name: en.frameleaf_sharing.link_ready_title });
     expect(screen.queryByDisplayValue('hunter2')).toBeNull();
-    expect((screen.getByLabelText(en.password) as HTMLInputElement).value).toBe('');
   });
 
   it('removes an existing password only when the checkbox is used, and preserves it otherwise', async () => {
@@ -70,11 +73,40 @@ describe('SharedLinkForm', () => {
       props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
     });
 
-    await fireEvent.change(screen.getByLabelText(en.expire_after), { target: { value: '1d' } });
+    await fireEvent.change(screen.getByLabelText(en.frameleaf_sharing.expires), { target: { value: '1d' } });
     await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
 
     const dto = vi.mocked(handleCreateSharedLink).mock.calls[0][0];
     expect(dto.expiresAt).toBeTruthy();
     expect(Date.parse(dto.expiresAt as string)).toBeGreaterThan(before);
+  });
+
+  it('starts with metadata off and download on, and keeps download independent of metadata', async () => {
+    render(SharedLinkForm, {
+      props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
+    });
+
+    const download = screen.getByRole('switch', { name: new RegExp(en.frameleaf_sharing.allow_download) });
+    const metadata = screen.getByRole('switch', { name: new RegExp(en.show_metadata) });
+    expect(metadata).not.toBeChecked();
+    expect(download).toBeChecked();
+    expect(download).toBeEnabled();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+    expect(handleCreateSharedLink).toHaveBeenCalledWith(
+      expect.objectContaining({ showMetadata: false, allowDownload: true }),
+    );
+  });
+
+  it('ends on the Link ready step with the address, instead of a separate QR modal', async () => {
+    render(SharedLinkForm, {
+      props: { open: true, target: { type: SharedLinkType.Album, albumId: 'album-1', name: 'Summer trip' } },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+
+    expect(await screen.findByRole('heading', { name: en.frameleaf_sharing.link_ready_title })).toBeInTheDocument();
+    expect(screen.getByLabelText(en.frameleaf_sharing.link_address)).toHaveValue('https://frameleaf.local/s/test');
+    expect(screen.getByRole('button', { name: en.frameleaf_sharing.qr_code })).toHaveAttribute('aria-pressed', 'false');
   });
 });

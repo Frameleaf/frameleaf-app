@@ -24,4 +24,13 @@ describe('ShareSheet', () => {
       await screen.findByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title }),
     ).toBeInTheDocument();
   });
+
+  it('reports once when the sheet closes, so the viewer can open it through the modal manager (AL-33)', async () => {
+    const onClosed = vi.fn();
+    render(ShareSheet, { open: true, assetIds: ['a1'], onClosed });
+    expect(onClosed).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(onClosed).toHaveBeenCalledTimes(1);
+  });
 });
