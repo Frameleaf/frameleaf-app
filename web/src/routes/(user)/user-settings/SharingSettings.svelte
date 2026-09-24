@@ -72,7 +72,8 @@
   );
 
   type DialogState =
-    | { kind: 'invite' | 'partner-add'; userId: string }
+    | { kind: 'invite'; userId: string }
+    | { kind: 'partner-add'; userId: string }
     | { kind: 'review'; request: ClusterGroupRequestResponseDto; members?: UserResponseDto[] };
   let dialog = $state<DialogState | null>(null);
   let dialogOpen = $state(false);
@@ -453,7 +454,7 @@
           ? $t('frameleaf_people_sharing.partner_add_body', { values: { name: name(byId[dialog.userId]) } })
           : $t('frameleaf_people_sharing.invite_body')}
       </p>
-    {:else}
+    {:else if dialog.kind === 'review'}
       <p>
         {dialog.members
           ? $t('frameleaf_people_sharing.review_body', {
