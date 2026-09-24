@@ -198,10 +198,10 @@
     flex-direction: column;
     gap: 0.75rem;
     margin-block-start: 1rem;
-    width: min(32rem, calc(100vw - 4rem));
+    width: min(32rem, 100%);
   }
   .create.smart {
-    width: min(44rem, calc(100vw - 4rem));
+    width: min(44rem, 100%);
   }
   .hint {
     margin: 0;
