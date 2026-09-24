@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
@@ -6,6 +6,7 @@ import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
   AlbumIconCatalogueResponseDto,
+  AlbumOrderDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -26,7 +27,7 @@ import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { buildAlbumTree } from 'src/utils/album-tree.js';
+import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
@@ -94,11 +95,12 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [results, smartBackedIds, ruleAlbumIds, rules] = await Promise.all([
+    const [results, smartBackedIds, ruleAlbumIds, rules, positions] = await Promise.all([
       this.albumRepository.getMetadataForIds(ids, privacyOptions),
       this.smartAlbumRepository.getSmartBackedAlbumIds(ids),
       this.classificationRepository.getRuleAlbumIds(ids),
       this.classificationRepository.getRules(auth.user.id),
+      this.albumRepository.getPositions(auth.user.id),
     ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const albumMetadata: Record<string, AlbumAssetCount> = {};
@@ -107,13 +109,48 @@ export class AlbumService extends BaseService {
     }
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
-    return buildAlbumTree(
-      albums.map((album) => ({
-        ...this.toListItem(album, albumMetadata),
-        isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
-        smartRuleId: ruleByAlbum.get(album.id) ?? null,
-      })),
+    // Every group comes back in the person's own custom order (FL-52); the client's "Custom order"
+    // sort shows it as is, the other sorts re-sort it.
+    return orderAlbumTree(
+      buildAlbumTree(
+        albums.map((album) => ({
+          ...this.toListItem(album, albumMetadata),
+          isSmart: smartBackedIds.has(album.id) || ruleAlbumIds.has(album.id),
+          smartRuleId: ruleByAlbum.get(album.id) ?? null,
+        })),
+      ),
+      positions,
     );
+  }
+
+  /**
+   * Save the person's custom order for one group of their directory (FL-52): the albums inside a
+   * collection, or the collections, the albums on their own or the shared spaces at the top level.
+   * The order is theirs alone and changes organization only — no access, membership or album row.
+   *
+   * The ids must be exactly the group as it is now. An order made from an outdated directory (an
+   * album moved in or out, created, deleted or shared away since the client loaded it) is refused
+   * with 409 so the client reloads instead of saving positions for a group that no longer exists.
+   */
+  async setOrder(auth: AuthDto, dto: AlbumOrderDto): Promise<void> {
+    const albumIds = dto.albumIds;
+    if (new Set(albumIds).size !== albumIds.length) {
+      throw new BadRequestException('Each album may appear only once');
+    }
+    const visible = await this.albumRepository.getAll(auth.user.id, {});
+    const known = new Set(visible.map(({ id }) => id));
+    const group = albumOrderGroup(visible, dto.parentId, albumIds[0]);
+    if (!group) {
+      if (!known.has(albumIds[0])) {
+        throw new BadRequestException('Not found or no album.read access');
+      }
+      throw new ConflictException('The album directory changed since it was loaded');
+    }
+    const expected = new Set(group);
+    if (expected.size !== albumIds.length || albumIds.some((id) => !expected.has(id))) {
+      throw new ConflictException('The album directory changed since it was loaded');
+    }
+    await this.albumRepository.setPositions(auth.user.id, albumIds);
   }
 
   /** The icon catalogue as data: every valid name plus the categorised suggested set. */
@@ -336,8 +373,12 @@ export class AlbumService extends BaseService {
   async moveToCollection(auth: AuthDto, id: string, dto: MoveAlbumDto): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
     const album = await this.findOrFail(id, auth, { withAssets: false });
+    // FL-52: a move decided on an outdated directory is refused, not applied on top of the other move.
+    if (dto.expectedParentId !== undefined && album.parentId !== dto.expectedParentId) {
+      throw new ConflictException('The album was moved since the directory was loaded');
+    }
     if (album.parentId !== dto.collectionId) {
-      await this.validateAndReparent(auth, album, dto.collectionId);
+      await this.validateAndReparent(auth, album, dto.collectionId, dto.expectedParentId);
     }
     return this.get(auth, id);
   }
@@ -352,6 +393,7 @@ export class AlbumService extends BaseService {
     auth: AuthDto,
     album: { id: string; kind: string; albumUsers: { role: AlbumUserRole; user: { id: string } }[] },
     newParentId: string | null,
+    expectedParentId?: string | null,
   ): Promise<void> {
     if (newParentId === album.id) {
       throw new BadRequestException('An album cannot be its own parent');
@@ -373,7 +415,9 @@ export class AlbumService extends BaseService {
 
     // The descendant/cycle check runs inside reparent's transaction (atomic with
     // the parent update) to avoid a TOCTOU race between concurrent reparents.
-    await this.albumRepository.reparent(album.id, newParentId);
+    await (expectedParentId === undefined
+      ? this.albumRepository.reparent(album.id, newParentId)
+      : this.albumRepository.reparent(album.id, newParentId, expectedParentId));
   }
 
   private async requireCollection(auth: AuthDto, id: string): Promise<void> {

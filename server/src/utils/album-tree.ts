@@ -35,3 +35,71 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
 
   return { collections: shelves, albums: standalone, spaces };
 };
+
+/**
+ * Put every group of a directory in the person's custom order (FL-52). Items they placed come
+ * first, by position; items never placed keep the order they arrived in (the repository's display
+ * order) after them, so a new album shows up at the end of its group until it is arranged.
+ */
+export const orderAlbumTree = (tree: AlbumTreeResponseDto, positions: Map<string, number>): AlbumTreeResponseDto => {
+  if (positions.size === 0) {
+    return tree;
+  }
+  const order = <T>(items: T[], idOf: (item: T) => string): T[] =>
+    items
+      .map((item, index) => ({ item, index, position: positions.get(idOf(item)) }))
+      .sort(
+        (left, right) =>
+          (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER) ||
+          left.index - right.index,
+      )
+      .map(({ item }) => item);
+
+  return {
+    collections: order(tree.collections, (node) => node.collection.id).map((node) => ({
+      ...node,
+      albums: order(node.albums, (album) => album.id),
+    })),
+    albums: order(tree.albums, (album) => album.id),
+    spaces: order(tree.spaces, (album) => album.id),
+  };
+};
+
+type DirectoryItem = { id: string; kind: string; parentId: string | null };
+
+/**
+ * The group of a person's directory an order applies to (FL-52): the albums inside one visible
+ * collection, or — at the top level — the collections, the albums that stand on their own, or the
+ * shared spaces, picked by the kind of the first id. Undefined when the group cannot be named
+ * (an unknown collection, or a first id the person cannot see).
+ */
+export const albumOrderGroup = (
+  items: DirectoryItem[],
+  parentId: string | null,
+  firstId: string,
+): string[] | undefined => {
+  const collectionIds = new Set(items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id));
+  if (parentId !== null) {
+    if (!collectionIds.has(parentId)) {
+      return undefined;
+    }
+    return items.filter((item) => item.kind === AlbumKind.Album && item.parentId === parentId).map(({ id }) => id);
+  }
+  const first = items.find((item) => item.id === firstId);
+  if (!first) {
+    return undefined;
+  }
+  switch (first.kind) {
+    case AlbumKind.Collection: {
+      return items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id);
+    }
+    case AlbumKind.Space: {
+      return items.filter((item) => item.kind === AlbumKind.Space).map(({ id }) => id);
+    }
+    default: {
+      return items
+        .filter((item) => item.kind === AlbumKind.Album && !(item.parentId && collectionIds.has(item.parentId)))
+        .map(({ id }) => id);
+    }
+  }
+};

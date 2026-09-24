@@ -4,7 +4,7 @@
   import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { setAlbumDragData } from '$lib/utils/album-drag';
+  import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
   import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
@@ -25,6 +25,9 @@
     dragging?: boolean;
     onDragStart?: (album: AlbumResponseDto) => void;
     onDragEnd?: () => void;
+    /** In custom order (FL-52), another item of the same group may be dropped here to go just before this one. */
+    acceptsReorder?: boolean;
+    onReorderDrop?: (albumId: string) => void;
     actions?: Snippet;
     /** Where the tile opens. Defaults to the album view; a shared space opens its own page. */
     href?: string;
@@ -38,9 +41,13 @@
     dragging = false,
     onDragStart,
     onDragEnd,
+    acceptsReorder = false,
+    onReorderDrop,
     actions,
     href: hrefOverride,
   }: Props = $props();
+
+  let over = $state(false);
 
   const name = $derived(album.albumName || $t('unnamed_album'));
   // A shared space opens on its own page, whose panels include the photos; everything else on the album view.
@@ -71,15 +78,46 @@
     setAlbumDragData(event, album.id);
     onDragStart?.(album);
   };
+
+  const handleDragOver = (event: DragEvent) => {
+    if (!(acceptsReorder && isAlbumDrag(event))) {
+      return;
+    }
+    // Handled here, so the collection shelf around the tile does not take it as a move into the collection.
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    over = true;
+  };
+  const handleDrop = (event: DragEvent) => {
+    over = false;
+    const albumId = getAlbumDragData(event);
+    if (!(acceptsReorder && albumId)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    onReorderDrop?.(albumId);
+  };
 </script>
 
 <article
   class="tile {layout}"
   class:dragging
+  class:drop-before={over && acceptsReorder}
   aria-label={name}
   {draggable}
   ondragstart={handleDragStart}
-  ondragend={() => onDragEnd?.()}
+  ondragend={() => {
+    over = false;
+    onDragEnd?.();
+  }}
+  ondragover={handleDragOver}
+  ondragenter={handleDragOver}
+  ondragleave={() => (over = false)}
+  ondrop={handleDrop}
 >
   <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
     {#if cover}
@@ -127,6 +165,14 @@
   }
   .tile[draggable='true'] {
     cursor: grab;
+  }
+  /* Where a dragged item will land in custom order: the accent edge of the prototype's drop targets (collections.css:657). */
+  .tile.drop-before {
+    box-shadow: -3px 0 0 0 var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent), transparent 90%);
+  }
+  .tile.list.drop-before {
+    box-shadow: inset 0 3px 0 0 var(--fl-accent);
   }
   .cover {
     position: relative;
