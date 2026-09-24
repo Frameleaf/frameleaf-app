@@ -7,6 +7,7 @@
   import { mdiMoonWaningCrescent, mdiWhiteBalanceSunny } from '@mdi/js';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import type { Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
 
   let {
     title,
@@ -28,8 +29,12 @@
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const heroImage = $derived(hero === 'summit' ? summit : cabin);
-  const heroTitle = $derived(hero === 'summit' ? 'Summit view' : 'Cabin life');
-  const heroSubtitle = $derived(hero === 'summit' ? 'Banff · 2026' : 'Jasper · 2026');
+  const heroTitle = $derived(
+    hero === 'summit' ? $t('frameleaf_auth_hero_summit_title') : $t('frameleaf_auth_hero_cabin_title'),
+  );
+  const heroSubtitle = $derived(
+    hero === 'summit' ? $t('frameleaf_auth_hero_summit_place') : $t('frameleaf_auth_hero_cabin_place'),
+  );
 </script>
 
 <section
@@ -47,7 +52,7 @@
       <button
         type="button"
         class="button auth-theme-toggle"
-        aria-label={appTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        aria-label={appTheme === 'dark' ? $t('frameleaf_auth_switch_to_light') : $t('frameleaf_auth_switch_to_dark')}
         onclick={() => themeManager.toggle()}
       >
         <Icon icon={appTheme === 'dark' ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent} size="20" />
@@ -64,7 +69,10 @@
     {#if footer || attribution}
       <footer class="auth-foot">
         {#if attribution}
-          <span>Built on <a href="https://immich.app" target="_blank" rel="noreferrer">Immich</a></span>
+          <span
+            >{$t('frameleaf_auth_built_on')}
+            <a href="https://immich.app" target="_blank" rel="noreferrer">Immich</a></span
+          >
         {/if}
         {#if footer}{@render footer()}{/if}
       </footer>

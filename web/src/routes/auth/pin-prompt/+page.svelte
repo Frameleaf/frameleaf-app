@@ -3,8 +3,13 @@
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
   import AuthPasswordField from '$lib/components/frameleaf/AuthPasswordField.svelte';
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
-  import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
-  import { requestSessionLock } from '$lib/frameleaf/session-lock';
+  import {
+    SESSION_UNLOCK_TIMEOUT_MS,
+    sessionAccess,
+    setSessionLockPending,
+    trackSessionUnlock,
+  } from '$lib/frameleaf/session-access.svelte';
+  import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -12,6 +17,7 @@
   import { mdiAlertCircleOutline, mdiInformationOutline, mdiBackspaceOutline, mdiShieldLockOutline } from '@mdi/js';
   import { Icon } from '@immich/ui';
   import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -32,10 +38,14 @@
   let pendingRequest = 0;
   let unlocking = false;
   let leaveDestination = $state<string | URL>();
-  const heading = $derived(hasPinCode ? 'Enter your PIN' : stage === 'confirm' ? 'Confirm your PIN' : 'Create a PIN');
-  const copy = $derived(
-    hasPinCode ? 'Unlock Locked content for this session.' : 'Six digits protect your Locked content on this device.',
+  const heading = $derived(
+    hasPinCode
+      ? $t('frameleaf_pin_enter_title')
+      : stage === 'confirm'
+        ? $t('frameleaf_pin_confirm_title')
+        : $t('frameleaf_pin_create_title'),
   );
+  const copy = $derived(hasPinCode ? $t('frameleaf_pin_unlock_body') : $t('frameleaf_pin_create_body'));
 
   const focusPin = () => pinCard?.querySelector<HTMLInputElement>('.pin-input')?.focus();
   const clear = () => {
@@ -113,7 +123,7 @@
     await requestSessionLock();
     relockFailed = sessionAccess.lockPending;
     if (relockFailed && active) {
-      errorMessage = 'Unable to confirm this session is locked. Retry locking before leaving.';
+      errorMessage = $t('frameleaf_pin_relock_failed');
     }
   };
   $effect(() => {
@@ -166,7 +176,7 @@
         firstPin = '';
         stage = 'enter';
         pinCode = '';
-        errorMessage = "The PINs don't match. Start again.";
+        errorMessage = $t('frameleaf_pin_mismatch');
         focusPin();
         return;
       }
@@ -184,7 +194,7 @@
           return;
         }
         pinCode = '';
-        errorMessage = getServerErrorMessage(error) || 'Unable to create your PIN.';
+        errorMessage = getServerErrorMessage(error) || $t('frameleaf_pin_create_failed');
       } finally {
         finish(request);
       }
@@ -196,7 +206,13 @@
     try {
       unlocking = true;
       const privacyRevision = sessionAccess.revision;
-      await trackSessionUnlock(unlockAuthSession({ sessionUnlockDto: { pinCode: code } }));
+      await trackSessionUnlock(
+        unlockAuthSession(
+          { sessionUnlockDto: { pinCode: code } },
+          // bounded, so a stalled request cannot hold a pending lock forever
+          { signal: AbortSignal.timeout(SESSION_UNLOCK_TIMEOUT_MS) },
+        ),
+      );
       if (!current(request) || sessionAccess.lockPending || privacyRevision !== sessionAccess.revision) {
         await reconcileLock();
         return;
@@ -207,12 +223,18 @@
       await goto(data.continueUrl);
     } catch (error) {
       isVerified = false;
-      await reconcileLock();
+      // The server's explicit Wrong PIN rejection precedes any session change: nothing to relock,
+      // so the prompt stays as it is (no shield, focus stays on the PIN) for another attempt.
+      const wrongPin = isWrongPinError(error);
+      if (!wrongPin) {
+        // Any other failure does not prove the server rejected the elevation.
+        await reconcileLock();
+      }
       if (!current(request) || relockFailed) {
         return;
       }
       pinCode = '';
-      errorMessage = getServerErrorMessage(error) || "That PIN isn't right. Try again.";
+      errorMessage = wrongPin ? $t('frameleaf_locked_dialog_wrong_pin') : $t('frameleaf_locked_dialog_unlock_failed');
       focusPin();
     } finally {
       unlocking = false;
@@ -260,7 +282,7 @@
         return;
       }
       resetPassword = '';
-      errorMessage = getServerErrorMessage(error) || 'Unable to reset your PIN.';
+      errorMessage = getServerErrorMessage(error) || $t('frameleaf_pin_reset_failed');
     } finally {
       finish(request);
     }
@@ -276,25 +298,26 @@
     </div>
     {#if relockFailed}
       <p class="auth-error" role="alert"><Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span></p>
-      <button type="button" class="button primary auth-submit" disabled={working} onclick={retryLock}>Retry lock</button
+      <button type="button" class="button primary auth-submit" disabled={working} onclick={retryLock}
+        >{$t('frameleaf_pin_retry_lock')}</button
       >
     {:else if leaveDestination || resetRequested}
       <p class="auth-info" role="status">
-        <Icon icon={mdiInformationOutline} size="16" /><span>Securing your session before continuing…</span>
+        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_securing')}</span>
       </p>
     {/if}
     {#if isVerified}
       <p class="auth-info" role="status">
-        <Icon icon={mdiInformationOutline} size="16" /><span>Unlocked. Opening your library…</span>
+        <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_unlocked')}</span>
       </p>
     {:else if resetting}
       <form class="auth-form" onsubmit={reset} novalidate>
         <p class="auth-info">
-          <Icon icon={mdiInformationOutline} size="16" /><span>Enter your account password to reset your PIN.</span>
+          <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_pin_reset_help')}</span>
         </p>
         <AuthPasswordField
           id="pin-reset-password"
-          label="Account password"
+          label={$t('frameleaf_pin_account_password')}
           autocomplete="current-password"
           autofocus
           bind:value={resetPassword}
@@ -303,7 +326,7 @@
             <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
           </p>{/if}
         <button type="submit" class="button primary auth-submit" disabled={working || !resetPassword}
-          >{working ? 'Resetting…' : 'Reset PIN'}</button
+          >{working ? $t('frameleaf_pin_resetting') : $t('frameleaf_pin_reset')}</button
         >
         <button
           type="button"
@@ -314,7 +337,7 @@
             errorMessage = '';
             resetPassword = '';
             focusPin();
-          }}>Back to PIN</button
+          }}>{$t('frameleaf_pin_back')}</button
         >
       </form>
     {:else}
@@ -324,56 +347,57 @@
         error={!!errorMessage}
         disabled={working || relockFailed}
         label={heading}
-        describedBy="pin-prompt-hint"
+        describedBy={errorMessage && !relockFailed ? 'pin-prompt-hint pin-prompt-error' : 'pin-prompt-hint'}
         oncomplete={complete}
       />
-      <p id="pin-prompt-hint" class="sr-only">Six digits. The PIN is checked as soon as all six are entered.</p>
-      {#if errorMessage && !relockFailed}<p class="auth-error" role="alert">
+      <p id="pin-prompt-hint" class="sr-only">{$t('frameleaf_pin_hint')}</p>
+      {#if errorMessage && !relockFailed}<p id="pin-prompt-error" class="auth-error" role="alert">
           <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
         </p>
       {:else}<p class="auth-field-hint">
-          {stage === 'confirm' && !hasPinCode
-            ? 'Enter the same six digits again.'
-            : 'Digits are checked automatically.'}
+          {stage === 'confirm' && !hasPinCode ? $t('frameleaf_pin_hint_confirm') : $t('frameleaf_pin_hint_auto')}
         </p>{/if}
       <div class="pin-keypad">
         {#each [1, 2, 3, 4, 5, 6, 7, 8, 9] as digit (digit)}
           <button
             type="button"
-            aria-label={`Digit ${digit}`}
+            aria-label={$t('frameleaf_pin_digit', { values: { digit } })}
             disabled={working || relockFailed}
             onclick={() => press(String(digit))}>{digit}</button
           >
         {/each}
-        <button type="button" class="pin-key-soft" onclick={cancel}>Cancel</button>
-        <button type="button" aria-label="Digit 0" disabled={working || relockFailed} onclick={() => press('0')}
-          >0</button
+        <button type="button" class="pin-key-soft" onclick={cancel}>{$t('cancel')}</button>
+        <button
+          type="button"
+          aria-label={$t('frameleaf_pin_digit', { values: { digit: 0 } })}
+          disabled={working || relockFailed}
+          onclick={() => press('0')}>0</button
         >
         <button
           type="button"
           class="pin-key-soft"
-          aria-label="Delete last digit"
+          aria-label={$t('frameleaf_pin_delete_digit')}
           disabled={working || relockFailed}
           onclick={() => press('back')}><Icon icon={mdiBackspaceOutline} size="20" /></button
         >
       </div>
       <div class="pin-actions">
-        <button type="button" class="button" onclick={cancel}>Cancel</button>
+        <button type="button" class="button" onclick={cancel}>{$t('cancel')}</button>
         {#if hasPinCode && data.hasPassword}<button
             type="button"
             class="auth-link"
             disabled={resetRequested}
-            onclick={requestReset}>Reset PIN</button
+            onclick={requestReset}>{$t('frameleaf_pin_reset')}</button
           >{/if}
         {#if !hasPinCode && stage === 'confirm'}<button
             type="button"
             class="auth-link"
             disabled={working}
-            onclick={restart}>Start over</button
+            onclick={restart}>{$t('frameleaf_pin_start_over')}</button
           >{/if}
       </div>
       {#if hasPinCode && !data.hasPassword}
-        <p class="auth-field-hint">Ask your server administrator to reset a forgotten PIN.</p>
+        <p class="auth-field-hint">{$t('frameleaf_pin_ask_admin')}</p>
       {/if}
     {/if}
   </div>

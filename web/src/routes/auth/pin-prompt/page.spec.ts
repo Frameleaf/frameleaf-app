@@ -1,14 +1,16 @@
 import { lockAuthSession, resetPinCode, setupPinCode, unlockAuthSession } from '@immich/sdk';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 import { sessionAccess, setSessionLockPending } from '$lib/frameleaf/session-access.svelte';
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
-vi.mock('@immich/sdk', () => ({
-  isHttpError: () => false,
+vi.mock('@immich/sdk', async (original) => ({
+  ...(await original<object>()),
   lockAuthSession: vi.fn(),
   resetPinCode: vi.fn(),
   setupPinCode: vi.fn(),
@@ -29,6 +31,7 @@ const enter = async (digits: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  addMessages('dev', en);
   setSessionLockPending(false);
   vi.mocked(unlockAuthSession).mockResolvedValue(undefined as never);
   vi.mocked(lockAuthSession).mockResolvedValue(undefined as never);
@@ -177,17 +180,48 @@ describe('PIN prompt', () => {
     expect(invalidateAll).toHaveBeenCalledOnce();
   });
 
-  it('clears a rejected PIN and verifies a retry before navigating to the load-approved continuation', async () => {
-    vi.mocked(unlockAuthSession).mockRejectedValueOnce(new Error('Incorrect PIN'));
+  it('keeps a confirmed Wrong PIN (HTTP 400) in the prompt without a compensating lock', async () => {
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    vi.mocked(unlockAuthSession).mockImplementationOnce((request) =>
+      sdk.unlockAuthSession(request, {
+        fetch: async () => Response.json({ message: 'Wrong PIN code' }, { status: 400 }),
+      }),
+    );
+    render(Page, { data } as never);
+    await enter('000000');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(en.frameleaf_locked_dialog_wrong_pin));
+    const input = screen.getByLabelText<HTMLInputElement>('Enter your PIN');
+    expect(input.value).toBe('');
+    expect(input).toHaveFocus();
+    expect(input.getAttribute('aria-describedby')).toContain('pin-prompt-error');
+    expect(lockAuthSession).not.toHaveBeenCalled();
+    expect(sessionAccess.lockPending).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Retry lock' })).toBeNull();
+  });
+
+  it('labels the keypad through translations', () => {
+    render(Page, { data } as never);
+    expect(screen.getByRole('button', { name: 'Digit 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Digit 0' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.frameleaf_pin_delete_digit })).toBeInTheDocument();
+  });
+
+  it('relocks after an ambiguous unlock failure, then verifies a retry before navigating', async () => {
+    vi.mocked(unlockAuthSession).mockRejectedValueOnce(new Error('response lost'));
     render(Page, { data } as never);
     await enter('123456');
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent("That PIN isn't right"));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(en.frameleaf_locked_dialog_unlock_failed));
+    expect(lockAuthSession).toHaveBeenCalledOnce();
     expect(screen.getByLabelText<HTMLInputElement>('Enter your PIN').value).toBe('');
     expect(goto).not.toHaveBeenCalled();
 
     await enter('654321');
     await waitFor(() => expect(goto).toHaveBeenCalledWith(data.continueUrl));
-    expect(unlockAuthSession).toHaveBeenNthCalledWith(2, { sessionUnlockDto: { pinCode: '654321' } });
+    expect(unlockAuthSession).toHaveBeenNthCalledWith(
+      2,
+      { sessionUnlockDto: { pinCode: '654321' } },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(eventManager.emit).toHaveBeenCalledWith('SessionAccessChanged', { isElevated: true });
   });
 

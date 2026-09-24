@@ -48,8 +48,12 @@ describe('LockedUnlockDialog', () => {
     const input = await screen.findByLabelText<HTMLInputElement>(en.frameleaf_locked_dialog_pin_label);
     await fireEvent.input(input, { target: { value: '000000' } });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Wrong PIN code');
+    // translated, not the server's English message; focus and description return to the PIN
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(en.frameleaf_locked_dialog_wrong_pin);
     expect(input.value).toBe('');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(lockAuthSession).not.toHaveBeenCalled();
     expect(revokeSessionView).not.toHaveBeenCalled();
@@ -95,7 +99,10 @@ describe('LockedUnlockDialog', () => {
     await fireEvent.input(input, { target: { value: '123456' } });
 
     await waitFor(() => {
-      expect(unlockAuthSession).toHaveBeenCalledWith({ sessionUnlockDto: { pinCode: '123456' } });
+      expect(unlockAuthSession).toHaveBeenCalledWith(
+        { sessionUnlockDto: { pinCode: '123456' } },
+        { signal: expect.any(AbortSignal) },
+      );
       expect(onUnlocked).toHaveBeenCalledOnce();
     });
   });
@@ -237,5 +244,26 @@ describe('LockedUnlockDialog', () => {
       'href',
       '/user-settings',
     );
+  });
+
+  it('tells a network failure apart from a revoked session and offers a retry', async () => {
+    vi.mocked(getAuthStatus)
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValueOnce({ pinCode: true, isElevated: false, password: true } as never);
+    render(LockedUnlockDialog, { open: true, onUnlocked: vi.fn() });
+    expect(await screen.findByText(en.frameleaf_locked_dialog_offline)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_locked_dialog_unavailable)).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: en.retry }));
+    expect(await screen.findByLabelText(en.frameleaf_locked_dialog_pin_label)).toBeInTheDocument();
+  });
+
+  it('reports a revoked session (401) as no longer available', async () => {
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    vi.mocked(getAuthStatus).mockImplementationOnce(() =>
+      sdk.getAuthStatus({ fetch: async () => Response.json({ message: 'Invalid user token' }, { status: 401 }) }),
+    );
+    render(LockedUnlockDialog, { open: true, onUnlocked: vi.fn() });
+    expect(await screen.findByText(en.frameleaf_locked_dialog_unavailable)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.retry })).toBeNull();
   });
 });

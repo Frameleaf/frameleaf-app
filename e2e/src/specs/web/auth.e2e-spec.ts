@@ -15,20 +15,21 @@ test.describe('Registration', () => {
     await page.goto('/');
     await page.getByRole('link', { name: 'Getting Started' }).click();
 
-    // register
+    // register (FL-80 prototype screen; the strength meter is advisory, the server decides)
     await expect(page).toHaveTitle(/Admin Registration/);
-    await page.getByLabel('Admin Email').fill('admin@immich.app');
-    await page.getByLabel('Admin Password', { exact: true }).fill('password');
-    await page.getByLabel('Confirm Admin Password').fill('password');
-    await page.getByLabel('Name').fill('Immich Admin');
-    await page.getByRole('button', { name: 'Sign up' }).click();
+    await expect(page.getByRole('heading', { name: 'Create the admin account' })).toBeVisible();
+    await page.getByLabel('Name', { exact: true }).fill('Immich Admin');
+    await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
+    await page.getByLabel('Password', { exact: true }).fill('password');
+    await page.getByLabel('Confirm password', { exact: true }).fill('password');
+    await page.getByRole('button', { name: 'Create account' }).click();
 
     // login
     await expect(page).toHaveTitle(/Login/);
     await page.goto('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email').fill('admin@immich.app');
-    await page.getByLabel('Password').fill('password');
-    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
+    await page.getByLabel('Password', { exact: true }).fill('password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // onboarding
     await expect(page).toHaveURL('/auth/onboarding');
@@ -68,22 +69,22 @@ test.describe('Registration', () => {
 
     // login
     await page.goto('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email').fill('user@immich.cloud');
-    await page.getByLabel('Password').fill('password');
-    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByLabel('Email', { exact: true }).fill('user@immich.cloud');
+    await page.getByLabel('Password', { exact: true }).fill('password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
-    // change password
-    await expect(page.getByRole('heading')).toHaveText('Change Password');
+    // change password (FL-80 prototype screen)
+    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
     await expect(page).toHaveURL('/auth/change-password');
-    await page.getByLabel('New Password').fill('new-password');
-    await page.getByLabel('Confirm Password').fill('new-password');
-    await page.getByRole('button', { name: 'Change password' }).click();
+    await page.getByLabel('New password', { exact: true }).fill('new-password');
+    await page.getByLabel('Confirm new password', { exact: true }).fill('new-password');
+    await page.getByRole('button', { name: 'Save and continue' }).click();
 
     // login with new password
     await expect(page).toHaveURL('/auth/login?autoLaunch=0');
-    await page.getByLabel('Email').fill('user@immich.cloud');
-    await page.getByLabel('Password').fill('new-password');
-    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByLabel('Email', { exact: true }).fill('user@immich.cloud');
+    await page.getByLabel('Password', { exact: true }).fill('new-password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // onboarding
     await expect(page).toHaveURL('/auth/onboarding');

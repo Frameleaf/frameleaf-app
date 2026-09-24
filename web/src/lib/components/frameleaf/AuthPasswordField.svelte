@@ -1,6 +1,7 @@
 <script lang="ts">
   import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
   import { Icon } from '@immich/ui';
+  import { t } from 'svelte-i18n';
   import type { HTMLInputAttributes } from 'svelte/elements';
 
   let {
@@ -38,7 +39,7 @@
     />
     <button
       type="button"
-      aria-label={visible ? 'Hide password' : 'Show password'}
+      aria-label={visible ? $t('frameleaf_auth_hide_password') : $t('frameleaf_auth_show_password')}
       aria-pressed={visible}
       onclick={() => (visible = !visible)}
     >
