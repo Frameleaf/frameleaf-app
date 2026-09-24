@@ -128,10 +128,13 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-motion')).toBe('180ms');
     expect(base.get('--fl-motion-slow')).toBe('240ms');
     expect(base.get('--fl-ease')).toBeDefined();
-    expect(base.get('--fl-radius-control')).toBe('6px');
-    expect(base.get('--fl-radius-card')).toBe('10px');
-    expect(base.get('--fl-radius-dialog')).toBe('14px');
+    // The September 24 continuous corners (apple-style.css, design/frameleaf/tokens.json).
+    expect(base.get('--fl-radius-control')).toBe('9px');
+    expect(base.get('--fl-radius-card')).toBe('12px');
+    expect(base.get('--fl-radius-dialog')).toBe('22px');
     expect(base.get('--fl-radius-pill')).toBe('999px');
+    // Every people photo is a squircle.
+    expect(base.get('--fl-squircle')).toContain('data:image/svg+xml');
   });
 
   it('honours reduced motion and keeps native touch targets', () => {
