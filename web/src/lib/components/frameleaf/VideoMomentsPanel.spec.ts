@@ -1,19 +1,24 @@
 import {
   AssetTypeEnum,
   VideoMomentIndexState,
+  VideoMomentMatch,
   VideoMomentSource,
   type AssetResponseDto,
   type VideoMomentFrameDto,
   type VideoMomentsResponseDto,
 } from '@immich/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
 import en from '../../../../../i18n/en.json';
 import VideoMomentsPanel from './VideoMomentsPanel.svelte';
 
+const navigation = vi.hoisted(() => ({ navigate: vi.fn() }));
+vi.mock('$lib/utils/navigation', async (original) => ({ ...(await original<object>()), ...navigation }));
+
 const ASSET_ID = '00000000-0000-4000-8000-0000000000c1';
+const OTHER_ID = '00000000-0000-4000-8000-0000000000c2';
 
 const asset = { id: ASSET_ID, type: AssetTypeEnum.Video } as AssetResponseDto;
 
@@ -135,5 +140,84 @@ describe('VideoMomentsPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Play from 1:35' }));
 
     expect(videoSeek.pending).toEqual({ assetId: ASSET_ID, seconds: 95 });
+  });
+  describe('frame-to-moment search', () => {
+    const hit = (assetId: string, timestampMs: number, caption: string | null = null) => ({
+      assetId,
+      timestampMs,
+      frameId: `hit-${assetId}-${timestampMs}`,
+      momentId: null,
+      caption,
+      match: VideoMomentMatch.Visual,
+      score: 0.9,
+    });
+
+    it('finds moments like a frame and opens another video at the moment chosen', async () => {
+      sdkMock.searchSimilarVideoMoments.mockResolvedValue({
+        hits: [hit(OTHER_ID, 33_000, 'Waves at dusk'), hit(ASSET_ID, 45_000)],
+      });
+      render(VideoMomentsPanel, { asset, isOwner: false });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Find moments like 0:12' }));
+
+      expect(sdkMock.searchSimilarVideoMoments).toHaveBeenCalledWith({ id: 'frame-1', limit: 12 });
+      const results = await screen.findByRole('region', { name: 'Moments like 0:12' });
+      expect(await within(results).findByText('Waves at dusk')).toBeInTheDocument();
+      expect(within(results).getByText('Similar moment')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Find moments like 0:12' })).toHaveAttribute('aria-pressed', 'true');
+
+      await fireEvent.click(within(results).getByRole('button', { name: 'Play from 0:33' }));
+
+      expect(videoSeek.pending).toEqual({ assetId: OTHER_ID, seconds: 33 });
+      expect(navigation.navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: OTHER_ID });
+    });
+
+    it('seeks this video for a moment at another time in it, without navigating', async () => {
+      sdkMock.searchSimilarVideoMoments.mockResolvedValue({ hits: [hit(ASSET_ID, 45_000)] });
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Find moments like 0:02' }));
+      const results = await screen.findByRole('region', { name: 'Moments like 0:02' });
+      await fireEvent.click(await within(results).findByRole('button', { name: 'Play from 0:45' }));
+
+      expect(videoSeek.pending).toEqual({ assetId: ASSET_ID, seconds: 45 });
+      expect(navigation.navigate).not.toHaveBeenCalled();
+    });
+
+    it('says so when nothing is similar, and closes', async () => {
+      sdkMock.searchSimilarVideoMoments.mockResolvedValue({ hits: [] });
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Find moments like 1:04' }));
+
+      expect(await screen.findByText('No similar moments in your videos yet.')).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('region', { name: 'Moments like 1:04' })).not.toBeInTheDocument();
+    });
+
+    it('shows a failure in place and tries again', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      sdkMock.searchSimilarVideoMoments.mockRejectedValueOnce(new Error('offline'));
+      sdkMock.searchSimilarVideoMoments.mockResolvedValueOnce({ hits: [hit(OTHER_ID, 5000, 'Found it')] });
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Find moments like 0:12' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Similar moments could not be found.');
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+      expect(await screen.findByText('Found it')).toBeInTheDocument();
+      expect(sdkMock.searchSimilarVideoMoments).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers the search only on frames that are indexed', async () => {
+      const response = moments(null);
+      response.frames = response.frames.map((item) => ({ ...item, indexed: item.frameIndex === 2 }));
+      sdkMock.getVideoMoments.mockResolvedValue(response);
+      render(VideoMomentsPanel, { asset, isOwner: true });
+
+      expect(await screen.findByRole('button', { name: 'Find moments like 1:04' })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /^Find moments like/ })).toHaveLength(1);
+    });
   });
 });
