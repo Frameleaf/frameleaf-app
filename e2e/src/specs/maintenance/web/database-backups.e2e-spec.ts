@@ -75,7 +75,7 @@ test.describe('Database Backups', () => {
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('IM CORRUPTED')).toBeVisible({ timeout: 60_000 });
-    await page.getByRole('button', { name: 'End maintenance mode' }).click();
+    await page.getByRole('button', { name: 'End maintenance' }).click();
     await page.waitForURL(backToMaintenance);
   });
 
@@ -92,7 +92,7 @@ test.describe('Database Backups', () => {
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 60_000 });
-    await page.getByRole('button', { name: 'End maintenance mode' }).click();
+    await page.getByRole('button', { name: 'End maintenance' }).click();
     await page.waitForURL(backToMaintenance);
   });
 

@@ -8089,6 +8089,8 @@ export type CreateProfileImageDto = {
     assetId?: string;
     /** Profile image file */
     file: Blob;
+    /** The image is a new crop of the current profile picture: keep the photo it was copied from, if any. Ignored when assetId is set. */
+    keepSource?: boolean;
 };
 export type CreateProfileImageResponseDto = {
     /** Profile image change date */

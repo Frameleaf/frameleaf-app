@@ -17,6 +17,7 @@
     hero,
     attribution = false,
     keypad = 'auto',
+    wide = false,
   }: {
     title?: string;
     withHeader?: boolean;
@@ -25,6 +26,8 @@
     hero?: 'summit' | 'cabin';
     attribution?: boolean;
     keypad?: 'auto' | 'always' | 'never';
+    /** The prototype's `AuthShell wide` (onboarding): a wider single pane. */
+    wide?: boolean;
   } = $props();
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -41,6 +44,7 @@
   class="frameleaf auth-screen"
   class:split={!!hero}
   class:single={!hero}
+  class:wide
   data-theme={appTheme}
   data-keypad={keypad}
 >

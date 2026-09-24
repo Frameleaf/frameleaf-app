@@ -140,6 +140,8 @@ export class UserService extends BaseService {
   ): Promise<CreateProfileImageResponseDto> {
     const { profileImagePath: oldPath } = await this.findOrFail(auth.user.id, { withDeleted: false });
     const profileImageAssetId = await this.resolveProfileImageSource(auth, file, dto.assetId);
+    // A new crop of the current picture keeps the photo it came from, so a later Lock still replaces it.
+    const keepSource = !dto.assetId && (dto.keepSource === true || dto.keepSource === 'true');
 
     let profileImagePath: string;
     try {
@@ -157,7 +159,7 @@ export class UserService extends BaseService {
 
     const user = await this.userRepository.update(auth.user.id, {
       profileImagePath,
-      profileImageAssetId,
+      ...(!keepSource && { profileImageAssetId }),
       profileChangedAt: new Date(),
     });
 
@@ -185,8 +187,9 @@ export class UserService extends BaseService {
   }
 
   /**
-   * The photo a new profile picture was copied from, when the client names one (FL-53): a photo the
-   * caller may read that is not Locked. It is recorded so the picture can be replaced if that photo
+   * The photo a new profile picture was copied from, when the client names one (FL-53): one of the
+   * caller's own photos that is not Locked. Profile pictures are shown to every account on the server,
+   * so a partner's or shared photo is refused. It is recorded so the picture can be replaced if that photo
    * becomes Locked later. The uploaded file is removed when the photo is refused.
    */
   private async resolveProfileImageSource(
@@ -207,6 +210,9 @@ export class UserService extends BaseService {
       const asset = await this.assetRepository.getById(assetId);
       if (!asset) {
         throw new BadRequestException('Invalid profile picture source');
+      }
+      if (asset.ownerId !== auth.user.id) {
+        throw new BadRequestException('Only your own photo can be a profile picture');
       }
       if (isLockedAsset(asset)) {
         throw new BadRequestException('A Locked photo cannot be a profile picture');

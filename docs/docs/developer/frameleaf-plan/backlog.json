@@ -2037,7 +2037,7 @@
         "web/src/routes/(user)/user-settings",
         "web/src/lib/components/frameleaf/access/ApiKeyDialog.svelte",
         "web/src/lib/components/frameleaf/access/ApiKeysSection.svelte",
-        "web/src/lib/modals/AvatarEditModal.svelte",
+        "web/src/lib/components/frameleaf/AvatarEditorDialog.svelte",
         "server/src/services/auth.service.ts",
         "server/src/services/session.service.ts",
         "prototypes/frameleaf/src/ProtectedContent.jsx"
