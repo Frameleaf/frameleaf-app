@@ -283,6 +283,15 @@ describe('LibraryTimeline grid zoom', () => {
     expect(manager.rowHeight).toBe(base);
   });
 
+  it('leaves + and − alone while any viewer is open', async () => {
+    const { assetViewerManager } = await import('$lib/managers/asset-viewer-manager.svelte');
+    const viewing = vi.spyOn(assetViewerManager, 'isViewing', 'get').mockReturnValue(true);
+    const browse = renderLayout('browse');
+    await press('+');
+    expect(browse).not.toHaveBeenCalled();
+    viewing.mockRestore();
+  });
+
   it('lays Browse out as a square cell grid', async () => {
     renderLayout('browse');
     await tick();
@@ -351,6 +360,32 @@ describe('LibraryTimeline curated Years and Months', () => {
     await tick();
     expect(screen.queryByTestId('frameleaf-timeline-cards')).toBeNull();
     expect(sdkMock.getTimelineHighlights).not.toHaveBeenCalled();
+  });
+
+  it('keeps the scrubber beside the cards and jumps to a month card, or its year card', async () => {
+    const { container } = renderGrouping('months');
+    await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_days' });
+    const slider = await screen.findByRole('slider');
+    const scroller = container.querySelector<HTMLElement>('.fl-tl-cards-scroll')!;
+    const scrollBy = vi.fn();
+    scroller.scrollBy = scrollBy as never;
+    await fireEvent.keyDown(slider, { key: 'Home' });
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches the cards after the library changes, once the changes settle', async () => {
+    vi.useFakeTimers();
+    try {
+      renderGrouping('years');
+      await vi.waitFor(() => expect(sdkMock.getTimelineHighlights).toHaveBeenCalledTimes(1));
+      const { eventManager } = await import('$lib/managers/event-manager.svelte');
+      eventManager.emit('AssetsDelete', ['a']);
+      eventManager.emit('AssetsDelete', ['b']);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(sdkMock.getTimelineHighlights).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says so when the cards cannot load', async () => {

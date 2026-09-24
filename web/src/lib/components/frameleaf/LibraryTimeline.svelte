@@ -216,7 +216,10 @@
     if (!element || tileLayout === 'timeline' || !onThumbnailSizeChange) {
       return;
     }
-    return bindGridZoom(element, { onZoom: zoomGrid, enabled: () => !session.openAssetId });
+    return bindGridZoom(element, {
+      onZoom: zoomGrid,
+      enabled: () => !session.openAssetId && !assetViewerManager.isViewing,
+    });
   });
 
   $effect(() => {
@@ -305,6 +308,74 @@
       pendingMonth = { year: target.year, month: target.month };
     }
     changeGrouping(target.grouping);
+  };
+
+  /*
+   * Leaving the tile flow for the cards unmounts it, and coming back would start at the top. The
+   * asset in view is remembered on the way out (read before the flow unmounts) and put back at the
+   * same height on screen on the way in, unless a month card chose where Days opens.
+   */
+  let wasCurated = untrack(() => curated);
+  let flowAnchor: LibraryAnchor | undefined;
+  let flowScrollTop = 0;
+  $effect.pre(() => {
+    const now = curated;
+    if (now && !wasCurated) {
+      untrack(() => {
+        flowAnchor =
+          captureLibraryAnchor(timelineManager, session.session.scrollAnchor) ?? captureLibraryAnchor(timelineManager);
+        flowScrollTop = scrollable?.scrollTop ?? 0;
+      });
+    }
+  });
+  $effect(() => {
+    const now = curated;
+    const was = wasCurated;
+    wasCurated = now;
+    if (now || !was || !scrollable) {
+      return;
+    }
+    const anchor = flowAnchor;
+    const top = flowScrollTop;
+    flowAnchor = undefined;
+    if (untrack(() => pendingMonth)) {
+      return;
+    }
+    void tick()
+      .then(nextFrame)
+      .then(nextFrame)
+      .then(() => {
+        if (!restoreLibraryAnchor(timelineManager, anchor) && top > 0) {
+          timelineManager.scrollTo(top);
+        }
+      });
+  });
+
+  /** The card at the top of the Years or Months view, as the scrubber's current month. */
+  let cardTopMonth = $state<ViewportTopMonth>(undefined);
+  let cards = $state<{ jumpTo: (month: { year: number; month: number }) => boolean }>();
+
+  const onCardPeriod = (period: { year: number; month?: number } | undefined) => {
+    if (!period) {
+      cardTopMonth = undefined;
+      return;
+    }
+    // A year card stands for the first of its months in display order.
+    const month =
+      period.month ?? timelineManager.months.find(({ yearMonth }) => yearMonth.year === period.year)?.yearMonth.month;
+    cardTopMonth = month === undefined ? undefined : { year: period.year, month };
+  };
+
+  /** The scrubber over the cards: a month goes to its month card, or its year's (template `jumpTo`). */
+  const onCardScrub: ScrubberListener = ({ scrubberMonth }) => {
+    if (scrubberMonth && typeof scrubberMonth === 'object') {
+      cards?.jumpTo(scrubberMonth);
+    }
+  };
+  const onCardJump = (month: { year: number; month: number }) => {
+    if (cards?.jumpTo(month)) {
+      cardTopMonth = month;
+    }
   };
 
   $effect(() => {
@@ -963,7 +1034,34 @@
   bind:this={root}
 >
   {#if curated && (grouping === 'years' || grouping === 'months')}
-    <TimelineCards {timelineManager} {grouping} {focusYear} onOpen={openCard} header={top} {empty} />
+    <div
+      class="fl-timeline-cards"
+      bind:clientHeight={measuredHeight}
+      bind:clientWidth={measuredWidth}
+      style:margin-inline-end="{coarsePointer ? 0 : scrubberWidth}px"
+    >
+      <TimelineCards
+        bind:this={cards}
+        {timelineManager}
+        {grouping}
+        {focusYear}
+        onOpen={openCard}
+        onCurrentPeriod={onCardPeriod}
+        header={top}
+        {empty}
+      />
+    </div>
+    <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
+    {#if timelineManager.months.length > 0}
+      <YearScrubber
+        {timelineManager}
+        height={measuredHeight}
+        viewportTopMonth={cardTopMonth}
+        onScrub={onCardScrub}
+        onJump={onCardJump}
+        bind:scrubberWidth
+      />
+    {/if}
   {:else}
     <section
       class="fl-timeline-scroll"
@@ -1108,6 +1206,11 @@
   }
   .fl-timeline-body {
     position: relative;
+  }
+  .fl-timeline-cards {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
   }
   .fl-timeline-top,
   .fl-timeline-bottom {

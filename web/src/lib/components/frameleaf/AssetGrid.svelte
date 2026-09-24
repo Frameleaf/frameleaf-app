@@ -18,10 +18,12 @@
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
-  import { cellGrid, cellGridOptions, type TileLayout } from '$lib/frameleaf/library-grid';
+  import { cellGrid, cellGridOptions, timelineRowHeight, type TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { animateFlip } from '$lib/frameleaf/motion';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
@@ -44,6 +46,11 @@
     ratingFor?: (asset: TimelineAsset) => number | null;
     /** The tile layout; by default the session's (Timeline, Browse or Work). */
     layout?: TileLayout;
+    /**
+     * A public shared-link page: the plain Browse grid whatever this device last used, and no zoom
+     * (LibraryView `publicView`). Defaults to whether this session is a shared link.
+     */
+    publicView?: boolean;
     /** Extra chrome drawn over every tile. */
     tileOverlay?: Snippet<[TimelineAsset]>;
     /** Rendered above the grid, inside the same scroll container. */
@@ -61,6 +68,7 @@
     onSelect,
     ratingFor,
     layout,
+    publicView = authManager.isSharedLink,
     tileOverlay,
     header,
     empty,
@@ -79,7 +87,7 @@
   const selected = $derived(new Set(selection));
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
-  const tileLayout = $derived<TileLayout>(layout ?? session.layout);
+  const tileLayout = $derived<TileLayout>(publicView ? 'browse' : (layout ?? session.layout));
   const cells = $derived(
     tileLayout === 'timeline'
       ? null
@@ -93,7 +101,8 @@
    */
   let scrollTop = $state(0);
   let rowsOffset = $state(0);
-  let frameHeight = $state(Infinity);
+  // The window until the scroller is measured, so the first render mounts one screen, not every result.
+  let frameHeight = $state(typeof innerHeight === 'number' && innerHeight > 0 ? innerHeight : Infinity);
   /** The viewport, in the grid's own coordinates; the whole grid until it has been measured. */
   const viewTop = $derived(frameHeight === Infinity ? 0 : scrollTop - rowsOffset);
   const viewBottom = $derived(frameHeight === Infinity ? Infinity : viewTop + frameHeight);
@@ -144,7 +153,7 @@
    */
   $effect(() => {
     const element = root;
-    if (!element || !cells) {
+    if (!element || !cells || publicView) {
       return;
     }
     return bindGridZoom(element, {
@@ -154,7 +163,8 @@
           animateFlip(element, () => (libraryGridPreferences.thumbnailSize = next));
         }
       },
-      enabled: () => !session.openAssetId,
+      // No zoom under any open viewer: a video viewer leaves + and − unclaimed.
+      enabled: () => !session.openAssetId && !assetViewerManager.isViewing,
     });
   });
 
@@ -171,7 +181,8 @@
     getJustifiedLayoutFromAssets(grid ? [] : assets, {
       spacing: maxMd ? 8 : 12,
       heightTolerance: 0.5,
-      rowHeight: maxMd ? 100 : 235,
+      // Thumbnail size scales the Timeline rows too, as in the library.
+      rowHeight: timelineRowHeight(maxMd ? 100 : 235, libraryGridPreferences.thumbnailSize),
       rowWidth: Math.floor(width),
       fillRowWidth: true,
     }),
@@ -236,7 +247,7 @@
 
 <div
   class="fl-grid"
-  class:is-zoomable={!!cells}
+  class:is-zoomable={!!cells && !publicView}
   data-testid="frameleaf-asset-grid"
   data-layout={tileLayout}
   bind:this={root}
