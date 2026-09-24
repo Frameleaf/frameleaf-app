@@ -6,6 +6,7 @@ import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
   AlbumIconCatalogueResponseDto,
+  AlbumOrderDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -86,6 +87,19 @@ export class AlbumController {
   })
   getAlbumIconCatalogue(): AlbumIconCatalogueResponseDto {
     return this.service.getIconCatalogue();
+  }
+
+  @Put('order')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Arrange a group of the album directory',
+    description:
+      "Save the authenticated user's own custom order for one group of their album directory: the albums inside a collection, or at the top level the collections, the albums on their own, or the shared spaces. The order is personal and changes organization only; access and membership are untouched. The ids must be exactly the group as it is now, otherwise 409.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setAlbumOrder(@Auth() auth: AuthDto, @Body() dto: AlbumOrderDto): Promise<void> {
+    return this.service.setOrder(auth, dto);
   }
 
   @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })

@@ -1,7 +1,7 @@
-import { LoginResponseDto } from '@immich/sdk';
+import { AlbumKind, LoginResponseDto, getAlbumTree, moveAlbumToCollection } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { testAssetDir, utils } from 'src/utils.js';
+import { asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 
 test.describe('Album', () => {
   let admin: LoginResponseDto;
@@ -146,6 +146,94 @@ test.describe('Album', () => {
     await expect(remove).toContainText('It has no items, so nothing else changes.');
     await remove.getByRole('button', { name: 'Delete album' }).click();
     await expect(page.getByRole('article', { name: 'Dialogs album, renamed' })).toHaveCount(0);
+  });
+
+  test('arranges albums in a custom order with the keyboard and keeps it (FL-52)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    const collection = await utils.createAlbum(admin.accessToken, {
+      albumName: 'Order shelf',
+      kind: AlbumKind.Collection,
+    });
+    await utils.createAlbum(admin.accessToken, { albumName: 'Order first', parentId: collection.id });
+    await utils.createAlbum(admin.accessToken, { albumName: 'Order second', parentId: collection.id });
+
+    await page.goto('/albums');
+    // The sort menu is keyboard-complete: open it, arrow to "Custom order", choose it.
+    const sort = page.getByRole('button', { name: 'Sort albums' });
+    await sort.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitemcheckbox', { name: 'Custom order' }).focus();
+    await page.keyboard.press('Enter');
+
+    const shelf = page.getByRole('region', { name: 'Order shelf' });
+    const names = () =>
+      shelf.getByRole('article').evaluateAll((tiles) => tiles.map((tile) => tile.getAttribute('aria-label')));
+    const [first, second] = await names();
+
+    // Move earlier from the tile's menu, by keyboard only.
+    await shelf.getByRole('button', { name: `Actions for ${second}` }).focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Move earlier' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('status')).toContainText(`“${second}” is now 1 of 2`);
+    await expect.poll(names).toEqual([second, first]);
+
+    // The order is saved on the server for this person and survives a reload.
+    await page.reload();
+    await expect.poll(names).toEqual([second, first]);
+  });
+
+  test('moves an album into a collection with the keyboard only (FL-52)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await utils.createAlbum(admin.accessToken, { albumName: 'Keyboard target', kind: AlbumKind.Collection });
+    await utils.createAlbum(admin.accessToken, { albumName: 'Keyboard mover' });
+
+    await page.goto('/albums');
+    await page.getByRole('button', { name: 'Actions for Keyboard mover' }).first().focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitem', { name: 'Move to…' }).focus();
+    await page.keyboard.press('Enter');
+
+    const dialog = page.getByRole('dialog', { name: 'Move “Keyboard mover”' });
+    await dialog.getByRole('radio', { name: /Keyboard target/ }).focus();
+    await page.keyboard.press('Space');
+    await dialog.getByRole('button', { name: 'Move', exact: true }).focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.getByText('Moved “Keyboard mover” into “Keyboard target”')).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Keyboard target' }).getByRole('article', { name: 'Keyboard mover' }),
+    ).toBeVisible();
+  });
+
+  test('refuses a move made from an outdated directory and shows the latest (FL-52)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    const family = await utils.createAlbum(admin.accessToken, {
+      albumName: 'Stale family',
+      kind: AlbumKind.Collection,
+    });
+    await utils.createAlbum(admin.accessToken, { albumName: 'Stale trips', kind: AlbumKind.Collection });
+    const album = await utils.createAlbum(admin.accessToken, { albumName: 'Stale mover' });
+
+    await page.goto('/albums');
+    await expect(page.getByRole('article', { name: 'Stale mover' })).toBeVisible();
+
+    // Another tab moves the album into Family while this page still shows it on its own.
+    await moveAlbumToCollection(
+      { id: album.id, moveAlbumDto: { collectionId: family.id } },
+      { headers: asBearerAuth(admin.accessToken) },
+    );
+
+    await page.getByRole('button', { name: 'Actions for Stale mover' }).first().click();
+    await page.getByRole('menuitem', { name: 'Move to…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Move “Stale mover”' });
+    await dialog.getByRole('radio', { name: /Stale trips/ }).check();
+    await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+
+    await expect(page.getByRole('status')).toContainText('Your albums changed since this page loaded');
+    const tree = await getAlbumTree({ headers: asBearerAuth(admin.accessToken) });
+    const node = tree.collections.find(({ collection }) => collection.id === family.id);
+    expect(node?.albums.map(({ id }) => id)).toContain(album.id);
   });
 
   test('opens the album inside the Frameleaf shell, without the legacy app bar', async ({ context, page }) => {

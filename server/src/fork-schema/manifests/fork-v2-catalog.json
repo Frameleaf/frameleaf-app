@@ -34,6 +34,22 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_position.albumId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.album_position.position"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_position.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_position.userId"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.archive_operation_item.assetId"
     },
     {
@@ -6487,6 +6503,14 @@
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"userId\", \"albumId\")",
+      "identity": "immich_fork.album_position.album_position_pkey"
+    },
+    {
+      "definition": "CHECK (\"position\" >= 0)",
+      "identity": "immich_fork.album_position.album_position_position_check"
+    },
+    {
       "definition": "FOREIGN KEY (\"operationId\") REFERENCES immich_fork.archive_operation(id) ON DELETE CASCADE",
       "identity": "immich_fork.archive_operation_item.archive_operation_item_operationId_fkey"
     },
@@ -8596,7 +8620,8 @@
     "0000000000110-AssetDevelopRevision",
     "0000000000120-VideoEditVersions",
     "0000000000130-ArchiveOperations",
-    "0000000000140-PersonMergeVerdicts"
+    "0000000000140-PersonMergeVerdicts",
+    "0000000000150-AlbumPositions"
   ],
   "functions": [
     {
@@ -9696,6 +9721,10 @@
     {
       "definition": "CREATE UNIQUE INDEX album_metadata_pkey ON immich_fork.album_metadata USING btree (\"albumId\")",
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_position_pkey ON immich_fork.album_position USING btree (\"userId\", \"albumId\")",
+      "identity": "immich_fork.album_position.album_position_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX archive_operation_item_pkey ON immich_fork.archive_operation_item USING btree (\"operationId\", \"assetId\")",
@@ -12287,6 +12316,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.album_metadata"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.album_position"
     },
     {
       "definition": "table",

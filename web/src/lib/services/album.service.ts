@@ -8,6 +8,7 @@ import {
   deleteAlbum,
   moveAlbumToCollection,
   removeUserFromAlbum,
+  setAlbumOrder,
   updateAlbumInfo,
   updateAlbumUser,
   type AlbumResponseDto,
@@ -322,15 +323,48 @@ export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: Alb
  * stands on its own. The server enforces the one-level rule and ownership; the
  * caller decides whether to refresh the directory.
  */
+/** A 409 from the album directory endpoints: the change was decided on an outdated directory (FL-52). */
+export const isStaleDirectoryError = (error: unknown) => (error as { status?: number } | undefined)?.status === 409;
+
+/**
+ * Move an album into or out of a collection. The server is told where this page last saw the album,
+ * so a move made from an outdated directory (it was moved elsewhere since) comes back as `'stale'`
+ * for the caller to reload, instead of silently undoing the other move (FL-52).
+ */
 export const handleMoveAlbumToCollection = async (album: AlbumResponseDto, collectionId: string | null) => {
   const $t = await getFormatter();
 
   try {
-    const response = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId } });
+    const response = await moveAlbumToCollection({
+      id: album.id,
+      moveAlbumDto: { collectionId, expectedParentId: album.parentId },
+    });
     eventManager.emit('AlbumUpdate', response);
     return response;
   } catch (error) {
+    if (isStaleDirectoryError(error)) {
+      return 'stale' as const;
+    }
     handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/**
+ * Save the person's own order for one group of their album directory (FL-52). `'stale'` when the
+ * group changed since the page loaded it (the caller reloads); `false` on any other failure.
+ */
+export const handleSetAlbumOrder = async (parentId: string | null, albumIds: string[]) => {
+  const $t = await getFormatter();
+
+  try {
+    await setAlbumOrder({ albumOrderDto: { parentId, albumIds } });
+    return true;
+  } catch (error) {
+    if (isStaleDirectoryError(error)) {
+      return 'stale' as const;
+    }
+    handleError(error, $t('frameleaf_albums_order_failed'));
+    return false;
   }
 };
 

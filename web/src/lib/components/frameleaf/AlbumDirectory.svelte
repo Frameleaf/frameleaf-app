@@ -11,13 +11,14 @@
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
-  import Dropdown from '$lib/elements/Dropdown.svelte';
   import {
     albumDirectoryFilters,
     albumDirectorySorts,
@@ -26,8 +27,11 @@
     canEdit,
     canTakeOut,
     isOwner,
+    moveInOrder,
     moveTargets,
     normalizeAlbumDirectoryView,
+    orderGroupOf,
+    placeBefore,
     type AlbumDirectoryFilter,
     type AlbumDirectorySort,
     type AlbumDetailsDraft,
@@ -44,6 +48,7 @@
     handleEditAlbumDetails,
     handleLeaveAlbum,
     handleMoveAlbumToCollection,
+    handleSetAlbumOrder,
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
@@ -65,6 +70,8 @@
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
+    mdiArrowDown,
+    mdiArrowUp,
     mdiAutoFix,
     mdiDeleteOutline,
     mdiDotsHorizontal,
@@ -101,6 +108,13 @@
    * space's photos, viewer and members live. The shelf links to Sharing, where
    * spaces are created and invitations answered, and says when invitations are
    * waiting.
+   *
+   * "Custom order" (FL-52) shows every group in the person's own arrangement, which the server keeps
+   * per person. While it is the sort — and nothing is filtered or searched, so the whole group is on
+   * screen — an item drags onto another in its group to go just before it, and every item's menu has
+   * Move earlier / Move later as the keyboard and touch alternative. Moving into or out of a
+   * collection keeps using the shelves, the take-out zone and Move to…. A move or an order decided on
+   * an outdated directory is refused by the server; the page then reloads and says so.
    */
   interface Props {
     tree: AlbumTreeResponseDto;
@@ -186,6 +200,7 @@
     items: () => $t('frameleaf_albums_sort_items'),
     'recent-photo': () => $t('frameleaf_albums_sort_recent'),
     'oldest-photo': () => $t('frameleaf_albums_sort_oldest'),
+    custom: () => $t('frameleaf_albums_sort_custom'),
   };
 
   const summary = $derived(
@@ -295,6 +310,10 @@
     busy = true;
     try {
       const moved = await handleMoveAlbumToCollection(album, collectionId);
+      if (moved === 'stale') {
+        await reloadStale();
+        return;
+      }
       if (!moved) {
         return;
       }
@@ -308,6 +327,69 @@
       busy = false;
     }
   };
+
+  /** The server refused a change made from an outdated directory: show the latest and say so. */
+  const reloadStale = async () => {
+    status = $t('frameleaf_albums_stale');
+    moveDialog = { open: false };
+    await refresh();
+  };
+
+  /* ---- custom order (FL-52) ---- */
+  const reorderable = $derived(view.sort === 'custom' && view.filter === 'all' && !arrangement.searching);
+
+  const saveOrder = async (album: AlbumResponseDto, parentId: string | null, ids: string[]) => {
+    busy = true;
+    try {
+      const saved = await handleSetAlbumOrder(parentId, ids);
+      if (saved === 'stale') {
+        await reloadStale();
+        return;
+      }
+      if (!saved) {
+        return;
+      }
+      status = $t('frameleaf_albums_reordered', {
+        values: { name: nameOf(album), position: ids.indexOf(album.id) + 1, count: ids.length },
+      });
+      await refresh();
+    } finally {
+      busy = false;
+    }
+  };
+
+  /** Move earlier / Move later: the keyboard and touch way to arrange a group. */
+  const step = (album: AlbumResponseDto, direction: -1 | 1) => {
+    const group = orderGroupOf(tree, album.id);
+    const ids = group && moveInOrder(group.ids, album.id, direction);
+    if (group && ids) {
+      void saveOrder(album, group.parentId, ids);
+    }
+  };
+  const canStep = (album: AlbumResponseDto, direction: -1 | 1) => {
+    const group = orderGroupOf(tree, album.id);
+    return !!group && !!moveInOrder(group.ids, album.id, direction);
+  };
+
+  /** A dragged item may land on another item of the same group, which it then goes just before. */
+  const acceptsReorder = (target: AlbumResponseDto) => {
+    if (!reorderable || !dragged || dragged.id === target.id) {
+      return false;
+    }
+    return orderGroupOf(tree, dragged.id)?.ids.includes(target.id) ?? false;
+  };
+  const dropBefore = (albumId: string, target: AlbumResponseDto) => {
+    const album = find(albumId);
+    endDrag();
+    const group = orderGroupOf(tree, albumId);
+    const ids = group && placeBefore(group.ids, albumId, target.id);
+    if (album && group && ids) {
+      void saveOrder(album, group.parentId, ids);
+    }
+  };
+  /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
+  const canDrag = (album: AlbumResponseDto) =>
+    reorderable || (album.kind === AlbumKind.Album && isOwner(album, currentUserId));
 
   /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
   const confirmDelete = async () => {
@@ -382,7 +464,7 @@
   /* ---- drag an album onto a collection shelf; touch uses Move to… ---- */
   const startDrag = (album: AlbumResponseDto) => {
     dragged = album;
-    status = $t('frameleaf_albums_drag_hint');
+    status = reorderable ? $t('frameleaf_albums_reorder_hint') : $t('frameleaf_albums_drag_hint');
   };
   const endDrag = () => {
     dragged = undefined;
@@ -437,6 +519,12 @@
     size="small"
   >
     <MenuOption icon={mdiFolderOpenOutline} text={$t('open')} onClick={() => goto(openRoute(album))} />
+    {#if reorderable && canStep(album, -1)}
+      <MenuOption icon={mdiArrowUp} text={$t('frameleaf_albums_move_earlier')} onClick={() => step(album, -1)} />
+    {/if}
+    {#if reorderable && canStep(album, 1)}
+      <MenuOption icon={mdiArrowDown} text={$t('frameleaf_albums_move_later')} onClick={() => step(album, 1)} />
+    {/if}
     {#if editor}
       <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(album)} />
     {/if}
@@ -507,10 +595,12 @@
         <AlbumTile
           {album}
           {currentUserId}
-          draggable={album.kind === AlbumKind.Album && isOwner(album, currentUserId)}
+          draggable={canDrag(album)}
           dragging={dragged?.id === album.id}
+          acceptsReorder={acceptsReorder(album)}
           onDragStart={startDrag}
           onDragEnd={endDrag}
+          onReorderDrop={(albumId) => dropBefore(albumId, album)}
         >
           {#snippet actions()}{@render menu(album)}{/snippet}
         </AlbumTile>
@@ -527,10 +617,12 @@
             {album}
             {currentUserId}
             layout="list"
-            draggable={album.kind === AlbumKind.Album && isOwner(album, currentUserId)}
+            draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
+            acceptsReorder={acceptsReorder(album)}
             onDragStart={startDrag}
             onDragEnd={endDrag}
+            onReorderDrop={(albumId) => dropBefore(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
@@ -556,13 +648,18 @@
         <Icon icon={mdiMagnify} size="17" />
         <input type="search" bind:value={search} placeholder={$t('search_albums')} aria-label={$t('search_albums')} />
       </label>
-      <Dropdown
-        title={$t('frameleaf_albums_sort')}
-        options={[...albumDirectorySorts]}
-        selectedOption={view.sort}
-        onSelect={(sort) => setSort(sort)}
-        render={(sort) => ({ title: sortLabels[sort](), icon: mdiSortVariant })}
-      />
+      <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
+      <div class="sort">
+        <Menu label={$t('frameleaf_albums_sort')} align="end">
+          {#snippet trigger()}
+            <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
+            <span aria-hidden="true">{sortLabels[view.sort]()}</span>
+          {/snippet}
+          {#each albumDirectorySorts as sort (sort)}
+            <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]()}</MenuItem>
+          {/each}
+        </Menu>
+      </div>
       <div class="view" role="group" aria-label={$t('view')}>
         <button
           type="button"

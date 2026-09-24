@@ -541,6 +541,15 @@ where
   "id_ancestor" = $1
   and "id_descendant" != $2
 
+-- AlbumRepository.getPositions
+SELECT
+  "albumId"::text AS "albumId",
+  position
+FROM
+  immich_fork.album_position
+WHERE
+  "userId" = $1::uuid
+
 -- AlbumRepository.getContributorCounts
 select
   "asset"."ownerId" as "userId",
