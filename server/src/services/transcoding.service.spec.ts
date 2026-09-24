@@ -225,6 +225,21 @@ describe(TranscodingService.name, () => {
       expect(mocks.process.spawn.mock.calls[0][1]).toEqual(expect.arrayContaining(['-start_number', '20']));
     });
 
+    it('does not spawn a superseded start after seeking away and back', async () => {
+      let resolveA!: (value: typeof eiffelTower) => void;
+      mocks.videoStream.getForTranscoding.mockReturnValueOnce(new Promise((resolve) => (resolveA = resolve)));
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+
+      const a = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledTimes(1));
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 20 });
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      resolveA(eiffelTower);
+      await a;
+
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(2); // B and D; A stays superseded
+    });
+
     it('does not spawn when the session is unknown', async () => {
       await sut.onSegmentRequest({ sessionId: 'never-created', assetId, variantIndex: 0, segmentIndex: 0 });
 

@@ -165,7 +165,7 @@ export class TranscodingService extends BaseService {
     session.starting = true;
     const token = ++session.startToken;
     try {
-      const process = await this.startTranscode(session, variantIndex, segmentIndex);
+      const process = await this.startTranscode(session, variantIndex, segmentIndex, token);
       if (process) {
         session.process = process;
       }
@@ -189,7 +189,7 @@ export class TranscodingService extends BaseService {
     }
   }
 
-  private async startTranscode(session: Session, variantIndex: number, startSegment: number) {
+  private async startTranscode(session: Session, variantIndex: number, startSegment: number, token: number) {
     const { ffmpeg } = await this.getConfig({ withCache: true });
 
     const asset = await this.videoStreamRepository.getForTranscoding(session.assetId);
@@ -198,7 +198,8 @@ export class TranscodingService extends BaseService {
       return;
     }
 
-    if (session.variantIndex !== variantIndex || session.startSegment !== startSegment) {
+    // Only the newest start may spawn; an older one can match again after seeking away and back.
+    if (session.startToken !== token) {
       return;
     }
 
