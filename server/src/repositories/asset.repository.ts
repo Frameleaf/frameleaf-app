@@ -76,7 +76,7 @@ import {
   withTags,
 } from 'src/utils/database.js';
 import { lockDerivedResults } from 'src/utils/derivative-locks.js';
-import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
+import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
   isLocked,
@@ -852,14 +852,7 @@ export class AssetRepository {
    * on the other's.
    */
   async lockGroupRows(ids: string[], kysely: Kysely<DB>): Promise<void> {
-    const targetIds = await this.getLockGroupIds(kysely, ids);
-    if (targetIds.length === 0) {
-      return;
-    }
-
-    await sql`select asset.id from asset where asset.id = ${anyUuid(targetIds)} order by asset.id for no key update`.execute(
-      kysely,
-    );
+    await lockAssetRowsInOrder(kysely, await this.getLockGroupIds(kysely, ids));
   }
 
   /** `lock` inside the caller's transaction `tx`. */
@@ -873,6 +866,8 @@ export class AssetRepository {
     if (targetIds.length === 0) {
       return [];
     }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
 
     const { rows } = await sql<{ assetId: string }>`
       insert into asset_lock ("assetId", "reason", "lockedBy")
@@ -953,6 +948,8 @@ export class AssetRepository {
     if (targetIds.length === 0) {
       return [];
     }
+    // the group's rows before its lock records, in id order, like every lock writer (FL-34)
+    await lockAssetRowsInOrder(tx, targetIds);
 
     const unlocked = await tx
       .deleteFrom('asset_lock')

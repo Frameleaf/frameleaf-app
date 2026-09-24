@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, JobStatus } from 'src/enum.js';
+import { AssetLockReason, AssetStatus, AssetType, AssetVisibility, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -312,4 +312,37 @@ it('marks two members of one stack in parallel before the cutover without a dead
   } finally {
     await legacy.destroy();
   }
+});
+
+it('marks one stack member while another is moved to Locked in parallel without a deadlock', async () => {
+  const { sut, ctx, user, asset: first, auth } = await setup();
+  const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+  await ctx.newStack({ ownerId: user.id }, [first.id, second.id]);
+  const assets = ctx.get(AssetRepository);
+
+  // The review holds the stack's rows from the start of its transaction and writes its lock records
+  // later. Move to Locked (`AssetService.lock` → `AssetRepository.lock`) starts in that window: were it
+  // to write its lock records before taking the rows, each would wait on the other.
+  let moved: Promise<string[]> | undefined;
+  const takeRows = assets.lockGroupRows.bind(assets);
+  const spy = vi.spyOn(AssetRepository.prototype, 'lockGroupRows').mockImplementation(async (ids, trx) => {
+    await takeRows(ids, trx);
+    moved = assets.lock([second.id], AssetLockReason.Marked, user.id);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  });
+  try {
+    await sut.updateAssetEnrichment(auth, first.id, { action: AssetImageEnrichmentAction.MarkNsfw });
+    await moved;
+  } finally {
+    spy.mockRestore();
+  }
+
+  await expect(
+    database
+      .selectFrom('asset_lock')
+      .select('assetId')
+      .where('assetId', 'in', [first.id, second.id])
+      .orderBy('assetId')
+      .execute(),
+  ).resolves.toHaveLength(2);
 });
