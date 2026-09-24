@@ -962,9 +962,9 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...comparisonPredicates(eb, 'asset_exif.city', branch.city),
     ...comparisonPredicates(eb, 'asset_exif.state', branch.state),
     ...comparisonPredicates(eb, 'asset_exif.country', branch.country),
-    ...comparisonPredicates(eb, 'asset_exif.make', branch.make),
-    ...comparisonPredicates(eb, 'asset_exif.model', branch.model),
-    ...comparisonPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
+    ...stringPatternPredicates(eb, 'asset_exif.make', branch.make),
+    ...stringPatternPredicates(eb, 'asset_exif.model', branch.model),
+    ...stringPatternPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
     ...stringPatternPredicates(eb, 'asset_exif.description', branch.description),
     ...stringPatternPredicates(eb, 'asset.originalFileName', branch.originalFileName),
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
@@ -983,6 +983,7 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
+    ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
@@ -1141,6 +1142,10 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
     ],
   },
   {
+    name: 'string-pattern-camera',
+    params: [{ take: 100 }, { filter: { make: { like: DummyValue.STRING } } }, scopeExample],
+  },
+  {
     name: 'string-similarity-ocr',
     params: [{ take: 100 }, { filter: { ocr: { matches: DummyValue.STRING } } }, scopeExample],
   },
@@ -1218,6 +1223,16 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
       { take: 100 },
       {
         filter: { takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
+      },
+      scopeExample,
+    ],
+  },
+  {
+    name: 'local-date-range',
+    params: [
+      { take: 100 },
+      {
+        filter: { localDateTime: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
       },
       scopeExample,
     ],
