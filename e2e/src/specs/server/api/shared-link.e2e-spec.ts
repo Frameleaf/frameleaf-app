@@ -486,8 +486,10 @@ describe('/shared-links', () => {
 
     describe('allowDownload=false', () => {
       it('refuses the original of a shared item', async () => {
+        // File routes answer every refusal, access included, with 404 (sendFile in utils/file.ts);
+        // the access check itself is proven in the shared-link medium spec.
         const { status } = await request(app).get(`/assets/${owned.id}/original`).query({ key: noDownload.key });
-        expect(status).toBe(400);
+        expect(status).toBe(404);
       });
 
       it('refuses an archive of the album or of its items', async () => {
@@ -515,7 +517,7 @@ describe('/shared-links', () => {
       expect(shareItem.status).toBe(200);
 
       const outsideItem = await request(app).get(`/assets/${outside.id}/original`).query({ key: noUpload.key });
-      expect(outsideItem.status).toBe(400);
+      expect(outsideItem.status).toBe(404);
     });
 
     it('refuses an upload through a link that does not allow one', async () => {
