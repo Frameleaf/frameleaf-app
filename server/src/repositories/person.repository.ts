@@ -261,6 +261,13 @@ export class PersonRepository {
           .on(isTimelineVisible('asset'))
           .on('asset.deletedAt', 'is', null),
       )
+      // FL-37: the People grid shows "N items" per card and sorts by photo count or by the
+      // most recent capture. Both come from the rows this query already joins (timeline-visible,
+      // not deleted, not locked), so the counts never include content the grid would not show.
+      .select((eb) => [
+        eb.fn.count<number>('asset_face.assetId').distinct().as('assetCount'),
+        eb.fn.max('asset.fileCreatedAt').as('lastSeenAt'),
+      ])
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where('person.ownerId', '=', userId)
       .where('asset_face.deletedAt', 'is', null)

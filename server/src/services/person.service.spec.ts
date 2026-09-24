@@ -49,7 +49,10 @@ describe(PersonService.name, () => {
       const [person, hiddenPerson] = [PersonFactory.create(), PersonFactory.create({ isHidden: true })];
 
       mocks.person.getAllForUser.mockResolvedValue({
-        items: [person, hiddenPerson],
+        items: [
+          { ...person, assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
+          { ...hiddenPerson, assetCount: 1, lastSeenAt: new Date('2025-06-07T08:09:10.000Z') },
+        ],
         hasNextPage: false,
       });
       mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
@@ -58,10 +61,17 @@ describe(PersonService.name, () => {
         total: 2,
         hidden: 1,
         people: [
-          expect.objectContaining({ id: person.personGroupId, isHidden: false }),
+          expect.objectContaining({
+            id: person.personGroupId,
+            isHidden: false,
+            assetCount: 3,
+            lastSeenAt: '2026-01-02T03:04:05.000Z',
+          }),
           expect.objectContaining({
             id: hiddenPerson.personGroupId,
             isHidden: true,
+            assetCount: 1,
+            lastSeenAt: '2025-06-07T08:09:10.000Z',
           }),
         ],
       });
@@ -75,7 +85,10 @@ describe(PersonService.name, () => {
       const [isFavorite, person] = [PersonFactory.create({ isFavorite: true }), PersonFactory.create()];
 
       mocks.person.getAllForUser.mockResolvedValue({
-        items: [isFavorite, person],
+        items: [
+          { ...isFavorite, assetCount: 2, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+          { ...person, assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+        ],
         hasNextPage: false,
       });
       mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
