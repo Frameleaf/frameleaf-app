@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ArchiveGateway, ArchiveOperationResponseDto } from '$lib/frameleaf/archive-operations';
+import { ArchiveOperationError, ArchiveOperationScope } from '$lib/frameleaf/archive-operations';
 import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
 import { DURABLE_BULK_THRESHOLD, type BulkGateway } from '$lib/frameleaf/bulk-operations';
 import {
@@ -13,7 +15,7 @@ vi.mock('$lib/utils/i18n', () => ({
 }));
 vi.mock('$lib/utils/asset-utils', () => ({ downloadArchive: vi.fn() }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
+vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() } }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({ activitySession: { refresh: vi.fn() } }));
 
 // FL-48: a structured search pages by cursor, so the next page is announced as `nextCursor`
@@ -28,6 +30,26 @@ describe('the bulk controller', () => {
   let controller: BulkController;
   const queued = vi.fn();
   const tracker = { track: vi.fn() };
+  let archive: { [K in keyof ArchiveGateway]: ReturnType<typeof vi.fn> };
+
+  const operationOf = (overrides: Partial<ArchiveOperationResponseDto> = {}): ArchiveOperationResponseDto => ({
+    id: 'op-1',
+    scope: ArchiveOperationScope.SelectedOwnedAssets,
+    requestKey: '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c',
+    count: 2,
+    prepared: false,
+    expiresAt: null,
+    createdAt: new Date().toISOString(),
+    archiveJobId: 'archive-job',
+    undoJobId: null,
+    pending: 2,
+    archived: 0,
+    skipped: 0,
+    undone: 0,
+    conflict: 0,
+    undoable: true,
+    ...overrides,
+  });
 
   const dispatch = vi.fn((action: LibrarySessionAction) => {
     session = reduceLibrarySession(session, action);
@@ -47,12 +69,19 @@ describe('the bulk controller', () => {
     } as unknown as BulkGateway;
     queued.mockClear();
     tracker.track.mockClear();
-    controller = new BulkController({ dispatch, gateway: api, queued, tracker });
+    archive = {
+      createArchiveOperation: vi.fn().mockResolvedValue(operationOf()),
+      prepareArchiveOperation: vi.fn(),
+      confirmArchiveOperation: vi.fn(),
+      undoArchiveOperation: vi.fn().mockResolvedValue(operationOf({ undoJobId: 'undo-job', undoable: false })),
+      getArchiveOperations: vi.fn().mockResolvedValue([]),
+    };
+    controller = new BulkController({ dispatch, gateway: api, queued, tracker, archive: archive as never });
   });
 
   it('tells the page which items an immediate action changed, so it can show the change at once', async () => {
     const applied = vi.fn();
-    controller = new BulkController({ dispatch, gateway: api, queued, tracker, applied });
+    controller = new BulkController({ dispatch, gateway: api, queued, tracker, applied, archive: archive as never });
     await controller.run('favorite', ['a', 'b']);
     expect(applied).toHaveBeenCalledWith('favorite', ['a', 'b'], undefined);
     // A favorite leaves nothing: the page decides what an item's new state takes out of its view.
@@ -84,12 +113,12 @@ describe('the bulk controller', () => {
   it('hands a selection above the threshold to the server as a durable job', async () => {
     const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
 
-    const result = await controller.run('archive', ids);
+    const result = await controller.run('favorite', ids);
 
     expect(result).toBeNull();
     expect(api.updateAssets).not.toHaveBeenCalled();
     expect(api.createBulkMediaOperation).toHaveBeenCalledWith({
-      mediaOperationBulkCreateDto: expect.objectContaining({ action: 'archive', assetIds: ids }),
+      mediaOperationBulkCreateDto: expect.objectContaining({ action: 'favorite', assetIds: ids }),
     });
     expect(controller.undo).toBeNull();
     expect(queued).toHaveBeenCalled();
@@ -105,7 +134,7 @@ describe('the bulk controller', () => {
     expect(tracker.track).toHaveBeenCalledWith('delete', 'job-1', ids);
   });
 
-  it('follows each part of a set split across several jobs with its own ids', async () => {
+  it('follows each part of a set split across several jobs with its own ids, even an archive too large for one operation', async () => {
     vi.mocked(api.createBulkMediaOperation)
       .mockResolvedValueOnce({ id: 'job-1' } as never)
       .mockResolvedValueOnce({ id: 'job-2' } as never);
@@ -129,11 +158,11 @@ describe('the bulk controller', () => {
   it('resolves everything matching once and queues exactly those ids against the frozen scope', async () => {
     const scope = structuredClone(session.state);
     const requestId = '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c';
-    await controller.runMatching('archive', scope, { submittedTotal: 2, requestId });
+    await controller.runMatching('favorite', scope, { submittedTotal: 2, requestId });
 
     expect(api.createBulkMediaOperation).toHaveBeenCalledWith({
       mediaOperationBulkCreateDto: expect.objectContaining({
-        action: 'archive',
+        action: 'favorite',
         assetIds: ['a', 'b'],
         submittedTotal: 2,
         truncated: false,
@@ -145,7 +174,7 @@ describe('the bulk controller', () => {
     // The server owns the job now; Activity shows it, so the tab's own record is dropped.
     expect(session.operations).toHaveLength(0);
     expect(queued).toHaveBeenCalled();
-    expect(tracker.track).toHaveBeenCalledWith('archive', 'job-1', ['a', 'b']);
+    expect(tracker.track).toHaveBeenCalledWith('favorite', 'job-1', ['a', 'b']);
   });
 
   it('reports a refused scope as a failed operation without calling anything', async () => {
@@ -164,7 +193,7 @@ describe('the bulk controller', () => {
   it('keeps a rejected submit as a failed record that retry runs again under the same key', async () => {
     vi.mocked(api.createBulkMediaOperation).mockRejectedValueOnce(new Error('offline'));
 
-    await controller.runMatching('archive', session.state, { submittedTotal: 2 });
+    await controller.runMatching('favorite', session.state, { submittedTotal: 2 });
     expect(session.operations).toHaveLength(1);
     expect(session.operations[0].status).toBe('failed');
 
@@ -190,5 +219,92 @@ describe('the bulk controller', () => {
     expect(session.operations[0].status).toBe('cancelled');
     expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
     expect(api.updateAssets).not.toHaveBeenCalled();
+  });
+  describe('a transactional archive (FL-32)', () => {
+    it('archives a large selection as one operation, follows its job and keeps an Undo', async () => {
+      const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
+
+      await controller.run('archive', ids);
+
+      expect(archive.createArchiveOperation).toHaveBeenCalledWith({
+        archiveOperationCreateDto: { requestKey: expect.any(String), assetIds: ids },
+      });
+      expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
+      expect(tracker.track).toHaveBeenCalledWith('archive', 'archive-job', ids);
+      expect(queued).toHaveBeenCalled();
+      expect(controller.undo?.label).toBe('frameleaf_bulk_archive');
+
+      await controller.undo!.run();
+
+      expect(archive.undoArchiveOperation).toHaveBeenCalledWith({
+        id: 'op-1',
+        archiveOperationUndoDto: { requestKey: expect.any(String) },
+      });
+      expect(controller.undo).toBeNull();
+    });
+
+    it('archives a resolved matching set as one operation under the hand-off request key', async () => {
+      const requestId = '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c';
+
+      await controller.runMatching('archive', structuredClone(session.state), { submittedTotal: 2, requestId });
+
+      expect(archive.createArchiveOperation).toHaveBeenCalledWith({
+        archiveOperationCreateDto: { requestKey: requestId, assetIds: ['a', 'b'] },
+      });
+      expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
+      expect(session.operations).toHaveLength(0);
+      expect(tracker.track).toHaveBeenCalledWith('archive', 'archive-job', ['a', 'b']);
+    });
+
+    it('prepares the matching set on the server and archives only the confirmed count', async () => {
+      const prepared = operationOf({
+        scope: ArchiveOperationScope.MatchingOwnedTimeline,
+        prepared: true,
+        count: 1200,
+        archiveJobId: null,
+        undoable: false,
+      });
+      archive.prepareArchiveOperation.mockResolvedValue(prepared);
+      archive.confirmArchiveOperation.mockResolvedValue(operationOf({ count: 1200 }));
+
+      expect(await controller.prepareArchive()).toEqual(prepared);
+      expect(archive.prepareArchiveOperation).toHaveBeenCalledWith({
+        archiveOperationPrepareDto: { requestKey: expect.any(String), scope: 'matching-owned-timeline' },
+      });
+      expect(archive.confirmArchiveOperation).not.toHaveBeenCalled();
+
+      expect(await controller.confirmArchive(prepared)).toBe(true);
+      expect(archive.confirmArchiveOperation).toHaveBeenCalledWith({
+        id: prepared.id,
+        archiveOperationConfirmDto: { requestKey: prepared.requestKey },
+      });
+      expect(controller.undo).not.toBeNull();
+    });
+
+    it('starts nothing when the prepared selection expired before it was confirmed', async () => {
+      archive.confirmArchiveOperation.mockRejectedValue(new ArchiveOperationError('expired', 410));
+
+      expect(await controller.confirmArchive(operationOf({ prepared: true }))).toBe(false);
+      expect(controller.undo).toBeNull();
+      expect(queued).not.toHaveBeenCalled();
+    });
+
+    it('offers the latest recent archive’s Undo again after a reload, and not an old one', async () => {
+      const now = Date.parse('2026-09-23T12:00:00.000Z');
+      archive.getArchiveOperations.mockResolvedValue([
+        operationOf({ id: 'finished', undoable: false, createdAt: '2026-09-23T11:59:00.000Z' }),
+        operationOf({ id: 'recent', createdAt: '2026-09-23T11:50:00.000Z' }),
+      ]);
+
+      await controller.restoreArchiveUndo(now);
+      await controller.undo!.run();
+
+      expect(archive.undoArchiveOperation).toHaveBeenCalledWith(expect.objectContaining({ id: 'recent' }));
+
+      controller.undo = null;
+      archive.getArchiveOperations.mockResolvedValue([operationOf({ createdAt: '2026-09-23T10:00:00.000Z' })]);
+      await controller.restoreArchiveUndo(now);
+      expect(controller.undo).toBeNull();
+    });
   });
 });
