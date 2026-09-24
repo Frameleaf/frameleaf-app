@@ -64,7 +64,6 @@ export enum QueryParameter {
 }
 
 export enum SessionStorageKey {
-  INFINITE_SCROLL_PAGE = 'infiniteScrollPage',
   SCROLL_POSITION = 'scrollPosition',
 }
 
@@ -272,13 +271,6 @@ export enum SettingInputFieldType {
   PASSWORD = 'password',
   COLOR = 'color',
   NAME = 'name',
-}
-
-export enum PersonPageViewMode {
-  VIEW_ASSETS = 'view-assets',
-  SELECT_PERSON = 'select-person',
-  MERGE_PEOPLE = 'merge-people',
-  UNASSIGN_ASSETS = 'unassign-faces',
 }
 
 export enum MediaType {
