@@ -181,7 +181,8 @@ from
 -- TagRepository.update
 begin
 select
-  "value"
+  "value",
+  "parentId"
 from
   "tag"
 where
@@ -195,6 +196,15 @@ where
 returning
   *
 rollback
+
+-- TagRepository.isAncestor
+select
+  "id_ancestor"
+from
+  "tag_closure"
+where
+  "id_ancestor" = $1
+  and "id_descendant" = $2
 
 -- TagRepository.delete
 delete from "tag"

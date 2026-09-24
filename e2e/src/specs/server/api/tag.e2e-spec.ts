@@ -280,6 +280,37 @@ describe('/tags', () => {
       expect(status).toBe(200);
       expect(body).toEqual(expect.objectContaining({ color: `#000000` }));
     });
+
+    it('should move a nested tag and its children to the top level', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB', parentId: tagA.id });
+      const tagC = await create(user.accessToken, { name: 'TagC', parentId: tagB.id });
+      const { status, body } = await request(app)
+        .put(`/tags/${tagB.id}`)
+        .send({ parentId: null })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(200);
+      expect(body).toEqual(expect.objectContaining({ id: tagB.id, value: 'TagB' }));
+      expect(body.parentId).toBeUndefined();
+      const tags = await getAllTags({ headers: asBearerAuth(user.accessToken) });
+      expect(tags).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: tagA.id, value: 'TagA' }),
+          expect.objectContaining({ id: tagC.id, value: 'TagB/TagC', parentId: tagB.id }),
+        ]),
+      );
+    });
+
+    it('should not move a tag under its own child', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB', parentId: tagA.id });
+      const { status, body } = await request(app)
+        .put(`/tags/${tagA.id}`)
+        .send({ parentId: tagB.id })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.badRequest('A tag cannot be moved under itself or one of its descendants'));
+    });
   });
 
   describe('DELETE /tags/:id', () => {
