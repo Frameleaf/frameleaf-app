@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 102,
+      "partial": 100,
       "missing": 5,
-      "fixed": 39,
+      "fixed": 41,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1749,28 +1749,37 @@
       "requirementId": "action:viewer:slideshow-ascending-descending-order",
       "title": "Slideshow ascending/descending order",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/SlideshowBar.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-8"],
-      "followUp": "Frameleaf slideshow settings"
+      "followUp": "Frameleaf slideshow settings dialog (fixed on codex/FL-62-sept24-slideshow-memories)"
     },
     {
       "requirementId": "action:viewer:slideshow-blurred-background-look-progress-transition-settings",
       "title": "Slideshow blurred-background look, progress/transition settings",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/SlideshowBar.svelte"],
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+      ],
       "status": "partial",
       "gaps": ["V-8", "V-18"],
-      "followUp": "Frameleaf slideshow settings; inline slideshow"
+      "followUp": "Inline slideshow (V-18); the Frameleaf settings and the five transitions are fixed (V-8)"
     },
     {
       "requirementId": "action:viewer:slideshow-duration-contain-cover-metadata-captions",
       "title": "Slideshow duration, contain/cover, metadata captions",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/SlideshowBar.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsDialog.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["V-8"],
-      "followUp": "Frameleaf slideshow settings"
+      "followUp": "Frameleaf slideshow settings dialog (fixed on codex/FL-62-sept24-slideshow-memories)"
     },
     {
       "requirementId": "action:viewer:slideshow-play-pause-previous-next-repeat-shuffle",
@@ -2280,7 +2289,7 @@
       ],
       "status": "partial",
       "gaps": ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-      "followUp": "Memories sections, remove confirm (fix-discovery), settings"
+      "followUp": "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)"
     },
     {
       "route": "/memories/[id]/[[photos=photos]]/[[assetId=id]]",
@@ -2291,7 +2300,7 @@
       ],
       "status": "partial",
       "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9"],
-      "followUp": "Player P0s (fix-discovery), title/end cards, shortcuts, soundtrack"
+      "followUp": "Player P0s (fix-discovery), end card (the title card is fixed, MPY-4), shortcuts, soundtrack"
     },
     {
       "route": "/memory/[[photos=photos]]/[[assetId=id]]",
