@@ -1120,4 +1120,91 @@ describe('TimelineManager', () => {
       expect(ids).not.toContain(assetC.id);
     });
   });
+  describe('grouping', () => {
+    let timelineManager: TimelineManager;
+    // Three months over two years, each spread over several days.
+    const onDays = (month: string, days: number[]) =>
+      days.flatMap((day) =>
+        timelineAssetFactory.buildList(3).map((asset) =>
+          deriveLocalDateTimeFromFileCreatedAt({
+            ...asset,
+            fileCreatedAt: fromISODateTimeUTCToObject(`${month}-${String(day).padStart(2, '0')}T12:00:00.000Z`),
+          }),
+        ),
+      );
+    const buckets: Record<string, TimelineAsset[]> = {
+      '2024-03-01': onDays('2024-03', [20, 10, 2]),
+      '2024-02-01': onDays('2024-02', [14, 3]),
+      '2023-12-01': onDays('2023-12', [25, 24, 1]),
+    };
+
+    beforeEach(async () => {
+      timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue(
+        Object.entries(buckets).map(([timeBucket, assets]) => ({ timeBucket, count: assets.length })),
+      );
+      sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+        Promise.resolve(toResponseDto(...buckets[timeBucket.slice(0, 10)])),
+      );
+      await timelineManager.updateViewport({ width: 1200, height: 5000 });
+      await tick();
+    });
+
+    const starts = () => timelineManager.months.map((month) => month.startsGroup);
+
+    it('draws a header per day by default', () => {
+      expect(timelineManager.grouping).toBe('days');
+      for (const month of timelineManager.months) {
+        expect(month.groupHeaderHeight).toBe(timelineManager.headerHeight);
+        expect(month.timelineDays.length).toBeGreaterThan(1);
+        expect(new Set(month.timelineDays.map((day) => day.top)).size).toBeGreaterThan(1);
+      }
+    });
+
+    it('lays each month out as one flow under one header when grouping by month', () => {
+      timelineManager.grouping = 'months';
+      expect(starts()).toEqual([true, true, true]);
+      for (const month of timelineManager.months) {
+        expect(month.isLoaded).toBe(true);
+        // Every day of the month shares the month's one flow, measured from its first row.
+        expect(month.timelineDays.every((day) => day.top === 0 && day.start === 0)).toBe(true);
+        const flowHeight = month.timelineDays[0].height;
+        expect(month.height).toBe(month.groupHeaderHeight + flowHeight);
+        const positions = month.timelineDays.flatMap((day) =>
+          day.viewerAssets.map((viewerAsset) => viewerAsset.position!),
+        );
+        const tops = positions.map((position) => `${position.top}:${position.left}`);
+        expect(new Set(tops).size).toBe(positions.length);
+      }
+    });
+
+    it('opens a year group on the newest month of each year', () => {
+      timelineManager.grouping = 'years';
+      expect(starts()).toEqual([true, false, true]);
+      const [march, february] = timelineManager.months;
+      expect(march.groupHeaderHeight).toBe(timelineManager.headerHeight);
+      expect(february.groupHeaderHeight).toBe(timelineManager.gap);
+    });
+
+    it('draws one header over everything for "all"', () => {
+      timelineManager.grouping = 'all';
+      expect(starts()).toEqual([true, false, false]);
+    });
+
+    it('places an asset under its month header when grouped', () => {
+      timelineManager.grouping = 'months';
+      const month = timelineManager.months[1];
+      const first = month.timelineDays[0].viewerAssets[0];
+      expect(month.findAssetAbsolutePosition(first.id)?.top).toBe(
+        month.top + month.groupHeaderHeight + first.position!.top,
+      );
+    });
+
+    it('goes back to day groups', () => {
+      const dayHeights = timelineManager.months.map((month) => month.height);
+      timelineManager.grouping = 'months';
+      timelineManager.grouping = 'days';
+      expect(timelineManager.months.map((month) => month.height)).toEqual(dayHeights);
+    });
+  });
 });

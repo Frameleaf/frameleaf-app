@@ -244,10 +244,32 @@ describe('LibraryDayGroup', () => {
     expect(container.querySelectorAll('[data-testid="frameleaf-asset-tile"]')).toHaveLength(3);
   });
 
+  it('titles the day with the full date, as the prototype does', () => {
+    render(LibraryDayGroup, { timelineDay: day(['a']), selection: [], selecting: false });
+    // Prototype `explore-timeline.mjs` `timelineGroups`: weekday, month, day and year in full.
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Tuesday, September 22, 2026');
+    expect(screen.getByRole('region', { name: 'Tuesday, September 22, 2026' })).toBeTruthy();
+    expect(screen.queryByText('Tue, Sep 22')).toBeNull();
+  });
+
   it('hides the day header for Browse', () => {
     render(LibraryDayGroup, { timelineDay: day(['a']), selection: [], selecting: false, showHeader: false });
     expect(screen.queryByRole('checkbox', { name: 'frameleaf_library_select_all_in_group' })).toBeNull();
-    expect(screen.queryByText('Tue, Sep 22')).toBeNull();
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Tuesday, September 22, 2026' })).toBeTruthy();
+  });
+
+  it('shows every group checkbox while a selection is in progress', async () => {
+    const { container, rerender } = render(LibraryDayGroup, {
+      timelineDay: day(['a']),
+      selection: [],
+      selecting: false,
+    });
+    const select = () => container.querySelector('.fl-group-select')!;
+    expect(select().classList.contains('is-shown')).toBe(false);
+    // Nothing in this day is selected, but another day's item is: the checkbox shows regardless.
+    await rerender({ selection: ['elsewhere'], selecting: true });
+    expect(select().classList.contains('is-shown')).toBe(true);
   });
 });
 

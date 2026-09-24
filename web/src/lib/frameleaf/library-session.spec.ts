@@ -127,7 +127,53 @@ describe('shift range and group select', () => {
 
     const ranged = reduceLibrarySession(first, { type: 'select-range', orderedIds: day, id: 'd' });
     expect(ranged.selection).toEqual(['b', 'c', 'd']);
-    expect(ranged.anchorId).toBe('d');
+    // Prototype `App.jsx` toggleSelect returns before setAnchorId on a shift-click.
+    expect(ranged.anchorId).toBe('b');
+  });
+
+  it('ranges every chained shift-click from the same original anchor', () => {
+    const anchored = reduceLibrarySession(createLibrarySession(), { type: 'select', id: 'c' });
+    const forward = reduceLibrarySession(anchored, { type: 'select-range', orderedIds: day, id: 'e' });
+    expect(forward.selection).toEqual(['c', 'd', 'e']);
+    expect(forward.anchorId).toBe('c');
+    // The second shift-click reaches back from "c", not from "e": "d" is not re-anchored past.
+    const backward = reduceLibrarySession(forward, { type: 'select-range', orderedIds: day, id: 'a' });
+    expect(backward.selection).toEqual(['c', 'd', 'e', 'a', 'b']);
+    expect(backward.anchorId).toBe('c');
+    // A replaced selection, as the timeline's range retrieval dispatches it, keeps the anchor too.
+    const retrieved = reduceLibrarySession(backward, { type: 'selection', ids: ['a', 'b', 'c'] });
+    expect(retrieved.anchorId).toBe('c');
+  });
+
+  it('keeps a stale anchor after its day is unchecked, and ranges from it', () => {
+    const anchored = reduceLibrarySession(createLibrarySession(), { type: 'select', id: 'b' });
+    const unchecked = reduceLibrarySession(anchored, { type: 'select-group', ids: ['a', 'b', 'c'], checked: false });
+    expect(unchecked.selection).toEqual([]);
+    expect(unchecked.anchorId).toBe('b');
+    const ranged = reduceLibrarySession(unchecked, { type: 'select-range', orderedIds: day, id: 'd' });
+    expect(ranged.selection).toEqual(['b', 'c', 'd']);
+    expect(ranged.anchorId).toBe('b');
+  });
+
+  it('keeps the anchor when the selection is cleared', () => {
+    const anchored = run(
+      createLibrarySession(),
+      { type: 'select', id: 'b' },
+      { type: 'select-range', orderedIds: day, id: 'c' },
+    );
+    const cleared = reduceLibrarySession(anchored, { type: 'clear-selection' });
+    expect(cleared.selection).toEqual([]);
+    expect(cleared.anchorId).toBe('b');
+    expect(reduceLibrarySession(cleared, { type: 'clear-selection' })).toBe(cleared);
+    const ranged = reduceLibrarySession(cleared, { type: 'select-range', orderedIds: day, id: 'd' });
+    expect(ranged.selection).toEqual(['b', 'c', 'd']);
+  });
+
+  it('adds just the target when the anchor is outside the visible order, and keeps the anchor', () => {
+    const anchored = reduceLibrarySession(createLibrarySession(), { type: 'select', id: 'gone' });
+    const ranged = reduceLibrarySession(anchored, { type: 'select-range', orderedIds: day, id: 'c' });
+    expect(ranged.selection).toEqual(['gone', 'c']);
+    expect(ranged.anchorId).toBe('gone');
   });
 
   it('extends a range backwards in visible order', () => {
@@ -139,9 +185,16 @@ describe('shift range and group select', () => {
     expect(session.selection).toEqual(['d', 'b', 'c']);
   });
 
-  it('treats a shift-click with no anchor as a plain selection', () => {
+  it('treats a shift-click with no anchor as a plain toggle, which sets the anchor', () => {
     const session = reduceLibrarySession(createLibrarySession(), { type: 'select-range', orderedIds: day, id: 'c' });
     expect(session.selection).toEqual(['c']);
+    expect(session.anchorId).toBe('c');
+    const grouped = reduceLibrarySession(createLibrarySession(), {
+      type: 'select-group',
+      ids: ['b', 'c'],
+      checked: true,
+    });
+    expect(reduceLibrarySession(grouped, { type: 'select-range', orderedIds: day, id: 'c' }).selection).toEqual(['b']);
   });
 
   it('selects and clears a whole day group from its header', () => {

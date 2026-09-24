@@ -45,6 +45,7 @@ import type {
   MoveAsset,
   ScrubberMonth,
   TimelineAsset,
+  TimelineGrouping,
   TimelineManagerOptions,
   Viewport,
 } from './types';
@@ -78,6 +79,20 @@ export class TimelineManager extends VirtualScrollManager {
   isInitialized = $state(false);
   isScrollingOnLoad = false;
   months: TimelineMonth[] = $state([]);
+  #grouping: TimelineGrouping = $state('days');
+
+  /** How the months are grouped for display; changing it lays every month out again. */
+  get grouping(): TimelineGrouping {
+    return this.#grouping;
+  }
+
+  set grouping(value: TimelineGrouping) {
+    if (this.#grouping === value) {
+      return;
+    }
+    this.#grouping = value;
+    this.refreshLayout();
+  }
   albumAssets: Set<string> = new SvelteSet();
   // Assets hidden in this view because they were just marked NSFW. The server
   // hides NSFW assets via a query-time filter (not the `visibility` enum), so a
