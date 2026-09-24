@@ -18,7 +18,12 @@
 </script>
 
 <details class="data-table" {open} data-table-id={table.id}>
-  <summary aria-label={$t('frameleaf_analytics_view_table_for', { values: { title: table.title } })}>
+  <!-- The accessible name starts with the visible text (WCAG 2.5.3, label in name). -->
+  <summary
+    aria-label={summary
+      ? $t('frameleaf_analytics_summary_for', { values: { summary, title: table.title } })
+      : $t('frameleaf_analytics_view_table_for', { values: { title: table.title } })}
+  >
     {summary ?? $t('frameleaf_analytics_view_table')}
   </summary>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->

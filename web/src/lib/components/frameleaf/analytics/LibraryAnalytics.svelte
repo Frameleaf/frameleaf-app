@@ -9,9 +9,11 @@
    * What differs from the template, on purpose:
    * - No "Sample data" badge: the notice says when the library was read and whether growth history
    *   is current, out of date (stale) or not collected yet (unknown).
-   * - "What uses the disk" never subtracts anything from the volume. The selection's originals and
-   *   the whole volume are shown side by side, each labelled with what it measures; there is no
-   *   "other files" row, because it could only be invented.
+   * - The storage donut splits the whole volume only from what the server measured, and only in
+   *   the administrator's whole-server report (`host.breakdown`: originals, previews and
+   *   thumbnails, encoded video, the database, and other files as the rest of the space used). For
+   *   an account or library it shows the volume as used and free; nothing is estimated from the
+   *   selection. Every donut segment is a share of the capacity, like its centre figure.
    * - Processing is recorded for the whole server; for an account or library it is left out, not
    *   drawn as zero. Its cost is an estimate from configured rates, never a bill, and absent when no
    *   rate is configured. There are no GPU or invoice charts.
