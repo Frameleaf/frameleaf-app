@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
@@ -53,5 +53,33 @@ describe('UploadPanel', () => {
 
     expect(screen.getByRole('link', { name: en.view })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: en.dismiss })).toBeInTheDocument();
+  });
+
+  it('offers Clear finished while uploads continue, keeping what is still going and what failed', async () => {
+    uploadAssetsStore.addItem({ id: 'done', file: makeFile('done.jpg') });
+    uploadAssetsStore.addItem({ id: 'same', file: makeFile('same.jpg') });
+    uploadAssetsStore.addItem({ id: 'failed', file: makeFile('failed.jpg') });
+    uploadAssetsStore.addItem({ id: 'going', file: makeFile('going.jpg') });
+    uploadAssetsStore.updateItem('done', { state: UploadState.DONE });
+    uploadAssetsStore.updateItem('same', { state: UploadState.DUPLICATED, assetId: 'asset-1' });
+    uploadAssetsStore.updateItem('failed', { state: UploadState.ERROR, error: 'nope' });
+    uploadAssetsStore.markStarted('going');
+
+    render(UploadPanel);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_transfer_clear_finished }));
+
+    expect(screen.queryByText('done.jpg')).toBeNull();
+    expect(screen.queryByText('same.jpg')).toBeNull();
+    expect(screen.getByText('failed.jpg')).toBeInTheDocument();
+    expect(screen.getByText('going.jpg')).toBeInTheDocument();
+  });
+
+  it('does not offer Clear finished once nothing is running (Done clears everything)', () => {
+    uploadAssetsStore.addItem({ id: 'done', file: makeFile('done.jpg') });
+    uploadAssetsStore.updateItem('done', { state: UploadState.DONE });
+
+    render(UploadPanel);
+
+    expect(screen.queryByRole('button', { name: en.frameleaf_transfer_clear_finished })).toBeNull();
   });
 });

@@ -42,6 +42,11 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   const active = $derived($remainingUploads > 0);
+  /** Finished rows ("Clear finished" is offered while uploads continue, UploadPanel.jsx). */
+  const finishedCount = $derived(
+    $uploadAssetsStore.filter((item) => item.state === UploadState.DONE || item.state === UploadState.DUPLICATED)
+      .length,
+  );
 
   $effect(() => {
     if ($isUploading) {
@@ -289,6 +294,11 @@
             {#if $isDismissible}
               <button type="button" class="fl-button" onclick={() => uploadAssetsStore.dismissErrors()}>
                 {$t('frameleaf_transfer_dismiss_errors')}
+              </button>
+            {/if}
+            {#if active && finishedCount > 0}
+              <button type="button" class="fl-button" onclick={() => uploadAssetsStore.clearFinished()}>
+                {$t('frameleaf_transfer_clear_finished')}
               </button>
             {/if}
             {#if active}

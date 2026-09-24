@@ -6595,6 +6595,7 @@
   "frameleaf_tools": "Tools",
   "frameleaf_transfer_add_to": "Add to",
   "frameleaf_transfer_cancel_remaining": "Cancel remaining",
+  "frameleaf_transfer_clear_finished": "Clear finished",
   "frameleaf_transfer_close_downloads": "Close downloads",
   "frameleaf_transfer_close_uploads": "Close uploads",
   "frameleaf_transfer_count_duplicates": "{count, plural, one {# duplicate} other {# duplicates}}",
