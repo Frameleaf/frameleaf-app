@@ -2,7 +2,7 @@ import { AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
-import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
+import { analyticsInsightsFixture, analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
 import en from '../../../../../../i18n/en.json';
 
 /**
@@ -42,9 +42,9 @@ describe('LibraryAnalytics', () => {
 
   it('shows measured values, the whole volume beside the selection, and no sample-data badge', () => {
     render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
-    expect(screen.getByRole('heading', { level: 1, name: 'A closer look at your library' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Library analytics' })).toBeInTheDocument();
     expect(screen.queryByText(/sample data/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Whole volume used')).toBeInTheDocument();
+    expect(screen.getByText('Volume used')).toBeInTheDocument();
     expect(screen.queryByText(/other libraries|host files/i)).not.toBeInTheDocument();
     expect(
       screen.getByText('Periods without a nightly reading are shown as gaps.', { exact: false }),
@@ -149,5 +149,145 @@ describe('LibraryAnalytics', () => {
       expect.stringContaining(`scope=${encodeURIComponent(scopes[1].value)}`),
       expect.anything(),
     );
+  });
+
+  describe('the dashboard (FL-79, AnalyticsDashboard.jsx)', () => {
+    /** The exact counts a panel's data table holds, summed. */
+    const tableTotal = (container: HTMLElement, id: string) =>
+      [...container.querySelectorAll(`:scope [data-table-id="${CSS.escape(id)}"] tbody > tr`)].reduce(
+        (sum, row) => sum + Number(row.querySelector(':scope > td:last-child')!.textContent!.replaceAll(',', '')),
+        0,
+      );
+    const panel = (container: HTMLElement, id: string) =>
+      container.querySelector<HTMLElement>(`[data-panel="${CSS.escape(id)}"]`)!;
+
+    it('opens with the library total, its span, fact chips and the four tiles', () => {
+      render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const hero = screen.getByRole('region', { name: 'Library at a glance' });
+      expect(within(hero).getByText('100')).toBeInTheDocument();
+      expect(within(hero).getByText('8 years')).toBeInTheDocument();
+      expect(hero).toHaveTextContent('2019–2026');
+      for (const fact of ['2 countries', '3 places', '3 people named', '5 RAW photos', '1 Dolby Vision video']) {
+        expect(within(hero).getByText(fact)).toBeInTheDocument();
+      }
+      for (const tile of ['Added in this period', 'Volume used', 'Saved by deduplication', 'Photos · videos']) {
+        expect(within(hero).getByText(tile)).toBeInTheDocument();
+      }
+      expect(within(hero).getByRole('img', { name: '60% of the volume used' })).toBeInTheDocument();
+    });
+
+    it('makes every breakdown add up to the report total', () => {
+      const report = analyticsReportFixture();
+      const { container } = render(LibraryAnalytics, { scopes, report });
+      const total = report.summary.items - report.insights!.hiddenItems;
+      for (const id of ['years', 'punchcard', 'lenses', 'focal-lengths', 'orientation', 'places']) {
+        expect(tableTotal(container, id)).toBe(total);
+      }
+      expect(tableTotal(container, 'photo-formats') + tableTotal(container, 'video-resolutions')).toBe(total);
+      expect(tableTotal(container, 'cameras')).toBe(report.summary.items);
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    });
+
+    it('notes the hidden items the breakdowns leave out, and still reconciles to what remains', () => {
+      const insights = analyticsInsightsFixture({
+        hiddenItems: 4,
+        capturesByYear: [
+          { year: 2019, count: 10 },
+          { year: 2024, count: 36 },
+          { year: 2026, count: 50 },
+        ],
+      });
+      const report = analyticsReportFixture({ insights });
+      const { container } = render(LibraryAnalytics, { scopes, report });
+      expect(screen.getByRole('note')).toHaveTextContent(
+        '4 hidden items are left out of the breakdowns below, so they add up to 96.',
+      );
+      expect(tableTotal(container, 'years')).toBe(report.summary.items - insights.hiddenItems);
+    });
+
+    it('ranks leaders and keeps catch-all rows last without setting the bar scale', () => {
+      const { container } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      const places = within(panel(container, 'places')).getByRole('list', { name: 'Where they were taken' });
+      const rows = within(places).getAllByRole('listitem');
+      expect(rows.map((row) => row.querySelector(':scope .name')!.textContent)).toEqual([
+        'Banff',
+        'Lisbon',
+        'Everywhere else',
+        'No location',
+      ]);
+      // "No location" (40) is larger than Banff (30), yet Banff sets the scale.
+      const width = (row: Element) => row.querySelector<HTMLElement>(':scope .bar > span')!.style.width;
+      expect(width(rows[0])).toBe('100%');
+      expect(width(rows[3])).toBe('100%');
+      expect(width(rows[1])).toBe(`${(20 / 30) * 100}%`);
+      const lenses = within(panel(container, 'gear')).getByRole('list', { name: 'Favourite lenses' });
+      expect(within(lenses).getAllByRole('listitem').at(-1)).toHaveTextContent('Not recorded');
+    });
+
+    it('draws captures per year, the punchcard peak, formats and coverage from the report', () => {
+      const { container } = render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      expect(
+        within(panel(container, 'years')).getByRole('heading', { name: '8 years, 2019 to today' }),
+      ).toBeInTheDocument();
+      expect(panel(container, 'years').querySelectorAll('.an-year')).toHaveLength(8);
+      expect(
+        within(panel(container, 'punchcard')).getByRole('heading', { name: /Most often on Mondays around 9/ }),
+      ).toBeInTheDocument();
+      const formats = panel(container, 'formats');
+      expect(within(formats).getByText('3 HDR videos')).toBeInTheDocument();
+      expect(within(formats).getByText(/HDR is known for 8 of 10 videos/)).toBeInTheDocument();
+      const coverage = within(panel(container, 'coverage'));
+      expect(coverage.getByRole('img', { name: 'Located: 60%' })).toBeInTheDocument();
+      expect(coverage.getByRole('img', { name: 'Described by AI: 40%' })).toBeInTheDocument();
+    });
+
+    it('shows the daily heatmap with an exact-count table for the chosen date', async () => {
+      const report = analyticsReportFixture();
+      const { container } = render(LibraryAnalytics, { scopes, report });
+      const days = panel(container, 'days');
+      expect(within(days).getByRole('heading', { name: '7 captures over 7 days' })).toBeInTheDocument();
+      expect(within(days).getByText('View daily counts')).toBeInTheDocument();
+      expect(tableTotal(container, 'calendar-captured')).toBe(7);
+      await fireEvent.change(within(days).getByLabelText('Show'), { target: { value: 'uploaded' } });
+      expect(within(days).getByRole('heading', { name: '4 uploads over 7 days' })).toBeInTheDocument();
+    });
+
+    it('hides people and places outside the owner scope and says why', () => {
+      const { container } = render(LibraryAnalytics, {
+        scopes,
+        report: analyticsReportFixture({ insights: analyticsInsightsFixture({ peopleAndPlaces: null }) }),
+      });
+      expect(panel(container, 'people')).toBeNull();
+      expect(panel(container, 'places')).toBeNull();
+      expect(screen.getByText('People and places are shown only when you view your own library.')).toBeInTheDocument();
+      expect(screen.queryByText('Emma')).not.toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Library at a glance' })).not.toHaveTextContent('countries');
+    });
+
+    it('shows the library records without inventing names it was not given', () => {
+      const base = analyticsInsightsFixture();
+      const { container } = render(LibraryAnalytics, {
+        scopes,
+        report: analyticsReportFixture({
+          insights: { ...base, records: { ...base.records, largestFile: { bytes: 3 * 1024 ** 3, name: null } } },
+        }),
+      });
+      const records = within(panel(container, 'records'));
+      expect(records.getByText('Oldest memory')).toBeInTheDocument();
+      expect(records.getByText('7 years ago')).toBeInTheDocument();
+      expect(records.getByText('Busiest day')).toBeInTheDocument();
+      expect(records.getByText('1:42:10')).toBeInTheDocument();
+      expect(records.getByText('Name shown only to its owner')).toBeInTheDocument();
+    });
+
+    it('puts every insight breakdown in the CSV export', async () => {
+      render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+      await fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+      const [blob] = downloadBlob.mock.calls[0] as [Blob, string];
+      const csv = await blob.text();
+      for (const section of ['Captures per year', 'Favourite lenses', 'Photo formats', 'Where they were taken']) {
+        expect(csv).toContain(`"${section}"`);
+      }
+    });
   });
 });
