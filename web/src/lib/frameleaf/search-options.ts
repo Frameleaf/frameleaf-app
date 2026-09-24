@@ -242,7 +242,10 @@ export const loadPaletteResults = async (
 
 /**
  * Counts for the enrichment filters: the same body with each enrichment value in turn. The body's
- * own enrichment value is replaced, as picking a quick filter would.
+ * own enrichment value is replaced, as picking a quick filter would. `POST /search/facets` has no
+ * enrichment facet — enrichment state is derived from the machine-learning metadata and its review
+ * records per value, not a column the facet query can group by — so each value is one statistics
+ * count, sent together and debounced with the palette's other requests.
  */
 export const loadEnrichmentCounts = async (
   body: DiscoverySearchDto,

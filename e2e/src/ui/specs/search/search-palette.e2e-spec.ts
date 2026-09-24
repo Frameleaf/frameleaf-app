@@ -155,4 +155,22 @@ test.describe('search palette', () => {
     await input.press('Enter');
     await expect(page).toHaveURL(/\/search\?dq=/);
   });
+
+  test('a search reopened from the results page comes back as typed chips (FL-48, SD-12)', async ({ page }) => {
+    const query = {
+      version: 1,
+      text: '',
+      mode: 'text',
+      filter: { personIds: { all: [JAMIE] }, city: { eq: 'Banff' } },
+      grouping: 'all',
+      view: 'photos',
+    };
+    await page.goto(`/search?dq=${encodeURIComponent(JSON.stringify(query))}`);
+    const chips = page.locator('#search-chips');
+    await expect(chips.locator('.search-chip')).toHaveCount(2);
+    await page.getByTestId('search-entry').click();
+    const palette = page.getByRole('dialog', { name: 'Search your library' });
+    await expect(palette.getByRole('button', { name: 'Remove Jamie' })).toBeVisible();
+    await expect(palette.getByRole('button', { name: 'Remove Banff' })).toBeVisible();
+  });
 });

@@ -270,6 +270,13 @@
     },
   ]);
 
+  /**
+   * FL-49: capture dates narrow the local capture date (`localDateTime`), the date the timeline and the
+   * search histogram use. A query that already narrows the UTC `takenAt` (an older link, a Places card)
+   * keeps editing that condition instead of gaining a second one.
+   */
+  const dateField = $derived(filter.takenAt && !filter.localDateTime ? 'takenAt' : 'localDateTime');
+
   const typeCounts = $derived(countsFor(SearchFacetField.Type));
   const peopleCounts = $derived(countsFor(SearchFacetField.People));
   const tagCounts = $derived(countsFor(SearchFacetField.Tags));
@@ -362,7 +369,7 @@
 
     <section class="filter-section" data-section="date">
       <h3>{$t('frameleaf_search_field_taken_at')}</h3>
-      {#if captureDateHasCustomCondition(filter.takenAt)}
+      {#if captureDateHasCustomCondition(filter[dateField])}
         <p class="muted">{$t('frameleaf_search_date_custom_condition')}</p>
       {/if}
       <div class="dates">
@@ -372,9 +379,12 @@
             <input
               type="date"
               aria-label={bound.aria}
-              value={captureDateControlValue(filter.takenAt, bound.operator)}
+              value={captureDateControlValue(filter[dateField], bound.operator)}
               oninput={(event) =>
-                setCondition('takenAt', updateCaptureDate(filter.takenAt, bound.operator, event.currentTarget.value))}
+                setCondition(
+                  dateField,
+                  updateCaptureDate(filter[dateField], bound.operator, event.currentTarget.value),
+                )}
             />
           </label>
         {/each}

@@ -1,6 +1,8 @@
 import {
   AssetTypeEnum,
+  ClassificationMediaType,
   ImageEnrichmentFilter,
+  type ClassificationRuleCreateDto,
   SearchFacetField,
   type SavedSearch,
   type SearchFacetsResponseDto,
@@ -32,11 +34,12 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
  * as the prototype leaves it, instead of being silently dropped or approximated.
  *
  * Differences from the prototype, all because the server's filter is stricter than the sample search:
- * - `camera:` and `lens:` match by "contains" over the makes, models and lenses the library actually
- *   has (`in`/`notIn`), because `make`, `model` and `lensModel` take no `like` operator.
- * - `file:` and `path:` use `like`/`notLike` without `%`: the server already matches "contains".
+ * - `file:`, `path:`, `camera:` and `lens:` use `like`/`notLike` without `%`: the server already matches
+ *   "contains" (make, model and lensModel take the pattern operators since FL-49).
  * - `text:` is `ocr.matches`, which has no negation.
  * - Two `place:` (or `type:`) values mean either one (`in`), since one photo has one city.
+ * - Dates (`year:`, `month:`, `after:`, `before:` and a histogram bar) narrow `localDateTime`, the local
+ *   capture date the histogram buckets by, so a bar selects exactly what it counts.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -209,9 +212,19 @@ export type PaletteToken = {
   display: string;
   /** The `SearchFilter` fields this token writes. */
   fields: (keyof SearchFilter)[];
+  /** The person or tag id a `person:` or `tag:` token resolved to (for the chip's face photo). */
+  id?: string;
 };
 
 export type ParsedPaletteInput = { text: string; filter: SearchFilter; tokens: PaletteToken[] };
+
+/**
+ * The most free text the palette searches; longer text is cut and the palette says so. Typed chips are
+ * parsed one by one and never cut.
+ */
+export const MAX_PALETTE_TEXT = 500;
+/** A bound on the work one parse does, far above anything a person types. */
+const MAX_PARSE_INPUT = 8192;
 
 /** key:value, key:"quoted value", with an optional leading "-" to exclude. */
 const TOKEN = /(^|\s)(-?)([a-z]+):(?:"([^"]*)"|(\S+))/gi;
@@ -253,15 +266,11 @@ const dateRange = (key: OperatorKey, value: string): { gte?: string; lt?: string
 const later = (a: string | undefined, b: string) => (a === undefined || Date.parse(b) > Date.parse(a) ? b : a);
 const earlier = (a: string | undefined, b: string) => (a === undefined || Date.parse(b) < Date.parse(a) ? b : a);
 
-/** Values of a vocabulary that contain the needle; an exact match alone wins. */
-const containing = (values: CatalogValue[], needle: string): string[] => {
-  const target = fold(needle);
-  const exact = values.filter((item) => fold(item.value) === target).map((item) => item.value);
-  if (exact.length > 0) {
-    return exact;
-  }
-  return [...new Set(values.filter((item) => fold(item.value).includes(target)).map((item) => item.value))];
-};
+/** A "contains" (or, excluded, "does not contain") condition, kept beside what the field already had. */
+const withPattern = (current: unknown, value: string, exclude: boolean) => ({
+  ...(current as Record<string, unknown> | undefined),
+  [exclude ? 'notLike' : 'like']: value,
+});
 
 type StringListCondition = { eq?: string; ne?: string; in?: string[]; notIn?: string[] };
 
@@ -317,7 +326,7 @@ export const parseSearchInput = (
   input: string,
   catalog: PaletteCatalog = emptyPaletteCatalog(),
 ): ParsedPaletteInput => {
-  const source = (input ?? '').slice(0, 500);
+  const source = (input ?? '').slice(0, MAX_PARSE_INPUT);
   const filter: Record<string, unknown> = {};
   const tokens: PaletteToken[] = [];
 
@@ -348,7 +357,7 @@ const resolveToken = (
   value: string,
   exclude: boolean,
   catalog: PaletteCatalog,
-): { display: string; fields: (keyof SearchFilter)[] } | null => {
+): { display: string; fields: (keyof SearchFilter)[]; id?: string } | null => {
   switch (key) {
     case 'person': {
       // Unnamed people have no name to type, so only named people resolve
@@ -361,7 +370,7 @@ const resolveToken = (
         return null;
       }
       filter.personIds = withId(filter.personIds as IdsCondition, person.id, exclude);
-      return { display: person.name, fields: ['personIds'] };
+      return { display: person.name, fields: ['personIds'], id: person.id };
     }
     case 'tag': {
       const tag = byName(catalog.tags, value, (item) => item.label);
@@ -369,7 +378,7 @@ const resolveToken = (
         return null;
       }
       filter.tagIds = withId(filter.tagIds as IdsCondition, tag.id, exclude);
-      return { display: tag.label, fields: ['tagIds'] };
+      return { display: tag.label, fields: ['tagIds'], id: tag.id };
     }
     case 'place': {
       const place = catalog.places.find((item) => fold(item.value) === fold(value))?.value ?? value;
@@ -385,23 +394,19 @@ const resolveToken = (
       return { display: type, fields: ['type'] };
     }
     case 'camera': {
-      const makes = containing(catalog.makes, value);
-      const models = makes.length > 0 ? [] : containing(catalog.models, value);
-      const field = makes.length > 0 ? 'make' : 'model';
-      const values = makes.length > 0 ? makes : models;
-      if (values.length === 0) {
-        return null;
+      // As the prototype: a make the library has, exactly; else a model containing it; else a make containing it
+      const make = catalog.makes.find((item) => fold(item.value) === fold(value))?.value;
+      if (make) {
+        filter.make = withStringValues(filter.make as StringListCondition, [make], exclude);
+        return { display: make, fields: ['make'] };
       }
-      filter[field] = withStringValues(filter[field] as StringListCondition, values, exclude);
-      return { display: values.length === 1 ? values[0] : value, fields: [field] };
+      const field = catalog.models.some((item) => fold(item.value).includes(fold(value))) ? 'model' : 'make';
+      filter[field] = withPattern(filter[field], value, exclude);
+      return { display: value, fields: [field] };
     }
     case 'lens': {
-      const lenses = containing(catalog.lenses, value);
-      if (lenses.length === 0) {
-        return null;
-      }
-      filter.lensModel = withStringValues(filter.lensModel as StringListCondition, lenses, exclude);
-      return { display: lenses.length === 1 ? lenses[0] : value, fields: ['lensModel'] };
+      filter.lensModel = withPattern(filter.lensModel, value, exclude);
+      return { display: value, fields: ['lensModel'] };
     }
     case 'rating': {
       if (!/^[0-5]$/.test(value) || exclude) {
@@ -425,13 +430,13 @@ const resolveToken = (
       if (!range || exclude) {
         return null;
       }
-      const current = (filter.takenAt ?? {}) as { gte?: string; lt?: string };
-      filter.takenAt = {
+      const current = (filter.localDateTime ?? {}) as { gte?: string; lt?: string };
+      filter.localDateTime = {
         ...current,
         ...(range.gte && { gte: later(current.gte, range.gte) }),
         ...(range.lt && { lt: earlier(current.lt, range.lt) }),
       };
-      return { display: value, fields: ['takenAt'] };
+      return { display: value, fields: ['localDateTime'] };
     }
     case 'text': {
       if (exclude) {
@@ -986,56 +991,198 @@ export const formatScopeCount = (count: { total: number; capped?: boolean } | nu
   count ? `${count.total.toLocaleString(locale)}${count.capped ? '+' : ''}` : '…';
 
 /* -------------------------------------------------------------------------- */
+/* Typed chips from a query                                                     */
+/* -------------------------------------------------------------------------- */
+
+type Condition = Record<string, unknown>;
+
+const isCondition = (value: unknown): value is Condition =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const personName = (catalog: PaletteCatalog, id: string) =>
+  catalog.people.find((item) => item.id === id)?.name || undefined;
+const tagName = (catalog: PaletteCatalog, id: string) => catalog.tags.find((item) => item.id === id)?.label;
+
+const dayBefore = (instant: string) => new Date(Date.parse(instant) - DAY_MS).toISOString().slice(0, 10);
+const isMidnight = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/.test(value);
+
+/** The typed tokens that would write exactly this condition, or undefined when none can. */
+const candidateTokens = (field: string, condition: Condition, catalog: PaletteCatalog): string[] | undefined => {
+  const values = (operator: string) => {
+    const value = condition[operator];
+    return value === undefined ? [] : Array.isArray(value) ? value : [value];
+  };
+  const both = (key: OperatorKey, include: unknown[], exclude: unknown[]) => [
+    ...include.map((value) => operatorToken(key, String(value))),
+    ...exclude.map((value) => operatorToken(key, String(value), true)),
+  ];
+  switch (field) {
+    case 'personIds':
+    case 'tagIds': {
+      if (condition.any !== undefined) {
+        return undefined;
+      }
+      const name = field === 'personIds' ? personName : tagName;
+      const key = field === 'personIds' ? 'person' : 'tag';
+      const ids = [...values('all'), ...values('none')] as string[];
+      if (ids.some((id) => !name(catalog, id))) {
+        return undefined;
+      }
+      return both(
+        key,
+        values('all').map((id) => name(catalog, id as string)),
+        values('none').map((id) => name(catalog, id as string)),
+      );
+    }
+    case 'city': {
+      return both('place', [...values('eq'), ...values('in')], [...values('ne'), ...values('notIn')]);
+    }
+    case 'type': {
+      const word = (value: unknown) =>
+        value === AssetTypeEnum.Video ? 'video' : value === AssetTypeEnum.Image ? 'photo' : '';
+      return both(
+        'type',
+        values('eq').map((value) => word(value)),
+        values('ne').map((value) => word(value)),
+      );
+    }
+    case 'make':
+    case 'model': {
+      return both('camera', [...values('eq'), ...values('like')], [...values('ne'), ...values('notLike')]);
+    }
+    case 'lensModel': {
+      return both('lens', values('like'), values('notLike'));
+    }
+    case 'rating': {
+      return both('rating', values('gte'), []);
+    }
+    case 'isFavorite': {
+      return [operatorToken('is', 'favorite', condition.eq === false)];
+    }
+    case 'localDateTime': {
+      const { gte, lt } = condition;
+      if ((gte !== undefined && !isMidnight(gte)) || (lt !== undefined && !isMidnight(lt))) {
+        return undefined;
+      }
+      const start = gte as string | undefined;
+      const end = lt as string | undefined;
+      if (start && end) {
+        const [year, month, day] = [start.slice(0, 4), start.slice(5, 7), start.slice(8, 10)];
+        if (month === '01' && day === '01' && end === `${Number(year) + 1}-01-01T00:00:00.000Z`) {
+          return [operatorToken('year', year)];
+        }
+        const next = new Date(Date.UTC(Number(year), Number(month), 1)).toISOString();
+        if (day === '01' && end === next) {
+          return [operatorToken('month', `${year}-${month}`)];
+        }
+      }
+      return [
+        ...(start ? [operatorToken('after', dayBefore(start))] : []),
+        ...(end ? [operatorToken('before', end.slice(0, 10))] : []),
+      ];
+    }
+    case 'ocr': {
+      return both('text', values('matches'), []);
+    }
+    case 'originalFileName':
+    case 'originalPath': {
+      const key = field === 'originalFileName' ? 'file' : 'path';
+      return both(key, values('like'), values('notLike'));
+    }
+    default: {
+      return undefined;
+    }
+  }
+};
+
+/**
+ * The typed chips a query reads back as (FL-48: a search reopened from the URL, from Back, from a recent
+ * or a saved search). Every condition an operator can write exactly becomes its chips and leaves the base;
+ * each candidate is checked by parsing it again, so the round trip never changes what is searched. What
+ * no operator can say — the collection scope, an any-of group, an id the viewer can no longer name —
+ * stays in the base, where it is still searched and shown as a filter.
+ */
+export const typedTokensFromQuery = (
+  query: DiscoveryQuery,
+  catalog: PaletteCatalog,
+): { tokens: string[]; base: DiscoveryQuery } => {
+  const base = structuredClone(query);
+  const tokens: string[] = [];
+  const filter = base.filter as Record<string, unknown>;
+  for (const [field, condition] of Object.entries(filter)) {
+    if (field === 'or' || !isCondition(condition)) {
+      continue;
+    }
+    const candidates = candidateTokens(field, condition, catalog);
+    if (!candidates?.length) {
+      continue;
+    }
+    const parsed = parseSearchInput(candidates.join(' '), catalog);
+    const written = parsed.filter as Record<string, unknown>;
+    if (
+      parsed.text ||
+      parsed.tokens.length !== candidates.length ||
+      Object.keys(written).length !== 1 ||
+      JSON.stringify(written[field]) !== JSON.stringify(condition)
+    ) {
+      continue;
+    }
+    tokens.push(...candidates);
+    delete filter[field];
+  }
+  return { tokens, base };
+};
+
+/** A query's chips and text as one line, for a recent or saved search row. */
+export const paletteSearchLabel = (query: DiscoveryQuery, catalog: PaletteCatalog) => {
+  const state = readPaletteState(query);
+  const { tokens } = typedTokensFromQuery(state.base, catalog);
+  return [...tokens, state.input].join(' ').trim();
+};
+
+/* -------------------------------------------------------------------------- */
 /* Recent and saved searches                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** A search the palette can restore exactly: its typed input (chips included), mode and base query. */
-export type PaletteSearch = { input: string; mode: PaletteMode; query: DiscoveryQuery };
+/**
+ * A recent search: the compiled query itself, scope and resolved ids included. The chips and text it is
+ * shown and restored with are derived from it (`typedTokensFromQuery`), never stored beside it, so a
+ * name is only ever shown for an id the viewer can still resolve.
+ */
+export type PaletteSearch = { query: DiscoveryQuery };
 
 export const RECENT_SEARCH_LIMIT = 5;
 export const SAVED_SEARCH_LIMIT = 50;
 export const SAVED_SEARCH_NAME_LIMIT = 100;
 
-/** Most recent first, one entry per input and mode (`applySearch` in the prototype's App.jsx). */
+/** Most recent first, one entry per distinct query (`applySearch` in the prototype's App.jsx). */
 export const rememberRecentSearch = (recent: PaletteSearch[], entry: PaletteSearch): PaletteSearch[] => {
-  const input = entry.input.trim();
-  if (!input) {
+  if (isEmptyPaletteQuery(entry.query)) {
     return recent;
   }
-  return [{ ...entry, input }, ...recent.filter((item) => item.input !== input || item.mode !== entry.mode)].slice(
-    0,
-    RECENT_SEARCH_LIMIT,
-  );
+  const key = JSON.stringify(entry.query);
+  return [entry, ...recent.filter((item) => JSON.stringify(item.query) !== key)].slice(0, RECENT_SEARCH_LIMIT);
 };
 
-const PALETTE_MODE_VALUES: ReadonlySet<string> = new Set(PALETTE_MODES.map((mode) => mode.value));
+const isEmptyPaletteQuery = (query: DiscoveryQuery) =>
+  !query.text.trim() && Object.keys(query.filter ?? {}).length === 0 && !query.imageEnrichment && !query.queryAssetId;
 
 /**
- * A saved search's stored body. It is the portable query (`DiscoveryQuery`, the body the web hands to
- * the search endpoints) plus the palette's typed input and mode, so reopening it restores the chips.
- * Person, pet and tag ids stay in the query, which is what lets the server leave out a saved search that
- * names something Locked while the session is locked.
+ * A saved search's stored body: the compiled, portable query (`DiscoveryQuery`, the body the web hands to
+ * the search endpoints), with every typed person, pet and tag already resolved to its id. Nothing else is
+ * stored — no typed names — so the server can leave out a search that names something Locked while the
+ * session is locked (`withoutLockedSavedSearches`), and reopening it rebuilds the chips from the ids.
  */
-export const toSavedSearch = (name: string, search: PaletteSearch): SavedSearch => ({
+export const toSavedSearch = (name: string, query: DiscoveryQuery): SavedSearch => ({
   name: name.trim().slice(0, SAVED_SEARCH_NAME_LIMIT),
-  query: { ...search.query, palette: { input: search.input, mode: search.mode } },
+  query: structuredClone(query) as unknown as SavedSearch['query'],
 });
 
 /** Reads a saved search back; one written by another client, or damaged, is refused rather than guessed. */
-export const fromSavedSearch = (saved: SavedSearch): PaletteSearch | undefined => {
+export const fromSavedSearch = (saved: SavedSearch): DiscoveryQuery | undefined => {
   const parsed = parseDiscoveryQuery(saved.query);
-  if (!parsed.ok) {
-    return undefined;
-  }
-  const palette = (saved.query as { palette?: { input?: unknown; mode?: unknown } }).palette;
-  const input = typeof palette?.input === 'string' ? palette.input : parsed.query.text;
-  const mode =
-    typeof palette?.mode === 'string' && PALETTE_MODE_VALUES.has(palette.mode)
-      ? (palette.mode as PaletteMode)
-      : parsed.query.mode === 'smart'
-        ? 'smart'
-        : discoveryTextField(parsed.query);
-  return { input, mode, query: parsed.query };
+  return parsed.ok ? parsed.query : undefined;
 };
 
 /** Adds or replaces (by name, ignoring case) a saved search, newest first, within the server's limit. */
@@ -1047,6 +1194,100 @@ export const upsertSavedSearch = (list: SavedSearch[], entry: SavedSearch): Save
 
 export const removeSavedSearch = (list: SavedSearch[], name: string): SavedSearch[] =>
   list.filter((item) => item.name !== name);
+
+/* -------------------------------------------------------------------------- */
+/* Saving as a smart album                                                      */
+/* -------------------------------------------------------------------------- */
+
+export type SmartAlbumCriteria = Omit<ClassificationRuleCreateDto, 'albumName'>;
+
+/**
+ * The FL-60 smart-album rule a palette search becomes (`SearchPalette.jsx` "Save search" → Smart album).
+ * A rule matches any of its people, any of its tags, a media type, an inclusive capture-day range and
+ * visual phrases, all together. A search that says anything else — an exclusion, all of several people,
+ * a place, a camera, a rating, a collection, text in a text field — cannot become a rule without
+ * changing what it matches, so the fields that stop it are returned instead and nothing is invented.
+ */
+export const smartAlbumCriteria = (
+  query: DiscoveryQuery,
+): { ok: true; criteria: SmartAlbumCriteria } | { ok: false; fields: string[] } => {
+  const blocked: string[] = [];
+  const criteria: SmartAlbumCriteria = {};
+  const ids = (field: 'personIds' | 'tagIds') => {
+    const condition = query.filter[field];
+    if (!condition) {
+      return;
+    }
+    const any = condition.any ?? [];
+    const all = condition.all ?? [];
+    if (condition.none?.length || (any.length > 0 && all.length > 0) || all.length > 1) {
+      blocked.push(field);
+      return;
+    }
+    criteria[field] = [...any, ...all];
+  };
+  for (const [field, condition] of Object.entries(query.filter) as [string, Record<string, unknown>][]) {
+    switch (field) {
+      case 'personIds':
+      case 'tagIds': {
+        ids(field);
+        break;
+      }
+      case 'type': {
+        const keys = Object.keys(condition);
+        if (keys.length === 1 && (condition.eq === AssetTypeEnum.Image || condition.eq === AssetTypeEnum.Video)) {
+          criteria.mediaType =
+            condition.eq === AssetTypeEnum.Video ? ClassificationMediaType.Video : ClassificationMediaType.Photo;
+        } else {
+          blocked.push(field);
+        }
+        break;
+      }
+      case 'localDateTime':
+      case 'takenAt': {
+        const { gte, lt, ...rest } = condition as { gte?: string; lt?: string };
+        const day = (value: string) => /^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/.test(value);
+        if (Object.keys(rest).length > 0 || (gte && !day(gte)) || (lt && !day(lt)) || criteria.takenAfter) {
+          blocked.push(field);
+          break;
+        }
+        criteria.takenAfter = gte ? gte.slice(0, 10) : undefined;
+        criteria.takenBefore = lt
+          ? new Date(Date.parse(`${lt.slice(0, 10)}T00:00:00.000Z`) - DAY_MS).toISOString().slice(0, 10)
+          : undefined;
+        break;
+      }
+      default: {
+        blocked.push(field);
+      }
+    }
+  }
+  const text = query.text.trim();
+  if (text) {
+    if (query.mode === 'smart') {
+      criteria.visualQueries = [text];
+    } else {
+      blocked.push('text');
+    }
+  }
+  if (query.imageEnrichment) {
+    blocked.push('imageEnrichment');
+  }
+  if (query.queryAssetId || query.spaceId) {
+    blocked.push(query.queryAssetId ? 'queryAssetId' : 'spaceId');
+  }
+  const says =
+    !!criteria.personIds?.length ||
+    !!criteria.tagIds?.length ||
+    !!criteria.mediaType ||
+    !!criteria.takenAfter ||
+    !!criteria.takenBefore ||
+    !!criteria.visualQueries?.length;
+  if (blocked.length > 0 || !says) {
+    return { ok: false, fields: blocked };
+  }
+  return { ok: true, criteria };
+};
 
 /* -------------------------------------------------------------------------- */
 /* Enrichment quick filters                                                     */
