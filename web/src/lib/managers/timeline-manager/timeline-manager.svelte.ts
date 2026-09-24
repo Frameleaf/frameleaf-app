@@ -9,7 +9,7 @@ import {
 } from '@immich/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
-import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
+import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -152,7 +152,12 @@ export class TimelineManager extends VirtualScrollManager {
         },
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
         AssetsMarkNsfw: (ids: string[]) => this.#handleMarkNsfw(ids),
-        SessionAccessChanged: () => void this.refresh(),
+        SessionLocked: () => {
+          this.initTask.cancel();
+          this.months = [];
+          this.albumAssets.clear();
+        },
+        SessionAccessChanged: () => void trackSessionLockRefresh(this.refresh()),
       }),
     );
   }
@@ -283,10 +288,15 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async #initializeTimelineMonths() {
+    const revision = sessionAccess.revision;
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
       ...this.#options,
     });
+
+    if (revision !== sessionAccess.revision) {
+      return;
+    }
 
     this.months = timebuckets.map((timeBucket) => {
       const date = new SvelteDate(timeBucket.timeBucket);
