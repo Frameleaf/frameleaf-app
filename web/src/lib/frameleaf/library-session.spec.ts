@@ -160,6 +160,21 @@ describe('shift range and group select', () => {
     expect(groupSelectionState(group, unchecked.selection)).toBe('none');
   });
 
+  it('keeps the shift-click anchor where a tile set it when a day group is selected', () => {
+    const dayGroup = reduceLibrarySession(createLibrarySession(), {
+      type: 'select-group',
+      ids: ['b', 'c'],
+      checked: true,
+    });
+    expect(dayGroup.anchorId).toBeNull();
+    const shifted = reduceLibrarySession(dayGroup, { type: 'select-range', orderedIds: day, id: 'e' });
+    expect(shifted.selection).toEqual(['b', 'c', 'e']);
+
+    const tile = reduceLibrarySession(createLibrarySession(), { type: 'select', id: 'a' });
+    const withGroup = reduceLibrarySession(tile, { type: 'select-group', ids: ['c', 'd'], checked: true });
+    expect(withGroup.anchorId).toBe('a');
+  });
+
   it('reports a partly selected group', () => {
     expect(groupSelectionState(['a', 'b'], ['a'])).toBe('some');
     expect(groupSelectionState([], ['a'])).toBe('none');
