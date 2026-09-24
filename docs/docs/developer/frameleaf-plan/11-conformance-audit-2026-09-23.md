@@ -58,7 +58,7 @@ Packet 3 of the September 24 port is on `codex/FL-49-search-palette`, based on `
 
   Operators compile to the structured `SearchFilter` the results page sends (`IdsFilter` all/none, `ne`/`notIn`/`like`/`notLike`, `rating.gte`, `localDateTime` ranges). Counts, facets and bars come from `POST /search/statistics`, `/search/smart/statistics` (capped, shown as "1,000+"), `/search/facets` and `/search/histogram`. Nothing is computed from sample data.
 
-- **Server additions (additive).** `make`, `model` and `lensModel` take the string-pattern operators, so `camera:` and `lens:` match "contains" as in the prototype. A new `localDateTime` date condition narrows by the local capture date, which is what the histogram buckets by; histogram bars and `year:`, `month:`, `after:` and `before:` use it, so a bar selects exactly what it counts. OpenAPI, the SDK and the search SQL snapshots are regenerated, and medium tests cover both additions.
+- **Server additions (additive).** `make`, `model` and `lensModel` take the string-pattern operators, so `camera:` and `lens:` match "contains" as in the prototype. A `notLike` condition keeps items with no value, as the prototype's `-camera:` and `-lens:` do. A new `localDateTime` date condition narrows by the local capture date, which is what the histogram buckets by; histogram bars and `year:`, `month:`, `after:` and `before:` use it, so a bar selects exactly what it counts. OpenAPI, the SDK and the search SQL snapshots are regenerated, and medium tests cover both additions.
 - **Deviations, each for a server contract.**
   - An operator that resolves to nothing stays as text.
   - All text is an `or` over the four text conditions, and the palette reads it back when reopened.
@@ -67,7 +67,7 @@ Packet 3 of the September 24 port is on `codex/FL-49-search-palette`, based on `
   - Enrichment counts are one statistics count per value: the facets endpoint has no enrichment facet.
 - **Save search** (`SearchSaveDialog.svelte`) is the prototype's "Save this collection" dialog, with three options:
   - Smart album: the FL-60 rule-backed album. It is offered only when a rule can say the search exactly (people, tags, media type, dates, smart text); otherwise it is disabled and says why.
-  - Album snapshot: the matching ids, collected through the authenticated search with the timeline default and added in chunks.
+  - Album snapshot: the matching ids, collected through the authenticated search with the timeline default. The exact number is confirmed before the album is created: smart search saves its top ranked page, and a truncated metadata search says it saves only the first N of M. Nothing is created when nothing matches. The ids are added in chunks; if one fails, Retry continues with the rest or Delete album removes the half-filled album, and the result reports added, skipped and failed items.
   - Saved search: the compiled query in the `savedSearches` preference.
 
   `RailSavedSearches.svelte` and the shared `savedSearchesStore` are ready for the shell to mount in `LibraryRail.svelte` (S-14 stays partial until it is mounted).
@@ -75,6 +75,7 @@ Packet 3 of the September 24 port is on `codex/FL-49-search-palette`, based on `
 - **Privacy.**
   - Saved and recent searches store only the compiled query, with person, pet and tag ids and never typed names. The server can therefore withhold a saved search that names something Locked while the session is locked; a unit test pins this.
   - Rows and chips are rebuilt from the ids the viewer can still resolve.
+  - On an access change, person and tag chips leave the field at once and come back only if they still resolve. The rest are dropped with a notice, so a Locked name is never shown, even greyed.
   - Every loaded answer is dropped and reloaded on each access change. A chip that stops resolving is shown as unavailable and left out of the search.
   - Recent searches live in memory only and are cleared when access narrows.
 - **FL-48.** A search reopened from the URL, Back, a recent or a saved search reads back as typed chips. Every conversion is checked by recompiling it, so the round trip never changes what is searched. The unsupported-legacy guard compares the bodies the server receives and keeps the page's own mode.
