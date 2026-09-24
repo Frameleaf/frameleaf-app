@@ -1,7 +1,7 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { beforeEach, vitest } from 'vitest';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { SearchFacetField, SearchHistogramGranularity, SearchSuggestionType } from 'src/dtos/search.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
 import { SearchService } from 'src/services/search.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -937,6 +937,117 @@ describe(SearchService.name, () => {
 
       await expect(sut.askSearch(authStub.user1, { query: 'dogs' })).rejects.toThrowError(
         new BadRequestException('Ask Search is not enabled'),
+      );
+    });
+  });
+
+  describe('FL-49 facets, histogram and smart counts', () => {
+    it('counts facets over the statistics scope and names nothing the session keeps Locked', async () => {
+      const me = authStub.user1.user.id;
+      const hiding = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: false });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding)]);
+      mocks.search.searchStatistics.mockResolvedValue({ total: 3 });
+      mocks.search.searchFacets.mockResolvedValue([
+        { field: SearchFacetField.Type, value: 'IMAGE', label: null, count: 3 },
+        { field: SearchFacetField.People, value: 'person-1', label: 'Emma', count: 2 },
+      ]);
+      const hiddenContent = {
+        userId: me,
+        includeNsfw: false,
+        tagIds: ['tag-locked'],
+        personIds: ['person-locked'],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      const auth = { ...authStub.user1, hiddenContent };
+
+      const result = await sut.searchFacets(auth, {
+        city: 'Lisbon',
+        facets: [SearchFacetField.Type, SearchFacetField.People],
+      });
+
+      expect(result).toEqual({
+        total: 3,
+        facets: [
+          { fieldName: 'type', counts: [{ value: 'IMAGE', count: 3 }] },
+          { fieldName: 'people', counts: [{ value: 'person-1', label: 'Emma', count: 2 }] },
+        ],
+      });
+      const [options, facetOptions] = mocks.search.searchFacets.mock.calls[0];
+      // a place filter leaves out partners who hide their locations, exactly as statistics does
+      expect(options).toEqual(
+        expect.objectContaining({ userIds: [me], visibility: 'not-locked', hiddenContent, hideLockedMotion: true }),
+      );
+      expect(mocks.search.searchStatistics).toHaveBeenCalledWith(options);
+      expect(facetOptions).toEqual({
+        viewerId: me,
+        facets: [SearchFacetField.Type, SearchFacetField.People],
+        limit: 10,
+        locationHiddenOwnerIds: [hiding.sharedById],
+        suppressedPersonIds: ['person-locked'],
+        suppressedTagIds: ['tag-locked'],
+      });
+    });
+
+    it('uses the structured scope for a filter body', async () => {
+      mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
+      mocks.search.searchFacetsV3.mockResolvedValue([]);
+      const result = await sut.searchFacets(authStub.user1, { filter: { isFavorite: { eq: true } } });
+      expect(result.facets.map(({ fieldName }) => fieldName)).toEqual(Object.values(SearchFacetField));
+      expect(mocks.search.searchFacetsV3).toHaveBeenCalledWith(
+        expect.objectContaining({ filter: expect.objectContaining({ isFavorite: { eq: true } }) }),
+        expect.objectContaining({ userIds: [authStub.user1.user.id], lockedOwnerId: authStub.user1.user.id }),
+        expect.anything(),
+      );
+      expect(mocks.search.searchFacets).not.toHaveBeenCalled();
+    });
+
+    it('requires an elevated session for Locked facets and histograms', async () => {
+      await expect(sut.searchFacets(authStub.user1, { visibility: AssetVisibility.Locked })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      await expect(
+        sut.searchHistogram(authStub.user1, {
+          visibility: AssetVisibility.Locked,
+          granularity: SearchHistogramGranularity.Year,
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('sums the histogram buckets into the total', async () => {
+      mocks.search.searchHistogram.mockResolvedValue([
+        { date: '2024-01-01', count: 2 },
+        { date: '2024-02-01', count: 5 },
+      ]);
+      await expect(
+        sut.searchHistogram(authStub.user1, { granularity: SearchHistogramGranularity.Month }),
+      ).resolves.toEqual({
+        granularity: 'month',
+        total: 7,
+        buckets: [
+          { date: '2024-01-01', count: 2 },
+          { date: '2024-02-01', count: 5 },
+        ],
+      });
+    });
+
+    it('counts smart search results without encoding the query', async () => {
+      mocks.search.searchSmartCount.mockResolvedValue({ total: 1000, capped: true });
+      await expect(sut.searchSmartStatistics(authStub.user1, { query: 'beach', size: 5 })).resolves.toEqual({
+        total: 1000,
+        capped: true,
+      });
+      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+      const [options] = mocks.search.searchSmartCount.mock.calls[0];
+      expect(options).not.toHaveProperty('query');
+      expect(options).not.toHaveProperty('size');
+      await expect(sut.searchSmartStatistics(authStub.user1, {})).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('refuses a smart count when smart search is disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
+      await expect(sut.searchSmartStatistics(authStub.user1, { query: 'beach' })).rejects.toThrowError(
+        new BadRequestException('Smart search is not enabled'),
       );
     });
   });

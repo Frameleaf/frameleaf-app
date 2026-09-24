@@ -223,6 +223,40 @@ describe(UserService.name, () => {
   });
 
   describe('updateMyPreferences', () => {
+    it('stores saved searches and keeps any naming a Locked person from a locked session (FL-49)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const unlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      const locked = factory.auth({ user: { id: user.id } });
+      const lockedPerson = newUuid();
+      const savedSearches = [
+        { name: 'Beach', query: { filter: { city: { eq: 'Lisbon' } } } },
+        { name: 'Private', query: { filter: { personIds: { any: [lockedPerson] } } } },
+      ];
+
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({ savedSearches: [] });
+      await sut.updateMyPreferences(unlocked, {
+        savedSearches,
+        privacy: { suppression: { personIds: [lockedPerson] } },
+      });
+
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({ savedSearches });
+      const lockedView = await sut.getMyPreferences(locked);
+      expect(lockedView.savedSearches).toEqual([savedSearches[0]]);
+
+      // a locked session may replace the list, but the searches it cannot see are kept
+      const added = { name: 'Snow', query: { filter: { city: { eq: 'Banff' } } } };
+      await sut.updateMyPreferences(locked, { savedSearches: [added], expectedRevision: lockedView.revision });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({
+        savedSearches: [added, savedSearches[1]],
+      });
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({ savedSearches: [added] });
+
+      // an unlocked session replaces the whole list
+      await sut.updateMyPreferences(unlocked, { savedSearches: [] });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({ savedSearches: [] });
+    });
+
     it('should update memories enabled', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

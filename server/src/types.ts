@@ -852,7 +852,11 @@ export type UserPreferences = {
   recentlyAdded: {
     sidebarWeb: boolean;
   };
+  /** FL-49: named searches from the search palette; `query` is the client's own search body */
+  savedSearches: SavedSearch[];
 };
+
+export type SavedSearch = { name: string; query: Record<string, unknown> };
 
 export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
   key: T;
