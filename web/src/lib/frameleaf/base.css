@@ -96,9 +96,10 @@
     font-weight: 500;
   }
 
-  /* Balanced titles and tabular numbers (apple-style.css:59-69). */
+  /* Balanced, slightly tightened titles and tabular numbers (apple-style.css:59-69). */
   :where(.frameleaf h1, .frameleaf h2, .frameleaf h3) {
     text-wrap: balance;
+    letter-spacing: -0.015em;
   }
 
   :where(
@@ -109,7 +110,8 @@
     .frameleaf .result-count,
     .frameleaf .stars,
     .frameleaf .duration,
-    .frameleaf .fl-tabular
+    .frameleaf .fl-tabular,
+    .frameleaf [aria-live]
   ) {
     font-variant-numeric: tabular-nums;
   }
@@ -200,11 +202,6 @@
     gap: 8px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    transition:
-      background var(--fl-motion-fast) var(--fl-ease),
-      border-color var(--fl-motion-fast) var(--fl-ease),
-      color var(--fl-motion-fast) var(--fl-ease),
-      transform var(--fl-duration) var(--fl-spring);
     background: var(--fl-raised);
     color: var(--fl-text);
     padding: 7px 11px;
@@ -224,16 +221,24 @@
 
   /*
    * September 24 press feedback (apple-style.css:287-296): buttons settle back on the spring
-   * and shrink slightly while pressed. Under Reduce Motion the press does not move (:473-490).
+   * and shrink slightly while pressed. The one transition list also carries the colour and
+   * border changes of `.button`. Drag handles (`fl-no-press`: face boxes and their resize grip,
+   * editor mask handles) must track the pointer, so they never scale. Under Reduce Motion the
+   * press does not move (:473-490).
    */
   :where(.frameleaf button, .frameleaf .button) {
     transition:
       transform var(--fl-duration) var(--fl-spring),
       background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
       box-shadow 200ms ease;
   }
 
-  :where(.frameleaf button:active:not(:disabled), .frameleaf .button:active:not(:disabled)) {
+  :where(
+    .frameleaf button:active:not(:disabled, .fl-no-press),
+    .frameleaf .button:active:not(:disabled, .fl-no-press)
+  ) {
     transform: scale(0.96);
     transition-duration: 90ms;
   }
