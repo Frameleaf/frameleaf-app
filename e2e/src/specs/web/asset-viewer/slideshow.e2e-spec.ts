@@ -55,4 +55,32 @@ test.describe('Slideshow', () => {
     await page.keyboard.press('f');
     await expect(page.getByText('Added to favorites')).not.toBeVisible();
   });
+
+  // FL-36: the settings are a Frameleaf dialog with the five transitions, Fade by default.
+  test('slideshow settings offer the transitions', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await openSlideshow(page);
+
+    await page.mouse.move(10, 10);
+    await page.getByRole('button', { name: 'Slideshow settings' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Slideshow' });
+    await expect(dialog).toBeVisible();
+    const transition = dialog.getByLabel('Transition');
+    await expect(transition).toHaveValue('fade');
+    await expect(transition.locator('option')).toHaveText(['None', 'Fade (default)', 'Slide', 'Ken Burns', 'Memories']);
+
+    await transition.selectOption('memories');
+    expect(await page.evaluate(() => localStorage.getItem('slideshow-transition'))).toBe('"memories"');
+  });
+
+  // FL-36: the old on/off switch reads back as the transition it meant.
+  test('a stored transition switch migrates to None', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await context.addInitScript(() => localStorage.setItem('slideshow-transition', 'false'));
+    await openSlideshow(page);
+
+    await page.mouse.move(10, 10);
+    await page.getByRole('button', { name: 'Slideshow settings' }).click();
+    await expect(page.getByRole('dialog', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
+  });
 });
