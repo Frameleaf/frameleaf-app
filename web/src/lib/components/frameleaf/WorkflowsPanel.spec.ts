@@ -109,7 +109,12 @@ describe('WorkflowsPanel', () => {
       { type: 'application/json' },
     );
 
-    await fireEvent.change(screen.getByLabelText(t.import), { target: { files: [file] } });
+    // A normal button opens the file chooser (September 24 "Small actions").
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    await fireEvent.click(screen.getByRole('button', { name: t.import }));
+    expect(click).toHaveBeenCalledOnce();
+    click.mockRestore();
+    await fireEvent.change(screen.getByTestId('workflow-import-input'), { target: { files: [file] } });
 
     expect(await screen.findByText(t.imported)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: t.enable_workflow })).not.toBeChecked();
