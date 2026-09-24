@@ -1,6 +1,21 @@
 import { LoginResponseDto } from '@immich/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { utils } from 'src/utils.js';
+
+/**
+ * FL-81 replaced the one-click restore confirmation with the design template's
+ * `RestoreDialog` (design/frameleaf/template/src/Maintenance.jsx): "Restore backup" stays
+ * disabled until the administrator types RESTORE. Prove the guard, then satisfy it.
+ */
+const confirmRestore = async (page: Page) => {
+  const dialog = page.getByRole('dialog', { name: 'Restore this backup?' });
+  const confirmButton = dialog.getByRole('button', { name: 'Restore backup', exact: true });
+
+  await expect(confirmButton).toBeDisabled();
+  await dialog.getByLabel('Type RESTORE to confirm').fill('RESTORE');
+  await expect(confirmButton).toBeEnabled();
+  await confirmButton.click();
+};
 
 test.describe.configure({ mode: 'serial' });
 
@@ -28,7 +43,7 @@ test.describe('Database Backups', () => {
 
     await page.goto('/admin/maintenance?isOpen=backups');
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+    await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await page.waitForURL('/admin/maintenance**', { timeout: 60_000 });
@@ -43,7 +58,7 @@ test.describe('Database Backups', () => {
 
     await page.goto('/admin/maintenance?isOpen=backups');
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+    await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('IM CORRUPTED')).toBeVisible({ timeout: 60_000 });
@@ -60,7 +75,7 @@ test.describe('Database Backups', () => {
 
     await page.goto('/admin/maintenance?isOpen=backups');
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+    await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 60_000 });
@@ -97,7 +112,7 @@ test.describe('Database Backups', () => {
 
     await page.getByRole('button', { name: 'Next' }).click();
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+    await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await page.waitForURL('/photos', { timeout: 60_000 });
