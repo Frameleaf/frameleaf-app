@@ -71,6 +71,7 @@ import {
   assertRenderSourceIsOriginal,
   buildEditedMasterLineage,
   getEditedMasterColorArgs,
+  getEditedMasterColorRange,
   getEditedMasterFfmpegConfig,
   getEditedMasterLineagePath,
   getEditedMasterTimingArgs,
@@ -1213,6 +1214,7 @@ export class MediaService extends BaseService {
         layout: qualification.layout,
         policy: colorDecision.policy,
         colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
       });
     }
     return colorDecision;
@@ -1706,6 +1708,7 @@ export class MediaService extends BaseService {
         layout: qualification.layout,
         policy: colorDecision.policy,
         colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
       });
       if (colorDecision.policy === EditedMasterColorPolicy.Preserve) {
         transcodeFilters = applyFloatEncodePixelFormat(transcodeFilters, encodePlan);
