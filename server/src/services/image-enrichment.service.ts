@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
+import { chunk } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -263,6 +264,9 @@ const normalizeTag = (tag: string) =>
     .replaceAll(/-+/g, '-')
     .replaceAll(/^-|-$/g, '');
 
+/** Assets unlocked per transaction by a bulk unlock (FL-34); see `unlockAssets`. */
+const UNLOCK_CHUNK_SIZE = 200;
+
 @Injectable()
 export class ImageEnrichmentService extends BaseService {
   @InjectKysely()
@@ -465,16 +469,21 @@ export class ImageEnrichmentService extends BaseService {
   async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     requireElevatedPermission(auth);
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
-    const groupIds = await this.assetRepository.findLockGroupIds(dto.ids);
-    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
-      const unlocked = [...new Set((await this.assetRepository.unlock(dto.ids, trx)).map(({ assetId }) => assetId))];
-      requireUnchangedGroup(unlocked, groupIds);
-      const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
-      return { unlocked, reviewed };
-    });
-    await this.clearSafeReviewTags(reviewed);
-    await this.notifyAssetsUpdated(unlocked, auth.user.id);
+    // Each chunk is one transaction: a metadata lock per group member (stacks and live photos
+    // included) lives in PostgreSQL's shared lock table until commit, so an unbounded request could
+    // exhaust it for every connection. A group split across chunks is unlocked whole by the first.
+    for (const ids of chunk(dto.ids, UNLOCK_CHUNK_SIZE)) {
+      // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
+      const groupIds = await this.assetRepository.findLockGroupIds(ids);
+      const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
+        const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
+        requireUnchangedGroup(unlocked, groupIds);
+        const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
+        return { unlocked, reviewed };
+      });
+      await this.clearSafeReviewTags(reviewed);
+      await this.notifyAssetsUpdated(unlocked, auth.user.id);
+    }
   }
 
   /**
