@@ -18,7 +18,7 @@
   import { Route } from '$lib/route';
   import { getUserAdminsActions } from '$lib/services/user-admin.service';
   import { requestServerInfo } from '$lib/utils/auth';
-  import { searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
+  import { getServerStatistics, searchUsersAdmin, type UsageByUserDto, type UserAdminResponseDto } from '@immich/sdk';
   import { CommandPaletteDefaultProvider } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -29,6 +29,8 @@
   const creating = $derived(page.url.searchParams.get('new') === '1');
 
   let users: UserAdminResponseDto[] = $state([]);
+  /** Each account's photos and videos for the Items column (CC-26); the list works without them. */
+  let usage: UsageByUserDto[] = $state([]);
   let loaded = $state(false);
   let failed = $state(false);
 
@@ -41,6 +43,11 @@
         loaded = true;
       })
       .catch(() => (failed = true));
+    void getServerStatistics()
+      .then((statistics) => (usage = statistics.usageByUser))
+      .catch(() => {
+        // The Items column stays empty rather than failing the account list.
+      });
   });
 
   const onUpdate = async (user: UserAdminResponseDto) => {
@@ -95,7 +102,7 @@
   </header>
 
   {#if loaded}
-    <AccountTable {users} />
+    <AccountTable {users} {usage} />
   {:else if failed}
     <p role="alert">{$t('frameleaf_cc_load_failed')}</p>
   {:else}
