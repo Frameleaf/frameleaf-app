@@ -15,6 +15,7 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
@@ -586,23 +587,40 @@
     void complete.finally(() => void scrollAfterNavigate());
   });
 
-  // A layout switch changes the geometry but not the session: come back to the same asset.
+  // A layout switch changes the geometry but not the session: come back to the same asset, at the
+  // same height on screen (FL-33). The anchor is read before the new layout options are applied —
+  // a pre-effect runs ahead of the effect that sets them — so it describes what was on screen.
   let lastLayout = session.layout;
+  let layoutAnchor: LibraryAnchor | undefined;
+  $effect.pre(() => {
+    const layout = session.layout;
+    if (layout === lastLayout) {
+      return;
+    }
+    layoutAnchor = untrack(() => captureLibraryAnchor(timelineManager, session.session.scrollAnchor));
+  });
   $effect(() => {
     const layout = session.layout;
     if (layout === lastLayout) {
       return;
     }
     lastLayout = layout;
-    const anchor = session.session.scrollAnchor;
-    if (anchor) {
-      // Work narrows the timeline for its panel and adds captions: the new width is measured and
-      // the months laid out again over the next frames, so the asset is found after that settles.
-      void tick()
-        .then(nextFrame)
-        .then(nextFrame)
-        .then(() => scrollToAssetId(anchor, false));
+    const anchor = layoutAnchor;
+    layoutAnchor = undefined;
+    const anchorId = untrack(() => session.session.scrollAnchor);
+    if (!anchor && !anchorId) {
+      return;
     }
+    // Work narrows the timeline for its panel and adds captions: the new width is measured and
+    // the months laid out again over the next frames, so the asset is found after that settles.
+    void tick()
+      .then(nextFrame)
+      .then(nextFrame)
+      .then(() => {
+        if (!restoreLibraryAnchor(timelineManager, anchor) && anchorId) {
+          void scrollToAssetId(anchorId, false);
+        }
+      });
   });
 
   const scrollToSegmentPercentage = (segmentTop: number, segmentHeight: number, percent: number) => {
