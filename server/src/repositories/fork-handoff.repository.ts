@@ -114,6 +114,18 @@ const officialLedgerDigest = (names: readonly string[]): string =>
 
 const ORPHAN_FAMILIES = [
   [
+    'video_edit_selection',
+    'immich_fork.video_edit_selection',
+    'candidate."assetId"::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
+  ],
+  [
+    'video_edit_version',
+    'immich_fork.video_edit_version',
+    'candidate.id::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id=candidate."assetId" AND asset."ownerId"=candidate."ownerId")',
+  ],
+  [
     'smart_album_match',
     'immich_fork.smart_album_match',
     `candidate."smartAlbumId"::text || ':' || candidate."assetId"::text`,

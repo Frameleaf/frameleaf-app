@@ -170,7 +170,8 @@ describe('certified fork return evidence', () => {
         immich_fork.smart_album_rule, immich_fork.album_closure, immich_fork.album_metadata,
         immich_fork.asset_privacy, immich_fork.asset_enrichment, immich_fork.asset_best_photo_score,
         immich_fork.asset_video_duplicate_frame, immich_fork.asset_checksum, immich_fork.asset_physical_file,
-        immich_fork.asset_storage_reservation, immich_fork.physical_file, immich_fork.config
+        immich_fork.asset_storage_reservation, immich_fork.physical_file, immich_fork.config,
+        immich_fork.video_edit_selection, immich_fork.video_edit_version
     `.execute(db);
     await db.deleteFrom('album').execute();
     await db.deleteFrom('asset').execute();

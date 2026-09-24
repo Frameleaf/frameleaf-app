@@ -23,7 +23,7 @@
   import '$lib/frameleaf/tokens.css';
   import './editor.css';
   import { focusTrap } from '$lib/actions/focus-trap';
-  import VideoEditorPanel from '$lib/components/asset-viewer/editor/VideoEditorPanel.svelte';
+  import VideoEditorPanel, { type VideoEditorDraft } from '$lib/components/asset-viewer/editor/VideoEditorPanel.svelte';
   import CropOverlay from '$lib/components/frameleaf/editor/CropOverlay.svelte';
   import DevelopGroup from '$lib/components/frameleaf/editor/DevelopGroup.svelte';
   import EditorSlider from '$lib/components/frameleaf/editor/EditorSlider.svelte';
@@ -37,6 +37,7 @@
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
   import RoundTripPanel from '$lib/components/frameleaf/editor/RoundTripPanel.svelte';
   import UserPresets from '$lib/components/frameleaf/editor/UserPresets.svelte';
+  import VideoVersionsMenu from '$lib/components/frameleaf/editor/VideoVersionsMenu.svelte';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -314,6 +315,10 @@
   /* Restoration (FL-115) ------------------------------------------------- */
   // Videos have no adjust rail; the top bar swaps the video editor for the restoration panel.
   let videoTool = $state<'edit' | 'restore'>('edit');
+  // FL-39: the Versions menu and Revert load recipes into the open video draft.
+  let videoEditor = $state<VideoEditorDraft>();
+  let videoHasUnsavedChanges = $state(false);
+  let videoDraftKey = $state('[]');
   // The before-and-after the restoration panel asked the stage to show. Cleared with the tool.
   let restorationCompare = $state<RestorationCompareRequest | null>(null);
   const restoring = $derived(isVideo ? videoTool === 'restore' : tool === 'restore');
@@ -762,6 +767,16 @@
           <Icon icon={mdiAutoFix} size="20" />
           <span>{$t('frameleaf_editor_tool_restore')}</span>
         </button>
+        {#if videoTool === 'edit'}
+          {#key asset.id}
+            <VideoVersionsMenu
+              {asset}
+              draftKey={videoDraftKey}
+              hasUnsavedChanges={videoHasUnsavedChanges}
+              onApply={(edits) => videoEditor?.applyRecipe(edits)}
+            />
+          {/key}
+        {/if}
       {:else}
         <button type="button" class="ed-tool labelled" onclick={cancel} title={$t('frameleaf_editor_cancel_title')}>
           <Icon icon={mdiClose} size="20" />
@@ -908,7 +923,13 @@
 
     {#if isVideo && videoTool === 'edit'}
       <div class="ed-video-host">
-        <VideoEditorPanel {asset} {onClose} />
+        <VideoEditorPanel
+          {asset}
+          onReady={(editor) => (videoEditor = editor)}
+          {onClose}
+          onUnsavedChange={(value) => (videoHasUnsavedChanges = value)}
+          onDraftChange={(key) => (videoDraftKey = key)}
+        />
       </div>
     {:else if isVideo}
       <div class="ed-stage-wrap">

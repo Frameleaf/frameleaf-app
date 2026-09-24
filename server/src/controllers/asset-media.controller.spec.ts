@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AssetMetadataKey, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { factory } from 'test/small.factory.js';
@@ -166,6 +166,26 @@ describe(AssetMediaController.name, () => {
     });
 
     // TODO figure out how to deal with `sendFile`
+
+    describe('GET /assets/:id/edit-versions/:versionId/download (FL-39)', () => {
+      it('requires download permission without a shared-link route', async () => {
+        await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/edit-versions/${factory.uuid()}/download`);
+        expect(ctx.authenticate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ permission: Permission.AssetDownload, sharedLinkRoute: false }),
+          }),
+        );
+      });
+
+      it('requires a valid version id', async () => {
+        const { status, body } = await request(ctx.getHttpServer()).get(
+          `/assets/${factory.uuid()}/edit-versions/123/download`,
+        );
+        expect(status).toBe(400);
+        expect(body).toEqual(factory.responses.validationError([{ path: ['versionId'], message: 'Invalid UUID' }]));
+        expect(service.downloadVideoEditVersion).not.toHaveBeenCalled();
+      });
+    });
 
     // TODO figure out how to deal with `sendFile`
     describe('GET /assets/:id/thumbnail', () => {
