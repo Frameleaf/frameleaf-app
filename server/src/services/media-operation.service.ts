@@ -355,7 +355,7 @@ export class MediaOperationService {
   async createBulk(
     auth: AuthDto,
     dto: MediaOperationBulkCreateDto,
-    options: { libraryCare?: boolean } = {},
+    options: { libraryCare?: boolean; archiveOperationId?: string } = {},
   ): Promise<MediaOperationDto> {
     if (auth.sharedLink) {
       throw new ForbiddenException('Bulk operations are not available on a shared link');
@@ -380,7 +380,14 @@ export class MediaOperationService {
     }
 
     const assetIds = [...new Set(dto.assetIds)];
-    const payload = dto.payload ?? {};
+    // FL-32: only the archive operation service links a job to its operation; a client payload never can
+    const payload: BulkOperationSnapshot['payload'] = {
+      ...dto.payload,
+      archiveOperationId: options.archiveOperationId,
+    };
+    if (!payload.archiveOperationId) {
+      delete payload.archiveOperationId;
+    }
     const problem = bulkPayloadProblem(dto.action, payload, assetIds);
     if (problem) {
       throw new BadRequestException(problem);

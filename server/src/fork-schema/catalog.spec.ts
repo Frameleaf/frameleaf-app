@@ -89,10 +89,13 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 137 public tables and 33 fork tables in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(170);
-    // 66 v3.1.0 public + the 33 fork tables
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
+    // 137 public tables and 35 fork tables in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(172);
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining(['immich_fork.archive_operation', 'immich_fork.archive_operation_item']),
+    );
+    // 66 v3.1.0 public + the 35 fork tables
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(101);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

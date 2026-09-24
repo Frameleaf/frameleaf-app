@@ -13,6 +13,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { ArchiveOperationRepository, archiveAnswerOutcome } from 'src/repositories/archive-operation.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -185,6 +186,7 @@ export class BulkOperationService {
     private duplicateDecisions: DuplicateDecisionService,
     private mediaHealth: MediaHealthService,
     private classification: ClassificationService,
+    private archiveOperations: ArchiveOperationRepository,
   ) {
     this.logger.setContext(BulkOperationService.name);
   }
@@ -674,6 +676,18 @@ export class BulkOperationService {
       return outcomes;
     }
 
+    // FL-32: a transactional archive publishes, or undoes, through its operation's own item records
+    if (
+      payload.archiveOperationId &&
+      operationId &&
+      (action === MediaOperationBulkAction.Archive || action === MediaOperationBulkAction.Unarchive)
+    ) {
+      outcomes.push(
+        ...(await this.applyArchiveOperation(auth, payload.archiveOperationId, operationId, action, allowed)),
+      );
+      return outcomes;
+    }
+
     const update = bulkAssetUpdate(action, payload);
     if (update) {
       const send = (ids: string[]) => this.assets.updateAll(auth, { ids, ...update } as AssetBulkUpdateDto);
@@ -819,6 +833,36 @@ export class BulkOperationService {
    * a group holding an item locked since a job submitted without the PIN is skipped entirely rather
    * than decided without that item, and a group's outcome is every member's outcome.
    */
+  /**
+   * One batch of a transactional archive (FL-32): publish or undo in one transaction per batch
+   * (`ArchiveOperationRepository`), then push the changed assets to the owner's open sessions.
+   */
+  private async applyArchiveOperation(
+    auth: AuthDto,
+    archiveOperationId: string,
+    jobId: string,
+    action: MediaOperationBulkAction,
+    batch: string[],
+  ): Promise<Outcome[]> {
+    const answers =
+      action === MediaOperationBulkAction.Unarchive
+        ? await this.archiveOperations.restore(auth.user.id, archiveOperationId, jobId, batch)
+        : await this.archiveOperations.publish(auth.user.id, archiveOperationId, jobId, batch);
+    const changed = batch.filter((id) => {
+      const answer = answers.get(id);
+      return answer === 'archived' || answer === 'undone';
+    });
+    if (changed.length > 0) {
+      await this.assets.notifyVisibilityChanged(changed, auth.user.id);
+    }
+    return batch.map((id) => {
+      const { status, reasonKey } = archiveAnswerOutcome(answers.get(id) ?? 'missing');
+      return status === 'ok'
+        ? ok(id)
+        : { id, status: MediaOperationItemStatus.Skipped, ...(reasonKey && { reasonKey }) };
+    });
+  }
+
   private async applyDuplicateBatch(
     auth: AuthDto,
     snapshot: BulkOperationSnapshot,

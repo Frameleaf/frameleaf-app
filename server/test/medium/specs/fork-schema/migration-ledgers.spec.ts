@@ -69,6 +69,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000090-ICloudSync' },
       { name: '0000000000100-AlbumKind' },
       { name: '0000000000110-AssetDevelopRevision' },
+      { name: '0000000000130-ArchiveOperations' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',
