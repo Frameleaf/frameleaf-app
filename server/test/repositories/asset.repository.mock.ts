@@ -43,6 +43,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     lock: vitest.fn().mockResolvedValue([]),
     lockGroupRows: vitest.fn().mockResolvedValue(undefined),
     lockGroupMembers: vitest.fn().mockResolvedValue([]),
+    findLockGroupIds: vitest.fn().mockResolvedValue([]),
     unlock: vitest.fn().mockResolvedValue([]),
     upsertFile: vitest.fn(),
     upsertFiles: vitest.fn(),

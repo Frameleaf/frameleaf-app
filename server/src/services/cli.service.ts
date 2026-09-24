@@ -72,10 +72,9 @@ export class CliService extends BaseService {
     await this.userRepository.update(admin.id, { password: hashedPassword });
 
     if (invalidateSessions) {
-      const deletedIds = await this.sessionRepository.invalidateAll({ userId: admin.id });
-      for (const sessionId of deletedIds) {
-        await this.eventRepository.emit('SessionDelete', { sessionId });
-      }
+      // immich-admin has no event handlers or socket server to tell open tabs: they sign out on their
+      // next request, which the deleted session fails with 401
+      await this.sessionRepository.invalidateAll({ userId: admin.id });
     }
 
     return { admin, password, provided: !!providedPassword };
