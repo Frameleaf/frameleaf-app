@@ -101,6 +101,88 @@ describe(TagService.name, () => {
       );
       await expect(ctx.get(TagRepository).get(tag.id)).resolves.toEqual(expect.objectContaining({ color: null }));
     });
+
+    describe('moving a tag (FL-46)', () => {
+      const closureOf = (ctx: ReturnType<typeof setup>['ctx'], ids: string[]) =>
+        ctx.database
+          .selectFrom('tag_closure')
+          .select(['id_ancestor', 'id_descendant'])
+          .where('id_descendant', 'in', ids)
+          .execute()
+          .then((rows) => rows.map((row) => `${row.id_ancestor}>${row.id_descendant}`).toSorted());
+
+      const nestedTags = async (ctx: ReturnType<typeof setup>['ctx']) => {
+        const { user } = await ctx.newUser();
+        const [a, b, c, d] = await upsertTags(ctx.get(TagRepository), {
+          userId: user.id,
+          tags: ['A', 'A/B', 'A/B/C', 'A/B/C/D'],
+        });
+        const [x] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['X'] });
+        return { auth: factory.auth({ user }), a, b, c, d, x };
+      };
+
+      it('moves a tag and its descendants to the top level', async () => {
+        const { sut, ctx } = setup();
+        const { auth, a, b, c, d } = await nestedTags(ctx);
+
+        const moved = await sut.update(auth, c.id, { parentId: null });
+        expect(moved).toEqual(expect.objectContaining({ id: c.id, value: 'C', name: 'C', parentId: undefined }));
+
+        const tagRepository = ctx.get(TagRepository);
+        await expect(tagRepository.get(d.id)).resolves.toEqual(
+          expect.objectContaining({ value: 'C/D', parentId: c.id }),
+        );
+        await expect(tagRepository.get(b.id)).resolves.toEqual(expect.objectContaining({ value: 'A/B' }));
+        await expect(closureOf(ctx, [c.id, d.id])).resolves.toEqual(
+          [`${c.id}>${c.id}`, `${c.id}>${d.id}`, `${d.id}>${d.id}`].toSorted(),
+        );
+        await expect(closureOf(ctx, [a.id, b.id])).resolves.toEqual(
+          [`${a.id}>${a.id}`, `${a.id}>${b.id}`, `${b.id}>${b.id}`].toSorted(),
+        );
+      });
+
+      it('moves and renames a tag under another parent', async () => {
+        const { sut, ctx } = setup();
+        const { auth, b, c, d, x } = await nestedTags(ctx);
+
+        await expect(sut.update(auth, b.id, { parentId: x.id, name: 'Bee' })).resolves.toEqual(
+          expect.objectContaining({ value: 'X/Bee', parentId: x.id }),
+        );
+        await expect(ctx.get(TagRepository).get(d.id)).resolves.toEqual(
+          expect.objectContaining({ value: 'X/Bee/C/D' }),
+        );
+        await expect(closureOf(ctx, [d.id])).resolves.toEqual(
+          [`${x.id}>${d.id}`, `${b.id}>${d.id}`, `${c.id}>${d.id}`, `${d.id}>${d.id}`].toSorted(),
+        );
+      });
+
+      it('rejects moving a tag under itself or its descendant', async () => {
+        const { sut, ctx } = setup();
+        const { auth, b, d } = await nestedTags(ctx);
+
+        await expect(sut.update(auth, b.id, { parentId: b.id })).rejects.toThrow('cannot be moved under itself');
+        await expect(sut.update(auth, b.id, { parentId: d.id })).rejects.toThrow('cannot be moved under itself');
+        await expect(ctx.get(TagRepository).get(b.id)).resolves.toEqual(expect.objectContaining({ value: 'A/B' }));
+      });
+
+      it('rejects a move onto an existing tag path', async () => {
+        const { sut, ctx } = setup();
+        const { auth, d, x } = await nestedTags(ctx);
+        await upsertTags(ctx.get(TagRepository), { userId: auth.user.id, tags: ['D'] });
+
+        await expect(sut.update(auth, d.id, { parentId: null })).rejects.toThrow('already exists');
+        await expect(sut.update(auth, x.id, { name: 'D' })).rejects.toThrow('already exists');
+      });
+
+      it("rejects another user's tag as the new parent", async () => {
+        const { sut, ctx } = setup();
+        const { auth, c } = await nestedTags(ctx);
+        const { tag: foreign } = await newTagOfAnotherUser(ctx);
+
+        await expect(sut.update(auth, c.id, { parentId: foreign.id })).rejects.toThrow('Tag not found');
+        await expect(ctx.get(TagRepository).get(c.id)).resolves.toEqual(expect.objectContaining({ value: 'A/B/C' }));
+      });
+    });
   });
 
   describe('remove', () => {

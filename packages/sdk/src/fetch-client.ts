@@ -7688,6 +7688,8 @@ export type TagUpdateDto = {
     color?: string | null;
     /** Tag name */
     name?: string;
+    /** Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path */
+    parentId?: string | null;
 };
 export type TakeoutAlbumDto = {
     /** Items in the folder */
