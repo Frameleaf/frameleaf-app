@@ -8,11 +8,16 @@ import {
   readMemoryOverrides,
   writeMemoryOverrides,
 } from "./discovery-data.mjs";
+import {
+  memoryCountLabel as countLabel,
+  memoryOverline,
+  memoryPreviewMotion,
+} from "./memory-engine.mjs";
+import { prefersReducedMotion } from "./interactions.js";
 import "./discovery.css";
+import "./memories.css";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
-const countLabel = (count, word = "item") =>
-  `${count} ${count === 1 ? word : `${word}s`}`;
 const kindIcon = {
   "on-this-day": "mdiCalendarTodayOutline",
   "years-ago": "mdiHistory",
@@ -24,17 +29,29 @@ const kindIcon = {
  * Accessible dropdown menu: trigger + role="menu" with arrow-key movement,
  * Escape and outside clicks close it and focus returns to the trigger.
  */
-export function Menu({ label, icon = "mdiDotsVertical", items = [], className = "", align = "end", children }) {
+export function Menu({
+  label,
+  icon = "mdiDotsVertical",
+  items = [],
+  className = "",
+  align = "end",
+  children,
+}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef(null);
   const menu = useRef(null);
   const id = useId();
   useEffect(() => {
     if (!open) return undefined;
-    const first = menu.current?.querySelector("[role=menuitem]:not([disabled])");
+    const first = menu.current?.querySelector(
+      "[role=menuitem]:not([disabled])",
+    );
     first?.focus();
     const onPointer = (event) => {
-      if (!menu.current?.contains(event.target) && !trigger.current?.contains(event.target))
+      if (
+        !menu.current?.contains(event.target) &&
+        !trigger.current?.contains(event.target)
+      )
         setOpen(false);
     };
     document.addEventListener("pointerdown", onPointer);
@@ -45,7 +62,10 @@ export function Menu({ label, icon = "mdiDotsVertical", items = [], className = 
     if (refocus) trigger.current?.focus();
   };
   const keyboard = (event) => {
-    const options = [...(menu.current?.querySelectorAll("[role=menuitem]:not([disabled])") || [])];
+    const options = [
+      ...(menu.current?.querySelectorAll("[role=menuitem]:not([disabled])") ||
+        []),
+    ];
     const index = options.indexOf(document.activeElement);
     const go = (next) => {
       event.preventDefault();
@@ -79,7 +99,14 @@ export function Menu({ label, icon = "mdiDotsVertical", items = [], className = 
         {children || <Icon name={icon} size={18} />}
       </button>
       {open && (
-        <div id={id} ref={menu} role="menu" aria-label={label} className={`dv-menu align-${align}`} onKeyDown={keyboard}>
+        <div
+          id={id}
+          ref={menu}
+          role="menu"
+          aria-label={label}
+          className={`dv-menu align-${align}`}
+          onKeyDown={keyboard}
+        >
           {items.map((item) =>
             item.separator ? (
               <hr key={item.id} />
@@ -108,9 +135,15 @@ export function Menu({ label, icon = "mdiDotsVertical", items = [], className = 
   );
 }
 
-function Cover({ asset, className = "" }) {
+function Cover({ asset, className = "", style }) {
   return asset?.image ? (
-    <img className={className} src={asset.image} alt="" loading="lazy" />
+    <img
+      className={className}
+      style={style}
+      src={asset.image}
+      alt=""
+      loading="lazy"
+    />
   ) : (
     <div className={`dv-cover-empty ${className}`}>
       <Icon name="mdiImageMultipleOutline" size={28} />
@@ -118,26 +151,48 @@ function Cover({ asset, className = "" }) {
   );
 }
 
-function MemoryCard({ memory, size = "regular", onPlay, onToggleFavorite, onHide, today }) {
-  const badge =
-    memory.upcomingOn
-      ? memory.inDays === 1
-        ? "Tomorrow"
-        : `In ${memory.inDays} days`
-      : memory.passedDays
-        ? memory.passedDays === 1
-          ? "Yesterday"
-          : `${memory.passedDays} days ago`
-        : null;
+function MemoryCard({
+  memory,
+  size = "regular",
+  onPlay,
+  onToggleFavorite,
+  onHide,
+  today,
+}) {
+  const badge = memory.upcomingOn
+    ? memory.inDays === 1
+      ? "Tomorrow"
+      : `In ${memory.inDays} days`
+    : memory.passedDays
+      ? memory.passedDays === 1
+        ? "Yesterday"
+        : `${memory.passedDays} days ago`
+      : null;
   return (
-    <article className={`dv-memory ${size}${memory.favorite ? " favorite" : ""}`}>
-      <button type="button" className="dv-memory-main" onClick={() => onPlay(memory)} aria-label={`Play ${memory.title}, ${memory.subtitle}, ${countLabel(memory.count)}`}>
-        <Cover asset={memory.cover} />
+    <article
+      className={`dv-memory ${size}${memory.favorite ? " favorite" : ""}`}
+    >
+      <button
+        type="button"
+        className="dv-memory-main"
+        onClick={() => onPlay(memory)}
+        aria-label={`Play ${memory.title}, ${memory.subtitle}, ${countLabel(memory.count)}`}
+      >
+        <Cover
+          asset={memory.cover}
+          style={memoryPreviewMotion(
+            memory.cover?.id ?? memory.id,
+            prefersReducedMotion(),
+          )}
+        />
         <span className="dv-shade" aria-hidden="true" />
         <span className="dv-memory-copy">
           <span className="dv-overline">
-            <Icon name={kindIcon[memory.kind] || "mdiImageMultipleOutline"} size={14} />
-            {badge || (memory.kind === "event" ? "Trip" : memory.kind === "best-of" ? "Highlights" : "Memory")}
+            <Icon
+              name={kindIcon[memory.kind] || "mdiImageMultipleOutline"}
+              size={14}
+            />
+            {badge || memoryOverline(memory)}
           </span>
           <strong>{memory.title}</strong>
           <small>{memory.subtitle}</small>
@@ -159,7 +214,12 @@ function MemoryCard({ memory, size = "regular", onPlay, onToggleFavorite, onHide
         label={`More actions for ${memory.title}`}
         className="dv-memory-menu"
         items={[
-          { id: "play", label: "Play", icon: "mdiPlay", onSelect: () => onPlay(memory) },
+          {
+            id: "play",
+            label: "Play",
+            icon: "mdiPlay",
+            onSelect: () => onPlay(memory),
+          },
           {
             id: "favorite",
             label: memory.favorite ? "Remove from favorites" : "Favorite",
@@ -167,14 +227,25 @@ function MemoryCard({ memory, size = "regular", onPlay, onToggleFavorite, onHide
             onSelect: () => onToggleFavorite(memory),
           },
           { id: "sep", separator: true },
-          { id: "hide", label: "Hide memory", icon: "mdiEyeOffOutline", onSelect: () => onHide(memory) },
+          {
+            id: "hide",
+            label: "Hide memory",
+            icon: "mdiEyeOffOutline",
+            onSelect: () => onHide(memory),
+          },
         ]}
       />
     </article>
   );
 }
 
-export function Memories({ assets = [], overrides, onChange, onPlay, today = isoToday() }) {
+export function Memories({
+  assets = [],
+  overrides,
+  onChange,
+  onPlay,
+  today = isoToday(),
+}) {
   const [local, setLocal] = useState(() => overrides || readMemoryOverrides());
   const current = overrides ?? local;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -203,14 +274,27 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
     commit(
       memoryOverrides.toggleFavorite(current, memory.id),
       { type: "favorite", memoryId: memory.id },
-      memory.favorite ? `${memory.title} removed from favorites.` : `${memory.title} added to favorites.`,
+      memory.favorite
+        ? `${memory.title} removed from favorites.`
+        : `${memory.title} added to favorites.`,
     );
   const hide = (memory) =>
-    commit(memoryOverrides.hide(current, memory.id), { type: "hide", memoryId: memory.id }, `${memory.title} hidden. Restore it from Hidden memories below.`);
+    commit(
+      memoryOverrides.hide(current, memory.id),
+      { type: "hide", memoryId: memory.id },
+      `${memory.title} hidden. Restore it from Hidden memories below.`,
+    );
   const unhide = (memory) =>
-    commit(memoryOverrides.unhide(current, memory.id), { type: "unhide", memoryId: memory.id }, `${memory.title} restored.`);
+    commit(
+      memoryOverrides.unhide(current, memory.id),
+      { type: "unhide", memoryId: memory.id },
+      `${memory.title} restored.`,
+    );
   const patchSettings = (patch) =>
-    commit(memoryOverrides.settings(current, patch), { type: "settings", ...patch });
+    commit(memoryOverrides.settings(current, patch), {
+      type: "settings",
+      ...patch,
+    });
   useEffect(() => {
     if (!settingsOpen) return undefined;
     const onKey = (event) => {
@@ -220,7 +304,10 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
       }
     };
     const onPointer = (event) => {
-      if (!document.getElementById(settingsId)?.contains(event.target) && !gear.current?.contains(event.target))
+      if (
+        !document.getElementById(settingsId)?.contains(event.target) &&
+        !gear.current?.contains(event.target)
+      )
         setSettingsOpen(false);
     };
     document.addEventListener("keydown", onKey);
@@ -231,17 +318,21 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
     };
   }, [settingsOpen, settingsId]);
 
-  const nothing = !index.today.length && !index.upcoming.length && !index.earlier.length;
+  const nothing =
+    !index.today.length && !index.upcoming.length && !index.earlier.length;
   const nextUp = index.upcoming[0];
-  const cardProps = { onPlay: play, onToggleFavorite: toggleFavorite, onHide: hide, today };
+  const cardProps = {
+    onPlay: play,
+    onToggleFavorite: toggleFavorite,
+    onHide: hide,
+    today,
+  };
   return (
     <main className="discovery dv-memories" aria-label="Memories">
       <header className="dv-header">
         <div>
           <h1>Memories</h1>
-          <p>
-            {longDay(today)} · days worth revisiting from your library
-          </p>
+          <p>{longDay(today)} · days worth revisiting from your library</p>
         </div>
         <div className="dv-header-actions">
           <div className="dv-popover-wrap">
@@ -257,14 +348,23 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
               onClick={() => setSettingsOpen((value) => !value)}
             />
             {settingsOpen && (
-              <div id={settingsId} className="dv-popover" role="dialog" aria-label="Memory settings">
+              <div
+                id={settingsId}
+                className="dv-popover"
+                role="dialog"
+                aria-label="Memory settings"
+              >
                 <strong>Memory settings</strong>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={current.settings.showUpcoming}
                   className={`dv-switch${current.settings.showUpcoming ? " on" : ""}`}
-                  onClick={() => patchSettings({ showUpcoming: !current.settings.showUpcoming })}
+                  onClick={() =>
+                    patchSettings({
+                      showUpcoming: !current.settings.showUpcoming,
+                    })
+                  }
                   autoFocus
                 >
                   <span className="dv-switch-track" aria-hidden="true" />
@@ -278,7 +378,11 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
                   role="switch"
                   aria-checked={current.settings.onlyFavorites}
                   className={`dv-switch${current.settings.onlyFavorites ? " on" : ""}`}
-                  onClick={() => patchSettings({ onlyFavorites: !current.settings.onlyFavorites })}
+                  onClick={() =>
+                    patchSettings({
+                      onlyFavorites: !current.settings.onlyFavorites,
+                    })
+                  }
                 >
                   <span className="dv-switch-track" aria-hidden="true" />
                   <span>
@@ -298,17 +402,31 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
       <section className="dv-section" aria-label="Today">
         <div className="dv-section-heading">
           <h2>Today</h2>
-          {index.today.length > 0 && <small>{countLabel(index.today.length, "memory").replace("memorys", "memories")}</small>}
+          {index.today.length > 0 && (
+            <small>
+              {countLabel(index.today.length, "memory").replace(
+                "memorys",
+                "memories",
+              )}
+            </small>
+          )}
         </div>
         {index.today.length ? (
           <div className="dv-memory-hero">
             {index.today.map((memory, position) => (
-              <MemoryCard key={memory.id} memory={memory} size={position === 0 ? "hero" : "regular"} {...cardProps} />
+              <MemoryCard
+                key={memory.id}
+                memory={memory}
+                size={position === 0 ? "hero" : "regular"}
+                {...cardProps}
+              />
             ))}
           </div>
         ) : (
           <div className="dv-memory-quiet">
-            <Cover asset={index.earlier[0]?.cover || index.upcoming[0]?.cover} />
+            <Cover
+              asset={index.earlier[0]?.cover || index.upcoming[0]?.cover}
+            />
             <span className="dv-shade" aria-hidden="true" />
             <span className="dv-memory-copy">
               <span className="dv-overline">
@@ -370,9 +488,17 @@ export function Memories({ assets = [], overrides, onChange, onPlay, today = iso
         <section className="dv-section dv-hidden" aria-label="Hidden memories">
           <div className="dv-section-heading">
             <h2>Hidden memories</h2>
-            <button type="button" className="dv-link" aria-expanded={showHidden} onClick={() => setShowHidden((value) => !value)}>
+            <button
+              type="button"
+              className="dv-link"
+              aria-expanded={showHidden}
+              onClick={() => setShowHidden((value) => !value)}
+            >
               {showHidden ? "Hide" : `Show ${index.hidden.length}`}
-              <Icon name={showHidden ? "mdiChevronUp" : "mdiChevronDown"} size={16} />
+              <Icon
+                name={showHidden ? "mdiChevronUp" : "mdiChevronDown"}
+                size={16}
+              />
             </button>
           </div>
           {showHidden && (

@@ -82,10 +82,10 @@
   color-scheme: light;
 }
 .frameleaf {
-  --fl-radius: 4px;
-  --fl-radius-control: 6px;
-  --fl-radius-card: 10px;
-  --fl-radius-dialog: 14px;
+  --fl-radius: 9px;
+  --fl-radius-control: 9px;
+  --fl-radius-card: 12px;
+  --fl-radius-dialog: 22px;
   --fl-radius-pill: 999px;
   /*
    * Retained as an alias so components written against the first token pass, including
@@ -106,9 +106,10 @@
   font-size: var(--fl-font-size);
   line-height: 1.45;
   font-family:
-    Inter,
     -apple-system,
     BlinkMacSystemFont,
+    system-ui,
+    Inter,
     'Segoe UI',
     sans-serif;
 }

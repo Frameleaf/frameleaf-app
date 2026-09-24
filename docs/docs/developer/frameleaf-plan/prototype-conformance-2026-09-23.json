@@ -842,7 +842,8 @@
       "requirementId": "action:search-discovery:camera-make-model-lens",
       "title": "Camera make/model/lens",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -858,7 +859,8 @@
       "requirementId": "action:search-discovery:cancel-stale-requests-and-restore-url-query-navigation-position",
       "title": "Cancel stale requests and restore URL/query/navigation position",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -871,7 +873,8 @@
       "requirementId": "action:search-discovery:clear-all-removable-chips-filter-presets",
       "title": "Clear all, removable chips, filter presets",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -899,7 +902,8 @@
       "requirementId": "action:search-discovery:context-smart-versus-filename-text-description-ocr-path-search",
       "title": "Context/smart versus filename/text/description/OCR/path search",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -915,7 +919,8 @@
       "requirementId": "action:search-discovery:country-state-city-facets",
       "title": "Country/state/city facets",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -931,7 +936,8 @@
       "requirementId": "action:search-discovery:dates-presets-custom-range",
       "title": "Dates/presets/custom range",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -947,7 +953,8 @@
       "requirementId": "action:search-discovery:dynamic-counts-facets-that-respect-access-privacy",
       "title": "Dynamic counts/facets that respect access/privacy",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -963,7 +970,8 @@
       "requirementId": "action:search-discovery:enrichment-review-override-failure-missing-description-missing-detection-filters",
       "title": "Enrichment review/override/failure/missing-description/missing-detection filters",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1033,7 +1041,8 @@
       "requirementId": "action:search-discovery:image-video-type",
       "title": "Image/video type",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1049,7 +1058,8 @@
       "requirementId": "action:search-discovery:interpret-natural-language-into-editable-constraints",
       "title": "Interpret natural language into editable constraints",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1074,7 +1084,8 @@
       "requirementId": "action:search-discovery:moment-search-frame-caption-transcript-timestamp-matches-and-jump-playback",
       "title": "Moment search: frame/caption/transcript timestamp matches and jump playback",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1087,7 +1098,8 @@
       "requirementId": "action:search-discovery:people-filter-with-face-avatars-and-matching-choices",
       "title": "People filter with face avatars and matching choices",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1100,7 +1112,8 @@
       "requirementId": "action:search-discovery:people-tag-any-all-exclude-groups-and-retained-chips",
       "title": "People/tag any/all/exclude groups and retained chips",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1113,7 +1126,8 @@
       "requirementId": "action:search-discovery:play-annotate-a-discovered-video-moment",
       "title": "Play/annotate a discovered video moment",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1126,7 +1140,8 @@
       "requirementId": "action:search-discovery:rating-favorites-archive-not-in-album-untagged",
       "title": "Rating/favorites/archive/not-in-album/untagged",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1154,7 +1169,8 @@
       "requirementId": "action:search-discovery:search-assets-inside-shared-spaces-or-named-pets",
       "title": "Search assets inside Shared Spaces or named pets",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1170,7 +1186,8 @@
       "requirementId": "action:search-discovery:search-input-recent-searches-clear-history-individual-term",
       "title": "Search input, recent searches, clear history/individual term",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -1186,7 +1203,8 @@
       "requirementId": "action:search-discovery:server-paging-load-more-and-large-result-sets",
       "title": "Server paging/load more and large result sets",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],
@@ -2391,7 +2409,8 @@
     {
       "route": "/search/[[photos=photos]]/[[assetId=id]]",
       "prototype": [
-        "design/frameleaf/template/src/SearchDialog.jsx",
+        "design/frameleaf/template/src/SearchPalette.jsx",
+        "design/frameleaf/template/src/search-palette.mjs",
         "design/frameleaf/template/src/FilterPanel.jsx",
         "design/frameleaf/template/src/search.mjs"
       ],

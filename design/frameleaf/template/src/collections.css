@@ -1328,6 +1328,14 @@
   line-height: 1.25;
   min-width: 0;
 }
+/* The flex row sizes the title without its child's negative margin, so the
+   hanging indent lives on the flex item instead or the title wraps early. */
+.ch-title:has(> .ch-edit-trigger) {
+  margin-left: -6px;
+}
+.ch-title > .ch-edit-trigger {
+  margin-left: 0;
+}
 .ch-title.editing,
 .ch-desc.editing {
   font: inherit;

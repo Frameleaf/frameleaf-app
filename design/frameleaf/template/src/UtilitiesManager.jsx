@@ -657,9 +657,11 @@ export function UtilitiesManager({
             >
               Create workflow
             </Button>
-            <label className="um-file-import">
+            <label className="button um-file-import">
+              <Icon name="mdiFileImportOutline" size={16} />
               Import workflow
               <input
+                className="fl-sr-only"
                 type="file"
                 accept="application/json,.json"
                 onChange={async (e) => {

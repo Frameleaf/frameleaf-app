@@ -2853,7 +2853,7 @@ export function Studio({
                 extra={
                   track.kind === "music" ? (
                     <button type="button" className="fls-mini fls-mini--wide" aria-label="Add music" onClick={() => setDialog("music")}>
-                      <Icon name="mdiPlus" size={12} /> Music
+                      <Icon name="mdiPlus" size={12} /> <span>Music</span>
                     </button>
                   ) : track.kind === "voice" ? (
                     recording ? (
@@ -2865,12 +2865,12 @@ export function Studio({
                       </button>
                     ) : (
                       <button type="button" className="fls-mini fls-mini--wide" aria-label="Record voiceover" disabled={track.locked} onClick={startRecording}>
-                        <Icon name="mdiRecord" size={12} /> Record
+                        <Icon name="mdiRecord" size={12} /> <span>Record</span>
                       </button>
                     )
                   ) : track.kind === "title" ? (
                     <button type="button" className="fls-mini fls-mini--wide" aria-label="Add title at playhead" onClick={addTitleAtPlayhead}>
-                      <Icon name="mdiPlus" size={12} /> Title
+                      <Icon name="mdiPlus" size={12} /> <span>Title</span>
                     </button>
                   ) : null
                 }

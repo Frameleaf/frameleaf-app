@@ -663,17 +663,17 @@
       "version": 7
     },
     {
-      "bytes": 34396,
+      "bytes": 51900,
       "category": "plan",
       "id": "62717954",
       "source": "docs/docs/developer/frameleaf-plan/09-prototype-to-production.md",
-      "sourceSha256": "fabf185047bc6a866a64f5fdce7883c9c2461e08a6e6de780467bcba24d7c4cd",
+      "sourceSha256": "3c6da602d6de3ed2283e6ae9751d49e03a1364c2c144d9edd45d92d9110ff68a",
       "title": "Prototype to production: implementing the September 22 design revision",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62717954/Prototype+to+production+implementing+the+September+22+design+revision",
-      "verification": "Confluence page read back at version 4 with the exact source hash and all seven workstreams from PR #135.",
+      "verification": "Confluence page version 6 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged); read back with the exact source hash and the polish-pass owner rows.",
       "verified": true,
-      "verifiedAt": "2026-09-23T12:16:32Z",
-      "version": 4
+      "verifiedAt": "2026-09-24T16:41:17.217Z",
+      "version": 6
     },
     {
       "bytes": 15705,
@@ -689,17 +689,17 @@
       "version": 2
     },
     {
-      "bytes": 19234,
+      "bytes": 19860,
       "category": "plan",
       "id": "61538319",
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
-      "sourceSha256": "aca9a06d6a190fd5ae949fca37ed191d7432d16f167c571476886738711cfaae",
+      "sourceSha256": "d9ee05d8d24c7b47600cdedf11650ad555a274c284f4fc93cc1fdd2d692a1a48",
       "title": "Frameleaf Implementation Plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, reproducibility-contract link and terminal content read back after update; no independent additions were present in the prior source-owned mirror.",
+      "verification": "Confluence page version 11 published as HTML from local branch aj/apple-style-integration (uncommitted, based on claude/frameleaf-implementation e2cca307f4): the prior mirror matched the committed source aca9a06d, so only the header and the Apple-style design paragraph changed. The header hash and new paragraph were read back through CQL.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:01:39.362Z",
-      "version": 10
+      "verifiedAt": "2026-09-24T15:14:15.463Z",
+      "version": 11
     },
     {
       "bytes": 11216,
@@ -787,75 +787,75 @@
       "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
-      "bytes": 1449,
+      "bytes": 2032,
       "category": "design-template",
       "id": "61539021",
       "source": "design/AGENTS.md",
-      "sourceSha256": "1aee3224386aed5ce97f80493d41d6fb6492c792e7d49ca54e08a35674051ecb",
+      "sourceSha256": "649f704713477e12313af810fa9fc7b90268117c3495c9bc5446baf08e1d86ef",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
-      "bytes": 5242,
+      "bytes": 6159,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/README.md",
-      "sourceSha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
+      "sourceSha256": "a315630a75974a8e28e7c401482f73b1bbef46accbb42457030020d1c2024a49",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
-      "bytes": 13640,
+      "bytes": 22692,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
-      "sourceSha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
+      "sourceSha256": "19bcad4422b087fcd6a227853e85a58821078f8d8103cd87adc6cce8882b97a5",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
-      "bytes": 5051,
+      "bytes": 6705,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/template/README.md",
-      "sourceSha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
+      "sourceSha256": "058d2576387c41855fe43b41a7944d319d9ae2b6395a40360a05a4e86353d05c",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
-      "bytes": 1547,
+      "bytes": 1805,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/references/README.md",
-      "sourceSha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
+      "sourceSha256": "423eb8fe70df78929c926fb83011a3a55c00f760b8807ed951f3c8f776882488",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 10 published as HTML from aj/apple-style-integration @ c04d2a56d2 (commit e53164fb04, PR #139 against claude/frameleaf-implementation, FL-147; not merged): the polish pass and analytics dashboard added to design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md. Read back in full; every section hash marker matches its source.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:35:01.000Z",
-      "version": 8
+      "verifiedAt": "2026-09-24T16:39:35.650Z",
+      "version": 10
     },
     {
       "bytes": 9820,

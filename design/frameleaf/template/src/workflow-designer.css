@@ -183,3 +183,14 @@
     min-height: 36px;
   }
 }
+.wd-preview {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding-left: 22px;
+}
+.wd-preview li span {
+  display: block;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
