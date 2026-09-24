@@ -56,6 +56,38 @@ it.each([false, true])('restores its invoker even when opening does not focus it
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
+it('draws the prototype title bar and pins an actions footer outside the scrolling body', async () => {
+  const { default: DialogHarness } = await import('$lib/../test-data/frameleaf/DialogHarness.svelte');
+  render(DialogHarness, { withActions: true, wide: true });
+  await fireEvent.click(screen.getByRole('button', { name: 'Open details' }));
+  const dialog = screen.getByRole('dialog', { name: 'Details' });
+  expect(dialog.classList).toContain('dialog');
+  expect(dialog.classList).toContain('wide');
+  expect(dialog.classList).toContain('with-actions');
+  const close = screen.getByRole('button', { name: 'Close details' });
+  // An icon close button: the label is the accessible name, the glyph is hidden.
+  expect(close.closest('.dialog-title')).not.toBeNull();
+  expect(close.textContent?.trim()).toBe('');
+  expect(close.querySelector(':scope [aria-hidden="true"] svg')).not.toBeNull();
+  const save = screen.getByRole('button', { name: 'Save' });
+  expect(save.closest('.dialog-actions')).not.toBeNull();
+  expect(screen.getByRole('textbox', { name: 'Name' }).closest('.dialog-body')).not.toBeNull();
+  // The prototype's initial-focus contract.
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Place' }));
+  await fireEvent.click(save);
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('keeps the plain body layout when a caller passes no actions', async () => {
+  const { default: DialogHarness } = await import('$lib/../test-data/frameleaf/DialogHarness.svelte');
+  render(DialogHarness);
+  await fireEvent.click(screen.getByRole('button', { name: 'Open details' }));
+  const dialog = screen.getByRole('dialog', { name: 'Details' });
+  expect(dialog.classList).not.toContain('with-actions');
+  expect(dialog.classList).not.toContain('wide');
+  expect(dialog.querySelector('.dialog-body, .dialog-actions')).toBeNull();
+});
+
 it('keeps nested picker themes independent and disables all picker controls', async () => {
   vi.stubGlobal('visualViewport', null);
   const { rerender } = render(PickerHarness, { theme: 'dark' });

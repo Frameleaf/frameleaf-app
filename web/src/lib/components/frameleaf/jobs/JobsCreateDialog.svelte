@@ -95,7 +95,7 @@
   .jm-manual {
     font-size: 13px;
     line-height: 1.6;
-    min-width: min(36rem, 80vw);
+    min-width: min(36rem, 100%);
   }
   .jm-manual > p {
     margin: 0 0 12px;

@@ -86,7 +86,7 @@
     flex-direction: column;
     gap: 1rem;
     margin-block-start: 1rem;
-    width: min(28rem, calc(100vw - 4rem));
+    width: min(28rem, 100%);
   }
   fieldset {
     display: flex;

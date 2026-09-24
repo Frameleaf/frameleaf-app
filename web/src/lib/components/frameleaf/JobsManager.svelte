@@ -1604,7 +1604,7 @@
   .jm-job-detail {
     font-size: 13px;
     line-height: 1.6;
-    min-width: min(28rem, 80vw);
+    min-width: min(28rem, 100%);
   }
   .jm-review dl,
   .jm-job-detail dl {

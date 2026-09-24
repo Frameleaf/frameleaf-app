@@ -149,6 +149,19 @@ describe('manifest', () => {
       ).success,
     ).toBe(false);
     expect(PreservationManifestSchema.safeParse(manifestOf({ complete: true })).success).toBe(false);
+    expect(
+      PreservationManifestSchema.safeParse(
+        manifestOf({ counts: { selected: 2, exported: 2, failed: 0, skipped: 0, locked: 0, bytes: 10 } }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('accepts an incomplete package with no failed copy when an original was skipped (FL-74)', () => {
+    expect(
+      PreservationManifestSchema.safeParse(
+        manifestOf({ counts: { selected: 3, exported: 2, failed: 0, skipped: 1, locked: 0, bytes: 10 } }),
+      ).success,
+    ).toBe(true);
   });
 
   it('refuses a manifest that does not digest its index', () => {

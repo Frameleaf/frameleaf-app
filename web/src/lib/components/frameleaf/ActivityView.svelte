@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
-  import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
     activityCounts,
@@ -18,14 +18,35 @@
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
   import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
-  import { downloadUrl } from '$lib/utils';
+  import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getBaseUrl, getStudioBundleOperation } from '@immich/sdk';
+  import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@immich/sdk';
+  import { Icon, Theme, themeManager } from '@immich/ui';
+  import {
+    mdiAutoFix,
+    mdiCancel,
+    mdiCheckAll,
+    mdiCheckCircleOutline,
+    mdiClose,
+    mdiDownloadOutline,
+    mdiExportVariant,
+    mdiImageMultipleOutline,
+    mdiMovieEditOutline,
+    mdiOpenInApp,
+    mdiPause,
+    mdiPlay,
+    mdiProgressClock,
+    mdiRefresh,
+    mdiUploadOutline,
+    mdiWifi,
+    mdiWifiOff,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
-   * The Activity page (FL-104), ported from the prototype's `Processing` screen.
+   * The Activity page (FL-104), ported from the prototype's `Processing` screen
+   * (template/src/Activity.jsx and activity.css, FL-43).
    *
    * Everything the prototype simulated with a timer is real here. A render's progress, its
    * destination, its failure and its cancellation all come from the durable job row; Cancel and
@@ -40,6 +61,10 @@
 
   let filter = $state<ActivityFilter>(initialFilter);
   let busyId = $state<string | null>(null);
+  /** Row heading ids come from the list position: an item id can hold spaces (a download key). */
+  const rowIdPrefix = $props.id();
+  /** No ancestor sets the token scope for this page, so it declares its own, as AuthShell does. */
+  const theme = $derived(themeManager.value === Theme.Dark ? 'dark' : 'light');
   let announcement = $state('');
 
   const items = $derived(
@@ -53,11 +78,51 @@
   const counts = $derived(activityCounts(items));
   const visible = $derived(items.filter((item) => matchesActivityFilter(item, filter)));
   const hasFinished = $derived(items.some((item) => item.source === 'job' && item.finished));
+  /** The prototype's summary: only the counts that are not zero, or "nothing" when idle. */
+  const summary = $derived(
+    [
+      counts.running ? $t('frameleaf_activity_summary_running', { values: { count: counts.running } }) : null,
+      counts.done ? $t('frameleaf_activity_summary_done', { values: { count: counts.done } }) : null,
+      counts.failed ? $t('frameleaf_activity_summary_failed', { values: { count: counts.failed } }) : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || $t('frameleaf_activity_summary_idle'),
+  );
 
   onMount(() => activitySession.watch());
 
   /** The row's name: a translated one where the server withheld or never had the words (FL-43). */
   const nameOf = (item: ActivityItem) => (item.titleKey ? $t(item.titleKey) : item.title);
+
+  /**
+   * The row's picture. A server job about a photo shows it; a withheld Locked item, a bulk job,
+   * an upload and a download never do, so nothing private is drawn here (FL-43). An upload row
+   * carries no withheld flag, so a Locked upload would otherwise show its picture. Everything
+   * else gets the prototype's kind icon.
+   */
+  const thumbnailOf = (item: ActivityItem) =>
+    item.source === 'job' && item.assetId && !item.withheld && !item.bulk
+      ? getAssetMediaUrl({ id: item.assetId, size: AssetMediaSize.Thumbnail })
+      : null;
+
+  const kindIcon = (item: ActivityItem) => {
+    if (item.bulk) {
+      return mdiImageMultipleOutline;
+    }
+    if (item.source === 'upload') {
+      return mdiUploadOutline;
+    }
+    if (item.source === 'download') {
+      return mdiDownloadOutline;
+    }
+    return item.kindKey.includes('export') ? mdiExportVariant : mdiAutoFix;
+  };
+
+  /** The prototype's status line: the state, then how far along it is, when that is known. */
+  const statusLine = (item: ActivityItem) => {
+    const status = $t(item.statusKey);
+    return item.progress !== null && !item.finished ? `${status} · ${Math.round(item.progress)}%` : status;
+  };
 
   let retrying = $state(false);
   /** Ask the server again now, rather than waiting for the next poll (FL-43). */
@@ -188,83 +253,106 @@
   };
 </script>
 
-<main class="frameleaf fl-activity-page" aria-labelledby="fl-activity-title">
+<main class="frameleaf fla" data-theme={theme} aria-labelledby="fl-activity-title">
   <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-  <header class="head">
+  <header class="fla-head">
     <div>
       <p class="eyebrow">{$t('frameleaf_activity_eyebrow')}</p>
       <h1 id="fl-activity-title">{$t('frameleaf_activity_title')}</h1>
-      <p class="summary">
-        {#if counts.all === 0}
-          {$t('frameleaf_activity_summary_idle')}
-        {:else}
-          {$t('frameleaf_activity_summary', {
-            values: { running: counts.running, done: counts.done, failed: counts.failed },
-          })}
-        {/if}
-      </p>
+      <p class="fla-summary">{summary}</p>
     </div>
 
-    <div class="head-actions">
-      <div class="filters" role="group" aria-label={$t('frameleaf_activity_filter_group')}>
+    <div class="fla-head-actions">
+      <div class="fla-filters" role="group" aria-label={$t('frameleaf_activity_filter_group')}>
         {#each ACTIVITY_FILTERS as name (name)}
-          <Button variant="quiet" pressed={filter === name} onclick={() => setFilter(name)}>
+          <button
+            type="button"
+            class:is-on={filter === name}
+            aria-pressed={filter === name}
+            onclick={() => setFilter(name)}
+          >
             {$t(`frameleaf_activity_filter_${name}`)}
             {#if counts[name] > 0}
-              <Badge
-                value={counts[name]}
-                tone={name === 'failed' ? 'danger' : 'neutral'}
-                label={$t('frameleaf_activity_filter_count', { values: { count: counts[name] } })}
-              />
+              <b aria-hidden="true">{counts[name]}</b>
+              <span class="sr-only">{$t('frameleaf_activity_filter_count', { values: { count: counts[name] } })}</span>
             {/if}
-          </Button>
+          </button>
         {/each}
       </div>
 
       {#if hasFinished}
-        <Button onclick={() => void clearFinished()}>{$t('frameleaf_activity_clear_finished')}</Button>
+        <Button onclick={() => void clearFinished()}>
+          <Icon icon={mdiCheckAll} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_clear_finished')}
+        </Button>
       {/if}
     </div>
   </header>
 
   {#if activitySession.unreachable}
-    <div class="offline" role="status">
-      <p>{$t('frameleaf_activity_offline')}</p>
-      <Button disabled={retrying} onclick={() => void tryAgain()}>{$t('frameleaf_activity_reconnect')}</Button>
+    <div class="fla-offline" role="status">
+      <Icon icon={mdiWifiOff} size="1.125rem" aria-hidden={true} />
+      <span>{$t('frameleaf_activity_offline')}</span>
+      <span class="grow"></span>
+      <Button disabled={retrying} onclick={() => void tryAgain()}>
+        <Icon icon={mdiWifi} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_reconnect')}
+      </Button>
     </div>
   {/if}
 
   {#if activitySession.loading && items.length === 0}
-    <p class="empty-note" role="status" aria-busy="true">{$t('loading')}</p>
+    <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
   {:else if visible.length === 0}
-    <div class="empty">
+    <div class="fla-empty">
+      <Icon icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock} size="2.25rem" aria-hidden={true} />
       <h2>{$t(`frameleaf_activity_empty_${filter}`)}</h2>
       {#if filter === 'all' || filter === 'running'}
-        <p>{$t('frameleaf_activity_empty_help_running')}</p>
-        <Button onclick={() => void goto(Route.studioProjects())}>{$t('frameleaf_activity_open_studio')}</Button>
+        <p>{$t('frameleaf_activity_empty_help')}</p>
+        <Button onclick={() => void goto(Route.studioProjects())}>
+          <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_studio')}
+        </Button>
       {:else}
-        <p>{$t('frameleaf_activity_empty_help_done')}</p>
+        <p>{$t('frameleaf_activity_empty_help_finished')}</p>
       {/if}
     </div>
   {/if}
 
-  <ul class="list">
-    {#each visible as item (item.id)}
-      <li class="job">
-        <div class="body">
-          <div class="row">
-            <h3>{nameOf(item)}</h3>
+  <div class="fla-list">
+    {#each visible as item, index (item.id)}
+      {@const thumbnail = thumbnailOf(item)}
+      <article
+        class="fla-job"
+        class:is-info={item.tone === 'info'}
+        class:is-success={item.tone === 'success'}
+        class:is-warning={item.tone === 'warning'}
+        class:is-danger={item.tone === 'danger'}
+        class:is-neutral={item.tone === 'neutral'}
+        aria-labelledby="{rowIdPrefix}-job-{index}"
+      >
+        <div class="fla-thumb">
+          {#if thumbnail}
+            <img src={thumbnail} alt="" />
+          {:else}
+            <Icon icon={kindIcon(item)} size="1.375rem" aria-hidden={true} />
+          {/if}
+        </div>
+
+        <div class="fla-body">
+          <div class="fla-row">
+            <h3 id="{rowIdPrefix}-job-{index}">{nameOf(item)}</h3>
             <span
-              class="chip"
-              class:chip-info={item.tone === 'info'}
-              class:chip-success={item.tone === 'success'}
-              class:chip-warning={item.tone === 'warning'}
-              class:chip-danger={item.tone === 'danger'}>{$t(item.statusKey)}</span
+              class="fla-chip"
+              class:fla-chip--info={item.tone === 'info'}
+              class:fla-chip--success={item.tone === 'success'}
+              class:fla-chip--warning={item.tone === 'warning'}
+              class:fla-chip--danger={item.tone === 'danger'}
             >
+              {#if item.running && !activitySession.unreachable}<i class="fla-dot" aria-hidden="true"></i>{/if}
+              {$t(item.statusKey)}
+            </span>
           </div>
 
-          <p class="meta">
+          <p class="fla-meta">
             {[
               $t(item.kindKey),
               item.destinationKey ? $t(item.destinationKey) : null,
@@ -275,36 +363,44 @@
               .join(' · ')}
           </p>
 
-          {#if item.bulk}
-            <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
-            <p class="meta">{$t('frameleaf_activity_bulk_counts', { values: item.bulk })}</p>
-            {#if item.bulk.retried > 0}
-              <p class="meta">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
-            {/if}
-          {/if}
-
           {#if item.running || item.paused || item.progress !== null}
-            <progress
-              class="progress"
-              max="100"
-              value={item.progress ?? undefined}
+            <div
+              class="fla-progress"
+              class:is-indeterminate={item.progress === null}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={item.progress === null ? undefined : Math.round(item.progress)}
               aria-label={$t('frameleaf_activity_progress_for', { values: { name: nameOf(item) } })}
-            ></progress>
+            >
+              <span style:width={item.progress === null ? undefined : `${item.progress}%`}></span>
+            </div>
           {/if}
 
-          {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
-            <p class="error">{item.error}</p>
+          <p class="fla-status">
+            {#if item.bulk}
+              <!-- Counts only: a refused item is never named or shown here, Locked or not. -->
+              {$t('frameleaf_activity_bulk_counts', { values: item.bulk })}
+            {:else}
+              {statusLine(item)}
+            {/if}
+            {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
+              · <span class="fla-error">{item.error}</span>
+            {/if}
+          </p>
+          {#if item.bulk && item.bulk.retried > 0}
+            <p class="fla-status">{$t('frameleaf_activity_bulk_retried', { values: { count: item.bulk.retried } })}</p>
           {/if}
         </div>
 
-        <div class="actions">
+        <div class="fla-actions">
           {#if item.canPause && item.source === 'job'}
             <Button
               disabled={busyId === item.id}
               label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
               onclick={() => pause(item)}
             >
-              {$t('pause')}
+              <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
             </Button>
           {:else if item.canResume && item.source === 'job'}
             <Button
@@ -312,210 +408,341 @@
               label={$t('frameleaf_running_resume', { values: { name: nameOf(item) } })}
               onclick={() => resume(item)}
             >
-              {$t('resume')}
+              <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
             </Button>
           {/if}
           {#if item.canCancel && item.source === 'job'}
-            <Button disabled={busyId === item.id} onclick={() => cancel(item)}>{$t('cancel')}</Button>
+            <Button disabled={busyId === item.id} onclick={() => cancel(item)}>
+              <Icon icon={mdiCancel} size="1.125rem" aria-hidden={true} />{$t('cancel')}
+            </Button>
           {/if}
           {#if item.canRetry}
-            <Button disabled={busyId === item.id} onclick={() => retry(item)}>{$t('retry')}</Button>
+            <Button disabled={busyId === item.id} onclick={() => retry(item)}>
+              <Icon icon={mdiRefresh} size="1.125rem" aria-hidden={true} />{$t('retry')}
+            </Button>
           {/if}
           {#if item.finished && !item.failed && item.studioBundle === 'export'}
             <Button variant="primary" onclick={() => void downloadBundle(item)}>
-              {$t('frameleaf_studio_bundle_download')}
+              <Icon icon={mdiDownloadOutline} size="1.125rem" aria-hidden={true} />{$t(
+                'frameleaf_studio_bundle_download',
+              )}
             </Button>
           {:else if item.finished && !item.failed && item.studioBundle === 'import'}
             <Button variant="primary" onclick={() => void openImportedProject(item)}>
-              {$t('frameleaf_studio_library_open')}
+              <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_studio_library_open')}
             </Button>
           {/if}
           {#if item.finished && !item.failed && item.assetId}
             <Button variant="primary" onclick={() => openResult(item)}>
-              {$t('frameleaf_activity_open_result')}
+              <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_activity_open_result')}
             </Button>
           {/if}
           {#if item.canDismiss}
-            <Button
-              variant="quiet"
+            <IconButton
+              variant="default"
               disabled={busyId === item.id}
               label={$t('frameleaf_activity_clear_one', { values: { name: nameOf(item) } })}
               onclick={() => dismiss(item)}
             >
-              {$t('dismiss')}
-            </Button>
+              <Icon icon={mdiClose} size="1.125rem" />
+            </IconButton>
           {/if}
         </div>
-      </li>
+      </article>
     {/each}
-  </ul>
+  </div>
 
-  <footer class="foot">{$t('frameleaf_activity_footnote')}</footer>
+  <footer class="fla-footer">
+    <span class="muted">{$t('frameleaf_activity_footnote')}</span>
+  </footer>
 </main>
 
 <style>
-  .fl-activity-page {
-    display: grid;
-    gap: 1rem;
-    padding: 1.5rem 1rem;
-    max-width: 60rem;
-    margin-inline: auto;
+  /* template/src/activity.css, the Activity screen's half (the topbar indicator is ActivityIndicator). */
+  .fla {
+    flex: 1;
+    min-width: 0;
+    padding: 32px 36px 48px;
     color: var(--fl-text);
-    font-size: var(--fl-font-size);
   }
-  .head {
+  .fla-head {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    max-width: 900px;
   }
+  /* styles.css `.eyebrow`. */
   .eyebrow {
-    margin: 0;
-    font-size: var(--fl-font-small);
-    letter-spacing: 0.08em;
+    margin: 0 0 8px;
+    font-size: var(--fl-font-micro);
+    letter-spacing: 1.2px;
     text-transform: uppercase;
     color: var(--fl-muted);
   }
   h1 {
-    margin: 0.125rem 0 0;
-    font-size: 1.375rem;
+    margin: 0 0 4px;
+    font-size: 28px;
     font-weight: 600;
+    letter-spacing: -0.6px;
+    line-height: 1.3;
   }
-  .summary,
-  .meta,
-  .foot,
-  .empty-note {
-    margin: 0.25rem 0 0;
+  .fla-summary {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-
-  .offline p {
-    flex: 1 1 16rem;
+    font-size: 13px;
     margin: 0;
   }
-  .head-actions {
+  .fla-head-actions {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-  }
-  .filters {
-    display: flex;
-    gap: 0.25rem;
-  }
-  .offline {
-    display: flex;
+    gap: 10px;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 0.75rem;
-    margin: 0;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+    padding-top: 6px;
+  }
+  .fla-filters {
+    display: inline-flex;
+    gap: 2px;
     background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    padding: 2px;
+  }
+  /* The prototype's 30px segments keep the 44px/48px floor from tokens.css. */
+  .fla-filters button {
+    padding: 0 12px;
+    border-radius: var(--fl-radius);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-  }
-  .list {
-    display: grid;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .job {
-    display: flex;
-    flex-wrap: wrap;
+    display: inline-flex;
+    gap: 6px;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    white-space: nowrap;
+  }
+  .fla-filters button:hover {
+    color: var(--fl-text);
+  }
+  .fla-filters button.is-on {
     background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-1);
   }
-  .body {
-    flex: 1 1 18rem;
-    min-width: 0;
+  .fla-filters b {
+    font-weight: 500;
+    /* 10px in the prototype; the type scale stops at 11px. */
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+    background: var(--fl-canvas);
+    padding: 0 6px;
+    border-radius: var(--fl-radius-pill);
+    line-height: 1.6;
   }
-  .row {
+  .fla-offline {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--fl-raised);
+    border-left: 3px solid var(--fl-warning);
+    border-radius: 0 6px 6px 0;
+    font-size: var(--fl-font-small);
+    margin-bottom: 16px;
+    max-width: 900px;
+    flex-wrap: wrap;
+  }
+  .fla-offline > :global(svg) {
+    color: var(--fl-warning);
+  }
+  .grow {
+    flex: 1;
+  }
+  .fla-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 900px;
+  }
+  .fla-job {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--fl-panel);
+    border-radius: var(--fl-radius-card);
+    border: 1px solid transparent;
+  }
+  :global([data-theme='light']) .fla-job {
+    border-color: var(--fl-border);
+  }
+  .fla-thumb {
+    width: 112px;
+    aspect-ratio: 16 / 10;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--fl-raised);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fl-muted);
+    position: relative;
+  }
+  .fla-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .fla-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .fla-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
   }
   h3 {
     margin: 0;
-    font-size: var(--fl-font-size);
+    font-size: 14px;
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
-  .chip {
-    flex-shrink: 0;
-    padding: 0.0625rem 0.5rem;
-    border-radius: var(--fl-radius-pill);
+  .fla-chip {
     font-size: var(--fl-font-micro);
-    font-weight: 600;
-    color: var(--fl-text);
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
-    box-shadow: inset 0 0 0 1px var(--fl-border);
+    color: var(--fl-muted);
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
   }
-  .chip-info {
-    color: var(--fl-blue-text);
-    background: var(--fl-blue);
-    box-shadow: none;
+  .fla-chip--info {
+    color: var(--fl-teal);
   }
-  .chip-success {
-    color: var(--fl-teal-text);
-    background: var(--fl-teal);
-    box-shadow: none;
+  .fla-chip--success {
+    color: var(--fl-accent);
   }
-  .chip-warning {
-    color: var(--fl-warning-text);
-    background: var(--fl-warning);
-    box-shadow: none;
+  .fla-chip--warning {
+    color: var(--fl-warning);
   }
-  .chip-danger {
-    color: var(--fl-danger-text);
-    background: var(--fl-danger);
-    box-shadow: none;
-  }
-  .progress {
-    inline-size: 100%;
-    block-size: 0.25rem;
-    margin-top: 0.375rem;
-  }
-  .error {
-    margin: 0.25rem 0 0;
-    font-size: var(--fl-font-small);
+  .fla-chip--danger {
     color: var(--fl-danger);
   }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
+  .fla-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: fla-pulse 1.2s ease-in-out infinite;
   }
-  .empty {
-    padding: 2.5rem 1rem;
-    text-align: center;
-    border: 1px dashed var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+  @keyframes fla-pulse {
+    50% {
+      opacity: 0.3;
+    }
   }
-  .empty h2 {
+  .fla-meta,
+  .fla-status {
     margin: 0;
-    font-size: var(--fl-font-size);
-    font-weight: 600;
-  }
-  .empty p {
-    margin: 0.25rem 0 0;
+    font-size: var(--fl-font-small);
     color: var(--fl-muted);
+  }
+  .fla-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fla-status {
+    font-variant-numeric: tabular-nums;
+  }
+  .fla-error {
+    color: var(--fl-danger);
+  }
+  .fla-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--fl-raised);
+    overflow: hidden;
+  }
+  .fla-progress > span {
+    display: block;
+    height: 100%;
+    background: var(--fl-teal);
+    border-radius: 3px;
+    transition: width 700ms linear;
+  }
+  /* The server does not always know a total; a bar that moves says "working" without guessing. */
+  .fla-progress.is-indeterminate > span {
+    width: 30%;
+    animation: fla-indeterminate 1.4s ease-in-out infinite;
+  }
+  @keyframes fla-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  .fla-job.is-success .fla-progress > span {
+    background: var(--fl-accent);
+  }
+  .fla-job.is-warning .fla-progress > span {
+    background: var(--fl-warning);
+  }
+  .fla-job.is-danger .fla-progress > span {
+    background: var(--fl-danger);
+  }
+  .fla-job.is-neutral .fla-progress > span {
+    background: var(--fl-muted);
+  }
+  .fla-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .fla-empty {
+    text-align: center;
+    padding: 48px 20px 40px;
+    color: var(--fl-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 900px;
+    margin: 0;
+  }
+  .fla-empty h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fl-text);
+  }
+  .fla-empty p {
+    margin: 0;
+    max-width: 420px;
+  }
+  .fla-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 28px;
+    max-width: 900px;
+    flex-wrap: wrap;
     font-size: var(--fl-font-small);
   }
-  .empty :global(button) {
-    margin-block-start: 0.75rem;
+  .muted {
+    color: var(--fl-muted);
   }
   .sr-only {
     position: absolute;
@@ -527,5 +754,32 @@
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
+  }
+  @media (max-width: 700px) {
+    .fla {
+      padding: 20px 16px 40px;
+    }
+    .fla-job {
+      grid-template-columns: 84px minmax(0, 1fr);
+      padding: 12px;
+    }
+    .fla-thumb {
+      width: 84px;
+    }
+    .fla-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+    .fla-head-actions {
+      width: 100%;
+    }
+    .fla-filters {
+      flex: 1;
+    }
+    .fla-filters button {
+      flex: 1;
+      justify-content: center;
+      padding: 0 8px;
+    }
   }
 </style>
