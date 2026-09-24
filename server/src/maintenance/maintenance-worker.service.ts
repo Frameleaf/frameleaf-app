@@ -150,7 +150,9 @@ export class MaintenanceWorkerService {
       const maintenancePath = '/maintenance';
       if (!request.url.startsWith(maintenancePath)) {
         const params = new URLSearchParams();
-        params.set('continue', request.path);
+        // The whole address, query included: Command Center sections live in the query
+        // (`/user-settings?area=maintenance&section=backups`); the web page checks it is same-origin.
+        params.set('continue', request.originalUrl);
         return res.redirect(`${maintenancePath}?${params}`);
       }
 

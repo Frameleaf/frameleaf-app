@@ -74,7 +74,21 @@ describe(MaintenanceWorkerService.name, () => {
     });
   });
 
-  describe.skip('ssr');
+  describe('ssr', () => {
+    it('sends a page request to maintenance and keeps its query for the way back', () => {
+      const redirect = vi.fn();
+      const url = '/user-settings?area=maintenance&section=backups';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '/user-settings', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      expect(redirect).toHaveBeenCalledWith(
+        `/maintenance?${new URLSearchParams({ continue: '/user-settings?area=maintenance&section=backups' })}`,
+      );
+    });
+  });
   describe.skip('detectMediaLocation');
 
   describe('setStatus', () => {
