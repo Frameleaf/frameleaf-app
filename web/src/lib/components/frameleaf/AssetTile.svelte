@@ -447,19 +447,11 @@
   .fl-tile[data-layout='browse'] {
     border-radius: 0;
   }
-  @supports (corner-shape: squircle) {
-    .fl-tile:not([data-layout='browse']),
-    .fl-tile.has-caption .fl-tile-open {
-      corner-shape: squircle;
-      border-radius: calc(var(--fl-radius-card, 12px) * 1.8);
-    }
-  }
   /* Work: the caption sits under the photo, so the tile itself draws no surface. */
   .fl-tile.has-caption {
     overflow: visible;
     background: transparent;
     border-radius: 0;
-    corner-shape: round;
   }
   .fl-tile.has-caption .fl-tile-open {
     overflow: hidden;

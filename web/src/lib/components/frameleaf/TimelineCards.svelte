@@ -110,29 +110,29 @@
 </script>
 
 <section
-  class="fl-cards-scroll"
+  class="fl-tl-cards-scroll"
   bind:this={scroller}
   data-testid="frameleaf-timeline-cards"
   aria-busy={status === 'loading'}
 >
   {@render header?.()}
   {#if status === 'failed'}
-    <p class="fl-cards-status" role="status">{$t('frameleaf_timeline_cards_failed')}</p>
+    <p class="fl-tl-cards-status" role="status">{$t('frameleaf_timeline_cards_failed')}</p>
   {:else if status === 'ready' && cards.length === 0}
     {@render empty?.()}
   {:else}
     <ul
-      class="fl-cards"
+      class="fl-tl-cards"
       class:is-months={kind === 'month'}
       aria-label={$t(grouping === 'years' ? 'frameleaf_library_grouping_years' : 'frameleaf_library_grouping_months')}
     >
       {#each cards as card (card.id)}
         {@const title = titleOf(card)}
         {@const meta = metaOf(card)}
-        <li class="fl-card" class:is-year={card.kind === 'year'} data-group-id={card.id}>
+        <li class="fl-tl-card" class:is-year={card.kind === 'year'} data-group-id={card.id}>
           <button
             type="button"
-            class="fl-card-open"
+            class="fl-tl-card-open"
             aria-label={$t(
               card.kind === 'year' ? 'frameleaf_timeline_card_show_months' : 'frameleaf_timeline_card_show_days',
               {
@@ -141,19 +141,19 @@
             )}
             onclick={() => onOpen(cardTarget(card))}
           >
-            <span class="fl-card-media">
+            <span class="fl-tl-card-media">
               {#if card.keyAssetId}
                 <img src={media(card.keyAssetId, AssetMediaSize.Preview)} alt="" loading="lazy" decoding="async" />
               {:else}
                 <Icon icon={mdiImageOutline} size="32" aria-hidden />
               {/if}
-              <span class="fl-card-caption">
-                <span class="fl-card-title">{title}</span>
-                <span class="fl-card-meta">{meta}</span>
+              <span class="fl-tl-card-caption">
+                <span class="fl-tl-card-title">{title}</span>
+                <span class="fl-tl-card-meta">{meta}</span>
               </span>
             </span>
             {#if card.highlightAssetIds.length > 0}
-              <span class="fl-card-strip" aria-hidden="true">
+              <span class="fl-tl-card-strip" aria-hidden="true">
                 {#each card.highlightAssetIds as id (id)}
                   <img src={media(id, AssetMediaSize.Thumbnail)} alt="" loading="lazy" decoding="async" />
                 {/each}
@@ -167,34 +167,34 @@
 </section>
 
 <style>
-  .fl-cards-scroll {
-    container: fl-cards / inline-size;
+  .fl-tl-cards-scroll {
+    container: fl-tl-cards / inline-size;
     height: 100%;
     overflow-y: auto;
     scrollbar-width: thin;
   }
   /* Template timeline-library.css "Curated Years and Months". */
-  .fl-cards {
+  .fl-tl-cards {
     display: grid;
     gap: 16px;
     margin: 0;
     padding: 0 0 16px;
     list-style: none;
   }
-  .fl-cards.is-months {
+  .fl-tl-cards.is-months {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   }
-  .fl-card {
+  .fl-tl-card {
     min-width: 0;
-    animation: fl-card-in var(--fl-duration, 380ms) var(--fl-snappy, ease-out) both;
+    animation: fl-tl-card-in var(--fl-duration, 380ms) var(--fl-snappy, ease-out) both;
   }
-  @keyframes fl-card-in {
+  @keyframes fl-tl-card-in {
     from {
       opacity: 0;
       transform: translateY(8px) scale(0.985);
     }
   }
-  .fl-card-open {
+  .fl-tl-card-open {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -213,25 +213,19 @@
       transform var(--fl-duration, 380ms) var(--fl-spring, ease),
       box-shadow var(--fl-motion-fast, 120ms) ease;
   }
-  @supports (corner-shape: squircle) {
-    .fl-card-open {
-      corner-shape: squircle;
-      border-radius: calc(var(--fl-radius-card, 12px) * 1.8);
-    }
-  }
-  .fl-card-open:hover {
+  .fl-tl-card-open:hover {
     box-shadow:
       0 0 0 1px var(--fl-material-edge, var(--fl-border)),
       var(--fl-shadow-1);
   }
-  .fl-card-open:active {
+  .fl-tl-card-open:active {
     transform: scale(0.985);
   }
-  .fl-card-open:focus-visible {
+  .fl-tl-card-open:focus-visible {
     outline: 2px solid var(--fl-accent);
     outline-offset: 3px;
   }
-  .fl-card-media {
+  .fl-tl-card-media {
     position: relative;
     display: grid;
     place-items: center;
@@ -240,12 +234,12 @@
     background: var(--fl-raised);
     color: var(--fl-muted);
   }
-  .is-year .fl-card-media {
+  .is-year .fl-tl-card-media {
     aspect-ratio: 21 / 9;
     max-height: min(440px, 55vh);
     width: 100%;
   }
-  .fl-card-media img {
+  .fl-tl-card-media img {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -253,10 +247,10 @@
     object-fit: cover;
     transition: transform calc(var(--fl-duration, 380ms) * 2) var(--fl-spring, ease);
   }
-  .fl-card-open:hover .fl-card-media img {
+  .fl-tl-card-open:hover .fl-tl-card-media img {
     transform: scale(1.03);
   }
-  .fl-card-caption {
+  .fl-tl-card-caption {
     position: absolute;
     inset: auto 0 0;
     display: flex;
@@ -268,61 +262,61 @@
     text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
   }
   /* Years put the title at the top, as in Photos, clear of the floating toolbar. */
-  .is-year .fl-card-caption {
+  .is-year .fl-tl-card-caption {
     inset: 0 0 auto;
     padding: 18px 22px 56px;
     background: linear-gradient(rgb(0 0 0 / 55%), transparent);
   }
-  .fl-card-title {
+  .fl-tl-card-title {
     font-size: 22px;
     font-weight: 700;
     line-height: 1.15;
     letter-spacing: -0.01em;
     text-wrap: balance;
   }
-  .is-year .fl-card-title {
+  .is-year .fl-tl-card-title {
     font-size: clamp(34px, 6cqi, 56px);
     font-weight: 800;
     letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
   }
-  .fl-card-meta {
+  .fl-tl-card-meta {
     font-size: var(--fl-font-small, 12px);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     opacity: 0.9;
   }
-  .fl-card-strip {
+  .fl-tl-card-strip {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 2px;
   }
-  .fl-card-strip img {
+  .fl-tl-card-strip img {
     display: block;
     width: 100%;
     aspect-ratio: 1;
     object-fit: cover;
   }
-  .fl-cards-status {
+  .fl-tl-cards-status {
     padding: 45px 12px;
     color: var(--fl-muted);
     font-size: 13px;
     text-align: center;
   }
   @media (prefers-reduced-motion: reduce) {
-    .fl-card {
-      animation-name: fl-card-fade;
+    .fl-tl-card {
+      animation-name: fl-tl-card-fade;
     }
-    .fl-card-open,
-    .fl-card-media img {
+    .fl-tl-card-open,
+    .fl-tl-card-media img {
       transition: none;
     }
-    .fl-card-open:active,
-    .fl-card-open:hover .fl-card-media img {
+    .fl-tl-card-open:active,
+    .fl-tl-card-open:hover .fl-tl-card-media img {
       transform: none;
     }
   }
-  @keyframes fl-card-fade {
+  @keyframes fl-tl-card-fade {
     from {
       opacity: 0;
     }
