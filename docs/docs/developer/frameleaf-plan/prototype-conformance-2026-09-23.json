@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 102,
+      "partial": 101,
       "missing": 5,
-      "fixed": 39,
+      "fixed": 40,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -584,8 +584,8 @@
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerOfflineBanner.svelte"],
       "status": "partial",
-      "gaps": ["V-6", "V-27"],
-      "followUp": "Remove the legacy offline block; owner line for every non-owned asset"
+      "gaps": ["V-27"],
+      "followUp": "Owner line for every non-owned asset (the legacy offline block is gone, V-6 fixed in FL-35)"
     },
     {
       "requirementId": "action:info-people:show-shared-by-owner-metadata",
@@ -1603,9 +1603,9 @@
       "title": "Offline asset indicator and source-specific behavior",
       "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
       "production": ["web/src/lib/components/frameleaf/ViewerOfflineBanner.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-6"],
-      "followUp": "Remove the legacy Offline button and block"
+      "followUp": "FL-35 September 24 viewer: the legacy Offline button and panel block are gone; the offline banner remains"
     },
     {
       "requirementId": "action:viewer:open-editor",
