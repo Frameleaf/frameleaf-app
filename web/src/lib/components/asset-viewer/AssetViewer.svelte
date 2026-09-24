@@ -57,6 +57,7 @@
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
   import SlideshowBar from './SlideshowBar.svelte';
+  import SlideshowMemoriesOverlay from './SlideshowMemoriesOverlay.svelte';
   import SlideshowMetadataOverlay from './SlideshowMetadataOverlay.svelte';
   import VideoViewer from './VideoWrapperViewer.svelte';
 
@@ -680,6 +681,7 @@
 
     {#if $slideshowState !== SlideshowState.None}
       <SlideshowMetadataOverlay {asset} />
+      <SlideshowMemoriesOverlay {asset} {album} {person} />
     {/if}
   </div>
 

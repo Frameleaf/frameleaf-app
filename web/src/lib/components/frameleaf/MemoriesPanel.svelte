@@ -18,6 +18,11 @@
    * The prototype's per-card menu offered Play, Favorite and Hide. There is no "hide"
    * concept in the real API (only permanent removal), so this ports it as "Remove memory"
    * (`memoryManager.removeMemory`), matching the action the legacy viewer already exposed.
+   *
+   * Sept 24 (memory-engine.mjs, Memories.jsx:170-207): each card's overline comes from the shared
+   * Memories engine (Trip, Highlights or Memory, by kind), and its cover plays the engine's slow
+   * pan-and-zoom preview on hover and keyboard focus, the same move the player and the viewer's
+   * Memories transition use. Under Reduce Motion the engine gives no motion and the cover holds still.
    */
   import { goto } from '$app/navigation';
   import { clickOutside } from '$lib/actions/click-outside';
@@ -28,6 +33,8 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import Toggle from '$lib/components/frameleaf/Toggle.svelte';
+  import { memoryMotionStyle, memoryOverlineKey, memoryPreviewMotion } from '$lib/frameleaf/memory-engine';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import {
     formatLocalDateRange,
     isEventStory,
@@ -40,7 +47,7 @@
   import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import type { MemoryResponseDto } from '@immich/sdk';
+  import { AssetVisibility, type MemoryResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner } from '@immich/ui';
   import { locale } from '$lib/stores/preferences.store';
   import {
@@ -73,19 +80,9 @@
     year_in_review: mdiCalendarStar,
   };
 
-  const KIND_LABEL = (kind: MemoryStoryKind) => {
-    switch (kind) {
-      case 'event_story': {
-        return $t('frameleaf_memories_kind_event_story');
-      }
-      case 'year_in_review': {
-        return $t('frameleaf_memories_kind_year_in_review');
-      }
-      default: {
-        return $t('frameleaf_memories_kind_on_this_day');
-      }
-    }
-  };
+  /** The server already leaves Locked items out of memories; the cover never shows one regardless. */
+  const coverOf = (memory: MemoryResponseDto) =>
+    memory.assets.find((asset) => asset.visibility !== AssetVisibility.Locked);
 
   let status = $state('');
   let settingsOpen = $state(false);
@@ -149,11 +146,16 @@
 </script>
 
 {#snippet card(memory: MemoryResponseDto, size: 'hero' | 'regular')}
-  {@const cover = memory.assets[0]}
+  {@const cover = coverOf(memory)}
   <article class="fm-card {size}" class:favorite={memory.isSaved}>
     <a class="fm-card-main" href={cardHref(memory)} aria-label={`${$t('play')}: ${$memoryLaneTitle(memory)}`}>
       {#if cover}
-        <img src={getAssetMediaUrl({ id: cover.id })} alt={$getAltText(toTimelineAsset(cover))} loading="lazy" />
+        <img
+          src={getAssetMediaUrl({ id: cover.id })}
+          alt={$getAltText(toTimelineAsset(cover))}
+          loading="lazy"
+          style={memoryMotionStyle(memoryPreviewMotion(cover.id, prefersReducedMotion()))}
+        />
       {:else}
         <span class="fm-card-empty" aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size="28" /></span>
       {/if}
@@ -161,7 +163,7 @@
       <span class="fm-card-copy">
         <span class="fm-card-kind">
           <Icon icon={KIND_ICON[memoryStoryKind(memory)]} size="12" aria-hidden="true" />
-          {KIND_LABEL(memoryStoryKind(memory))}
+          {$t(memoryOverlineKey(memoryStoryKind(memory)))}
         </span>
         <strong>{$memoryLaneTitle(memory)}</strong>
         <small>
@@ -426,6 +428,10 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  /* memories.css:107-109: the engine sets --kb-* only when motion is allowed. */
+  .fm-card-main:is(:hover, :focus-visible) > img[style*='--kb-from'] {
+    animation: fl-ken-burns var(--kb-duration, 9s) ease-in-out infinite alternate;
   }
   .fm-card-empty {
     display: flex;

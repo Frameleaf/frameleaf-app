@@ -10,8 +10,11 @@
    * before this story and is extended here rather than replaced.
    *
    * What this story adds on top of the pre-existing viewer:
-   *  - Ken Burns pan/zoom motion on photos (`MemoryPhotoViewer`'s new `motionClass` prop),
-   *    cycling through three variants and disabled under `prefers-reduced-motion`.
+   *  - The shared Memories engine (`$lib/frameleaf/memory-engine`, memory-engine.mjs in the Sept 24
+   *    template): a title card with the overline by kind before the first item (MEMORY_TITLE_MS),
+   *    a blurred backdrop, the deterministic per-item pan and zoom, and a lower third with the
+   *    place over the day (MemoryPlayer.jsx, memories.css). The viewer's Memories slideshow and the
+   *    Memories card previews use the same engine; under Reduce Motion photos only crossfade.
    *  - Share, which the legacy viewer had commented out entirely; it now opens the shared
    *    `ShareSheet` with the memory's current asset ids.
    *  - "Make a movie in Studio", which did not exist before this story. Studio itself has
@@ -35,7 +38,24 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import ShareSheet from '$lib/components/frameleaf/ShareSheet.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import { exportProgress, isExportActive, latestExport } from '$lib/frameleaf/memory-stories';
+  import {
+    MEMORY_TITLE_MS,
+    memoryLowerThird,
+    memoryMotion,
+    memoryMotionStyle,
+    memoryPhotoMs,
+    memorySlideClass,
+    memoryTitleCard,
+  } from '$lib/frameleaf/memory-engine';
+  import {
+    exportProgress,
+    formatLocalDateRange,
+    isEventStory,
+    isExportActive,
+    latestExport,
+    memoryStoryKind,
+  } from '$lib/frameleaf/memory-stories';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
@@ -96,11 +116,10 @@
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { Attachment } from 'svelte/attachments';
+  import { on } from 'svelte/events';
   import { Tween } from 'svelte/motion';
   import MemoryPhotoViewer from '$lib/components/frameleaf/MemoryPhotoViewer.svelte';
   import MemoryVideoViewer from '$lib/components/frameleaf/MemoryVideoViewer.svelte';
-
-  const KEN_BURNS_CLASSES = ['fmp-kb-a', 'fmp-kb-b', 'fmp-kb-c'];
 
   /** how often the player asks the server for the export run's current state */
   const EXPORT_POLL_MS = 1500;
@@ -115,7 +134,7 @@
   let status = $state('');
   const current = $derived(memoryManager.current);
   const currentAssetId = $derived(current?.asset.id);
-  // where the asset sits in its memory, for the progress bar, counter and Ken Burns cycle
+  // where the asset sits in its memory, for the progress bar and counter
   const assetIndex = $derived(current ? current.memory.assets.findIndex(({ id }) => id === currentAssetId) : -1);
   /** FL-45: the memory's own title, so its gallery download is not just another generic zip. Dated,
    * since a person is likely to open the same memory again on a later day. */
@@ -124,7 +143,46 @@
       ? namedArchiveName($memoryLaneTitle(current.memory), $t('frameleaf_archive_name_memory'), { withDate: true })
       : undefined,
   );
-  const kenBurnsClass = $derived(KEN_BURNS_CLASSES[Math.max(0, assetIndex) % KEN_BURNS_CLASSES.length]);
+  // The Memories engine: the same move, crossfade and Reduce Motion rule as the viewer's Memories slideshow.
+  const reducedMotion = $derived(prefersReducedMotion());
+  const photoMs = $derived(memoryPhotoMs(authManager.preferences.memories.duration));
+  const slideClass = $derived(`fmp-photo ${memorySlideClass({ reducedMotion, paused })}`);
+  const slideStyle = $derived(
+    memoryMotionStyle(memoryMotion(currentAssetId, { reducedMotion, durationMs: photoMs + 1000 })) ?? '',
+  );
+  const memorySubtitle = $derived.by(() => {
+    if (!current) {
+      return '';
+    }
+    if (isEventStory(current.memory)) {
+      return formatLocalDateRange(current.memory.data.startDate, current.memory.data.endDate, $locale);
+    }
+    const first = current.memory.assets[0];
+    return first ? fromISODateTimeUTC(first.localDateTime).toLocaleString(DateTime.DATE_FULL, { locale: $locale }) : '';
+  });
+  const titleCard = $derived(
+    current
+      ? memoryTitleCard({
+          kind: memoryStoryKind(current.memory),
+          title: $memoryLaneTitle(current.memory),
+          subtitle: memorySubtitle,
+          count: current.memory.assets.length,
+        })
+      : undefined,
+  );
+  const currentMemoryAsset = $derived(current && assetIndex >= 0 ? current.memory.assets[assetIndex] : undefined);
+  const currentDay = $derived(
+    currentMemoryAsset
+      ? fromISODateTimeUTC(currentMemoryAsset.localDateTime).toLocaleString(DateTime.DATE_FULL, { locale: $locale })
+      : '',
+  );
+  /**
+   * The title card opens a memory once, before its first item (MemoryPlayer.jsx index -1), and
+   * holds the progress until it has shown for MEMORY_TITLE_MS or Play is pressed.
+   */
+  let titleCardFor = $state<string | undefined>();
+  const titleCardsShown = new Set<string>();
+  let titleCardTimer: ReturnType<typeof setTimeout> | undefined;
   const currentMemoryAssetFull = $derived.by(async () =>
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
   );
@@ -139,6 +197,43 @@
   let videoPlayer: HTMLVideoElement | undefined = $state();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
+  // The city is on the full asset only; the lower third shows the memory's title until it arrives.
+  let currentCity = $state<string | undefined>();
+  $effect(() => {
+    const pending = currentMemoryAssetFull;
+    let stale = false;
+    currentCity = undefined;
+    pending
+      .then((asset) => {
+        if (!stale) {
+          currentCity = asset?.exifInfo?.city ?? undefined;
+        }
+      })
+      .catch(() => {
+        // no city: the lower third keeps the memory's title
+      });
+    return () => {
+      stale = true;
+    };
+  });
+  const lowerThird = $derived(
+    current
+      ? memoryLowerThird(
+          { city: currentCity },
+          { fallbackTitle: $memoryLaneTitle(current.memory), day: currentDay, video: current.asset.isVideo },
+        )
+      : null,
+  );
+  let videoMuted = $state(true);
+  $effect(() => {
+    const player = videoPlayer;
+    if (!player) {
+      return;
+    }
+    videoMuted = player.muted;
+    return on(player, 'volumechange', () => (videoMuted = player.muted));
+  });
+
   const handleNavigate = async (href: string | undefined, options?: { replaceState?: boolean }) => {
     if (assetViewerManager.isViewing || !href) {
       return;
@@ -150,7 +245,9 @@
   const setProgressDuration = (asset: TimelineAsset) => {
     progressBarController = new Tween<number>(0, {
       duration: (from: number, to: number) =>
-        to ? (asset.isVideo ? asset.duration! : authManager.preferences.memories.duration * 1000) * (to - from) : 0,
+        to
+          ? (asset.isVideo ? asset.duration! : memoryPhotoMs(authManager.preferences.memories.duration)) * (to - from)
+          : 0,
     });
   };
 
@@ -261,9 +358,39 @@
   };
 
   const resetAndPlay = () => {
+    if (titleCardFor) {
+      return;
+    }
     handlePromiseError(handleAction('resetAndPlay', 'reset'));
     handlePromiseError(handleAction('resetAndPlay', 'play'));
   };
+
+  const dismissTitleCard = () => {
+    clearTimeout(titleCardTimer);
+    titleCardTimer = undefined;
+    if (!titleCardFor) {
+      return;
+    }
+    titleCardFor = undefined;
+    if (!galleryInView && !assetViewerManager.isViewing) {
+      resetAndPlay();
+    }
+  };
+
+  $effect(() => {
+    const memoryId = current?.memory.id;
+    if (!memoryId || assetIndex !== 0 || titleCardsShown.has(memoryId)) {
+      return;
+    }
+    untrack(() => {
+      titleCardsShown.add(memoryId);
+      titleCardFor = memoryId;
+      handlePromiseError(handleAction('titleCard', 'pause'));
+      titleCardTimer = setTimeout(dismissTitleCard, MEMORY_TITLE_MS);
+    });
+  });
+
+  $effect(() => () => clearTimeout(titleCardTimer));
 
   const initPlayer = () => {
     const isVideo = current && current.asset.isVideo;
@@ -590,14 +717,40 @@
               {#if current.asset.isVideo}
                 <MemoryVideoViewer asset={current.asset} bind:videoPlayer />
               {:else}
+                <!-- memories.css:7-15: a dimmed, blurred copy of the photo fills the frame behind it. -->
+                <div
+                  class="fmp-backdrop"
+                  style:background-image={`url("${getAssetMediaUrl({ id: current.asset.id, size: AssetMediaSize.Preview })}")`}
+                  aria-hidden="true"
+                ></div>
                 <MemoryPhotoViewer
                   asset={current.asset}
                   onImageLoad={resetAndPlay}
-                  motionClass={paused ? '' : kenBurnsClass}
-                  motionStyle={`animation-duration: ${authManager.preferences.memories.duration}s`}
+                  motionClass={slideClass}
+                  motionStyle={slideStyle}
                 />
               {/if}
             {/key}
+
+            {#if titleCard && titleCardFor === current.memory.id}
+              <!-- MemoryPlayer.jsx:338-363, memories.css:44-75 -->
+              <section class="fmp-title-card" aria-label={titleCard.title}>
+                <div class="fmp-title-copy">
+                  <span class="fmp-overline">{$t(titleCard.overlineKey)}</span>
+                  <h2>{titleCard.title}</h2>
+                  {#if titleCard.subtitle}
+                    <p>{titleCard.subtitle}</p>
+                  {/if}
+                  <p class="fmp-title-count">
+                    {$t('frameleaf_memories_item_count', { values: { count: titleCard.count } })}
+                  </p>
+                  <button type="button" class="fmp-play-large" onclick={dismissTitleCard}>
+                    <Icon icon={mdiPlay} size="22" aria-hidden="true" />
+                    {$t('frameleaf_memories_play')}
+                  </button>
+                </div>
+              </section>
+            {/if}
 
             <div class="fmp-overlay" class:hidden={galleryInView}>
               <div class="fmp-overlay-top">
@@ -704,19 +857,18 @@
               </div>
             {/if}
 
-            <div class="fmp-meta">
-              <p>
-                {fromISODateTimeUTC(current.memory.assets[0].localDateTime).toLocaleString(DateTime.DATE_FULL, {
-                  locale: $locale,
-                })}
-              </p>
-              <p>
-                {#await currentMemoryAssetFull then asset}
-                  {asset?.exifInfo?.city || ''}
-                  {asset?.exifInfo?.country || ''}
-                {/await}
-              </p>
-            </div>
+            {#if titleCardFor !== current.memory.id && lowerThird}
+              <!-- MemoryPlayer.jsx:434-458, memories.css:77-104: the place over the day. -->
+              {#key current.asset.id}
+                <div class="fmp-lower-third">
+                  <strong>{lowerThird.place}</strong>
+                  <span>
+                    {lowerThird.day}{#if lowerThird.video && videoMuted}
+                      <span aria-hidden="true"> · </span>{$t('frameleaf_memories_video_muted')}{/if}
+                  </span>
+                </div>
+              {/key}
+            {/if}
           </div>
         </div>
 
@@ -1026,63 +1178,133 @@
   .fmp-nav.next {
     inset-inline-end: 1rem;
   }
-  .fmp-meta {
+  /* memories.css:7-15 */
+  .fmp-backdrop {
     position: absolute;
-    inset-inline-start: 2rem;
-    top: 1rem;
-    font-size: var(--fl-font-small);
-    font-weight: 500;
-    color: #fff;
-    text-shadow: 0 1px 3px rgb(0 0 0 / 60%);
+    inset: -48px;
+    background-size: cover;
+    background-position: center;
+    filter: blur(30px) brightness(0.5) saturate(1.15);
+    transform: scale(1.08);
+    animation: fmp-fade 900ms ease both;
   }
-  .fmp-meta p {
+  /* memories.css:44-75 */
+  .fmp-title-card {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-content: center;
+    padding: 1.5rem;
+    text-align: center;
+    color: #fff;
+    background: #000a;
+    animation: fmp-fade 600ms ease both;
+  }
+  .fmp-title-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: min(720px, 100%);
+  }
+  .fmp-overline {
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .fmp-title-card h2 {
     margin: 0;
+    font-size: clamp(32px, 6vw, 64px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+  .fmp-title-copy p {
+    margin: 0;
+    font-size: 18px;
+    opacity: 0.8;
+  }
+  .fmp-title-copy .fmp-title-count {
+    font-size: var(--fl-font-small);
+    opacity: 0.65;
+  }
+  .fmp-play-large {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-block-start: 0.75rem;
+    padding: 0.625rem 1.25rem;
+    color: var(--fl-viewer-canvas, #08090b);
+    background: #fff;
+    border: 0;
+    border-radius: var(--fl-radius-pill);
+    font-weight: 600;
+  }
+  /* memories.css:77-104, 124-133 */
+  .fmp-lower-third {
+    position: absolute;
+    inset-inline-start: 32px;
+    bottom: 28px;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: min(70%, 560px);
+    color: #fff;
+    text-shadow: 0 1px 12px #000a;
+    pointer-events: none;
+    animation: fmp-fade 1.2s 600ms ease both;
+  }
+  .fmp-lower-third strong {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .fmp-lower-third > span {
+    font-size: 15px;
+    opacity: 0.85;
+  }
+  @media (max-width: 760px) {
+    .fmp-lower-third {
+      inset-inline-start: 18px;
+      bottom: 20px;
+    }
+    .fmp-lower-third strong {
+      font-size: 20px;
+    }
   }
   .fmp-gallery-section {
     padding: 1rem;
     background: var(--fl-viewer-canvas);
   }
 
-  /* Ken Burns: a slow pan/zoom while a photo is on screen. Disabled entirely under
-     prefers-reduced-motion so the presentation never relies on parallax motion. */
-  :global(.fmp-kb-a) {
-    animation: fmp-kb-zoom-in 6s ease-out forwards;
+  /* memories.css:16-42: the photo crossfades in and, when motion is allowed, pans and zooms
+     through the shared fl-ken-burns keyframes (tokens.css) with the engine's --kb-* values. */
+  .fmp :global(.fmp-photo) {
+    position: relative;
+    transform-origin: center;
   }
-  :global(.fmp-kb-b) {
-    animation: fmp-kb-zoom-out 6s ease-out forwards;
+  .fmp :global(.fmp-photo.fade) {
+    animation: fmp-fade 900ms ease both;
   }
-  :global(.fmp-kb-c) {
-    animation: fmp-kb-pan 6s ease-out forwards;
+  .fmp :global(.fmp-photo.memories) {
+    animation:
+      fmp-fade 900ms ease both,
+      fl-ken-burns var(--kb-duration, 6s) ease-in-out both;
   }
-  @keyframes fmp-kb-zoom-in {
+  .fmp :global(.fmp-photo.paused) {
+    animation-play-state: paused;
+  }
+  @keyframes -global-fmp-fade {
     from {
-      transform: scale(1);
+      opacity: 0;
     }
     to {
-      transform: scale(1.08);
-    }
-  }
-  @keyframes fmp-kb-zoom-out {
-    from {
-      transform: scale(1.08);
-    }
-    to {
-      transform: scale(1);
-    }
-  }
-  @keyframes fmp-kb-pan {
-    from {
-      transform: scale(1.06) translateX(-1%);
-    }
-    to {
-      transform: scale(1.06) translateX(1%);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.fmp-kb-a),
-    :global(.fmp-kb-b),
-    :global(.fmp-kb-c) {
-      animation: none;
+      opacity: 1;
     }
   }
 </style>
