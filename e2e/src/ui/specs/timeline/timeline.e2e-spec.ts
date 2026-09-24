@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { DateTime } from 'luxon';
 import {
   Changes,
@@ -19,8 +19,12 @@ import {
   setupTimelineMockApiRoutes,
   TimelineTestContext,
 } from 'src/ui/mock-network/timeline-network';
+import { setupTrashMockApiRoutes } from 'src/ui/mock-network/trash-network.js';
 import { utils } from 'src/utils.js';
 import { assetViewerUtils, padYearMonth, pageUtils, poll, thumbnailUtils, timelineUtils } from './utils';
+
+/** A Trash section item; it is listed under its file name, which the trash mock derives from the asset id. */
+const trashItem = (page: Page, asset: { id: string }) => page.locator('article').filter({ hasText: asset.id });
 
 test.describe.configure({ mode: 'parallel' });
 test.describe('Timeline', () => {
@@ -66,6 +70,29 @@ test.describe('Timeline', () => {
     changes.assetArchivals = [];
     changes.assetFavorites = [];
   });
+
+  /** Opens the rail's Trash (the Command Center's Trash section, FL-71) and restores one item from it. */
+  const restoreFromTrash = async (page: Page, asset: { id: string }) => {
+    await page.getByText('Trash', { exact: true }).click();
+    await page.waitForURL('**/user-settings?area=trash**');
+    await expect(trashItem(page, asset)).toBeVisible();
+    const restoreRequest = pageRoutePromise(page, '**/api/trash/apply', async (route, request) => {
+      const requestJson = request.postDataJSON();
+      changes.assetDeletions = changes.assetDeletions.filter((id) => !requestJson.ids.includes(id));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: { count: requestJson.ids.length },
+      });
+    });
+    await trashItem(page, asset).getByRole('button', { name: 'Restore', exact: true }).click();
+    await expect(restoreRequest).resolves.toEqual({
+      action: 'restore',
+      ids: [asset.id],
+      token: 'e2e-review',
+    });
+    await expect(trashItem(page, asset)).toHaveCount(0);
+  };
 
   test.describe('/photos', () => {
     test('Persists the initial library view only after the router is ready', async ({ page }) => {
@@ -488,6 +515,17 @@ test.describe('Timeline', () => {
     });
   });
   test.describe('/trash', () => {
+    // FL-71: the rail's Trash opens the Command Center's Trash section (the template's
+    // TrashManager): it lists the trash from the trash API and restores through a review.
+    test.beforeEach(async ({ context }) => {
+      await setupTrashMockApiRoutes(
+        context,
+        () => assets.filter((asset) => changes.assetDeletions.includes(asset.id)),
+        (ids) => {
+          changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
+        },
+      );
+    });
     test('open /photos, trash photo, open /trash, restore', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
       const assetToTrash = assets[0];
@@ -508,25 +546,8 @@ test.describe('Timeline', () => {
         force: false,
         ids: [assetToTrash.id],
       });
-      await page.getByText('Trash', { exact: true }).click();
-      await thumbnailUtils.expectInViewport(page, assetToTrash.id);
-      await thumbnailUtils.withAssetId(page, assetToTrash.id).hover();
-      await thumbnailUtils.selectButton(page, assetToTrash.id).click();
-      const restoreRequest = pageRoutePromise(page, '**/api/trash/restore/assets', async (route, request) => {
-        const requestJson = request.postDataJSON();
-        changes.assetDeletions = changes.assetDeletions.filter((id) => !requestJson.ids.includes(id));
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          json: { count: requestJson.ids.length },
-        });
-      });
-      await page.getByText('Restore', { exact: true }).click();
-      await expect(restoreRequest).resolves.toEqual({
-        ids: [assetToTrash.id],
-      });
-      await expect(thumbnailUtils.withAssetId(page, assetToTrash.id)).toHaveCount(0);
-      await page.getByText('Photos', { exact: true }).click();
+      await restoreFromTrash(page, assetToTrash);
+      await pageUtils.openPhotosPage(page);
       await thumbnailUtils.expectInViewport(page, assetToTrash.id);
     });
     test('open album, trash photo, open /trash, restore', async ({ page }) => {
@@ -551,25 +572,7 @@ test.describe('Timeline', () => {
         ids: [assetToTrash.id],
       });
       await page.locator('#control-bar').getByLabel('Close').click();
-      await page.getByText('Trash', { exact: true }).click();
-      await timelineUtils.waitForTimelineLoad(page);
-      await thumbnailUtils.expectInViewport(page, assetToTrash.id);
-      await thumbnailUtils.withAssetId(page, assetToTrash.id).hover();
-      await thumbnailUtils.selectButton(page, assetToTrash.id).click();
-      const restoreRequest = pageRoutePromise(page, '**/api/trash/restore/assets', async (route, request) => {
-        const requestJson = request.postDataJSON();
-        changes.assetDeletions = changes.assetDeletions.filter((id) => !requestJson.ids.includes(id));
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          json: { count: requestJson.ids.length },
-        });
-      });
-      await page.getByText('Restore', { exact: true }).click();
-      await expect(restoreRequest).resolves.toEqual({
-        ids: [assetToTrash.id],
-      });
-      await expect(thumbnailUtils.withAssetId(page, assetToTrash.id)).toHaveCount(0);
+      await restoreFromTrash(page, assetToTrash);
       await pageUtils.openAlbumPage(page, album.id);
       await thumbnailUtils.expectInViewport(page, assetToTrash.id);
     });

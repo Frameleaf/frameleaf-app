@@ -11,8 +11,12 @@ import {
 } from 'src/ui/generators/timeline';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 import { setupTimelineMockApiRoutes, TimelineTestContext } from 'src/ui/mock-network/timeline-network.js';
+import { setupTrashMockApiRoutes } from 'src/ui/mock-network/trash-network.js';
 import { utils } from 'src/utils.js';
 import { assetViewerUtils } from '../timeline/utils';
+
+/** FL-71: the viewer over the Command Center's Trash section (the old `/trash/photos/:id` address). */
+const trashViewer = (id: string) => `/user-settings?area=trash&section=contents&assetId=${id}`;
 
 test.describe.configure({ mode: 'parallel' });
 test.describe('asset-viewer', () => {
@@ -214,25 +218,14 @@ test.describe('asset-viewer', () => {
       await assetViewerUtils.waitForViewerLoad(page, assets[index - 2]);
     });
   });
-  test.describe('/trash/photos/:id', () => {
-    // The trash page lists its items from the trash API and the viewer's next/previous item is the
-    // page's neighbour of the open one. The trash holds the assets each test moved there, in
-    // timeline order.
+  test.describe('Trash viewer', () => {
+    // FL-71: Trash is a Command Center section; `?assetId=` opens the viewer over it (the old
+    // `/trash/photos/:id` address redirects there). The section lists its items from the trash API
+    // and the viewer's next/previous item is the section's neighbour of the open one. The trash
+    // holds the assets each test moved there, in timeline order.
     test.beforeEach(async ({ context }) => {
-      await context.route('**/api/trash/items*', async (route) => {
-        const items = trashedAssets().map((asset) => ({
-          id: asset.id,
-          originalFileName: `${asset.id}.${asset.isVideo ? 'mp4' : 'jpg'}`,
-          type: asset.isVideo ? 'VIDEO' : 'IMAGE',
-          fileSizeInByte: null,
-          isLocked: false,
-          isOffline: false,
-          trashedAt: new Date().toISOString(),
-        }));
-        await route.fulfill({ json: { items, nextPage: null, total: items.length } });
-      });
-      await context.route('**/api/trash/summary', async (route) => {
-        await route.fulfill({ json: { bytes: 0, count: trashedAssets().length, offline: 0, pendingDeletion: 0 } });
+      await setupTrashMockApiRoutes(context, trashedAssets, (ids) => {
+        changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
       });
     });
     test('Delete trashed photo advances to next', async ({ page }) => {
@@ -240,7 +233,7 @@ test.describe('asset-viewer', () => {
       const index = assets.indexOf(asset);
       const deletedAssets = assets.slice(index - 10, index + 10).map((asset) => asset.id);
       changes.assetDeletions.push(...deletedAssets);
-      await page.goto(`/trash/photos/${asset.id}`);
+      await page.goto(trashViewer(asset.id));
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
       // the viewer always confirms a permanent delete
@@ -252,7 +245,7 @@ test.describe('asset-viewer', () => {
       const index = assets.indexOf(asset);
       const deletedAssets = assets.slice(index - 10, index + 10).map((asset) => asset.id);
       changes.assetDeletions.push(...deletedAssets);
-      await page.goto(`/trash/photos/${asset.id}`);
+      await page.goto(trashViewer(asset.id));
       await assetViewerUtils.waitForViewerLoad(page, asset);
       await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
       // the viewer always confirms a permanent delete
@@ -268,7 +261,7 @@ test.describe('asset-viewer', () => {
       const index = assets.indexOf(asset);
       const deletedAssets = assets.slice(index - 10, index + 10).map((asset) => asset.id);
       changes.assetDeletions.push(...deletedAssets);
-      await page.goto(`/trash/photos/${assets[index + 9].id}`);
+      await page.goto(trashViewer(assets[index + 9].id));
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
       await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
       // the viewer always confirms a permanent delete
@@ -280,7 +273,7 @@ test.describe('asset-viewer', () => {
       const index = assets.indexOf(asset);
       const deletedAssets = assets.slice(index - 10, index + 10).map((asset) => asset.id);
       changes.assetDeletions.push(...deletedAssets);
-      await page.goto(`/trash/photos/${assets[index + 9].id}`);
+      await page.goto(trashViewer(assets[index + 9].id));
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
       await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
       // the viewer always confirms a permanent delete

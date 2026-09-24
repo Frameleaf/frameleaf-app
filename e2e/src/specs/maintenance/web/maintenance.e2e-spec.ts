@@ -16,7 +16,8 @@ test.describe('Maintenance', () => {
   test('enter and exit maintenance mode', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
-    await page.goto('/admin/maintenance');
+    // FL-71: maintenance mode is the Command Center's Maintenance → Maintenance mode section.
+    await page.goto('/user-settings?area=maintenance&section=mode');
     await page.getByRole('button', { name: 'Switch to maintenance mode' }).click();
 
     // FL-81: MaintenanceModeCard always asks for confirmation before starting maintenance mode
@@ -25,7 +26,7 @@ test.describe('Maintenance', () => {
 
     await expect(page.getByText('Temporarily Unavailable')).toBeVisible({ timeout: 10_000 });
     await page.getByRole('button', { name: 'End maintenance mode' }).click();
-    await page.waitForURL('**/admin/maintenance*', { timeout: 10_000 });
+    await page.waitForURL('**/user-settings?area=maintenance*', { timeout: 10_000 });
   });
 
   test('maintenance shows no options to users until they authenticate', async ({ page }) => {
