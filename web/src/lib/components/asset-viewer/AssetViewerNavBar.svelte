@@ -77,6 +77,16 @@
 
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }, album));
   const sharedLink = getSharedLink();
+
+  /**
+   * A shared link's viewer has no More menu, so its one slideshow entry point sits in the bar itself
+   * (FL-83; `action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`). It keeps the gate the
+   * old public header had: only when the link allows downloads, and only with something to move to.
+   */
+  const SharedLinkSlideshow: ActionItem = $derived({
+    ...Actions.PlaySlideshow,
+    $if: () => !!sharedLink?.allowDownload && canNavigateCollection && (Actions.PlaySlideshow.$if?.() ?? true),
+  });
 </script>
 
 <CommandPaletteDefaultProvider
@@ -118,6 +128,9 @@
     <ActionButton action={Actions.StopMotionPhoto} />
     <ActionButton action={Actions.Copy} />
     <ActionButton action={Actions.SharedLinkDownload} />
+    {#if sharedLink}
+      <ActionButton action={SharedLinkSlideshow} />
+    {/if}
     <ActionButton action={Actions.Info} />
     <ActionButton action={Actions.Favorite} />
     <ActionButton action={Actions.Unfavorite} />
