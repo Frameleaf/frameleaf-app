@@ -2,31 +2,12 @@
 
 -- AssetEditRepository.replaceAll
 begin
-SELECT
-  phase
-FROM
-  immich_fork.state
-WHERE
-  id = 1
-FOR SHARE
-SELECT
-  1
-FROM
-  immich_fork.migration_audit
-WHERE
-  status = 'running'
-  AND name IN (
-    'official-handoff-preparation',
-    'fork-return-reconciliation'
-  )
-LIMIT
-  1
-SELECT
-  1
-FROM
-  immich_fork.video_edit_selection
-WHERE
-  "assetId" = $1::uuid
+select
+  "type"
+from
+  "asset"
+where
+  "id" = $1
 delete from "asset_edit"
 where
   "assetId" = $1
