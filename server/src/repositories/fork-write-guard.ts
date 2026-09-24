@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
-import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { DB } from 'src/schema/index.js';
 
 /**
