@@ -22,6 +22,7 @@
     CommandPaletteProvider,
     CORE_PAGE_COMMANDS,
     defaultProvider,
+    logoManager,
     MOBILE_APP_COMMANDS,
     modalManager,
     OTHER_SITE_COMMANDS,
@@ -45,6 +46,14 @@
   interface Props {
     children?: Snippet;
   }
+
+  const frameleafInline = { light: '/frameleaf/frameleaf-logo-light.svg', dark: '/frameleaf/frameleaf-logo-dark.svg' };
+  logoManager.setLogo({
+    stacked: frameleafInline,
+    unstacked: frameleafInline,
+    stacked_futo: frameleafInline,
+    icon: '/frameleaf/frameleaf-symbol.svg',
+  });
 
   const MediaChromeDefaultKeys = [
     'Start airplay',

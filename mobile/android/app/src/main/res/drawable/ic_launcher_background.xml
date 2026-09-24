@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frameleaf app tile gradient (design/frameleaf/brand-kit/frameleaf-app-icon.svg #tile-gradient). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:aapt="http://schemas.android.com/aapt"
+  android:width="108dp"
+  android:height="108dp"
+  android:viewportWidth="108"
+  android:viewportHeight="108">
+  <path android:pathData="M0,0h108v108h-108z">
+    <aapt:attr name="android:fillColor">
+      <gradient
+        android:type="linear"
+        android:startX="5.4"
+        android:startY="3.24"
+        android:endX="103.68"
+        android:endY="101.52">
+        <item android:offset="0" android:color="#FF88F54A" />
+        <item android:offset="0.38" android:color="#FF1BDD72" />
+        <item android:offset="0.66" android:color="#FF00C4AD" />
+        <item android:offset="1" android:color="#FF00ACC9" />
+      </gradient>
+    </aapt:attr>
+  </path>
+</vector>

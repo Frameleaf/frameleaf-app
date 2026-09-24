@@ -152,7 +152,7 @@ class BrandAssetContractTests(unittest.TestCase):
 
         def yaml_asset_decoy(root):
             path = root / "mobile/pubspec.yaml"
-            path.write_text(path.read_text().replace("image_path_android: 'assets/immich-logo.png'", "# image_path_android: 'assets/immich-logo.png'\n  image_path_android: 'assets/frameleaf-logo.png'"))
+            path.write_text(path.read_text().replace("image_path_android: 'assets/frameleaf-app-icon.png'", "# image_path_android: 'assets/frameleaf-app-icon.png'\n  image_path_android: 'assets/other-logo.png'"))
 
         def json_decoy(root):
             path = root / "packages/sdk/package.json"

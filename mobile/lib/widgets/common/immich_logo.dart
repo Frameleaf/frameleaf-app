@@ -9,7 +9,7 @@ class ImmichLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image(
-      image: const AssetImage('assets/immich-logo.png'),
+      image: const AssetImage('assets/frameleaf-symbol.png'),
       width: size,
       filterQuality: FilterQuality.high,
       isAntiAlias: true,

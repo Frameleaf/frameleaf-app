@@ -85,7 +85,7 @@ void main() {
   });
 
   test('preserves cover quality for extreme aspect ratios', () async {
-    final image = await loadEncoded('assets/immich-logo-inline-light.png', const ui.Size.square(320));
+    final image = await loadEncoded('assets/frameleaf-logo-inline-light.png', const ui.Size.square(320));
 
     expect(image.width, 1311);
     expect(image.height, 320);

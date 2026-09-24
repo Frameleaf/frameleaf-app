@@ -1,0 +1,657 @@
+{
+  "exports": [
+    {
+      "note": "byte-for-byte copy",
+      "path": "web/static/frameleaf/frameleaf-symbol.svg",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "byte-for-byte copy",
+      "path": "web/static/frameleaf/frameleaf-logo-dark.svg",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "note": "byte-for-byte copy",
+      "path": "web/static/frameleaf/frameleaf-logo-light.svg",
+      "sha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "note": "540x132",
+      "path": "web/static/frameleaf/frameleaf-logo-light.png",
+      "sha256": "964f74fee8eb1b7a03764202b929b72843f169fa77bc7e68e95d8374dd6cc75f",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "note": "16x16",
+      "path": "web/static/favicon-16.png",
+      "sha256": "9df971b7102f8a4e2944c2db1115ab9e69cc72494c38b9544e0940ff2bacb7c4",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "32x32",
+      "path": "web/static/favicon-32.png",
+      "sha256": "dd237fdb22fdb4a5fbc2908740e681ffcc6b030e66254caaba5d790045ded0fe",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "48x48",
+      "path": "web/static/favicon-48.png",
+      "sha256": "9a29ef31c8f2148632ed504fc95086e00bc72cb25eea3ff9660b995451817a54",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "96x96",
+      "path": "web/static/favicon-96.png",
+      "sha256": "a6230b877d8ea6ed2986ebd1a0d9a6f72fed334fdd61b265e0c070f02495e091",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "144x144",
+      "path": "web/static/favicon-144.png",
+      "sha256": "a008411a3b5aeaa3698bd30aa2c3d5ed3e941aca55c61a47ab3c2b57dc97bd11",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "512x512",
+      "path": "web/static/favicon.png",
+      "sha256": "7c5d59d32499f8800cb515c638954af53c37956781a685cb94e39f14fafc6dda",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "ICO with 16/32/48 PNG payloads",
+      "path": "web/static/favicon.ico",
+      "sha256": "64a2202de8d255a1f3bc6654b9e51f9af18d4d4ed388a7bc7ba17899b4aab703",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "ICO with 16/32/48 PNG payloads",
+      "path": "docs/static/img/favicon.ico",
+      "sha256": "64a2202de8d255a1f3bc6654b9e51f9af18d4d4ed388a7bc7ba17899b4aab703",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "180x180; square full-bleed tile",
+      "path": "web/static/apple-icon-180.png",
+      "sha256": "a4bfe1aa56df3b7e2f01a6b148b1029b37fcaa12b74486b2f03e3d023e5c0e9a",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "192x192; full-bleed tile, symbol in maskable safe zone",
+      "path": "web/static/manifest-icon-192.maskable.png",
+      "sha256": "a61c001e8de350ec087518ba7ce5ec5807ec5b72f906d1e50c384a2b7bb67fee",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "512x512; full-bleed tile, symbol in maskable safe zone",
+      "path": "web/static/manifest-icon-512.maskable.png",
+      "sha256": "041cb91671a0b85b6eb08759df6986ef9ed97cee9b55c5c39e46b234021c1fb6",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "180x180",
+      "path": "docs/static/img/favicon.png",
+      "sha256": "530b0b651314e94091a25a230f2b15f5ea8ac2558644c81eec4971a990148dc5",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "byte-for-byte copy",
+      "path": "docs/static/img/frameleaf-logo-inline-light.svg",
+      "sha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "note": "byte-for-byte copy",
+      "path": "docs/static/img/frameleaf-logo-inline-dark.svg",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "note": "1024x1024",
+      "path": "mobile/assets/frameleaf-symbol.png",
+      "sha256": "9bf64824041dd13a4c9571fbf5ee12e7400c8cd836e31fb9da8b1cd53655c8eb",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "3038x742",
+      "path": "mobile/assets/frameleaf-logo-inline-light.png",
+      "sha256": "207c40686f76117cb88dec36447073878688637c543bc5b5c62fb8ea008625f5",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "note": "3038x742",
+      "path": "mobile/assets/frameleaf-logo-inline-dark.png",
+      "sha256": "1ef0a19ec943c6138aa46599b4ae38bb0baf8a9ef661cccd3c2da94862830b44",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "note": "autox400 wordmark only",
+      "path": "mobile/assets/frameleaf-wordmark-light.png",
+      "sha256": "6731a583344d25311951dac57ee29a44a614fb08f9fb424baf9b9ab4ed84cd14",
+      "source": "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+      "sourceSha256": "6f20367286b92d9603cce849bade81bb82a18ed73bf8b366492e931746f5d2ee"
+    },
+    {
+      "note": "autox400 wordmark only",
+      "path": "mobile/assets/frameleaf-wordmark-dark.png",
+      "sha256": "8903513ccde8ed8fa902aa4ea2e3080b971fc0bc6148c5dcfde5005e317340fe",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b"
+    },
+    {
+      "note": "1024x1024",
+      "path": "mobile/assets/frameleaf-app-icon.png",
+      "sha256": "530f9a9f9794db87ac7621dae6363653ef9fa3aa4124ad87fcc4a42a0af245a3",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "1024x1024; square full-bleed tile",
+      "path": "mobile/assets/frameleaf-app-icon-ios.png",
+      "sha256": "a1109977d3ea630b0cf7b08582d5532e1e7c1f612bebb49a5849176637dfe570",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "320x320 pad 0.1",
+      "path": "mobile/assets/frameleaf-splash.png",
+      "sha256": "e25fa731deb309cbb0d3363a52344a513f9aec8ce653e172915bb8facd6d9ea1",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "1152x1152 pad 0.28",
+      "path": "mobile/assets/frameleaf-splash-android12.png",
+      "sha256": "2781717fcc03b14d2b59be661249fed9e0ab77a1e6c2f4b70305961520488c52",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "48x48",
+      "path": "mobile/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "sha256": "2ae981be1cd41a463b2a3c1f002b2fd160a5ec09c784d2a1abc9bdf31c43e2ca",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "24x24 pad 0.08",
+      "path": "mobile/android/app/src/main/res/drawable-mdpi/notification_icon.png",
+      "sha256": "eafa8d02913434b80e27af95f18b2041aaaf1f18118842da5c3abe7876b5efe8",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "note": "80x80 pad 0.1",
+      "path": "mobile/android/app/src/main/res/drawable-mdpi/splash.png",
+      "sha256": "c43c3eeb4824f81887f647b4eace8aa2f0ab15148a0d9a81a3fa9ce77ee8e0d5",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "288x288 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-mdpi/android12splash.png",
+      "sha256": "d505e1f00aeac139e5b3e9c552aac0b5e3a378b8f4d27da3f55784ebd31a7989",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "288x288 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-night-mdpi/android12splash.png",
+      "sha256": "d505e1f00aeac139e5b3e9c552aac0b5e3a378b8f4d27da3f55784ebd31a7989",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "72x72",
+      "path": "mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "sha256": "6e83ff49e57778274bf8ba2ae36688c3683295e20301cadaeef757c8968ecc15",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "36x36 pad 0.08",
+      "path": "mobile/android/app/src/main/res/drawable-hdpi/notification_icon.png",
+      "sha256": "b61e8f113134118ae5006871548afda25aa3f4f552c0d86e1dc40b6abbe8fa67",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "note": "120x120 pad 0.1",
+      "path": "mobile/android/app/src/main/res/drawable-hdpi/splash.png",
+      "sha256": "f1c79ec918621e5bd2adc19f233de811536e8d226558de117d116b856e7def43",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "432x432 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-hdpi/android12splash.png",
+      "sha256": "b1ddb708b560da0a71f04369ce4e2eb95ea04071592051192109e805ef1a38c5",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "432x432 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-night-hdpi/android12splash.png",
+      "sha256": "b1ddb708b560da0a71f04369ce4e2eb95ea04071592051192109e805ef1a38c5",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "96x96",
+      "path": "mobile/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "sha256": "66b631f3a06831813202080998e3b128fc236d218c5a2764bae50e2263cc0cb8",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "48x48 pad 0.08",
+      "path": "mobile/android/app/src/main/res/drawable-xhdpi/notification_icon.png",
+      "sha256": "1aa1c344b8d5d8d9b523a838a744e92652fc3acf9a6b90397b3615efe99c8a72",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "note": "160x160 pad 0.1",
+      "path": "mobile/android/app/src/main/res/drawable-xhdpi/splash.png",
+      "sha256": "d7b98fc95084fb81dc4aa0608d32f9db82ac0178fb1aa30644d14bdef36b82c1",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "576x576 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-xhdpi/android12splash.png",
+      "sha256": "5eb9ff7b3a44c6b0d99157b89425fcce550c131c4534748672d2954cba55bf82",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "576x576 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-night-xhdpi/android12splash.png",
+      "sha256": "5eb9ff7b3a44c6b0d99157b89425fcce550c131c4534748672d2954cba55bf82",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "144x144",
+      "path": "mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "sha256": "2e9ce2fe5f8ccdc54bebd80fce906151d6bef2a255630a016a9163003b97dcc2",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "72x72 pad 0.08",
+      "path": "mobile/android/app/src/main/res/drawable-xxhdpi/notification_icon.png",
+      "sha256": "02c23eb329e19449f270a52080209b198e71cddbcfc0aa6d3ce76b561431392e",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "note": "240x240 pad 0.1",
+      "path": "mobile/android/app/src/main/res/drawable-xxhdpi/splash.png",
+      "sha256": "157119cfb2cabef0da8fc14b7f820766f7c2f5f02f78c05f3619d6894491ba6f",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "864x864 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-xxhdpi/android12splash.png",
+      "sha256": "4d4b22e37803324bf100e8f4b6af5d3c3e81d5690288fa1d556ca5c4b1a7398e",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "864x864 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-night-xxhdpi/android12splash.png",
+      "sha256": "4d4b22e37803324bf100e8f4b6af5d3c3e81d5690288fa1d556ca5c4b1a7398e",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "192x192",
+      "path": "mobile/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "sha256": "6dffde665cc32328748b8bf50689d9dbde51d45eb5862ba1b420e98474f121f4",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "96x96 pad 0.08",
+      "path": "mobile/android/app/src/main/res/drawable-xxxhdpi/notification_icon.png",
+      "sha256": "205902e21deb8af4e4f3b16994233889ebff9c7d423c698c74213b1f319ad2b4",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b"
+    },
+    {
+      "note": "320x320 pad 0.1",
+      "path": "mobile/android/app/src/main/res/drawable-xxxhdpi/splash.png",
+      "sha256": "e25fa731deb309cbb0d3363a52344a513f9aec8ce653e172915bb8facd6d9ea1",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "1152x1152 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-xxxhdpi/android12splash.png",
+      "sha256": "2781717fcc03b14d2b59be661249fed9e0ab77a1e6c2f4b70305961520488c52",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "1152x1152 pad 0.28",
+      "path": "mobile/android/app/src/main/res/drawable-night-xxxhdpi/android12splash.png",
+      "sha256": "2781717fcc03b14d2b59be661249fed9e0ab77a1e6c2f4b70305961520488c52",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "512x512; square full-bleed tile",
+      "path": "mobile/android/fastlane/metadata/android/en-US/images/icon.png",
+      "sha256": "3aac3ee1f2b431e171df41074d2ea230744615755d6086940f5653a1a52952a7",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "1024x500 pad 0.12 on #111d26",
+      "path": "mobile/android/fastlane/metadata/android/en-US/images/featureGraphic.png",
+      "sha256": "ac1f76c0bf715241d4f4807f71ff4ba124dfa7a7937b59af3a7245c53436752e",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark-tagline.svg",
+      "sourceSha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7"
+    },
+    {
+      "note": "512x512; square full-bleed tile",
+      "path": "mobile/android/metadata/en-US/images/icon.png",
+      "sha256": "3aac3ee1f2b431e171df41074d2ea230744615755d6086940f5653a1a52952a7",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "1024x500 pad 0.12 on #111d26",
+      "path": "mobile/android/metadata/en-US/images/featureGraphic.png",
+      "sha256": "ac1f76c0bf715241d4f4807f71ff4ba124dfa7a7937b59af3a7245c53436752e",
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark-tagline.svg",
+      "sourceSha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7"
+    },
+    {
+      "note": "100x100 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/100.png",
+      "sha256": "603d136c6c971214906cdcbb107a09ccabd5836b21054ebef932d4d20a0ebc68",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "102x102 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/102.png",
+      "sha256": "7030cb2bacb3841ee3f8612b9fbcfccc5a73efd4205301b6f5696f26fb225f96",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "1024x1024 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/1024.png",
+      "sha256": "d897747b6590e590cd35cd336b9dae9eb4bc0dfa247e02fa452c54433d444c4e",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "114x114 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/114.png",
+      "sha256": "1773fe3810aa6503bf600cfa2a73ee0af017e2f346e0fa3bc1c8744fc184d5f4",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "120x120 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/120.png",
+      "sha256": "a531ebb42171d4853aff67f58190dda0390049870c3e0c72b89b73d63b31a244",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "128x128 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/128.png",
+      "sha256": "814cfd390b866c940c244fc7790c48324fb4c5136d7a8781e6a0f6f0a5dcea43",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "144x144 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/144.png",
+      "sha256": "42df8f6faf51d79f153fc7cf5039eceb1bc683d1e379ad5212be4bbcc47dff6c",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "152x152 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/152.png",
+      "sha256": "5930ddce0746bfd0a554550d76e6c637345c0b8e7cdaaba11d6dc1da34883711",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "16x16 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/16.png",
+      "sha256": "9a84daba0303a32a1d2ebe43a6c95be327d7131260785b24f03bb8ccb940c8f3",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "167x167 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/167.png",
+      "sha256": "f36fbfbc94106f857f991266542c1eafdfdc77941b7d9247ff970cfbd77ef6c6",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "172x172 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/172.png",
+      "sha256": "4fc63944e910ca298aed7f47a14d1b0c141fb0c1a4277f9f00770256f88df0aa",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "180x180 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/180.png",
+      "sha256": "9335ac1f0de245a5197aa967b974e43a57bfa03a27e98a953bf95c7569927759",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "196x196 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/196.png",
+      "sha256": "d6253c84cd6467f403aa14bebbf8598188253da21a28a276adb2ed0d2fb5d580",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "20x20 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/20.png",
+      "sha256": "f5ef2eb5a0c1786f0782e97f21573166c50b0d13e7a40fa2ae2016039cdbb82a",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "216x216 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/216.png",
+      "sha256": "302bfa4eaa033c01e4104e559862a9ef189197eb2aa84f93cb6ce85f551ecf33",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "256x256 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/256.png",
+      "sha256": "87bc71740f5c052ecebbc86fe34b90916581609b01d820fd733d3be9fc22642e",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "29x29 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/29.png",
+      "sha256": "b0de3d63594b2c687562db58ec92266c70665c16811cc56ff9e7edeb4c88b861",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "32x32 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/32.png",
+      "sha256": "62c85c6ddf1d14d41da9044bf82488ef993e221839afe22613d699975eae8c7e",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "40x40 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/40.png",
+      "sha256": "a33b04b0320c671fb62984eed71e2a74369804c665718780a647e336dde39b9e",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "48x48 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/48.png",
+      "sha256": "70ab62b955bdfef98430a9df080ae48e36b6ef686c6a3a6b9be1b073a8fe5ec8",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "50x50 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/50.png",
+      "sha256": "ba0d1de7c037df7699606905fa5583d38194825d873f77c723cdf95364b83bd8",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "512x512 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/512.png",
+      "sha256": "aed7c3ff05a0b1db3c874eb6c2bdab23d675a97c132b11cdfb2a6c5fd1a4fbce",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "55x55 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/55.png",
+      "sha256": "5a3d60fe27d31be8469dd204dab9006dcad2b5607cfee92ec7971db2f61dcaea",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "57x57 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/57.png",
+      "sha256": "3d8e5be215fc36feeb5c4e7d711fabe9589e7fff61cf8cb89ee1e321d2b62fe9",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "58x58 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/58.png",
+      "sha256": "9645e8aeb85f2bf1ec6f6a7230b7e24505589d72b42ed2aedb63663bae19e748",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "60x60 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/60.png",
+      "sha256": "1a049d4268f1b331488b8aae00901607c09986db8a14bbe9a59035764abac73e",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "64x64 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/64.png",
+      "sha256": "a35514cc78bade3bbe02a4e7e7952cb3e38b70ad45aaa0a2c92fc671883c366f",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "66x66 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/66.png",
+      "sha256": "3952cb71a8c14cb0b7f9dc90338f6a65b987735d49bbf032c138d0224c2f05d8",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "72x72 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/72.png",
+      "sha256": "a78216364bbf6ebb6148c706181b6dce55bb566c5c5868e013096d0ce4daf476",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "76x76 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/76.png",
+      "sha256": "c099cf6cb5f61d25e6076b469bbf5d730ff61be0548a95752bed3ddb5e35562b",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "80x80 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/80.png",
+      "sha256": "b86086ba1b22d8e0855c49f0012dd8091a72b82da7727b21d002b09e336c27b0",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "87x87 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/87.png",
+      "sha256": "4f1f77fc36de7da33b3884ac9b8c4ec01c6aa6c9442a70e4e31e7b6eef1da1f3",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "88x88 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/88.png",
+      "sha256": "b7b8d32be8d8b157044a8d62a58dcc1b8384537daeb952fe09a21d697c7b7f89",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "92x92 on #111d26; square full-bleed tile, opaque",
+      "path": "mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/92.png",
+      "sha256": "0175ff90d542dbfffde296d15dd4acc51dc8bb52365a4c1ec6b2299fd5d88ff6",
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94"
+    },
+    {
+      "note": "80x80 pad 0.1",
+      "path": "mobile/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png",
+      "sha256": "c43c3eeb4824f81887f647b4eace8aa2f0ab15148a0d9a81a3fa9ce77ee8e0d5",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "160x160 pad 0.1",
+      "path": "mobile/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png",
+      "sha256": "d7b98fc95084fb81dc4aa0608d32f9db82ac0178fb1aa30644d14bdef36b82c1",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    },
+    {
+      "note": "240x240 pad 0.1",
+      "path": "mobile/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png",
+      "sha256": "157119cfb2cabef0da8fc14b7f820766f7c2f5f02f78c05f3619d6894491ba6f",
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2"
+    }
+  ],
+  "generator": "scripts/frameleaf-logo-exports.mjs",
+  "renderer": "sharp 0.35.3, libvips 8.18.3"
+}

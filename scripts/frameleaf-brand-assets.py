@@ -49,7 +49,7 @@ REFERENCE_SPECS = (
 
 COMPATIBILITY_SENTINELS = (
     ("mobile/pubspec.yaml", "yaml-root-name", "immich_mobile"),
-    ("mobile/pubspec.yaml", "yaml-image-path-android", "assets/immich-logo.png"),
+    ("mobile/pubspec.yaml", "yaml-image-path-android", "assets/frameleaf-app-icon.png"),
     ("packages/sdk/package.json", "json-name", "@immich/sdk"),
     ("server/package.json", "json-name", "immich"),
     ("machine-learning/pyproject.toml", "toml-project-name", "immich-ml"),

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Iniciar sessió amb URL personalitzada">
+<picture><source media="(prefers-color-scheme: dark)" srcset="../design/frameleaf/brand-kit/frameleaf-logo-dark.svg"><img src="../design/frameleaf/derivatives/frameleaf-logo-light.svg" width="300" title="Iniciar sessió amb URL personalitzada" alt="Frameleaf"></picture>
 </p>
 <h3 align="center">Immich - Solució de còpia de seguretat d'alta rendiment per a fotos i vídeos auto-allotjada</h3>
 <br/>

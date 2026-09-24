@@ -65,7 +65,7 @@
       "path": "mobile/pubspec.yaml"
     },
     {
-      "expectedValue": "assets/immich-logo.png",
+      "expectedValue": "assets/frameleaf-app-icon.png",
       "parser": "yaml-image-path-android",
       "path": "mobile/pubspec.yaml"
     },

@@ -58,7 +58,7 @@ class ImmichAppBarDialog extends HookConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Image.asset(
-                  context.isDarkTheme ? 'assets/immich-text-dark.png' : 'assets/immich-text-light.png',
+                  context.isDarkTheme ? 'assets/frameleaf-wordmark-dark.png' : 'assets/frameleaf-wordmark-light.png',
                   height: 16,
                 ),
               ),
