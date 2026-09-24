@@ -993,18 +993,62 @@ describe(PreservationWorkerService.name, () => {
           expect(repository.restoreWork).not.toHaveBeenCalled();
         });
 
-        it('refuses a restoration whose review recorded no digests', async () => {
+        it('carries on a restoration reviewed before digests were recorded', async () => {
           const built = buildPackage(1);
           useSource(built.entries);
           const found = packageOf({ origin: 'server-folder', format: 'directory', status: 'ready' });
+          const restore = restoreFor(found, {
+            status: 'restoring',
+            packageIdentity: built.manifest.packageId,
+            summary: { albums: 0, people: 0 } as never,
+          });
+
+          await apply(restore, found);
+
+          expect(repository.updateRestore).not.toHaveBeenCalledWith(
+            restore.id,
+            expect.objectContaining({ status: 'unreadable' }),
+          );
+          expect(repository.restoreWork).toHaveBeenCalled();
+        });
+
+        it('compares a legacy restoration with the digests stored on the package', async () => {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({
+            origin: 'server-folder',
+            format: 'directory',
+            status: 'ready',
+            manifest: { files: { 'assets.jsonl': { sha256: 'c'.repeat(64), bytes: 1 } } } as never,
+          });
+          const restore = restoreFor(found, {
+            status: 'restoring',
+            packageIdentity: built.manifest.packageId,
+            summary: { albums: 0, people: 0 } as never,
+          });
+
+          await apply(restore, found);
+
+          expect(repository.updateRestore).toHaveBeenLastCalledWith(restore.id, {
+            status: 'unreadable',
+            summary: expect.objectContaining({ reasonKey: 'package_changed_since_review' }),
+          });
+          expect(repository.restoreWork).not.toHaveBeenCalled();
+        });
+
+        it('applies a legacy restoration whose package still matches its stored digests', async () => {
+          const built = buildPackage(1);
+          useSource(built.entries);
+          const found = packageOf({
+            origin: 'server-folder',
+            format: 'directory',
+            status: 'ready',
+            manifest: { files: built.manifest.files } as never,
+          });
 
           await apply(reviewed(found, undefined, built.manifest.packageId), found);
 
-          expect(repository.updateRestore).toHaveBeenLastCalledWith(
-            expect.any(String),
-            expect.objectContaining({ status: 'unreadable' }),
-          );
-          expect(repository.restoreWork).not.toHaveBeenCalled();
+          expect(repository.restoreWork).toHaveBeenCalled();
         });
 
         it('applies a package that is byte-for-byte what was reviewed', async () => {
