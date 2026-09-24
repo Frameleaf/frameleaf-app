@@ -127,11 +127,26 @@ describe(TagService.name, () => {
     it('should update a tag', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
       mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
-      mocks.tag.get.mockResolvedValue(tagStub.tag);
       await expect(sut.update(authStub.admin, 'tag-1', { name: 'tag', color: '#000000' })).resolves.toEqual(
         tagResponseStub.color1,
       );
-      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { value: 'tag', color: '#000000' });
+      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { name: 'tag', color: '#000000' });
+    });
+
+    it('should move a tag to the top level', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
+      mocks.tag.update.mockResolvedValue(tagStub.colorCreate);
+      await sut.update(authStub.admin, 'tag-1', { parentId: null });
+      expect(mocks.tag.update).toHaveBeenCalledWith('tag-1', { parentId: null });
+    });
+
+    it('should require read access to the new parent', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set(['tag-1']));
+      mocks.access.tag.checkOwnerAccess.mockResolvedValueOnce(new Set());
+      await expect(sut.update(authStub.admin, 'tag-1', { parentId: 'tag-other' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.tag.update).not.toHaveBeenCalled();
     });
   });
 

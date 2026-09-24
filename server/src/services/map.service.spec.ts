@@ -28,6 +28,10 @@ describe(MapService.name, () => {
         city: asset.exifInfo.city,
         state: asset.exifInfo.state,
         country: asset.exifInfo.country,
+        originalFileName: asset.originalFileName,
+        type: asset.type,
+        fileCreatedAt: asset.fileCreatedAt.toISOString(),
+        localDateTime: asset.localDateTime.toISOString(),
       };
       mocks.partner.getAll.mockResolvedValue([]);
       mocks.map.getMapMarkers.mockResolvedValue([marker]);
@@ -62,6 +66,10 @@ describe(MapService.name, () => {
         city: asset.exifInfo.city,
         state: asset.exifInfo.state,
         country: asset.exifInfo.country,
+        originalFileName: asset.originalFileName,
+        type: asset.type,
+        fileCreatedAt: asset.fileCreatedAt.toISOString(),
+        localDateTime: asset.localDateTime.toISOString(),
       };
       mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
       mocks.map.getMapMarkers.mockResolvedValue([marker]);
@@ -107,6 +115,10 @@ describe(MapService.name, () => {
         city: asset.exifInfo.city,
         state: asset.exifInfo.state,
         country: asset.exifInfo.country,
+        originalFileName: asset.originalFileName,
+        type: asset.type,
+        fileCreatedAt: asset.fileCreatedAt.toISOString(),
+        localDateTime: asset.localDateTime.toISOString(),
       };
       mocks.partner.getAll.mockResolvedValue([]);
       mocks.map.getMapMarkers.mockResolvedValue([marker]);

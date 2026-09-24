@@ -11,6 +11,7 @@ import {
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
+  SearchCityCountResponseDto,
   SearchExploreResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
@@ -144,6 +145,18 @@ export class SearchController {
   })
   getAssetsByCity(@Auth() auth: AuthDto): Promise<AssetResponseDto[]> {
     return this.service.getAssetsByCity(auth);
+  }
+
+  @Get('cities/counts')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Retrieve asset counts by city',
+    description:
+      'Retrieve how many timeline photos and videos the user can see in each city. Counts include videos, while GET /search/cities lists only cities with at least one photo, so a city that has only videos appears here but not in that list. Locked, hidden and trashed media are never counted.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getCityAssetCounts(@Auth() auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
+    return this.service.getCityAssetCounts(auth);
   }
 
   @Get('suggestions')

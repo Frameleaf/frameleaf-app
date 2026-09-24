@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetMetadataKey } from 'src/enum.js';
+import { AssetMetadataKey, AssetType } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -140,5 +140,29 @@ describe(MapService.name, () => {
         expect.arrayContaining([partnerVisible.id, partnerNsfw.id, albumVisible.id, albumNsfw.id]),
       );
     });
+  });
+
+  it('returns the file name, capture dates and media type on each marker (FL-51)', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({
+      ownerId: user.id,
+      originalFileName: 'IMG_0042.HEIC',
+      type: AssetType.Video,
+      fileCreatedAt: new Date('2024-05-06T07:08:09.123Z'),
+      localDateTime: new Date('2024-05-06T09:08:09.123Z'),
+    });
+    await addExif(ctx, [asset]);
+
+    const markers = await sut.getMapMarkers(factory.auth({ user }), {});
+    expect(markers).toEqual([
+      expect.objectContaining({
+        id: asset.id,
+        originalFileName: 'IMG_0042.HEIC',
+        type: AssetType.Video,
+        fileCreatedAt: '2024-05-06T07:08:09.123Z',
+        localDateTime: '2024-05-06T09:08:09.123Z',
+      }),
+    ]);
   });
 });

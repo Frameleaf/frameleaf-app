@@ -181,19 +181,29 @@ from
 -- TagRepository.update
 begin
 select
-  "value"
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select
+  "userId",
+  "value",
+  "parentId"
 from
   "tag"
 where
   "id" = $1
-update "tag"
-set
-  "value" = $1,
-  "color" = $2
-where
-  "id" = $3
-returning
-  *
 rollback
 
 -- TagRepository.delete
