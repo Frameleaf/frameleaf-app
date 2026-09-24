@@ -414,6 +414,40 @@ describe(AuthService.name, () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    it('says an expired key expired, with the same message and nothing about the link', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue(sharedLinkStub.expired as any);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect((error as UnauthorizedException).getResponse()).toEqual({
+        message: 'Invalid share key',
+        error: 'Unauthorized',
+        statusCode: 401,
+        reason: 'expired',
+      });
+    });
+
+    it('gives an unknown key no reason', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue(void 0);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect((error as UnauthorizedException).getResponse()).not.toHaveProperty('reason');
+    });
+
     it('should not accept a key on a non-shared route', async () => {
       mocks.sharedLink.getByKey.mockResolvedValue(sharedLinkStub.valid as any);
 

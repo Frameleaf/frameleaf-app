@@ -37,13 +37,17 @@ export const getDatabaseBackupActions = ($t: MessageFormatter, filename: string)
  * RESTORE before this runs. It calls `setMaintenanceMode` with
  * `MaintenanceAction.RestoreDatabase`.
  */
-export const restoreDatabaseBackup = async (filename: string) => {
+export const restoreDatabaseBackup = async (
+  filename: string,
+  { keepSafetyBackup }: { keepSafetyBackup?: boolean } = {},
+) => {
   const $t = await getFormatter();
   try {
     await setMaintenanceMode({
       setMaintenanceModeDto: {
         action: MaintenanceAction.RestoreDatabase,
         restoreBackupFilename: filename,
+        keepSafetyBackup,
       },
     });
   } catch (error) {

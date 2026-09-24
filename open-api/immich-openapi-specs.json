@@ -59613,6 +59613,10 @@
           "action": {
             "$ref": "#/components/schemas/MaintenanceAction"
           },
+          "keepSafetyBackup": {
+            "description": "Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails",
+            "type": "boolean"
+          },
           "restoreBackupFilename": {
             "description": "Restore backup filename",
             "type": "string"

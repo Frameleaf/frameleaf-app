@@ -737,6 +737,36 @@ describe(DatabaseBackupService.name, () => {
       );
     });
 
+    describe('safety backup', () => {
+      const restorePoint = expect.stringContaining('restore-point-');
+
+      it('keeps the restore point by default', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('removes the restore point after a successful restore when it is not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false });
+
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('keeps the restore point after a failed restore even when it was not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(false);
+
+        await expect(
+          sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false }),
+        ).rejects.toThrow('Server health check failed, no admin exists.');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+    });
+
     it('should fail to restore invalid backup', async () => {
       await expect(sut.restoreDatabaseBackup('filename')).rejects.toThrowErrorMatchingInlineSnapshot(
         `[Error: Invalid backup file format!]`,

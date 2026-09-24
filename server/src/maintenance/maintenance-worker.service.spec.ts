@@ -446,6 +446,30 @@ describe(MaintenanceWorkerService.name, () => {
       );
     });
 
+    it('keeps the safety backup unless the request says not to', async () => {
+      await sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+      });
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
+        'development-filename.sql',
+        expect.any(Function),
+        { keepSafetyBackup: true },
+      );
+
+      mocks.database.tryLock.mockResolvedValueOnce(true);
+      await sut.runAction({
+        action: MaintenanceAction.RestoreDatabase,
+        restoreBackupFilename: 'development-filename.sql',
+        keepSafetyBackup: false,
+      });
+      expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
+        'development-filename.sql',
+        expect.any(Function),
+        { keepSafetyBackup: false },
+      );
+    });
+
     it('should forward errors from database backup service', async () => {
       databaseBackupServiceMock.restoreDatabaseBackup.mockRejectedValue('Sample error');
 
