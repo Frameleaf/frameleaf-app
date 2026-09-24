@@ -68,12 +68,17 @@ export class SessionService extends BaseService {
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AuthDeviceDelete, ids: [id] });
     await this.sessionRepository.delete(id);
+    // FL-34: the revoked session's open tabs clear what they show and sign out
+    await this.eventRepository.emit('SessionDelete', { sessionId: id });
   }
 
   async deleteAll(auth: AuthDto): Promise<void> {
     const userId = auth.user.id;
     const currentSessionId = auth.session?.id;
-    await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
+    const deletedIds = await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
+    for (const sessionId of deletedIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
   }
 
   async lock(auth: AuthDto, id: string): Promise<void> {
@@ -88,6 +93,9 @@ export class SessionService extends BaseService {
     // FL-34: a password change revokes elevation everywhere, the retained session included
     await this.sessionRepository.lockAll(userId);
     this.websocketRepository.clientSend('on_session_lock', userId);
-    await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
+    const deletedIds = await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
+    for (const sessionId of deletedIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
   }
 }

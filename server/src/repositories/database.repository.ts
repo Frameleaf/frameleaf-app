@@ -1307,6 +1307,21 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   /**
+   * FL-34: `withAssetMetadataLock` for several assets, such as every member of a stack or live photo
+   * that one review writes. The per-asset locks are taken one at a time in id order, so two such
+   * callers cannot deadlock, and before any row lock the callback takes, the order every metadata
+   * writer follows.
+   */
+  async withAssetMetadataLocks<R>(assetIds: string[], callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+    return this.db.transaction().execute(async (trx) => {
+      for (const assetId of [...new Set(assetIds)].toSorted()) {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${assetId})::int)`.execute(trx);
+      }
+      return callback(trx);
+    });
+  }
+
+  /**
    * FL-67: per-account lock around a read-check-write of the stored preferences, so a revision
    * check and the write it guards are atomic. Two saves from different tabs can no longer both pass
    * the check against the same revision and overwrite each other. Same shape as

@@ -194,7 +194,10 @@ export class UserAdminService extends BaseService {
 
     // FL-76: deleting an account signs out its devices, as the delete dialog says, so a restored
     // account signs in again rather than resuming the sessions it had before
-    await this.sessionRepository.invalidateAll({ userId: id });
+    const deletedIds = await this.sessionRepository.invalidateAll({ userId: id });
+    for (const sessionId of deletedIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
 
     await this.eventRepository.emit('UserTrash', user);
 
@@ -249,6 +252,7 @@ export class UserAdminService extends BaseService {
     }
 
     await this.sessionRepository.delete(sessionId);
+    await this.eventRepository.emit('SessionDelete', { sessionId });
 
     // the device as the Security tab names it: operating system · device type
     const device = [session.deviceOS, session.deviceType].filter(Boolean).join(' · ') || null;

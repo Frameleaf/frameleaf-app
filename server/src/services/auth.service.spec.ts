@@ -707,6 +707,48 @@ describe(AuthService.name, () => {
       vi.useRealTimers();
     });
 
+    describe('when the elevation refresh finds the session changed (FL-34)', () => {
+      const nearExpiry = () => {
+        const session = SessionFactory.create({ updatedAt: new Date() });
+        return {
+          id: session.id,
+          updatedAt: session.updatedAt,
+          user: UserFactory.create(),
+          isPendingSyncReset: false,
+          pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+          appVersion: null,
+          oauthSid: null,
+        };
+      };
+      const authenticate = () =>
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        });
+
+      it('continues without elevation when the session was locked meanwhile', async () => {
+        const session = nearExpiry();
+        mocks.session.getByToken
+          .mockResolvedValueOnce(session)
+          .mockResolvedValueOnce({ ...session, pinExpiresAt: null });
+        mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+        await expect(authenticate()).resolves.toEqual(
+          expect.objectContaining({ session: { id: session.id, hasElevatedPermission: false } }),
+        );
+        expect(mocks.session.getByToken).toHaveBeenCalledTimes(2);
+      });
+
+      it('rejects the request when the session was deleted meanwhile', async () => {
+        const session = nearExpiry();
+        mocks.session.getByToken.mockResolvedValueOnce(session).mockResolvedValueOnce(void 0);
+        mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+        await expect(authenticate()).rejects.toBeInstanceOf(UnauthorizedException);
+      });
+    });
+
     it('does not extend an elevated session for a status read (FL-34)', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
