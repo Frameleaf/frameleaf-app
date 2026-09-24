@@ -1,14 +1,25 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Kysely, NotNull, Selectable, ShallowDehydrateObject, Updateable, sql } from 'kysely';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  ExpressionBuilder,
+  Kysely,
+  NotNull,
+  Selectable,
+  ShallowDehydrateObject,
+  Transaction,
+  Updateable,
+  sql,
+} from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
+import { isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -522,8 +533,21 @@ export class AlbumRepository {
    * the final backstop and will abort the transaction if a concurrent writer
    * still manages to introduce a cycle.
    */
-  async reparent(id: string, newParentId: string | null): Promise<void> {
+  async reparent(id: string, newParentId: string | null, expectedParentId?: string | null): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
+      if (expectedParentId !== undefined) {
+        // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
+        // client loaded it) is refused rather than silently undoing the other change.
+        const current = await tx
+          .selectFrom('album')
+          .select('parentId')
+          .where('id', '=', id)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!current || current.parentId !== expectedParentId) {
+          throw new ConflictException('The album was moved since the directory was loaded');
+        }
+      }
       const subtree = await tx
         .selectFrom('album_closure')
         .select('id_descendant')
@@ -574,6 +598,56 @@ export class AlbumRepository {
         tx,
       );
     });
+  }
+
+  /**
+   * FL-52: the custom order one person gave their album directory, as album id → position. Only
+   * that person's rows are read; an album they can no longer see is simply never looked up.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getPositions(userId: string): Promise<Map<string, number>> {
+    const { rows } = await sql<{ albumId: string; position: number }>`
+      SELECT "albumId"::text AS "albumId", position
+      FROM immich_fork.album_position
+      WHERE "userId" = ${userId}::uuid
+    `.execute(this.db);
+    return new Map(rows.map(({ albumId, position }) => [albumId, position]));
+  }
+
+  /**
+   * FL-52: saves one group of the person's directory in the given order (index = position).
+   * Organization only — no album, membership or access row is touched. Like every fork-owned
+   * writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  async setPositions(userId: string, albumIds: string[]): Promise<void> {
+    if (albumIds.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      await sql`
+        INSERT INTO immich_fork.album_position ("userId", "albumId", position)
+        SELECT ${userId}::uuid, ordered.id, (ordered.ordinality - 1)::integer
+        FROM unnest(${albumIds}::uuid[]) WITH ORDINALITY AS ordered(id, ordinality)
+        ON CONFLICT ("userId", "albumId")
+        DO UPDATE SET position = excluded.position, "updatedAt" = clock_timestamp()
+      `.execute(tx);
+    });
+  }
+
+  private async lockForkWrites(tx: Transaction<DB>) {
+    const { rows } = await sql<{ phase: ForkSchemaPhase }>`
+      SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
+    `.execute(tx);
+    const handoff = await sql`
+      SELECT 1 FROM immich_fork.migration_audit
+      WHERE status = 'running' AND name IN ('official-handoff-preparation', 'fork-return-reconciliation')
+      LIMIT 1
+    `.execute(tx);
+    const phase = rows[0]?.phase;
+    if (!phase || !(isLegacyAuthoritative(phase) || isForkWriteEnabled(phase)) || handoff.rows.length > 0) {
+      throw new ConflictException('Album order is unavailable during database handoff');
+    }
   }
 
   @Chunked({ chunkSize: 30_000 })

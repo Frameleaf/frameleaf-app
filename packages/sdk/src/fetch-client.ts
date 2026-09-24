@@ -1688,6 +1688,12 @@ export type AlbumIconCatalogueResponseDto = {
     /** Material Design Icons catalogue version the names come from */
     version: string;
 };
+export type AlbumOrderDto = {
+    /** Every item of the group, in the order to show them. Must be exactly the group as it is now; a group that changed since the client loaded it is refused with 409. */
+    albumIds: string[];
+    /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
+    parentId: string | null;
+};
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
     notShared: number;
@@ -1745,6 +1751,8 @@ export type BulkIdResponseDto = {
 export type MoveAlbumDto = {
     /** Collection to move the album into, or null to take it out so it stands on its own */
     collectionId: string | null;
+    /** Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change. */
+    expectedParentId?: string | null;
 };
 export type AlbumDescendantCountResponseDto = {
     /** Number of descendant albums (children, grandchildren, etc.) */
@@ -9649,6 +9657,18 @@ export function getAlbumIconCatalogue(opts?: Oazapfts.RequestOpts) {
     }>("/albums/icons", {
         ...opts
     }));
+}
+/**
+ * Arrange a group of the album directory
+ */
+export function setAlbumOrder({ albumOrderDto }: {
+    albumOrderDto: AlbumOrderDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/albums/order", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumOrderDto
+    })));
 }
 /**
  * Retrieve album statistics

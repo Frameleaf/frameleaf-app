@@ -1,8 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumUserRole, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -413,6 +413,68 @@ describe(AlbumService.name, () => {
         'Not found or no albumAsset.delete access',
       );
       await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.toContain(asset.id);
+    });
+  });
+
+  describe('custom order (FL-52)', () => {
+    it("keeps each person's own order of the same albums, and changes nothing else", async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { album: first } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'First' });
+      const { album: second } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'Second' });
+      await ctx.newAlbumUser({ albumId: first.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+      await ctx.newAlbumUser({ albumId: second.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+      const ownerAuth = factory.auth({ user: { id: owner.id } });
+      const viewerAuth = factory.auth({ user: { id: viewer.id } });
+
+      await sut.setOrder(ownerAuth, { parentId: null, albumIds: [second.id, first.id] });
+      await sut.setOrder(viewerAuth, { parentId: null, albumIds: [first.id, second.id] });
+
+      const ids = async (auth: typeof ownerAuth) => (await sut.getTree(auth)).albums.map(({ id }) => id);
+      await expect(ids(ownerAuth)).resolves.toEqual([second.id, first.id]);
+      await expect(ids(viewerAuth)).resolves.toEqual([first.id, second.id]);
+      // A viewer arranging their directory never gains rights or changes the owner's albums.
+      const [album] = await ctx.get(AlbumRepository).getAll(owner.id, { id: first.id });
+      expect(album.albumUsers?.find(({ user }) => user.id === viewer.id)?.role).toBe(AlbumUserRole.Viewer);
+    });
+
+    it('arranges the albums inside a collection and refuses an order from a stale tree', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const { album: collection } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album: a } = await ctx.newAlbum({ ownerId: user.id, parentId: collection.id });
+      const { album: b } = await ctx.newAlbum({ ownerId: user.id, parentId: collection.id });
+
+      await sut.setOrder(auth, { parentId: collection.id, albumIds: [b.id, a.id] });
+      const tree = await sut.getTree(auth);
+      expect(tree.collections[0].albums.map(({ id }) => id)).toEqual([b.id, a.id]);
+
+      // Somebody (another tab) takes `a` out of the collection; the first tab still shows it inside.
+      await sut.moveToCollection(auth, a.id, { collectionId: null });
+      await expect(sut.setOrder(auth, { parentId: collection.id, albumIds: [a.id, b.id] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('refuses a move of a node that was moved since the client loaded it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const { album: family } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album: trips } = await ctx.newAlbum({ ownerId: user.id, kind: AlbumKind.Collection });
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+
+      // Tab one moves the album into Family.
+      await sut.moveToCollection(auth, album.id, { collectionId: family.id, expectedParentId: null });
+      // Tab two, still showing it on its own, tries to move it into Trips.
+      await expect(
+        sut.moveToCollection(auth, album.id, { collectionId: trips.id, expectedParentId: null }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      const moved = await sut.get(auth, album.id);
+      expect(moved.parentId).toBe(family.id);
     });
   });
 
