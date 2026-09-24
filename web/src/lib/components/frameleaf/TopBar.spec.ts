@@ -251,3 +251,24 @@ describe('TopBar session privacy', () => {
     view.unmount();
   });
 });
+
+describe('TopBar chrome (September 24)', () => {
+  it('names the brand "Frameleaf" whatever it shows', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    const view = render(TopBarTestHarness);
+
+    expect(screen.getByRole('link', { name: 'Frameleaf' })).toHaveAttribute('href', '/photos');
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+
+  it('is frosted and has no tab bar where there is no rail (Studio)', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    const view = render(TopBarTestHarness);
+
+    expect(document.querySelector('#dashboard-navbar')).toHaveClass('fl-material');
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
+    view.unmount();
+  });
+});
