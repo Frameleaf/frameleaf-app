@@ -6894,7 +6894,7 @@
             "state": "Beta"
           }
         ],
-        "x-immich-permission": "asset.download",
+        "x-immich-permission": "asset.edit.create",
         "x-immich-state": "Beta"
       }
     },
