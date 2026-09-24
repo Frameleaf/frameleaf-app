@@ -3,7 +3,7 @@ import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000160-RecipientGroups.js';
-import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumUserRepository, RECIPIENT_GROUP_LIMIT } from 'src/repositories/album-user.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -102,4 +102,38 @@ it('refuses to write while the fork schema is not writable', async () => {
   } finally {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
+});
+
+it('drops a deleted account’s own groups and takes it out of everyone else’s (FL-55)', async () => {
+  const { ctx, sut } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: leaving } = await ctx.newUser();
+  const { user: jamie } = await ctx.newUser();
+  const kept = await sut.createRecipientGroup(owner.id, 'Family', [leaving.id, jamie.id]);
+  await sut.createRecipientGroup(leaving.id, 'Mine', [owner.id]);
+
+  await sut.forgetRecipient(leaving.id);
+
+  await expect(sut.getRecipientGroups(leaving.id)).resolves.toEqual([]);
+  await expect(sut.getRecipientGroup(owner.id, kept.id)).resolves.toEqual(
+    expect.objectContaining({ userIds: [jamie.id] }),
+  );
+});
+
+it('caps how many groups one person keeps, with a clear error (FL-55)', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { user: other } = await ctx.newUser();
+  await sql`
+    INSERT INTO immich_fork.recipient_group ("ownerId", name)
+    SELECT ${user.id}::uuid, 'Group ' || n FROM generate_series(1, ${RECIPIENT_GROUP_LIMIT}) AS n
+  `.execute(db);
+
+  await expect(sut.createRecipientGroup(user.id, 'One too many', [])).rejects.toThrow(
+    `You can keep up to ${RECIPIENT_GROUP_LIMIT} recipient groups`,
+  );
+  // Somebody else's limit is their own.
+  await expect(sut.createRecipientGroup(other.id, 'Family', [])).resolves.toEqual(
+    expect.objectContaining({ name: 'Family' }),
+  );
 });
