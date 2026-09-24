@@ -264,23 +264,24 @@ describe('FaceTagger', () => {
     expect(screen.getByLabelText(en.frameleaf_face_tagger_left)).toHaveValue(Number(before));
   });
 
-  it('asks before discarding unsaved face tags and keeps editing on request', async () => {
+  it('closes at once from Cancel even with unsaved face tags (FaceTagger.jsx:731)', async () => {
     const { onClose } = await setup();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
 
     await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('alertdialog', { name: en.frameleaf_face_tagger_discard })).toBeInTheDocument();
-
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_keep_editing }));
+    expect(onClose).toHaveBeenCalledOnce();
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('closes at once from Escape even with unsaved face tags (FaceTagger.jsx:316-318)', async () => {
+    const { onClose } = await setup();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_add_face }));
 
     await fireEvent.keyDown(screen.getByRole('heading', { name: en.frameleaf_face_tagger_title }), { key: 'Escape' });
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_face_tagger_discard_confirm }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('closes without asking when nothing changed', async () => {
+  it('closes when nothing changed', async () => {
     const { onClose } = await setup();
 
     await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
