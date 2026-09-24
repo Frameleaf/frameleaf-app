@@ -3,12 +3,14 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import Hls from 'hls.js';
 import type { Component, ComponentProps } from 'svelte';
+import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
+import { videoQuality } from '$lib/stores/preferences.store';
 import { getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -31,13 +33,18 @@ const hlsMocks = vi.hoisted(() => ({
     stopLoad: ReturnType<typeof vi.fn>;
     startLoad: ReturnType<typeof vi.fn>;
     removeLevel: ReturnType<typeof vi.fn>;
-    levels: Array<{ url: string[] }>;
+    levels: Array<{ url: string[]; width?: number; height?: number }>;
+    startLevel?: number;
   }>,
 }));
 
 vi.mock('hls-video-element', () => {
   class MockHlsVideo extends HTMLElement {
     api: (typeof hlsMocks.instances)[number] | undefined;
+    videoRenditions = {
+      selectedIndex: -1,
+      getRenditionById: (id: string) => this.api?.levels[Number(id)] ?? null,
+    };
     pause = vi.fn();
     currentTime = 0;
     get src() {
@@ -110,6 +117,7 @@ describe('VideoNativeViewer component', () => {
     vi.clearAllMocks();
     featureFlagsManager.value.realtimeTranscoding = false;
     hlsMocks.instances.length = 0;
+    videoQuality.set('auto');
   });
 
   afterAll(() => {
@@ -286,5 +294,40 @@ describe('VideoNativeViewer component', () => {
     expect(api.off).toHaveBeenCalledTimes(3);
     expect(viewer.getByRole('status', { name: 'loading' })).toBeInTheDocument();
     errorLog.mockRestore();
+  });
+
+  it('starts on the saved quality and saves the one picked from the quality menu', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    videoQuality.set(720);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
+    vi.spyOn(mediaCapabilitiesManager, 'efficientLevels').mockResolvedValue(new Set([0, 1, 2]));
+    const viewer = renderViewer(videoProps());
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const api = hlsMocks.instances[0];
+    const url = '/video/stream/11111111-1111-1111-1111-111111111111/0/playlist.m3u8';
+    // Portrait levels: the short side is the width.
+    api.levels = [
+      { url: [url], width: 480, height: 854 },
+      { url: [url], width: 720, height: 1280 },
+      { url: [url], width: 1080, height: 1920 },
+    ];
+    const manifestHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1];
+    await manifestHandler();
+
+    const element = viewer.container.querySelector('hls-video') as unknown as {
+      videoRenditions: { selectedIndex: number };
+    };
+    expect(element.videoRenditions.selectedIndex).toBe(1);
+    expect(api.startLevel).toBe(1);
+    expect(api.startLoad).toHaveBeenCalled();
+
+    const controller = viewer.container.querySelector('media-controller')!;
+    controller.dispatchEvent(new CustomEvent('mediarenditionrequest', { detail: '2' }));
+    expect(get(videoQuality)).toBe(1080);
+    controller.dispatchEvent(new CustomEvent('mediarenditionrequest', { detail: 'auto' }));
+    expect(get(videoQuality)).toBe('auto');
+    viewer.unmount();
+    fetchMock.mockRestore();
+    vi.mocked(mediaCapabilitiesManager.efficientLevels).mockRestore();
   });
 });
