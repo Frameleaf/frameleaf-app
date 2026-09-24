@@ -4,6 +4,9 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import {
+  RecipientGroupCreateDto,
+  RecipientGroupResponseDto,
+  RecipientGroupUpdateDto,
   SharedSpaceActivityResponseDto,
   SharedSpaceActivitySearchDto,
   SharedSpaceAlbumParamDto,
@@ -21,9 +24,6 @@ import {
   SharedSpacePersonLinkDto,
   SharedSpacePersonParamDto,
   SharedSpacePreviewResponseDto,
-  RecipientGroupCreateDto,
-  RecipientGroupResponseDto,
-  RecipientGroupUpdateDto,
 } from 'src/dtos/shared-space.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -46,7 +46,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'List recipient groups',
     description:
-      'The authenticated user\'s own named groups of people to invite to a shared space together. A group is a shortcut only: it grants nothing, and its name is never shown to anyone but its owner.',
+      "The authenticated user's own named groups of people to invite to a shared space together. A group is a shortcut only: it grants nothing, and its name is never shown to anyone but its owner.",
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
   getRecipientGroups(@Auth() auth: AuthDto): Promise<RecipientGroupResponseDto[]> {
@@ -61,7 +61,10 @@ export class SharedSpaceController {
       'Save a named group of people to invite together. Nobody is invited or given access until the group is applied to a shared space and its invitations are sent.',
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
-  createRecipientGroup(@Auth() auth: AuthDto, @Body() dto: RecipientGroupCreateDto): Promise<RecipientGroupResponseDto> {
+  createRecipientGroup(
+    @Auth() auth: AuthDto,
+    @Body() dto: RecipientGroupCreateDto,
+  ): Promise<RecipientGroupResponseDto> {
     return this.service.createRecipientGroup(auth, dto);
   }
 
@@ -70,7 +73,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'Update a recipient group',
     description:
-      'Rename a group or change who is in it. Existing invitations and memberships are never changed; only the owner\'s own groups can be updated (anyone else\'s reads as not found).',
+      "Rename a group or change who is in it. Existing invitations and memberships are never changed; only the owner's own groups can be updated (anyone else's reads as not found).",
     history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
   })
   updateRecipientGroup(

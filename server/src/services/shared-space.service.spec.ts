@@ -119,10 +119,12 @@ describe(SharedSpaceService.name, () => {
       mocks.albumUser.deleteRecipientGroup.mockResolvedValue(false);
       const id = newUuid();
 
-      await expect(sut.updateRecipientGroup(AuthFactory.create(stranger), id, { name: 'Mine now' })).rejects.toBeInstanceOf(
+      await expect(
+        sut.updateRecipientGroup(AuthFactory.create(stranger), id, { name: 'Mine now' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.deleteRecipientGroup(AuthFactory.create(stranger), id)).rejects.toBeInstanceOf(
         NotFoundException,
       );
-      await expect(sut.deleteRecipientGroup(AuthFactory.create(stranger), id)).rejects.toBeInstanceOf(NotFoundException);
       // The lookups are always scoped to the caller as owner.
       expect(mocks.albumUser.updateRecipientGroup).toHaveBeenCalledWith(stranger.id, id, {
         name: 'Mine now',
