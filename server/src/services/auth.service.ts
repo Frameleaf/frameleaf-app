@@ -200,6 +200,8 @@ export class AuthService extends BaseService {
 
     await this.userRepository.update(auth.user.id, { pinCode: null });
     await this.sessionRepository.lockAll(auth.user.id);
+    // FL-34: every open tab of every session of this account drops what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
@@ -208,6 +210,9 @@ export class AuthService extends BaseService {
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
+    await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   private validatePinCode(
@@ -713,6 +718,8 @@ export class AuthService extends BaseService {
     }
 
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
+    // FL-34: only once the lock is stored; the session's other tabs drop what it unlocked
+    this.websocketRepository.clientSend('on_session_lock', auth.session.id);
   }
 
   private async createLoginResponse(
