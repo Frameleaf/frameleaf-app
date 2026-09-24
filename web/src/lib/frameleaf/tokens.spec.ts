@@ -4,6 +4,24 @@ import tokens from '../../../../design/frameleaf/tokens.json';
 
 const css = readFileSync('src/lib/frameleaf/tokens.css', 'utf8');
 const baseline = readFileSync('src/lib/frameleaf/base.css', 'utf8');
+const appCss = readFileSync('src/app.css', 'utf8');
+
+/** The body of the first block that follows `opener` (an at-rule or selector) in `sheet`. */
+const blockAfter = (sheet: string, opener: string) => {
+  const start = sheet.indexOf(opener);
+  if (start === -1) {
+    throw new Error(`missing ${opener}`);
+  }
+  let depth = 0;
+  for (let index = sheet.indexOf('{', start); index < sheet.length; index++) {
+    if (sheet[index] === '{') {
+      depth++;
+    } else if (sheet[index] === '}' && --depth === 0) {
+      return sheet.slice(sheet.indexOf('{', start) + 1, index);
+    }
+  }
+  throw new Error(`unterminated ${opener}`);
+};
 
 /** Reads one rule's custom properties. `selector` must be the literal text in the sheet. */
 const declarations = (selector: string) => {
@@ -40,9 +58,30 @@ const luminance = (color: string) => {
   );
 };
 
-const contrast = (a: string, b: string) => {
-  const pair = [luminance(a), luminance(b)].sort((first, second) => first - second);
+const linear = (value: number) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+
+/** Relative luminance of a `color(display-p3 r g b)` value (P3 primaries, sRGB transfer curve). */
+const p3Luminance = (color: string) => {
+  const match = /^color\(display-p3 ([\d.]+) ([\d.]+) ([\d.]+)\)$/.exec(color);
+  expect(match, `not a display-p3 colour: ${color}`).not.toBeNull();
+  const [r, g, b] = (match as RegExpExecArray).slice(1).map((value) => linear(Number(value)));
+  return 0.2289746 * r + 0.6917385 * g + 0.0792869 * b;
+};
+
+const ratio = (first: number, second: number) => {
+  const pair = [first, second].sort((a, b) => a - b);
   return (pair[1] + 0.05) / (pair[0] + 0.05);
+};
+
+const contrast = (a: string, b: string) => ratio(luminance(a), luminance(b));
+
+/** `share` of `top` composited over `bottom`, per channel, as a hex colour. */
+const composite = (top: string, bottom: string, share: number) => {
+  const channel = (color: string, offset: number) => Number.parseInt(color.slice(offset, offset + 2), 16);
+  return `#${[1, 3, 5]
+    .map((offset) => Math.round(channel(top, offset) * share + channel(bottom, offset) * (1 - share)))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')}`;
 };
 
 /** Foregrounds that must stay readable on every Frameleaf surface. */
@@ -58,6 +97,8 @@ const fillPairs = [
   ['blue', 'blue-text'],
   ['warning', 'warning-text'],
   ['danger', 'danger-text'],
+  // The reserved AI tile: the sparkle and "AI" badge sit on solid indigo (tokens.json `ai`).
+  ['ai', 'ai-text'],
 ] as const;
 
 describe('Frameleaf theme contract', () => {
@@ -133,6 +174,109 @@ describe('Frameleaf theme contract', () => {
     expect(base.get('--fl-radius-card')).toBe('12px');
     expect(base.get('--fl-radius-dialog')).toBe('22px');
     expect(base.get('--fl-radius-pill')).toBe('999px');
+    expect(base.get('--fl-radius-sheet')).toBe('var(--fl-radius-dialog)');
+    expect(`${tokens.radius.sheet}px`).toBe(base.get('--fl-radius-dialog'));
+  });
+
+  it('ports the September 24 spring, snappy and duration motion tokens', () => {
+    // apple-style.css:11-40: a linear() spring that overshoots once and settles on 1.
+    const spring = base.get('--fl-spring') ?? '';
+    expect(spring).toMatch(/^linear\(\s*0,[\S\s]*,\s*1\s*\)$/);
+    const stops = [...spring.matchAll(/(\d+(?:\.\d+)?)(?:\s+[\d.]+%)?\s*[,)]/g)].map(([, value]) => Number(value));
+    expect(Math.max(...stops)).toBeGreaterThan(1);
+    expect(stops.at(-1)).toBe(1);
+    expect(base.get('--fl-snappy')).toBe(tokens.motion.snappy);
+    expect(base.get('--fl-duration')).toBe(`${tokens.motion.durationMs}ms`);
+  });
+
+  it('ports the frosted material with solid fallbacks for Increase Contrast and Reduce Transparency', () => {
+    expect(base.get('--fl-material')).toBe('color-mix(in srgb, var(--fl-panel) 72%, transparent)');
+    expect(base.get('--fl-material-edge')).toBe('color-mix(in srgb, var(--fl-text) 12%, transparent)');
+    expect(base.get('--fl-material-blur')).toBe(tokens.material.blur);
+
+    const fallback = blockAfter(css, '@media (prefers-contrast: more), (prefers-reduced-transparency: reduce)');
+    expect(fallback).toContain('.frameleaf {');
+    expect(fallback).toContain('--fl-material: var(--fl-panel);');
+    expect(fallback).toContain('--fl-material-edge: var(--fl-border);');
+    expect(fallback).toContain('--fl-material-blur: none;');
+
+    for (const theme of ['dark', 'light'] as const) {
+      // Over the brightest and darkest photograph the blur can show, body text stays readable.
+      for (const backdrop of ['#000000', '#ffffff']) {
+        const fill = composite(hex(theme, 'panel'), backdrop, 0.72);
+        expect(
+          contrast(hex(theme, 'text'), fill),
+          `text on material over ${backdrop} (${theme})`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      // The fallback is the opaque panel, so every foreground keeps the surface contract.
+      for (const foreground of foregrounds) {
+        expect(contrast(hex(theme, foreground), hex(theme, 'panel'))).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it('uses the Display P3 accent on wide-gamut screens without losing contrast', () => {
+    const wide = blockAfter(css, '@media (color-gamut: p3)');
+    for (const theme of ['dark', 'light'] as const) {
+      const rule = blockAfter(wide, `.frameleaf[data-theme='${theme}']`);
+      const accent = /--fl-accent:\s*([^;]+);/.exec(rule)?.[1];
+      expect(accent).toBe(tokens.accentP3[theme]);
+      const accentLuminance = p3Luminance(accent as string);
+      for (const surface of surfaces) {
+        expect(
+          ratio(accentLuminance, luminance(hex(theme, surface))),
+          `P3 accent on ${surface} (${theme})`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(
+        ratio(accentLuminance, luminance(hex(theme, 'accent-text'))),
+        `accent-text on the P3 accent (${theme})`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('reserves the indigo AI colour and keeps its tile readable', () => {
+    for (const theme of ['dark', 'light'] as const) {
+      expect(themes[theme].get('--fl-ai')).toBe(tokens.ai.color);
+    }
+  });
+
+  it('draws every people photo as a squircle mask, the same shape in every engine', () => {
+    // Global (app.css), because people photos also render outside a .frameleaf scope.
+    expect(appCss).toMatch(/:root\s*{\s*--fl-squircle: url\("data:image\/svg\+xml,[^"]+"\);\s*}/);
+    const rule = blockAfter(appCss, '.fl-squircle {');
+    expect(rule).toContain('mask: var(--fl-squircle) center / 100% 100% no-repeat;');
+    expect(rule).toContain('-webkit-mask: var(--fl-squircle) center / 100% 100% no-repeat;');
+    // Nothing inside keeps its own circle.
+    expect(appCss).toMatch(/\.fl-squircle :where\(img, figure\) {\s*border-radius: 0 !important;/);
+  });
+
+  it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
+    const stack = /font-family: ([^;]+);/.exec(blockAfter(css, '.frameleaf {'))?.[1];
+    expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));
+    expect(stack?.indexOf('-apple-system')).toBe(0);
+    expect(stack?.indexOf('Inter')).toBeGreaterThan(stack?.indexOf('system-ui') ?? Infinity);
+  });
+
+  it('exposes safe-area insets for edge-to-edge devices', () => {
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      expect(base.get(`--fl-safe-${side}`)).toBe(`env(safe-area-inset-${side}, 0px)`);
+    }
+  });
+
+  it('balances titles, uses tabular numbers, continuous corners and a springy press', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    expect(withoutComments).toMatch(/:where\(\.frameleaf h1, \.frameleaf h2, \.frameleaf h3\) {\s*text-wrap: balance;/);
+    expect(withoutComments).toContain('font-variant-numeric: tabular-nums;');
+    const corners = blockAfter(withoutComments, '@supports (corner-shape: squircle)');
+    expect(corners).toContain('corner-shape: squircle;');
+    expect(corners).toContain('calc(var(--fl-radius-sheet) * 1.8)');
+    expect(withoutComments).toMatch(/button:active:not\(:disabled\)[^{]*{\s*transform: scale\(0\.96\);/);
+    const reduced = blockAfter(withoutComments, '@media (prefers-reduced-motion: reduce)');
+    expect(reduced).toMatch(/transform: none;/);
+    // The materials other packets reuse, solid under the tokens.css fallback.
+    expect(withoutComments).toMatch(/\.frameleaf \.fl-material,[^{]*{[^}]*backdrop-filter: var\(--fl-material-blur\);/);
   });
 
   it('honours reduced motion and keeps native touch targets', () => {
