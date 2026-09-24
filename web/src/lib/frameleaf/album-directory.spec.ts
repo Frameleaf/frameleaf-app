@@ -10,9 +10,13 @@ import {
   defaultAlbumDirectoryView,
   matchesFilter,
   monthSpan,
+  moveInOrder,
   moveTargets,
   normalizeAlbumDirectoryView,
+  orderGroupOf,
   othersOf,
+  placeBefore,
+  removalOutcome,
 } from './album-directory';
 
 const me = userAdminFactory.build({ id: 'me' });
@@ -173,6 +177,36 @@ describe('album directory rules', () => {
     expect(monthSpan('2025-06-03T00:00:00.000Z', '2026-08-20T00:00:00.000Z', 'en-US')).toBe('2025 – 2026');
   });
 
+  it('keeps the server\'s own order under "Custom order" (FL-52)', () => {
+    const result = arrangeAlbumDirectory(directory, { filter: 'all', sort: 'custom', search: '', userId: 'me' });
+    expect(result.shelves[0].albums.map(({ id }) => id)).toEqual(['winter', 'rockies']);
+    expect(normalizeAlbumDirectoryView({ sort: 'custom' }).sort).toBe('custom');
+  });
+
+  it('names the group a custom order applies to (FL-52)', () => {
+    expect(orderGroupOf(directory, 'family')).toEqual({ parentId: null, ids: ['family'] });
+    expect(orderGroupOf(directory, 'rockies')).toEqual({ parentId: 'family', ids: ['winter', 'rockies'] });
+    expect(orderGroupOf(directory, 'trail')).toEqual({ parentId: null, ids: ['trail'] });
+    expect(orderGroupOf(directory, 'space')).toEqual({ parentId: null, ids: ['space'] });
+    expect(orderGroupOf(directory, 'missing')).toBeUndefined();
+  });
+
+  it('moves an item one place earlier or later, and not past either end (FL-52)', () => {
+    expect(moveInOrder(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
+    expect(moveInOrder(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b']);
+    expect(moveInOrder(['a', 'b', 'c'], 'a', -1)).toBeUndefined();
+    expect(moveInOrder(['a', 'b', 'c'], 'c', 1)).toBeUndefined();
+    expect(moveInOrder(['a', 'b'], 'x', 1)).toBeUndefined();
+  });
+
+  it('places a dropped item before its target (FL-52)', () => {
+    expect(placeBefore(['a', 'b', 'c'], 'c', 'a')).toEqual(['c', 'a', 'b']);
+    expect(placeBefore(['a', 'b', 'c'], 'a', 'c')).toEqual(['b', 'a', 'c']);
+    expect(placeBefore(['a', 'b', 'c'], 'a', 'b')).toBeUndefined();
+    expect(placeBefore(['a', 'b', 'c'], 'a', 'a')).toBeUndefined();
+    expect(placeBefore(['a', 'b'], 'x', 'a')).toBeUndefined();
+  });
+
   it('repairs a persisted view', () => {
     expect(normalizeAlbumDirectoryView(null)).toEqual(defaultAlbumDirectoryView);
     expect(normalizeAlbumDirectoryView({ filter: 'smart', sort: 'nope', view: 'list', collapsed: ['a', 1] })).toEqual({
@@ -181,5 +215,16 @@ describe('album directory rules', () => {
       view: 'list',
       collapsed: ['a'],
     });
+  });
+
+  it('navigates once when someone leaves: the leave action, never the removal echo (FL-53)', () => {
+    const page = { albumId: 'a', userId: 'me', isOwner: false, leftLocally: false };
+    expect(removalOutcome({ albumId: 'b', userId: 'me' }, page)).toBe('ignore');
+    expect(removalOutcome({ albumId: 'a', userId: 'jamie' }, page)).toBe('refresh');
+    // Removed by the owner elsewhere: the page leaves and says so.
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, page)).toBe('exit');
+    // Left from this tab: the local announcement and the server echo are both ignored.
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, leftLocally: true })).toBe('ignore');
+    expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, isOwner: true })).toBe('refresh');
   });
 });

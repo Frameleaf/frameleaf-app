@@ -31,13 +31,14 @@
     SPACE_PANELS,
     type SpacePanel,
   } from '$lib/frameleaf/shared-space';
-  import type { AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
+  import { removalOutcome, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { Route } from '$lib/route';
   import {
     handleDeleteAlbum,
     handleDownloadAlbum,
     handleEditAlbumDetails,
     handleLeaveAlbum,
+    leftLocally,
   } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -50,7 +51,7 @@
     type SharedSpaceNewResponseDto,
     type SharedSpacePeopleResponseDto,
   } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { Icon, toastManager } from '@immich/ui';
   import {
     mdiArrowLeft,
     mdiDeleteOutline,
@@ -209,6 +210,33 @@
 
         photos.remove(assetIds);
         void onRefresh();
+      },
+      // FL-55: a role changed elsewhere (the server's AlbumUserUpdateV1) re-reads the space, so a
+      // downgraded contributor loses "Add everything matching" and the other contributor controls
+      // at once. The server refuses the same actions again.
+      AlbumUserUpdate: ({ albumId }) => {
+        if (albumId === space.id) {
+          void onRefresh();
+        }
+      },
+      // Taken out of the space while it is open: nothing loaded for it stays on screen.
+      AlbumUserDelete: (removal) => {
+        const outcome = removalOutcome(removal, {
+          albumId: space.id,
+          userId: currentUserId,
+          isOwner: isSpaceOwner(space, currentUserId),
+          leftLocally: leftLocally(removal.albumId),
+        });
+        if (outcome === 'refresh') {
+          void onRefresh();
+        }
+        if (outcome !== 'exit') {
+          return;
+        }
+        assetViewerManager.showAssetViewer(false);
+        photos.remove(photos.assets.map(({ id }) => id));
+        toastManager.primary($t('frameleaf_album_access_removed', { values: { name: space.albumName } }));
+        void goto(Route.sharing());
       },
     }),
   );

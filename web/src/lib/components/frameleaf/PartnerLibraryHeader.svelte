@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import Dialog from './Dialog.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { OpenQueryParam } from '$lib/constants';
@@ -99,6 +101,7 @@
     updating = true;
     try {
       await removePartner({ id: partner.id });
+      eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.id });
       confirmOpen = false;
       toastManager.primary($t('saved'));
       onStopped();

@@ -1,5 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Kysely, NotNull, Selectable, ShallowDehydrateObject, Updateable, sql } from 'kysely';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  ExpressionBuilder,
+  Kysely,
+  NotNull,
+  Selectable,
+  ShallowDehydrateObject,
+  Transaction,
+  Updateable,
+  sql,
+} from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
@@ -10,6 +19,7 @@ import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -88,6 +98,9 @@ const isAlbumOwned = (ownerId: string) => (eb: ExpressionBuilder<DB, 'album'>) =
       .where('album_user.role', '=', AlbumUserRole.Owner)
       .where('album_user.userId', '=', ownerId),
   );
+
+/** One album as a person's directory sees it, for checking a custom order (FL-52). */
+export type DirectoryItem = { id: string; kind: string; parentId: string | null };
 
 @Injectable()
 export class AlbumRepository {
@@ -285,6 +298,7 @@ export class AlbumRepository {
         tx,
       );
       await this.smartAlbums.deleteOwner(userId, tx);
+      await this.deletePositions({ albumIds: albums.map(({ id }) => id), userId }, tx);
       await this.forkMetadata.delete(
         albums.map(({ id }) => id),
         tx,
@@ -453,9 +467,28 @@ export class AlbumRepository {
         .execute();
       const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
       await this.smartAlbums.deleteAlbums(subtreeIds, tx);
+      await this.deletePositions({ albumIds: subtreeIds }, tx);
       await tx.deleteFrom('album').where('id', '=', id).execute();
       await this.forkMetadata.delete(subtreeIds, tx);
     });
+  }
+
+  /**
+   * FL-52: forget custom-order rows for deleted albums, or for a deleted person. Cleanup never
+   * blocks the delete itself: while the fork schema is not writable (a handoff runs) the rows are
+   * left, and reading the order ignores albums nobody can see any more.
+   */
+  private async deletePositions(
+    { albumIds = [], userId }: { albumIds?: string[]; userId?: string },
+    tx: Transaction<DB>,
+  ): Promise<void> {
+    if ((albumIds.length === 0 && !userId) || !(await canWriteFork(tx))) {
+      return;
+    }
+    await sql`
+      DELETE FROM immich_fork.album_position
+      WHERE "albumId" = ANY(${albumIds}::uuid[]) OR "userId" = ${userId ?? null}::uuid
+    `.execute(tx);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -522,8 +555,21 @@ export class AlbumRepository {
    * the final backstop and will abort the transaction if a concurrent writer
    * still manages to introduce a cycle.
    */
-  async reparent(id: string, newParentId: string | null): Promise<void> {
+  async reparent(id: string, newParentId: string | null, expectedParentId?: string | null): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
+      if (expectedParentId !== undefined) {
+        // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
+        // client loaded it) is refused rather than silently undoing the other change.
+        const current = await tx
+          .selectFrom('album')
+          .select('parentId')
+          .where('id', '=', id)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!current || current.parentId !== expectedParentId) {
+          throw new ConflictException('The album was moved since the directory was loaded');
+        }
+      }
       const subtree = await tx
         .selectFrom('album_closure')
         .select('id_descendant')
@@ -573,6 +619,54 @@ export class AlbumRepository {
         subtree.map(({ id_descendant }) => id_descendant),
         tx,
       );
+    });
+  }
+
+  /**
+   * FL-52: the custom order one person gave their album directory, as album id → position. Only
+   * that person's rows are read; an album they can no longer see is simply never looked up.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getPositions(userId: string): Promise<Map<string, number>> {
+    const { rows } = await sql<{ albumId: string; position: number }>`
+      SELECT "albumId"::text AS "albumId", position
+      FROM immich_fork.album_position
+      WHERE "userId" = ${userId}::uuid
+    `.execute(this.db);
+    return new Map(rows.map(({ albumId, position }) => [albumId, position]));
+  }
+
+  /**
+   * FL-52: saves one group of the person's directory in the given order (index = position).
+   * Organization only — no album, membership or access row is touched. Like every fork-owned
+   * writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  async setPositions(userId: string, albumIds: string[], validate?: (visible: DirectoryItem[]) => void): Promise<void> {
+    if (albumIds.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Album order is unavailable during database handoff');
+      if (validate) {
+        // Everything the person can see, as it is now, locked until the order is written.
+        const rows = await tx
+          .selectFrom('album')
+          .innerJoin('album_user', (join) =>
+            join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
+          )
+          .where('album.deletedAt', 'is', null)
+          .select(['album.id', 'album.icon', 'album.parentId', 'album.sortOrder', 'album.kind'])
+          .modifyEnd(sql`FOR SHARE OF album`)
+          .execute();
+        validate(await this.forkMetadata.applyReadMetadata(rows, tx));
+      }
+      await sql`
+        INSERT INTO immich_fork.album_position ("userId", "albumId", position)
+        SELECT ${userId}::uuid, ordered.id, (ordered.ordinality - 1)::integer
+        FROM unnest(${albumIds}::uuid[]) WITH ORDINALITY AS ordered(id, ordinality)
+        ON CONFLICT ("userId", "albumId")
+        DO UPDATE SET position = excluded.position, "updatedAt" = clock_timestamp()
+      `.execute(tx);
     });
   }
 

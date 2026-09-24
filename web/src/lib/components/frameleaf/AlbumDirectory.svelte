@@ -11,13 +11,12 @@
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
+  import Menu from '$lib/components/frameleaf/Menu.svelte';
+  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
-  import Dropdown from '$lib/elements/Dropdown.svelte';
   import {
     albumDirectoryFilters,
     albumDirectorySorts,
@@ -26,8 +25,11 @@
     canEdit,
     canTakeOut,
     isOwner,
+    moveInOrder,
     moveTargets,
     normalizeAlbumDirectoryView,
+    orderGroupOf,
+    placeBefore,
     type AlbumDirectoryFilter,
     type AlbumDirectorySort,
     type AlbumDetailsDraft,
@@ -44,6 +46,7 @@
     handleEditAlbumDetails,
     handleLeaveAlbum,
     handleMoveAlbumToCollection,
+    handleSetAlbumOrder,
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
@@ -65,6 +68,8 @@
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
+    mdiArrowDown,
+    mdiArrowUp,
     mdiAutoFix,
     mdiDeleteOutline,
     mdiDotsHorizontal,
@@ -101,6 +106,13 @@
    * space's photos, viewer and members live. The shelf links to Sharing, where
    * spaces are created and invitations answered, and says when invitations are
    * waiting.
+   *
+   * "Custom order" (FL-52) shows every group in the person's own arrangement, which the server keeps
+   * per person. While it is the sort — and nothing is filtered or searched, so the whole group is on
+   * screen — an item drags onto another in its group to go just before it, and every item's menu has
+   * Move earlier / Move later as the keyboard and touch alternative. Moving into or out of a
+   * collection keeps using the shelves, the take-out zone and Move to…. A move or an order decided on
+   * an outdated directory is refused by the server; the page then reloads and says so.
    */
   interface Props {
     tree: AlbumTreeResponseDto;
@@ -186,6 +198,7 @@
     items: () => $t('frameleaf_albums_sort_items'),
     'recent-photo': () => $t('frameleaf_albums_sort_recent'),
     'oldest-photo': () => $t('frameleaf_albums_sort_oldest'),
+    custom: () => $t('frameleaf_albums_sort_custom'),
   };
 
   const summary = $derived(
@@ -295,6 +308,10 @@
     busy = true;
     try {
       const moved = await handleMoveAlbumToCollection(album, collectionId);
+      if (moved === 'stale') {
+        await reloadStale();
+        return;
+      }
       if (!moved) {
         return;
       }
@@ -308,6 +325,69 @@
       busy = false;
     }
   };
+
+  /** The server refused a change made from an outdated directory: show the latest and say so. */
+  const reloadStale = async () => {
+    status = $t('frameleaf_albums_stale');
+    moveDialog = { open: false };
+    await refresh();
+  };
+
+  /* ---- custom order (FL-52) ---- */
+  const reorderable = $derived(view.sort === 'custom' && view.filter === 'all' && !arrangement.searching);
+
+  const saveOrder = async (album: AlbumResponseDto, parentId: string | null, ids: string[]) => {
+    busy = true;
+    try {
+      const saved = await handleSetAlbumOrder(parentId, ids);
+      if (saved === 'stale') {
+        await reloadStale();
+        return;
+      }
+      if (!saved) {
+        return;
+      }
+      status = $t('frameleaf_albums_reordered', {
+        values: { name: nameOf(album), position: ids.indexOf(album.id) + 1, count: ids.length },
+      });
+      await refresh();
+    } finally {
+      busy = false;
+    }
+  };
+
+  /** Move earlier / Move later: the keyboard and touch way to arrange a group. */
+  const step = (album: AlbumResponseDto, direction: -1 | 1) => {
+    const group = orderGroupOf(tree, album.id);
+    const ids = group && moveInOrder(group.ids, album.id, direction);
+    if (group && ids) {
+      void saveOrder(album, group.parentId, ids);
+    }
+  };
+  const canStep = (album: AlbumResponseDto, direction: -1 | 1) => {
+    const group = orderGroupOf(tree, album.id);
+    return !!group && !!moveInOrder(group.ids, album.id, direction);
+  };
+
+  /** A dragged item may land on another item of the same group, which it then goes just before. */
+  const acceptsReorder = (target: AlbumResponseDto) => {
+    if (!reorderable || !dragged || dragged.id === target.id) {
+      return false;
+    }
+    return orderGroupOf(tree, dragged.id)?.ids.includes(target.id) ?? false;
+  };
+  const dropBefore = (albumId: string, target: AlbumResponseDto) => {
+    const album = find(albumId);
+    endDrag();
+    const group = orderGroupOf(tree, albumId);
+    const ids = group && placeBefore(group.ids, albumId, target.id);
+    if (album && group && ids) {
+      void saveOrder(album, group.parentId, ids);
+    }
+  };
+  /** In custom order everything can be dragged to arrange it; otherwise only an owner's album, to move it. */
+  const canDrag = (album: AlbumResponseDto) =>
+    reorderable || (album.kind === AlbumKind.Album && isOwner(album, currentUserId));
 
   /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
   const confirmDelete = async () => {
@@ -382,7 +462,7 @@
   /* ---- drag an album onto a collection shelf; touch uses Move to… ---- */
   const startDrag = (album: AlbumResponseDto) => {
     dragged = album;
-    status = $t('frameleaf_albums_drag_hint');
+    status = reorderable ? $t('frameleaf_albums_reorder_hint') : $t('frameleaf_albums_drag_hint');
   };
   const endDrag = () => {
     dragged = undefined;
@@ -429,75 +509,82 @@
   {@const editor = canEdit(album, currentUserId)}
   {@const isAlbum = album.kind === AlbumKind.Album}
   {@const isCollection = album.kind === AlbumKind.Collection}
-  <ButtonContextMenu
-    icon={mdiDotsHorizontal}
-    title={$t('frameleaf_albums_actions_for', { values: { name: nameOf(album) } })}
-    align="top-right"
-    direction="left"
-    size="small"
-  >
-    <MenuOption icon={mdiFolderOpenOutline} text={$t('open')} onClick={() => goto(openRoute(album))} />
+  <!--
+    The item menu in the prototype's order (Collections.jsx `menuFor`, lines 298-372), on the
+    Frameleaf Menu. "Move earlier" / "Move later" (FL-52 custom order) sit with "Move to…", the
+    prototype's other organising command, and use the same icon-and-label item.
+  -->
+  <Menu label={$t('frameleaf_albums_actions_for', { values: { name: nameOf(album) } })} align="end">
+    {#snippet trigger()}<Icon icon={mdiDotsHorizontal} size="18" aria-hidden={true} />{/snippet}
+    <MenuItem onSelect={() => goto(openRoute(album))}>
+      <Icon icon={mdiFolderOpenOutline} size="18" aria-hidden={true} />{$t('open')}
+    </MenuItem>
     {#if editor}
-      <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(album)} />
+      <MenuItem onSelect={() => edit(album)}>
+        <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />{$t('edit')}
+      </MenuItem>
     {/if}
     {#if editor && isCollection}
-      <MenuOption
-        icon={mdiPlus}
-        text={$t('frameleaf_albums_new_album')}
-        onClick={() => openCreate(AlbumKind.Album, album.id)}
-      />
+      <MenuItem onSelect={() => openCreate(AlbumKind.Album, album.id)}>
+        <Icon icon={mdiPlus} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_album')}
+      </MenuItem>
     {/if}
     {#if owner && isAlbum}
-      <MenuOption
-        icon={mdiFolderMoveOutline}
-        text={$t('frameleaf_albums_move_to')}
-        onClick={() => (moveDialog = { open: true, album })}
-      />
+      <MenuItem onSelect={() => (moveDialog = { open: true, album })}>
+        <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
+      </MenuItem>
+    {/if}
+    {#if reorderable && canStep(album, -1)}
+      <MenuItem onSelect={() => step(album, -1)}>
+        <Icon icon={mdiArrowUp} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_earlier')}
+      </MenuItem>
+    {/if}
+    {#if reorderable && canStep(album, 1)}
+      <MenuItem onSelect={() => step(album, 1)}>
+        <Icon icon={mdiArrowDown} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_later')}
+      </MenuItem>
     {/if}
     {#if editor && isAlbum && !album.isSmart}
-      <MenuOption
-        icon={mdiUpload}
-        text={$t('frameleaf_albums_upload')}
-        onClick={() => void openFileUploadDialog({ albumId: album.id })}
-      />
+      <MenuItem onSelect={() => void openFileUploadDialog({ albumId: album.id })}>
+        <Icon icon={mdiUpload} size="18" aria-hidden={true} />{$t('frameleaf_albums_upload')}
+      </MenuItem>
     {/if}
     {#if album.isSmart && (album.smartRuleId || authManager.user.isAdmin)}
-      <MenuOption
-        icon={mdiRefresh}
-        text={$t('frameleaf_albums_smart_reevaluate')}
-        onClick={() => void openReevaluate(album)}
-      />
+      <MenuItem onSelect={() => void openReevaluate(album)}>
+        <Icon icon={mdiRefresh} size="18" aria-hidden={true} />{$t('frameleaf_albums_smart_reevaluate')}
+      </MenuItem>
     {/if}
+    <div class="menu-separator" role="separator"></div>
     {#if isSpace(album)}
       <!-- A space's people are invitations and roles, managed on the space's own Members panel. -->
-      <MenuOption
-        icon={mdiAccountMultipleOutline}
-        text={$t('frameleaf_albums_members')}
-        onClick={() => goto(`${Route.viewSharedSpace({ id: album.id })}?panel=members`)}
-      />
+      <MenuItem onSelect={() => goto(`${Route.viewSharedSpace({ id: album.id })}?panel=members`)}>
+        <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_members')}
+      </MenuItem>
     {:else}
-      <MenuOption
-        icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
-        text={owner ? $t('share') : $t('frameleaf_albums_members')}
-        onClick={() => share(album)}
-      />
+      <MenuItem onSelect={() => share(album)}>
+        <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" aria-hidden={true} />
+        {owner ? $t('share') : $t('frameleaf_albums_members')}
+      </MenuItem>
     {/if}
     {#if owner}
-      <MenuOption
-        icon={mdiLinkVariant}
-        text={$t('frameleaf_albums_create_link')}
-        onClick={() => (linkDialog = { open: true, album })}
-      />
+      <MenuItem onSelect={() => (linkDialog = { open: true, album })}>
+        <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_link')}
+      </MenuItem>
     {/if}
-    {#if album.assetCount > 0}
-      <MenuOption icon={mdiDownloadOutline} text={$t('download')} onClick={() => handleDownloadAlbum(album)} />
-    {/if}
+    <MenuItem disabled={album.assetCount === 0} onSelect={() => handleDownloadAlbum(album)}>
+      <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('download')}
+    </MenuItem>
+    <div class="menu-separator" role="separator"></div>
     {#if owner}
-      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => (deleteDialog = { open: true, album })} />
+      <MenuItem onSelect={() => (deleteDialog = { open: true, album })}>
+        <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
+      </MenuItem>
     {:else}
-      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => (leaveDialog = { open: true, album })} />
+      <MenuItem onSelect={() => (leaveDialog = { open: true, album })}>
+        <Icon icon={mdiLogoutVariant} size="18" aria-hidden={true} />{$t('leave')}
+      </MenuItem>
     {/if}
-  </ButtonContextMenu>
+  </Menu>
 {/snippet}
 
 {#snippet albums(list: AlbumResponseDto[], emptyText: string)}
@@ -507,10 +594,12 @@
         <AlbumTile
           {album}
           {currentUserId}
-          draggable={album.kind === AlbumKind.Album && isOwner(album, currentUserId)}
+          draggable={canDrag(album)}
           dragging={dragged?.id === album.id}
+          acceptsReorder={acceptsReorder(album)}
           onDragStart={startDrag}
           onDragEnd={endDrag}
+          onReorderDrop={(albumId) => dropBefore(albumId, album)}
         >
           {#snippet actions()}{@render menu(album)}{/snippet}
         </AlbumTile>
@@ -527,10 +616,12 @@
             {album}
             {currentUserId}
             layout="list"
-            draggable={album.kind === AlbumKind.Album && isOwner(album, currentUserId)}
+            draggable={canDrag(album)}
             dragging={dragged?.id === album.id}
+            acceptsReorder={acceptsReorder(album)}
             onDragStart={startDrag}
             onDragEnd={endDrag}
+            onReorderDrop={(albumId) => dropBefore(albumId, album)}
           >
             {#snippet actions()}{@render menu(album)}{/snippet}
           </AlbumTile>
@@ -556,13 +647,18 @@
         <Icon icon={mdiMagnify} size="17" />
         <input type="search" bind:value={search} placeholder={$t('search_albums')} aria-label={$t('search_albums')} />
       </label>
-      <Dropdown
-        title={$t('frameleaf_albums_sort')}
-        options={[...albumDirectorySorts]}
-        selectedOption={view.sort}
-        onSelect={(sort) => setSort(sort)}
-        render={(sort) => ({ title: sortLabels[sort](), icon: mdiSortVariant })}
-      />
+      <!-- The prototype's sort menu (Collections.jsx:672-683), plus "Custom order" (FL-52). -->
+      <div class="sort">
+        <Menu label={$t('frameleaf_albums_sort')} align="end">
+          {#snippet trigger()}
+            <Icon icon={mdiSortVariant} size="17" aria-hidden={true} />
+            <span aria-hidden="true">{sortLabels[view.sort]()}</span>
+          {/snippet}
+          {#each albumDirectorySorts as sort (sort)}
+            <MenuItem checked={view.sort === sort} onSelect={() => setSort(sort)}>{sortLabels[sort]()}</MenuItem>
+          {/each}
+        </Menu>
+      </div>
       <div class="view" role="group" aria-label={$t('view')}>
         <button
           type="button"
@@ -583,36 +679,28 @@
           <Icon icon={mdiViewListOutline} size="18" />
         </button>
       </div>
-      <ButtonContextMenu
-        icon={mdiPlus}
-        title={$t('frameleaf_albums_new')}
-        align="top-right"
-        direction="left"
-        color="primary"
-        variant="filled"
-        hideContent={false}
-      >
-        <MenuOption
-          icon={mdiImageAlbum}
-          text={$t('frameleaf_albums_new_album')}
-          onClick={() => openCreate(AlbumKind.Album)}
-        />
-        <MenuOption
-          icon={mdiAutoFix}
-          text={$t('frameleaf_albums_new_smart')}
-          onClick={() => openCreate(AlbumKind.Album, null, true)}
-        />
-        <MenuOption
-          icon={mdiFolderMultipleOutline}
-          text={$t('frameleaf_albums_new_collection')}
-          onClick={() => openCreate(AlbumKind.Collection)}
-        />
-        <MenuOption
-          icon={mdiAccountMultipleOutline}
-          text={$t('frameleaf_albums_new_space')}
-          onClick={() => openCreate(AlbumKind.Space)}
-        />
-      </ButtonContextMenu>
+      <!-- The prototype's primary "New" menu (Collections.jsx:702-735). -->
+      <div class="new-menu">
+        <Menu label={$t('frameleaf_albums_new')} align="end">
+          {#snippet trigger()}
+            <Icon icon={mdiPlus} size="18" aria-hidden={true} />
+            <span>{$t('frameleaf_albums_new')}</span>
+          {/snippet}
+          <MenuItem onSelect={() => openCreate(AlbumKind.Album)}>
+            <Icon icon={mdiImageAlbum} size="18" aria-hidden={true} />{$t('frameleaf_albums_new_album')}
+          </MenuItem>
+          <MenuItem onSelect={() => openCreate(AlbumKind.Album, null, true)}>
+            <Icon icon={mdiAutoFix} size="18" aria-hidden={true} />{$t('frameleaf_albums_new_smart')}
+          </MenuItem>
+          <div class="menu-separator" role="separator"></div>
+          <MenuItem onSelect={() => openCreate(AlbumKind.Collection)}>
+            <Icon icon={mdiFolderMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_new_collection')}
+          </MenuItem>
+          <MenuItem onSelect={() => openCreate(AlbumKind.Space)}>
+            <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_new_space')}
+          </MenuItem>
+        </Menu>
+      </div>
     </div>
   </header>
 
@@ -925,6 +1013,18 @@
     background: var(--fl-accent);
     border-color: var(--fl-accent);
     color: var(--fl-accent-text);
+  }
+  .menu-separator {
+    height: 1px;
+    margin: 0.25rem 0.375rem;
+    background: var(--fl-border);
+  }
+  /* The prototype's primary New menu trigger (Collections.jsx:702, Menu primary). */
+  .new-menu :global(.menu-root > button) {
+    font-weight: 600;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-color: var(--fl-accent);
   }
   .grid {
     display: grid;

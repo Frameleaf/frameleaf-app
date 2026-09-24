@@ -99,6 +99,41 @@ describe('fileUploader error handling', () => {
     expect(items[0].state).toBe(UploadState.DONE);
   });
 
+  it('uploads every file of a partly failing batch into the album that could be uploaded (FL-53)', async () => {
+    authManager.setUser(mockUserObject);
+    const second = new File(['content-2'], 'second.jpg', { type: 'image/jpeg' });
+    vi.spyOn(utils, 'uploadRequest')
+      .mockResolvedValueOnce({ status: 200, data: mockUploadResponse })
+      .mockRejectedValueOnce(mockError);
+    const addAssetsToAlbumsSpy = vi.spyOn(albumService, 'addAssetsToAlbums').mockResolvedValue(true);
+
+    const ids = await fileUploadHandler({ files: [mockFile, second], albumId: 'album-1' });
+
+    expect(ids).toEqual([mockUploadResponse.id]);
+    // Only the file that uploaded is added; the failed one is reported, not silently dropped.
+    expect(addAssetsToAlbumsSpy).toHaveBeenCalledTimes(1);
+    expect(addAssetsToAlbumsSpy).toHaveBeenCalledWith(['album-1'], [mockUploadResponse.id], { notify: false });
+    const states = get(uploadAssetsStore).map(({ state }) => state);
+    expect(states).toContain(UploadState.DONE);
+    expect(states).toContain(UploadState.ERROR);
+  });
+
+  it('says so when the upload worked but adding it to the album did not (FL-53)', async () => {
+    authManager.setUser(mockUserObject);
+    vi.spyOn(utils, 'uploadRequest').mockResolvedValue({ status: 200, data: mockUploadResponse });
+    vi.spyOn(albumService, 'addAssetsToAlbums').mockResolvedValue(false);
+
+    const ids = await fileUploadHandler({ files: [mockFile], albumId: 'album-1' });
+
+    // The original is kept in the library either way.
+    expect(ids).toEqual([mockUploadResponse.id]);
+    const [item] = get(uploadAssetsStore);
+    expect(item.state).toBe(UploadState.ERROR);
+    expect(item.assetId).toBe(mockUploadResponse.id);
+    expect(item.error).toBeTruthy();
+    expect(item.message).not.toBe('asset_added_to_album');
+  });
+
   it('retrying a failed upload clears the previous error and re-runs the same file', async () => {
     authManager.setUser(mockUserObject);
     const uploadRequestSpy = vi
