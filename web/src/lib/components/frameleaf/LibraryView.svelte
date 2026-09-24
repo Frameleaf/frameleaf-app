@@ -17,8 +17,10 @@
   import { page } from '$app/state';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
+  import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
@@ -46,7 +48,8 @@
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { Icon, toastManager } from '@immich/ui';
+  import { mdiTuneVariant } from '@mdi/js';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -122,7 +125,10 @@
     onOpen?: (asset: TimelineAsset) => void;
     /** FL-35: the viewer, opened from the session's open asset. */
     viewer?: Snippet;
-    /** FL-36: the information panel. Work opens it above tablet width only. */
+    /**
+     * FL-36: the information panel. Work opens it above tablet width only. Without one, Work shows
+     * the selected item's information (`LibraryWorkInspector`, FL-33).
+     */
     infoPanel?: Snippet;
     empty?: Snippet;
     /**
@@ -183,8 +189,22 @@
   const manager = $derived(timelineManager as TimelineManager);
   /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
   const gridLayout = $derived(publicView ? 'browse' : session.layout);
+  /**
+   * Work's information panel can be closed and opened again (prototype `inspector`); switching to
+   * Work opens it again, as the template's layout switch does.
+   */
+  let inspectorOpen = $state(true);
+  let inspectorLayout: string | undefined;
+  $effect(() => {
+    const layout = gridLayout;
+    if (inspectorLayout !== undefined && layout !== inspectorLayout && layout === 'work') {
+      inspectorOpen = true;
+    }
+    inspectorLayout = layout;
+  });
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
-  const showInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
+  const canShowInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
+  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen);
   const selecting = $derived(session.selection.length > 0);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
@@ -497,6 +517,12 @@
 
   const focusedId = () => session.session.scrollAnchor ?? session.selection.at(-1) ?? null;
 
+  /** The item Work's panel describes: the last one selected, or the one in focus. */
+  const inspectedAsset = $derived.by(() => {
+    const id = session.selection.at(-1) ?? session.session.scrollAnchor;
+    return id ? findAsset(id) : null;
+  });
+
   const loadedIds = () =>
     manager.months.flatMap((month) =>
       month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
@@ -623,6 +649,15 @@
         helpOpen = true;
         return;
       }
+      case 'info': {
+        // I shows or hides Work's panel (prototype `case "info"`); in the viewer the key is the viewer's.
+        if (surface !== 'timeline' || !canShowInfoPanel || publicView) {
+          break;
+        }
+        event.preventDefault();
+        inspectorOpen = !inspectorOpen;
+        return;
+      }
       case 'select-all': {
         event.preventDefault();
         session.selectAll(loadedIds());
@@ -728,6 +763,15 @@
           {#if !publicView}
             <ResultsToolbar {session} {onOpenFilterPanel}>
               {@render toolbar?.()}
+              {#if canShowInfoPanel}
+                <IconButton
+                  label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                  pressed={inspectorOpen}
+                  onclick={() => (inspectorOpen = !inspectorOpen)}
+                >
+                  <Icon icon={mdiTuneVariant} size="18" aria-hidden />
+                </IconButton>
+              {/if}
               {#if session.selection.length >= 2 && !snapshot && !selectionMode}
                 <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
               {/if}
@@ -747,8 +791,23 @@
       {/if}
     </div>
 
-    {#if showInfoPanel}
-      <aside class="fl-library-panel">{@render infoPanel?.()}</aside>
+    {#if showInfoPanel && !publicView}
+      <aside class="fl-library-panel" aria-label={$t('frameleaf_work_inspector_title')}>
+        {#if infoPanel}
+          {@render infoPanel()}
+        {:else}
+          <LibraryWorkInspector
+            asset={inspectedAsset}
+            selectedCount={session.selection.length}
+            onOpen={(asset) => {
+              session.open(asset.id);
+              session.setScrollAnchor(asset.id);
+              onOpen?.(asset);
+            }}
+            onClose={() => (inspectorOpen = false)}
+          />
+        {/if}
+      </aside>
     {/if}
   </div>
 
