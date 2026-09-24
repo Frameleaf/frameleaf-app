@@ -258,4 +258,75 @@ describe('LibraryView', () => {
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
     });
   });
+
+  describe('the results toolbar, empty state and library keys (FL-30, FL-33)', () => {
+    const setupLibrary = async (props: Record<string, unknown> = {}) => {
+      render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false, ...props });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+    };
+
+    afterEach(() => {
+      librarySession.patchView({ query: emptyDiscoveryQuery(), sort: 'captured-desc' });
+      librarySession.clearSelection();
+    });
+
+    it('shows the Frameleaf empty state, not the legacy upload card (T-10)', async () => {
+      await setupLibrary();
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      expect(empty).toHaveTextContent('frameleaf_library_empty');
+      expect(screen.queryByText('no_assets_message')).not.toBeInTheDocument();
+    });
+
+    it('says a filter left nothing, never how much it hides, and offers to clear it', async () => {
+      sdkMock.searchAssetStatistics.mockResolvedValue({ total: 0 } as never);
+      await setupLibrary();
+      librarySession.patchView({
+        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } as never,
+      });
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_empty_filtered_clear' }));
+      expect(librarySession.filterActive).toBe(false);
+    });
+
+    it('orders the timeline by the chosen sort where the page leaves ordering to it (S-15)', async () => {
+      await setupLibrary();
+      const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
+      await fireEvent.change(sort, { target: { value: 'captured-asc' } });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ order: 'asc' })),
+      );
+      await fireEvent.change(sort, { target: { value: 'imported-desc' } });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ order: 'desc', dateType: 'added' }),
+        ),
+      );
+    });
+
+    it('draws no Sort where the page fixes its own order', async () => {
+      await setupLibrary({ options: { dateType: 'added' } });
+      expect(screen.queryByRole('combobox', { name: 'frameleaf_library_sort' })).not.toBeInTheDocument();
+    });
+
+    it('shows the information panel toggle in every layout and opens More library actions', async () => {
+      await setupLibrary();
+      expect(librarySession.layout).toBe('browse');
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_more_actions' }));
+      expect(await screen.findByRole('heading', { name: 'frameleaf_library_actions_title' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'frameleaf_library_compare_selected' })).toBeDisabled();
+    });
+
+    it('opens the Frameleaf shortcuts sheet on ?, with Done', async () => {
+      await setupLibrary();
+      await fireEvent.keyDown(document, { key: '?', shiftKey: true });
+      expect(await screen.findByTestId('frameleaf-shortcuts-help')).toBeInTheDocument();
+      expect(screen.getByText('frameleaf_shortcuts_note')).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: 'done' }));
+      await waitFor(() => expect(screen.queryByTestId('frameleaf-shortcuts-help')).not.toBeInTheDocument());
+    });
+  });
 });

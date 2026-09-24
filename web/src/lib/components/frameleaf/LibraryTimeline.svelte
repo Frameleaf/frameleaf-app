@@ -23,7 +23,9 @@
     THUMBNAIL_SIZE_DEFAULT,
     timelineRowHeight,
     type TileLayout,
+    WORK_CAPTION_HEIGHT,
   } from '$lib/frameleaf/library-grid';
+  import type { TileQuickActions } from '$lib/frameleaf/tile-actions';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
@@ -95,6 +97,13 @@
     onTileClick?: (asset: TimelineAsset) => boolean;
     /** Extra chrome drawn over every tile by the page that mounts the timeline. */
     tileOverlay?: Snippet<[TimelineAsset]>;
+    /** The hover quick actions each tile may offer (prototype `AssetTile.jsx` `.at-actions`). */
+    quickActions?: (asset: TimelineAsset) => TileQuickActions | null;
+    /**
+     * Timeline captions (prototype `TimelineLibrary.jsx` `showCaptions`, on in every layout but
+     * Browse). Work's cell grid reserves its own caption row.
+     */
+    timelineCaptions?: boolean;
     /** Rendered above the timeline; the results toolbar and any page header go here. */
     header?: Snippet;
     empty?: Snippet;
@@ -118,6 +127,8 @@
     onSelect,
     onTileClick,
     tileOverlay,
+    quickActions,
+    timelineCaptions = false,
     header,
     empty,
   }: Props = $props();
@@ -1203,7 +1214,7 @@
                   {selecting}
                   {ratingFor}
                   layout={tileLayout}
-                  captionHeight={cells?.captionHeight ?? 0}
+                  captionHeight={cells ? cells.captionHeight : timelineCaptions ? WORK_CAPTION_HEIGHT : 0}
                   {showFileNames}
                   showHeader={showDayHeaders}
                   grouped={effectiveGrouping !== 'days' || !!cells}
@@ -1213,6 +1224,7 @@
                   onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
                   {tileOverlay}
+                  {quickActions}
                 />
               {/each}
             </div>
