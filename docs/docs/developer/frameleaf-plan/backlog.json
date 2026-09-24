@@ -1304,8 +1304,8 @@
       "objective": "The prototype supports photographed cards and filtering, but source person management is richer. Adapt list/detail/manage screens without changing identity architecture.",
       "paths": [
         "web/src/routes/(user)/people",
-        "web/src/lib/services/person.service.ts",
-        "web/src/lib/modals/PersonEditBirthDateModal.svelte",
+        "web/src/lib/components/frameleaf/people/PersonHero.svelte",
+        "web/src/lib/components/frameleaf/people/BirthdayDialog.svelte",
         "server/src/services/person.service.ts",
         "e2e/src/specs/server/api/person.e2e-spec.ts",
         "prototypes/frameleaf/src/People.jsx"
@@ -1338,8 +1338,8 @@
       "id": "REC-002",
       "objective": "The new sample face tagger supports manual regions but explicitly does not alter existing detected identities. Port the source face editor and assignment contracts together.",
       "paths": [
-        "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-        "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+        "web/src/lib/components/frameleaf/FaceTagger.svelte",
+        "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
         "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
         "server/src/services/person.service.ts",
         "prototypes/frameleaf/src/FaceTagger.jsx",

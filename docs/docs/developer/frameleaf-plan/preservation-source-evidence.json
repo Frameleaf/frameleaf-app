@@ -8,7 +8,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c"
+      "sha256": "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
@@ -3508,14 +3508,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3572,14 +3572,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3636,14 +3636,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3700,14 +3700,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3764,14 +3764,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3828,14 +3828,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3892,14 +3892,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -3956,14 +3956,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4020,14 +4020,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4084,14 +4084,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4148,14 +4148,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4212,14 +4212,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4276,14 +4276,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4340,14 +4340,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4404,14 +4404,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4468,14 +4468,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4532,14 +4532,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4596,14 +4596,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4660,14 +4660,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4724,14 +4724,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4788,14 +4788,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4852,14 +4852,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4916,14 +4916,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -4980,14 +4980,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -5044,14 +5044,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -5108,14 +5108,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
@@ -5172,14 +5172,14 @@
           "sha256": "1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612"
         },
         {
-          "path": "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
+          "path": "web/src/lib/components/frameleaf/FaceTagger.svelte",
           "availability": "accepted-main",
-          "sha256": "97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37"
+          "sha256": "d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447"
         },
         {
-          "path": "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+          "path": "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
           "availability": "accepted-main",
-          "sha256": "d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453"
+          "sha256": "3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206"
         },
         {
           "path": "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte",
