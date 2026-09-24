@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -133,6 +134,13 @@
     }
   };
 
+  /**
+   * Removing a member asks first, as the space's Members panel does. The design removes at once,
+   * but re-adding cannot undo it: a shared space member comes back only by accepting a new
+   * invitation, so an Undo would not restore what was there.
+   */
+  let removing = $state<{ open: boolean; user?: UserResponseDto }>({ open: false });
+
   const remove = async (user: UserResponseDto) => {
     busy = true;
     try {
@@ -243,7 +251,7 @@
                 disabled={busy}
                 aria-label={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
                 title={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
-                onclick={() => void remove(member.user)}
+                onclick={() => (removing = { open: true, user: member.user })}
               >
                 <Icon icon={mdiClose} size="18" />
               </button>
@@ -290,6 +298,17 @@
 </Dialog>
 
 <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
+
+{#if removing.user}
+  {@const user = removing.user}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_remove_member_title', { values: { name: user.name } })}
+    body={$t('frameleaf_album_remove_member_body', { values: { name: album.albumName || $t('unnamed_album') } })}
+    confirmLabel={$t('frameleaf_album_remove_member_confirm')}
+    bind:open={removing.open}
+    onConfirm={() => remove(user)}
+  />
+{/if}
 
 <style>
   .share {

@@ -188,9 +188,9 @@ export const handleInviteAlbumUsers = async (album: AlbumResponseDto, albumUsers
 };
 
 /**
- * Remove a member from an album, a collection or a shared space. The Frameleaf share dialog
- * removes at once, as the design's `ShareDialog` does (`CollectionHeader.jsx:643-649`): the
- * owner can invite the person again, and nothing in anyone's library changes.
+ * Remove a member from an album, a collection or a shared space. The caller has already asked
+ * in the Frameleaf confirmation: re-inviting cannot undo a removal from a shared space, whose
+ * members come back only by accepting a new invitation.
  */
 export const handleRemoveUserFromAlbum = async (album: AlbumResponseDto, albumUser: UserResponseDto) => {
   const $t = await getFormatter();
