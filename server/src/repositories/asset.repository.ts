@@ -844,6 +844,24 @@ export class AssetRepository {
       : this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
   }
 
+  /**
+   * FL-34: takes, in the caller's transaction and in id order, the row locks that a later lock or
+   * unlock of `ids` needs on its whole stack and live-photo group. Called first in a transaction that
+   * writes one member (its `is_nsfw`, its review) and may then lock the group, so two such
+   * transactions for members of one group queue here instead of each holding its own row and waiting
+   * on the other's.
+   */
+  async lockGroupRows(ids: string[], kysely: Kysely<DB>): Promise<void> {
+    const targetIds = await this.getLockGroupIds(kysely, ids);
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    await sql`select asset.id from asset where asset.id = ${anyUuid(targetIds)} order by asset.id for no key update`.execute(
+      kysely,
+    );
+  }
+
   /** `lock` inside the caller's transaction `tx`. */
   private async lockIn(
     tx: Kysely<DB>,
