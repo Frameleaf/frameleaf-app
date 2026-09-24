@@ -11,6 +11,7 @@ import {
   VideoMomentDto,
   VideoMomentSearchDto,
   VideoMomentSearchResponseDto,
+  VideoMomentSimilarDto,
   VideoMomentUpdateDto,
   VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
@@ -89,6 +90,19 @@ const asIso = (value: unknown): string | null => {
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+/** One hit per second of each video, the first (best) one kept. */
+const uniqueMoments = <T extends { assetId: string; timestampMs: number }>(hits: T[]): T[] => {
+  const seen = new Set<string>();
+  return hits.filter((hit) => {
+    const key = `${hit.assetId}:${Math.round(hit.timestampMs / 1000)}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
 
 /**
  * The timestamped moment index of videos (FL-59, `REC-101`).
@@ -262,26 +276,26 @@ export class VideoMomentIndexService {
     }
 
     // What was captioned is kept even when a frame failed; the retry only asks for the rest.
-    let written = 0;
-    if (captions.length > 0) {
-      written = await this.moments.publishCaptions(
-        assetId,
-        captions,
-        {
-          modelName: captionConfig.modelName,
-          configHash: captionHash,
-          identityHash: names,
-          destinationId: selection.destinationId,
-          ...(options.planConfigHash && { planConfigHash: options.planConfigHash }),
-        },
-        {
-          captionModel: captionConfig.modelName,
-          captionConfigHash: captionHash,
-          captionIdentityHash: names,
-          captionDestinationId: selection.destinationId,
-        },
-      );
-    }
+    const written =
+      captions.length > 0
+        ? await this.moments.publishCaptions(
+            assetId,
+            captions,
+            {
+              modelName: captionConfig.modelName,
+              configHash: captionHash,
+              identityHash: names,
+              destinationId: selection.destinationId,
+              ...(options.planConfigHash && { planConfigHash: options.planConfigHash }),
+            },
+            {
+              captionModel: captionConfig.modelName,
+              captionConfigHash: captionHash,
+              captionIdentityHash: names,
+              captionDestinationId: selection.destinationId,
+            },
+          )
+        : 0;
 
     if (claimLost) {
       return CLAIM_LOST;
@@ -440,16 +454,44 @@ export class VideoMomentIndexService {
       }
     }
 
-    const seen = new Set<string>();
-    const unique = hits.filter((hit) => {
-      const key = `${hit.assetId}:${Math.round(hit.timestampMs / 1000)}`;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
+    return { hits: uniqueMoments(hits).slice(0, limit) };
+  }
+
+  /**
+   * Frame-to-moment search (FL-59): the moments nearest one frame's stored embedding, in other
+   * videos and at other times in the same one. The frame is read under its video's own access; the
+   * results are the caller's own library under exactly the rules of `search`, and never the frame
+   * itself. Nothing is sent to a model: the embedding is already stored.
+   */
+  async searchSimilar(
+    auth: AuthDto,
+    frameId: string,
+    dto: VideoMomentSimilarDto,
+  ): Promise<VideoMomentSearchResponseDto> {
+    const query = await this.moments.getFrameEmbedding(frameId);
+    // An unknown frame and a frame of a video the caller may not read answer the same.
+    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [query?.assetId ?? frameId] });
+    if (!query) {
+      throw new BadRequestException('This frame has no search embedding yet; index the video first');
+    }
+
+    const limit = dto.limit ?? 24;
+    const found = await this.moments.searchFrames(query.embedding, query.modelName, {
+      ownerId: auth.user.id,
+      lockedOwnerId: getLockedOwnerId(auth),
+      limit,
+      excludeFrameId: frameId,
     });
-    return { hits: unique.slice(0, limit) };
+    const hits = found.map((hit) => ({
+      assetId: hit.assetId,
+      timestampMs: hit.timestampMs,
+      frameId: hit.frameId,
+      momentId: hit.momentId,
+      caption: hit.caption,
+      match: VideoMomentMatch.Visual,
+      score: Math.max(0, 1 - hit.distance),
+    }));
+    return { hits: uniqueMoments(hits).slice(0, limit) };
   }
 
   /* ------------------------------------------------------------------ */

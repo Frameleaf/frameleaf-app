@@ -210,6 +210,40 @@ describe(EnrichmentController.name, () => {
     });
   });
 
+  describe('GET /enrichment/frames/:id/similar', () => {
+    it('requires asset read permission', async () => {
+      await request(ctx.getHttpServer()).get(`/enrichment/frames/${newUuidV7()}/similar`);
+      expectAuth({ permission: Permission.AssetRead });
+    });
+
+    it('requires a frame id', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/enrichment/frames/123/similar');
+      expect(status).toBe(400);
+      expect(moments.searchSimilar).not.toHaveBeenCalled();
+    });
+
+    it('refuses a limit outside 1 to 100', async () => {
+      for (const limit of [0, 101, 'many']) {
+        const { status } = await request(ctx.getHttpServer())
+          .get(`/enrichment/frames/${newUuidV7()}/similar`)
+          .query({ limit });
+        expect(status).toBe(400);
+      }
+      expect(moments.searchSimilar).not.toHaveBeenCalled();
+    });
+
+    it('delegates the frame and limit to the moment service', async () => {
+      const id = newUuidV7();
+      moments.searchSimilar.mockResolvedValue({ hits: [] });
+      const { status, body } = await request(ctx.getHttpServer())
+        .get(`/enrichment/frames/${id}/similar`)
+        .query({ limit: 12 });
+      expect(status).toBe(200);
+      expect(body).toEqual({ hits: [] });
+      expect(moments.searchSimilar).toHaveBeenCalledWith(undefined, id, { limit: 12 });
+    });
+  });
+
   describe('GET /enrichment/videos/:id/moments', () => {
     it('requires asset read permission', async () => {
       await request(ctx.getHttpServer()).get(`/enrichment/videos/${factory.uuid()}/moments`);
@@ -237,7 +271,9 @@ describe(EnrichmentController.name, () => {
     });
 
     it.each([{}, { timestampMs: -1 }, { timestampMs: 1.5 }])('rejects %j', async (body) => {
-      const { status } = await request(ctx.getHttpServer()).put(`/enrichment/videos/${factory.uuid()}/cover`).send(body);
+      const { status } = await request(ctx.getHttpServer())
+        .put(`/enrichment/videos/${factory.uuid()}/cover`)
+        .send(body);
       expect(status).toBe(400);
       expect(moments.setCover).not.toHaveBeenCalled();
     });
@@ -302,9 +338,7 @@ describe(EnrichmentController.name, () => {
     it('delegates to the moment service', async () => {
       const id = factory.uuid();
       const momentId = newUuidV7();
-      await request(ctx.getHttpServer())
-        .put(`/enrichment/videos/${id}/moments/${momentId}`)
-        .send({ transcript: null });
+      await request(ctx.getHttpServer()).put(`/enrichment/videos/${id}/moments/${momentId}`).send({ transcript: null });
       expect(moments.updateMoment).toHaveBeenCalledWith(undefined, id, momentId, { transcript: null });
     });
   });

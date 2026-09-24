@@ -223,8 +223,7 @@ describe(VideoMomentIndexService.name, () => {
     });
 
     it('publishes no embeddings or moments when the original is replaced and invalidated during indexing', async () => {
-      const { sut, machineLearning, newOwner, newVideo, replaceOriginal, framesOf, embeddingsOf, momentsOf } =
-        setup();
+      const { sut, machineLearning, newOwner, newVideo, replaceOriginal, framesOf, embeddingsOf, momentsOf } = setup();
       const { user } = await newOwner();
       const video = await newVideo(user.id);
       await sut.runFramesStage(video.id);
@@ -457,6 +456,110 @@ describe(VideoMomentIndexService.name, () => {
       await expect(sut.search(alice.auth, { query: 'private toast' })).resolves.toMatchObject({
         hits: [{ assetId: video.id, match: VideoMomentMatch.Transcript }],
       });
+    });
+  });
+
+  describe('searchSimilar (frame-to-moment search)', () => {
+    /** A 512-dimension vector along `axis`, leaning `lean` towards axis 1. */
+    const vector = (axis: number, lean = 0) => {
+      const values = Array.from({ length: 512 }, () => 0);
+      values[axis] = 1;
+      values[1] += lean;
+      return `[${values}]`;
+    };
+
+    /**
+     * Indexes a video with one vector per frame: `byFrame[frameIndex]`, or a vector of its own far
+     * from every other for frames not named.
+     */
+    const indexWith = async (
+      { sut, machineLearning }: ReturnType<typeof setup>,
+      assetId: string,
+      byFrame: Record<number, string>,
+    ) => {
+      machineLearning.encodeImage.mockImplementation((_selection, path) => {
+        const match = /([\da-f-]{36})_moment_[^_]+_(\d+)\.jpeg$/.exec(path as string);
+        const frameIndex = Number(match?.[2]);
+        if (match?.[1] !== assetId) {
+          throw new Error(`unexpected frame ${path as string}`);
+        }
+        return Promise.resolve(byFrame[frameIndex] ?? vector(100 + Math.floor(Math.random() * 400)));
+      });
+      await expect(sut.runIndexStage(assetId)).resolves.toMatchObject({ state: EnrichmentItemState.Completed });
+    };
+
+    const frameAt = async (context: ReturnType<typeof setup>, assetId: string, frameIndex: number) => {
+      const frames = await context.framesOf(assetId);
+      return frames.find((frame) => frame.frameIndex === frameIndex)!;
+    };
+
+    it('ranks the most similar frame first, across videos and other times in the same video, never the frame itself', async () => {
+      const context = setup();
+      const { sut, newOwner, newVideo } = context;
+      const { user, auth } = await newOwner();
+      const source = await newVideo(user.id);
+      const other = await newVideo(user.id);
+      await indexWith(context, source.id, { 0: vector(0), 3: vector(0, 0.5) });
+      await indexWith(context, other.id, { 2: vector(0, 0.1) });
+      const query = await frameAt(context, source.id, 0);
+      const sameVideo = await frameAt(context, source.id, 3);
+      const closest = await frameAt(context, other.id, 2);
+
+      const { hits } = await sut.searchSimilar(auth, query.id, { limit: 5 });
+
+      expect(hits.map(({ frameId }) => frameId)).not.toContain(query.id);
+      expect(hits[0]).toMatchObject({
+        assetId: other.id,
+        frameId: closest.id,
+        timestampMs: closest.timestampMs,
+        match: VideoMomentMatch.Visual,
+        momentId: expect.any(String),
+      });
+      expect(hits[1]).toMatchObject({ assetId: source.id, frameId: sameVideo.id, timestampMs: sameVideo.timestampMs });
+      expect(hits[0].score).toBeGreaterThan(hits[1].score);
+      expect(hits).toHaveLength(5);
+    });
+
+    it('leaves out Locked videos unless the owner’s session is unlocked', async () => {
+      const context = setup();
+      const { sut, newOwner, newVideo } = context;
+      const { user } = await newOwner();
+      const source = await newVideo(user.id);
+      const locked = await newVideo(user.id, AssetVisibility.Locked);
+      await indexWith(context, source.id, { 0: vector(0) });
+      await indexWith(context, locked.id, { 1: vector(0, 0.05) });
+      const query = await frameAt(context, source.id, 0);
+
+      const notUnlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: false } });
+      const ordinary = await sut.searchSimilar(notUnlocked, query.id, { limit: 100 });
+      expect(ordinary.hits.length).toBeGreaterThan(0);
+      expect(ordinary.hits.map(({ assetId }) => assetId)).not.toContain(locked.id);
+
+      const unlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      const elevated = await sut.searchSimilar(unlocked, query.id, { limit: 100 });
+      expect(elevated.hits[0]).toMatchObject({ assetId: locked.id });
+
+      // A frame of a Locked video is not a starting point for an ordinary session either.
+      const lockedFrame = await frameAt(context, locked.id, 1);
+      await expect(sut.searchSimilar(notUnlocked, lockedFrame.id, {})).rejects.toThrow();
+    });
+
+    it('never returns another person’s moments, and refuses their frames', async () => {
+      const context = setup();
+      const { sut, newOwner, newVideo } = context;
+      const alice = await newOwner();
+      const bob = await newOwner();
+      const mine = await newVideo(alice.user.id);
+      const theirs = await newVideo(bob.user.id);
+      await indexWith(context, mine.id, { 0: vector(0) });
+      await indexWith(context, theirs.id, { 0: vector(0), 1: vector(0), 2: vector(0) });
+      const query = await frameAt(context, mine.id, 0);
+
+      const { hits } = await sut.searchSimilar(alice.auth, query.id, { limit: 100 });
+      expect(hits.map(({ assetId }) => assetId)).not.toContain(theirs.id);
+      expect(new Set(hits.map(({ assetId }) => assetId))).toEqual(new Set([mine.id]));
+
+      await expect(sut.searchSimilar(bob.auth, query.id, {})).rejects.toThrow();
     });
   });
 });

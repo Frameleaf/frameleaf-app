@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetStatus, AssetType, AssetVisibility, VectorIndex, VideoMomentSource } from 'src/enum.js';
+import { probes } from 'src/repositories/database.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   VideoMomentFrameTable,
@@ -29,6 +31,8 @@ export type VideoMomentSourceRow = NonNullable<Awaited<ReturnType<VideoMomentRep
 export type VideoMomentSearchHit = {
   assetId: string;
   frameId: string;
+  /** The frame's generated moment, when it has one. */
+  momentId: string | null;
   timestampMs: number;
   distance: number;
   caption: string | null;
@@ -49,6 +53,8 @@ export type VideoMomentSearchScope = {
   /** The same owner, only when their session is unlocked; otherwise Locked videos are left out. */
   lockedOwnerId?: string;
   limit: number;
+  /** A frame never returned: the one a frame-to-moment search started from. */
+  excludeFrameId?: string;
 };
 
 /**
@@ -188,6 +194,24 @@ export class VideoMomentRepository {
         'asset.ownerId',
       ])
       .where('video_moment_frame.id', '=', asUuid(frameId))
+      .executeTakeFirst();
+  }
+
+  /**
+   * A frame's stored search embedding and the model it came from, with its video, for a search that
+   * starts from the frame (FL-59). Undefined when the frame has not been indexed.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFrameEmbedding(frameId: string) {
+    return this.db
+      .selectFrom('video_moment_frame_embedding')
+      .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+      .select([
+        'video_moment_frame.assetId',
+        'video_moment_frame_embedding.embedding',
+        'video_moment_frame_embedding.modelName',
+      ])
+      .where('video_moment_frame_embedding.frameId', '=', asUuid(frameId))
       .executeTakeFirst();
   }
 
@@ -531,20 +555,26 @@ export class VideoMomentRepository {
   }
 
   /**
-   * Frames nearest a text embedding in one library. Only embeddings from `modelName`, the model the
-   * text was encoded with: vectors from another model are not comparable. Only videos an ordinary
+   * Frames nearest a text or frame embedding in one library. Only embeddings from `modelName`, the
+   * model the query was encoded with: vectors from another model are not comparable. Only videos an ordinary
    * read may show: active, not deleted, Timeline or Archive, and not Locked unless the owner's
    * session is unlocked.
    */
+  @GenerateSql({
+    params: [
+      DummyValue.VECTOR,
+      DummyValue.STRING,
+      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, limit: 24, excludeFrameId: DummyValue.UUID },
+    ],
+  })
   async searchFrames(
     embedding: string,
     modelName: string,
     scope: VideoMomentSearchScope,
   ): Promise<VideoMomentSearchHit[]> {
     const rows = await this.db.transaction().execute(async (trx) => {
-      // The frame index is built with a single list (`2100000000500-AddVideoMomentFrameVectorIndex`);
-      // like every other vector search, set the probes here rather than relying on a database default.
-      await sql`set local vchordrq.probes = ${sql.lit(1)}`.execute(trx);
+      // Like every other vector search, set the probes here rather than relying on a database default.
+      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.VideoMomentFrame])}`.execute(trx);
       return trx
         .selectFrom('video_moment_frame_embedding')
         .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
@@ -557,6 +587,7 @@ export class VideoMomentRepository {
         .select([
           'video_moment_frame.assetId',
           'video_moment_frame.id as frameId',
+          'video_moment.id as momentId',
           'video_moment_frame.timestampMs',
           'video_moment.caption',
           sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
@@ -567,6 +598,9 @@ export class VideoMomentRepository {
         .where('asset.deletedAt', 'is', null)
         .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
         .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+        .$if(!!scope.excludeFrameId, (qb) =>
+          qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
+        )
         .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
         .limit(scope.limit)
         .execute();
