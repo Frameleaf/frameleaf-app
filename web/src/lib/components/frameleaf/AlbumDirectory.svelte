@@ -10,7 +10,6 @@
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
-  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
   import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
@@ -130,7 +129,6 @@
   let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let linkDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let smartDialogOpen = $state(false);
   let reevaluate = $state<{ open: boolean; rule?: ClassificationRuleResponseDto; sources: RuleSources }>({
     open: false,
     sources: { people: [], tags: [] },
@@ -772,28 +770,6 @@
   />
 {/if}
 
-<Dialog title={$t('frameleaf_albums_smart_title')} closeLabel={$t('close')} bind:open={smartDialogOpen}>
-  <div class="smart">
-    <p>{$t('frameleaf_albums_smart_description')}</p>
-    <div class="buttons">
-      {#if authManager.user.isAdmin}
-        <a href={Route.systemSettings()} onclick={() => (smartDialogOpen = false)}
-          >{$t('frameleaf_albums_smart_settings')}</a
-        >
-      {/if}
-      <button
-        type="button"
-        class="primary"
-        onclick={() => {
-          smartDialogOpen = false;
-          void modalManager.show(SmartAlbumReevaluateModal, {});
-        }}
-      >
-        {$t('frameleaf_albums_smart_reevaluate')}
-      </button>
-    </div>
-  </div>
-</Dialog>
 
 {#if ruleEdit.rule && ruleEdit.album}
   <SmartAlbumRuleDialog
