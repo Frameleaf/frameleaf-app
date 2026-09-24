@@ -190,6 +190,20 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
   });
 
+  it('lists all four repair tools for an administrator, in the Utilities order', () => {
+    open('/user-settings?area=care');
+    const { container } = render(SettingsHost, { sections });
+    const tools = within(container.querySelector<HTMLElement>('.cc-directory')!)
+      .getByRole('heading', { level: 2, name: 'Tools' })
+      .closest('section')!;
+    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
+      'Duplicate review',
+      'Live Photo pairing',
+      'Missing media',
+      'Damaged media',
+    ]);
+  });
+
   it('lists only the repair tools an account without administration may run', () => {
     open('/user-settings?area=care', false);
     const { container } = render(SettingsHost, {

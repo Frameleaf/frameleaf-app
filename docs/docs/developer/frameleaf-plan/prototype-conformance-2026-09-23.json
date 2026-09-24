@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 103,
+      "partial": 102,
       "missing": 5,
-      "fixed": 38,
+      "fixed": 39,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -204,7 +204,7 @@
       ],
       "status": "partial",
       "gaps": ["AL-1", "AL-6", "AL-12", "S-14"],
-      "followUp": "Per-album rules shipped with FL-60 (AL-1, AL-12); saved presets (S-14) and AL-6 remain"
+      "followUp": "Per-album rules shipped with FL-60 (AL-1, AL-12) and saved presets in the rail (S-14); AL-6 remains"
     },
     {
       "requirementId": "action:albums-organization:delete-album-while-retaining-assets",
@@ -1156,14 +1156,18 @@
     {
       "requirementId": "action:search-discovery:save-update-delete-custom-server-queries",
       "title": "Save/update/delete custom server queries",
-      "prototype": ["design/frameleaf/template/src/App.jsx", "design/frameleaf/template/src/FilterPanel.jsx"],
-      "production": [
-        "web/src/lib/components/frameleaf/SearchPalette.svelte",
-        "web/src/lib/components/frameleaf/FilterPanel.svelte"
+      "prototype": [
+        "design/frameleaf/template/src/App.jsx",
+        "design/frameleaf/template/src/FilterPanel.jsx",
+        "design/frameleaf/template/src/LibraryRail.jsx"
       ],
-      "status": "partial",
+      "production": [
+        "web/src/lib/components/frameleaf/RailSavedSearches.svelte",
+        "web/src/lib/components/frameleaf/LibraryRail.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["S-14"],
-      "followUp": "RailSavedSearches is ready on codex/FL-49-search-palette for the shell to mount in LibraryRail; palette Save search (Smart album, Album snapshot, saved search) fixed there"
+      "followUp": "Palette Save search (Smart album, Album snapshot, saved search) and RailSavedSearches mounted in LibraryRail's Albums section"
     },
     {
       "requirementId": "action:search-discovery:search-assets-inside-shared-spaces-or-named-pets",

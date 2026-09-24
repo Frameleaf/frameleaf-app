@@ -1,7 +1,7 @@
-import { buildCommandIndex } from '$lib/frameleaf/command-palette';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildCommandIndex } from '$lib/frameleaf/command-palette';
 import CommandPalette from './CommandPalette.svelte';
 
 const reducedMotion = vi.hoisted(() => ({ value: false }));
