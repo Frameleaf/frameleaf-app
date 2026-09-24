@@ -7,6 +7,7 @@ import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
 import { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
+import AssetGrid from './AssetGrid.svelte';
 import AssetTile from './AssetTile.svelte';
 import LibraryDayGroup from './LibraryDayGroup.svelte';
 import ResultsToolbar from './ResultsToolbar.svelte';
@@ -125,6 +126,66 @@ describe('AssetTile', () => {
     expect(container.querySelector('.fl-tile-rating')).not.toBeNull();
   });
 
+  it('shows the asset’s own rating when no override is given', async () => {
+    const { container } = render(AssetTile, { asset: asset({ rating: 4 }), width: 200, height: 133, selected: true });
+    expect(container.querySelector('.fl-tile-rating')?.getAttribute('aria-label')).toBe(
+      'frameleaf_library_rating_stars',
+    );
+  });
+
+  describe('per layout (September 24)', () => {
+    it('never shows a rating or a caption in Browse, even selected or hovered', async () => {
+      const { container } = render(AssetTile, {
+        asset: asset({ rating: 5, originalFileName: 'IMG_0001.HEIC' }),
+        width: 120,
+        height: 120,
+        layout: 'browse',
+        selected: true,
+        showFileName: true,
+      });
+      await fireEvent.pointerEnter(screen.getByRole('button', { name: 'A photo' }), { pointerType: 'mouse' });
+      expect(container.querySelector('.fl-tile-rating')).toBeNull();
+      expect(container.querySelector('.fl-tile-caption')).toBeNull();
+      expect(container.querySelector('[data-layout="browse"]')).not.toBeNull();
+    });
+
+    it('always shows ratings and rejects in Work, at rest', () => {
+      const { container, unmount } = render(AssetTile, {
+        asset: asset({ rating: 2 }),
+        width: 200,
+        height: 157,
+        layout: 'work',
+        captionHeight: 24,
+      });
+      expect(container.querySelector('.fl-tile-rating')).not.toBeNull();
+      unmount();
+      render(AssetTile, { asset: asset({ rating: -1 }), width: 200, height: 157, layout: 'work', captionHeight: 24 });
+      expect(screen.getByLabelText('frameleaf_library_rating_rejected')).toBeTruthy();
+    });
+
+    it('captions Work tiles with the capture time and hides the file name until asked', async () => {
+      const props = {
+        asset: asset({ originalFileName: 'IMG_0042.HEIC' }),
+        width: 200,
+        height: 157,
+        layout: 'work' as const,
+        captionHeight: 24,
+      };
+      const { container, rerender } = render(AssetTile, props);
+      const caption = () => container.querySelector('.fl-tile-caption')!;
+      expect(caption().querySelector('time')?.textContent).toMatch(/10:00/);
+      expect(caption().textContent).not.toContain('IMG_0042');
+      // The name still shows on hover (the button's tooltip) while the captions hide it.
+      expect(screen.getByRole('button', { name: 'A photo' }).getAttribute('title')).toBe('IMG_0042.HEIC');
+      // The photo leaves the caption row free under it.
+      expect((screen.getByRole('button', { name: 'A photo' }) as HTMLElement).style.height).toBe('133px');
+
+      await rerender({ ...props, showFileName: true });
+      expect(caption().querySelector('span')?.textContent).toBe('IMG_0042');
+      expect(screen.getByRole('button', { name: 'A photo' }).getAttribute('title')).toBeNull();
+    });
+  });
+
   it('opens on a plain click, selects while a selection is in progress, and selects on shift-click', async () => {
     const onOpen = vi.fn();
     const onToggleSelect = vi.fn();
@@ -196,6 +257,63 @@ describe('AssetTile', () => {
     await fireEvent.click(screen.getByRole('checkbox'));
     expect(onToggleSelect).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('AssetGrid', () => {
+  const results = (count: number) => Array.from({ length: count }, (_, index) => asset({ id: `asset-${index}` }));
+  const cells = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('.fl-grid-cell')];
+  const px = (value: string) => Number(value.replace('px', ''));
+
+  // The grid lays out once it has measured its width (`bind:clientWidth`, through a ResizeObserver).
+  const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')!;
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 1000 });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private callback: ResizeObserverCallback) {}
+        observe(target: Element) {
+          queueMicrotask(() =>
+            this.callback(
+              [{ target, contentRect: target.getBoundingClientRect() } as unknown as ResizeObserverEntry],
+              this as unknown as ResizeObserver,
+            ),
+          );
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+  afterEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidth);
+    vi.unstubAllGlobals();
+  });
+
+  const renderGrid = (layout: 'browse' | 'work' | 'timeline', count = 12) => {
+    const session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+    const view = render(AssetGrid, { assets: results(count), session, layout });
+    return { ...view, session };
+  };
+
+  it('draws Browse as square cells with 2px gutters and no captions', async () => {
+    const { container } = renderGrid('browse');
+    await waitFor(() => expect(cells(container).length).toBeGreaterThan(0));
+    const [first, second] = cells(container);
+    expect(first.style.width).toBe(first.style.height);
+    expect(px(second.style.insetInlineStart) - px(first.style.width)).toBe(2);
+    expect(container.querySelector('.fl-tile-caption')).toBeNull();
+    expect(container.querySelector('[data-layout="browse"]')).not.toBeNull();
+  });
+
+  it('draws Work as 3:2 cells with a caption row under each', async () => {
+    const { container } = renderGrid('work');
+    await waitFor(() => expect(cells(container).length).toBeGreaterThan(0));
+    const [first] = cells(container);
+    const width = px(first.style.width);
+    expect(px(first.style.height)).toBe(Math.round(width / 1.5) + 24);
+    expect(container.querySelectorAll('.fl-tile-caption')).toHaveLength(12);
   });
 });
 
