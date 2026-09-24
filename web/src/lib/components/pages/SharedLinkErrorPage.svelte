@@ -11,7 +11,7 @@
   // `$lib/utils/shared-links.ts` throws and SvelteKit lands here). Own layout, no
   // LibraryRail/TopBar/account menu; the prototype draws this state inside the public frame.
   // SvelteKit reports every failed load as 500; the API's own status is `error.code` (hooks.client.ts).
-  const code = $derived(Number(page.error?.code ?? page.status));
+  const code = $derived(Number((page.error as { code?: string | number } | null)?.code ?? page.status));
   const serverFailure = $derived(!code || code >= 500);
 </script>
 
