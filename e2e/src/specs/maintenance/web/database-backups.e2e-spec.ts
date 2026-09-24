@@ -36,6 +36,11 @@ test.describe('Database Backups', () => {
     admin = await utils.adminSetup();
   });
 
+  // A failed test must not leave the server in maintenance mode for the tests after it.
+  test.afterEach(async ({ context }) => {
+    await utils.endMaintenance(context);
+  });
+
   test('restore a backup from settings', async ({ context, page }) => {
     test.setTimeout(60_000);
 
