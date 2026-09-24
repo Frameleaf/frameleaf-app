@@ -45,12 +45,7 @@
   <UserPageLayout>
     <div class="size-full [&>.frameleaf]:size-full">
       <Theme theme={appTheme}>
-        <MapScreen
-          title={data.meta.title}
-          scopedMarkers={data.albumMarkers}
-          onOpenAsset={openAsset}
-          onSearchArea={data.albumMarkers ? undefined : searchArea}
-        />
+        <MapScreen title={data.meta.title} albumId={data.album?.id} onOpenAsset={openAsset} onSearchArea={searchArea} />
       </Theme>
     </div>
   </UserPageLayout>
