@@ -11,7 +11,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { useSwipe } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
 
   interface Props {
     isFullScreen: boolean;
@@ -183,7 +183,7 @@
     class="dark m-4 flex gap-2 rounded-3xl bg-black/40 px-2 backdrop-blur-sm"
     onmouseenter={() => (isOverControls = true)}
     onmouseleave={() => (isOverControls = false)}
-    transition:fly={{ duration: 150 }}
+    transition:motionFly={{ duration: 150 }}
     role="navigation"
   >
     <IconButton

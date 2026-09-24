@@ -14,7 +14,7 @@
     mdiReload,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
 
   /**
    * Download panel (FL-45), ported from the prototype's `DownloadPanel` in
@@ -36,7 +36,7 @@
 
 {#if downloadManager.isDownloading}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
-    <section class="fl-panel" aria-label={$t('prepared_archives')} transition:fly={{ x: -100, duration: 350 }}>
+    <section class="fl-panel" aria-label={$t('prepared_archives')} transition:motionFly={{ x: -100, duration: 350 }}>
       <header class="fl-panel-head">
         <Icon icon={mdiDownloadOutline} size="20" aria-hidden="true" />
         <div class="fl-panel-head-text">
