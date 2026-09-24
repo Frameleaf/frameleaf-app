@@ -23,7 +23,10 @@ test.describe('Album', () => {
     await dialog.getByLabel('Name').fill('Weekend trip');
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page).toHaveURL(/\/albums(?:\?|$)/);
-    await page.getByRole('link', { name: /Weekend trip/ }).first().click();
+    await page
+      .getByRole('link', { name: /Weekend trip/ })
+      .first()
+      .click();
     await page.waitForURL(/\/albums\/[\da-f-]{36}/);
 
     // CollectionHeader.jsx: Add photos -> Select from library / Upload from computer.
