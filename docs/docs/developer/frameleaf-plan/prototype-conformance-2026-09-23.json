@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 109,
-      "missing": 6,
-      "fixed": 31,
+      "partial": 104,
+      "missing": 5,
+      "fixed": 37,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -848,7 +848,7 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
       "status": "match",
@@ -883,8 +883,8 @@
         "web/src/lib/components/frameleaf/FilterChip.svelte"
       ],
       "status": "partial",
-      "gaps": ["S-19", "FP-1", "SD-12"],
-      "followUp": "Chips open their section, Clear all whenever active, Save preset, Frameleaf chips on the results page"
+      "gaps": ["S-19", "SD-12"],
+      "followUp": "Chips open their section, Clear all whenever active, Frameleaf chips on the results page (Save search fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:command-palette-across-assets-people-albums-places-settings-actions",
@@ -908,12 +908,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["SD-1", "SD-2", "SD-3"],
-      "followUp": "Scope select, mode hints, All text mode (server)"
+      "followUp": "Glass search palette: scope toggle with counts, per-mode placeholders, All text as an or over every text field (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:country-state-city-facets",
@@ -925,12 +925,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["FP-3", "SD-7"],
-      "followUp": "Facet counts need a server endpoint"
+      "followUp": "Facet counts from POST /search/facets in the palette and its Advanced view (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:dates-presets-custom-range",
@@ -942,7 +942,7 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
       "status": "match",
@@ -959,12 +959,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["FP-3", "SD-7"],
-      "followUp": "Facet counts need a server endpoint"
+      "followUp": "Server-scoped facet, histogram and scope counts, dropped on every access change (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:enrichment-review-override-failure-missing-description-missing-detection-filters",
@@ -976,12 +976,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["FP-2", "SD-6"],
-      "followUp": "Text & descriptions and Sensitivity review radiogroups (DTO permitting)"
+      "followUp": "Text & descriptions and Sensitivity review radiogroups over the one enrichment enum; palette Enrichment quick filters with counts (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:explore-empty-error-loading-states",
@@ -1047,7 +1047,7 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
       "status": "match",
@@ -1064,7 +1064,7 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
       "status": "match",
@@ -1146,7 +1146,7 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
       "status": "match",
@@ -1158,12 +1158,12 @@
       "title": "Save/update/delete custom server queries",
       "prototype": ["design/frameleaf/template/src/App.jsx", "design/frameleaf/template/src/FilterPanel.jsx"],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "missing",
-      "gaps": ["S-14", "FP-1"],
-      "followUp": "Save query or collection dialog and rail presets"
+      "status": "partial",
+      "gaps": ["S-14"],
+      "followUp": "Rail presets; palette Save search, replace by name and delete in the savedSearches preference fixed on codex/FL-49-search-palette"
     },
     {
       "requirementId": "action:search-discovery:search-assets-inside-shared-spaces-or-named-pets",
@@ -1175,12 +1175,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["SD-1"],
-      "followUp": "Scope select in the search dialog"
+      "followUp": "Palette scope toggle: current album, pet or space and the entire library, each with its count (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:search-input-recent-searches-clear-history-individual-term",
@@ -1192,12 +1192,12 @@
         "design/frameleaf/template/src/search.mjs"
       ],
       "production": [
-        "web/src/lib/components/frameleaf/SearchDialog.svelte",
+        "web/src/lib/components/frameleaf/SearchPalette.svelte",
         "web/src/lib/components/frameleaf/FilterPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["SD-5"],
-      "followUp": "Recent searches keep mode + filters; suggested fallback"
+      "followUp": "Recent searches keep chips, mode and filters, with the Try a search fallback (fixed on codex/FL-49-search-palette)"
     },
     {
       "requirementId": "action:search-discovery:server-paging-load-more-and-large-result-sets",
@@ -2416,11 +2416,11 @@
       ],
       "production": [
         "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/lib/components/frameleaf/SearchDialog.svelte"
+        "web/src/lib/components/frameleaf/SearchPalette.svelte"
       ],
       "status": "partial",
-      "gaps": ["SD-1", "SD-2", "SD-3", "SD-4", "SD-5", "SD-12", "FP-1", "FP-2"],
-      "followUp": "Search dialog scope/hints/recents, results chips, filter panel presets and enrichment groups"
+      "gaps": ["SD-12"],
+      "followUp": "Frameleaf chips on the results page (the search palette, SD-1..SD-11, FP-1..FP-5, fixed on codex/FL-49-search-palette)"
     },
     {
       "route": "/share/[key]/[[photos=photos]]/[[assetId=id]]",
