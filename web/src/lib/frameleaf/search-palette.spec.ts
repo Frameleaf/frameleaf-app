@@ -117,7 +117,7 @@ describe('parseSearchInput', () => {
     expect(filter).toEqual({
       city: { notIn: ['Banff', 'Lake Louise'] },
       type: { ne: AssetTypeEnum.Image },
-      make: { ne: 'Canon' },
+      make: { notLike: 'Canon' },
       lensModel: { notLike: 'RF' },
       tagIds: { none: [WATER] },
       originalFileName: { notLike: 'tmp' },
@@ -125,6 +125,10 @@ describe('parseSearchInput', () => {
       isFavorite: { eq: false },
     });
     expect(isDiscoveryFilter(filter)).toBe(true);
+  });
+
+  it('excludes a camera by "does not contain", which keeps photos without one, as the prototype does', () => {
+    expect(parseSearchInput('-camera:sony', catalog).filter).toEqual({ make: { notLike: 'Sony' } });
   });
 
   it('matches cameras and lenses by "contains", as the prototype does', () => {
@@ -485,6 +489,27 @@ describe('saving as a smart album', () => {
         takenBefore: '2026-08-31',
         visualQueries: ['sunset'],
       },
+    });
+  });
+
+  it('reads the local capture days from every bound, without one overwriting another', () => {
+    const rule = (localDateTime: Record<string, string>) =>
+      smartAlbumCriteria({ ...emptyDiscoveryQuery(), filter: { localDateTime } as never });
+    expect(rule({ lt: '2026-09-01T00:00:00.000Z' })).toEqual({ ok: true, criteria: { takenBefore: '2026-08-31' } });
+    expect(rule({ gte: '2026-08-01', lte: '2026-08-31' })).toEqual({
+      ok: true,
+      criteria: { takenAfter: '2026-08-01', takenBefore: '2026-08-31' },
+    });
+    // The narrower of a strict and a non-strict bound wins
+    expect(rule({ gt: '2026-08-01', gte: '2026-07-01', lte: '2026-08-31', lt: '2026-08-20T00:00:00.000Z' })).toEqual({
+      ok: true,
+      criteria: { takenAfter: '2026-08-02', takenBefore: '2026-08-19' },
+    });
+    expect(rule({ gte: '2026-08-01T10:00:00.000Z' })).toEqual({ ok: false, fields: ['localDateTime'] });
+    // takenAt is the UTC date, not the local day a rule compares
+    expect(smartAlbumCriteria({ ...emptyDiscoveryQuery(), filter: { takenAt: { gte: '2026-08-01' } } })).toEqual({
+      ok: false,
+      fields: ['takenAt'],
     });
   });
 

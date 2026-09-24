@@ -42,6 +42,12 @@ const asset = (id: string, name: string) =>
 
 const statisticsDto = (value: unknown) => JSON.stringify(value);
 
+const deferredPeople = () => {
+  let resolve!: (value: unknown) => void;
+  const promise = new Promise((done) => (resolve = done));
+  return { promise, resolve };
+};
+
 const searchResponse = (items: AssetResponseDto[]) => ({
   albums: { total: 0, count: 0, items: [], facets: [] },
   assets: { total: items.length, count: items.length, items, facets: [], nextPage: null, nextCursor: null },
@@ -344,22 +350,37 @@ describe('SearchPalette', () => {
     expect(screen.getByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove Banff' })).not.toBeInTheDocument();
   });
-  it('shows a chip that stops resolving after a lock as unavailable and leaves it out of the search', async () => {
+  it('drops a person chip that stops resolving after a lock, without ever showing the name', async () => {
     const { input } = setup();
     await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
     await type(input, 'person:Jamie place:Banff ');
     expect(await screen.findByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
-    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
+    const people = deferredPeople();
+    sdkMock.getAllPeople.mockReturnValue(people.promise as never);
     sdkMock.searchAssetStatistics.mockClear();
     eventManager.emit('SessionLocked');
-    expect(await screen.findByRole('button', { name: 'Remove person:Jamie' })).toBeInTheDocument();
+    // Held back at once: no Jamie chip, greyed or not, while the vocabulary reloads
+    await waitFor(() => expect(screen.queryByText(/Jamie/)).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Remove Banff' })).toBeInTheDocument();
+    people.resolve({ people: [], total: 0, hidden: 0, hasNextPage: false });
+    expect(await screen.findByText("A filter that's no longer available was removed.")).toBeInTheDocument();
+    expect(screen.queryByText(/Jamie/)).not.toBeInTheDocument();
     await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalled());
     const bodies = sdkMock.searchAssetStatistics.mock.calls.map(([{ statisticsSearchDto }]) =>
       statisticsDto(statisticsSearchDto),
     );
     expect(bodies.every((body) => !body.includes(JAMIE) && !body.includes('person:Jamie'))).toBe(true);
-    // Removing the unavailable chip removes that chip, not its neighbour
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove person:Jamie' }));
-    expect(screen.getByRole('button', { name: 'Remove Banff' })).toBeInTheDocument();
+  });
+
+  it('brings a person chip back after an unlock when the person still resolves', async () => {
+    const { input } = setup();
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await type(input, 'person:Jamie ');
+    expect(await screen.findByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument();
+    const calls = sdkMock.getAllPeople.mock.calls.length;
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    await waitFor(() => expect(sdkMock.getAllPeople.mock.calls.length).toBeGreaterThan(calls));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument());
+    expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
   });
 });
