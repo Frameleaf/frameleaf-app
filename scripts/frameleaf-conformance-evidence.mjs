@@ -198,12 +198,10 @@ const actions = {
   "add-a-person-draw-bounding-box-search-existing-person-confirm": [
     "partial",
     ["V-28"],
-    "Draw-to-tag, numeric inputs, multi-face session, batch save",
+    "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face and batch Save face tags ported (FL-38); the stale-revision banner is deferred by the owner and detected face boxes stay read-only until the server can update a face box",
     {
       prototype: [`${P}/FaceTagger.jsx`, `${P}/face-tags.mjs`],
-      production: [
-        `${W}/lib/components/asset-viewer/face-editor/FaceEditor.svelte`,
-      ],
+      production: [`${W}/lib/components/frameleaf/FaceTagger.svelte`],
     },
   ],
   "add-edit-location": [
@@ -254,9 +252,7 @@ const actions = {
     undefined,
     {
       prototype: [`${P}/FaceTagger.jsx`],
-      production: [
-        `${W}/lib/components/asset-viewer/face-editor/FaceEditor.svelte`,
-      ],
+      production: [`${W}/lib/components/frameleaf/FaceTagger.svelte`],
     },
   ],
   "display-edit-faces-with-no-named-person": [
@@ -1521,7 +1517,7 @@ const routes = {
     ],
   ],
   "/people": [
-    "partial",
+    "fixed",
     [
       "PG-1",
       "PG-2",
@@ -1536,23 +1532,29 @@ const routes = {
       "PN-2",
       "PN-3",
     ],
-    "People grid conformance (PN-1/PN-2 by fix-discovery)",
+    "People grid: sort, Find a person, counts (GET /people assetCount/lastSeenAt), labels, summary, empty/status copy, combobox name editor and Frameleaf merge/birthday dialogs (PN-1/PN-2 by fix-discovery; the rest on codex/FL-37-people-faces)",
     [`${P}/People.jsx`, `${P}/people-data.mjs`],
-    [`${W}/routes/(user)/people/+page.svelte`],
+    [
+      `${W}/routes/(user)/people/+page.svelte`,
+      `${W}/lib/components/frameleaf/people/PersonCard.svelte`,
+      `${W}/lib/components/frameleaf/people/MergePeopleDialog.svelte`,
+    ],
   ],
   "/people/[personId]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
-    "Person hero toolbar, Fix incorrect match, dialogs",
+    "fixed",
+    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8"],
+    "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); PD-9 Correction history stays as an extra action pending an owner decision",
     [`${P}/PersonDetail.jsx`, `${P}/People.jsx`],
     [
       `${W}/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
+      `${W}/lib/components/frameleaf/people/PersonHero.svelte`,
+      `${W}/lib/components/frameleaf/people/FixMatchPanel.svelte`,
     ],
   ],
   "/people/manage": [
     "fixed",
-    ["MP-1", "MP-2", "MP-3", "MP-4", "MP-5"],
-    "Batch labels, pending footer, Discard changes? guard, back button, empty and status copy (fixed on claude/frameleaf-implementation by the people visibility recovery); MP-6 aria remains",
+    ["MP-1", "MP-2", "MP-3", "MP-4", "MP-5", "MP-6"],
+    "Batch labels, pending footer, Discard changes? guard, back button, empty and status copy (fixed on claude/frameleaf-implementation by the people visibility recovery); MP-6 card aria (name, state, unsaved change) verified present",
     [`${P}/ManagePeople.jsx`],
     [`${W}/routes/(user)/people/manage/+page.svelte`],
   ],

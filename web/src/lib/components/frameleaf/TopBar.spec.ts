@@ -12,7 +12,7 @@ import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
-import CreateFaceModal from '$lib/modals/CreateFaceModal.svelte';
+import EmailTemplatePreviewModal from '$lib/modals/EmailTemplatePreviewModal.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import TopBarTestHarness from './TopBarTestHarness.svelte';
@@ -226,18 +226,9 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(app.invalidateAll).toHaveBeenCalledOnce());
     expect(sessionAccess.lockPending).toBe(true);
     expect(document.body).not.toHaveTextContent('Permanently delete asset');
-    const late = modalManager.open(CreateFaceModal, {
-      assetId: 'late-private-asset',
-      imageWidth: 100,
-      imageHeight: 100,
-      x: 1,
-      y: 1,
-      width: 10,
-      height: 10,
-      previewUrl: 'data:image/png;base64,cHJpdmF0ZQ==',
-    });
+    const late = modalManager.open(EmailTemplatePreviewModal, { html: '<p>late private preview</p>' });
     await late.onClose;
-    expect(document.querySelector('img[src^="data:image/png"]')).not.toBeInTheDocument();
+    expect(document.querySelector('iframe[srcdoc*="private preview"]')).not.toBeInTheDocument();
     expect(sessionAccess.lockPending).toBe(true);
     refreshed.resolve();
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
@@ -245,27 +236,18 @@ describe('TopBar session privacy', () => {
     view.unmount();
   });
 
-  it('clears a cached face preview mounted by the shared modal manager', async () => {
+  it('clears a private preview mounted by the shared modal manager', async () => {
     sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
     sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
-    const face = modalManager.open(CreateFaceModal, {
-      assetId: 'private-asset',
-      imageWidth: 100,
-      imageHeight: 100,
-      x: 1,
-      y: 1,
-      width: 10,
-      height: 10,
-      previewUrl: 'data:image/png;base64,cHJpdmF0ZQ==',
-    });
-    await waitFor(() => expect(document.querySelector('img[src^="data:image/png"]')).toBeInTheDocument());
+    const preview = modalManager.open(EmailTemplatePreviewModal, { html: '<p>private preview</p>' });
+    await waitFor(() => expect(document.querySelector('iframe[srcdoc*="private preview"]')).toBeInTheDocument());
 
     void sessionAccess.retryLock?.();
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
-    expect(document.querySelector('img[src^="data:image/png"]')).not.toBeInTheDocument();
-    expect(await face.onClose).toBeUndefined();
+    expect(document.querySelector('iframe[srcdoc*="private preview"]')).not.toBeInTheDocument();
+    expect(await preview.onClose).toBeUndefined();
     view.unmount();
   });
 });

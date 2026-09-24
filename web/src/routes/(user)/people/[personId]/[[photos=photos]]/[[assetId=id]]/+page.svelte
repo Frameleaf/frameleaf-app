@@ -1,44 +1,30 @@
 <script lang="ts">
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
-  import { clickOutside } from '$lib/actions/click-outside';
-  import { listNavigation } from '$lib/actions/list-navigation';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
-  import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
-  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
-  import { PersonPageViewMode, QueryParameter, SessionStorageKey } from '$lib/constants';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
-  import FrameleafMenu from '$lib/components/frameleaf/Menu.svelte';
-  import FrameleafMenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import FrameleafPersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
-  import CorrectionHistoryPanel from '$lib/components/frameleaf/people/CorrectionHistoryPanel.svelte';
+  import PersonHero from '$lib/components/frameleaf/people/PersonHero.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import { OpenQueryParam, QueryParameter } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import PersonMergeSuggestionModal from '$lib/modals/PersonMergeSuggestionModal.svelte';
   import { Route } from '$lib/route';
-  import { getPersonActions } from '$lib/services/person.service';
-  import { locale } from '$lib/stores/preferences.store';
   import { navigate } from '$lib/utils/navigation';
-  import { websocketEvents } from '$lib/stores/websocket';
-  import { getPeopleThumbnailUrl } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
-  import { normalizeSearchString } from '$lib/utils/string-utils';
-  import { AssetVisibility, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
-  import { ContextMenuButton, Icon, LoadingSpinner, modalManager, toastManager, type ActionItem } from '@immich/ui';
-  import { mdiAccountBoxOutline, mdiAccountMultipleCheckOutline, mdiArrowLeft, mdiDotsVertical } from '@mdi/js';
-  import { DateTime } from 'luxon';
+  import { AssetVisibility, type PersonResponseDto } from '@immich/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
-  import EditNameInput from './EditNameInput.svelte';
-  import MergeFaceSelector from './MergeFaceSelector.svelte';
-  import UnmergeFaceSelector from './UnmergeFaceSelector.svelte';
+
+  /**
+   * The person page (FL-37): the Frameleaf hero (`PersonHero`, ported from `PersonHeader` in
+   * design/frameleaf/template/src/PersonDetail.jsx) above the person's timeline. Every person
+   * action lives in the hero and its Frameleaf dialogs; the legacy select-featured-photo page
+   * mode, full-screen merge selector, name input and unmerge selector are gone.
+   */
 
   interface Props {
     data: PageData;
@@ -48,63 +34,18 @@
 
   let numberOfAssets = $derived(data.statistics.assets);
   let person = $derived(data.person);
-  let thumbnailData = $derived(getPeopleThumbnailUrl(person));
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
   const options = $derived({ visibility: AssetVisibility.Timeline, personId: data.person.id, withPartners: true });
 
-  let viewMode: PersonPageViewMode = $state(PersonPageViewMode.VIEW_ASSETS);
-  let isEditingName = $state(false);
   let previousRoute = $state<string>(Route.explore());
-  let personMerge1: PersonResponseDto | undefined = $state();
-  let personMerge2: PersonResponseDto | undefined = $state();
-  let potentialMergePeople: PersonResponseDto[] = $state([]);
-  let isSuggestionSelectedByUser = $state(false);
-
-  let personName = $derived(person.name);
-  let suggestedPeople: PersonResponseDto[] = $state([]);
-
-  /**
-   * Save the word used to search people name: for example,
-   * if searching 'r' and the server returns 15 people with names starting with 'r',
-   * there's no need to search again people with name starting with 'ri'.
-   * However, it needs to make a new api request if searching 'r' returns 20 names (arbitrary value, the limit sent back by the server).
-   * or if the new search word starts with another word / letter
-   **/
-  let isSearchingPeople = $state(false);
-  let suggestionContainer: HTMLElement | undefined = $state();
+  let refresh = $state(0);
 
   onMount(() => {
-    const action = $page.url.searchParams.get(QueryParameter.ACTION);
-
     const fallbackRoute = $page.params.assetId ? Route.viewPerson(data.person) : Route.explore();
     previousRoute = Route.continue($page.url.searchParams.get(QueryParameter.PREVIOUS_ROUTE), fallbackRoute).toString();
-
-    if (action === 'merge') {
-      viewMode = PersonPageViewMode.MERGE_PEOPLE;
-    }
-
-    return websocketEvents.on('on_person_thumbnail', (personId: string) => {
-      if (person.id === personId) {
-        thumbnailData = getPeopleThumbnailUrl(person, Date.now().toString());
-      }
-    });
   });
-
-  const handleEscape = async () => {
-    if (librarySession.selection.length > 0) {
-      librarySession.clearSelection();
-      return;
-    }
-
-    await goto(previousRoute);
-    return;
-  };
-
-  const updateAssetCount = async () => {
-    await invalidateAll();
-  };
 
   afterNavigate(({ from }) => {
     // Prevent setting previousRoute to the current page.
@@ -113,158 +54,22 @@
     }
   });
 
-  const handleUnmerge = () => {
-    timelineManager.removeAssets([...librarySession.selection]);
-    librarySession.clearSelection();
-    viewMode = PersonPageViewMode.VIEW_ASSETS;
-  };
-
-  const handleReassignAssets = () => {
-    viewMode = PersonPageViewMode.UNASSIGN_ASSETS;
-  };
-
-  const handleMerge = async (person: PersonResponseDto) => {
-    await updateAssetCount();
-    await handleGoBack();
-
-    data = { ...data, person };
-  };
-
-  const handleSelectFeaturePhoto = async (asset: TimelineAsset) => {
-    if (viewMode !== PersonPageViewMode.SELECT_PERSON) {
+  const handleEscape = async () => {
+    if (librarySession.selection.length > 0) {
+      librarySession.clearSelection();
       return;
     }
-    try {
-      person = await updatePerson({ id: person.id, personUpdateDto: { featureFaceAssetId: asset.id } });
-      toastManager.primary($t('feature_photo_updated'));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_set_feature_photo'));
-    }
-
-    librarySession.clearSelection();
-
-    viewMode = PersonPageViewMode.VIEW_ASSETS;
+    await goto(previousRoute);
   };
 
-  const handleMergeSuggestion = async (): Promise<{ merged: boolean }> => {
-    if (!personMerge1 || !personMerge2) {
-      return { merged: false };
-    }
-
-    const result = await modalManager.show(PersonMergeSuggestionModal, {
-      personToMerge: personMerge1,
-      personToBeMergedInto: personMerge2,
-      potentialMergePeople,
-    });
-
-    if (!result) {
-      return { merged: false };
-    }
-
-    const [, personToBeMergedInto] = result;
-
-    if (personToBeMergedInto.name !== personName && person.id === personToBeMergedInto.id) {
-      await updateAssetCount();
-      return { merged: true };
-    }
-    await goto(Route.viewPerson(personToBeMergedInto), { replaceState: true });
-    return { merged: true };
+  const updateAssetCount = async () => {
+    await invalidateAll();
   };
 
-  const handleSuggestPeople = async (person2: PersonResponseDto) => {
-    isEditingName = false;
-    if (person.id !== person2.id) {
-      potentialMergePeople = [];
-      personMerge1 = person;
-      personMerge2 = person2;
-      isSuggestionSelectedByUser = true;
-
-      await handleMergeSuggestion();
-    }
-  };
-
-  const changeName = async () => {
-    viewMode = PersonPageViewMode.VIEW_ASSETS;
-    person.name = personName;
-    isEditingName = false;
-
-    if (isSuggestionSelectedByUser) {
-      // User canceled the merge
-      isSuggestionSelectedByUser = false;
-      return;
-    }
-
-    try {
-      person = await updatePerson({ id: person.id, personUpdateDto: { name: personName } });
-      toastManager.primary($t('change_name_successfully'));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_save_name'));
-    }
-  };
-
-  const handleCancelEditName = () => {
-    isSearchingPeople = false;
-    isEditingName = false;
-  };
-
-  const handleNameChange = async (name: string) => {
-    isEditingName = false;
-    potentialMergePeople = [];
-    personName = name;
-
-    if (person.name === personName) {
-      return;
-    }
-    if (name === '') {
-      await changeName();
-      return;
-    }
-
-    const result = await searchPerson({ name: personName, withHidden: true });
-
-    const normalizedPersonName = normalizeSearchString(personName);
-    const existingPerson = result.find(
-      ({ name, id }: PersonResponseDto) =>
-        normalizeSearchString(name) === normalizedPersonName && id !== person.id && name,
-    );
-    if (existingPerson) {
-      personMerge2 = existingPerson;
-      personMerge1 = person;
-      potentialMergePeople = result
-        .filter(
-          (person: PersonResponseDto) =>
-            normalizeSearchString(personMerge2?.name ?? '') === normalizeSearchString(person.name) &&
-            person.id !== personMerge2?.id &&
-            person.id !== personMerge1?.id &&
-            !person.isHidden,
-        )
-        .slice(0, 3);
-      const { merged } = await handleMergeSuggestion();
-      if (merged) {
-        return;
-      }
-    }
-    await changeName();
-  };
-
-  const handleGoBack = async () => {
-    viewMode = PersonPageViewMode.VIEW_ASSETS;
-    if ($page.url.searchParams.has(QueryParameter.ACTION)) {
-      $page.url.searchParams.delete(QueryParameter.ACTION);
-      await goto($page.url);
-    }
-  };
-
-  const onPersonUpdate = async (response: PersonResponseDto) => {
+  const onPersonUpdate = (response: PersonResponseDto) => {
     if (response.id !== person.id) {
       return;
     }
-
-    if (response.isHidden) {
-      await goto(previousRoute);
-      return;
-    }
-
     person = response;
   };
 
@@ -275,34 +80,6 @@
     timelineManager.removeAssets([assetId]);
     await updateAssetCount();
   };
-
-  const { SetDateOfBirth, Favorite, Unfavorite, HidePerson, ShowPerson } = $derived(getPersonActions($t, person));
-  const SelectFeaturePhoto: ActionItem = {
-    title: $t('select_featured_photo'),
-    icon: mdiAccountBoxOutline,
-    onAction: () => {
-      viewMode = PersonPageViewMode.SELECT_PERSON;
-    },
-  };
-
-  const Merge: ActionItem = {
-    title: $t('merge_people'),
-    icon: mdiAccountMultipleCheckOutline,
-    onAction: () => {
-      viewMode = PersonPageViewMode.MERGE_PEOPLE;
-    },
-  };
-
-  const FixIncorrectMatch: ActionItem = {
-    title: $t('fix_incorrect_match'),
-    icon: mdiAccountMultipleCheckOutline,
-    // Same trigger as the existing selection-bar "Fix incorrect match" menu option: select
-    // the mis-tagged photos first, then reassign them with the existing UnmergeFaceSelector.
-    onAction: () => handleReassignAssets(),
-  };
-
-  // FL-57: correction history view. New for this story — see CorrectionHistoryPanel.svelte.
-  let showCorrectionHistory = $state(false);
 </script>
 
 <OnEvents
@@ -315,14 +92,9 @@
 
 <main
   class="relative z-0 h-dvh overflow-hidden px-2 pt-(--navbar-height) md:px-6 md:pt-(--navbar-height-md)"
-  use:scrollMemoryClearer={{
-    routeStartsWith: Route.people(),
-    beforeClear: () => {
-      sessionStorage.removeItem(SessionStorageKey.INFINITE_SCROLL_PAGE);
-    },
-  }}
+  use:scrollMemoryClearer={{ routeStartsWith: Route.people() }}
 >
-  {#key person.id}
+  {#key `${person.id}:${refresh}`}
     <LibraryView
       enableRouting
       syncUrl={false}
@@ -331,10 +103,6 @@
       {options}
       destination={{ kind: 'person', id: person.id }}
       downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
-      selectionMode={viewMode === PersonPageViewMode.SELECT_PERSON}
-      singleSelect={viewMode === PersonPageViewMode.SELECT_PERSON}
-      noSelectionBar={viewMode === PersonPageViewMode.SELECT_PERSON}
-      onSelect={handleSelectFeaturePhoto}
       onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
       onShortcut={(shortcut) => {
         // Escape with nothing open and nothing selected leaves the person, as it did before.
@@ -343,143 +111,20 @@
         }
       }}
     >
-      {#if viewMode === PersonPageViewMode.VIEW_ASSETS}
-        <!-- Person information block -->
-        <div
-          class="relative w-fit p-4 pt-12 sm:px-6"
-          use:clickOutside={{
-            onOutclick: handleCancelEditName,
-            onEscape: handleCancelEditName,
-          }}
-          use:listNavigation={suggestionContainer}
-        >
-          <section class="flex w-64 place-items-center border-black sm:w-96">
-            {#if isEditingName}
-              <EditNameInput
-                {person}
-                bind:suggestedPeople
-                name={person.name}
-                bind:isSearchingPeople
-                onChange={handleNameChange}
-                {thumbnailData}
-              />
-            {:else}
-              <div class="relative">
-                <button
-                  type="button"
-                  class="flex items-center justify-center"
-                  title={$t('edit_name')}
-                  onclick={() => (isEditingName = true)}
-                >
-                  <FrameleafPersonAvatar {person} size={72} />
-                  <div class="flex flex-col justify-center px-4 text-start text-primary">
-                    <p class="w-40 truncate font-medium sm:w-72">{person.name || $t('add_a_name')}</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                      {$t('assets_count', { values: { count: numberOfAssets } })}
-                    </p>
-                    {#if person.birthDate}
-                      <p class="text-sm text-gray-500 dark:text-gray-400">
-                        {$t('person_birthdate', {
-                          values: {
-                            date: DateTime.fromISO(person.birthDate).toLocaleString(
-                              {
-                                month: 'numeric',
-                                day: 'numeric',
-                                year: 'numeric',
-                              },
-                              { locale: $locale },
-                            ),
-                          },
-                        })}
-                      </p>
-                    {/if}
-                  </div>
-                </button>
-              </div>
-            {/if}
-          </section>
-          {#if !isEditingName}
-            <div
-              class="frameleaf-person-actions"
-              role="toolbar"
-              aria-label={$t('frameleaf_people_person_actions', { values: { name: person.name || $t('add_a_name') } })}
-            >
-              <FrameleafMenu label={$t('show_person_options')} align="start">
-                {#snippet trigger()}
-                  <Icon icon={mdiDotsVertical} size="18" />
-                {/snippet}
-                <FrameleafMenuItem onSelect={() => void SelectFeaturePhoto.onAction(SelectFeaturePhoto)}
-                  >{$t('select_featured_photo')}</FrameleafMenuItem
-                >
-                <FrameleafMenuItem onSelect={() => void Merge.onAction(Merge)}>{$t('merge_people')}</FrameleafMenuItem>
-                <FrameleafMenuItem onSelect={() => void FixIncorrectMatch.onAction(FixIncorrectMatch)}
-                  >{$t('fix_incorrect_match')}</FrameleafMenuItem
-                >
-                <FrameleafMenuItem onSelect={() => (showCorrectionHistory = true)}
-                  >{$t('frameleaf_people_correction_history')}</FrameleafMenuItem
-                >
-                <FrameleafMenuItem onSelect={() => void SetDateOfBirth.onAction(SetDateOfBirth)}
-                  >{$t('set_date_of_birth')}</FrameleafMenuItem
-                >
-                {#if person.isHidden}
-                  <FrameleafMenuItem onSelect={() => void ShowPerson.onAction(ShowPerson)}
-                    >{$t('unhide_person')}</FrameleafMenuItem
-                  >
-                {:else}
-                  <FrameleafMenuItem onSelect={() => void HidePerson.onAction(HidePerson)}
-                    >{$t('hide_person')}</FrameleafMenuItem
-                  >
-                {/if}
-                {#if person.isFavorite}
-                  <FrameleafMenuItem onSelect={() => void Unfavorite.onAction(Unfavorite)}
-                    >{$t('unfavorite')}</FrameleafMenuItem
-                  >
-                {:else}
-                  <FrameleafMenuItem onSelect={() => void Favorite.onAction(Favorite)}
-                    >{$t('to_favorite')}</FrameleafMenuItem
-                  >
-                {/if}
-              </FrameleafMenu>
-            </div>
-          {/if}
-          {#if isEditingName}
-            <div class="absolute z-1 w-64 sm:w-96">
-              {#if isSearchingPeople}
-                <div
-                  class="flex h-14 place-items-center rounded-b-lg border border-gray-400 bg-gray-200 p-2 dark:border-immich-dark-gray dark:bg-gray-700"
-                >
-                  <div class="flex w-full place-items-center">
-                    <LoadingSpinner />
-                  </div>
-                </div>
-              {:else}
-                <div bind:this={suggestionContainer}>
-                  {#each suggestedPeople as person, index (person.id)}
-                    <button
-                      type="button"
-                      class="flex h-14 w-full place-items-center border border-gray-200 bg-gray-100 p-2 hover:bg-gray-300 focus:bg-gray-300 dark:border-immich-dark-gray dark:bg-gray-700 hover:dark:bg-[#232932] focus:dark:bg-[#232932] {index ===
-                      suggestedPeople.length - 1
-                        ? 'rounded-b-lg border-b'
-                        : ''}"
-                      onclick={() => handleSuggestPeople(person)}
-                    >
-                      <ImageThumbnail
-                        circle
-                        shadow
-                        url={getPeopleThumbnailUrl(person)}
-                        altText={person.name}
-                        widthStyle="2rem"
-                        heightStyle="2rem"
-                      />
-                      <p class="ms-4 text-gray-700 dark:text-gray-100">{person.name}</p>
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      {/if}
+      <PersonHero
+        {person}
+        assetCount={numberOfAssets}
+        onBack={() => goto(previousRoute)}
+        onPersonChange={(updated) => (person = updated)}
+        onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
+        onFacesChanged={async () => {
+          // Photos whose only face of this person moved away leave the timeline: re-read both.
+          await updateAssetCount();
+          refresh++;
+        }}
+        onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
+        onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
+      />
 
       {#snippet viewer()}
         <Portal target="body">
@@ -491,56 +136,3 @@
     </LibraryView>
   {/key}
 </main>
-
-<header>
-  {#if viewMode === PersonPageViewMode.VIEW_ASSETS}
-    <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(previousRoute)}>
-      {#snippet trailing()}
-        <ContextMenuButton
-          items={[
-            SelectFeaturePhoto,
-            Merge,
-            FixIncorrectMatch,
-            HidePerson,
-            ShowPerson,
-            SetDateOfBirth,
-            Favorite,
-            Unfavorite,
-          ]}
-          aria-label={$t('open')}
-        />
-      {/snippet}
-    </ControlAppBar>
-  {/if}
-
-  {#if viewMode === PersonPageViewMode.SELECT_PERSON}
-    <ControlAppBar onClose={() => (viewMode = PersonPageViewMode.VIEW_ASSETS)}>
-      {#snippet leading()}
-        {$t('select_featured_photo')}
-      {/snippet}
-    </ControlAppBar>
-  {/if}
-</header>
-
-{#if viewMode === PersonPageViewMode.UNASSIGN_ASSETS}
-  <UnmergeFaceSelector
-    assetIds={[...librarySession.selection]}
-    personAssets={person}
-    onClose={() => (viewMode = PersonPageViewMode.VIEW_ASSETS)}
-    onConfirm={handleUnmerge}
-  />
-{/if}
-
-{#if viewMode === PersonPageViewMode.MERGE_PEOPLE}
-  <MergeFaceSelector {person} onBack={handleGoBack} onMerge={handleMerge} />
-{/if}
-
-{#if showCorrectionHistory}
-  <CorrectionHistoryPanel {person} close={() => (showCorrectionHistory = false)} />
-{/if}
-
-<style>
-  .frameleaf-person-actions {
-    margin-top: 0.5rem;
-  }
-</style>

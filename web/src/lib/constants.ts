@@ -64,7 +64,6 @@ export enum QueryParameter {
 }
 
 export enum SessionStorageKey {
-  INFINITE_SCROLL_PAGE = 'infiniteScrollPage',
   SCROLL_POSITION = 'scrollPosition',
 }
 
@@ -83,8 +82,6 @@ export enum OpenQueryParam {
   /** Originals & preservation, from Library Care's preservation verification (FL-74). */
   PRESERVATION = 'preservation',
 }
-
-export const maximumLengthSearchPeople = 100;
 
 // time to load the map before displaying the loading spinner
 export const timeToLoadTheMap: number = 100;
@@ -272,13 +269,6 @@ export enum SettingInputFieldType {
   PASSWORD = 'password',
   COLOR = 'color',
   NAME = 'name',
-}
-
-export enum PersonPageViewMode {
-  VIEW_ASSETS = 'view-assets',
-  SELECT_PERSON = 'select-person',
-  MERGE_PEOPLE = 'merge-people',
-  UNASSIGN_ASSETS = 'unassign-faces',
 }
 
 export enum MediaType {
