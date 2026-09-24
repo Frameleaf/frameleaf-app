@@ -3,11 +3,17 @@
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import SlideshowSettingsModal from '$lib/modals/SlideshowSettingsModal.svelte';
+  import SlideshowSettingsDialog from '$lib/components/frameleaf/SlideshowSettingsDialog.svelte';
+  import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
-  import { AssetTypeEnum } from '@immich/sdk';
-  import { IconButton, modalManager } from '@immich/ui';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { fromISODateTimeUTC } from '$lib/utils/timeline-util';
+  import { acquireWakeLock, releaseWakeLock } from '$lib/utils/wakelock.svelte';
+  import { AssetMediaSize, AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
+  import { IconButton } from '@immich/ui';
   import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiCog, mdiFullscreen, mdiPause, mdiPlay } from '@mdi/js';
+  import { DateTime } from 'luxon';
   import { onDestroy, onMount } from 'svelte';
   import { useSwipe } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
@@ -16,6 +22,10 @@
   interface Props {
     isFullScreen: boolean;
     assetType: AssetTypeEnum;
+    /** The item on screen, for the lock screen and media keys (Media Session). */
+    asset?: AssetResponseDto;
+    /** The collection being played, such as the album's name. */
+    title?: string;
     onNext?: () => void;
     onPrevious?: () => void;
     onClose?: () => void;
@@ -25,6 +35,8 @@
   let {
     isFullScreen,
     assetType,
+    asset,
+    title,
     onNext = () => {},
     onPrevious = () => {},
     onClose = () => {},
@@ -109,12 +121,24 @@
     onNext();
   };
 
-  const onShowSettings = async () => {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
+  // FL-36: the settings are a Frameleaf dialog over the slideshow (it stays full screen). The
+  // slideshow holds still while they are open and carries on when they close.
+  let settingsOpen = $state(false);
+  let resumeAfterSettings = false;
+  const onShowSettings = () => {
+    resumeAfterSettings = progressBarStatus !== ProgressBarStatus.Paused && !isVideoSlide;
+    if (resumeAfterSettings) {
+      pause();
     }
-    await modalManager.show(SlideshowSettingsModal);
+    settingsOpen = true;
   };
+  $effect(() => {
+    if (settingsOpen || !resumeAfterSettings) {
+      return;
+    }
+    resumeAfterSettings = false;
+    play();
+  });
 
   onMount(() => {
     function exitFullscreenHandler() {
@@ -143,17 +167,58 @@
     true,
   );
 
+  const play = () => {
+    $slideshowState = SlideshowState.PlaySlideshow;
+    progressBar?.play();
+  };
+
+  const pause = () => {
+    $slideshowState = SlideshowState.PauseSlideshow;
+    progressBar?.pause();
+  };
+
   const togglePause = () => {
     if (progressBarStatus === ProgressBarStatus.Paused) {
-      $slideshowState = SlideshowState.PlaySlideshow;
-      progressBar?.play();
+      play();
     } else {
-      $slideshowState = SlideshowState.PauseSlideshow;
-      progressBar?.pause();
+      pause();
     }
   };
 
+  // FL-36 (MediaViewer.jsx:863-885): keep the screen awake while the slideshow plays.
+  $effect(() => {
+    if ($slideshowState === SlideshowState.PlaySlideshow) {
+      void acquireWakeLock('slideshow');
+    } else {
+      void releaseWakeLock('slideshow');
+    }
+  });
+  onDestroy(() => void releaseWakeLock('slideshow'));
+
+  // FL-36 (MediaViewer.jsx:886-923): the lock screen, headphones and media keys see the item on
+  // screen and can play, pause and move through the slideshow.
+  $effect(() => {
+    if (!asset) {
+      return;
+    }
+    const date = fromISODateTimeUTC(asset.localDateTime);
+    return bindMediaSession({
+      title: asset.originalFileName,
+      artist: title || MEDIA_SESSION_ARTIST,
+      album: [date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : '', asset.exifInfo?.city]
+        .filter(Boolean)
+        .join(' · '),
+      artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
+      playing: isVideoSlide ? undefined : $slideshowState === SlideshowState.PlaySlideshow,
+      controls: { play, pause, previous: onPrevious, next: onNext },
+    });
+  });
+
   const shortcutBindings = $derived.by((): ShortcutOptions[] => {
+    // the settings dialog keeps Escape and the arrow keys to itself
+    if (settingsOpen) {
+      return [];
+    }
     const bindings: ShortcutOptions[] = [
       { shortcut: { key: 'Escape' }, onShortcut: onClose },
       { shortcut: { key: 'ArrowLeft' }, onShortcut: onPrevious },
@@ -252,3 +317,5 @@
     onDone={handleDone}
   />
 {/if}
+
+<SlideshowSettingsDialog bind:open={settingsOpen} />
