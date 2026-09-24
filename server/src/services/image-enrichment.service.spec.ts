@@ -639,6 +639,11 @@ describe(ImageEnrichmentService.name, () => {
 
       // in the same transaction as the review, so neither commits without the other
       expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Marked, authStub.admin.user.id, trx);
+      // the group's rows are taken first, in a fixed order, so parallel marks in one stack cannot deadlock
+      expect(mocks.asset.lockGroupRows).toHaveBeenCalledWith([assetId], trx);
+      expect(mocks.asset.lockGroupRows.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.asset.upsertMetadata.mock.invocationCallOrder[0],
+      );
       expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(assetId, expect.any(Array), trx);
       // what a locked photo may no longer be is released and followed up
       expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);

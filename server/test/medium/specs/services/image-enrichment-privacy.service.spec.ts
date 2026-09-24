@@ -6,6 +6,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -14,13 +15,14 @@ import { MachineLearningRepository } from 'src/repositories/machine-learning.rep
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { withoutHiddenContent, withoutNsfwAssets } from 'src/utils/database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
 
 /**
  * FL-34 (ported from PR127 f77249be16, adapted to per-asset `asset_lock`): a sensitive review, its
@@ -246,4 +248,68 @@ it('retains independent tag and person hiding after marking safe', async () => {
   await expect(
     sql`SELECT suppression FROM immich_fork.asset_privacy WHERE "assetId" = ${asset.id}::uuid`.execute(database),
   ).resolves.toMatchObject({ rows: [{ suppression: { action: 'marked-safe' } }] });
+});
+
+it('marks two members of one stack in parallel before the cutover without a deadlock', async () => {
+  const legacy = await getKyselyDB();
+  try {
+    const { sut, ctx } = newMediumService(ImageEnrichmentService, {
+      database: legacy,
+      // before the cutover the review also writes its tags
+      real: [
+        AccessRepository,
+        AssetRepository,
+        DatabaseRepository,
+        ConfigRepository,
+        PersonRepository,
+        TagRepository,
+        UserRepository,
+      ],
+      mock: [
+        EventRepository,
+        JobRepository,
+        LoggingRepository,
+        AssetJobRepository,
+        MachineLearningRepository,
+        SystemMetadataRepository,
+      ],
+    });
+    Object.assign(sut, { db: legacy });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+    ctx.getMock(JobRepository).queue.mockResolvedValue();
+    ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+    const { user } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newStack({ ownerId: user.id }, [first.id, second.id]);
+    const auth = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+    const action = AssetImageEnrichmentAction.MarkNsfw;
+
+    // each writes its own is_nsfw, then locks the whole stack: without a fixed row order they deadlock
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await Promise.all([
+        sut.updateAssetEnrichment(auth, first.id, { action }),
+        sut.updateAssetEnrichment(auth, second.id, { action }),
+      ]);
+      await Promise.all([
+        sut.updateAssetEnrichment(auth, first.id, { action: AssetImageEnrichmentAction.MarkSafe }),
+        sut.updateAssetEnrichment(auth, second.id, { action: AssetImageEnrichmentAction.MarkSafe }),
+      ]);
+    }
+
+    await Promise.all([
+      sut.updateAssetEnrichment(auth, first.id, { action }),
+      sut.updateAssetEnrichment(auth, second.id, { action }),
+    ]);
+    await expect(
+      legacy
+        .selectFrom('asset_lock')
+        .select('assetId')
+        .where('assetId', 'in', [first.id, second.id])
+        .orderBy('assetId')
+        .execute(),
+    ).resolves.toHaveLength(2);
+  } finally {
+    await legacy.destroy();
+  }
 });
