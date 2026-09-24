@@ -154,6 +154,22 @@ test.describe('Shared Links', () => {
     await expect(input).toHaveAttribute('type', 'password');
   });
 
+  test('an expired link says it expired, without naming anyone', async ({ page }) => {
+    const expiredLink = await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Album,
+      albumId: album.id,
+    });
+    const client = await utils.connectDatabase();
+    await client.query(`UPDATE shared_link SET "expiresAt" = now() - interval '1 day' WHERE id = $1`, [expiredLink.id]);
+
+    await page.goto(`/share/${expiredLink.key}`);
+    await page.getByRole('heading', { name: 'This link has expired' }).waitFor();
+    await expect(
+      page.getByText('Ask the person who shared it for a new link if you still need these photos.'),
+    ).toBeVisible();
+    await expect(page.getByText('Immich Admin')).toHaveCount(0);
+  });
+
   test('show error for invalid shared link', async ({ page }) => {
     await page.goto('/share/invalid');
     await page.getByRole('heading', { name: 'This link is not available' }).waitFor();

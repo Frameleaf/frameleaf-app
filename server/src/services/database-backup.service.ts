@@ -361,6 +361,7 @@ export class DatabaseBackupService {
   async restoreDatabaseBackup(
     filename: string,
     progressCb?: (action: 'backup' | 'restore' | 'migrations' | 'rollback', progress: number) => void,
+    { keepSafetyBackup = true }: { keepSafetyBackup?: boolean } = {},
   ): Promise<void> {
     this.logger.debug(`Database Restore Started`);
 
@@ -472,6 +473,15 @@ export class DatabaseBackupService {
         await pipeline(sqlStream, progressSource, psql, progressSink);
 
         throw error;
+      }
+
+      // The restore point is always made, for the rollback above. After a successful restore it is
+      // kept as the administrator's safety backup ("Create a safety backup of the current database
+      // first", the template's RestoreDialog) unless they chose not to keep it.
+      if (!keepSafetyBackup) {
+        await this.storageRepository.unlink(restorePointFilePath).catch((error: unknown) => {
+          this.logger.warn(`Could not remove the restore point ${restorePointFilePath}: ${error}`);
+        });
       }
     } catch (error) {
       this.logger.error(`Database Restore Failure: ${error}`);

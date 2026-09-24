@@ -318,7 +318,7 @@ export class MaintenanceWorkerService {
         throw new Error("Expected restoreBackupFilename but it's missing!");
       }
 
-      await this.restoreBackup(action.restoreBackupFilename);
+      await this.restoreBackup(action.restoreBackupFilename, action.keepSafetyBackup !== false);
     } catch (error) {
       this.logger.error(`Encountered error running action: ${error}`);
       this.setStatus({
@@ -330,7 +330,7 @@ export class MaintenanceWorkerService {
     }
   }
 
-  private async restoreBackup(filename: string): Promise<void> {
+  private async restoreBackup(filename: string, keepSafetyBackup: boolean): Promise<void> {
     this.setStatus({
       active: true,
       action: MaintenanceAction.RestoreDatabase,
@@ -338,13 +338,16 @@ export class MaintenanceWorkerService {
       progress: 0,
     });
 
-    await this.databaseBackupService.restoreDatabaseBackup(filename, (task, progress) =>
-      this.setStatus({
-        active: true,
-        action: MaintenanceAction.RestoreDatabase,
-        progress,
-        task,
-      }),
+    await this.databaseBackupService.restoreDatabaseBackup(
+      filename,
+      (task, progress) =>
+        this.setStatus({
+          active: true,
+          action: MaintenanceAction.RestoreDatabase,
+          progress,
+          task,
+        }),
+      { keepSafetyBackup },
     );
 
     await this.setAction({

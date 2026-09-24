@@ -564,7 +564,7 @@ export class AuthService extends BaseService {
     const bytes = Buffer.from(key, key.length === 100 ? 'hex' : 'base64url');
     const sharedLink = await this.sharedLinkRepository.getByKey(bytes);
     if (!this.isValidSharedLink(sharedLink)) {
-      throw new UnauthorizedException('Invalid share key');
+      throw this.invalidSharedLink(sharedLink, 'Invalid share key');
     }
 
     return { user: sharedLink.user, sharedLink };
@@ -575,10 +575,22 @@ export class AuthService extends BaseService {
 
     const sharedLink = await this.sharedLinkRepository.getBySlug(slug);
     if (!this.isValidSharedLink(sharedLink)) {
-      throw new UnauthorizedException('Invalid share slug');
+      throw this.invalidSharedLink(sharedLink, 'Invalid share slug');
     }
 
     return { user: sharedLink.user, sharedLink };
+  }
+
+  /**
+   * The same 401 and message for every unusable link, as official clients expect. A link that only
+   * ran out of time also says so (`reason: 'expired'`), so the public viewer can show the prototype's
+   * expired state instead of "not available"; nothing about the link or its owner is included.
+   */
+  private invalidSharedLink(sharedLink: (AuthSharedLink & { user: AuthUser | null }) | undefined, message: string) {
+    const expired = !!sharedLink?.user && !!sharedLink.expiresAt && new Date(sharedLink.expiresAt) <= new Date();
+    return expired
+      ? new UnauthorizedException({ message, error: 'Unauthorized', statusCode: 401, reason: 'expired' })
+      : new UnauthorizedException(message);
   }
 
   private isValidSharedLink(
