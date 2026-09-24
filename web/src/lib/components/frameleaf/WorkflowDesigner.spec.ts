@@ -117,6 +117,43 @@ describe('WorkflowDesigner', () => {
     expect(screen.getByRole('checkbox', { name: t.enable_workflow })).toBeDisabled();
   });
 
+  it('lists the problems instead of a preview when the definition cannot run', async () => {
+    setup([webhook({ url: { type: 'string', title: 'URL' } })], workflow({ enabled: false }));
+
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Step 2: this plugin method is unavailable/);
+    expect(screen.queryByText(t.preview_step_validated)).toBeNull();
+  });
+
+  it('checks and previews a runnable definition step by step without running it (FL-82)', async () => {
+    const stored = workflow({
+      enabled: false,
+      steps: [
+        { ...workflow().steps[0], enabled: true },
+        { ...workflow().steps[0], id: '00000000-0000-4000-8000-000000000013', enabled: false },
+      ],
+    });
+    setup([webhook({ url: { type: 'string', title: 'URL' } })], stored);
+
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
+    await fireEvent.click(screen.getByRole('button', { name: t.validate }));
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(t.validation_ok);
+    const steps = [...status.querySelectorAll(':scope ol li')].map((item) =>
+      item.textContent?.replaceAll(/\s+/g, ' ').trim(),
+    );
+    expect(steps).toEqual([
+      `Trigger Webhook ${t.preview_step_validated}`,
+      `Trigger Webhook ${t.preview_step_disabled}`,
+    ]);
+    expect(status).toHaveTextContent(t.preview_run_needs);
+    // A dry run never reaches the server.
+    expect(sdkMock.updateWorkflow).not.toHaveBeenCalled();
+  });
+
   it('never shows a stored credential, only that one is kept', () => {
     setup([webhook({ url: { type: 'string', title: 'URL' }, headerValue: { type: 'string', title: 'Header value' } })]);
 

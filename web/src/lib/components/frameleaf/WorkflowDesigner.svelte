@@ -27,10 +27,10 @@
     parseWorkflowDefinition,
     schemaDefaults,
     WORKFLOW_LIMITS,
+    previewWorkflow,
     workflowProblems,
     type WorkflowDraft,
     type WorkflowDraftStep,
-    type WorkflowProblem,
   } from '$lib/frameleaf/workflows';
   import { Route } from '$lib/route';
   import { downloadJson } from '$lib/utils';
@@ -89,7 +89,7 @@
   let error = $state('');
   let raw = $state('');
   let parameterJson = $state<string | null>(null);
-  let validation = $state<WorkflowProblem[] | null>(null);
+  let validation = $state<ReturnType<typeof previewWorkflow> | null>(null);
   let deleting = $state(false);
   let saving = $state(false);
 
@@ -532,15 +532,33 @@
     {:else if tab === 'validation'}
       <h3>{$t('frameleaf_workflows.validation_title')}</h3>
       <p>{$t('frameleaf_workflows.validation_help')}</p>
-      <div><Button onclick={() => (validation = problems)}>{$t('frameleaf_workflows.validate')}</Button></div>
+      <div>
+        <Button onclick={() => (validation = previewWorkflow(draft, methods, triggers))}>
+          {$t('frameleaf_workflows.validate')}
+        </Button>
+      </div>
       {#if validation}
         <div role="status">
-          {#if validation.length > 0}
+          {#if validation.problems.length > 0}
             <ul>
-              {#each validation as problem, index (index)}<li>{problem.message}</li>{/each}
+              {#each validation.problems as problem, index (index)}<li>{problem.message}</li>{/each}
             </ul>
           {:else}
+            <!-- WorkflowDesigner.jsx "Check and preview": a step-by-step dry run; nothing executes. -->
             <p>{$t('frameleaf_workflows.validation_ok')}</p>
+            <ol class="wd-preview">
+              {#each validation.steps as step (step.index)}
+                <li>
+                  <strong>{step.title ?? step.method}</strong>
+                  <span>
+                    {step.result === 'disabled'
+                      ? $t('frameleaf_workflows.preview_step_disabled')
+                      : $t('frameleaf_workflows.preview_step_validated')}
+                  </span>
+                </li>
+              {/each}
+            </ol>
+            <p>{$t('frameleaf_workflows.preview_run_needs')}</p>
           {/if}
         </div>
       {/if}
