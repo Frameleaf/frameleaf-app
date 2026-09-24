@@ -2,7 +2,7 @@
   /**
    * Onboarding → Choose your language (FL-80 ON-1, O-13): the prototype's radio list of languages
    * (`AuthScreens.jsx:918-933`) over every language Frameleaf ships, in place of the upstream
-   * Combobox. Choosing one applies it at once, as `SettingsLanguageSelector` does.
+   * Combobox. Choosing one applies it at once, as the App settings language choice does.
    */
   import { invalidateAll } from '$app/navigation';
   import { lang } from '$lib/stores/preferences.store';
