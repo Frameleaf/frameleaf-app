@@ -29,8 +29,9 @@
   import { filterIsInOrNearViewport } from '$lib/managers/timeline-manager/utils.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
+  import { hasRouterStarted } from '$lib/utils/router-started';
   import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import { locale, t, type Translations } from 'svelte-i18n';
 
@@ -584,6 +585,14 @@
       return;
     }
     void complete.finally(() => void scrollAfterNavigate());
+  });
+
+  // FL-34: the session privacy gate can mount this after the router's first navigation completed;
+  // place the grid now rather than waiting for the next navigation
+  onMount(() => {
+    if (enableRouting && hasRouterStarted()) {
+      void scrollAfterNavigate();
+    }
   });
 
   // A layout switch changes the geometry but not the session: come back to the same asset.

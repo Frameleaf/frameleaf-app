@@ -1,0 +1,229 @@
+import { getAuthStatus } from '@immich/sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { revokeSessionView } from '$lib/utils/session-privacy';
+import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
+
+// FL-34: ported from PR131 bebfed12ff and 25990c373c (d7cfe8b1a7), adapted to the current Locked flow
+
+vi.mock('@immich/sdk', () => ({ getAuthStatus: vi.fn() }));
+vi.mock('$lib/utils/session-privacy', () => ({ revokeSessionView: vi.fn() }));
+const respond =
+  (value: Awaited<ReturnType<typeof getAuthStatus>>) => async (opts?: Parameters<typeof getAuthStatus>[0]) => {
+    await opts?.fetch?.('/api/auth/status');
+    return value;
+  };
+
+const status = (active: boolean) => ({
+  isElevated: active,
+  pinCode: true,
+  password: true,
+  pinExpiresAt: active ? new Date(Date.now() + 10_000).toISOString() : undefined,
+});
+
+describe('watchSessionPrivacy', () => {
+  let guard: ReturnType<typeof watchSessionPrivacy> | undefined;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.resetAllMocks();
+    vi.setSystemTime(new Date('2026-09-21T12:00:00Z'));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { headers: { Date: new Date().toUTCString() } }),
+    );
+  });
+  afterEach(() => {
+    guard?.dispose();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it.each([-86_400_000, 86_400_000])('uses server time with a client clock skew of %i ms', async (skew) => {
+    const authoritative = status(true);
+    vi.setSystemTime(Date.now() + skew);
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(authoritative));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('keeps initial content gated on failure, and allows an explicit successful retry', async () => {
+    const gate = vi.fn();
+    vi.mocked(getAuthStatus).mockRejectedValueOnce(new Error('offline'));
+    guard = watchSessionPrivacy(() => true, gate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate.mock.calls.map(([state]) => state)).toEqual(['pending', 'error']);
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    await guard.refresh();
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('does not release preloaded elevated route data when its first status is locked', async () => {
+    const gate = vi.fn();
+    const revalidate = vi.fn().mockRejectedValue(new Error('preloaded asset is no longer authorized'));
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).toHaveBeenCalledOnce();
+    expect(gate).toHaveBeenLastCalledWith('error');
+    expect(gate).not.toHaveBeenCalledWith('ready');
+  });
+
+  it('waits for locked route data to be fetched again before releasing the initial gate', async () => {
+    const gate = vi.fn();
+    let finish!: () => void;
+    const reloading = new Promise<void>((resolve) => (finish = resolve));
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(
+      () => true,
+      gate,
+      () => reloading,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).not.toHaveBeenCalledWith('ready');
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('keeps initial elevated content gated if the server Date header is absent', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{}'));
+    const gate = vi.fn();
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true, gate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).toHaveBeenLastCalledWith('error');
+    expect(gate).not.toHaveBeenCalledWith('ready');
+  });
+
+  it('clears at the known expiry even while status revalidation is stalled', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(getAuthStatus).mockImplementationOnce(() => new Promise(() => {}));
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('clears on resume when the deadline elapsed while timers were suspended', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    vi.spyOn(performance, 'now').mockReturnValue(20_000);
+    dispatchEvent(new Event('focus'));
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+    expect(getAuthStatus).toHaveBeenCalledOnce();
+  });
+
+  it('detects a missed lock on websocket reconnect', async () => {
+    vi.mocked(getAuthStatus)
+      .mockImplementationOnce(respond(status(true)))
+      .mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    eventManager.emit('WebsocketConnect');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('does not let an older elevated response supersede a newer revoked response', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    let resolve!: (value: Awaited<ReturnType<typeof getAuthStatus>>) => void;
+    const stale = new Promise<Awaited<ReturnType<typeof getAuthStatus>>>((done) => (resolve = done));
+    vi.mocked(getAuthStatus)
+      .mockReturnValueOnce(stale)
+      .mockImplementationOnce(respond(status(false)));
+    const first = guard.refresh();
+    await guard.refresh();
+    resolve(status(true));
+    await first;
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed when an elevated session cannot be revalidated', async () => {
+    vi.mocked(getAuthStatus)
+      .mockImplementationOnce(respond(status(true)))
+      .mockRejectedValueOnce(new Error('offline'));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    await guard.refresh();
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('does not start authenticated checks on signed-out views', async () => {
+    guard = watchSessionPrivacy(() => false);
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getAuthStatus).not.toHaveBeenCalled();
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  it('discards the previous account deadline when signing out', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    eventManager.emit('AuthLogout');
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  // FL-34 adaptation: a lock anywhere (this tab, another tab via `on_session_lock`, a PIN reset)
+  // discards an elevated view; a view that was never elevated has nothing to discard and rechecks
+  it.each(['SessionLocked', 'UserPinCodeReset'] as const)('discards an elevated view on %s', async (event) => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    eventManager.emit(event);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+    expect(revokeSessionView).toHaveBeenCalledWith('/photos');
+  });
+
+  it('discards an elevated view when this tab locks it', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    eventManager.emit('SessionAccessChanged', { isElevated: false });
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it.each(['SessionLocked', 'UserPinCodeReset'] as const)(
+    'only rechecks a view that was not elevated on %s',
+    async (event) => {
+      vi.mocked(getAuthStatus).mockImplementation(respond(status(false)));
+      guard = watchSessionPrivacy(() => true);
+      await vi.advanceTimersByTimeAsync(0);
+      eventManager.emit(event);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(revokeSessionView).not.toHaveBeenCalled();
+      expect(getAuthStatus).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('reloads where the caller says a revoked view goes', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(
+      () => true,
+      () => {},
+      async () => {},
+      () => '/albums?filter=mine',
+    );
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(revokeSessionView).toHaveBeenCalledWith('/albums?filter=mine');
+  });
+
+  it('cleans up the timer and listeners when the root is destroyed', async () => {
+    vi.mocked(getAuthStatus).mockImplementation(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    guard.dispose();
+    dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(getAuthStatus).toHaveBeenCalledOnce();
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+});
