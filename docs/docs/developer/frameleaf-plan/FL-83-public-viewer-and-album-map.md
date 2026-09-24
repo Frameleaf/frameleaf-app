@@ -5,6 +5,7 @@ Placements and decisions for the public shared-link viewer (FL-83, FL-56) and th
 ## Public shared-link viewer
 
 - **Slideshow.** A shared link's viewer has no More menu, so its slideshow (`action:viewer:slideshow-play-pause-previous-next-repeat-shuffle`, entry point `route:/share/[key]/[[photos=photos]]/[[assetId=id]]`) is the Play slideshow button in the viewer bar (`AssetViewerNavBar.svelte`). It keeps the old public header's gate: only when the link allows downloads, and only when there is another item to move to. Signed-in library viewers keep it in the More menu. The preservation ledger row has no placement field (its new-UI target is generated from the source audit), so the placement is recorded here.
+- **Public album map.** The old public album page had a map (`AlbumMap`, shown when the link allowed metadata). `PublicViewer.jsx` has no map, so it went with the old header rather than being carried over. `GET /albums/{id}/map-markers` still answers a shared link that shows metadata, and the owner's own album keeps its Map action (`/map?albumId=`). Restoring a public map would be a product decision, not a parity gap.
 
 ## Album-scoped map (FL-51)
 
