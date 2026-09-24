@@ -436,7 +436,9 @@ export class ArchiveOperationRepository {
         SELECT item."operationId", item.status
         FROM recent
         JOIN immich_fork.archive_operation_item item ON item."operationId" = recent.id
-        LEFT JOIN asset ON asset.id = item."assetId"
+        -- Only the owner's own assets can drop out as Locked; any other id always counts (as skipped),
+        -- so the counts never tell whether another user's asset is Locked.
+        LEFT JOIN asset ON asset.id = item."assetId" AND asset."ownerId" = recent."ownerId"
         WHERE ${reader.elevated} OR asset.id IS NULL OR NOT ${isLocked('asset')}
       )
       SELECT recent.id, recent."ownerId", recent."sessionId", recent."requestKey", recent.scope, recent.descriptor,
