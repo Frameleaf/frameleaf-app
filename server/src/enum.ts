@@ -2304,6 +2304,8 @@ export enum AnalyticsSeriesId {
   HostCapacityBytes = 'host.capacityBytes',
   HostThumbnailBytes = 'host.thumbnailBytes',
   HostEncodedVideoBytes = 'host.encodedVideoBytes',
+  HostThumbnailOtherDiskBytes = 'host.thumbnailOtherDiskBytes',
+  HostEncodedVideoOtherDiskBytes = 'host.encodedVideoOtherDiskBytes',
   Arrivals = 'library.arrivals',
   Captures = 'library.captures',
   ProcessingCompleted = 'processing.completed',

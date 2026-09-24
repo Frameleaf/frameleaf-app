@@ -253,7 +253,18 @@ export class StorageRepository {
    * The bytes of every regular file under a folder, symbolic links not followed (FL-79: the
    * nightly analytics collector's generated-file sizes). A missing folder is empty.
    */
-  async getFolderBytes(folder: string): Promise<number> {
+  async getFolderBytes(folder: string, concurrency = 16): Promise<number> {
+    const sizeOf = async (file: string) => {
+      try {
+        return (await fs.lstat(file)).size;
+      } catch (error: any) {
+        // a file removed while the folder is read no longer counts
+        if (error?.code === 'ENOENT') {
+          return 0;
+        }
+        throw error;
+      }
+    };
     let total = 0;
     const pending = [folder];
     while (pending.length > 0) {
@@ -267,23 +278,31 @@ export class StorageRepository {
         }
         throw error;
       }
+      const files: string[] = [];
       for (const entry of entries) {
         const entryPath = path.join(directory, entry.name);
         if (entry.isDirectory()) {
           pending.push(entryPath);
         } else if (entry.isFile()) {
-          try {
-            total += (await fs.lstat(entryPath)).size;
-          } catch (error: any) {
-            // a file removed while the folder is read no longer counts
-            if (error?.code !== 'ENOENT') {
-              throw error;
-            }
-          }
+          files.push(entryPath);
         }
+      }
+      // a small, bounded number of lstat calls at once
+      for (let index = 0; index < files.length; index += concurrency) {
+        const sizes = await Promise.all(files.slice(index, index + concurrency).map((file) => sizeOf(file)));
+        total += sizes.reduce((sum, size) => sum + size, 0);
       }
     }
     return total;
+  }
+
+  /** The device a path lives on (`stat.dev`), or null when it cannot be read. */
+  async getDevice(filepath: string): Promise<number | null> {
+    try {
+      return (await fs.stat(filepath)).dev;
+    } catch {
+      return null;
+    }
   }
 
   crawl(crawlOptions: CrawlOptionsDto): Promise<string[]> {

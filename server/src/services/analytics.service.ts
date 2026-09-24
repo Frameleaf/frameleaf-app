@@ -225,9 +225,12 @@ export class AnalyticsService {
 
     const items = inventory.photos + inventory.videos;
     // FL-79: what uses the volume, for the administrator's whole-server report only
-    if (isHost) {
-      host.breakdown = await this.readVolumeBreakdown(host.volumeUsedBytes, physical.uploadedPhysicalBytes);
-    }
+    // Only against a live volume reading: a stale or unknown volume is never mixed with the live
+    // originals and database sizes.
+    host.breakdown =
+      isHost && host.state === AnalyticsState.Measured
+        ? await this.readVolumeBreakdown(host.volumeUsedBytes, physical.uploadedPhysicalBytes)
+        : null;
     const growth = bindGrowth(window.buckets, samples);
     const arrivalTotals = sumIntoBuckets(window.buckets, arrivals, ['photos', 'videos'] as const);
     const processingTotals = processing
@@ -454,23 +457,40 @@ export class AnalyticsService {
       const disk = await this.storageRepository.checkDiskUsage(StorageCore.getBaseFolder(StorageFolder.Library));
       add({ kind: AnalyticsScopeKind.Host }, AnalyticsSeriesId.HostVolumeUsedBytes, disk.total - disk.free);
       add({ kind: AnalyticsScopeKind.Host }, AnalyticsSeriesId.HostCapacityBytes, disk.total);
-      // FL-79: the generated files (thumbnails and previews, encoded video) behind the storage donut
-      const folders = [
-        [AnalyticsSeriesId.HostThumbnailBytes, StorageFolder.Thumbnails],
-        [AnalyticsSeriesId.HostEncodedVideoBytes, StorageFolder.EncodedVideo],
-      ] as const;
-      for (const [series, folder] of folders) {
-        add(
-          { kind: AnalyticsScopeKind.Host },
-          series,
-          await this.storageRepository.getFolderBytes(StorageCore.getBaseFolder(folder)),
-        );
-      }
     } catch (error) {
       // A volume that cannot be read tonight is a gap in its history, never a zero.
       this.logger.warn(
         `Analytics could not read the library volume: ${error instanceof Error ? error.message : error}`,
       );
+    }
+
+    // FL-79: the generated files (thumbnails and previews, encoded video) behind the storage donut,
+    // each read on its own so one failure keeps the other's reading. A folder on another device than
+    // the library is recorded as on another disk, so it is never subtracted from the library volume.
+    const libraryDevice = await this.storageRepository.getDevice(StorageCore.getBaseFolder(StorageFolder.Library));
+    const folders = [
+      [StorageFolder.Thumbnails, AnalyticsSeriesId.HostThumbnailBytes, AnalyticsSeriesId.HostThumbnailOtherDiskBytes],
+      [
+        StorageFolder.EncodedVideo,
+        AnalyticsSeriesId.HostEncodedVideoBytes,
+        AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes,
+      ],
+    ] as const;
+    for (const [folder, onVolume, otherDisk] of folders) {
+      try {
+        const path = StorageCore.getBaseFolder(folder);
+        const device = await this.storageRepository.getDevice(path);
+        const elsewhere = device !== null && libraryDevice !== null && device !== libraryDevice;
+        add(
+          { kind: AnalyticsScopeKind.Host },
+          elsewhere ? otherDisk : onVolume,
+          await this.storageRepository.getFolderBytes(path),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Analytics could not measure the ${folder} folder: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
 
     // Only series the registry marks as collected for each scope kind reach the table.
@@ -511,17 +531,33 @@ export class AnalyticsService {
       this.analyticsRepository.getDatabaseBytes(),
       this.analyticsRepository.getLatestHostSamples([
         AnalyticsSeriesId.HostThumbnailBytes,
+        AnalyticsSeriesId.HostThumbnailOtherDiskBytes,
         AnalyticsSeriesId.HostEncodedVideoBytes,
+        AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes,
       ]),
     ]);
-    const previews = generated.find((sample) => sample.series === AnalyticsSeriesId.HostThumbnailBytes);
-    const encoded = generated.find((sample) => sample.series === AnalyticsSeriesId.HostEncodedVideoBytes);
+    // The newest reading of a folder decides where it is, on the library volume or another disk.
+    const newest = (onVolume: AnalyticsSeriesId, otherDisk: AnalyticsSeriesId) => {
+      const here = generated.find((sample) => sample.series === onVolume);
+      const there = generated.find((sample) => sample.series === otherDisk);
+      if (here && (!there || here.observedAt >= there.observedAt)) {
+        return { value: here.value, observedAt: here.observedAt, elsewhere: false };
+      }
+      return there ? { value: there.value, observedAt: there.observedAt, elsewhere: true } : undefined;
+    };
+    const previews = newest(AnalyticsSeriesId.HostThumbnailBytes, AnalyticsSeriesId.HostThumbnailOtherDiskBytes);
+    const encoded = newest(AnalyticsSeriesId.HostEncodedVideoBytes, AnalyticsSeriesId.HostEncodedVideoOtherDiskBytes);
     const observed = [previews, encoded].filter((sample) => sample !== undefined).map((sample) => sample.observedAt);
-    const measured = originalsBytes + (previews?.value ?? 0) + (encoded?.value ?? 0) + databaseBytes;
+    const onVolume = (part?: { value: number; elsewhere: boolean }) => (part && !part.elsewhere ? part.value : 0);
+    const measured = originalsBytes + onVolume(previews) + onVolume(encoded) + databaseBytes;
     return {
       originalsBytes,
       previewsBytes: previews?.value ?? null,
       encodedVideoBytes: encoded?.value ?? null,
+      onOtherDisk: [
+        ...(previews?.elsewhere ? (['previews'] as const) : []),
+        ...(encoded?.elsewhere ? (['encodedVideo'] as const) : []),
+      ],
       generatedObservedAt:
         observed.length > 0 ? new Date(Math.min(...observed.map((date) => date.getTime()))).toISOString() : null,
       databaseBytes,

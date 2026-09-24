@@ -222,6 +222,18 @@ describe(StorageRepository.name, () => {
     await expect(sut.getFolderBytes('/data/missing')).resolves.toBe(0);
   });
 
+  it('reads a large folder in bounded batches with the same total', async () => {
+    mockfs(Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`/data/encoded-video/${index}.mp4`, 'xx'])));
+    await expect(sut.getFolderBytes('/data/encoded-video', 16)).resolves.toBe(80);
+    await expect(sut.getFolderBytes('/data/encoded-video', 1)).resolves.toBe(80);
+  });
+
+  it('reads the device of a path, or null when it cannot be read', async () => {
+    mockfs({ '/data/thumbs/a.webp': 'x' });
+    await expect(sut.getDevice('/data/thumbs')).resolves.toEqual(expect.any(Number));
+    await expect(sut.getDevice('/data/missing')).resolves.toBeNull();
+  });
+
   it('resumes bounded traversal across directories and roots without repeating files or following symlinks', async () => {
     mockfs({
       '/first/a/1.jpg': '',
