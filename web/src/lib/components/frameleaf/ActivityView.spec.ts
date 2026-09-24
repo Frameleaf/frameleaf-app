@@ -161,6 +161,58 @@ describe('Frameleaf Activity page', () => {
     expect(screen.getByText(/could not be reached/i)).toBeInTheDocument();
   });
 
+  it('draws the prototype job card: status chip, progress bar and status line (FL-43)', async () => {
+    const { container } = await mount([operation()]);
+
+    const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
+    const card = heading.closest('article');
+    expect(card?.classList).toContain('fla-job');
+    expect(card?.getAttribute('aria-labelledby')).toBe(heading.id);
+    const bar = screen.getByRole('progressbar', { name: /summer in the rockies/i });
+    expect(bar.getAttribute('aria-valuenow')).toBe('42');
+    expect(card?.querySelector(':scope .fla-status')?.textContent?.trim()).toMatch(/^Rendering · 42%$/);
+    expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
+    // The prototype's summary names only what is not zero.
+    expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
+    expect(screen.getByRole('button', { name: /^running/i }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /^all/i }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('never draws a thumbnail for a withheld Locked job, only the kind icon (FL-43)', async () => {
+    await mount([
+      operation({
+        kind: MediaOperationKind.Restoration,
+        label: '',
+        withheld: true,
+        assetId: '0195e2a0-0000-7000-8000-0000000000aa',
+      }),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: 'Locked item' });
+    const card = heading.closest('article')!;
+    expect(card.querySelector(':scope .fla-thumb img')).toBeNull();
+    expect(card.querySelector(':scope .fla-thumb svg')).not.toBeNull();
+  });
+
+  it('shows a finished result by thumbnail and clears it with a labelled icon button', async () => {
+    await mount([
+      operation({
+        status: MediaOperationStatus.Completed,
+        progress: 100,
+        resultAssetId: '0195e2a0-0000-7000-8000-0000000000bb',
+        finishedAt: '2026-09-22T10:10:00.000Z',
+      }),
+    ]);
+
+    const heading = await screen.findByRole('heading', { name: 'Summer in the Rockies' });
+    const card = heading.closest('article')!;
+    // The SDK is mocked here, so only the presence of the result's picture is asserted.
+    expect(card.querySelector(':scope .fla-thumb img')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /open result/i })).toBeInTheDocument();
+    const clear = screen.getByRole('button', { name: /summer in the rockies/i });
+    expect(clear.textContent?.trim()).toBe('');
+  });
+
   it('says nothing is processing when there are no tasks', async () => {
     await mount([]);
 
