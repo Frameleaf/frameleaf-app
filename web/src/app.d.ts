@@ -18,6 +18,7 @@ declare namespace App {
     message: string;
     stack?: string;
     code?: string | number;
+    reason?: string;
   }
 }
 

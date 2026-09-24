@@ -6,6 +6,12 @@ const SetMaintenanceModeSchema = z
   .object({
     action: MaintenanceActionSchema,
     restoreBackupFilename: z.string().optional().describe('Restore backup filename'),
+    keepSafetyBackup: z
+      .boolean()
+      .optional()
+      .describe(
+        'Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails',
+      ),
   })
   .refine(
     (data) => data.action !== MaintenanceAction.RestoreDatabase || (data.restoreBackupFilename?.length ?? 0) > 0,

@@ -132,6 +132,8 @@
 
 <MaintenanceRestoreConfirmDialog
   {filename}
+  date={backupDateTime?.toLocaleString(DateTime.DATETIME_MED)}
+  size={`${filesizeText[0]} ${filesizeText[1]}`}
   bind:open={restoreConfirmOpen}
   onClose={() => (restoreConfirmOpen = false)}
 />

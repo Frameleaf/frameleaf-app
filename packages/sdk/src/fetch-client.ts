@@ -725,6 +725,8 @@ export type IntegrityReportSummaryResponseDto = {
 };
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
+    /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
+    keepSafetyBackup?: boolean;
     /** Restore backup filename */
     restoreBackupFilename?: string;
 };

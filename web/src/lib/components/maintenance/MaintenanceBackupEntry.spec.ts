@@ -84,6 +84,36 @@ describe('MaintenanceBackupEntry', () => {
 
     await fireEvent.click(confirmButton);
 
-    expect(restoreDatabaseBackup).toHaveBeenCalledWith('immich-db-backup-20260324T110000-v1.2.3-snapshot.sql.gz');
+    // The template's "Create a safety backup of the current database first" is off by default.
+    expect(restoreDatabaseBackup).toHaveBeenCalledWith('immich-db-backup-20260324T110000-v1.2.3-snapshot.sql.gz', {
+      keepSafetyBackup: false,
+    });
+  });
+
+  it('shows what a restore changes and keeps the safety backup when asked', async () => {
+    renderWithTooltips(MaintenanceBackupEntry, {
+      expectedVersion: '1.2.3',
+      filename: 'restore-point-immich-db-backup-20260324T110000-v1.2.3-pg14.sql.gz',
+      filesize: 1024,
+      timezone: 'UTC',
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(screen.getByText(/^Before restore backup from .+ · 1 KiB$/)).toBeInTheDocument();
+    expect(screen.getByText('Original files on disk are not touched.')).toBeInTheDocument();
+    expect(screen.getByText(/The restore runs in 4 steps/)).toBeInTheDocument();
+
+    const backupFirst = screen.getByRole('checkbox', { name: 'Create a safety backup of the current database first' });
+    expect(backupFirst).not.toBeChecked();
+    await fireEvent.click(backupFirst);
+
+    await fireEvent.input(screen.getByLabelText('Type RESTORE to confirm'), { target: { value: 'RESTORE' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }));
+
+    expect(restoreDatabaseBackup).toHaveBeenCalledWith(
+      'restore-point-immich-db-backup-20260324T110000-v1.2.3-pg14.sql.gz',
+      { keepSafetyBackup: true },
+    );
   });
 });
