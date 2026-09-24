@@ -28,7 +28,13 @@
   import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
   import QueueGraph from '$lib/components/frameleaf/jobs/QueueGraph.svelte';
   import QueueStorageMigrationDescription from '$lib/components/frameleaf/jobs/QueueStorageMigrationDescription.svelte';
-  import { historyFor, readJobHistory, recordJobHistory, type JobHistoryEntry } from '$lib/frameleaf/job-history';
+  import {
+    historyFor,
+    JOB_HISTORY_SHOWN,
+    readJobHistory,
+    recordJobHistory,
+    type JobHistoryEntry,
+  } from '$lib/frameleaf/job-history';
   import {
     FAILED_CLEAN_LIMIT,
     isFeatureOff,
@@ -196,9 +202,11 @@
   const shownHistory = $derived(historyFor(history, selected?.definition.name));
   const historyDetail = (entry: JobHistoryEntry) => {
     const definition = jobQueue(entry.queue);
+    // The template's detail: `${queue title || "Server"} · N items · all accounts`.
     return [
-      definition ? title(definition) : $t('frameleaf_jobs_all_queues'),
+      definition ? title(definition) : $t('frameleaf_jobs_history_server'),
       $t('frameleaf_jobs_review_affected_count', { values: { count: entry.affected } }),
+      $t('frameleaf_jobs_history_all_accounts'),
     ].join(' · ');
   };
 
@@ -977,7 +985,7 @@
       <p class="jm-muted">{$t('frameleaf_jobs_history_empty')}</p>
     {:else}
       <ol>
-        {#each shownHistory as entry (entry.id)}
+        {#each shownHistory.slice(0, JOB_HISTORY_SHOWN) as entry (entry.id)}
           <li>
             <div>
               <strong>{entry.title}</strong>

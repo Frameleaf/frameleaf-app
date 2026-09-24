@@ -26,6 +26,7 @@ import AccountDeleteDialog from '$lib/components/frameleaf/AccountDeleteDialog.s
 import AccountPasswordResetDialog from '$lib/components/frameleaf/AccountPasswordResetDialog.svelte';
 import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
 import AccountRestoreDialog from '$lib/components/frameleaf/AccountRestoreDialog.svelte';
+import { accountLifecycle } from '$lib/frameleaf/accounts';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -55,6 +56,8 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
   const Update: ActionItem = {
     icon: mdiPencilOutline,
     title: $t('edit'),
+    // As the detail header's Edit account: only an active account can be edited.
+    $if: () => accountLifecycle(user) === 'active',
     onAction: () => goto(Route.editUser(user)),
   };
 

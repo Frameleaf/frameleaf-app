@@ -138,12 +138,12 @@ describe('Frameleaf running jobs in the notifications panel', () => {
     });
     render(RunningJobsSection);
 
-    expect(screen.getByRole('progressbar', { name: 'Progress of “Generate Thumbnails”' })).toHaveAttribute(
+    expect(screen.getByRole('progressbar', { name: 'Progress of “Thumbnails”' })).toHaveAttribute(
       'aria-valuenow',
       '300',
     );
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Pause “Generate Thumbnails”' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause “Thumbnails”' }));
 
     expect(sdkMock.updateQueue).toHaveBeenCalledWith({
       name: QueueName.ThumbnailGeneration,

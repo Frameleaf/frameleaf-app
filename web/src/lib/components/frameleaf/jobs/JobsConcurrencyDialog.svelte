@@ -35,8 +35,10 @@
   const isFixed = (definition: JobQueueDefinition) => jobDraft?.[definition.name] === undefined;
   const saved = (definition: JobQueueDefinition) => jobSaved?.[definition.name]?.concurrency ?? 1;
   const current = (definition: JobQueueDefinition) => jobDraft?.[definition.name]?.concurrency ?? 1;
+  // A pending draft value stays pending while the field holds text that is not a limit yet: the
+  // draft still carries it, so it must not drop out of the count and the review.
   const isPending = (definition: JobQueueDefinition) =>
-    !isFixed(definition) && typed[definition.name] === undefined && current(definition) !== saved(definition);
+    !isFixed(definition) && current(definition) !== saved(definition);
 
   const rows = $derived(
     JOB_QUEUES.filter((definition) => {

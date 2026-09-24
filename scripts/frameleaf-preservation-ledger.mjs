@@ -237,6 +237,45 @@ const shippedSettingHomes = {
     notes:
       "Server migration is the resumable command-line tool; the web home shows its exact commands and opens its audit report read-only. It never runs a migration or holds API keys.",
   },
+  // FL-71: the separate job settings form is gone. Queue concurrency is edited in the Job manager's
+  // Concurrency dialog (template `ConcurrencyDialog` in `JobsManager.jsx`) and saved or discarded
+  // through the one settings draft's save bar and review.
+  "action:system/job/reset-saved": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/settings/SettingsSaveBar.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: ["web/src/lib/frameleaf/system-config-draft.svelte.spec.ts"],
+    notes:
+      "Discard in the settings save bar returns pending concurrency values to the saved settings.",
+  },
+  "action:system/job/save": {
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: [
+      "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.spec.ts",
+    ],
+    notes:
+      "The Concurrency dialog's Review opens the settings review; saving there writes job.<queue>.concurrency with every other pending setting.",
+  },
+  "action:system/job/reset-defaults": {
+    removed: true,
+    target: {
+      module:
+        "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
+      area: "processing",
+      section: "queues",
+    },
+    evidence: [],
+    notes:
+      "Removed per the prototype: the template's Concurrency dialog offers Done and Review only, with no reset to defaults.",
+  },
 };
 // FL-71: routes whose screens moved into the Command Center (`/user-settings?area=&section=`).
 // Their old addresses only redirect there; the row stays unqualified until acceptance and names the
@@ -980,11 +1019,13 @@ async function buildLedger() {
         `${row.target?.module ?? "unknown"}:${area ?? "unknown"}/${row.target?.section ?? "unknown"}`,
       ].filter(Boolean),
       owners: ownerSet(primary, secondary),
-      disposition: shipped
-        ? { kind: "legacy-fallback-until-qualified", legacyFallback: false }
-        : row.auditStatus === "not-yet-built"
-          ? { kind: "not-yet-designed", legacyFallback: true }
-          : { kind: "legacy-fallback-until-qualified", legacyFallback: true },
+      disposition: shipped?.removed
+        ? { kind: "intentional-product-change", legacyFallback: false }
+        : shipped
+          ? { kind: "legacy-fallback-until-qualified", legacyFallback: false }
+          : row.auditStatus === "not-yet-built"
+            ? { kind: "not-yet-designed", legacyFallback: true }
+            : { kind: "legacy-fallback-until-qualified", legacyFallback: true },
       qualification: "planned-not-qualified",
       mappings: mapping(
         { status: row.sourceAvailability, paths: [row.source] },
