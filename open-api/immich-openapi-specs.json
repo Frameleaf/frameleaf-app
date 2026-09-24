@@ -68458,6 +68458,16 @@
             },
             "type": "array"
           },
+          "rating": {
+            "description": "Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF",
+            "items": {
+              "maximum": 5,
+              "minimum": -1,
+              "nullable": true,
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "ratio": {
             "description": "Array of aspect ratios (width/height) for each asset",
             "items": {
