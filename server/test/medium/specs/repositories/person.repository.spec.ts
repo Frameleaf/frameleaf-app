@@ -363,6 +363,36 @@ describe(PersonRepository.name, () => {
       await expect(pairsOf()).resolves.toEqual([`${a}:${b}`, `${a}:${c}`, `${b}:${c}`]);
     });
 
+    it('should drop verdicts naming a person the owner no longer has (FL-57)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const people = [];
+      for (let index = 0; index < 3; index++) {
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        people.push(person.personGroupId!);
+      }
+      const [a, b, c] = people.toSorted();
+      const { person: foreign } = await ctx.newPerson({ ownerId: other.id });
+      const { person: foreign2 } = await ctx.newPerson({ ownerId: other.id });
+      const [x, y] = [foreign.personGroupId!, foreign2.personGroupId!].toSorted();
+
+      await sut.setMergeVerdict(user.id, a, b, 'different');
+      await sut.setMergeVerdict(user.id, b, c, 'later');
+      await sut.setMergeVerdict(other.id, x, y, 'different');
+      await sut.delete([a], user.id);
+
+      await expect(sut.deleteOrphanedMergeVerdicts(user.id)).resolves.toBe(1);
+      const remaining = await sql<{ personId: string }>`
+        SELECT "personId" FROM immich_fork.person_merge_verdict WHERE "ownerId" IN (${user.id}::uuid, ${other.id}::uuid)
+        ORDER BY "personId"
+      `.execute(ctx.database);
+      expect(remaining.rows.map(({ personId }) => personId).toSorted()).toEqual([b, x].toSorted());
+
+      await ctx.database.deleteFrom('user').where('id', '=', other.id).execute();
+      await expect(sut.deleteOrphanedMergeVerdicts(other.id)).resolves.toBe(1);
+    });
+
     it("should not apply one owner's verdict to another owner's suggestions (FL-57)", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

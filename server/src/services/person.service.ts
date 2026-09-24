@@ -1,15 +1,16 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import type { Insertable, Selectable, Updateable } from 'kysely';
 import type { Person } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type { PersonId, UpdateFacesData } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import type { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import type { PersonTable } from 'src/schema/tables/person.table.js';
 import type { JobItem, JobOf } from 'src/types.js';
-import { Chunked, OnJob } from 'src/decorators.js';
+import { Chunked, OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   AssetFaceCreateDto,
@@ -178,6 +179,27 @@ export class PersonService extends BaseService {
     // uuids compare bytewise in Postgres, which is the order of their lowercase hex form
     const [first, second] = [personId.toLowerCase(), suggestionId.toLowerCase()];
     return first < second ? [first, second] : [second, first];
+  }
+
+  /** A deleted account's merge-suggestion verdicts go with it (FL-57). */
+  @OnEvent({ name: 'UserDelete' })
+  async onUserDelete({ id }: ArgOf<'UserDelete'>) {
+    await this.purgeMergeVerdicts(id);
+  }
+
+  /**
+   * Verdicts naming a person that no longer exists are dropped. Like the other fork-owned writes this
+   * waits out a database handoff: it is skipped then and the next cleanup catches up.
+   */
+  private async purgeMergeVerdicts(ownerId?: string) {
+    try {
+      await this.personRepository.deleteOrphanedMergeVerdicts(ownerId);
+    } catch (error) {
+      if (!(error instanceof ConflictException)) {
+        throw error;
+      }
+      this.logger.warn('Skipped removing stale merge-suggestion verdicts during a database handoff');
+    }
   }
 
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
@@ -396,6 +418,8 @@ export class PersonService extends BaseService {
     const people = await this.personRepository.delete(groupIds, ownerId);
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
     await this.personRepository.deleteEmptyGroups();
+    // deleting, merging away and cleaning up people all come through here (FL-57)
+    await this.purgeMergeVerdicts(ownerId);
     this.logger.debug(`Deleted ${groupIds.length} people`);
   }
 
