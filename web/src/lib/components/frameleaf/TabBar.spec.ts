@@ -1,12 +1,29 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { Route } from '$lib/route';
+import { sidebarStore } from '$lib/stores/sidebar.svelte';
+import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import TabBar from './TabBar.svelte';
 
-const app = vi.hoisted(() => ({ page: { url: new URL('http://localhost/photos') } }));
+const app = vi.hoisted(() => ({
+  page: { url: new URL('http://localhost/photos'), params: {} },
+  flags: { search: true },
+  media: { isFullSidebar: false, maxMd: true, pointerCoarse: true, reducedMotion: false },
+}));
 vi.mock('$app/state', () => ({ page: app.page }));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: app.flags } }));
+vi.mock('$lib/stores/media-query-manager.svelte', () => ({ mediaQueryManager: app.media }));
+
+const signIn = (memories = true) => {
+  authManager.setUser(userAdminFactory.build());
+  authManager.setPreferences(
+    preferencesFactory.build({ memories: { enabled: memories, duration: 5, sidebarWeb: memories } }),
+  );
+};
 
 const at = (pathname: string) => {
   app.page.url = new URL(`http://localhost${pathname}`);
@@ -15,6 +32,13 @@ const at = (pathname: string) => {
 beforeEach(() => {
   addMessages('dev', en);
   at('/photos');
+  app.flags.search = true;
+  sidebarStore.isOpen = false;
+  signIn();
+});
+
+afterEach(() => {
+  authManager.reset();
 });
 
 describe('TabBar', () => {
@@ -60,6 +84,25 @@ describe('TabBar', () => {
 
     at('/user-settings');
     render(TabBar, { theme: 'dark' });
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+  });
+
+  it('follows the rail: no Memories when the account turned it off, no Search without the search feature', () => {
+    authManager.reset();
+    signIn(false);
+    app.flags.search = false;
+    render(TabBar, { theme: 'dark' });
+
+    expect(screen.queryByRole('link', { name: 'Memories' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Search' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Albums' })).toBeInTheDocument();
+  });
+
+  it('steps away while the ☰ drawer is open so its footer stays reachable', () => {
+    sidebarStore.isOpen = true;
+    render(TabBar, { theme: 'dark' });
+
     expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
   });
 });

@@ -673,6 +673,16 @@
    */
   let alignedEdge: 'top' | 'bottom' | null = null;
 
+  /** Height of the sticky toolbar strip LibraryView publishes as `--fl-sticky-offset`, or 0. */
+  const stickyOffset = () => {
+    if (!scrollable) {
+      return 0;
+    }
+    // Published as whole pixels ("64px"); unset reads as an empty string, which is 0.
+    const value = Number(getComputedStyle(scrollable).getPropertyValue('--fl-sticky-offset').trim().replace(/px$/, ''));
+    return Number.isFinite(value) ? value : 0;
+  };
+
   const scrollToAssetPosition = (assetId: string, month: TimelineMonth, keepEdge = false) => {
     const position = month.findAssetAbsolutePosition(assetId);
     if (!position) {
@@ -682,14 +692,18 @@
     timelineManager.updateSlidingWindow();
     const assetTop = position.top;
     const assetBottom = position.top + position.height;
-    const visibleTop = timelineManager.visibleWindow.top;
+    // The frosted results toolbar sticks over the top of the scroller (LibraryView publishes its
+    // height), so the part it covers is not "on screen" and a top alignment lands just below it.
+    const covered = stickyOffset();
+    const visibleTop = timelineManager.visibleWindow.top + covered;
     const visibleBottom = timelineManager.visibleWindow.bottom;
     const viewportHeight = visibleBottom - visibleTop;
-    const alignTop = assetTop;
-    const alignBottom = assetBottom - viewportHeight;
+    const alignTop = assetTop - covered;
+    const alignBottom = assetBottom - viewportHeight - covered;
+    const scrollTop = visibleTop - covered;
     if (keepEdge && alignedEdge) {
       const target = alignedEdge === 'top' ? alignTop : alignBottom;
-      if (Math.abs(target - visibleTop) > 1) {
+      if (Math.abs(target - scrollTop) > 1) {
         timelineManager.scrollTo(target);
       }
       return;
@@ -1203,6 +1217,8 @@
     outline: none;
     contain: strict;
     scrollbar-width: none;
+    /* Keyboard focus and scrollIntoView stop below the sticky results toolbar. */
+    scroll-padding-top: var(--fl-sticky-offset, 0px);
   }
   .fl-timeline-body {
     position: relative;
@@ -1217,6 +1233,11 @@
     position: absolute;
     inset-inline: 0;
   }
+  /* Months and the bottom spacer are placed by their transform alone, from the body's top, even
+     when a host makes the header block sticky (in flow) above them. */
+  .fl-timeline-bottom {
+    top: 0;
+  }
   .fl-timeline.is-groupable,
   .fl-timeline.is-zoomable {
     /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping (or the grid zoom), not the page zoom. */
@@ -1230,6 +1251,7 @@
   }
   .fl-month {
     position: absolute;
+    top: 0;
     inset-inline: 0;
     contain: layout size paint;
     backface-visibility: hidden;

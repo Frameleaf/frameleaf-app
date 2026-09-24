@@ -1,7 +1,9 @@
 import { AlbumKind, AlbumUserRole, type AlbumTreeResponseDto } from '@immich/sdk';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterNavigate } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
 import { albumDirectoryView } from '$lib/stores/preferences.store';
@@ -17,9 +19,16 @@ const app = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/albums'), state: {} },
   goto: vi.fn(),
   replaceState: vi.fn(),
+  routerStarted: true,
 }));
 vi.mock('$app/state', () => ({ page: app.page }));
-vi.mock('$app/navigation', () => ({ goto: app.goto, replaceState: app.replaceState, invalidate: vi.fn() }));
+vi.mock('$app/navigation', () => ({
+  goto: app.goto,
+  replaceState: app.replaceState,
+  invalidate: vi.fn(),
+  afterNavigate: vi.fn(),
+}));
+vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => app.routerStarted }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
@@ -77,6 +86,7 @@ describe('AlbumDirectory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     app.page.url = new URL('http://localhost/albums');
+    app.routerStarted = true;
     localStorage.clear();
     // The view (filter pill, grid or list) is a persisted store that outlives a single mount.
     albumDirectoryView.set({ ...defaultAlbumDirectoryView });
@@ -193,6 +203,20 @@ describe('AlbumDirectory', () => {
     expect(app.replaceState).toHaveBeenCalledOnce();
     const [url] = app.replaceState.mock.calls[0] as [URL];
     expect(url.search).toBe('');
+  });
+
+  it('waits for the router before touching the address on a direct load', async () => {
+    app.page.url = new URL('http://localhost/albums?create=album');
+    app.routerStarted = false;
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    await tick();
+
+    expect(app.replaceState).not.toHaveBeenCalled();
+    const [[callback]] = vi.mocked(afterNavigate).mock.calls as unknown as [[() => void]];
+    callback();
+
+    expect(await screen.findByRole('dialog', { name: 'New album' })).toBeInTheDocument();
+    expect(app.replaceState).toHaveBeenCalledOnce();
   });
 
   it('opens no create dialog on a plain visit to All albums', () => {
