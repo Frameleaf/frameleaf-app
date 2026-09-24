@@ -66,9 +66,7 @@ export function Menu({
       if (!wrap.current?.contains(event.target)) setOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
-    list.current
-      ?.querySelector('[role^="menuitem"]:not([disabled])')
-      ?.focus();
+    list.current?.querySelector('[role^="menuitem"]:not([disabled])')?.focus();
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
@@ -141,7 +139,9 @@ export function Menu({
               <button
                 key={item.id || item.label}
                 type="button"
-                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                role={
+                  item.checked === undefined ? "menuitem" : "menuitemcheckbox"
+                }
                 aria-checked={item.checked}
                 disabled={item.disabled}
                 className={`cl-menu-item${item.danger ? " danger" : ""}`}
@@ -192,7 +192,8 @@ export function RuleChips({ rule, people = [] }) {
         .map((id) => people.find((person) => person.id === id)?.name || id)
         .join(", "),
     });
-  if (r.tagIds.length) chips.push({ icon: "mdiTagOutline", label: r.tagIds.join(", ") });
+  if (r.tagIds.length)
+    chips.push({ icon: "mdiTagOutline", label: r.tagIds.join(", ") });
   if (r.from || r.to)
     chips.push({
       icon: "mdiCalendarRange",
@@ -237,7 +238,13 @@ export function IconPicker({ value, onChange, label = "Icon" }) {
   );
 }
 
-export function RuleBuilder({ rule, onChange, people = [], tags = [], assets = [] }) {
+export function RuleBuilder({
+  rule,
+  onChange,
+  people = [],
+  tags = [],
+  assets = [],
+}) {
   const r = normalizeRule(rule);
   const set = (patch) => onChange(normalizeRule({ ...r, ...patch }));
   const count = useMemo(() => reevaluateSmart(r, assets).length, [r, assets]);
@@ -254,13 +261,17 @@ export function RuleBuilder({ rule, onChange, people = [], tags = [], assets = [
               <input
                 type="checkbox"
                 checked={r.personIds.includes(person.id)}
-                onChange={() => set({ personIds: toggleIn(r.personIds, person.id) })}
+                onChange={() =>
+                  set({ personIds: toggleIn(r.personIds, person.id) })
+                }
               />
               <PersonAvatar person={person} size={24} />
               <span>{person.name}</span>
             </label>
           ))}
-          {!people.length && <span className="cl-muted">No named people yet.</span>}
+          {!people.length && (
+            <span className="cl-muted">No named people yet.</span>
+          )}
         </div>
       </fieldset>
       <fieldset>
@@ -302,7 +313,10 @@ export function RuleBuilder({ rule, onChange, people = [], tags = [], assets = [
         </label>
         <label className="cl-field">
           <span>Media</span>
-          <select value={r.type} onChange={(event) => set({ type: event.target.value })}>
+          <select
+            value={r.type}
+            onChange={(event) => set({ type: event.target.value })}
+          >
             <option value="any">Photos and videos</option>
             <option value="photo">Photos only</option>
             <option value="video">Videos only</option>
@@ -322,9 +336,16 @@ export function RuleBuilder({ rule, onChange, people = [], tags = [], assets = [
 /** Collections an album can live in (never itself, never a smart album or a space). */
 export function parentOptions(state, selfId = null) {
   return state.collections
-    .filter((collection) => collection.kind === "collection" && collection.id !== selfId)
+    .filter(
+      (collection) =>
+        collection.kind === "collection" && collection.id !== selfId,
+    )
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((collection) => ({ id: collection.id, name: collection.name, depth: 0 }));
+    .map((collection) => ({
+      id: collection.id,
+      name: collection.name,
+      depth: 0,
+    }));
 }
 
 export function CollectionFormDialog({
@@ -347,12 +368,21 @@ export function CollectionFormDialog({
   const [name, setName] = useState(collection?.name || "");
   const [description, setDescription] = useState(collection?.description || "");
   const [icon, setIcon] = useState(collection?.icon || defaultIconFor(kind));
-  const [parentId, setParentId] = useState(collection?.parentId ?? defaultParentId ?? null);
-  const [smart, setSmart] = useState(Boolean(collection?.smart) || (isAlbum && Boolean(smartDefault)));
+  const [parentId, setParentId] = useState(
+    collection?.parentId ?? defaultParentId ?? null,
+  );
+  const [smart, setSmart] = useState(
+    Boolean(collection?.smart) || (isAlbum && Boolean(smartDefault)),
+  );
   const [rule, setRule] = useState(normalizeRule(collection?.smart?.rule));
   const [error, setError] = useState("");
-  const parents = useMemo(() => parentOptions(state, collection?.id ?? null), [state, collection]);
-  const hasChildren = collection ? descendantIds(state, collection.id).size > 0 : false;
+  const parents = useMemo(
+    () => parentOptions(state, collection?.id ?? null),
+    [state, collection],
+  );
+  const hasChildren = collection
+    ? descendantIds(state, collection.id).size > 0
+    : false;
   const submit = (event) => {
     event.preventDefault();
     try {
@@ -378,7 +408,12 @@ export function CollectionFormDialog({
           <Button type="button" onClick={close}>
             Cancel
           </Button>
-          <Button primary type="submit" form={formId} icon={editing ? "mdiCheck" : "mdiPlus"}>
+          <Button
+            primary
+            type="submit"
+            form={formId}
+            icon={editing ? "mdiCheck" : "mdiPlus"}
+          >
             {editing ? "Save" : "Create"}
           </Button>
         </>
@@ -442,7 +477,13 @@ export function CollectionFormDialog({
           </label>
         )}
         {smart && isAlbum && (
-          <RuleBuilder rule={rule} onChange={setRule} people={people} tags={tags} assets={assets} />
+          <RuleBuilder
+            rule={rule}
+            onChange={setRule}
+            people={people}
+            tags={tags}
+            assets={assets}
+          />
         )}
         {error && (
           <p className="cl-error" role="alert">
@@ -457,7 +498,10 @@ export function CollectionFormDialog({
 export function MoveDialog({ state, collection, close, onMove }) {
   const [parentId, setParentId] = useState(collection.parentId);
   const [error, setError] = useState("");
-  const parents = useMemo(() => parentOptions(state, collection.id), [state, collection.id]);
+  const parents = useMemo(
+    () => parentOptions(state, collection.id),
+    [state, collection.id],
+  );
   const current = findCollection(state, collection.parentId);
   return (
     <Dialog
@@ -545,7 +589,8 @@ export function ShareDialog({
       return false;
     }
   };
-  const userFor = (id) => users.find((user) => user.id === id) || { id, name: id };
+  const userFor = (id) =>
+    users.find((user) => user.id === id) || { id, name: id };
   return (
     <Dialog
       title={owner ? `Share ${kindLabel(collection)}` : "Members"}
@@ -564,7 +609,11 @@ export function ShareDialog({
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <ul className="cl-people" role="listbox" aria-label="People to invite">
+          <ul
+            className="cl-people"
+            role="listbox"
+            aria-label="People to invite"
+          >
             {candidates.map((user) => (
               <li key={user.id}>
                 <button
@@ -583,14 +632,19 @@ export function ShareDialog({
             ))}
             {!candidates.length && (
               <li className="cl-empty-row">
-                {term ? "No one matches that search." : "Everyone already has access."}
+                {term
+                  ? "No one matches that search."
+                  : "Everyone already has access."}
               </li>
             )}
           </ul>
           <div className="cl-invite-row">
             <label>
               Role
-              <select value={role} onChange={(event) => setRole(event.target.value)}>
+              <select
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+              >
                 <option value="editor">Editor</option>
                 <option value="viewer">Viewer</option>
               </select>
@@ -601,7 +655,11 @@ export function ShareDialog({
               disabled={!picked}
               onClick={() => {
                 const invitee = picked;
-                if (apply((current) => inviteMember(current, collectionId, invitee, role))) {
+                if (
+                  apply((current) =>
+                    inviteMember(current, collectionId, invitee, role),
+                  )
+                ) {
                   setPicked(null);
                   setQuery("");
                   onShared?.(invitee, role);
@@ -633,7 +691,12 @@ export function ShareDialog({
                     value={member.role}
                     onChange={(event) =>
                       apply((current) =>
-                        changeRole(current, collectionId, member.userId, event.target.value),
+                        changeRole(
+                          current,
+                          collectionId,
+                          member.userId,
+                          event.target.value,
+                        ),
                       )
                     }
                   >
@@ -644,12 +707,16 @@ export function ShareDialog({
                     icon="mdiClose"
                     aria-label={`Remove ${user.name}`}
                     onClick={() =>
-                      apply((current) => removeMember(current, collectionId, member.userId))
+                      apply((current) =>
+                        removeMember(current, collectionId, member.userId),
+                      )
                     }
                   />
                 </>
               ) : (
-                <span className="cl-role">{member.role === "editor" ? "Editor" : "Viewer"}</span>
+                <span className="cl-role">
+                  {member.role === "editor" ? "Editor" : "Viewer"}
+                </span>
               )}
             </li>
           );
@@ -658,8 +725,8 @@ export function ShareDialog({
       {!owner && onLeave && (
         <div className="cl-leave">
           <p>
-            Leaving removes this collection from your library. The owner can invite you again
-            later.
+            Leaving removes this collection from your library. The owner can
+            invite you again later.
           </p>
           <Button icon="mdiLogoutVariant" onClick={onLeave}>
             Leave {kindLabel(collection)}
@@ -725,13 +792,19 @@ export function ReevaluateDialog({
           <Icon name="mdiPlus" /> {plural(added.length, "item")} would be added
         </li>
         <li>
-          <Icon name="mdiMinus" /> {plural(removed.length, "item")} no longer match
+          <Icon name="mdiMinus" /> {plural(removed.length, "item")} no longer
+          match
         </li>
       </ul>
       {preview.length > 0 && (
         <div className="cl-thumbs" aria-label="New matches">
           {preview.map((asset) => (
-            <img key={asset.id} src={asset.image} alt={asset.name} loading="lazy" />
+            <img
+              key={asset.id}
+              src={asset.image}
+              alt={asset.name}
+              loading="lazy"
+            />
           ))}
         </div>
       )}
@@ -771,7 +844,9 @@ export function DeleteDialog({ collection, count = 0, close, onConfirm }) {
         {collection.kind === "collection"
           ? "The collection is removed. Its albums stay in your library, on their own."
           : `The ${kindLabel(collection)}, its sharing and any public links are removed.`}
-        {collection.kind === "space" ? " Members lose access to the space." : ""}
+        {collection.kind === "space"
+          ? " Members lose access to the space."
+          : ""}
       </p>
       <p className="cl-keep">
         <Icon name="mdiImageMultipleOutline" />
@@ -809,7 +884,8 @@ export function LeaveDialog({ collection, close, onConfirm }) {
       }
     >
       <p style={{ margin: 0 }}>
-        It disappears from your library. The owner keeps everything and can invite you again.
+        It disappears from your library. The owner keeps everything and can
+        invite you again.
       </p>
     </Dialog>
   );
@@ -847,7 +923,11 @@ export function CoverDialog({ collection, assets = [], close, onSelect }) {
             aria-checked={choice === asset.id}
             aria-label={asset.name}
             className={choice === asset.id ? "chosen" : ""}
-            data-initial-focus={choice === asset.id || (!choice && asset === assets[0]) || undefined}
+            data-initial-focus={
+              choice === asset.id ||
+              (!choice && asset === assets[0]) ||
+              undefined
+            }
             onClick={() => setChoice(asset.id)}
           >
             <img src={asset.image} alt="" loading="lazy" />
@@ -859,7 +939,9 @@ export function CoverDialog({ collection, assets = [], close, onSelect }) {
         <input
           type="checkbox"
           checked={choice === null}
-          onChange={(event) => setChoice(event.target.checked ? null : (assets[0]?.id ?? null))}
+          onChange={(event) =>
+            setChoice(event.target.checked ? null : (assets[0]?.id ?? null))
+          }
         />
         <span>Always use the newest item</span>
       </label>
@@ -869,7 +951,9 @@ export function CoverDialog({ collection, assets = [], close, onSelect }) {
 
 export function OptionsDialog({ collection, close, onChange }) {
   const [displayOrder, setDisplayOrder] = useState(collection.displayOrder);
-  const [commentsEnabled, setCommentsEnabled] = useState(collection.commentsEnabled);
+  const [commentsEnabled, setCommentsEnabled] = useState(
+    collection.commentsEnabled,
+  );
   const id = useId();
   return (
     <Dialog
@@ -1055,9 +1139,28 @@ export function CollectionHeader({
   const [dialog, setDialog] = useState(null);
   const [iconOpen, setIconOpen] = useState(false);
   const [status, setStatus] = useState("");
+  // #3 on phones the secondary actions move into the "…" menu instead of running off-screen.
+  const [compact, setCompact] = useState(
+    () =>
+      typeof matchMedia === "function" &&
+      matchMedia("(max-width: 700px)").matches,
+  );
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const query = matchMedia("(max-width: 700px)");
+    const change = () => setCompact(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
   const library = allAssets || assets;
   const tagList = useMemo(
-    () => tags || [...new Set(library.flatMap((asset) => asset.tagIds || asset.tags || []))].sort(),
+    () =>
+      tags ||
+      [
+        ...new Set(
+          library.flatMap((asset) => asset.tagIds || asset.tags || []),
+        ),
+      ].sort(),
     [tags, library],
   );
   if (!collection) return null;
@@ -1070,13 +1173,18 @@ export function CollectionHeader({
   const childAlbums =
     state && collection.kind === "collection"
       ? state.collections.filter(
-          (item) => item.parentId === collection.id && isMember(item, currentUserId),
+          (item) =>
+            item.parentId === collection.id && isMember(item, currentUserId),
         )
       : [];
   const likes = activity.filter((entry) => entry.type === "like").length;
   const comments = activity.filter((entry) => entry.type === "comment").length;
-  const mappable = items.filter((asset) => Number.isFinite(asset.latitude)).length;
-  const others = collection.members.filter((member) => member.userId !== currentUserId);
+  const mappable = items.filter((asset) =>
+    Number.isFinite(asset.latitude),
+  ).length;
+  const others = collection.members.filter(
+    (member) => member.userId !== currentUserId,
+  );
   const ownerUser = users.find((user) => user.id === collection.ownerId) || {
     id: collection.ownerId,
     name: collection.ownerId,
@@ -1160,7 +1268,9 @@ export function CollectionHeader({
                 <Icon name="mdiAutoFix" /> Smart
               </span>
             )}
-            {collection.kind === "space" && <span className="ch-badge">Shared space</span>}
+            {collection.kind === "space" && (
+              <span className="ch-badge">Shared space</span>
+            )}
             {!owner && (
               <span className="ch-shared-by">
                 <PersonAvatar person={ownerUser} size={18} />
@@ -1177,7 +1287,9 @@ export function CollectionHeader({
             editable={editor}
             multiline
             placeholder={editor ? "Add a description" : ""}
-            onSave={(description) => patch({ description }, "Description saved")}
+            onSave={(description) =>
+              patch({ description }, "Description saved")
+            }
           />
           <div className="ch-summary">
             <span>{plural(items.length, "item")}</span>
@@ -1195,12 +1307,23 @@ export function CollectionHeader({
                 onClick={openShare}
                 aria-label={`Shared with ${plural(others.length, "person", "people")}. Manage members`}
               >
-                <UserAvatars users={users} ids={others.map((member) => member.userId)} size={20} />
+                <UserAvatars
+                  users={users}
+                  ids={others.map((member) => member.userId)}
+                  size={20}
+                />
                 <span>
                   Shared with{" "}
                   {others
                     .slice(0, 2)
-                    .map((member) => (users.find((user) => user.id === member.userId) || { name: member.userId }).name)
+                    .map(
+                      (member) =>
+                        (
+                          users.find((user) => user.id === member.userId) || {
+                            name: member.userId,
+                          }
+                        ).name,
+                    )
                     .join(", ")}
                   {others.length > 2 ? ` and ${others.length - 2} more` : ""}
                 </span>
@@ -1217,7 +1340,10 @@ export function CollectionHeader({
               <>
                 <span className="dot" />
                 <span>
-                  {[likes ? plural(likes, "like") : null, comments ? plural(comments, "comment") : null]
+                  {[
+                    likes ? plural(likes, "like") : null,
+                    comments ? plural(comments, "comment") : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
@@ -1227,12 +1353,18 @@ export function CollectionHeader({
           {collection.smart && (
             <div className="ch-rule">
               <RuleChips rule={collection.smart.rule} people={people} />
-              <span className="cl-muted">Checked {timeAgo(collection.updatedAt)}</span>
+              <span className="cl-muted">
+                Checked {timeAgo(collection.updatedAt)}
+              </span>
             </div>
           )}
         </div>
       </div>
-      <div className="ch-actions" role="toolbar" aria-label={`${Kind(collection)} actions`}>
+      <div
+        className="ch-actions"
+        role="toolbar"
+        aria-label={`${Kind(collection)} actions`}
+      >
         {editor && collection.kind === "collection" && (
           <Button primary icon="mdiPlus" onClick={() => setDialog("new-album")}>
             New album
@@ -1261,45 +1393,114 @@ export function CollectionHeader({
           />
         )}
         {collection.smart && (
-          <Button primary icon="mdiRefresh" onClick={() => setDialog("reevaluate")}>
+          <Button
+            primary
+            icon="mdiRefresh"
+            onClick={() => setDialog("reevaluate")}
+          >
             Re-evaluate
           </Button>
         )}
-        <Button icon={owner ? "mdiAccountPlusOutline" : "mdiAccountMultipleOutline"} onClick={openShare}>
+        <Button
+          icon={owner ? "mdiAccountPlusOutline" : "mdiAccountMultipleOutline"}
+          onClick={openShare}
+        >
           {owner ? "Share" : "Members"}
         </Button>
-        {owner && (
-          <Button
-            icon="mdiLinkVariant"
-            aria-label={linkCount ? `Links, ${linkCount}` : "Create link"}
-            onClick={() => (linkCount ? onManageLinks?.() : onCreateLink?.())}
-          >
-            Links
-            {linkCount > 0 && <span className="ch-count">{linkCount}</span>}
-          </Button>
+        {!compact && (
+          <>
+            {owner && (
+              <Button
+                icon="mdiLinkVariant"
+                aria-label={linkCount ? `Links, ${linkCount}` : "Create link"}
+                onClick={() =>
+                  linkCount ? onManageLinks?.() : onCreateLink?.()
+                }
+              >
+                Links
+                {linkCount > 0 && <span className="ch-count">{linkCount}</span>}
+              </Button>
+            )}
+            <Button
+              icon="mdiMapOutline"
+              disabled={!mappable}
+              onClick={() => onOpenMap?.()}
+            >
+              Map
+            </Button>
+            <Button
+              icon="mdiPlayCircleOutline"
+              disabled={!items.length}
+              onClick={() => onSlideshow?.()}
+            >
+              Slideshow
+            </Button>
+            <Button
+              icon="mdiDownloadOutline"
+              disabled={!items.length}
+              onClick={() => onDownload?.()}
+            >
+              Download
+            </Button>
+            <Button
+              icon="mdiCommentTextOutline"
+              aria-label={`Activity, ${plural(likes + comments, "entry", "entries")}`}
+              onClick={() => onOpenActivity?.()}
+            >
+              Activity
+              {likes + comments > 0 && (
+                <span className="ch-count">{likes + comments}</span>
+              )}
+            </Button>
+          </>
         )}
-        <Button icon="mdiMapOutline" disabled={!mappable} onClick={() => onOpenMap?.()}>
-          Map
-        </Button>
-        <Button icon="mdiPlayCircleOutline" disabled={!items.length} onClick={() => onSlideshow?.()}>
-          Slideshow
-        </Button>
-        <Button icon="mdiDownloadOutline" disabled={!items.length} onClick={() => onDownload?.()}>
-          Download
-        </Button>
-        <Button
-          icon="mdiCommentTextOutline"
-          aria-label={`Activity, ${plural(likes + comments, "entry", "entries")}`}
-          onClick={() => onOpenActivity?.()}
-        >
-          Activity
-          {likes + comments > 0 && <span className="ch-count">{likes + comments}</span>}
-        </Button>
         <span className="spacer" />
         <Menu
           icon="mdiDotsHorizontal"
           aria-label="More actions"
           items={[
+            ...(compact
+              ? [
+                  owner && {
+                    id: "links",
+                    icon: "mdiLinkVariant",
+                    label: linkCount ? `Links (${linkCount})` : "Create link",
+                    onSelect: () =>
+                      linkCount ? onManageLinks?.() : onCreateLink?.(),
+                  },
+                  {
+                    id: "map",
+                    icon: "mdiMapOutline",
+                    label: "Map",
+                    disabled: !mappable,
+                    onSelect: () => onOpenMap?.(),
+                  },
+                  {
+                    id: "slideshow",
+                    icon: "mdiPlayCircleOutline",
+                    label: "Slideshow",
+                    disabled: !items.length,
+                    onSelect: () => onSlideshow?.(),
+                  },
+                  {
+                    id: "download",
+                    icon: "mdiDownloadOutline",
+                    label: "Download",
+                    disabled: !items.length,
+                    onSelect: () => onDownload?.(),
+                  },
+                  {
+                    id: "activity",
+                    icon: "mdiCommentTextOutline",
+                    label:
+                      likes + comments
+                        ? `Activity (${likes + comments})`
+                        : "Activity",
+                    onSelect: () => onOpenActivity?.(),
+                  },
+                  { separator: true },
+                ]
+              : []),
             editor && {
               id: "edit",
               icon: "mdiPencilOutline",
@@ -1314,7 +1515,9 @@ export function CollectionHeader({
               onSelect: () =>
                 patch(
                   { showOwnerBadges: !collection.showOwnerBadges },
-                  collection.showOwnerBadges ? "Owner badges hidden" : "Owner badges shown",
+                  collection.showOwnerBadges
+                    ? "Owner badges hidden"
+                    : "Owner badges shown",
                 ),
             },
             editor &&
@@ -1434,7 +1637,10 @@ export function CollectionHeader({
           close={closeDialog}
           onSelect={(assetId) => {
             onSelectCover?.(assetId);
-            patch({ coverAssetId: assetId }, assetId ? "Cover updated" : "Cover follows the newest item");
+            patch(
+              { coverAssetId: assetId },
+              assetId ? "Cover updated" : "Cover follows the newest item",
+            );
           }}
         />
       )}
@@ -1468,7 +1674,11 @@ export function CollectionHeader({
         />
       )}
       {dialog === "leave" && (
-        <LeaveDialog collection={collection} close={closeDialog} onConfirm={() => onLeave?.()} />
+        <LeaveDialog
+          collection={collection}
+          close={closeDialog}
+          onConfirm={() => onLeave?.()}
+        />
       )}
       {dialog === "reevaluate" && collection.smart && (
         <ReevaluateDialog
@@ -1479,7 +1689,10 @@ export function CollectionHeader({
           close={closeDialog}
           onApply={(ids) => {
             onReevaluate?.(ids);
-            patch({ smart: collection.smart }, `Smart album checked · ${plural(ids.length, "item")}`);
+            patch(
+              { smart: collection.smart },
+              `Smart album checked · ${plural(ids.length, "item")}`,
+            );
           }}
         />
       )}

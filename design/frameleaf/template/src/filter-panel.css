@@ -41,6 +41,7 @@
 }
 .filter-status-options label {
   display: flex;
+  flex-direction: row; /* the global label rule stacks radio over text */
   align-items: center;
   gap: 9px;
   min-height: 32px;
@@ -57,6 +58,8 @@
 }
 .filter-status-options input[type="radio"] {
   accent-color: var(--fl-accent);
+  width: auto;
+  height: auto;
   margin: 0;
 }
 .filter-status-options span {

@@ -199,7 +199,7 @@ export const settingsSections = {
     section(
       "volumes",
       "Library storage",
-      "Disk capacity and media usage measure different things. External libraries can live on other filesystems.",
+      "See how much space your library uses and where it lives.",
       [
         text(
           "libraryLabel",
@@ -223,7 +223,7 @@ export const settingsSections = {
     section(
       "organization",
       "Originals & folder structure",
-      "Albums organize references. They do not need to move your original files.",
+      "Choose how originals are named and arranged on disk.",
       [
         toggle(
           "storageTemplate",
@@ -255,7 +255,7 @@ export const settingsSections = {
     section(
       "deduplication",
       "Physical deduplication",
-      "One physical file may back multiple owned assets. Ownership and access remain separate.",
+      "Keep one copy of identical files while each person keeps their own library.",
       [
         toggle(
           "physicalDedup",
@@ -275,7 +275,7 @@ export const settingsSections = {
     section(
       "retention",
       "Trash & retention",
-      "Make the recovery window visible before anything becomes permanent.",
+      "How long deleted items stay recoverable.",
       [
         number(
           "trashDays",
@@ -302,7 +302,7 @@ export const settingsSections = {
     section(
       "migration",
       "Move or export your library",
-      "Migration, preservation exports, and official-server handoff are different operations.",
+      "Move your library to new storage or export a complete copy.",
       [],
       { action: "Prepare migration checklist", actionKind: "migration" },
     ),
@@ -311,7 +311,7 @@ export const settingsSections = {
     section(
       "sources",
       "External libraries",
-      "Register folders, exclusions, scan schedules, and ownership in one place.",
+      "Folders on disk that Frameleaf watches and imports.",
       [
         toggle(
           "libraryWatch",
@@ -338,7 +338,7 @@ export const settingsSections = {
     section(
       "takeout",
       "Google Photos & server imports",
-      "Stage → scan → review → import → reconcile. Existing assets retain recovered album membership.",
+      "Bring in a Google Photos export or another server, review it, then import.",
       [
         toggle(
           "takeoutAlbums",
@@ -358,7 +358,7 @@ export const settingsSections = {
     section(
       "database-backup",
       "Database backups",
-      "A database backup contains metadata. Originals need their own protected copy.",
+      "Back up albums, people and edits. Originals need their own backup.",
       [
         toggle(
           "databaseBackup",
@@ -388,7 +388,7 @@ export const settingsSections = {
     section(
       "preservation",
       "Originals & preservation",
-      "Checksums, metadata sidecars, albums, edit recipes, and provenance travel together.",
+      "Export originals with their albums, edits and history kept together.",
       [
         toggle(
           "exportSidecars",
@@ -408,7 +408,7 @@ export const settingsSections = {
     section(
       "devices-backup",
       "Mobile backup & migration",
-      "Permissions and backup sources belong to each device.",
+      "Set up phone backup and move from another app.",
       [
         toggle(
           "uploaderReminder",
@@ -445,7 +445,7 @@ export const settingsSections = {
     section(
       "descriptions",
       "Descriptions & tags",
-      "Keep visible descriptions, search embeddings, and identity-aware names in sync.",
+      "Automatic descriptions and tags that make photos easier to find.",
       [
         toggle(
           "descriptions",
@@ -488,7 +488,7 @@ export const settingsSections = {
     section(
       "faces",
       "Faces & identity",
-      "Recognition suggests. Your confirmed corrections remain authoritative.",
+      "Recognize faces. Your own corrections always win.",
       [
         toggle(
           "faceRecognition",
@@ -517,7 +517,7 @@ export const settingsSections = {
     section(
       "pets",
       "Individual pets",
-      "Named cat and dog identities survive replaceable model output.",
+      "Recognize and name your cats and dogs.",
       [
         toggle(
           "petRecognition",
@@ -536,7 +536,7 @@ export const settingsSections = {
     section(
       "documents",
       "Text, documents & receipts",
-      "Ground searchable text and extracted fields in visible source regions.",
+      "Find text in photos, documents and receipts.",
       [
         toggle(
           "ocr",
@@ -564,7 +564,7 @@ export const settingsSections = {
     section(
       "classification",
       "Categories & smart albums",
-      "Rules contribute metadata without overwriting your manual decisions.",
+      "Sort photos into categories without overriding your own choices.",
       [
         toggle(
           "smartAlbums",
@@ -596,7 +596,7 @@ export const settingsSections = {
     section(
       "sensitive-detection",
       "Locked-content detection",
-      "Private flags protect access. Searchable tags are not a security boundary.",
+      "Spot photos that may belong in Locked.",
       [
         toggle(
           "sensitiveDetect",
@@ -620,7 +620,7 @@ export const settingsSections = {
     section(
       "previews",
       "Photo previews",
-      "Fast library browsing with predictable cache costs.",
+      "Smaller copies that keep browsing fast.",
       [
         number(
           "thumbnailSize",
@@ -661,7 +661,7 @@ export const settingsSections = {
     section(
       "playback",
       "Video playback proxies",
-      "Compatibility copies for browsing and streaming. These are not edited masters.",
+      "Copies that play smoothly on every device.",
       [
         select(
           "transcodePolicy",
@@ -724,7 +724,7 @@ export const settingsSections = {
     section(
       "masters",
       "Edited masters",
-      "Always render from the original plus its edit recipe.",
+      "How edited photos and videos are saved.",
       [
         select(
           "masterResolution",
@@ -793,7 +793,7 @@ export const settingsSections = {
     section(
       "studio",
       "Studio & Dolby Vision",
-      "Check rendering support separately from library analysis.",
+      "Studio rendering and Dolby Vision support.",
       [
         toggle(
           "studioPreview",
@@ -810,7 +810,7 @@ export const settingsSections = {
     section(
       "spaces",
       "Shared Spaces",
-      "Contributors keep their originals. Removing a membership does not delete an asset.",
+      "Libraries everyone in a household can add to.",
       [
         select(
           "spaceRole",
@@ -837,7 +837,7 @@ export const settingsSections = {
     section(
       "links",
       "Public links",
-      "Expiration, downloads, and location exposure should be visible when a link is created.",
+      "Defaults for links you share with anyone.",
       [
         number(
           "shareExpiry",
@@ -865,7 +865,7 @@ export const settingsSections = {
     section(
       "partner",
       "Partners & recipient groups",
-      "Recipient groups are shortcuts, not hidden permission rules.",
+      "Partners who see your library, and groups you share with often.",
       [
         toggle(
           "partnerTimeline",
@@ -884,7 +884,7 @@ export const settingsSections = {
     section(
       "shared-identities",
       "People across libraries",
-      "Link identities reversibly while keeping private names private.",
+      "Match the same person across different libraries.",
       [
         toggle(
           "sharedPeople",
@@ -906,7 +906,7 @@ export const settingsSections = {
     section(
       "health",
       "Media health & integrity",
-      "Track scan evidence and recovery history instead of a single green check.",
+      "Check that every original is present and intact.",
       [
         toggle(
           "healthScan",
@@ -932,7 +932,7 @@ export const settingsSections = {
     section(
       "repair",
       "Repair queues",
-      "Review missing media, Live Photo links, duplicate keepers, and RAW recovery together.",
+      "Everything waiting for a fix, in one place.",
       [
         toggle(
           "livePhotoRepair",
@@ -958,7 +958,7 @@ export const settingsSections = {
     section(
       "enrichment-care",
       "Enrichment completeness",
-      "Faces, video frames, descriptions, embeddings, and rules form a dependency graph.",
+      "See which photos still need faces, descriptions or search indexing.",
       [
         toggle(
           "incrementalEnrichment",
@@ -979,14 +979,14 @@ export const settingsSections = {
     section(
       "workers",
       "Workers & endpoints",
-      "Discover capabilities per endpoint, including machines on your home network.",
+      "Computers that process your library, including others on your network.",
       [],
       { panel: "workers" },
     ),
     section(
       "routing",
       "Workload destinations",
-      "A destination stays attached to a job, including during retry and recovery.",
+      "Choose where each kind of work runs.",
       [
         select(
           "destination",
@@ -1063,7 +1063,7 @@ export const settingsSections = {
     section(
       "runpod",
       "RunPod lifecycle",
-      "Keep cloud starts, usage, and shutdown behavior explicit.",
+      "When cloud processing starts and stops.",
       [
         toggle(
           "runpodEnabled",
@@ -1132,7 +1132,7 @@ export const settingsSections = {
     section(
       "accounts",
       "People with server access",
-      "Server roles, storage quotas, and Space roles have different scopes.",
+      "Accounts, roles and storage limits.",
       [
         number(
           "defaultQuota",
@@ -1149,7 +1149,7 @@ export const settingsSections = {
     section(
       "signin",
       "Sign-in methods",
-      "Preserve a tested recovery path when changing authentication.",
+      "How people sign in, and how to recover access.",
       [
         toggle(
           "passwordLogin",
@@ -1191,7 +1191,7 @@ export const settingsSections = {
     section(
       "privacy",
       "Locked content",
-      "Apply access rules across search, thumbnails, downloads, public links, and sync.",
+      "Keep Locked items out of search, sharing and downloads.",
       [
         toggle(
           "hideSensitive",
@@ -1220,7 +1220,7 @@ export const settingsSections = {
     section(
       "credentials",
       "Devices & API access",
-      "Know which clients can reach the library.",
+      "Devices and apps that can reach your library.",
       [],
       { panel: "sessions" },
     ),
@@ -1229,7 +1229,7 @@ export const settingsSections = {
     section(
       "signals",
       "What needs my attention",
-      "Notify on actionable changes, not every routine heartbeat.",
+      "Choose which events deserve an alert.",
       [
         toggle(
           "notifyCapacity",
@@ -1267,7 +1267,7 @@ export const settingsSections = {
     section(
       "email",
       "Email delivery",
-      "A dedicated delivery setup with a preview before sending.",
+      "Send email from your own mail server.",
       [
         toggle(
           "smtpEnabled",
@@ -1332,7 +1332,7 @@ export const settingsSections = {
     section(
       "identity",
       "Server identity & network",
-      "Keep a friendly name separate from compatibility-sensitive internal identifiers.",
+      "Your server's name and network address.",
       [
         text(
           "serverName",
@@ -1429,7 +1429,7 @@ export const settingsSections = {
     section(
       "diagnostics",
       "Logs & diagnostics",
-      "Enough evidence to debug without unnecessarily exposing private media.",
+      "Logs for troubleshooting, without exposing your photos.",
       [
         select(
           "logLevel",
@@ -1470,7 +1470,7 @@ export const settingsSections = {
     section(
       "maps",
       "Maps & geography",
-      "Use configurable tiles and reverse geocoding without breaking location privacy.",
+      "Map style and place names, with location privacy kept.",
       [
         toggle(
           "mapsEnabled",
@@ -1495,7 +1495,7 @@ export const settingsSections = {
     section(
       "branding",
       "Branding & client compatibility",
-      "Customize your workspace while preserving client compatibility and library access.",
+      "Your server's name, logo and login message.",
       [
         toggle(
           "customTheme",
@@ -1519,7 +1519,7 @@ export const settingsSections = {
     section(
       "profile",
       "Your profile",
-      "Personal settings follow you; device layout remains local.",
+      "Your name, photo and email.",
       [
         text(
           "displayName",
@@ -1541,7 +1541,7 @@ export const settingsSections = {
     section(
       "appearance",
       "Appearance & browsing",
-      "Timeline, Browse and Work remember the same library session.",
+      "Theme, layout and how the library looks on this device.",
       [
         select(
           "themePreference",
@@ -1585,7 +1585,7 @@ export const settingsSections = {
     section(
       "rediscovery",
       "Memories & discovery",
-      "Give you control over what comes back.",
+      "What Memories brings back, and when.",
       [
         toggle(
           "memories",
@@ -1610,7 +1610,7 @@ export const settingsSections = {
     section(
       "downloads",
       "Downloads & local behavior",
-      "Native permissions and backup sources are set on the device itself.",
+      "How downloads are packaged and saved.",
       [
         select(
           "downloadFormat",
@@ -1636,7 +1636,7 @@ export const settingsSections = {
     section(
       "suppression",
       "Hidden memories",
-      "Memory preferences change rediscovery. Locked content is managed under Access & security.",
+      "People, places and dates Memories should skip.",
       [],
       { action: "Review hidden memory rules", actionKind: "suppression" },
     ),

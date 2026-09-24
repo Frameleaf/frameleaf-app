@@ -16,11 +16,21 @@ import {
   timelineGroups,
   timelineScrubber,
 } from "./explore-timeline.mjs";
+import {
+  drillTarget,
+  firstGroupWithPrefix,
+  timelineCards,
+} from "./timeline-highlights.mjs";
 import "./timeline-library.css";
 
 // Coarse to fine. ⌘/Ctrl+wheel and pinch step through this list.
 const MODES = ["all", "years", "months", "days"];
-const MODE_LABELS = { years: "Years", months: "Months", days: "Days", all: "All" };
+const MODE_LABELS = {
+  years: "Years",
+  months: "Months",
+  days: "Days",
+  all: "All",
+};
 const GAP = 4;
 const HEADER_OFFSET = 48;
 const WHEEL_STEP = 60;
@@ -83,6 +93,8 @@ export function TimelineLibrary({
   order = "desc",
   showCaptions = false,
   rowHeight,
+  // The library's Thumbnail size slider scales the responsive default height.
+  rowScale = 1,
 }) {
   const rootRef = useRef(null);
   const groupsRef = useRef(null);
@@ -102,7 +114,16 @@ export function TimelineLibrary({
     () => timelineGroups(assets, mode === "days" ? "day" : mode, order),
     [assets, mode, order],
   );
-  const scrubber = useMemo(() => timelineScrubber(assets, order), [assets, order]);
+  // Years and Months are curated card views; Days and All show every item.
+  const curated = mode === "years" || mode === "months";
+  const cards = useMemo(
+    () => (curated ? timelineCards(assets, mode, { order }) : []),
+    [assets, mode, order, curated],
+  );
+  const scrubber = useMemo(
+    () => timelineScrubber(assets, order),
+    [assets, order],
+  );
   const assetById = useMemo(
     () => new Map(assets.map((asset) => [asset.id, asset])),
     [assets],
@@ -117,10 +138,10 @@ export function TimelineLibrary({
   const width = useContainerWidth(groupsRef);
   const targetRowHeight = Number.isFinite(rowHeight)
     ? rowHeight
-    : rowHeightFor(width);
+    : Math.round(rowHeightFor(width) * rowScale);
   const layouts = useMemo(
     () =>
-      groups.map((group) =>
+      (curated ? [] : groups).map((group) =>
         justifiedRows(group.assets, {
           containerWidth: width,
           targetRowHeight,
@@ -128,7 +149,7 @@ export function TimelineLibrary({
           maxRowHeight: Math.round(targetRowHeight * 1.25),
         }),
       ),
-    [groups, width, targetRowHeight],
+    [groups, width, targetRowHeight, curated],
   );
   const ratingFor = (asset) =>
     typeof ratings === "function"
@@ -145,8 +166,38 @@ export function TimelineLibrary({
   };
   const stepGrouping = (delta) => {
     const index = MODES.indexOf(mode);
-    changeGrouping(MODES[Math.min(MODES.length - 1, Math.max(0, index + delta))]);
+    changeGrouping(
+      MODES[Math.min(MODES.length - 1, Math.max(0, index + delta))],
+    );
   };
+  // Opening a year or month card steps one level finer and scrolls there.
+  const pendingDrill = useRef(null);
+  const openCard = (card) => {
+    const target = drillTarget(card);
+    if (!target) return;
+    pendingDrill.current = target.groupPrefix;
+    changeGrouping(target.grouping);
+  };
+  useLayoutEffect(() => {
+    const prefix = pendingDrill.current;
+    if (!prefix) return;
+    pendingDrill.current = null;
+    const container = groupsRef.current;
+    const id = firstGroupWithPrefix(
+      groups.map((group) => group.id),
+      prefix,
+    );
+    const element = id && container?.querySelector(`[data-group-id="${id}"]`);
+    if (!element) return;
+    const scroller = scrollParent(container);
+    if (scroller)
+      scroller.scrollBy({
+        top:
+          element.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top,
+      });
+    else element.scrollIntoView({ block: "start" });
+  }, [mode, groups]);
   const latest = useRef({});
   latest.current = { mode, stepGrouping };
 
@@ -216,18 +267,20 @@ export function TimelineLibrary({
       const container = groupsRef.current;
       if (!container) return;
       const top = scroller ? scroller.getBoundingClientRect().top : 0;
-      const rows = container.querySelectorAll(".tl-row");
+      const rows = container.querySelectorAll(".tl-row, .tl-card");
       let id = null;
       for (const row of rows) {
         if (row.getBoundingClientRect().bottom > top + HEADER_OFFSET) {
-          id = row.querySelector("[data-asset-id]")?.dataset.assetId ?? null;
+          id =
+            row.dataset.firstAsset ??
+            row.querySelector("[data-asset-id]")?.dataset.assetId ??
+            null;
           break;
         }
       }
       const asset = id ? assetById.get(id) : null;
       setCurrentMonthId(asset ? assetMonthId(asset) : null);
-      if (scroller)
-        setTrackHeight(Math.max(200, scroller.clientHeight - 72));
+      if (scroller) setTrackHeight(Math.max(200, scroller.clientHeight - 72));
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
@@ -249,7 +302,11 @@ export function TimelineLibrary({
       typeof CSS !== "undefined" && CSS.escape
         ? CSS.escape(month.firstAssetId)
         : String(month.firstAssetId).replace(/["\\]/g, "\\$&");
-    const tile = container?.querySelector(`[data-asset-id="${escaped}"]`);
+    // Card views have no tiles: fall back to the month's card, then the year's.
+    const tile =
+      container?.querySelector(`[data-asset-id="${escaped}"]`) ||
+      container?.querySelector(`.tl-card[data-group-id="${month.id}"]`) ||
+      container?.querySelector(`.tl-card[data-group-id="${month.year}"]`);
     if (!tile) return;
     const scroller = scrollParent(container);
     const smooth = behavior === "smooth" && !reducedMotion();
@@ -259,7 +316,11 @@ export function TimelineLibrary({
         scroller.getBoundingClientRect().top -
         HEADER_OFFSET;
       scroller.scrollBy({ top: offset, behavior: smooth ? "smooth" : "auto" });
-    } else tile.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+    } else
+      tile.scrollIntoView({
+        block: "start",
+        behavior: smooth ? "smooth" : "auto",
+      });
     setCurrentMonthId(month.id);
   };
 
@@ -275,7 +336,11 @@ export function TimelineLibrary({
     >
       <div className="tl-toolbar">
         <span className="tl-hint">{hint}</span>
-        <div role="group" aria-label="Timeline grouping" className="tl-segmented">
+        <div
+          role="group"
+          aria-label="Timeline grouping"
+          className="tl-segmented"
+        >
           {["years", "months", "days", "all"].map((value) => (
             <button
               type="button"
@@ -298,74 +363,99 @@ export function TimelineLibrary({
         </div>
       ) : (
         <div className="tl-layout">
-          <div className="tl-groups" ref={groupsRef} style={{ "--tl-gap": `${GAP}px` }}>
-            {groups.map((group, index) => {
-              const ids = group.assets.map((asset) => asset.id);
-              const state = groupSelectionState(ids, selectedIds);
-              const headingId = `tl-group-${group.id}`;
-              return (
-                <section
-                  className="tl-group"
-                  key={group.id}
-                  data-group-id={group.id}
-                  aria-labelledby={headingId}
-                >
-                  <header className="tl-group-header">
-                    <label
-                      className={`tl-group-select${state !== "none" ? " is-active" : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={state === "all"}
-                        ref={(element) => {
-                          if (element) element.indeterminate = state === "some";
-                        }}
-                        aria-label={`Select all in ${group.title}`}
-                        onChange={(event) =>
-                          onSelectGroup?.(ids, event.target.checked)
-                        }
-                      />
-                      <span aria-hidden="true">
-                        {state === "all" && <Icon name="mdiCheck" size={13} />}
-                        {state === "some" && <Icon name="mdiMinus" size={13} />}
+          <div
+            className={`tl-groups${curated ? ` is-curated tl-cards-${mode}` : ""}`}
+            ref={groupsRef}
+            style={{ "--tl-gap": `${GAP}px` }}
+            role={curated ? "list" : undefined}
+            aria-label={curated ? MODE_LABELS[mode] : undefined}
+          >
+            {curated &&
+              cards.map((card) => (
+                <TimelineCard key={card.id} card={card} onOpen={openCard} />
+              ))}
+            {!curated &&
+              groups.map((group, index) => {
+                const ids = group.assets.map((asset) => asset.id);
+                const state = groupSelectionState(ids, selectedIds);
+                const headingId = `tl-group-${group.id}`;
+                return (
+                  <section
+                    className="tl-group"
+                    key={group.id}
+                    data-group-id={group.id}
+                    aria-labelledby={headingId}
+                  >
+                    <header className="tl-group-header">
+                      <label
+                        className={`tl-group-select${state !== "none" ? " is-active" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={state === "all"}
+                          ref={(element) => {
+                            if (element)
+                              element.indeterminate = state === "some";
+                          }}
+                          aria-label={`Select all in ${group.title}`}
+                          onChange={(event) =>
+                            onSelectGroup?.(ids, event.target.checked)
+                          }
+                        />
+                        <span aria-hidden="true">
+                          {state === "all" && (
+                            <Icon name="mdiCheck" size={13} />
+                          )}
+                          {state === "some" && (
+                            <Icon name="mdiMinus" size={13} />
+                          )}
+                        </span>
+                      </label>
+                      <h2 id={headingId}>{group.title}</h2>
+                      <span className="tl-group-count">
+                        {group.assets.length}{" "}
+                        {group.assets.length === 1 ? "item" : "items"}
                       </span>
-                    </label>
-                    <h2 id={headingId}>{group.title}</h2>
-                    <span className="tl-group-count">
-                      {group.assets.length}{" "}
-                      {group.assets.length === 1 ? "item" : "items"}
-                    </span>
-                  </header>
-                  <div className="tl-rows">
-                    {layouts[index].map((row, rowIndex) => (
-                      <div className="tl-row" key={rowIndex}>
-                        {row.items.map(({ item, width: tileWidth, height }) => (
-                          <AssetTile
-                            key={item.id}
-                            asset={item}
-                            layout="timeline"
-                            selected={selectedIds.has(item.id)}
-                            selecting={selecting}
-                            rating={ratingFor(item)}
-                            stackCount={
-                              item.stackId ? stackCounts.get(item.stackId) : undefined
-                            }
-                            showCaption={showCaptions}
-                            style={{ width: tileWidth, "--tl-h": `${height}px` }}
-                            onOpen={onOpen}
-                            onToggleSelect={(event) => onSelect?.(item.id, event)}
-                            onFavorite={onFavorite}
-                            onEdit={onEdit}
-                            onShare={onShare}
-                            onMore={onMore}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+                    </header>
+                    <div className="tl-rows">
+                      {layouts[index].map((row, rowIndex) => (
+                        <div className="tl-row" key={rowIndex}>
+                          {row.items.map(
+                            ({ item, width: tileWidth, height }) => (
+                              <AssetTile
+                                key={item.id}
+                                asset={item}
+                                layout="timeline"
+                                selected={selectedIds.has(item.id)}
+                                selecting={selecting}
+                                rating={ratingFor(item)}
+                                stackCount={
+                                  item.stackId
+                                    ? stackCounts.get(item.stackId)
+                                    : undefined
+                                }
+                                showCaption={showCaptions}
+                                style={{
+                                  width: tileWidth,
+                                  "--tl-h": `${height}px`,
+                                }}
+                                onOpen={onOpen}
+                                onToggleSelect={(event) =>
+                                  onSelect?.(item.id, event)
+                                }
+                                onFavorite={onFavorite}
+                                onEdit={onEdit}
+                                onShare={onShare}
+                                onMore={onMore}
+                              />
+                            ),
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
           </div>
           {scrubber.total > 0 && (
             <TimelineScrubber
@@ -378,6 +468,57 @@ export function TimelineLibrary({
         </div>
       )}
     </section>
+  );
+}
+
+const plural = (count) => `${count} ${count === 1 ? "item" : "items"}`;
+
+/** One curated Years or Months card: key photo, title, count and places. */
+function TimelineCard({ card, onOpen }) {
+  const year = card.kind === "year";
+  const title = year ? (card.year ?? card.title) : card.title;
+  const meta = [plural(card.count), card.placeLabel]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <article
+      className={`tl-card tl-card-${card.kind}`}
+      role="listitem"
+      data-group-id={card.id}
+      data-first-asset={card.firstAssetId ?? undefined}
+    >
+      <button
+        type="button"
+        className="tl-card-open"
+        aria-label={`${title}, ${meta}. Show ${year ? "months" : "days"}`}
+        onClick={() => onOpen(card)}
+      >
+        <span className="tl-card-media">
+          {card.key?.image ? (
+            <img src={card.key.image} alt="" loading="lazy" decoding="async" />
+          ) : (
+            <Icon name="mdiImageOutline" size={32} />
+          )}
+          <span className="tl-card-caption">
+            <span className="tl-card-title">{title}</span>
+            <span className="tl-card-meta">{meta}</span>
+          </span>
+        </span>
+        {card.highlights.length > 0 && (
+          <span className="tl-card-strip" aria-hidden="true">
+            {card.highlights.map((asset) => (
+              <img
+                key={asset.id}
+                src={asset.image}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+            ))}
+          </span>
+        )}
+      </button>
+    </article>
   );
 }
 
@@ -429,9 +570,12 @@ function TimelineScrubber({ model, currentMonthId, trackHeight, onJump }) {
     if (!dragging) setHover(null);
   };
   const keyDown = (event) => {
-    const step = { ArrowUp: -1, ArrowDown: 1, PageUp: -3, PageDown: 3 }[event.key];
+    const step = { ArrowUp: -1, ArrowDown: 1, PageUp: -3, PageDown: 3 }[
+      event.key
+    ];
     let next = null;
-    if (step) next = Math.min(months.length - 1, Math.max(0, currentIndex + step));
+    if (step)
+      next = Math.min(months.length - 1, Math.max(0, currentIndex + step));
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = months.length - 1;
     if (next === null) return;
@@ -440,7 +584,7 @@ function TimelineScrubber({ model, currentMonthId, trackHeight, onJump }) {
   };
   const labelHeight = 18;
   const bubble = hover?.month || (dragging ? current : null);
-  const bubbleFraction = hover ? hover.fraction : current?.center ?? 0;
+  const bubbleFraction = hover ? hover.fraction : (current?.center ?? 0);
   return (
     <div className="tl-scrubber" style={{ "--tl-track": `${trackHeight}px` }}>
       <div
@@ -453,7 +597,11 @@ function TimelineScrubber({ model, currentMonthId, trackHeight, onJump }) {
         aria-valuemin={0}
         aria-valuemax={Math.max(0, months.length - 1)}
         aria-valuenow={currentIndex}
-        aria-valuetext={current ? `${current.label}, ${current.count} ${current.count === 1 ? "item" : "items"}` : ""}
+        aria-valuetext={
+          current
+            ? `${current.label}, ${current.count} ${current.count === 1 ? "item" : "items"}`
+            : ""
+        }
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}

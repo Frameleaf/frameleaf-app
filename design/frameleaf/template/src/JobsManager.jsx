@@ -241,7 +241,7 @@ export function JobsManager({
     <section className="jobs-manager" aria-label="Job management" ref={main}>
       <header className="jm-header">
         <div>
-          <p className="jm-eyebrow">PROCESSING</p>
+          <p className="jm-eyebrow">Compute &amp; jobs</p>
           <h2>{queue ? queue.title : "Queues & jobs"}</h2>
           <p>
             {queue
@@ -1480,7 +1480,7 @@ export function RunPodManager({ settings = {}, onNavigate }) {
     >
       <header className="jm-header">
         <div>
-          <p className="jm-eyebrow">CLOUD COMPUTE</p>
+          <p className="jm-eyebrow">Compute &amp; jobs</p>
           <h2>RunPod workers</h2>
           <p>
             Manage ordinary ML workers, their lifecycle, and their processing

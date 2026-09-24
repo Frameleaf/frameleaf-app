@@ -2020,7 +2020,8 @@ dd {
 .filter-option.is-selected {
   background: color-mix(in srgb, var(--fl-accent), transparent 92%);
 }
-.filter-option span {
+/* only the name grows; a face crop is a span too and must keep its size */
+.filter-option > span:not(.person-avatar) {
   flex: 1;
 }
 .filter-option small {
@@ -2220,265 +2221,6 @@ dd {
   font-size: 12px;
   color: var(--fl-muted);
 }
-@media (min-width: 701px) and (max-height: 860px) {
-  .sidebar .rail-link {
-    min-height: 30px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-  }
-  .sidebar .nav-heading {
-    margin-top: 8px;
-  }
-  .sidebar.rail-collapsed .rail-link {
-    min-height: 31px;
-    padding: 6px 0;
-  }
-  .sidebar.rail-collapsed .nav-heading {
-    margin: 7px 12px;
-  }
-}
-@media (min-width: 701px) and (max-width: 1100px) {
-  .filter-panel {
-    width: 290px;
-  }
-  .discovery-bar,
-  .active-filter-bar {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .toolbar.results-toolbar {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-  .filter-panel-header {
-    padding: 14px;
-  }
-  .filter-panel-scroll {
-    padding: 0 14px;
-  }
-  .quick-filters .button {
-    font-size: 10px;
-    padding: 4px 6px;
-  }
-  .quick-filters {
-    gap: 4px;
-  }
-  .results-toolbar .sort select {
-    max-width: 146px;
-    font-size: 11px;
-  }
-}
-@media (max-width: 700px) {
-  .sidebar.rail-collapsed.mobile-open {
-    width: 250px;
-  }
-  .sidebar.rail-collapsed.mobile-open .rail-label {
-    display: initial;
-  }
-  .sidebar.rail-collapsed.mobile-open .rail-link {
-    justify-content: flex-start;
-    padding: 10px 22px;
-    min-height: 44px;
-  }
-  .sidebar.rail-collapsed.mobile-open .nav-heading {
-    height: auto;
-    min-height: 0;
-    margin: 8px 0 0;
-    padding: 10px 22px 6px;
-    border-top: 1px solid var(--fl-border);
-  }
-  .rail-header {
-    display: none;
-  }
-  .sidebar .rail-link {
-    min-height: 44px;
-  }
-  .sidebar .rail-link.nested,
-  .sidebar.rail-collapsed.mobile-open .rail-link.nested {
-    padding-left: 36px;
-  }
-  .search-launcher {
-    min-height: 36px;
-  }
-  .global-search.search-launcher {
-    padding: 7px 10px;
-  }
-  .search-launcher span {
-    font-size: 12px;
-  }
-  .search-context {
-    margin-bottom: 8px;
-  }
-  .search-context small {
-    display: none;
-  }
-  .discovery-bar {
-    padding: 10px 14px;
-  }
-  .quick-filters {
-    flex-wrap: nowrap;
-    overflow: auto;
-    padding-bottom: 3px;
-    gap: 6px;
-  }
-  .quick-filters .button {
-    min-height: 40px;
-    font-size: 11px;
-  }
-  .active-filter-bar {
-    padding: 8px 14px;
-  }
-  .active-filter-bar .text-button {
-    min-height: 44px;
-  }
-  .chips .chip button {
-    min-height: 32px;
-  }
-  .toolbar.results-toolbar {
-    padding: 4px 14px;
-    flex-wrap: nowrap;
-    gap: 2px;
-    min-height: 48px;
-  }
-  .results-toolbar .button {
-    min-height: 40px;
-    min-width: 36px;
-  }
-  .results-toolbar .sort select {
-    max-width: 140px;
-    font-size: 10px;
-  }
-  .result-count {
-    font-size: 10px;
-  }
-  .filter-panel {
-    position: fixed;
-    inset: 96px 0 66px auto;
-    width: min(100%, 360px);
-    z-index: 35;
-    box-shadow: -10px 0 40px #0004;
-  }
-  .filter-panel select,
-  .filter-panel input:not([type="checkbox"]) {
-    min-height: 40px;
-  }
-  .filter-panel .button {
-    min-height: 44px;
-  }
-  .filter-option {
-    min-height: 44px;
-  }
-  .filter-segments button {
-    min-height: 38px;
-  }
-  .filter-panel-scroll {
-    padding: 0 18px;
-  }
-  .filter-panel-header {
-    padding: 12px 18px;
-  }
-  .people-library {
-    padding: 22px 16px;
-  }
-  .people-header {
-    gap: 18px;
-    padding-bottom: 18px;
-  }
-  .people-toolbar {
-    width: 100%;
-  }
-  .people-toolbar input {
-    flex: 1;
-    width: 0;
-    min-height: 44px;
-  }
-  .people-toolbar select {
-    min-height: 44px;
-  }
-  .people-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    padding: 20px 0;
-  }
-  .person-card {
-    padding: 12px 0;
-  }
-  .person-card .person-avatar {
-    width: 126px !important;
-    height: 126px !important;
-  }
-  .people-summary {
-    font-size: 12px;
-  }
-  .person-name {
-    font-size: 14px;
-  }
-  .search-input-row input {
-    font-size: 16px;
-    min-height: 40px;
-  }
-  .search-mode-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .search-mode-grid button {
-    min-height: 44px;
-    font-size: 12px;
-  }
-  .search-scope {
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .search-scope select {
-    max-width: 175px;
-    min-height: 40px;
-  }
-  .search-scope > span {
-    font-size: 10px;
-  }
-  .search-people > div {
-    gap: 7px;
-  }
-  .search-people button {
-    flex-direction: column;
-    flex: 1;
-    padding: 8px 6px;
-    font-size: 12px;
-  }
-  .search-discovery {
-    gap: 14px;
-  }
-  .search-discovery button {
-    min-height: 44px;
-    font-size: 11px;
-  }
-  .search-result-count {
-    font-size: 10px;
-    min-width: 40px;
-  }
-  .dialog-actions .button {
-    min-height: 44px;
-    padding: 7px 9px;
-  }
-}
-
-.dialog:has(.search-workspace) {
-  width: min(780px, calc(100vw - 32px));
-}
-
-.recent-mode {
-  display: block;
-  color: var(--fl-muted);
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-.search-input-row {
-  padding-left: 3px;
-  padding-right: 3px;
-}
-.search-input-row input:focus-visible {
-  outline-offset: -2px;
-}
 .filter-group-help,
 .filter-group-summary {
   font-size: 11px;
@@ -2666,19 +2408,37 @@ button.searchable-select-control {
   justify-content: center;
   padding: 18px;
 }
-.nav-heading .rail-heading-link {
+.nav-heading .rail-heading-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   width: auto;
   min-height: 0;
   padding: 0;
+  border: 0;
   background: none;
   color: inherit;
   font: inherit;
   text-transform: inherit;
   letter-spacing: inherit;
+  cursor: pointer;
 }
-.nav-heading .rail-heading-link:hover {
+.nav-heading .rail-heading-toggle:hover {
   color: var(--fl-text);
   background: none;
+}
+.nav-heading .rail-heading-toggle svg {
+  opacity: 0;
+  transition:
+    opacity var(--fl-motion-fast) var(--fl-ease),
+    rotate var(--fl-motion-fast) var(--fl-ease);
+}
+.nav-heading .rail-heading-toggle:is(:hover, :focus-visible) svg,
+.nav-heading .rail-heading-toggle[aria-expanded="false"] svg {
+  opacity: 1;
+}
+.nav-heading .rail-heading-toggle[aria-expanded="false"] svg {
+  rotate: -90deg;
 }
 
 /* Phone topbar: the new upload, notification and account controls share row one. */

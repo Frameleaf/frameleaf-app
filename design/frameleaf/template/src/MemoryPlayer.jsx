@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Icon } from "./Icon";
 import { PersonAvatar } from "./People";
 import { captureDate, videoAsset } from "./explore-timeline.mjs";
@@ -9,15 +16,31 @@ import {
   readMemoryOverrides,
   writeMemoryOverrides,
 } from "./discovery-data.mjs";
+import {
+  MEMORY_PHOTO_MS as PHOTO_MS,
+  MEMORY_TITLE_MS as TITLE_MS,
+  memoryCountLabel as countLabel,
+  memoryLowerThird,
+  memoryMotion,
+  memorySlideClass,
+  memoryTitleCard,
+} from "./memory-engine.mjs";
+import { prefersReducedMotion } from "./interactions.js";
 import "./discovery.css";
+import "./memories.css";
 
-const PHOTO_MS = 5000;
-const TITLE_MS = 2600;
 const isoToday = () => new Date().toISOString().slice(0, 10);
-const countLabel = (count, word = "item") =>
-  `${count} ${count === 1 ? word : `${word}s`}`;
 
-function Tool({ label, icon, onClick, active, disabled, pressed, primary, className = "" }) {
+function Tool({
+  label,
+  icon,
+  onClick,
+  active,
+  disabled,
+  pressed,
+  primary,
+  className = "",
+}) {
   return (
     <button
       type="button"
@@ -55,7 +78,10 @@ export function MemoryPlayer({
   const titleId = useId();
   const [local, setLocal] = useState(() => overrides || readMemoryOverrides());
   const current = overrides ?? local;
-  const removed = useMemo(() => new Set(current.removed[memory?.id] || []), [current, memory]);
+  const removed = useMemo(
+    () => new Set(current.removed[memory?.id] || []),
+    [current, memory],
+  );
   const items = useMemo(
     () =>
       (memory?.assetIds || [])
@@ -70,7 +96,8 @@ export function MemoryPlayer({
   );
   const position = list.findIndex((entry) => entry.id === memory?.id);
   const previousMemory = position > 0 ? list[position - 1] : null;
-  const nextMemory = position >= 0 && position < list.length - 1 ? list[position + 1] : null;
+  const nextMemory =
+    position >= 0 && position < list.length - 1 ? list[position + 1] : null;
 
   const [index, setIndex] = useState(-1);
   const [playing, setPlaying] = useState(true);
@@ -158,14 +185,22 @@ export function MemoryPlayer({
   const removeCurrent = () => {
     if (!item) return;
     const next = memoryOverrides.removeAsset(current, memory.id, item.id);
-    commit(next, { type: "remove-asset", memoryId: memory.id, assetId: item.id }, `${item.name || item.originalFileName} removed from this memory.`);
+    commit(
+      next,
+      { type: "remove-asset", memoryId: memory.id, assetId: item.id },
+      `${item.name || item.originalFileName} removed from this memory.`,
+    );
     setToast({ assetId: item.id, name: item.name || item.originalFileName });
     if (index >= items.length - 1) go(Math.max(-1, items.length - 2));
     setProgress(0);
   };
   const undoRemove = () => {
     if (!toast) return;
-    commit(memoryOverrides.restoreAsset(current, memory.id, toast.assetId), { type: "restore-asset", memoryId: memory.id, assetId: toast.assetId }, `${toast.name} restored.`);
+    commit(
+      memoryOverrides.restoreAsset(current, memory.id, toast.assetId),
+      { type: "restore-asset", memoryId: memory.id, assetId: toast.assetId },
+      `${toast.name} restored.`,
+    );
     setToast(null);
   };
   const togglePlay = () => {
@@ -204,11 +239,24 @@ export function MemoryPlayer({
     }
   };
   const itemPeople = item
-    ? people.filter((person) => (item.personIds || item.people || []).includes(person.id))
+    ? people.filter((person) =>
+        (item.personIds || item.people || []).includes(person.id),
+      )
     : [];
-  const kenBurns = ["kb-a", "kb-b", "kb-c"][Math.max(0, index) % 3];
+  // Same pan-and-zoom and Reduce Motion rule as the viewer's Memories slideshow.
+  const reducedMotion = prefersReducedMotion();
+  const motion =
+    item && !isVideo
+      ? memoryMotion(item.id, { reducedMotion, durationMs: PHOTO_MS + 1000 })
+      : undefined;
   if (!memory) return null;
   const date = item ? captureDate(item)?.day : null;
+  const card = memoryTitleCard(memory, items.length);
+  const lowerThird = memoryLowerThird(item, {
+    fallbackTitle: memory.title,
+    day: date ? longDay(date) : "",
+    video: isVideo,
+  });
 
   return (
     <dialog
@@ -219,7 +267,11 @@ export function MemoryPlayer({
         event.preventDefault();
         onClose?.();
       }}
-      onClose={() => onClose?.()}
+      // The close event is async: ignore one from a StrictMode effect re-run that
+      // has already reopened the dialog.
+      onClose={() => {
+        if (!dialog.current?.open) onClose?.();
+      }}
       onKeyDown={keyboard}
     >
       <div className="mp-progress" role="group" aria-label="Memory progress">
@@ -266,21 +318,30 @@ export function MemoryPlayer({
             active={gallery}
             onClick={() => setGallery((value) => !value)}
           />
-          <Tool label="Close memory" icon="mdiClose" onClick={() => onClose?.()} />
+          <Tool
+            label="Close memory"
+            icon="mdiClose"
+            onClick={() => onClose?.()}
+          />
         </div>
       </header>
 
-      <main className="mp-stage" onClick={(event) => {
-        if (event.target === event.currentTarget) togglePlay();
-      }}>
+      <main
+        className="mp-stage"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) togglePlay();
+        }}
+      >
         {index === -1 && (
-          <section className="mp-title-card">
-            {memory.cover?.image && <img className="mp-title-bg" src={memory.cover.image} alt="" />}
+          <section className="mp-title-card mv-title-card">
+            {memory.cover?.image && (
+              <img className="mp-title-bg" src={memory.cover.image} alt="" />
+            )}
             <div className="mp-title-copy">
-              <span className="mp-overline">{memory.kind === "event" ? "Trip" : memory.kind === "best-of" ? "Highlights" : "Memory"}</span>
-              <h1>{memory.title}</h1>
-              <p>{memory.subtitle}</p>
-              <p className="mp-title-count">{countLabel(items.length)}</p>
+              <span className="mp-overline">{card.overline}</span>
+              <h1>{card.title}</h1>
+              <p>{card.subtitle}</p>
+              <p className="mp-title-count">{card.count}</p>
               <button
                 type="button"
                 className="mp-play-large"
@@ -296,10 +357,19 @@ export function MemoryPlayer({
             </div>
           </section>
         )}
+        {item && !isVideo && item.image && (
+          <div
+            key={`backdrop:${item.id}`}
+            className="mp-backdrop"
+            style={{ backgroundImage: `url("${item.image}")` }}
+            aria-hidden="true"
+          />
+        )}
         {item && !isVideo && (
           <img
             key={`${item.id}:${index}`}
-            className={`mp-photo ${kenBurns}${playing ? "" : " paused"}`}
+            className={`mp-photo ${memorySlideClass({ reducedMotion, paused: !playing })}`}
+            style={motion}
             src={item.image}
             alt={item.description || item.name || ""}
           />
@@ -318,33 +388,52 @@ export function MemoryPlayer({
             aria-label={item.name}
             onTimeUpdate={(event) => {
               const element = event.currentTarget;
-              if (element.duration) setProgress(element.currentTime / element.duration);
+              if (element.duration)
+                setProgress(element.currentTime / element.duration);
             }}
             onEnded={advance}
           />
         )}
         {ended && (
-          <section className="mp-end-card">
-            {memory.cover?.image && <img className="mp-title-bg" src={memory.cover.image} alt="" />}
+          <section className="mp-end-card mv-title-card">
+            {memory.cover?.image && (
+              <img className="mp-title-bg" src={memory.cover.image} alt="" />
+            )}
             <div className="mp-title-copy">
-              <span className="mp-overline">{items.length ? "That was" : "Nothing left in"}</span>
+              <span className="mp-overline">
+                {items.length ? "That was" : "Nothing left in"}
+              </span>
               <h1>{memory.title}</h1>
               <p>{memory.subtitle}</p>
               <div className="mp-end-actions">
-                <button type="button" className="mp-play-large" data-initial-focus onClick={() => {
-                  go(items.length ? 0 : -1);
-                  setPlaying(true);
-                }} disabled={!items.length}>
+                <button
+                  type="button"
+                  className="mp-play-large"
+                  data-initial-focus
+                  onClick={() => {
+                    go(items.length ? 0 : -1);
+                    setPlaying(true);
+                  }}
+                  disabled={!items.length}
+                >
                   <Icon name="mdiRepeat" size={20} />
                   Play again
                 </button>
                 {nextMemory && onSelectMemory && (
-                  <button type="button" className="mp-secondary" onClick={() => onSelectMemory(nextMemory.id, nextMemory)}>
+                  <button
+                    type="button"
+                    className="mp-secondary"
+                    onClick={() => onSelectMemory(nextMemory.id, nextMemory)}
+                  >
                     <Icon name="mdiSkipNext" size={20} />
                     Next memory: {nextMemory.title}
                   </button>
                 )}
-                <button type="button" className="mp-secondary" onClick={() => onClose?.()}>
+                <button
+                  type="button"
+                  className="mp-secondary"
+                  onClick={() => onClose?.()}
+                >
                   Back to memories
                 </button>
               </div>
@@ -352,14 +441,21 @@ export function MemoryPlayer({
           </section>
         )}
         {item && (
-          <div className="mp-info" aria-live="off">
-            <strong>{item.name || item.originalFileName}</strong>
-            <small>
-              {[date && longDay(date), item.city].filter(Boolean).join(" · ")}
-              {isVideo ? " · Video, muted" : ""}
-            </small>
+          <div
+            className="mp-info mv-lower-third"
+            key={`caption:${item.id}:${index}`}
+            aria-live="off"
+          >
+            <strong>{lowerThird.place}</strong>
+            {lowerThird.detail && <span>{lowerThird.detail}</span>}
+            <span className="dv-sr-only">
+              {item.name || item.originalFileName}
+            </span>
             {itemPeople.length > 0 && (
-              <span className="mp-people" aria-label={`People: ${itemPeople.map((p) => p.name).join(", ")}`}>
+              <span
+                className="mp-people"
+                aria-label={`People: ${itemPeople.map((p) => p.name).join(", ")}`}
+              >
                 {itemPeople.map((person) => (
                   <PersonAvatar key={person.id} person={person} size={24} />
                 ))}
@@ -390,7 +486,11 @@ export function MemoryPlayer({
                       setPlaying(true);
                     }}
                   >
-                    {entry.image ? <img src={entry.image} alt="" loading="lazy" /> : <span className="dv-cover-empty" />}
+                    {entry.image ? (
+                      <img src={entry.image} alt="" loading="lazy" />
+                    ) : (
+                      <span className="dv-cover-empty" />
+                    )}
                     <span className="mp-gallery-index">{position + 1}</span>
                     {videoAsset(entry) && (
                       <span className="mp-gallery-video">
@@ -401,7 +501,9 @@ export function MemoryPlayer({
                 ))}
               </div>
             ) : (
-              <p className="mp-gallery-empty">Every item has been removed from this memory.</p>
+              <p className="mp-gallery-empty">
+                Every item has been removed from this memory.
+              </p>
             )}
           </section>
         )}
@@ -410,21 +512,37 @@ export function MemoryPlayer({
       <footer className="mp-controls">
         <div className="mp-transport">
           <Tool
-            label={previousMemory ? `Previous memory: ${previousMemory.title}` : "Previous memory"}
+            label={
+              previousMemory
+                ? `Previous memory: ${previousMemory.title}`
+                : "Previous memory"
+            }
             icon="mdiSkipPrevious"
             disabled={!previousMemory || !onSelectMemory}
             onClick={() => onSelectMemory?.(previousMemory.id, previousMemory)}
           />
-          <Tool label="Previous item" icon="mdiChevronLeft" disabled={index <= -1} onClick={() => go(index - 1)} />
+          <Tool
+            label="Previous item"
+            icon="mdiChevronLeft"
+            disabled={index <= -1}
+            onClick={() => go(index - 1)}
+          />
           <Tool
             label={ended ? "Play again" : playing ? "Pause" : "Play"}
             icon={ended ? "mdiRepeat" : playing ? "mdiPause" : "mdiPlay"}
             primary
             onClick={togglePlay}
           />
-          <Tool label="Next item" icon="mdiChevronRight" disabled={ended} onClick={() => go(index + 1)} />
           <Tool
-            label={nextMemory ? `Next memory: ${nextMemory.title}` : "Next memory"}
+            label="Next item"
+            icon="mdiChevronRight"
+            disabled={ended}
+            onClick={() => go(index + 1)}
+          />
+          <Tool
+            label={
+              nextMemory ? `Next memory: ${nextMemory.title}` : "Next memory"
+            }
             icon="mdiSkipNext"
             disabled={!nextMemory || !onSelectMemory}
             onClick={() => onSelectMemory?.(nextMemory.id, nextMemory)}
@@ -433,7 +551,9 @@ export function MemoryPlayer({
         <div className="mp-actions">
           {onFavoriteAsset && (
             <Tool
-              label={item?.favorite ? "Remove item from favorites" : "Favorite item"}
+              label={
+                item?.favorite ? "Remove item from favorites" : "Favorite item"
+              }
               icon={item?.favorite ? "mdiHeart" : "mdiHeartOutline"}
               pressed={!!item?.favorite}
               active={!!item?.favorite}
@@ -441,16 +561,52 @@ export function MemoryPlayer({
               onClick={() => onFavoriteAsset(item.id, !item.favorite)}
             />
           )}
-          <Tool label="Remove from memory" icon="mdiPlaylistRemove" disabled={!item} onClick={removeCurrent} />
+          <Tool
+            label="Remove from memory"
+            icon="mdiPlaylistRemove"
+            disabled={!item}
+            onClick={removeCurrent}
+          />
           {onShare && (
-            <Tool label="Share memory" icon="mdiShareVariantOutline" disabled={!items.length} onClick={() => onShare(items.map((entry) => entry.id), memory)} />
+            <Tool
+              label="Share memory"
+              icon="mdiShareVariantOutline"
+              disabled={!items.length}
+              onClick={() =>
+                onShare(
+                  items.map((entry) => entry.id),
+                  memory,
+                )
+              }
+            />
           )}
           {onViewInTimeline && (
-            <Tool label="View in timeline" icon="mdiTimelineClockOutline" disabled={!item} onClick={() => onViewInTimeline(item.id, memory)} />
+            <Tool
+              label="View in timeline"
+              icon="mdiTimelineClockOutline"
+              disabled={!item}
+              onClick={() => onViewInTimeline(item.id, memory)}
+            />
           )}
-          {onOpenAsset && <Tool label="Open item" icon="mdiOpenInApp" disabled={!item} onClick={() => onOpenAsset(item.id)} />}
+          {onOpenAsset && (
+            <Tool
+              label="Open item"
+              icon="mdiOpenInApp"
+              disabled={!item}
+              onClick={() => onOpenAsset(item.id)}
+            />
+          )}
           {onStudio && (
-            <button type="button" className="mp-studio" onClick={() => onStudio(memory, items.map((entry) => entry.id))}>
+            <button
+              type="button"
+              className="mp-studio"
+              onClick={() =>
+                onStudio(
+                  memory,
+                  items.map((entry) => entry.id),
+                )
+              }
+            >
               <Icon name="mdiMovieEditOutline" size={18} />
               <span>Make a movie in Studio</span>
             </button>
@@ -467,7 +623,8 @@ export function MemoryPlayer({
       )}
       <output className="dv-sr-only" aria-live="polite">
         {status}
-        {item && ` Item ${index + 1} of ${items.length}: ${item.name || item.originalFileName}.`}
+        {item &&
+          ` Item ${index + 1} of ${items.length}: ${item.name || item.originalFileName}.`}
       </output>
     </dialog>
   );

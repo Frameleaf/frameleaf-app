@@ -1,6 +1,6 @@
 # Visual references
 
-The first three images are planning studies, not screenshots of completed features. The remaining captures record selected prototype states during the design engagement. Later [written interaction requirements](../INTERACTION-REQUIREMENTS.md) override historical details such as the old Prototype badge, generated logo or early toolbar labels.
+The first three images are planning studies, not screenshots of completed features. The remaining captures record selected prototype states during the design engagement. Later [written interaction requirements](../INTERACTION-REQUIREMENTS.md) override historical details such as the old Prototype badge, generated logo or early toolbar labels. All captures predate the September 24, 2026 Apple-style refinements (SF Pro, continuous corners, frosted materials, square Browse grid, glass search palette, floating info card, phone tab bar); run the [template](../template/README.md) for the current look.
 
 | Surface | Reference |
 | --- | --- |

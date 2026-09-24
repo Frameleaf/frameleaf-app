@@ -57,7 +57,7 @@ export const settingsExtensions = {
     section(
       "dedup-owner",
       "Deduplication ownership",
-      "Choose who manages shared physical originals while keeping each person’s library and access separate.",
+      "Choose which account keeps the shared copy of identical files.",
       [
         select(
           "DedupMaster",
@@ -84,7 +84,7 @@ export const settingsExtensions = {
     section(
       "icloud",
       "iCloud source preferences",
-      "Personal connection settings. Connecting an Apple account, selecting remote libraries/albums, and entering two-factor codes remain separate authenticated workflows.",
+      "Your iCloud connection preferences.",
       [
         toggle(
           "ICloudEdits",
@@ -144,7 +144,7 @@ export const settingsExtensions = {
     section(
       "search-labels",
       "Search models & suggested tags",
-      "Use the selected search model for suggested tags and local Ask Search. These controls complement the main semantic-search model selector.",
+      "Choose the model behind suggested tags and Ask Search.",
       [
         toggle(
           "ZeroShotEnabled",
@@ -355,7 +355,7 @@ export const settingsExtensions = {
     section(
       "recognition-models",
       "Face, text & Locked-content models",
-      "Model-level controls complement review workflows. Changing model output must preserve explicit user corrections.",
+      "Choose the models that recognize faces, text and Locked content.",
       [
         text(
           "FaceModel",
@@ -430,7 +430,7 @@ export const settingsExtensions = {
     section(
       "travel-album",
       "Built-in smart album: Travel",
-      "A representative built-in category. Each built-in album has its own name, triggers, semantic queries, and threshold.",
+      "Choose matching rules for the travel collection.",
       [
         toggle(
           "TravelEnabled",
@@ -472,7 +472,7 @@ export const settingsExtensions = {
     section(
       "image-output",
       "Image color & embedded previews",
-      "Image generation settings affect previews and related renders. They do not replace a full RAW-development engine.",
+      "Color handling and embedded previews for generated images.",
       [
         select(
           "ImageColorSpace",
@@ -507,7 +507,7 @@ export const settingsExtensions = {
     section(
       "playback-compatibility",
       "Playback compatibility & encoding",
-      "These FFmpeg controls belong to playback proxies. Edited-master quality must remain independent.",
+      "Formats and quality for playback copies.",
       [
         lines(
           "AcceptedVideo",
@@ -581,7 +581,7 @@ export const settingsExtensions = {
     section(
       "hls",
       "Real-time adaptive playback",
-      "Adapt playback quality to the available connection. Real-time HLS transcoding is an alpha feature.",
+      "Adjust playback quality to the connection. An early feature.",
       [
         toggle(
           "HlsEnabled",
@@ -608,7 +608,7 @@ export const settingsExtensions = {
     section(
       "sharing-boundaries",
       "Recognition groups & library access",
-      "Manage partner access, shared recognition, and collaborative spaces separately.",
+      "What partners and shared spaces can see and recognize.",
       [
         policy(
           "RecognitionGroupConsent",
@@ -629,7 +629,7 @@ export const settingsExtensions = {
     section(
       "duplicate-matching",
       "Visual duplicate matching",
-      "Similarity proposes review groups; exact physical reuse still requires checksum and reference verification.",
+      "How closely photos must match to be offered as duplicates.",
       [
         toggle(
           "DuplicateDetection",
@@ -690,7 +690,7 @@ export const settingsExtensions = {
     section(
       "integrity-budget",
       "Integrity scan budget",
-      "Administrator limits for checksum checks, separate from repair, metadata enrichment, and scheduled database backup.",
+      "Limit how much work integrity checks may do at once.",
       [
         number(
           "ChecksumTime",
@@ -873,7 +873,7 @@ export const settingsExtensions = {
     section(
       "runpod-serverless",
       "Serverless analysis scaling",
-      "Per-request workers can scale to zero. They are not a replacement for durable, resumable full-video jobs.",
+      "Cloud workers that start on demand and stop when idle.",
       [
         lines(
           "ServerlessGpuPools",
@@ -1108,7 +1108,7 @@ export const settingsExtensions = {
     section(
       "download-packaging",
       "Personal download packaging",
-      "Account preferences for archive size and motion-photo downloads, distinct from preservation exports and backup verification.",
+      "Archive size and how Live Photos download.",
       [
         number(
           "DownloadArchiveSize",
@@ -1568,7 +1568,7 @@ settingsExtensions.care.push({
   id: "integrity-schedules",
   title: "Integrity check schedules",
   description:
-    "Plan missing-file, untracked-file, and checksum checks independently.",
+    "When each kind of integrity check runs.",
   scope: "server",
   fields: [
     {
@@ -1641,7 +1641,7 @@ settingsExtensions.storage.push({
   id: "retention-policy",
   title: "Trash policy",
   description:
-    "Choose whether deleted assets enter a recoverable trash period.",
+    "Choose whether deleted items go to Trash first.",
   scope: "server",
   fields: [
     {
