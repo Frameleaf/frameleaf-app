@@ -670,6 +670,14 @@ export class AuthService extends BaseService {
             session.id,
             DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
           );
+          if (!hasElevatedPermission) {
+            // A concurrent lock leaves a valid ordinary session, but a concurrent revocation or expiry
+            // must reject the request instead of granting ordinary access from the stale read above.
+            const current = await this.sessionRepository.getByToken(hashed);
+            if (!current?.user) {
+              throw new UnauthorizedException('Invalid user token');
+            }
+          }
         }
       }
 
