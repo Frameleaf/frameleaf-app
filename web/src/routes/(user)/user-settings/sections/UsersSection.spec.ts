@@ -1,4 +1,4 @@
-import { searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
+import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -21,6 +21,7 @@ vi.mock('$lib/utils/auth', () => ({ requestServerInfo: vi.fn().mockResolvedValue
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   searchUsersAdmin: vi.fn(),
+  getServerStatistics: vi.fn(),
 }));
 vi.mock('$lib/components/frameleaf/AccountTable.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -35,6 +36,7 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     vi.mocked(searchUsersAdmin).mockResolvedValue([] as UserAdminResponseDto[]);
+    vi.mocked(getServerStatistics).mockResolvedValue({ photos: 0, videos: 0, usage: 0, usageByUser: [] } as never);
     state.goto.mockReset().mockResolvedValue(undefined);
     Element.prototype.scrollIntoView = vi.fn();
   });
@@ -43,7 +45,7 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
     render(UsersSection);
 
-    expect(screen.getByText('Command center / Users')).toBeInTheDocument();
+    expect(screen.getByText('Your server')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Users' })).toBeInTheDocument();
     expect(screen.getByText('Manage profiles, features, preferences, storage and sign-in.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Create account' }));

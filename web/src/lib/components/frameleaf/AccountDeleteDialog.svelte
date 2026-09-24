@@ -6,8 +6,9 @@
    * The default is the configured soft delete: the server marks the account deleted, trashes
    * its albums and keeps the files for `userDeleteDelay` days, which Restore undoes. Ticking
    * "skip recovery" sends `force`, which queues the real removal job instead and cannot be
-   * undone, so that path additionally demands the account's email typed exactly. Both go
-   * through `deleteUserAdmin`, which refuses the calling administrator's own account.
+   * undone. As in the template (CC-32, `AccountsLibraries.jsx` 632-659), both paths ask for the
+   * account's email typed exactly. Both go through `deleteUserAdmin`, which refuses the calling
+   * administrator's own account.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -24,7 +25,7 @@
   let working = $state(false);
 
   const delay = $derived(serverConfigManager.value.userDeleteDelay);
-  const valid = $derived(!force || confirmation.trim().toLowerCase() === user.email.toLowerCase());
+  const valid = $derived(confirmation.trim().toLowerCase() === user.email.toLowerCase());
   const confirmId = $props.id();
 
   $effect(() => {
@@ -51,7 +52,7 @@
   };
 </script>
 
-<Dialog title={$t('frameleaf_users_delete_title', { values: { name: user.name } })} closeLabel={$t('close')} bind:open>
+<Dialog title={$t('frameleaf_users_delete')} closeLabel={$t('close')} bind:open>
   <form onsubmit={submit}>
     <p>{$t('frameleaf_users_delete_body', { values: { name: user.name, delay } })}</p>
 
@@ -62,24 +63,26 @@
 
     {#if force}
       <p class="danger" role="alert">{$t('frameleaf_users_delete_force_warning')}</p>
-      <label class="field" for={confirmId}>
-        <span>{$t('frameleaf_users_delete_confirm_label', { values: { email: user.email } })}</span>
-        <input
-          id={confirmId}
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder={user.email}
-          bind:value={confirmation}
-          disabled={working}
-        />
-      </label>
     {/if}
+    <label class="field" for={confirmId}>
+      <span>{$t('frameleaf_users_delete_confirm_label')}</span>
+      <input
+        id={confirmId}
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        required
+        data-initial-focus
+        placeholder={user.email}
+        bind:value={confirmation}
+        disabled={working}
+      />
+    </label>
 
     <footer>
       <Button type="button" disabled={working} onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button type="submit" variant="primary" disabled={!valid || working}>
-        {force ? $t('frameleaf_users_delete_confirm_force') : $t('frameleaf_users_delete_confirm')}
+        {$t('frameleaf_users_delete')}
       </Button>
     </footer>
   </form>

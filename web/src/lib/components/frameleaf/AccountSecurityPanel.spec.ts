@@ -16,7 +16,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id:
 
 vi.mock('@immich/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
-  return { ...sdk, deleteUserSessionAdmin: vi.fn() };
+  return { ...sdk, deleteUserSessionAdmin: vi.fn(), getUserPinCodeStateAdmin: vi.fn() };
 });
 
 vi.mock('@immich/ui', async () => {
@@ -45,8 +45,9 @@ const session = (overrides: Partial<SessionResponseDto> = {}): SessionResponseDt
 beforeEach(async () => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  const { deleteUserSessionAdmin } = await import('@immich/sdk');
+  const { deleteUserSessionAdmin, getUserPinCodeStateAdmin } = await import('@immich/sdk');
   vi.mocked(deleteUserSessionAdmin).mockResolvedValue(undefined as never);
+  vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: false });
 });
 
 describe('AccountSecurityPanel (FL-76)', () => {
@@ -100,5 +101,44 @@ describe('AccountSecurityPanel (FL-76)', () => {
 
     expect(screen.getByText(en.frameleaf_users_device_current)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en.frameleaf_users_device_revoke })).toBeNull();
+  });
+
+  describe('Locked folder PIN (CC-30, AccountsLibraries.jsx 1403-1435)', () => {
+    it('offers Set PIN and no Reset PIN while the account has none', async () => {
+      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      render(AccountSecurityPanel, { user, sessions: [] });
+
+      expect(await screen.findByText(en.frameleaf_users_pin_not_set)).toBeInTheDocument();
+      expect(getUserPinCodeStateAdmin).toHaveBeenCalledWith({ id: 'target-id' });
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_set })).toBeEnabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeDisabled();
+    });
+
+    it('offers Change PIN and Reset PIN once a PIN is set, and rereads the state after either', async () => {
+      const { modalManager } = await import('@immich/ui');
+      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      vi.mocked(getUserPinCodeStateAdmin).mockResolvedValue({ pinCode: true });
+      vi.mocked(modalManager.show).mockResolvedValue(undefined as never);
+      render(AccountSecurityPanel, { user, sessions: [] });
+
+      expect(await screen.findByText(en.frameleaf_users_pin_is_set)).toBeInTheDocument();
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_pin_reset }));
+
+      expect(modalManager.show).toHaveBeenCalledWith(expect.anything(), { user, mode: 'clear', hasPin: true });
+      await waitFor(() => expect(getUserPinCodeStateAdmin).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_change })).toBeEnabled();
+    });
+
+    it('keeps both actions when the state cannot be read', async () => {
+      const { getUserPinCodeStateAdmin } = await import('@immich/sdk');
+      vi.mocked(getUserPinCodeStateAdmin).mockRejectedValue(new Error('offline'));
+      render(AccountSecurityPanel, { user, sessions: [] });
+
+      await waitFor(() => expect(getUserPinCodeStateAdmin).toHaveBeenCalled());
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_set })).toBeEnabled();
+      expect(screen.getByRole('button', { name: en.frameleaf_users_pin_reset })).toBeEnabled();
+      expect(screen.queryByText(en.frameleaf_users_pin_is_set)).toBeNull();
+      expect(screen.queryByText(en.frameleaf_users_pin_not_set)).toBeNull();
+    });
   });
 });

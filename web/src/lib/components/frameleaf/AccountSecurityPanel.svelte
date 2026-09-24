@@ -3,14 +3,13 @@
    * Sign-in and security for one account (FL-76), from the `security` tab of the design
    * template's account detail panel (`design/frameleaf/template/src/AccountsLibraries.jsx`).
    *
-   * Two honest differences from the template, which simulates its own store:
+   * Against the template, which simulates its own store:
    *
-   * - The template shows "PIN is set" / "No PIN set". Production never tells an administrator
-   *   whether another account has a PIN: `UserAdminResponseDto` carries no PIN state, and
-   *   adding one would mean putting a secret's presence into a widely shared DTO. So the row
-   *   says so plainly and offers the two actions that are always meaningful: set or replace a
-   *   PIN, and clear it.
-   * - "Last changed" for a password is not recorded per secret; the account's `updatedAt` is
+   * - The PIN row is the template's (CC-30, `AccountsLibraries.jsx` 1403-1435): "PIN is set" /
+   *   "No PIN set", Set PIN or Change PIN, and Reset PIN only while a PIN is set. Whether a PIN
+   *   is set comes from its own admin-only endpoint (`getUserPinCodeStateAdmin`), never from a
+   *   user DTO, and never the PIN itself.
+   * - One honest difference: "Last changed" for a password is not recorded per secret; the account's `updatedAt` is
    *   the closest true statement, so the row reports the change requirement instead of
    *   inventing a password age.
    *
@@ -27,7 +26,12 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { deleteUserSessionAdmin, type SessionResponseDto, type UserAdminResponseDto } from '@immich/sdk';
+  import {
+    deleteUserSessionAdmin,
+    getUserPinCodeStateAdmin,
+    type SessionResponseDto,
+    type UserAdminResponseDto,
+  } from '@immich/sdk';
   import { modalManager, toastManager } from '@immich/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
@@ -39,6 +43,33 @@
   // An administrator resets their own password in their account settings, not from here. The
   // server does not refuse it on this path, so this is a courtesy that matches the legacy action.
   const canResetPassword = $derived(live && authManager.user.id !== user.id);
+
+  /** Whether the account has a PIN; undefined until the server says (or when it could not). */
+  let hasPin = $state<boolean | undefined>();
+  let pinReload = $state(0);
+  $effect(() => {
+    const id = user.id;
+    void pinReload;
+    let cancelled = false;
+    hasPin = undefined;
+    getUserPinCodeStateAdmin({ id })
+      .then(({ pinCode }) => {
+        if (!cancelled) {
+          hasPin = pinCode;
+        }
+      })
+      .catch(() => {
+        // Unknown: both actions stay offered, as before the state was reported.
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const changePin = async (mode: 'set' | 'clear') => {
+    await modalManager.show(AccountPinDialog, { user, mode, hasPin: hasPin === true });
+    pinReload++;
+  };
 
   const lastSeen = (session: SessionResponseDto) =>
     DateTime.fromISO(session.updatedAt, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
@@ -91,13 +122,15 @@
   <div class="row">
     <div>
       <strong>{$t('frameleaf_users_pin_title')}</strong>
-      <small>{$t('frameleaf_users_pin_unknown')}</small>
+      <small aria-live="polite">
+        {hasPin === undefined ? '' : hasPin ? $t('frameleaf_users_pin_is_set') : $t('frameleaf_users_pin_not_set')}
+      </small>
     </div>
-    <Button disabled={!live} onclick={() => modalManager.show(AccountPinDialog, { user, mode: 'set' })}>
-      {$t('frameleaf_users_pin_set')}
+    <Button disabled={!live} onclick={() => changePin('set')}>
+      {hasPin ? $t('frameleaf_users_pin_change') : $t('frameleaf_users_pin_set')}
     </Button>
-    <Button disabled={!live} onclick={() => modalManager.show(AccountPinDialog, { user, mode: 'clear' })}>
-      {$t('frameleaf_users_pin_clear')}
+    <Button disabled={!live || hasPin === false} onclick={() => changePin('clear')}>
+      {$t('frameleaf_users_pin_reset')}
     </Button>
   </div>
 
