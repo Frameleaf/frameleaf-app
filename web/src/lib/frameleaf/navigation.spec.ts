@@ -3,12 +3,18 @@ import {
   buildPrimaryDestinations,
   buildRailSections,
   currentPrimaryDestination,
+  currentTab,
   defaultRailCapabilities,
   isDestinationCurrent,
   isSettingsRoute,
+  RAIL_CLOSED_SECTIONS_KEY,
+  readClosedRailSections,
+  showsTabBar,
+  toggleRailSection,
   type RailCapabilities,
   type RailDestination,
 } from '$lib/frameleaf/navigation';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { Route } from '$lib/route';
 
 const allCapabilities = (): RailCapabilities => ({
@@ -29,12 +35,12 @@ const find = (capabilities: RailCapabilities, id: RailDestination['id']) =>
   flatten(capabilities).find((destination) => destination.id === id);
 
 describe('Frameleaf rail destinations', () => {
-  it('keeps the approved section order', () => {
+  it('keeps the September 24 section order: Library, Explore, Albums, Shared spaces, Tools', () => {
     expect(buildRailSections(allCapabilities()).map((section) => section.id)).toEqual([
       'library',
+      'explore',
       'albums',
       'spaces',
-      'explore',
       'tools',
       'footer',
     ]);
@@ -92,11 +98,10 @@ describe('Frameleaf rail destinations', () => {
       'bestPhotos',
       'archive',
       'locked',
-      'allAlbums',
-      'sharing',
       'pets',
       'places',
       'documents',
+      'allAlbums',
       'workflows',
       'libraryCare',
       'settings',
@@ -107,7 +112,8 @@ describe('Frameleaf rail destinations', () => {
   it('offers one utilities entry and no repeated utility shortcuts', () => {
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
-    expect(hrefs.filter((href) => href === Route.utilities())).toHaveLength(1);
+    expect(hrefs.filter((href) => href === Route.libraryCare())).toHaveLength(1);
+    expect(hrefs).not.toContain(Route.utilities());
     expect(hrefs).not.toContain(Route.duplicatesUtility());
     expect(hrefs).not.toContain(Route.largeFileUtility());
     expect(hrefs).not.toContain(Route.livePhotosUtility());
@@ -135,6 +141,7 @@ describe('Frameleaf rail destinations', () => {
     expect(active(Route.utilities())).toEqual(['libraryCare']);
     expect(active(Route.duplicatesUtility())).toEqual(['libraryCare']);
     expect(active(Route.libraryCare())).toEqual(['libraryCare']);
+    expect(active(commandCenterUrl('care', 'repair'))).toEqual(['libraryCare']);
     expect(active(Route.workflows())).toEqual(['workflows']);
     expect(active(Route.userSettings())).toEqual(['settings']);
   });
@@ -247,5 +254,83 @@ describe('Frameleaf primary destinations', () => {
     expect(isSettingsRoute('/admin/users')).toBe(true);
     expect(isSettingsRoute(Route.userSettings())).toBe(true);
     expect(isSettingsRoute(Route.photos())).toBe(false);
+  });
+});
+
+describe('Frameleaf rail folding', () => {
+  const memoryStorage = (initial?: string) => {
+    const values = new Map<string, string>(initial === undefined ? [] : [[RAIL_CLOSED_SECTIONS_KEY, initial]]);
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+      values,
+    };
+  };
+
+  it('opens every section on a device that has folded nothing', () => {
+    expect(readClosedRailSections(memoryStorage())).toEqual([]);
+    expect(readClosedRailSections(undefined)).toEqual([]);
+  });
+
+  it('remembers a folded section on this device and unfolds it again', () => {
+    const storage = memoryStorage();
+    const folded = toggleRailSection([], 'albums', storage);
+
+    expect(folded).toEqual(['albums']);
+    expect(readClosedRailSections(storage)).toEqual(['albums']);
+    expect(toggleRailSection(folded, 'albums', storage)).toEqual([]);
+    expect(readClosedRailSections(storage)).toEqual([]);
+  });
+
+  it('ignores unreadable or foreign values instead of hiding the rail', () => {
+    expect(readClosedRailSections(memoryStorage('not json'))).toEqual([]);
+    expect(readClosedRailSections(memoryStorage('{"albums":true}'))).toEqual([]);
+    expect(readClosedRailSections(memoryStorage('["library","footer","tools","tools"]'))).toEqual(['tools']);
+  });
+
+  it('still folds for this visit when storage refuses the write', () => {
+    const storage = {
+      setItem: () => {
+        throw new Error('quota');
+      },
+    };
+
+    expect(toggleRailSection([], 'explore', storage)).toEqual(['explore']);
+  });
+});
+
+describe('Frameleaf phone tab bar', () => {
+  it('is absent from Studio and the settings screens', () => {
+    expect(showsTabBar(Route.photos())).toBe(true);
+    expect(showsTabBar(Route.albums())).toBe(true);
+    expect(showsTabBar(Route.studio())).toBe(false);
+    expect(showsTabBar(Route.studioProjects())).toBe(false);
+    expect(showsTabBar('/user-settings')).toBe(false);
+    expect(showsTabBar('/admin/users')).toBe(false);
+  });
+
+  it('marks Library current on the library screen and on collections opened from it', () => {
+    expect(currentTab(Route.photos())).toBe('library');
+    expect(currentTab(Route.favorites())).toBe('library');
+    expect(currentTab(Route.viewAlbum({ id: 'album-id' }))).toBe('library');
+  });
+
+  it('marks Albums current on the albums and shared spaces indexes only', () => {
+    expect(currentTab(Route.albums())).toBe('albums');
+    expect(currentTab(Route.sharing())).toBe('albums');
+  });
+
+  it('marks Memories and Search on their own screens', () => {
+    expect(currentTab(Route.memories())).toBe('memories');
+    expect(currentTab('/memories/memory-id')).toBe('memories');
+    expect(currentTab('/search')).toBe('search');
+  });
+
+  it('leaves every tab uncurrent on screens only the drawer reaches', () => {
+    expect(currentTab(Route.people())).toBeNull();
+    expect(currentTab(Route.explore())).toBeNull();
+    expect(currentTab(Route.map())).toBeNull();
+    expect(currentTab(Route.places())).toBeNull();
+    expect(currentTab(Route.activity())).toBeNull();
   });
 });

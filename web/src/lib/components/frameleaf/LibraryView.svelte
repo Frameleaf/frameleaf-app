@@ -11,14 +11,23 @@
    * the rail and top bar (FL-30) render through `shell`, the selection bar and bulk actions
    * (FL-32) through `selectionBar`, the viewer (FL-35) through `viewer`, and the information panel
    * (FL-36) through `infoPanel`. This component owns the session, the layouts and the key map.
+   *
+   * September 24 chrome (apple-style.css "#3 materials", "#1 one toolbar"): the page header scrolls
+   * away with the photos while the frosted results toolbar sticks (its height is published as
+   * `--fl-sticky-offset` for the group headers and the scrubber), the header's large title shrinks
+   * as you scroll where the browser supports scroll-driven animation, the library status bar
+   * floats as a capsule over the photos, and while anything is selected the selection bar takes
+   * its place carrying Compare, Quick edit and Open in Studio ahead of the bulk actions. Both bars
+   * centre between the rail and the inspector through `--fl-left` / `--fl-right`.
    */
   import { browser } from '$app/environment';
-  import { afterNavigate, replaceState } from '$app/navigation';
+  import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
+  import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
+  import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
@@ -43,7 +52,11 @@
     type FilterChipDescription,
   } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
+  import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
+  import { maxStudioHandoffAssets } from '$lib/frameleaf/studio/handoff';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { Route } from '$lib/route';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -51,9 +64,9 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility, type ArchiveOperationResponseDto } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
-  import { mdiTuneVariant } from '@mdi/js';
+  import { mdiCompare, mdiOpenInNew, mdiPencilOutline, mdiTuneVariant } from '@mdi/js';
   import { hasRouterStarted } from '$lib/utils/router-started';
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -146,6 +159,8 @@
      * last used in the library.
      */
     publicView?: boolean;
+    /** The library status bar (counts, selection, save state). Off for pages that are not a library view. */
+    statusBar?: boolean;
   };
 
   let {
@@ -182,6 +197,7 @@
     sidePanelOpen = false,
     empty,
     publicView = false,
+    statusBar = true,
   }: Props = $props();
 
   timelineManager = new TimelineManager();
@@ -249,6 +265,9 @@
     }
   });
 
+  /** Whether this device kept the view (the status bar's "Saved on this device"). */
+  let savedOnDevice = $state(true);
+
   // Persist the device-local part of the session, and keep the link in step with the view state.
   $effect(() => {
     // Read both so the effect re-runs when either changes.
@@ -257,7 +276,7 @@
     if (!browser || !restored || !state || !layout) {
       return;
     }
-    session.persist(authManager.authenticated ? authManager.user.id : undefined);
+    savedOnDevice = session.persist(authManager.authenticated ? authManager.user.id : undefined);
     if (syncUrl && routerReady) {
       const next = session.viewUrl(page.url);
       if (next.href !== page.url.href) {
@@ -574,6 +593,159 @@
   });
 
   let root = $state<HTMLElement>();
+  let main = $state<HTMLElement>();
+  let toolbarStrip = $state<HTMLElement>();
+  /** Where scroll-driven animation exists, the grouping row fades away under the toolbar. */
+  const groupingScrollsAway = typeof CSS !== 'undefined' && !!CSS.supports?.('animation-timeline: scroll()');
+
+  /**
+   * The capsules centre over the photos, between the rail and the inspector (apple-style.css
+   * `--fl-left` / `--fl-right`), and the group headers and scrubber stick below the frosted
+   * toolbar whatever its height (App.jsx publishes `--fl-sticky-offset` the same way).
+   */
+  $effect(() => {
+    const host = root;
+    const area = main;
+    if (!host || !area || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const measure = () => {
+      const box = area.getBoundingClientRect();
+      host.style.setProperty('--fl-left', `${Math.max(0, Math.round(box.left))}px`);
+      host.style.setProperty('--fl-right', `${Math.max(0, Math.round(innerWidth - box.right))}px`);
+      const strip = toolbarStrip;
+      if (!strip) {
+        return;
+      }
+      // As in the template only the results toolbar stays; the Timeline grouping row below it
+      // scrolls away (timeline-library.css `.tl-toolbar` is not sticky). Timeline rows pin the whole
+      // header block, so the grouping row is faded out by scroll where the browser can; elsewhere it
+      // stays pinned inside the frosted strip. Years and Months cards pin the toolbar alone.
+      const top = strip.closest<HTMLElement>('.fl-timeline-top');
+      const offsetTop = top ? strip.offsetTop : 0;
+      host.style.setProperty('--fl-toolbar-top', `${offsetTop}px`);
+      host.style.setProperty(
+        '--fl-sticky-offset',
+        `${Math.round(top && !groupingScrollsAway ? top.offsetHeight - offsetTop : strip.offsetHeight)}px`,
+      );
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    if (toolbarStrip) {
+      observer.observe(toolbarStrip);
+      const top = toolbarStrip.closest('.fl-timeline-top');
+      if (top) {
+        observer.observe(top);
+      }
+    }
+    // The window and the rail change the photo area's own size, so observing it covers both.
+    observer.observe(document.documentElement);
+    measure();
+    return () => observer.disconnect();
+  });
+
+  /* ---------------------------------------------------------------------- */
+  /* One toolbar while selecting (FL-32, September 24 second pass #1)         */
+  /* ---------------------------------------------------------------------- */
+
+  /** Quick edit works on the item the selection ends with, as the prototype's `selected` does. */
+  const quickEditTarget = $derived.by(() => {
+    const id = session.selection.at(-1);
+    return id ? findAsset(id) : null;
+  });
+  const canQuickEdit = $derived(
+    !!viewer &&
+      !snapshot &&
+      !!quickEditTarget &&
+      quickEditTarget.ownerId === currentUserId &&
+      !quickEditTarget.isTrashed,
+  );
+
+  const openQuickEdit = () => {
+    const asset = quickEditTarget;
+    if (!asset || !canQuickEdit) {
+      return;
+    }
+    // The viewer opens straight into the quick editor, which edits this one item.
+    assetViewerManager.openEditor();
+    session.open(asset.id);
+    session.setScrollAnchor(asset.id);
+    onOpen?.(asset);
+  };
+
+  /**
+   * What Studio may receive: the selection in order through its handoff link (FL-88), capped as
+   * Studio caps it. Locked items never cross into Studio (`studio/assets.ts`), so from the Locked
+   * view — or a view revealing locked items — nothing is offered, and a locked item selected
+   * elsewhere is left out rather than written into the address.
+   */
+  const studioIds = $derived.by(() => {
+    if (snapshot || !options || options.visibility === AssetVisibility.Locked || revealsLocks(options)) {
+      return [];
+    }
+    return session.selection.filter((id) => findAsset(id)?.visibility !== AssetVisibility.Locked);
+  });
+
+  const openInStudio = () => {
+    if (studioIds.length === 0) {
+      return;
+    }
+    void goto(Route.studio({ assetIds: studioIds.slice(0, maxStudioHandoffAssets) }));
+  };
+
+  const leadingActions = $derived<SelectionBarLeadingAction[]>([
+    {
+      id: 'compare',
+      label: $t('frameleaf_compare_title'),
+      icon: mdiCompare,
+      disabled: session.selection.length < 2 || !!snapshot,
+      onClick: () => session.patchView({ view: 'compare' }),
+    },
+    ...(viewer
+      ? [
+          {
+            id: 'quick-edit',
+            label: $t('frameleaf_selection_quick_edit'),
+            icon: mdiPencilOutline,
+            disabled: !canQuickEdit,
+            onClick: openQuickEdit,
+          },
+        ]
+      : []),
+    {
+      id: 'studio',
+      label: $t('frameleaf_selection_open_in_studio'),
+      icon: mdiOpenInNew,
+      primary: true,
+      disabled: studioIds.length === 0,
+      onClick: openInStudio,
+    },
+  ]);
+
+  const showStatusBar = $derived(statusBar && !publicView && !selectionMode && !noSelectionBar);
+  const thumbnailControl = $derived(!!destination && !['person', 'pet'].includes(destination.kind) && !options?.userId);
+
+  /*
+   * The status bar's "X of Y items" (App.jsx footer: `visible.length of collectionAssets.length`).
+   * Y is the whole scope, which the timeline's buckets count up front. X is what the active filter
+   * leaves, counted by the server for the session's scope and query (`POST /search/statistics`);
+   * with no filter the two are the same.
+   */
+  const scopeTotal = $derived(manager.isInitialized ? manager.assetCount : null);
+  /** One count per result set, even when the server cannot count it (a smart search). */
+  let countedRevision = -1;
+  $effect(() => {
+    const revision = session.revision;
+    if (!showStatusBar || !session.filterActive || session.total !== null || countedRevision === revision) {
+      return;
+    }
+    countedRevision = revision;
+    const state = session.state;
+    void untrack(() => bulk.count(state)).then((total) => session.applyTotal(total, revision));
+  });
+  const resultCount = $derived(session.filterActive ? session.total : scopeTotal);
+  /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
+  const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
   const showTimeline = (grouping: LibraryGrouping) => {
     session.setLayout('timeline');
@@ -745,11 +917,17 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={gridLayout} bind:this={root}>
+<div
+  class="frameleaf fl-library"
+  class:has-sticky-toolbar={!publicView}
+  data-testid="frameleaf-library"
+  data-layout={gridLayout}
+  bind:this={root}
+>
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
-    <div class="fl-library-main">
+    <div class="fl-library-main" bind:this={main}>
       <LibraryTimeline
         timelineManager={manager}
         {session}
@@ -771,27 +949,27 @@
         {empty}
       >
         {#snippet header()}
-          {@render children?.()}
+          <div class="fl-library-header">{@render children?.()}</div>
           {#if !publicView}
-            <ResultsToolbar {session} {onOpenFilterPanel}>
-              {@render toolbar?.()}
-              <!-- FL-33: Work's file-name toggle. The shell owns this toolbar; merge note for 2e/2g. -->
-              {#if gridLayout === 'work'}
-                <WorkFileNamesToggle />
-              {/if}
-              {#if canShowInfoPanel}
-                <IconButton
-                  label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-                  pressed={inspectorOpen}
-                  onclick={() => (inspectorOpen = !inspectorOpen)}
-                >
-                  <Icon icon={mdiTuneVariant} size="18" aria-hidden />
-                </IconButton>
-              {/if}
-              {#if session.selection.length >= 2 && !snapshot && !selectionMode}
-                <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
-              {/if}
-            </ResultsToolbar>
+            <div class="fl-library-toolbar" bind:this={toolbarStrip}>
+              <ResultsToolbar {session} {onOpenFilterPanel}>
+                {@render toolbar?.()}
+                <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
+                {#if gridLayout === 'work'}
+                  <WorkFileNamesToggle />
+                {/if}
+                {#if canShowInfoPanel}
+                  <IconButton
+                    label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                    pressed={inspectorOpen}
+                    onclick={() => (inspectorOpen = !inspectorOpen)}
+                  >
+                    <Icon icon={mdiTuneVariant} size="18" aria-hidden />
+                  </IconButton>
+                {/if}
+                <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
+              </ResultsToolbar>
+            </div>
           {/if}
         {/snippet}
       </LibraryTimeline>
@@ -851,8 +1029,26 @@
         onCancelOperation={(requestId) => bulk.cancel(requestId)}
         onRetryOperation={(operation) => void bulk.retry(operation)}
         onDismissOperation={(requestId) => bulk.dismiss(requestId)}
+        leading={selectionMode || publicView ? [] : leadingActions}
       />
     {/if}
+  {/if}
+  {#if showStatusBar}
+    <LibraryStatusBar
+      count={resultCount}
+      total={scopeTotal}
+      outside={selectedOutside}
+      selected={session.selection.length}
+      saved={savedOnDevice}
+      hidden={selecting}
+    >
+      {#snippet controls()}
+        <!-- App.jsx: Thumbnail size on the library's own screen, not a person's or partner's. -->
+        {#if thumbnailControl}
+          <ThumbnailSizeControl />
+        {/if}
+      {/snippet}
+    </LibraryStatusBar>
   {/if}
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
@@ -892,6 +1088,81 @@
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
+  }
+  /*
+   * apple-style.css "#3 materials": the header scrolls away and the frosted toolbar stays. The
+   * timeline draws its header block (`.fl-timeline-top`) above the rows; it sticks with a negative
+   * top equal to the toolbar's offset, so everything above the toolbar scrolls out of view.
+   */
+  /* Only where the toolbar exists: a public shared-link page's header simply scrolls away. */
+  .fl-library.has-sticky-toolbar :global(.fl-timeline-body > .fl-timeline-top) {
+    position: sticky;
+    top: calc(-1 * var(--fl-toolbar-top, 0px));
+    z-index: 4;
+  }
+  .fl-library-toolbar {
+    position: relative;
+  }
+  /* Years and Months cards scroll in their own container: the toolbar sticks there by itself. */
+  .has-sticky-toolbar :global(.fl-tl-cards-scroll > .fl-library-toolbar) {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+  }
+  .fl-library-toolbar::before {
+    /* The frosted strip spans the scroller's width under the toolbar (and, without scroll-driven
+       animation, the pinned grouping row below it). */
+    content: '';
+    position: absolute;
+    inset: 0 -8px auto;
+    height: var(--fl-sticky-offset, 100%);
+    z-index: -1;
+    border-bottom: 1px solid var(--fl-material-edge);
+    background: var(--fl-material);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+  }
+  /* Large title that shrinks as you scroll (Chrome, Safari 26+); a fade only under Reduce Motion. */
+  .fl-library-header :global(h1) {
+    transform-origin: left bottom;
+  }
+  @supports (animation-timeline: scroll()) {
+    .fl-library.has-sticky-toolbar :global(.fl-timeline-scroll) {
+      scroll-timeline: --fl-library block;
+    }
+    .has-sticky-toolbar .fl-library-header :global(h1) {
+      animation: fl-title-shrink linear both;
+      animation-timeline: --fl-library;
+      animation-range: 0 90px;
+    }
+    /* The grouping row goes as the rows reach the toolbar, like the template's scrolling .tl-toolbar. */
+    .has-sticky-toolbar :global(.fl-timeline-top > .fl-grouping) {
+      animation: fl-grouping-away linear both;
+      animation-timeline: --fl-library;
+      animation-range: var(--fl-toolbar-top, 0px) calc(var(--fl-toolbar-top, 0px) + 40px);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .has-sticky-toolbar .fl-library-header :global(h1) {
+        animation-name: fl-title-fade;
+      }
+    }
+  }
+  @keyframes fl-title-shrink {
+    to {
+      scale: 0.62;
+      opacity: 0.2;
+    }
+  }
+  @keyframes fl-grouping-away {
+    to {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
+  @keyframes fl-title-fade {
+    to {
+      opacity: 0.2;
+    }
   }
   .fl-library-compare {
     position: absolute;

@@ -110,6 +110,20 @@ export const UTILITY_TOOLS: UtilityTool[] = [
 ];
 
 export const utilityToolsFor = (isAdmin: boolean) => UTILITY_TOOLS.filter((tool) => isAdmin || !tool.adminOnly);
+/**
+ * The repair tools the Library care area lists beside health, repairs and duplicates, in the
+ * template's order (`CARE_TOOLS` in CommandCenter.jsx): Library Care is the hub for fixing things.
+ */
+export const LIBRARY_CARE_TOOLS: readonly UtilityId[] = Object.freeze([
+  'duplicates',
+  'missing-media',
+  'corrupt-media',
+  'live-photos',
+]);
+export const libraryCareToolsFor = (isAdmin: boolean) =>
+  LIBRARY_CARE_TOOLS.map((id) => UTILITY_TOOLS.find((tool) => tool.id === id)!).filter(
+    (tool) => isAdmin || !tool.adminOnly,
+  );
 export const utilityTool = (id: string | null) => UTILITY_TOOLS.find((tool) => tool.id === id);
 export const utilitiesUrl = (section?: UtilityId, params: Record<string, string | number | undefined> = {}) => {
   const search = new URLSearchParams({ area: 'utilities' });

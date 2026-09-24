@@ -9,6 +9,7 @@
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
+  import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
@@ -36,6 +37,7 @@
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
 
   trackSessionModals(modalManager);
 
@@ -46,7 +48,12 @@
    * entry, Upload, the activity indicator, Notifications, the Locked toggle as an icon, the theme
    * toggle and the account menu. The switcher's items are text only and the current one carries
    * the accent underline. On phones the bar is a fixed two-row grid: the brand and the controls
-   * on the first row, the switcher and search on the second, and the activity indicator hidden.
+   * on the first row, the switcher on the second, and the activity indicator hidden.
+   *
+   * September 24 (apple-style.css "#3 materials", "#9 edge-to-edge", "top bar", "#7 phone tab
+   * bar"): the bar is frosted and keeps clear of the notch; from 1200px the search field sits in
+   * the true centre; on phones (≤700px) the bar has no search field, because the tab bar owns
+   * Search, and the brand shows the Frameleaf symbol only while keeping "Frameleaf" as its name.
    *
    * Every control drives an existing production service: the Locked toggle is the elevated
    * session, Upload is the upload manager's file dialog, Notifications is the notification
@@ -67,6 +74,8 @@
   let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
 
   const primaryDestinations = buildPrimaryDestinations();
+  /** apple-style.css: phones show the Frameleaf symbol only. */
+  const phone = new MediaQuery('max-width: 700px');
   const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
 
   let showNotifications = $state(false);
@@ -230,7 +239,7 @@
 
 <nav
   id="dashboard-navbar"
-  class="frameleaf fl-topbar h-(--fl-topbar-height) w-dvw text-sm max-md:h-(--fl-topbar-height-phone)"
+  class="frameleaf fl-topbar fl-material h-(--fl-topbar-height) w-dvw text-sm max-md:h-(--fl-topbar-height-phone)"
   class:fl-no-border={noBorder}
   data-theme={appTheme}
 >
@@ -259,9 +268,15 @@
           class="sidebar:hidden"
         />
       {/if}
-      <a class="fl-topbar-brand" data-sveltekit-preload-data="hover" href={Route.photos()} aria-label={$t('library')}>
+      <!-- App.jsx `.brand`: the button is named "Frameleaf" whatever it shows. -->
+      <a
+        class="fl-topbar-brand"
+        data-sveltekit-preload-data="hover"
+        href={Route.photos()}
+        aria-label={$t('frameleaf_brand_name')}
+      >
         <FrameleafLogo
-          variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'}
+          variant={mediaQueryManager.isFullSidebar && !phone.current ? 'inline' : 'icon'}
           theme={appTheme}
           decorative
           class="h-8"
@@ -386,6 +401,11 @@
   </div>
 </nav>
 
+<!-- Outside the frosted bar: a backdrop filter would make the bar the fixed tab bar's containing block. -->
+{#if hasRail}
+  <TabBar theme={appTheme} />
+{/if}
+
 <LockedUnlockDialog bind:open={unlockDialogOpen} onUnlocked={() => handlePromiseError(onUnlocked())} />
 
 <style>
@@ -394,10 +414,14 @@
    * pushed toward the controls and capped at 480px. Below Tailwind's `md` the bar becomes the
    * prototype's phone grid.
    */
+  /* apple-style.css "#3 materials": the bar is frosted, with a hairline edge. */
   .fl-topbar {
     position: relative;
-    background: var(--fl-panel);
-    border-bottom: 1px solid var(--fl-border);
+    z-index: 20;
+    background: var(--fl-material);
+    border-bottom: 1px solid var(--fl-material-edge);
+    /* "#9 edge-to-edge": --fl-topbar-height already includes the top inset (app.css). */
+    padding-top: var(--fl-safe-top);
   }
   .fl-no-border {
     border-bottom: 0;
@@ -407,7 +431,7 @@
     align-items: center;
     gap: 1.125rem;
     height: 100%;
-    padding: 0 1.5rem 0 1.125rem;
+    padding: 0 max(1.5rem, var(--fl-safe-right)) 0 max(1.125rem, var(--fl-safe-left));
   }
   .fl-topbar-lead {
     display: flex;
@@ -486,6 +510,20 @@
       gap: 0.5rem;
     }
   }
+  /* apple-style.css "top bar": the search field sits in the true centre on wide screens. */
+  @media (min-width: 1200px) {
+    .fl-topbar-search {
+      position: absolute;
+      left: 50%;
+      translate: -50% 0;
+      width: min(480px, calc(100vw - 940px));
+      max-width: none;
+      margin: 0;
+    }
+    .fl-topbar-actions {
+      margin-left: auto;
+    }
+  }
   /* Phones: the prototype's fixed two-row grid. */
   @media (max-width: 47.99rem) {
     .fl-topbar-grid {
@@ -496,7 +534,7 @@
         'lead . actions'
         'primary search search';
       column-gap: 0.3125rem;
-      padding: 0.1875rem 0.5rem 0.5rem;
+      padding: 0.1875rem max(0.5rem, var(--fl-safe-right)) 0.5rem max(0.5rem, var(--fl-safe-left));
     }
     .fl-topbar-lead {
       grid-area: lead;
@@ -522,6 +560,30 @@
     .fl-topbar-actions {
       grid-area: actions;
       gap: 0.125rem;
+    }
+  }
+  /* apple-style.css: on phones the tab bar owns Search, so the bar keeps no search field. The
+     entry stays mounted (only its trigger is hidden) so the tab bar and ⌘K still open it. */
+  @media (max-width: 700px) {
+    .fl-topbar-grid {
+      grid-template-areas:
+        'lead . actions'
+        'primary primary primary';
+    }
+    .fl-topbar-search {
+      position: absolute;
+      width: 0;
+      height: 0;
+    }
+    .fl-topbar-search > :global(button) {
+      display: none;
+    }
+    /* The notifications bottom sheet is fixed; a backdrop filter would make the bar its
+       containing block, so the bar turns solid while the sheet is open. */
+    .fl-topbar:has(.fl-notifications-panel) {
+      background: var(--fl-panel);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
     }
   }
   /* The prototype's bordered Locked control (locked-content.css): icon + state, accent when revealed. */

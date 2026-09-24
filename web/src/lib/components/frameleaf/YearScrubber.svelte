@@ -257,7 +257,8 @@
     position: relative;
     width: 34px;
     flex: 0 0 auto;
-    padding: 8px 0;
+    /* The track starts below the frosted results toolbar (apple-style.css `.tl-scrubber` top). */
+    padding: calc(var(--fl-sticky-offset, 0px) + 8px) 0 8px;
     touch-action: none;
   }
   .fl-scrub-track {

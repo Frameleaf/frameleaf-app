@@ -30,7 +30,7 @@
     type WorkflowResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiDownload, mdiPlus, mdiTuneVariant } from '@mdi/js';
+  import { mdiDownload, mdiFileImportOutline, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
   import { onMount, untrack } from 'svelte';
 
@@ -160,6 +160,7 @@
     }
   };
 
+  let importInput = $state<HTMLInputElement>();
   const importFile = async (event: Event & { currentTarget: HTMLInputElement }) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
@@ -182,10 +183,19 @@
       <Icon icon={mdiPlus} size="16" />
       {$t('frameleaf_workflows.create')}
     </Button>
-    <label class="file-import">
+    <!-- A normal button (September 24 "Small actions"); UtilitiesManager.jsx `um-file-import`. -->
+    <Button onclick={() => importInput?.click()}>
+      <Icon icon={mdiFileImportOutline} size="16" />
       {$t('frameleaf_workflows.import')}
-      <input type="file" accept="application/json,.json" onchange={(event) => void importFile(event)} />
-    </label>
+    </Button>
+    <input
+      bind:this={importInput}
+      type="file"
+      accept="application/json,.json"
+      hidden
+      data-testid="workflow-import-input"
+      onchange={(event) => void importFile(event)}
+    />
   </div>
 
   {#if error}<p role="alert" class="error">{error}</p>{/if}
@@ -257,24 +267,6 @@
     gap: 0.75rem;
     align-items: center;
     padding: 0.875rem 0;
-  }
-  .file-import {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.4375rem 0.6875rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-    cursor: pointer;
-  }
-  .file-import:focus-within {
-    outline: 2px solid var(--fl-accent);
-  }
-  .file-import input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
   }
   .list article {
     display: flex;
