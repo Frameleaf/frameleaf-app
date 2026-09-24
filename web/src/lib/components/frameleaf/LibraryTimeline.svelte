@@ -224,6 +224,11 @@
 
   $effect(() => {
     timelineManager.scrollableElement = scrollable;
+    // A scroll area mounted anew (back from the Years or Months cards) starts at the top: the
+    // manager's window must follow it, or it keeps the old offset and mounts no month at all.
+    if (scrollable) {
+      timelineManager.updateSlidingWindow();
+    }
   });
 
   /**
@@ -329,12 +334,15 @@
     }
   });
   $effect(() => {
-    const now = curated;
-    const was = wasCurated;
-    wasCurated = now;
-    if (now || !was || !scrollable) {
+    if (curated) {
+      wasCurated = true;
       return;
     }
+    // The flow mounts (and binds its scroll area) after the switch; wait for it before settling.
+    if (!wasCurated || !scrollable) {
+      return;
+    }
+    wasCurated = false;
     const anchor = flowAnchor;
     const top = flowScrollTop;
     flowAnchor = undefined;
