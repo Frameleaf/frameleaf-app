@@ -15,37 +15,36 @@ export type LibraryAnchor = {
 };
 
 /**
- * The asset to hold still across a layout switch: `preferredId` (the session's focused asset) when
- * it is on screen, otherwise the first asset the viewport shows. Only laid-out, loaded assets are
- * read; nothing is fetched.
+ * The asset to hold still across a layout switch, and where it is on screen.
+ *
+ * With a `preferredId` — the session's scroll anchor: the asset last opened, focused or linked to —
+ * only that asset is ever the anchor. When it is on screen its height on screen is kept; when it is
+ * not (the person scrolled away to reach the layout control, which scrolls with the results), the
+ * answer is undefined and the caller brings that asset back into view by id, as before. The first
+ * visible asset stands in only when the session has no anchor at all. Only laid-out, loaded assets
+ * are read; nothing is fetched.
  */
 export function captureLibraryAnchor(manager: TimelineManager, preferredId?: string | null): LibraryAnchor | undefined {
   const viewportTop = manager.scrollTop;
   const viewportBottom = viewportTop + manager.viewportHeight;
-  let first: LibraryAnchor | undefined;
 
   for (const month of manager.months) {
     for (const day of month.timelineDays) {
       for (const viewer of day.activeViewerAssets) {
         const position = viewer.position;
-        if (!position) {
+        if (!position || (preferredId && viewer.id !== preferredId)) {
           continue;
         }
         const top = month.top + day.top + month.groupHeaderHeight + position.top;
         const visible = top + position.height > viewportTop && (manager.viewportHeight === 0 || top < viewportBottom);
-        if (!visible) {
-          continue;
+        if (visible) {
+          return { assetId: viewer.id, offset: top - viewportTop };
         }
-        const anchor = { assetId: viewer.id, offset: top - viewportTop };
-        if (!preferredId || viewer.id === preferredId) {
-          return anchor;
-        }
-        first ??= anchor;
       }
     }
   }
 
-  return first;
+  return undefined;
 }
 
 /**
