@@ -242,7 +242,11 @@
       return;
     }
 
-    if (maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location)) {
+    // FL-80 M-4: the maintenance page shows its own "Maintenance is finished" state with "Open Frameleaf".
+    if (
+      maintenanceShouldRedirect(isRestarting.isMaintenanceMode, location) &&
+      !location.pathname.startsWith(Route.maintenanceMode())
+    ) {
       modalManager.show(ServerRestartingModal, {}).catch((error) => console.error('Error [ServerRestartBox]:', error));
     }
   });

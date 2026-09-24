@@ -4,9 +4,9 @@
   import { focusTrap } from '$lib/actions/focus-trap';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AvatarEditModal from '$lib/modals/AvatarEditModal.svelte';
-  import HelpAndFeedbackModal from '$lib/modals/HelpAndFeedbackModal.svelte';
-  import ServerAboutModal from '$lib/modals/ServerAboutModal.svelte';
+  import AvatarEditorDialog from '$lib/components/frameleaf/AvatarEditorDialog.svelte';
+  import AboutDialog from '$lib/components/frameleaf/AboutDialog.svelte';
+  import HelpFeedbackDialog from '$lib/components/frameleaf/HelpFeedbackDialog.svelte';
   import { Route } from '$lib/route';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { getAboutInfo, getVersionHistory } from '@immich/sdk';
@@ -15,6 +15,7 @@
     mdiAccountEditOutline,
     mdiChevronDown,
     mdiCogOutline,
+    mdiHandHeartOutline,
     mdiInformationOutline,
     mdiLifebuoy,
     mdiLockOpenVariantOutline,
@@ -45,6 +46,11 @@
 
   let open = $state(false);
   let menu = $state<HTMLDivElement>();
+
+  // S-5 (SystemPanels.jsx:677-686): the Supporter badge shows for a supporter who has not hidden it.
+  const showSupporter = $derived(
+    authManager.isPurchased && authManager.authenticated && authManager.preferences.purchase.showSupportBadge,
+  );
 
   const close = () => (open = false);
   const run = (action: () => void) => {
@@ -88,13 +94,13 @@
 
   const openAvatarEditor = async () => {
     close();
-    await modalManager.show(AvatarEditModal);
+    await modalManager.show(AvatarEditorDialog, {});
   };
 
   const openSupport = async () => {
     close();
     const info = userInteraction.aboutInfo ?? (await getAboutInfo());
-    await modalManager.show(HelpAndFeedbackModal, { info });
+    await modalManager.show(HelpFeedbackDialog, { info });
   };
 
   const openAbout = async () => {
@@ -105,7 +111,7 @@
     ]);
     userInteraction.aboutInfo = info;
     userInteraction.versions = versions;
-    await modalManager.show(ServerAboutModal, { info, versions });
+    await modalManager.show(AboutDialog, { info, versions });
   };
 </script>
 
@@ -138,7 +144,16 @@
       <div class="fl-identity">
         <UserAvatar user={authManager.user} size="lg" noTitle />
         <div>
-          <strong>{authManager.user.name}</strong>
+          <strong>
+            {authManager.user.name}
+            {#if authManager.user.isAdmin}<span class="account-tag">{$t('frameleaf_account_admin_tag')}</span>{/if}
+            {#if showSupporter}
+              <span class="supporter-badge">
+                <Icon icon={mdiHandHeartOutline} size="12" aria-hidden={true} />
+                {$t('supporter')}
+              </span>
+            {/if}
+          </strong>
           <span>{authManager.user.email}</span>
         </div>
       </div>
@@ -264,11 +279,38 @@
     min-width: 0;
     flex-direction: column;
   }
-  .fl-identity span {
+  .fl-identity > div > span {
     color: var(--fl-muted);
     font-size: 0.75rem;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .fl-identity strong {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  /* design/frameleaf/template/src/system.css `.account-tag`, auth.css `.supporter-badge`. */
+  .account-tag {
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    color: var(--fl-muted);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-pill);
+    padding: 0 7px;
+    line-height: 16px;
+  }
+  .supporter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    color: var(--fl-accent);
+    background: var(--fl-accent-soft);
+    border-radius: var(--fl-radius-pill);
+    padding: 2px 8px;
   }
   hr {
     margin: 0.25rem 0;

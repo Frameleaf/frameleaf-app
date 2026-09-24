@@ -245,6 +245,35 @@ describe(UserService.name, () => {
       expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
     });
 
+    it("refuses another account's photo as the source and removes the upload", async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      const asset = AssetFactory.create({ ownerId: 'partner-id' });
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(asset as never);
+
+      await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toThrow(
+        'Only your own photo can be a profile picture',
+      );
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue.mock.calls).toEqual([[{ name: JobName.FileDelete, data: { files: [file.path] } }]]);
+    });
+
+    it('keeps the recorded source when re-cropping the current picture', async () => {
+      const file = { path: '/profile/path' } as Express.Multer.File;
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.user.update.mockResolvedValue({ ...userStub.admin, profileImagePath: file.path });
+
+      await sut.createProfileImage(authStub.admin, file, { keepSource: 'true' });
+
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.not.objectContaining({ profileImageAssetId: expect.anything() }),
+      );
+      expect(mocks.user.update.mock.calls[0][1]).not.toHaveProperty('profileImageAssetId');
+    });
+
     it('refuses a source that is not an id and removes the upload (FL-53)', async () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
       mocks.user.get.mockResolvedValue(userStub.admin);

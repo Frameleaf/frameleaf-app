@@ -53,7 +53,8 @@ describe('AccountSecurityPanel (FL-76)', () => {
   it('revokes a device after confirmation, through the admin session endpoint', async () => {
     const { modalManager, toastManager } = await import('@immich/ui');
     const { deleteUserSessionAdmin } = await import('@immich/sdk');
-    vi.mocked(modalManager.showDialog).mockResolvedValue(true);
+    // CC-33: the Frameleaf ConfirmDialog, opened through modalManager.show, replaces showDialog.
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
 
     render(AccountSecurityPanel, { user, sessions: [session()] });
 
@@ -69,15 +70,29 @@ describe('AccountSecurityPanel (FL-76)', () => {
   it('does nothing when the confirmation is declined', async () => {
     const { modalManager } = await import('@immich/ui');
     const { deleteUserSessionAdmin } = await import('@immich/sdk');
-    vi.mocked(modalManager.showDialog).mockResolvedValue(false);
+    vi.mocked(modalManager.show).mockResolvedValue(false as never);
 
     render(AccountSecurityPanel, { user, sessions: [session()] });
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_users_device_revoke }));
 
-    await waitFor(() => expect(modalManager.showDialog).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(modalManager.show).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ title: en.frameleaf_users_device_revoke_title, danger: true }),
+      ),
+    );
     expect(deleteUserSessionAdmin).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: en.frameleaf_users_device_revoke })).toBeInTheDocument();
+  });
+
+  it('shows whether a sign-in provider is connected (CC-31)', () => {
+    render(AccountSecurityPanel, { user: { ...user, oauthId: 'oidc|123' }, sessions: [] });
+
+    expect(screen.getByText(en.frameleaf_users_provider_title)).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(String.raw`^\s*${en.frameleaf_users_provider_connected} ·`)),
+    ).toBeInTheDocument();
   });
 
   it('never offers to revoke the current device, and never asks the endpoint to', () => {

@@ -6,6 +6,7 @@
 import {
   getAllLibraries,
   getLibraryStatistics,
+  getManagedUploadStatistics,
   getMlWorkloadRoutes,
   getPhysicalDeduplicationPreview,
   getRenderWorkerLimits,
@@ -57,17 +58,20 @@ export const loadUserDetail = async (id: string) => {
   }
   // Every library in the system, narrowed to this account's own for the account detail's
   // Libraries tab (FL-76).
-  const [userPreferences, userStatistics, userSessions, allLibraries] = await Promise.all([
+  const [userPreferences, userStatistics, userSessions, allLibraries, uploads] = await Promise.all([
     getUserPreferencesAdmin({ id: user.id }),
     getUserStatisticsAdmin({ id: user.id }),
     getUserSessionsAdmin({ id: user.id }),
     getAllLibraries({}),
+    // CC-29: the physical size of the account's uploads; the overview shows "—" when unreadable.
+    getManagedUploadStatistics().catch(() => []),
   ]);
+  const physicalBytes = uploads.find(({ ownerId }) => ownerId === user.id)?.usagePhysical ?? null;
   const libraries = allLibraries.filter((library) => library.ownerId === user.id);
   // Item counts for the Libraries tab: each external library's own (FL-76).
   const libraryStatistics = Object.fromEntries(
     await Promise.all(libraries.map(async ({ id }) => [id, await getLibraryStatistics({ id })] as const)),
   );
-  return { user, userPreferences, userStatistics, userSessions, libraries, libraryStatistics };
+  return { user, userPreferences, userStatistics, userSessions, libraries, libraryStatistics, physicalBytes };
 };
 export type UserDetailData = NonNullable<Awaited<ReturnType<typeof loadUserDetail>>>;

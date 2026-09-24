@@ -5,19 +5,19 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { locale } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
 import en from '../../../../../i18n/en.json';
-import MaintenanceBackupEntry from './MaintenanceBackupEntry.svelte';
+import MaintenanceBackupRow from './MaintenanceBackupRow.svelte';
 
 const restoreDatabaseBackup = vi.fn();
+const handleDeleteDatabaseBackup = vi.fn();
+const handleDownloadDatabaseBackup = vi.fn();
 
 vi.mock('$lib/services/database-backups.service', () => ({
-  getDatabaseBackupActions: () => ({
-    Download: { type: 'command', title: 'Download', onAction: vi.fn() },
-    Delete: { type: 'command', title: 'Delete', onAction: vi.fn() },
-  }),
+  handleDeleteDatabaseBackup: (...args: unknown[]) => handleDeleteDatabaseBackup(...args),
+  handleDownloadDatabaseBackup: (...args: unknown[]) => handleDownloadDatabaseBackup(...args),
   restoreDatabaseBackup: (...args: unknown[]) => restoreDatabaseBackup(...args),
 }));
 
-describe('MaintenanceBackupEntry', () => {
+describe('MaintenanceBackupRow', () => {
   beforeAll(() => {
     // The assertions read the English copy the administrator sees.
     addMessages('dev', en);
@@ -32,6 +32,8 @@ describe('MaintenanceBackupEntry', () => {
   afterEach(() => {
     vi.useRealTimers();
     restoreDatabaseBackup.mockClear();
+    handleDeleteDatabaseBackup.mockClear();
+    handleDownloadDatabaseBackup.mockClear();
   });
 
   it('renders relative backup time using the user timezone instead of UTC', () => {
@@ -52,18 +54,18 @@ describe('MaintenanceBackupEntry', () => {
     expect(expectedRelativeTime).toBeTruthy();
     expect(expectedRelativeTime).not.toEqual(utcRelativeTime);
 
-    renderWithTooltips(MaintenanceBackupEntry, {
+    renderWithTooltips(MaintenanceBackupRow, {
       expectedVersion: '1.2.3',
       filename: 'immich-db-backup-20260324T110000-v1.2.3-snapshot.sql.gz',
       filesize: 1024,
       timezone: 'Asia/Tokyo',
     });
 
-    expect(screen.getByText(expectedRelativeTime!)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`^${expectedRelativeTime!} ·`))).toBeInTheDocument();
   });
 
   it('opens the typed-confirmation dialog instead of restoring immediately', async () => {
-    renderWithTooltips(MaintenanceBackupEntry, {
+    renderWithTooltips(MaintenanceBackupRow, {
       expectedVersion: '1.2.3',
       filename: 'immich-db-backup-20260324T110000-v1.2.3-snapshot.sql.gz',
       filesize: 1024,
@@ -91,7 +93,7 @@ describe('MaintenanceBackupEntry', () => {
   });
 
   it('shows what a restore changes and keeps the safety backup when asked', async () => {
-    renderWithTooltips(MaintenanceBackupEntry, {
+    renderWithTooltips(MaintenanceBackupRow, {
       expectedVersion: '1.2.3',
       filename: 'restore-point-immich-db-backup-20260324T110000-v1.2.3-pg14.sql.gz',
       filesize: 1024,
@@ -114,6 +116,28 @@ describe('MaintenanceBackupEntry', () => {
     expect(restoreDatabaseBackup).toHaveBeenCalledWith(
       'restore-point-immich-db-backup-20260324T110000-v1.2.3-pg14.sql.gz',
       { keepSafetyBackup: true },
+    );
+  });
+
+  it('shows the prototype row actions and confirms a delete through the Frameleaf dialog', async () => {
+    renderWithTooltips(MaintenanceBackupRow, {
+      expectedVersion: '1.2.3',
+      filename: 'immich-db-backup-20260324T110000-v1.2.2-pg14.sql.gz',
+      filesize: 2048,
+      timezone: 'UTC',
+    });
+
+    // A backup from another version keeps its warning, now as the row's status pill.
+    expect(screen.getByText('This backup was created with a different version of Frameleaf!')).toBeInTheDocument();
+    expect(screen.getByText('2 KiB')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: /^Download backup from / }));
+    expect(handleDownloadDatabaseBackup).toHaveBeenCalledWith('immich-db-backup-20260324T110000-v1.2.2-pg14.sql.gz');
+
+    await fireEvent.click(screen.getByRole('button', { name: /^Delete backup from / }));
+    expect(handleDeleteDatabaseBackup).toHaveBeenCalledWith(
+      { date: expect.any(String) },
+      'immich-db-backup-20260324T110000-v1.2.2-pg14.sql.gz',
     );
   });
 });

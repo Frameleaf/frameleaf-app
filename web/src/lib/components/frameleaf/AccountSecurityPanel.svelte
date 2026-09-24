@@ -29,6 +29,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { deleteUserSessionAdmin, type SessionResponseDto, type UserAdminResponseDto } from '@immich/sdk';
   import { modalManager, toastManager } from '@immich/ui';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -52,7 +53,12 @@
   const visibleSessions = $derived(sessions.filter((session) => !revokedIds.has(session.id)));
 
   const revoke = async (session: SessionResponseDto) => {
-    const confirmed = await modalManager.showDialog({ prompt: $t('frameleaf_users_device_revoke_confirm') });
+    const confirmed = await confirmFrameleaf({
+      title: $t('frameleaf_users_device_revoke_title'),
+      prompt: $t('frameleaf_users_device_revoke_confirm'),
+      confirmText: $t('frameleaf_users_device_revoke'),
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -93,6 +99,17 @@
     <Button disabled={!live} onclick={() => modalManager.show(AccountPinDialog, { user, mode: 'clear' })}>
       {$t('frameleaf_users_pin_clear')}
     </Button>
+  </div>
+
+  <!-- CC-31 (AccountsLibraries.jsx:1437-1445): whether a sign-in provider is connected; only the owner manages it. -->
+  <div class="row">
+    <div>
+      <strong>{$t('frameleaf_users_provider_title')}</strong>
+      <small>
+        {user.oauthId ? $t('frameleaf_users_provider_connected') : $t('frameleaf_users_provider_not_connected')} ·
+        {$t('frameleaf_users_provider_owner_managed')}
+      </small>
+    </div>
   </div>
 
   <h3>{$t('frameleaf_users_devices_title')}</h3>
