@@ -54,7 +54,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
     const { modalManager, toastManager } = await import('@immich/ui');
     const { deleteUserSessionAdmin } = await import('@immich/sdk');
     // CC-33: the Frameleaf ConfirmDialog, opened through modalManager.show, replaces showDialog.
-    vi.mocked(modalManager.show).mockResolvedValue(true);
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
 
     render(AccountSecurityPanel, { user, sessions: [session()] });
 
@@ -70,7 +70,7 @@ describe('AccountSecurityPanel (FL-76)', () => {
   it('does nothing when the confirmation is declined', async () => {
     const { modalManager } = await import('@immich/ui');
     const { deleteUserSessionAdmin } = await import('@immich/sdk');
-    vi.mocked(modalManager.show).mockResolvedValue(false);
+    vi.mocked(modalManager.show).mockResolvedValue(false as never);
 
     render(AccountSecurityPanel, { user, sessions: [session()] });
 
@@ -90,7 +90,9 @@ describe('AccountSecurityPanel (FL-76)', () => {
     render(AccountSecurityPanel, { user: { ...user, oauthId: 'oidc|123' }, sessions: [] });
 
     expect(screen.getByText(en.frameleaf_users_provider_title)).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(String.raw`^\s*${en.frameleaf_users_provider_connected} ·`))).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(String.raw`^\s*${en.frameleaf_users_provider_connected} ·`)),
+    ).toBeInTheDocument();
   });
 
   it('never offers to revoke the current device, and never asks the endpoint to', () => {
