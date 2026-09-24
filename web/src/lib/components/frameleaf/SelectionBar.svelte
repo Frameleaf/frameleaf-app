@@ -7,6 +7,7 @@
   import BulkLocationDialog from '$lib/components/frameleaf/BulkLocationDialog.svelte';
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
   import BulkTagDialog from '$lib/components/frameleaf/BulkTagDialog.svelte';
+  import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import {
     bulkActionById,
     bulkActions,
@@ -21,6 +22,7 @@
   } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
+  import { SharedLinkType } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiArchiveArrowUpOutline,
@@ -111,6 +113,7 @@
     total = null,
     /** The selected assets, when the view has them loaded. */
     assets = [],
+    selectedIds = assets.map((asset) => asset.id),
     context = {},
     tagOptions = [],
     operations = [],
@@ -127,6 +130,8 @@
     count?: number;
     total?: number | null;
     assets?: BulkAsset[];
+    /** Explicit selection, including items outside the loaded timeline window. */
+    selectedIds?: readonly string[];
     context?: Omit<BulkActionContext, 'assets' | 'count'>;
     tagOptions?: { id: string; name: string }[];
     operations?: BulkOperationRecord[];
@@ -426,6 +431,16 @@
   <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
+{:else if dialog === 'create-shared-link'}
+  <!-- The form creates the link itself, so nothing is dispatched to the bulk runner. -->
+  <SharedLinkForm
+    bind:open={dialogOpen}
+    target={{
+      type: SharedLinkType.Individual,
+      assetIds: [...selectedIds],
+      name: $t('frameleaf_sharing.individual_items', { values: { count } }),
+    }}
+  />
 {/if}
 
 <style>

@@ -1,10 +1,12 @@
 import {
   type AssetResponseDto,
   MemorySearchOrder,
+  addMemoryAssets,
   deleteMemory,
   type MemoryResponseDto,
   removeMemoryAssets,
   searchMemories,
+  updateAsset,
   updateMemory,
   memoriesStatistics,
 } from '@immich/sdk';
@@ -229,23 +231,105 @@ class MemoryManager {
     this.memories = this.memories.filter((memory) => memory.assets.length > 0);
   }
 
-  async deleteCurrentAsset() {
+  /** How long the "Remove from memory" toast offers Undo. */
+  static readonly REMOVE_UNDO_TIMEOUT = 6000;
+
+  /**
+   * FL-83 (MPY-1): removing the current item from its memory is undoable, as in the
+   * prototype's `MemoryPlayer.jsx`. The removal is sent to the server at once (a reload or a
+   * closed tab never loses it) and Undo puts the item back through the inverse call. A memory
+   * emptied this way is dropped from the list but not deleted, so Undo can restore it.
+   */
+  async removeCurrentAsset() {
     const current = this.current;
     if (!current) {
       return;
     }
 
-    const memoryId = current.memory.id;
-    const assetId = current.asset.id;
-    await this.#leaveCurrentAsset();
-    try {
-      await this.#deleteAsset(memoryId, assetId);
-    } catch (error) {
-      handleError(error, get(t)('errors.something_went_wrong'));
+    const memory = this.#getMemory(current.memory.id);
+    const assetIndex = memory?.assets.findIndex((asset) => asset.id === current.asset.id) ?? -1;
+    if (!memory || assetIndex === -1) {
+      return;
+    }
+
+    // Captured before the item disappears, since `current` is derived from the loaded assets.
+    const { nextHref, previousHref } = current;
+    const asset = memory.assets[assetIndex];
+    const removed = await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (removed.find((result) => result.id === asset.id)?.success !== true) {
+      throw new Error('Unable to remove the item from this memory');
+    }
+    memory.assets.splice(assetIndex, 1);
+    const memoryIndex = this.memories.indexOf(memory);
+    const emptied = memory.assets.length === 0;
+    if (emptied) {
+      this.memories = this.memories.filter((item) => item !== memory);
+    }
+    await this.#goto(nextHref ?? previousHref ?? this.memoriesHref);
+
+    const translate = get(t);
+    let undone = false;
+    toastManager.primary(
+      {
+        description: translate('frameleaf_memories_item_removed', { values: { name: asset.originalFileName } }),
+        button: (close) => ({
+          label: translate('undo'),
+          onclick: () => {
+            close();
+            if (undone) {
+              return;
+            }
+            undone = true;
+            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied).catch((error) =>
+              handleError(error, translate('errors.something_went_wrong')),
+            );
+          },
+        }),
+      },
+      { timeout: MemoryManager.REMOVE_UNDO_TIMEOUT },
+    );
+  }
+
+  async #restoreAsset(
+    memory: MemoryResponseDto,
+    memoryIndex: number,
+    asset: AssetResponseDto,
+    assetIndex: number,
+    emptied: boolean,
+  ) {
+    const restored = await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (restored.find((result) => result.id === asset.id)?.success !== true) {
+      throw new Error('Unable to restore the item to this memory');
+    }
+    memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
+    if (emptied && !this.memories.includes(memory)) {
+      this.memories.splice(Math.min(memoryIndex, this.memories.length), 0, memory);
     }
   }
 
-  async deleteCurrentMemory() {
+  /**
+   * FL-83 (MPY-3): the player's heart favorites the item being shown, not the memory
+   * (the memory's own saved flag lives on the index card).
+   */
+  async toggleCurrentAssetFavorite() {
+    const current = this.current;
+    if (!current) {
+      return;
+    }
+
+    const { id } = current.asset;
+    const isFavorite = !current.asset.isFavorite;
+    await updateAsset({ id, updateAssetDto: { isFavorite } });
+    for (const memory of this.memories) {
+      for (const asset of memory.assets) {
+        if (asset.id === id) {
+          asset.isFavorite = isFavorite;
+        }
+      }
+    }
+  }
+
+  async #deleteCurrentMemory() {
     const current = this.current;
     if (!current) {
       return;
@@ -255,15 +339,6 @@ class MemoryManager {
     await this.#goto(current.nextMemory?.href ?? current.previousMemory?.href ?? this.memoriesHref);
     await this.#deleteMemory(id);
     toastManager.primary(get(t)('removed_memory'));
-  }
-
-  async toggleCurrentMemorySaved() {
-    const memory = this.current?.memory;
-    if (!memory) {
-      return;
-    }
-
-    await this.toggleMemorySaved(memory.id);
   }
 
   /**
@@ -288,7 +363,7 @@ class MemoryManager {
    */
   async removeMemory(id: string) {
     if (this.current?.memory.id === id) {
-      await this.deleteCurrentMemory();
+      await this.#deleteCurrentMemory();
       return;
     }
 
@@ -313,26 +388,6 @@ class MemoryManager {
 
     await deleteMemory({ id });
     this.memories = this.memories.filter((memory) => memory.id !== id);
-  }
-
-  async #deleteAsset(memoryId: string, assetId: string) {
-    const memory = this.#getMemory(memoryId);
-    if (!memory?.assets.some((asset) => asset.id === assetId)) {
-      return;
-    }
-
-    if (memory.assets.length === 1) {
-      await this.#deleteMemory(memoryId);
-      return;
-    }
-
-    // FL-83 (ported from ef7ad8b832): the bulk endpoint answers 200 with a per-item outcome; only an
-    // explicit success for this item may change local state.
-    const removed = await removeMemoryAssets({ id: memoryId, bulkIdsDto: { ids: [assetId] } });
-    if (removed.find((result) => result.id === assetId)?.success !== true) {
-      throw new Error('Unable to remove the item from this memory');
-    }
-    memory.assets = memory.assets.filter((asset) => asset.id !== assetId);
   }
 
   loadNextPage() {
