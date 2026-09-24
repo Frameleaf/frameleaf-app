@@ -53,8 +53,8 @@ Packet 5 is on `codex/FL-71-sept24-settings`, based on `master/frameleaf-impleme
 Recorded deviations (privacy and truthfulness; production behaviour kept):
 
 - People and places are only shown to the owner reading their own scope (`insights.peopleAndPlaces` is null otherwise); the section is replaced by an explanation, and record file names read "Name shown only to its owner". Host scope stays administrator-only.
-- The storage donut shows the whole volume as used and free only. Originals, previews and the database are not measured separately, so nothing is subtracted to invent the template's categories.
-- Coverage rings show Dated, Located, Described by AI and Checksummed. "Faces checked" and "Search indexed" are not in the report and are left out rather than estimated.
+- The storage donut follows the prototype's split only in the administrator's whole-server report (`host.breakdown`: uploaded originals, previews & thumbnails and encoded video measured by the nightly collector, the database from `pg_database_size`, and other files as the rest of the space used, so the parts add up to the volume used). Accounts and libraries see the volume as used and free. When the measured parts exceed the space used (a database on another disk), the donut falls back to used and free and says so. Every segment is a share of the capacity.
+- Coverage rings are Dated, Located, Described by AI, Faces checked (`asset_job_status.facesRecognizedAt`), Search indexed (a smart-search embedding) and Checksummed; the last two server counts leave out the session's hidden content, as do the cameras, so every breakdown reconciles to items minus hidden items.
 - HDR and Dolby Vision appear only when the server has read a video stream (`insights.hdr` not null), with a note when only some videos have been read.
 
 ## 1. Coverage
