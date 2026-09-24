@@ -851,6 +851,7 @@
 }
 .mv-slideshow-settings > label {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -870,6 +871,9 @@
   border-radius: var(--fl-radius-control);
   font: inherit;
   font-size: var(--fl-font-small);
+}
+.mv-slideshow-settings input[type="checkbox"] {
+  width: auto;
 }
 .mv-slideshow-settings label.mv-check {
   justify-content: flex-start;
@@ -1069,64 +1073,154 @@
 }
 .mv-enrichment {
   margin: 14px 0 0;
-  padding: 14px;
-  border: 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--fl-viewer-text) 8%, transparent);
   border-radius: var(--fl-radius-card);
-  background: var(--fl-viewer-raised);
+  background: color-mix(in srgb, var(--fl-viewer-raised) 70%, transparent);
 }
-.mv-enrichment .mv-section-heading {
-  margin-bottom: 4px;
+@supports (corner-shape: squircle) {
+  .mv-enrichment {
+    corner-shape: squircle;
+    border-radius: calc(var(--fl-radius-card) * 1.6);
+  }
+}
+.mv-enrich-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.mv-enrich-head h3 {
+  margin: 0;
+  flex: 1;
+  color: var(--fl-viewer-text);
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* AI mark: a sparkle on one reserved indigo, so AI-produced content is recognisable everywhere */
+.mv-ai-mark,
+.mv-enrich-icon.ai {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+  background: var(--fl-ai, #5e5ce6);
+}
+.mv-ai-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
 }
 .mv-note {
   color: var(--fl-viewer-muted);
   font-size: var(--fl-font-micro);
 }
+.mv-enrich-list {
+  display: grid;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--fl-viewer-text) 4%, transparent);
+}
 .mv-enrich-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding: 10px 0 0;
+  min-height: 52px;
+  padding: 8px 8px 8px 10px;
 }
 .mv-enrich-row + .mv-enrich-row {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--fl-viewer-border);
+  border-top: 1px solid
+    color-mix(in srgb, var(--fl-viewer-text) 8%, transparent);
 }
-.mv-enrich-row > div:first-child {
+.mv-enrich-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #fff;
+  background: #636366;
+}
+.mv-enrich-icon.manual {
+  background: #636366;
+}
+.mv-enrich-icon.teal {
+  background: #30b0c7;
+}
+.mv-enrich-icon.warning {
+  background: #ff9f0a;
+}
+.mv-enrich-icon.blue {
+  background: #0a84ff;
+}
+@supports (corner-shape: squircle) {
+  .mv-enrich-icon,
+  .mv-ai-mark {
+    corner-shape: squircle;
+    border-radius: 11px;
+  }
+}
+.mv-enrich-text {
+  flex: 1;
   display: grid;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
-.mv-enrich-row strong {
+.mv-enrich-text strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fl-font-small);
   font-weight: 550;
 }
-.mv-enrich-row span {
+.mv-enrich-text span {
   color: var(--fl-viewer-muted);
   font-size: var(--fl-font-micro);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 .mv-enrich-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 .mv-enrich-actions button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
   min-height: 30px;
   padding: 4px 10px;
-  border: 1px solid var(--fl-viewer-border);
-  border-radius: var(--fl-radius-control);
-  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fl-viewer-text) 10%, transparent);
   color: var(--fl-viewer-text);
   font: inherit;
   font-size: var(--fl-font-micro);
+  font-weight: 550;
   cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.mv-enrich-actions button:has(> svg:only-child) {
+  padding: 0;
 }
 .mv-enrich-actions button:hover {
-  background: #ffffff10;
+  background: color-mix(in srgb, var(--fl-viewer-text) 18%, transparent);
+}
+/* Description badge: AI-written vs written by you */
+.mv-badge.mv-ai-badge,
+.mv-badge:has(> svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mv-badge.mv-ai-badge {
+  color: #fff;
+  border-color: transparent;
+  background: var(--fl-ai, #5e5ce6);
+  font-weight: 600;
 }
 .mv-pill {
   display: inline-block;

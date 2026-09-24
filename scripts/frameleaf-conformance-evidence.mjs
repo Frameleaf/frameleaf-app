@@ -57,7 +57,8 @@ const sectionDefaults = {
   },
   "search-discovery": {
     prototype: [
-      `${P}/SearchDialog.jsx`,
+      `${P}/SearchPalette.jsx`,
+      `${P}/search-palette.mjs`,
       `${P}/FilterPanel.jsx`,
       `${P}/search.mjs`,
     ],
@@ -1607,7 +1608,12 @@ const routes = {
     "partial",
     ["SD-1", "SD-2", "SD-3", "SD-4", "SD-5", "SD-12", "FP-1", "FP-2"],
     "Search dialog scope/hints/recents, results chips, filter panel presets and enrichment groups",
-    [`${P}/SearchDialog.jsx`, `${P}/FilterPanel.jsx`, `${P}/search.mjs`],
+    [
+      `${P}/SearchPalette.jsx`,
+      `${P}/search-palette.mjs`,
+      `${P}/FilterPanel.jsx`,
+      `${P}/search.mjs`,
+    ],
     [
       `${W}/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
       `${W}/lib/components/frameleaf/SearchDialog.svelte`,

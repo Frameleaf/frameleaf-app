@@ -140,8 +140,7 @@ export function slideshowOrder(
   random = Math.random,
 ) {
   const unique = [...new Set(ids)];
-  const order =
-    mode === true ? "shuffle" : mode === false ? "ascending" : mode;
+  const order = mode === true ? "shuffle" : mode === false ? "ascending" : mode;
   if (order === "descending") return unique.reverse();
   if (order !== "shuffle") return unique;
   const others = unique.filter((id) => id !== currentId);
@@ -202,14 +201,15 @@ export function panoramaLayout(natural, viewport) {
   };
 }
 export const clampPanorama = (offset, layout) =>
-  !layout
-    ? 0
-    : Math.max(0, Math.min(layout.maxOffset, Number(offset) || 0));
+  !layout ? 0 : Math.max(0, Math.min(layout.maxOffset, Number(offset) || 0));
 export function panoramaWindow(offset, layout, viewport) {
   if (!layout || !viewport?.width) return { left: 0, width: 1 };
   const width = Math.min(1, viewport.width / layout.width);
   return {
-    left: Math.max(0, Math.min(1 - width, clampPanorama(offset, layout) / layout.width)),
+    left: Math.max(
+      0,
+      Math.min(1 - width, clampPanorama(offset, layout) / layout.width),
+    ),
     width,
   };
 }
@@ -328,9 +328,10 @@ export function osmLink(latitude, longitude) {
 }
 /* ---------- Date and time ---------- */
 export function splitDateTime(value) {
-  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?)?/.exec(
-    String(value || ""),
-  );
+  const match =
+    /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?)?/.exec(
+      String(value || ""),
+    );
   return match
     ? { date: match[1], time: match[2] || "00:00" }
     : { date: "", time: "" };
@@ -636,10 +637,18 @@ export function parseViewerPreferences(raw) {
   return {
     interval: oneOf(data.interval, [2, 3, 5, 10, 15, 30], 5),
     look: oneOf(data.look, ["fit", "fill", "blur"], "fit"),
-    caption: oneOf(data.caption, ["off", "description", "details"], "description"),
+    caption: oneOf(
+      data.caption,
+      ["off", "description", "details"],
+      "description",
+    ),
     order: oneOf(data.order, SLIDESHOW_ORDERS, "ascending"),
     repeat: data.repeat === true,
-    transition: oneOf(data.transition, ["none", "fade", "slide"], "fade"),
+    transition: oneOf(
+      data.transition,
+      SLIDESHOW_TRANSITIONS.map(([id]) => id),
+      VIEWER_DEFAULTS.transition,
+    ),
     progress: data.progress !== false,
     filmstrip: data.filmstrip === true,
   };
@@ -677,14 +686,22 @@ export function viewerActionGroups(
       id: "download",
       label: "Download",
       items: [
-        canDownload && { id: "download", label: "Download", icon: "mdiDownloadOutline" },
+        canDownload && {
+          id: "download",
+          label: "Download",
+          icon: "mdiDownloadOutline",
+        },
         canDownload &&
           asset.isEdited && {
             id: "download-original",
             label: "Download original",
             icon: "mdiFileDownloadOutline",
           },
-        !video && { id: "copy-image", label: "Copy image", icon: "mdiContentCopy" },
+        !video && {
+          id: "copy-image",
+          label: "Copy image",
+          icon: "mdiContentCopy",
+        },
       ],
     },
     trash
@@ -692,7 +709,11 @@ export function viewerActionGroups(
           id: "trash",
           label: "Trash",
           items: [
-            !readOnly && { id: "restore", label: "Restore", icon: "mdiDeleteRestore" },
+            !readOnly && {
+              id: "restore",
+              label: "Restore",
+              icon: "mdiDeleteRestore",
+            },
             !readOnly && {
               id: "delete-permanently",
               label: "Delete permanently",
@@ -705,7 +726,11 @@ export function viewerActionGroups(
           id: "organize",
           label: "Organize",
           items: [
-            !readOnly && { id: "add-to-album", label: "Add to album", icon: "mdiImageAlbum" },
+            !readOnly && {
+              id: "add-to-album",
+              label: "Add to album",
+              icon: "mdiImageAlbum",
+            },
             !readOnly &&
               inAlbum && {
                 id: "remove-from-album",
@@ -722,7 +747,9 @@ export function viewerActionGroups(
             !readOnly && {
               id: locked ? "unlock" : "lock",
               label: locked ? "Unmark Sensitive" : "Mark Sensitive",
-              icon: locked ? "mdiLockOpenVariantOutline" : "mdiShieldLockOutline",
+              icon: locked
+                ? "mdiLockOpenVariantOutline"
+                : "mdiShieldLockOutline",
             },
           ],
         },
@@ -731,9 +758,17 @@ export function viewerActionGroups(
       label: "Stack",
       items: [
         !readOnly &&
-          !asset.stackId && { id: "add-to-stack", label: "Add to stack", icon: "mdiLayersPlus" },
+          !asset.stackId && {
+            id: "add-to-stack",
+            label: "Add to stack",
+            icon: "mdiLayersPlus",
+          },
         !readOnly &&
-          asset.stackId && { id: "unstack", label: "Unstack", icon: "mdiLayersOutline" },
+          asset.stackId && {
+            id: "unstack",
+            label: "Unstack",
+            icon: "mdiLayersOutline",
+          },
         !readOnly &&
           asset.stackId && {
             id: "stack-keep-this",
@@ -780,8 +815,16 @@ export function viewerActionGroups(
       id: "navigate",
       label: "Go to",
       items: [
-        { id: "view-in-timeline", label: "View in timeline", icon: "mdiTimelineClockOutline" },
-        { id: "find-similar", label: "Find similar", icon: "mdiImageSearchOutline" },
+        {
+          id: "view-in-timeline",
+          label: "View in timeline",
+          icon: "mdiTimelineClockOutline",
+        },
+        {
+          id: "find-similar",
+          label: "Find similar",
+          icon: "mdiImageSearchOutline",
+        },
         (asset.city || asset.latitude != null) && {
           id: "view-on-map",
           label: "View on map",
@@ -799,11 +842,31 @@ export function viewerActionGroups(
         id: "jobs",
         label: "Jobs",
         items: [
-          !video && { id: "refresh-faces", label: "Refresh faces", icon: "mdiFaceRecognition" },
-          { id: "refresh-metadata", label: "Refresh metadata", icon: "mdiDatabaseRefreshOutline" },
-          { id: "refresh-thumbnails", label: "Refresh thumbnails", icon: "mdiImageMultipleOutline" },
-          video && { id: "refresh-encoded", label: "Refresh encoded video", icon: "mdiVideoOutline" },
-          video && { id: "transcode", label: "Transcode video", icon: "mdiMovieOpenOutline" },
+          !video && {
+            id: "refresh-faces",
+            label: "Refresh faces",
+            icon: "mdiFaceRecognition",
+          },
+          {
+            id: "refresh-metadata",
+            label: "Refresh metadata",
+            icon: "mdiDatabaseRefreshOutline",
+          },
+          {
+            id: "refresh-thumbnails",
+            label: "Refresh thumbnails",
+            icon: "mdiImageMultipleOutline",
+          },
+          video && {
+            id: "refresh-encoded",
+            label: "Refresh encoded video",
+            icon: "mdiVideoOutline",
+          },
+          video && {
+            id: "transcode",
+            label: "Transcode video",
+            icon: "mdiMovieOpenOutline",
+          },
         ],
       },
   ];
@@ -814,4 +877,36 @@ export function viewerActionGroups(
       items: group.items.filter((item) => item && available.includes(item.id)),
     }))
     .filter((group) => group.items.length > 0);
+}
+
+/** Slideshow transitions. Fade stays the default; Ken Burns and Memories add slow pan and zoom. */
+export const SLIDESHOW_TRANSITIONS = Object.freeze([
+  ["none", "None"],
+  ["fade", "Fade"],
+  ["slide", "Slide"],
+  ["ken-burns", "Ken Burns"],
+  ["memories", "Memories"],
+]);
+/** Reduce Motion keeps the pacing but swaps moving transitions for a fade. */
+export function effectiveTransition(transition, reducedMotion = false) {
+  const known = SLIDESHOW_TRANSITIONS.some(([id]) => id === transition)
+    ? transition
+    : VIEWER_DEFAULTS.transition;
+  return reducedMotion && ["slide", "ken-burns", "memories"].includes(known)
+    ? "fade"
+    : known;
+}
+
+const kenBurnsMoves = [
+  { from: "scale(1) translate(0, 0)", to: "scale(1.14) translate(-3%, -2%)" },
+  { from: "scale(1.14) translate(3%, 2%)", to: "scale(1.02) translate(0, 0)" },
+  { from: "scale(1.1) translate(-4%, 0)", to: "scale(1.1) translate(4%, 0)" },
+  { from: "scale(1.08) translate(0, 3%)", to: "scale(1.16) translate(0, -3%)" },
+];
+/** Deterministic pan/zoom per asset so the same photo always moves the same way. */
+export function kenBurnsMove(assetId) {
+  let hash = 0;
+  for (const character of String(assetId ?? ""))
+    hash = (hash * 31 + character.codePointAt(0)) >>> 0;
+  return kenBurnsMoves[hash % kenBurnsMoves.length];
 }

@@ -5,6 +5,7 @@ import { media } from "./media";
 import {
   aboutInfo,
   checkForUpdates,
+  dismissNotification,
   markAllRead,
   markRead,
   notificationTypes,
@@ -208,6 +209,15 @@ export function NotificationsPanel({ notifications, onChange, onClose, onOpenTar
                     {item.body && <span>{item.body}</span>}
                   </span>
                   <time dateTime={item.createdAt}>{relativeTime(item.createdAt, now)}</time>
+                </button>
+                <button
+                  type="button"
+                  className="fl-icon-button notif-dismiss"
+                  aria-label={`Dismiss ${item.title}`}
+                  title="Dismiss"
+                  onClick={() => onChange?.(dismissNotification(list, item.id))}
+                >
+                  <Icon name="mdiClose" size={14} />
                 </button>
               </li>
             );

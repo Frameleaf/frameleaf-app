@@ -101,8 +101,11 @@ function Switch({ checked, onChange, children, disabled }) {
   );
 }
 
+const clusterRadius = (cluster) =>
+  cluster.count === 1 ? 21 : 18 + Math.min(cluster.count, 40) * 0.45;
+
 /** Base terrain, lakes, roads, graticule and labels: purely decorative, offline. */
-function BaseLayer({ bounds, size, zoom, terrain, blurId, showLabels = true }) {
+function BaseLayer({ bounds, size, zoom, terrain, blurId, showLabels = true, clusters = [] }) {
   const at = (lat, lng) => project(lat, lng, bounds, size);
   const origin = at(bounds.north, bounds.west);
   const unit = at(bounds.north - 0.1, bounds.west + 0.1);
@@ -224,10 +227,19 @@ function BaseLayer({ bounds, size, zoom, terrain, blurId, showLabels = true }) {
             .map((place) => {
               const p = at(place.lat, place.lng);
               if (!visible(p, 0)) return null;
+              // Start the name past any cluster bubble drawn over this place.
+              // Clusters sit at their photos' average, a little off the place dot.
+              const bubble = clusters.find(
+                (c) => Math.hypot(c.x - p.x, c.y - p.y) < clusterRadius(c) + 24,
+              );
+              const labelX = Math.max(
+                p.x + 7,
+                bubble ? bubble.x + clusterRadius(bubble) + 6 : 0,
+              );
               return (
                 <g key={place.id} className={`map-label rank-${place.rank}`}>
                   <circle cx={p.x} cy={p.y} r={place.rank === 1 ? 3 : 2} />
-                  <text x={p.x + 7} y={p.y + 4}>
+                  <text x={labelX} y={p.y + 4}>
                     {place.name}
                   </text>
                 </g>
@@ -513,7 +525,7 @@ export function MapView({
               <feGaussianBlur stdDeviation="10" />
             </filter>
           </defs>
-          <BaseLayer bounds={bounds} size={size} zoom={view.zoom} terrain={terrain} blurId={blurId} showLabels={size.width > 220} />
+          <BaseLayer bounds={bounds} size={size} zoom={view.zoom} terrain={terrain} blurId={blurId} showLabels={size.width > 220} clusters={clusters} />
           <g className="map-markers">
             {clusters.map((cluster) => (
               <g key={cluster.id} className="map-dot">
@@ -560,10 +572,10 @@ export function MapView({
               <circle cx="0" cy="0" r="19" />
             </clipPath>
           </defs>
-          <BaseLayer bounds={bounds} size={size} zoom={view.zoom} terrain={terrain} blurId={blurId} />
+          <BaseLayer bounds={bounds} size={size} zoom={view.zoom} terrain={terrain} blurId={blurId} clusters={clusters} />
           <g className="map-markers">
             {clusters.map((cluster) => {
-              const radius = cluster.count === 1 ? 21 : 18 + Math.min(cluster.count, 40) * 0.45;
+              const radius = clusterRadius(cluster);
               const highlighted = highlightId && cluster.assetIds.includes(highlightId);
               const label =
                 cluster.count === 1
