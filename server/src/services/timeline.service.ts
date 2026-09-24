@@ -1,6 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { TimeBucketAssetDto, TimeBucketDto, TimeBucketsResponseDto } from 'src/dtos/time-bucket.dto.js';
+import {
+  TIMELINE_HIGHLIGHT_DEFAULT,
+  TimeBucketAssetDto,
+  TimeBucketDto,
+  TimeBucketsResponseDto,
+  TimelineHighlightResponseDto,
+  TimelineHighlightsDto,
+} from 'src/dtos/time-bucket.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -33,6 +40,22 @@ export class TimelineService extends BaseService {
     // TODO: use id cursor for pagination
     const bucket = await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth);
     return bucket.assets;
+  }
+
+  /**
+   * FL-33: curated Years and Months cards. The same checks and the same options as the time buckets,
+   * so a card counts exactly what the matching bucket counts and never reveals more.
+   */
+  async getTimelineHighlights(auth: AuthDto, dto: TimelineHighlightsDto): Promise<TimelineHighlightResponseDto[]> {
+    const { grouping, highlightCount, ...bucketDto } = dto;
+    await this.timeBucketChecks(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
+    return this.assetRepository.getTimelineHighlights(timeBucketOptions, auth, {
+      grouping,
+      highlightCount: grouping === 'year' ? 0 : (highlightCount ?? TIMELINE_HIGHLIGHT_DEFAULT),
+      // a shared link that hides EXIF hides places too, as its buckets do
+      withPlaces: !auth.sharedLink || auth.sharedLink.showExif,
+    });
   }
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {

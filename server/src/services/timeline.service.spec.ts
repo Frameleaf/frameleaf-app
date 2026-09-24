@@ -477,4 +477,50 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });
+
+  describe('getTimelineHighlights (FL-33)', () => {
+    it('uses the same options as the time buckets', async () => {
+      const auth = { ...authStub.admin, hideNsfwAssets: true };
+      mocks.asset.getTimelineHighlights.mockResolvedValue([]);
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimelineHighlights(auth, { grouping: 'month', isFavorite: true });
+      await sut.getTimeBuckets(auth, { isFavorite: true });
+
+      const [highlightOptions] = mocks.asset.getTimelineHighlights.mock.calls[0];
+      const [bucketOptions] = mocks.asset.getTimeBuckets.mock.calls[0];
+      expect(highlightOptions).toEqual(bucketOptions);
+      expect(mocks.asset.getTimelineHighlights.mock.calls[0][2]).toEqual({
+        grouping: 'month',
+        highlightCount: 4,
+        withPlaces: true,
+      });
+    });
+
+    it('gives year cards no highlights', async () => {
+      mocks.asset.getTimelineHighlights.mockResolvedValue([]);
+      await sut.getTimelineHighlights(authStub.admin, { grouping: 'year', highlightCount: 6 });
+      expect(mocks.asset.getTimelineHighlights.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ grouping: 'year', highlightCount: 0 }),
+      );
+    });
+
+    it('requires an elevated session for Locked highlights', async () => {
+      await expect(
+        sut.getTimelineHighlights(authStub.admin, { grouping: 'month', visibility: AssetVisibility.Locked }),
+      ).rejects.toThrow('Elevated permission');
+      expect(mocks.asset.getTimelineHighlights).not.toHaveBeenCalled();
+    });
+
+    it("never scopes Locked highlights to another user's library", async () => {
+      const auth = { ...authStub.admin, session: { id: 'session', hasElevatedPermission: true } } as any;
+      await expect(
+        sut.getTimelineHighlights(auth, {
+          grouping: 'month',
+          visibility: AssetVisibility.Locked,
+          userId: '00000000-0000-4000-8000-000000000000',
+        }),
+      ).rejects.toThrow("You may not access another user's locked timeline");
+    });
+  });
 });
