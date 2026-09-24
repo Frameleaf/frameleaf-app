@@ -38966,6 +38966,37 @@
         ],
         "type": "object"
       },
+      "AnalyticsFocalLengthDto": {
+        "description": "Items per recorded focal length (mm)",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsFocalLengthDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsFocalLengthDtoKey": {
+        "enum": [
+          "0-16",
+          "17-28",
+          "29-40",
+          "41-70",
+          "71-135",
+          "136-300",
+          "301+",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "AnalyticsGrain": {
         "description": "Analytics grain",
         "enum": [
@@ -38973,6 +39004,33 @@
           "day"
         ],
         "type": "string"
+      },
+      "AnalyticsHdrDto": {
+        "properties": {
+          "dolbyVisionVideos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hdrVideos": {
+            "description": "PQ or HLG transfer, or Dolby Vision",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probedVideos": {
+            "description": "Videos whose stream metadata has been read; the only ones HDR can be told for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dolbyVisionVideos",
+          "hdrVideos",
+          "probedVideos"
+        ],
+        "type": "object"
       },
       "AnalyticsHistoryDto": {
         "properties": {
@@ -39052,6 +39110,138 @@
         ],
         "type": "object"
       },
+      "AnalyticsInsightsDto": {
+        "properties": {
+          "capturesByYear": {
+            "description": "Items per local capture year, all time",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsYearCountDto"
+            },
+            "type": "array"
+          },
+          "focalLengths": {
+            "description": "Every bucket, in order; adds up to summary.items",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsFocalLengthDto"
+            },
+            "type": "array"
+          },
+          "hdr": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsHdrDto"
+              }
+            ],
+            "description": "Null when no video stream has been read, so HDR cannot be told",
+            "nullable": true
+          },
+          "lenses": {
+            "description": "Items per lens model, then every other lens, then no lens",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsNamedCountDto"
+            },
+            "type": "array"
+          },
+          "livePhotos": {
+            "description": "Photos with a Live Photo motion part",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orientation": {
+            "description": "Every bucket; adds up to summary.items. Panorama is 2:1 or wider",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsOrientationDto"
+            },
+            "type": "array"
+          },
+          "peopleAndPlaces": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsPeopleAndPlacesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "photoFormats": {
+            "description": "Every format; adds up to summary.photos, and RAW equals summary.raw",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPhotoFormatDto"
+            },
+            "type": "array"
+          },
+          "punchcard": {
+            "description": "All 168 weekday and hour cells of the local capture time",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPunchcardCellDto"
+            },
+            "type": "array"
+          },
+          "records": {
+            "$ref": "#/components/schemas/AnalyticsRecordsDto"
+          },
+          "videoResolutions": {
+            "description": "Every bucket; adds up to summary.videos",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsVideoResolutionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "capturesByYear",
+          "focalLengths",
+          "hdr",
+          "lenses",
+          "livePhotos",
+          "orientation",
+          "peopleAndPlaces",
+          "photoFormats",
+          "punchcard",
+          "records",
+          "videoResolutions"
+        ],
+        "type": "object"
+      },
+      "AnalyticsLargestFileDto": {
+        "properties": {
+          "bytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsLongestVideoDto": {
+        "properties": {
+          "durationMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "durationMs",
+          "name"
+        ],
+        "type": "object"
+      },
       "AnalyticsMeasurementScope": {
         "description": "Analytics measurement scope",
         "enum": [
@@ -39096,6 +39286,210 @@
           "cameraModel",
           "aiDescription",
           "checksum"
+        ],
+        "type": "string"
+      },
+      "AnalyticsNamedCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AnalyticsNamedCountKind"
+          },
+          "name": {
+            "description": "Null for the other and unknown rows",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsNamedCountKind": {
+        "enum": [
+          "named",
+          "other",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsOldestCaptureDto": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsOrientationDto": {
+        "description": "Items per displayed orientation",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsOrientationDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsOrientationDtoKey": {
+        "enum": [
+          "landscape",
+          "portrait",
+          "square",
+          "panorama",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsPeopleAndPlacesDto": {
+        "description": "The owner's own people and places, only when the owner reads their own scope",
+        "properties": {
+          "cities": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "countries": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faces": {
+            "description": "Visible faces on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "geotagged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "itemsWithFaces": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "itemsWithoutFaces": {
+            "description": "itemsWithFaces plus itemsWithoutFaces is summary.items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "namedPeople": {
+            "description": "Named, visible people of the owner seen on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pets": {
+            "description": "The owner's visible pets confirmed on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "places": {
+            "description": "Items per city, then every other city, then no city",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsNamedCountDto"
+            },
+            "type": "array"
+          },
+          "topPeople": {
+            "description": "Most photographed named people; overlapping, as one item can show several",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPersonCountDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cities",
+          "countries",
+          "faces",
+          "geotagged",
+          "itemsWithFaces",
+          "itemsWithoutFaces",
+          "namedPeople",
+          "pets",
+          "places",
+          "topPeople"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPersonCountDto": {
+        "properties": {
+          "count": {
+            "description": "Items showing them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person id",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPhotoFormatDto": {
+        "description": "Photos per original file format",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsPhotoFormatDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPhotoFormatDtoKey": {
+        "enum": [
+          "HEIC",
+          "JPEG",
+          "RAW",
+          "PNG",
+          "OTHER"
         ],
         "type": "string"
       },
@@ -39155,6 +39549,33 @@
         ],
         "type": "object"
       },
+      "AnalyticsPunchcardCellDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hour": {
+            "description": "Hour of the local capture time",
+            "maximum": 23,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "weekday": {
+            "description": "ISO weekday of the local capture time, 1 = Monday",
+            "maximum": 7,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "hour",
+          "weekday"
+        ],
+        "type": "object"
+      },
       "AnalyticsRange": {
         "description": "Analytics date range",
         "enum": [
@@ -39162,6 +39583,54 @@
           "year"
         ],
         "type": "string"
+      },
+      "AnalyticsRecordsDto": {
+        "properties": {
+          "largestFile": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsLargestFileDto"
+              }
+            ],
+            "nullable": true
+          },
+          "longestVideo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsLongestVideoDto"
+              }
+            ],
+            "nullable": true
+          },
+          "oldestCapture": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsOldestCaptureDto"
+              }
+            ],
+            "nullable": true
+          },
+          "videoDurationMs": {
+            "description": "All videos together",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videoHours": {
+            "description": "videoDurationMs in hours, one decimal",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "largestFile",
+          "longestVideo",
+          "oldestCapture",
+          "videoDurationMs",
+          "videoHours"
+        ],
+        "type": "object"
       },
       "AnalyticsReportResponseDto": {
         "properties": {
@@ -39199,6 +39668,10 @@
           },
           "host": {
             "$ref": "#/components/schemas/AnalyticsHostDto"
+          },
+          "insights": {
+            "$ref": "#/components/schemas/AnalyticsInsightsDto",
+            "description": "Dashboard breakdowns of the same items as summary. People, places and file names are only for the owner reading their own scope"
           },
           "metadata": {
             "items": {
@@ -39528,6 +40001,34 @@
         ],
         "type": "string"
       },
+      "AnalyticsVideoResolutionDto": {
+        "description": "Videos per resolution",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsVideoResolutionDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsVideoResolutionDtoKey": {
+        "enum": [
+          "4K",
+          "1080p",
+          "720p",
+          "SD",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "AnalyticsView": {
         "enum": [
           "timeline",
@@ -39568,6 +40069,25 @@
           "total",
           "videos",
           "view"
+        ],
+        "type": "object"
+      },
+      "AnalyticsYearCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "year": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "year"
         ],
         "type": "object"
       },
