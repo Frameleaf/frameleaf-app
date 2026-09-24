@@ -6236,7 +6236,7 @@ export type AskSearchResponseDto = {
     warnings: string[];
 };
 export type SearchCityCountResponseDto = {
-    /** City name, as grouped by GET /search/cities */
+    /** City name, grouped as in GET /search/cities (which lists only cities with a photo) */
     city: string;
     /** Number of timeline photos and videos in this city */
     count: number;

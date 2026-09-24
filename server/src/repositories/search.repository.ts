@@ -588,7 +588,8 @@ export class SearchRepository {
 
   /**
    * Media per city for the places page (FL-51): the same owners and privacy rules as `getAssetsByCity`
-   * (timeline-visible, not Locked, hidden content filtered), counting photos and videos.
+   * (timeline-visible, not Locked, hidden content filtered), but counting photos and videos, so a city
+   * with only videos has a count here and no entry in `getAssetsByCity`, which lists photos only.
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getCityAssetCounts(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
