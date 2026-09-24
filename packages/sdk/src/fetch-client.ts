@@ -8301,6 +8301,8 @@ export type TimeBucketAssetResponseDto = {
     lockReason?: ((AssetLockReason) | null)[];
     /** Array of longitude coordinates extracted from EXIF GPS data */
     longitude?: (number | null)[];
+    /** Array of original file names. Omitted for shared links that hide EXIF */
+    originalFileName?: string[];
     /** Array of owner IDs for each asset */
     ownerId: string[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */

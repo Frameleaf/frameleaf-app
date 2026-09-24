@@ -1746,7 +1746,8 @@ export class AssetRepository {
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select(lockReasonOf('asset').as('lockReason')),
           )
-          .$if(withPlaces, (qb) => qb.select('asset_exif.rating'))
+          // FL-33: Work shows each tile's file name on request; hidden with the rest of the metadata
+          .$if(withPlaces, (qb) => qb.select(['asset_exif.rating', 'asset.originalFileName']))
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
           .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
           .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
@@ -1870,6 +1871,7 @@ export class AssetRepository {
               eb.fn.coalesce(eb.fn('array_agg', ['city']), sql.lit('{}')).as('city'),
               eb.fn.coalesce(eb.fn('array_agg', ['country']), sql.lit('{}')).as('country'),
               eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
+              eb.fn.coalesce(eb.fn('array_agg', ['originalFileName']), sql.lit('{}')).as('originalFileName'),
             ]),
           )
           .$if(!!options.withCoordinates, (qb) =>

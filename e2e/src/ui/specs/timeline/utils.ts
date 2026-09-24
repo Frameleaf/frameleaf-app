@@ -200,6 +200,10 @@ export const groupingUtils = {
   groupHeadings(page: Page) {
     return page.getByTestId('frameleaf-group').getByRole('heading', { level: 2 });
   },
+  /** The curated Years or Months cards (FL-33). */
+  cards(page: Page) {
+    return page.getByTestId('frameleaf-timeline-cards').getByRole('listitem');
+  },
   /** The per-day headers of the Days grouping. */
   dayHeadings(page: Page) {
     return page.getByTestId('frameleaf-day-group').getByRole('heading', { level: 2 });
