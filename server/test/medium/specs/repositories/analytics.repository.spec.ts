@@ -360,3 +360,273 @@ describe(AnalyticsRepository.name, () => {
     });
   });
 });
+
+describe('AnalyticsRepository.getInsights (FL-79)', () => {
+  const noNames = { ownerId: null, suppressedPersonIds: [], suppressedPetIds: [] };
+  const total = (rows: Array<{ count: number }>) => rows.reduce((sum, { count }) => sum + count, 0);
+
+  const newItem = async (
+    ctx: MediumTestContext,
+    ownerId: string,
+    asset: Record<string, unknown>,
+    exif: Record<string, unknown> = {},
+  ) => {
+    const { asset: created } = await ctx.newAsset({ ownerId, ...asset });
+    await ctx.newExif({ assetId: created.id, make: 'Canon', ...exif });
+    return created;
+  };
+
+  const library = async (ctx: MediumTestContext, db: Kysely<DB>, ownerId: string) => {
+    const at = (value: string) => new Date(value);
+    const heic = await newItem(
+      ctx,
+      ownerId,
+      { originalFileName: 'IMG_1.HEIC', localDateTime: at('2009-06-14T08:30:00Z'), width: 4032, height: 3024 },
+      { lensModel: 'iPhone 13mm', focalLength: 1.5, city: 'Banff', country: 'Canada', latitude: 51, longitude: -115 },
+    );
+    await newItem(
+      ctx,
+      ownerId,
+      { originalFileName: 'IMG_2.jpg', localDateTime: at('2024-03-02T17:10:00Z'), width: 3000, height: 4000 },
+      { lensModel: 'RF 70-200mm', focalLength: 135, city: 'Banff', country: 'Canada', fileSizeInByte: 9_000_000 },
+    );
+    await newItem(
+      ctx,
+      ownerId,
+      { originalFileName: 'DSC_3.CR3', localDateTime: at('2024-03-02T17:40:00Z'), width: 8000, height: 2000 },
+      { focalLength: 400, city: 'Lisbon', country: 'Portugal' },
+    );
+    const motion = await newItem(ctx, ownerId, {
+      type: AssetType.Video,
+      visibility: AssetVisibility.Hidden,
+      originalFileName: 'IMG_1.MOV',
+      localDateTime: at('2009-06-14T08:30:00Z'),
+    });
+    await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', heic.id).execute();
+    const video = await newItem(
+      ctx,
+      ownerId,
+      {
+        type: AssetType.Video,
+        originalFileName: 'clip.mov',
+        localDateTime: at('2025-12-31T23:00:00Z'),
+        width: 3840,
+        height: 2160,
+        duration: 5_400_000,
+      },
+      { fileSizeInByte: 1000 },
+    );
+    await db
+      .insertInto('asset_video')
+      .values({
+        assetId: video.id,
+        bitrate: 1,
+        frameCount: 1,
+        timeBase: 1,
+        index: 0,
+        colorPrimaries: 9,
+        colorTransfer: 16,
+        colorMatrix: 9,
+        dvProfile: 8,
+        codecName: 'hevc',
+        formatName: 'mov',
+        formatLongName: 'QuickTime',
+        pixelFormat: 'yuv420p10le',
+      })
+      .execute();
+    // a trashed video still counts as an item, with unknown resolution
+    await newItem(ctx, ownerId, {
+      type: AssetType.Video,
+      originalFileName: 'old.mp4',
+      localDateTime: at('2024-07-01T12:00:00Z'),
+      deletedAt: at('2026-01-01T00:00:00Z'),
+    });
+    // Locked media never counts anywhere
+    await newItem(
+      ctx,
+      ownerId,
+      { visibility: AssetVisibility.Locked, originalFileName: 'secret.jpg', localDateTime: at('1990-01-01T00:00:00Z') },
+      { lensModel: 'Secret lens', city: 'Hidden City', fileSizeInByte: 99_000_000 },
+    );
+    return { heic };
+  };
+
+  it('partitions the same items as the summary and reads no names for another reader', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    await library(ctx, db, user.id);
+
+    const scope = account(user.id);
+    const [inventory, insights] = await Promise.all([sut.getInventory(scope), sut.getInsights(scope, noNames)]);
+    const items = inventory.photos + inventory.videos;
+    expect(items).toBe(5);
+
+    expect(insights.years).toEqual([
+      { year: 2009, count: 1 },
+      { year: 2024, count: 3 },
+      { year: 2025, count: 1 },
+    ]);
+    expect(total(insights.punchcard)).toBe(items);
+    // 2024-03-02 was a Saturday; both photos were taken at 17:xx local time
+    expect(insights.punchcard).toContainEqual({ weekday: 6, hour: 17, count: 2 });
+    expect(total(insights.lenses)).toBe(items);
+    expect(insights.lenses).not.toContainEqual(expect.objectContaining({ name: 'Secret lens' }));
+    expect(total(insights.focalLengths)).toBe(items);
+    expect(insights.focalLengths).toEqual(
+      expect.arrayContaining([
+        { bucket: '0-16', count: 1 },
+        { bucket: '71-135', count: 1 },
+        { bucket: '301+', count: 1 },
+        { bucket: 'unknown', count: 2 },
+      ]),
+    );
+    expect(total(insights.photoFormats)).toBe(inventory.photos);
+    expect(insights.photoFormats.find(({ format }) => format === 'RAW')?.count).toBe(inventory.raw);
+    expect(insights.photoFormats).toEqual(
+      expect.arrayContaining([
+        { format: 'HEIC', count: 1 },
+        { format: 'JPEG', count: 1 },
+        { format: 'RAW', count: 1 },
+      ]),
+    );
+    expect(total(insights.videoResolutions)).toBe(inventory.videos);
+    expect(insights.videoResolutions).toEqual(
+      expect.arrayContaining([
+        { resolution: '4K', count: 1 },
+        { resolution: 'unknown', count: 1 },
+      ]),
+    );
+    expect(total(insights.orientation)).toBe(items);
+    expect(insights.orientation).toEqual(
+      expect.arrayContaining([
+        { orientation: 'landscape', count: 2 },
+        { orientation: 'portrait', count: 1 },
+        { orientation: 'panorama', count: 1 },
+        { orientation: 'unknown', count: 1 },
+      ]),
+    );
+    expect(insights.livePhotos).toBe(1);
+    expect(insights.hdr).toEqual({ probedVideos: 1, hdrVideos: 1, dolbyVisionVideos: 1 });
+    expect(insights.records).toEqual({
+      oldest: { localDateTime: new Date('2009-06-14T08:30:00.000Z'), name: '' },
+      largest: { bytes: 9_000_000, name: '' },
+      longest: { durationMs: 5_400_000, name: '' },
+      videoDurationMs: 5_400_000,
+    });
+    expect(insights.people).toBeNull();
+    expect(JSON.stringify(insights)).not.toMatch(/IMG_|clip\.mov|secret/);
+  });
+
+  it("reads the owner's people and places, never a Locked or hidden one", async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const { heic } = await library(ctx, db, user.id);
+
+    const { person: emma } = await ctx.newPerson({ ownerId: user.id, name: 'Emma' });
+    const { person: kept } = await ctx.newPerson({ ownerId: user.id, name: 'Kept Private' });
+    const { person: hidden } = await ctx.newPerson({ ownerId: user.id, name: 'Hidden', isHidden: true });
+    const { person: stranger } = await ctx.newPerson({ ownerId: other.id, name: 'Other Account' });
+    for (const person of [emma, kept, hidden, stranger]) {
+      await ctx.newAssetFace({ assetId: heic.id, personGroupId: person.personGroupId });
+    }
+
+    const scope = account(user.id);
+    const insights = await sut.getInsights(scope, {
+      ownerId: user.id,
+      suppressedPersonIds: [kept.personGroupId],
+      suppressedPetIds: [],
+    });
+    const people = insights.people!;
+    expect(people).toMatchObject({ faces: 4, itemsWithFaces: 1, namedPeople: 1, pets: 0, geotagged: 1 });
+    expect(people.topPeople).toEqual([{ id: emma.personGroupId, name: 'Emma', count: 1 }]);
+    expect(people.countries).toBe(2);
+    expect(people.cities).toBe(2);
+    expect(total(people.places)).toBe(5);
+    expect(people.places).toEqual(
+      expect.arrayContaining([
+        { name: 'Banff', count: 2 },
+        { name: 'Lisbon', count: 1 },
+        { name: null, count: 2 },
+      ]),
+    );
+    expect(insights.records.oldest?.name).toBe('IMG_1.HEIC');
+    expect(JSON.stringify(insights)).not.toMatch(/Kept Private|Other Account|Hidden City|"Hidden"/);
+
+    // the other account's own scope never sees this account's people
+    const otherInsights = await sut.getInsights(account(other.id), {
+      ownerId: other.id,
+      suppressedPersonIds: [],
+      suppressedPetIds: [],
+    });
+    expect(otherInsights.people?.topPeople).toEqual([]);
+  });
+
+  it('reads the whole server without names', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    await library(ctx, db, user.id);
+    await newItem(ctx, other.id, { originalFileName: 'x.png', localDateTime: new Date('2020-01-01T00:00:00Z') });
+
+    const [inventory, insights] = await Promise.all([sut.getInventory(host), sut.getInsights(host, noNames)]);
+    expect(inventory.photos + inventory.videos).toBe(6);
+    expect(total(insights.years)).toBe(6);
+    expect(insights.photoFormats).toContainEqual({ format: 'PNG', count: 1 });
+    expect(insights.people).toBeNull();
+  });
+
+  it('never shows a locked session an item its hidden-content rules keep hidden', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    await library(ctx, db, user.id);
+    const secret = await newItem(
+      ctx,
+      user.id,
+      { originalFileName: 'kept-private.jpg', localDateTime: new Date('2001-01-01T00:00:00Z') },
+      { city: 'Private Town', country: 'Nowhere', fileSizeInByte: 50_000_000, lensModel: 'Private lens' },
+    );
+    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Kept Private' });
+    await ctx.newAssetFace({ assetId: secret.id, personGroupId: person.personGroupId });
+
+    const scope = account(user.id);
+    const hiddenContent = {
+      userId: user.id,
+      includeNsfw: false,
+      personIds: [person.personGroupId],
+      tagIds: [],
+      petIds: [],
+      scope: 'owned' as const,
+    };
+    const [inventory, unlocked, locked] = await Promise.all([
+      sut.getInventory(scope),
+      sut.getInsights(scope, { ownerId: user.id, suppressedPersonIds: [], suppressedPetIds: [] }),
+      sut.getInsights(scope, {
+        ownerId: user.id,
+        suppressedPersonIds: [person.personGroupId],
+        suppressedPetIds: [],
+        privacy: { hiddenContent },
+      }),
+    ]);
+
+    // unlocked, the item leads the records and the places
+    expect(inventory.photos + inventory.videos).toBe(6);
+    expect(unlocked.items).toBe(6);
+    expect(unlocked.records.oldest?.name).toBe('kept-private.jpg');
+    expect(unlocked.records.largest?.bytes).toBe(50_000_000);
+
+    // locked, nothing about it is left, and every breakdown adds up to the items it may see
+    expect(locked.items).toBe(5);
+    expect(locked.records.oldest).toEqual({ localDateTime: new Date('2009-06-14T08:30:00.000Z'), name: 'IMG_1.HEIC' });
+    expect(locked.records.largest).toEqual({ bytes: 9_000_000, name: 'IMG_2.jpg' });
+    expect(locked.years).not.toContainEqual(expect.objectContaining({ year: 2001 }));
+    expect(locked.people?.places).not.toContainEqual(expect.objectContaining({ name: 'Private Town' }));
+    expect(locked.people?.countries).toBe(2);
+    expect(locked.people?.faces).toBe(0);
+    expect(JSON.stringify(locked)).not.toMatch(/kept-private|Private Town|Private lens|Nowhere|Kept Private/);
+    for (const rows of [locked.years, locked.punchcard, locked.lenses, locked.focalLengths, locked.orientation]) {
+      expect(total(rows)).toBe(locked.items);
+    }
+    expect(total(locked.people!.places)).toBe(locked.items);
+  });
+});

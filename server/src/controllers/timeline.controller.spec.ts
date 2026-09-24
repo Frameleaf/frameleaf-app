@@ -94,4 +94,26 @@ describe(TimelineController.name, () => {
       expect(body).toEqual(errorDto.validationError([{ path: ['timeBucket'], message: 'Invalid time bucket format' }]));
     });
   });
+
+  describe('GET /timeline/highlights (FL-33)', () => {
+    it('defaults to months and coerces the highlight count', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .get('/timeline/highlights')
+        .query({ highlightCount: '3', withPartners: 'true' });
+
+      expect(status).toBe(200);
+      expect(service.getTimelineHighlights).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ grouping: 'month', highlightCount: 3, withPartners: true }),
+      );
+    });
+
+    it('rejects an unknown grouping and too many highlights', async () => {
+      const grouping = await request(ctx.getHttpServer()).get('/timeline/highlights').query({ grouping: 'day' });
+      expect(grouping.status).toBe(400);
+
+      const count = await request(ctx.getHttpServer()).get('/timeline/highlights').query({ highlightCount: '13' });
+      expect(count.status).toBe(400);
+    });
+  });
 });

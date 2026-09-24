@@ -124,6 +124,12 @@ export type NsfwDetectionResult = {
 
 export type ImageDescriptionResult = {
   description: string;
+  /**
+   * FL-36: the model's confidence in the description, 0 to 1, when the destination reports one.
+   * The bundled service does not (its people and safety signals carry only low/medium/high labels,
+   * which are never turned into a number); stored only when present, null otherwise.
+   */
+  confidence?: number | null;
   people: Array<{
     count: number;
     apparent_age_group: string;

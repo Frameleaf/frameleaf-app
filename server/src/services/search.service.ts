@@ -2,7 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { LRUMap } from 'mnemonist';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { AssetSearchScope } from 'src/repositories/search.repository.js';
+import type {
+  AssetSearchOptions,
+  AssetSearchScope,
+  SearchFacetOptions,
+  SearchFacetResult,
+} from 'src/repositories/search.repository.js';
 import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { PersonResponseDto, mapPerson } from 'src/dtos/person.dto.js';
 import {
@@ -12,8 +17,14 @@ import {
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
+  SEARCH_FACET_DEFAULT_LIMIT,
   SearchCityCountResponseDto,
+  SearchFacetField,
+  SearchFacetsDto,
+  SearchFacetsResponseDto,
   SearchFilter,
+  SearchHistogramDto,
+  SearchHistogramResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
   SearchResponseDto,
@@ -21,6 +32,7 @@ import {
   SearchSuggestionRequestDto,
   SearchSuggestionType,
   SmartSearchDto,
+  SmartSearchStatisticsResponseDto,
   StatisticsSearchDto,
   isFullyAlbumConfined,
   isNewShapeRequest,
@@ -33,7 +45,7 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
+import { applyPartnerLocationPolicy, getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -171,13 +183,123 @@ export class SearchService extends BaseService {
       return this.searchStatisticsV3(auth, dto);
     }
 
+    return await this.searchRepository.searchStatistics(await this.getLegacyStatisticsOptions(auth, dto));
+  }
+
+  /**
+   * FL-49: facet counts for a search body. The body resolves exactly as POST /search/statistics does,
+   * so the matched assets (and `total`) are the same; facets then only name the viewer's own people
+   * and tags, never a suppressed one while the session is locked, and never a place of an owner who
+   * hides their locations from the viewer.
+   */
+  async searchFacets(auth: AuthDto, dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
+    const { facets: requested, facetLimit, ...body } = dto;
+    const facetOptions: SearchFacetOptions = {
+      viewerId: auth.user.id,
+      // each facet once, in the order asked
+      facets: [...new Set(requested ?? Object.values(SearchFacetField))],
+      limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
+      locationHiddenOwnerIds: [
+        ...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository })),
+      ],
+      suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
+      suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
+    };
+
+    // the total comes from the facet statement itself: one scan of the matched assets, not two
+    let result: SearchFacetResult;
+    if (isNewShapeRequest(body)) {
+      const { filter, scope } = await this.resolveSearchScopeV3(auth, body);
+      result = await this.searchRepository.searchFacetsV3(
+        { filter, ...getPrivacyQueryOptions(auth, body.suppressedOnly), imageEnrichment: body.imageEnrichment },
+        scope,
+        facetOptions,
+      );
+    } else {
+      result = await this.searchRepository.searchFacets(
+        await this.getLegacyStatisticsOptions(auth, body),
+        facetOptions,
+      );
+    }
+    const { total, rows } = result;
+
+    return {
+      total,
+      facets: facetOptions.facets.map((fieldName) => ({
+        fieldName,
+        counts: rows
+          .filter((row) => row.field === fieldName)
+          .map(({ value, label, count }) =>
+            fieldName === SearchFacetField.People || fieldName === SearchFacetField.Tags
+              ? { value, label, count }
+              : { value, count },
+          ),
+      })),
+    };
+  }
+
+  /** FL-49: the search body's matches per local capture day, month or year (the palette's date histogram) */
+  async searchHistogram(auth: AuthDto, dto: SearchHistogramDto): Promise<SearchHistogramResponseDto> {
+    const { granularity, ...body } = dto;
+    let buckets: Array<{ date: string; count: number }>;
+    if (isNewShapeRequest(body)) {
+      const { filter, scope } = await this.resolveSearchScopeV3(auth, body);
+      buckets = await this.searchRepository.searchHistogramV3(
+        { filter, ...getPrivacyQueryOptions(auth, body.suppressedOnly), imageEnrichment: body.imageEnrichment },
+        scope,
+        granularity,
+      );
+    } else {
+      buckets = await this.searchRepository.searchHistogram(
+        await this.getLegacyStatisticsOptions(auth, body),
+        granularity,
+      );
+    }
+
+    return { granularity, total: buckets.reduce((sum, { count }) => sum + count, 0), buckets };
+  }
+
+  /**
+   * FL-49: the palette's scope count for smart search. Smart search ranks every eligible asset that
+   * has an embedding, so this counts those, stopping at the cap. Nothing is encoded: no request goes
+   * to machine learning for a count.
+   */
+  async searchSmartStatistics(auth: AuthDto, dto: SmartSearchDto): Promise<SmartSearchStatisticsResponseDto> {
+    const { machineLearning } = await this.getConfig({ withCache: false });
+    if (!isSmartSearchEnabled(machineLearning)) {
+      throw new BadRequestException('Smart search is not enabled');
+    }
+    if (!dto.query && !dto.queryAssetId) {
+      throw new BadRequestException('Either `query` or `queryAssetId` must be set');
+    }
+    if (dto.queryAssetId) {
+      await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [dto.queryAssetId] });
+    }
+
+    if (isNewShapeRequest(dto)) {
+      const { filter, scope } = await this.resolveSearchScopeV3(auth, dto);
+      return this.searchRepository.searchSmartCountV3(
+        { filter, ...getPrivacyQueryOptions(auth, dto.suppressedOnly), imageEnrichment: dto.imageEnrichment },
+        scope,
+      );
+    }
+
+    const { query: _query, queryAssetId: _queryAssetId, language: _language, page: _page, size: _size, ...rest } = dto;
+    return this.searchRepository.searchSmartCount(await this.getLegacyStatisticsOptions(auth, rest));
+  }
+
+  /** The options a legacy (flat) statistics body resolves to; shared with facets, histogram and smart counts. */
+  private async getLegacyStatisticsOptions(
+    auth: AuthDto,
+    dto: Omit<StatisticsSearchDto, 'filter'>,
+  ): Promise<AssetSearchOptions> {
     const { suppressedOnly, ...searchDto } = dto;
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
 
-    return await this.searchRepository.searchStatistics({
+    return {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
@@ -185,7 +307,7 @@ export class SearchService extends BaseService {
       hideLockedMotion: true,
       userIds,
       viewingUserId: auth.user.id,
-    });
+    };
   }
 
   async searchRandom(auth: AuthDto, dto: RandomSearchDto): Promise<AssetResponseDto[]> {

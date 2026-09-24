@@ -1,9 +1,9 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { get, isEqual, set } from 'lodash-es';
 import { createHash } from 'node:crypto';
-import type { UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import { SAVED_SEARCH_MAX_COUNT, type UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import { AssetOrder, UserMetadataKey } from 'src/enum.js';
-import { DeepPartial, UserMetadataItem, UserPreferences } from 'src/types.js';
+import { DeepPartial, SavedSearch, UserMetadataItem, UserPreferences } from 'src/types.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { emptySuppressionPreferences } from 'src/utils/hidden-content.js';
 import { getKeysDeep } from 'src/utils/misc.js';
@@ -50,7 +50,34 @@ export const withoutStoredLockedRuleIds = <T>(value: T): T => {
 
   const { tagIds: _tagIds, personIds: _personIds, petIds: _petIds, ...rest } = suppression;
   const partial = value as DeepPartial<UserPreferences>;
-  return { ...partial, privacy: { ...partial.privacy, suppression: rest } } as T;
+  const savedSearches = partial.savedSearches as SavedSearch[] | undefined;
+  return {
+    ...partial,
+    privacy: { ...partial.privacy, suppression: rest },
+    ...(savedSearches && { savedSearches: withoutLockedSavedSearches(savedSearches, suppression) }),
+  } as T;
+};
+
+/**
+ * FL-49: saved searches that name none of the account's Locked people, pets or tags. A saved search
+ * is the owner's own search body, so it can carry those ids; a reader whose session is not unlocked
+ * must not learn them from it (FL-67), so such a search is left out rather than rewritten.
+ */
+export const withoutLockedSavedSearches = (
+  savedSearches: SavedSearch[],
+  suppression: DeepPartial<UserPreferences['privacy']['suppression']> | undefined,
+): SavedSearch[] => {
+  const lockedIds = [...(suppression?.tagIds ?? []), ...(suppression?.personIds ?? []), ...(suppression?.petIds ?? [])]
+    .filter((id): id is string => typeof id === 'string')
+    .map((id) => id.toLowerCase());
+  if (lockedIds.length === 0) {
+    return savedSearches;
+  }
+
+  return savedSearches.filter(({ query }) => {
+    const text = JSON.stringify(query).toLowerCase();
+    return lockedIds.every((id) => !text.includes(id));
+  });
 };
 export const PREFERENCES_CHANGED_MESSAGE =
   'These preferences changed after they were loaded. Load the latest preferences and try again.';
@@ -108,6 +135,7 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     recentlyAdded: {
       sidebarWeb: false,
     },
+    savedSearches: [],
   };
 };
 
@@ -149,17 +177,18 @@ export const getPreferencesPartial = (newPreferences: UserPreferences) => {
  *   when the administrator allows casting.
  * - An administrator may set `cast.adminDisabled`; while it is (or becomes) true, the user's
  *   own `cast.gCastEnabled` choice is preserved rather than overwritten.
- * - An administrator never rewrites the account's private Locked choices (`privacy`); that
- *   group is dropped from an administrator's update.
+ * - An administrator never rewrites the account's private Locked choices (`privacy`) or its saved
+ *   searches (`savedSearches`, FL-49); both are dropped from an administrator's update.
  */
 export const restrictPreferencesUpdate = (
   current: FrameleafUserPreferences,
   dto: UserPreferencesUpdateDto,
   editor: PreferencesEditor,
 ): UserPreferencesUpdateDto => {
-  // Locked people, pets and tags are the account owner's private choices.
-  const { privacy: _privacy, ...withoutPrivacy } = dto;
-  const allowed = editor === 'admin' && dto.privacy !== undefined ? withoutPrivacy : dto;
+  // Locked people, pets and tags, and saved searches (FL-49), are the account owner's private choices.
+  const { privacy: _privacy, savedSearches: _savedSearches, ...ownerOnly } = dto;
+  const allowed =
+    editor === 'admin' && (dto.privacy !== undefined || dto.savedSearches !== undefined) ? ownerOnly : dto;
 
   if (!allowed.cast) {
     return allowed;
@@ -208,6 +237,8 @@ export const assertPreferencesRevision = (current: FrameleafUserPreferences, exp
 
 /**
  * Merges an update into the current preferences. When the update carries `expectedRevision`
+ * (and `lockedSession` says the editor cannot see searches naming Locked people, pets or tags, which
+ * a replaced list then keeps)
  * it is applied only if the stored preferences still match that revision; the field itself is
  * never stored. Only the groups and fields the update names change, so unrelated groups are
  * preserved.
@@ -216,10 +247,28 @@ export const mergePreferences = (
   preferences: FrameleafUserPreferences,
   dto: UserPreferencesUpdateDto,
   editor: PreferencesEditor,
+  { lockedSession = false }: { lockedSession?: boolean } = {},
 ) => {
   const { expectedRevision, ...changes } = dto;
   assertPreferencesRevision(preferences, expectedRevision);
   const update = restrictPreferencesUpdate(preferences, changes, editor);
+  if (lockedSession && update.savedSearches) {
+    // FL-49: a locked session never saw the searches that name a Locked person, pet or tag, so
+    // replacing the list from it keeps them rather than deleting what it could not show
+    const visible = new Set(withoutLockedSavedSearches(preferences.savedSearches, preferences.privacy.suppression));
+    update.savedSearches = [
+      ...update.savedSearches,
+      ...preferences.savedSearches.filter((search) => !visible.has(search)),
+    ];
+    // the kept searches count towards the same limits the request was checked against
+    if (update.savedSearches.length > SAVED_SEARCH_MAX_COUNT) {
+      throw new BadRequestException(`At most ${SAVED_SEARCH_MAX_COUNT} saved searches, including any kept Locked`);
+    }
+    const names = update.savedSearches.map(({ name }) => name.toLocaleLowerCase());
+    if (new Set(names).size !== names.length) {
+      throw new BadRequestException('Saved search names must be unique, including any kept Locked');
+    }
+  }
   for (const key of getKeysDeep(update)) {
     set(preferences, key, get(update, key));
   }

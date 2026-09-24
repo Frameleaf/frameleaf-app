@@ -116,6 +116,18 @@ const ImageDescriptionEnrichmentResponseSchema = z
     error: z.string().optional(),
     skipReason: z.string().optional().describe('Machine-readable reason when status === "skipped"'),
     description: z.string().optional(),
+    // always sent; optional in the schema so clients built before FL-36 keep compiling
+    confidence: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .nullable()
+      .optional()
+      .describe(
+        "The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise",
+      )
+      .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
     tags: z.array(z.string()).optional(),
     objects: z.array(z.string()).optional(),
     people: z

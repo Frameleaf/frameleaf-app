@@ -32,6 +32,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getCalendarHeatmap: vitest.fn(),
     getTimeBucket: vitest.fn(),
     getTimeBuckets: vitest.fn(),
+    getTimelineHighlights: vitest.fn(),
     getAssetIdByCity: vitest.fn(),
     getRecentlyCreatedAssetIds: vitest.fn(),
     getNsfwAssetIds: vitest.fn().mockResolvedValue(new Set()),
