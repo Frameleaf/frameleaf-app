@@ -249,11 +249,15 @@ export class AssetEditRepository {
     assetId: string,
     ownerId: string,
   ): Promise<Array<VideoEditVersion & { isCurrent: boolean; isRequested: boolean }>> {
-    const { rows } = await sql<VideoEditVersion & { isCurrent: boolean; isRequested: boolean }>`SELECT v.*,
+    // Only versions of the asset's current original are listed, matching what download, restore
+    // and export accept; versions of a replaced original are kept but not offered.
+    const { rows } = await sql<
+      VideoEditVersion & { isCurrent: boolean; isRequested: boolean }
+    >`SELECT ${versionColumns},
       coalesce(s."currentVersionId"=v.id,false) AS "isCurrent", coalesce(s."requestedVersionId"=v.id,false) AS "isRequested"
       FROM immich_fork.video_edit_version v
       LEFT JOIN immich_fork.video_edit_selection s ON s."assetId"=v."assetId" AND s."ownerId"=v."ownerId"
-      JOIN public.asset a ON a.id=v."assetId" AND a."ownerId"=v."ownerId"
+      ${sourceJoin}
       WHERE v."assetId"=${assetId}::uuid AND v."ownerId"=${ownerId}::uuid ORDER BY v."createdAt" DESC,v.id DESC`.execute(
       this.db,
     );

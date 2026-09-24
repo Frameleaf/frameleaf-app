@@ -768,17 +768,6 @@
           <span>{$t('frameleaf_editor_tool_restore')}</span>
         </button>
         {#if videoTool === 'edit'}
-          {#if videoDraftKey !== '[]'}
-            <button
-              type="button"
-              class="ed-tool labelled"
-              title={$t('editor_video_revert_original')}
-              onclick={() => videoEditor?.applyRecipe([])}
-            >
-              <Icon icon={mdiRestore} size="20" />
-              <span>{$t('frameleaf_editor_revert')}</span>
-            </button>
-          {/if}
           {#key asset.id}
             <VideoVersionsMenu
               {asset}

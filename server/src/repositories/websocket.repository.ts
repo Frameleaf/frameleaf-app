@@ -49,6 +49,11 @@ export interface ClientEventMap {
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
   AssetEditReadyV2: [{ asset: SyncAssetV2; edit: SyncAssetEditV1[] }];
+  /**
+   * Fork-only (FL-39): a video edit render settled without publishing anything. Official clients
+   * never subscribe to it, so a failure never looks like an "edit ready" to them.
+   */
+  VideoEditVersionFailedV1: [{ assetId: string; versionId: string | null }];
 }
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;

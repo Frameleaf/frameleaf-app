@@ -116,8 +116,15 @@ export class JobService extends BaseService {
       if (shouldRunFollowUp) {
         await this.onDone(job);
       } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
-        // FL-39: a failed version render still settles; history views refresh on this event.
-        await this.sendAssetEditReady(job.data.id);
+        // FL-39: a failed version render still settles. Only the fork's history view listens for
+        // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
+        const asset = await this.assetRepository.getById(job.data.id);
+        if (asset) {
+          this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+            assetId: asset.id,
+            versionId: job.data.versionId ?? null,
+          });
+        }
       }
     } catch (error: any) {
       await this.eventRepository.emit('JobError', { job, error });

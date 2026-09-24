@@ -119,6 +119,9 @@ it('rejects content changes, original-path publication and a handoff fence', asy
     .execute();
   expect(await publish(sut, version, rendered(asset.id, version.id))).toBe(false);
   await expect(sut.getRequestedVideoVersion(asset.id)).rejects.toThrow('source_changed');
+  // History of a replaced original is not offered where it could no longer be downloaded.
+  expect(await sut.listVideoVersions(asset.id, asset.ownerId)).toEqual([]);
+  expect(await sut.getVideoVersion(asset.id, version.id)).toBeUndefined();
   const failed = await sql<{
     status: string;
   }>`SELECT status FROM immich_fork.video_edit_version WHERE id=${version.id}::uuid`.execute(db);

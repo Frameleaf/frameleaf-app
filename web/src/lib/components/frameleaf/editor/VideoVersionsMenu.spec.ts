@@ -88,6 +88,52 @@ it('opens as the prototype popover with Original and saved versions, checked by 
   expect(trigger).toHaveFocus();
 });
 
+it('labels the menu, groups the version choices and keeps notes outside the menu', async () => {
+  const view = render();
+  const trigger = view.getByRole('button', { name: 'frameleaf_editor_tool_versions' });
+  const menu = await openMenu(view);
+  expect(trigger).toHaveAttribute('aria-controls', menu.id);
+  const group = view.getByRole('group', { name: 'editor_video_versions' });
+  expect(menu).toContainElement(group);
+  expect(group.querySelectorAll('[role="menuitemradio"]')).toHaveLength(2);
+  expect(menu.querySelector('h3, p')).toBeNull();
+  expect(view.getByRole('separator')).toBeInTheDocument();
+});
+
+it.each([
+  { isEdited: true, versions: [], current: false },
+  { isEdited: false, versions: [], current: true },
+  { isEdited: true, versions: [version({ edits: [] })], current: true },
+])('marks Original current only when it is (%j)', async ({ isEdited, versions, current }) => {
+  vi.mocked(getVideoEditVersions).mockResolvedValue(versions);
+  const view = renderWithTooltips(VideoVersionsMenu, {
+    asset: { ...asset, isEdited },
+    draftKey: '[]',
+    hasUnsavedChanges: false,
+    onApply: vi.fn(),
+  });
+  await openMenu(view);
+  await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalled());
+  const original = view.getByRole('menuitemradio', { name: /frameleaf_editor_version_original/ });
+  await waitFor(() => expect(original.textContent?.includes('editor_video_version_current')).toBe(current));
+});
+
+it('reverts the draft to the original only after confirming unsaved changes, and hides when already original', async () => {
+  const onApply = vi.fn();
+  modalShow.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const view = render({ hasUnsavedChanges: true, onApply });
+  const revert = view.getByRole('button', { name: 'frameleaf_editor_revert' });
+  await fireEvent.click(revert);
+  await waitFor(() => expect(modalShow).toHaveBeenCalledOnce());
+  expect(onApply).not.toHaveBeenCalled();
+  await fireEvent.click(revert);
+  await waitFor(() => expect(onApply).toHaveBeenCalledWith([]));
+  expect(removeAssetEdits).not.toHaveBeenCalled();
+
+  const original = render({ draftKey: '[]' });
+  expect(original.queryAllByRole('button', { name: 'frameleaf_editor_revert' })).toHaveLength(1);
+});
+
 it('loads a chosen version into the draft instead of publishing it', async () => {
   const older = [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }];
   vi.mocked(getVideoEditVersions).mockResolvedValue([
@@ -174,14 +220,20 @@ it('reports a failed history read inside the menu', async () => {
   expect(await view.findByRole('alert')).toHaveTextContent('editor_video_versions_error');
 });
 
-it('refreshes only for this asset completion and unsubscribes on unmount', async () => {
+it('refreshes only for this asset completion or failure and unsubscribes on unmount', async () => {
   const view = render();
   await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledOnce());
-  const listener = vi.mocked(websocketEvents.on).mock.calls[0][1] as (event: { asset: { id: string } }) => void;
-  listener({ asset: { id: 'another-asset' } });
+  const listeners = Object.fromEntries(vi.mocked(websocketEvents.on).mock.calls) as Record<
+    string,
+    (event: unknown) => void
+  >;
+  listeners.AssetEditReadyV2({ asset: { id: 'another-asset' } });
+  listeners.VideoEditVersionFailedV1({ assetId: 'another-asset', versionId: null });
   expect(getVideoEditVersions).toHaveBeenCalledOnce();
-  listener({ asset: { id: asset.id } });
+  listeners.AssetEditReadyV2({ asset: { id: asset.id } });
   await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledTimes(2));
+  listeners.VideoEditVersionFailedV1({ assetId: asset.id, versionId: 'failed' });
+  await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledTimes(3));
   view.unmount();
-  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(unsubscribe).toHaveBeenCalledTimes(2);
 });
