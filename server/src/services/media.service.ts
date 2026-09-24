@@ -71,6 +71,7 @@ import {
   assertRenderSourceIsOriginal,
   buildEditedMasterLineage,
   getEditedMasterColorArgs,
+  getEditedMasterColorRange,
   getEditedMasterFfmpegConfig,
   getEditedMasterLineagePath,
   getEditedMasterTimingArgs,
@@ -1213,6 +1214,7 @@ export class MediaService extends BaseService {
         layout: qualification.layout,
         policy: colorDecision.policy,
         colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
       });
     }
     return colorDecision;
@@ -1706,6 +1708,7 @@ export class MediaService extends BaseService {
         layout: qualification.layout,
         policy: colorDecision.policy,
         colorMatrix: videoStream.colorMatrix,
+        range: getEditedMasterColorRange(videoStream, colorDecision),
       });
       if (colorDecision.policy === EditedMasterColorPolicy.Preserve) {
         transcodeFilters = applyFloatEncodePixelFormat(transcodeFilters, encodePlan);
@@ -1849,7 +1852,11 @@ export class MediaService extends BaseService {
       // FL-16: rational timing and any variable-frame-rate mapping survive the render.
       ...getEditedMasterTimingArgs(videoStream),
       // FL-16: the master's colour intent is tagged explicitly, never inferred.
-      ...getEditedMasterColorArgs(videoStream, colorDecision),
+      ...getEditedMasterColorArgs(
+        videoStream,
+        colorDecision,
+        colorDecision.policy === EditedMasterColorPolicy.Preserve ? (encodePlan?.statedRange ?? null) : null,
+      ),
     );
 
     return {

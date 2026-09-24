@@ -332,5 +332,35 @@ describe(LivePhotoService.name, () => {
       expect(result).toEqual({ success: false, error: 'Image is already linked to a motion video' });
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
+
+    describe('Locked media (FL-70)', () => {
+      const pairOf = (ownerId: string, locked: { photo: boolean; video: boolean }) => [
+        {
+          ...AssetFactory.from({ id: 'photo-1', ownerId, type: AssetType.Image, livePhotoVideoId: null }).build(),
+          isLocked: locked.photo,
+        },
+        { ...AssetFactory.from({ id: 'video-1', ownerId, type: AssetType.Video }).build(), isLocked: locked.video },
+      ];
+
+      it('answers a Locked video like a missing one to a session that has not unlocked', async () => {
+        const auth = AuthFactory.create();
+        mocks.asset.getByIds.mockResolvedValue(pairOf(auth.user.id, { photo: false, video: true }) as never);
+
+        const result = await sut.relinkOne(auth, 'photo-1', 'video-1');
+
+        expect(result).toEqual({ success: false, error: 'Asset not found' });
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+      });
+
+      it('never pairs an unlocked still with a Locked video, even in an unlocked session', async () => {
+        const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+        mocks.asset.getByIds.mockResolvedValue(pairOf(auth.user.id, { photo: false, video: true }) as never);
+
+        const result = await sut.relinkOne(auth, 'photo-1', 'video-1');
+
+        expect(result).toEqual({ success: false, error: 'A Locked item cannot be paired with one that is not Locked' });
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+      });
+    });
   });
 });

@@ -214,9 +214,13 @@ const unlessHidden = (id: string | null, hidden: ReadonlySet<string>) => (id && 
  * Whether a job is about one of the caller's Locked items that this session may not see (FL-43,
  * FL-34). Its label is that item's file name and its snapshot names the item, so both are withheld;
  * the row itself stays, so the owner still sees that something is running and can stop it.
+ *
+ * The published result counts too: a job whose output was moved to Locked after it finished — or
+ * whose source was deleted, leaving only the result — would otherwise still name it.
  */
-const isWithheld = (operation: Pick<MediaOperation, 'assetId'>, hidden: ReadonlySet<string>) =>
-  !!operation.assetId && hidden.has(operation.assetId);
+const isWithheld = (operation: Pick<MediaOperation, 'assetId' | 'resultAssetId'>, hidden: ReadonlySet<string>) =>
+  (!!operation.assetId && hidden.has(operation.assetId)) ||
+  (!!operation.resultAssetId && hidden.has(operation.resultAssetId));
 
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (

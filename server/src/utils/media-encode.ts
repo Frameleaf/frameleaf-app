@@ -17,6 +17,7 @@
  *   hardware plan states the surface format the accelerator must reach and emits no filters
  *   and no `-pix_fmt` of its own — only the refusal, which applies either way.
  */
+import type { VideoColorRange } from 'src/types.js';
 import { ColorMatrix, TranscodeHardwareAcceleration, VideoCodec } from 'src/enum.js';
 import { ChromaSubsampling, SourcePixelLayout, SourceTransferKind } from 'src/utils/media-decode.js';
 import {
@@ -37,9 +38,10 @@ export const FLOAT_INTERMEDIATE_PIXEL_FORMAT = 'gbrpf32le';
 /**
  * Quantising float to integer always loses something. Error-diffusion dither spends that loss
  * as noise instead of as banding, which is what a gradient test measures. `sws_dither` is a
- * swscale option the `scale` filter accepts per invocation.
+ * swscale option the `scale` filter accepts per invocation; `ed` is its error-diffusion value
+ * (ffmpeg rejects the spelled-out `error_diffusion` and the whole render with it).
  */
-export const FLOAT_TO_INTEGER_DITHER = 'error_diffusion';
+export const FLOAT_TO_INTEGER_DITHER = 'ed';
 
 /** The delivery bit depth used for any source that carries more than 8 bits per component. */
 export const HIGH_BIT_DEPTH_DELIVERY = 10;
@@ -103,7 +105,7 @@ export type EncoderPixelFormatRequest = {
   /** The source colour matrix, used as the conversion target when preserving. */
   colorMatrix: ColorMatrix;
   /** Output signal range. Consumer delivery is limited range unless the caller says otherwise. */
-  range?: 'tv' | 'pc';
+  range?: VideoColorRange;
 };
 
 export type EncoderPixelFormatPlan = {
@@ -127,6 +129,12 @@ export type EncoderPixelFormatPlan = {
   reducedChroma: boolean;
   /** Stated justification, recorded with the render rather than inferred from the command. */
   reason: string;
+  /**
+   * The signal range {@link filters} convert to (`out_range`), or null when the plan emits no
+   * conversion of its own. Only a range the filter graph actually states may be tagged on the
+   * output: a tag the pixels were never converted to makes a decoder stretch or squeeze them.
+   */
+  statedRange: VideoColorRange | null;
 };
 
 /**
@@ -206,6 +214,7 @@ export const selectEncoderPixelFormat = ({
     args: software ? ['-pix_fmt', pixelFormat] : [],
     reducedBitDepth,
     reducedChroma,
+    statedRange: software ? range : null,
     reason: software
       ? `Float frames (${FLOAT_INTERMEDIATE_PIXEL_FORMAT}) are converted to ${pixelFormat} with ` +
         `${matrix ? `matrix ${matrix}, ` : ''}range ${range} and ${FLOAT_TO_INTEGER_DITHER} dither${loss}.`
