@@ -25,7 +25,10 @@ const link = (patch: Partial<SharedLinkResponseDto> = {}): SharedLinkResponseDto
 
 const children = createRawSnippet(() => ({ render: () => '<p>grid</p>' }));
 
-const setup = (sharedLink: SharedLinkResponseDto, props: { selecting?: boolean; selectedCount?: number } = {}) => {
+const setup = (
+  sharedLink: SharedLinkResponseDto,
+  props: { selecting?: boolean; selectedCount?: number; noSelectBar?: boolean } = {},
+) => {
   const handlers = {
     onSelectingChange: vi.fn(),
     onUpload: vi.fn(),
@@ -40,6 +43,7 @@ const setup = (sharedLink: SharedLinkResponseDto, props: { selecting?: boolean; 
     count: 3,
     selecting: props.selecting ?? false,
     selectedCount: props.selectedCount ?? 0,
+    noSelectBar: props.noSelectBar,
     children,
     ...handlers,
   });
@@ -91,6 +95,12 @@ describe('PublicViewerShell', () => {
     expect(handlers.onDownloadSelected).toHaveBeenCalledOnce();
     await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(handlers.onSelectingChange).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves the select bar to the library's selection bar when the owner prunes their link", () => {
+    setup(link(), { selecting: true, selectedCount: 2, noSelectBar: true });
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
   });
 
   it('keeps an empty selection from downloading', () => {

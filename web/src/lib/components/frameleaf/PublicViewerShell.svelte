@@ -35,6 +35,11 @@
     onDownloadSelected: () => void;
     onSelectAll: () => void;
     onClear: () => void;
+    /**
+     * Leave the Select mode bar out: the owner of an individual link prunes it from the library's own
+     * selection bar, which already counts the selection, so a second counter would repeat it.
+     */
+    noSelectBar?: boolean;
     children: Snippet;
   }
 
@@ -50,6 +55,7 @@
     onDownloadSelected,
     onSelectAll,
     onClear,
+    noSelectBar = false,
     children,
   }: Props = $props();
 
@@ -109,7 +115,7 @@
     </div>
   </header>
 
-  {#if selecting}
+  {#if selecting && !noSelectBar}
     <div class="pv-selectbar" role="toolbar" aria-label={$t('frameleaf_public_selection')}>
       <span aria-live="polite"
         >{$t('frameleaf_public_selected_of', { values: { count: selectedCount, total: count } })}</span

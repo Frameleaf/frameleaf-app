@@ -106,6 +106,7 @@
   onDownloadSelected={() => download([...librarySession.selection])}
   onSelectAll={() => librarySession.selectAll(assets.map((asset) => asset.id))}
   onClear={() => librarySession.clearSelection()}
+  noSelectBar={isOwned}
 >
   <div class="pt-4">
     <ResultsView
