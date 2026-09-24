@@ -5412,6 +5412,8 @@
   "frameleaf_selection_region": "Selected items",
   "frameleaf_selection_select_all_matching": "Select all {total, number}",
   "frameleaf_selection_snapshot": "Everything matching this view",
+  "frameleaf_session_lock_failed": "Couldn't confirm the lock with the server. Check your connection, then retry.",
+  "frameleaf_session_lock_locking": "Locking this session…",
   "frameleaf_settings_area_analytics": "Library analytics",
   "frameleaf_settings_area_analytics_description": "Growth, storage and activity across accounts and libraries.",
   "frameleaf_settings_area_backup": "Import & protection",

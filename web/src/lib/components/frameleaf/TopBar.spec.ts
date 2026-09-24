@@ -78,7 +78,7 @@ describe('TopBar session privacy', () => {
     view.unmount();
   });
 
-  it('hides immediately while auth status and lock are pending, then ignores the stale elevated response', async () => {
+  it('hides immediately on an explicit lock while auth status is pending, then ignores the stale elevated response', async () => {
     const auth = deferred<ReturnType<typeof authStatus>>();
     const lock = deferred<void>();
     const sanitized = deferred<void>();
@@ -96,8 +96,7 @@ describe('TopBar session privacy', () => {
     const view = render(TopBarTestHarness);
     await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalledOnce());
 
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-    document.dispatchEvent(new Event('visibilitychange'));
+    void sessionAccess.retryLock?.();
     expect(sessionAccess.lockPending).toBe(true);
     expect(sessionStorage.getItem('frameleaf:session-lock-pending')).toBe('true');
     await waitFor(() => expect(sdkMock.lockAuthSession).toHaveBeenCalledOnce());
@@ -115,6 +114,37 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
     expect(sessionAccess.isElevated).toBe(false);
     stopRefresh();
+    view.unmount();
+  });
+
+  it('never locks the shared server session when the tab is hidden, and re-reads it when shown', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    const view = render(TopBarTestHarness);
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await Promise.resolve();
+    expect(sdkMock.lockAuthSession).not.toHaveBeenCalled();
+    expect(sessionAccess.lockPending).toBe(false);
+    expect(sessionAccess.isElevated).toBe(true);
+
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await screen.findByRole('button', { name: en.frameleaf_locked_unlock_content });
+    expect(sdkMock.getAuthStatus).toHaveBeenCalledTimes(2);
+    expect(sdkMock.lockAuthSession).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it('does not lock a tab that loads hidden', async () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    const view = render(TopBarTestHarness);
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    expect(sdkMock.lockAuthSession).not.toHaveBeenCalled();
+    expect(sessionAccess.lockPending).toBe(false);
     view.unmount();
   });
 

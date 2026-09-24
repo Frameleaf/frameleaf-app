@@ -15,12 +15,24 @@ try {
   // Storage may be disabled; the in-memory barrier still protects this tab.
 }
 
+export type SessionLockStatus = 'idle' | 'locking' | 'failed';
+
 export const sessionAccess = $state({
   isElevated: false,
   lockPending: pending,
+  /** What the root shield says about the pending lock: toasts are hidden under it. */
+  lockStatus: 'idle' as SessionLockStatus,
+  /**
+   * FL-83: this tab is hidden while elevated. Only this tab's content is concealed; the server
+   * session stays unlocked for other tabs until an explicit lock or its idle timeout.
+   */
+  concealed: false,
   revision: 0,
   retryLock: undefined as (() => Promise<void>) | undefined,
 });
+
+/** Unlock requests are bounded so a stalled one cannot hold a pending lock forever. */
+export const SESSION_UNLOCK_TIMEOUT_MS = 15_000;
 
 export const setSessionLockPending = (value: boolean) => {
   if (value && !sessionAccess.lockPending) {
@@ -67,9 +79,16 @@ export const trackSessionModals = (manager: typeof import('@immich/ui').modalMan
     };
     let closing: Promise<void> | undefined;
     const close = () => {
-      closing ??= modal.close().then(() => {
-        activeModals.delete(close);
-      });
+      closing ??= modal
+        .close()
+        .then(() => {
+          activeModals.delete(close);
+        })
+        .catch((error: unknown) => {
+          // a failed close must be retried by the next sweep, not replay the same rejection
+          closing = undefined;
+          throw error;
+        });
       return closing;
     };
     activeModals.add(close);
