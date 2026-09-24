@@ -1,3 +1,12 @@
+/*
+ * Cascade layer order. Tailwind declares properties, theme, base, components and utilities;
+ * the Frameleaf prototype baseline (src/lib/frameleaf/base.css) is layered after preflight
+ * and before components and utilities, so a utility class still beats it and unlayered
+ * component styles beat everything. A layer statement may precede @import, and the first
+ * declaration fixes the order.
+ */
+@layer properties, theme, base, frameleaf-base, components, utilities;
+
 @import 'tailwindcss';
 @import '@immich/ui/theme/default.css';
 

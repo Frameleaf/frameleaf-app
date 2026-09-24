@@ -258,7 +258,7 @@
     flex-direction: column;
     gap: 1.25rem;
     margin-block-start: 1rem;
-    width: min(32rem, calc(100vw - 4rem));
+    width: min(32rem, 100%);
   }
   h3 {
     margin: 0 0 0.5rem;

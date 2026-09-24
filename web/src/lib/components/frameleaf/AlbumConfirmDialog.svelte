@@ -59,7 +59,7 @@
     flex-direction: column;
     gap: 0.75rem;
     margin-block-start: 1rem;
-    width: min(28rem, calc(100vw - 4rem));
+    width: min(28rem, 100%);
   }
   p {
     margin: 0;

@@ -145,6 +145,8 @@ export type ActivityItem = {
   title: string;
   /** Used instead of `title` when the name is a translated label rather than the user's own text. */
   titleKey?: Translations;
+  /** A Locked item this session may not see (FL-43): named generically and never shown by thumbnail. */
+  withheld?: boolean;
   /** Percent complete, or null when the total is not known and a bar would be a guess. */
   progress: number | null;
   /** Still working. Drives the indicator's count and the presence of Cancel. */
@@ -314,7 +316,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     title: operation.label,
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
     // A job about a Locked item a locked session may not see comes without its file name (FL-43).
-    ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item' }),
+    ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item', withheld: true }),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,

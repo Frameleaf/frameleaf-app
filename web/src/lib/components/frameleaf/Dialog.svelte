@@ -1,7 +1,14 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
+  /**
+   * The Frameleaf modal: September 22 prototype `Dialog` (template/src/Controls.jsx) and its
+   * `.dialog` styles. A title bar with an icon close button, the body, and an optional
+   * `actions` footer that stays pinned while a long body scrolls.
+   */
   let {
     title,
     closeLabel,
@@ -10,8 +17,10 @@
     onRequestClose,
     wide = false,
     children,
+    actions,
   }: {
     title: string;
+    /** Accessible name of the icon close button. */
     closeLabel: string;
     returnFocus?: HTMLElement;
     open?: boolean;
@@ -20,6 +29,11 @@
     /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. */
     wide?: boolean;
     children: Snippet;
+    /**
+     * The footer buttons. A form body associates its submit button through the `form`
+     * attribute, because the footer sits outside the scrolling body.
+     */
+    actions?: Snippet;
   } = $props();
   let dialog: HTMLDialogElement;
   const titleId = $props.id();
@@ -39,6 +53,8 @@
 
     const previous = returnFocus ?? document.activeElement;
     dialog.showModal();
+    // As in the prototype, a caller marks the control that should take focus first.
+    dialog.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
     return () => {
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected) {
@@ -50,8 +66,9 @@
 
 <dialog
   bind:this={dialog}
-  class="frameleaf"
+  class="frameleaf dialog"
   class:wide
+  class:with-actions={!!actions}
   data-theme={appTheme}
   aria-labelledby={titleId}
   oncancel={(event) => {
@@ -60,58 +77,109 @@
   }}
   onclose={() => (open = false)}
 >
-  <header>
+  <header class="dialog-title">
     <h2 id={titleId}>{title}</h2>
-    <button type="button" aria-label={closeLabel} onclick={requestClose}>×</button>
+    <IconButton label={closeLabel} onclick={requestClose}><Icon icon={mdiClose} size="1.125rem" /></IconButton>
   </header>
-  {@render children()}
+  {#if actions}
+    <div class="dialog-body">{@render children()}</div>
+    <footer class="dialog-actions">{@render actions()}</footer>
+  {:else}
+    {@render children()}
+  {/if}
 </dialog>
 
 <style>
-  dialog {
+  /* template/src/styles.css `.dialog`; the radius and motion come from the token scale. */
+  .dialog {
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    /* The revision sets dialogs at 14px, above the 10px card and 6px control radii. */
     border-radius: var(--fl-radius-dialog);
-    box-shadow: var(--fl-shadow-2);
-    max-width: min(40rem, calc(100vw - 2rem));
-    max-height: calc(100dvh - 2rem);
-    padding: 1.375rem;
+    padding: 22px;
+    width: 100%;
+    max-width: min(510px, calc(100vw - 32px));
+    max-height: calc(100dvh - 44px);
+    overflow: auto;
+    box-shadow: 0 18px 80px rgb(0 0 0 / 47%);
     /* Clamped by the prefers-reduced-motion rule in tokens.css. */
     animation: fl-dialog-in var(--fl-motion) var(--fl-ease);
+  }
+  .dialog.wide {
+    max-width: min(1120px, calc(100vw - 32px));
+  }
+  .dialog::backdrop {
+    background: rgb(0 0 0 / 60%);
+    backdrop-filter: blur(2px);
   }
   @keyframes fl-dialog-in {
     from {
       opacity: 0;
-      transform: scale(0.98) translateY(0.375rem);
+      transform: scale(0.98) translateY(6px);
     }
     to {
       opacity: 1;
       transform: none;
     }
   }
-  dialog.wide {
-    width: min(56rem, calc(100vw - 2rem));
-    max-width: min(56rem, calc(100vw - 2rem));
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 60%);
-  }
-  header {
+  .dialog-title {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 20px;
+    align-items: center;
+    margin-bottom: 20px;
   }
   h2 {
-    font-size: 1.125rem;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
   }
-  button {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    min-width: 44px;
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 18px;
+    border-top: 1px solid var(--fl-border);
+    margin-top: 20px;
+  }
+  .dialog.with-actions[open] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .dialog.with-actions .dialog-title,
+  .dialog.with-actions .dialog-actions {
+    flex-shrink: 0;
+  }
+  .dialog-body {
+    overflow: auto;
+    min-height: 0;
+    /*
+     * Room for a full-width field's focus ring, which the scrolling body would otherwise clip:
+     * tokens.css draws it 2px wide at a 3px offset (5px out from the field), so 6px clears it.
+     * The negative margin keeps the prototype's edges.
+     */
+    padding: 6px;
+    margin: -6px;
+  }
+  @media (max-width: 700px) {
+    .dialog {
+      padding: 17px;
+      max-height: calc(100dvh - 24px);
+    }
+    .dialog.wide {
+      max-width: calc(100vw - 16px);
+    }
+    h2 {
+      font-size: 15px;
+    }
+    .dialog-actions {
+      flex-wrap: wrap;
+      justify-content: stretch;
+    }
+    /* The prototype shrinks footer text here; the 44px floor stays from tokens.css. */
+    .dialog-actions > :global(*) {
+      flex: 1;
+    }
   }
 </style>
