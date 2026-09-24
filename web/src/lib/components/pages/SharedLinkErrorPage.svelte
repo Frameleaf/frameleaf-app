@@ -10,7 +10,9 @@
   // revoked link (the `getMySharedLink`/`getAssetInfoFromParam` failure in
   // `$lib/utils/shared-links.ts` throws and SvelteKit lands here). Own layout, no
   // LibraryRail/TopBar/account menu; the prototype draws this state inside the public frame.
-  const serverFailure = $derived(page.status === 0 || page.status >= 500);
+  // SvelteKit reports every failed load as 500; the API's own status is `error.code` (hooks.client.ts).
+  const code = $derived(Number(page.error?.code ?? page.status));
+  const serverFailure = $derived(!code || code >= 500);
 </script>
 
 <!--

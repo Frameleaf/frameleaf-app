@@ -101,18 +101,16 @@ describe(JobRepository.name, () => {
     });
 
     it('cuts a long last error to 500 characters', async () => {
-      const getJobs = vi
-        .fn()
-        .mockResolvedValue([
-          {
-            id: '1',
-            name: JobName.AssetDetectFaces,
-            timestamp: 1000,
-            data: {},
-            attemptsMade: 1,
-            failedReason: 'x'.repeat(2000),
-          },
-        ]);
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: {},
+          attemptsMade: 1,
+          failedReason: 'x'.repeat(2000),
+        },
+      ]);
       const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
       const repository = new JobRepository(
         moduleRef,
