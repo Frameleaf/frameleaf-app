@@ -707,9 +707,17 @@ export class AuthService extends BaseService {
     // Successful unlock — reset the per-user counter.
     pinAttemptsByUser.delete(auth.user.id);
 
-    await this.sessionRepository.update(auth.session.id, {
-      pinExpiresAt: DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
-    });
+    // FL-34: conditional on the credentials just checked, so a PIN or password change that lands
+    // in between (and locked every session) is not undone by this unlock
+    const elevated = await this.sessionRepository.elevate(
+      auth.session.id,
+      auth.user.id,
+      user,
+      DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+    );
+    if (!elevated) {
+      throw new UnauthorizedException('Your PIN or password changed; unlock again');
+    }
   }
 
   async lockSession(auth: AuthDto): Promise<void> {

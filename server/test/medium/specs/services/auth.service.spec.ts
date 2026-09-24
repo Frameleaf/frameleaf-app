@@ -45,6 +45,25 @@ beforeAll(async () => {
 describe(AuthService.name, () => {
   // FL-34 (ported from PR131 bebfed12ff): a stale authentication read never reverses a lock
   describe('PIN refresh revocation race', () => {
+    it('elevates only while the PIN and password are the ones the unlock checked', async () => {
+      const { ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser({ pinCode: 'old-pin-hash', password: 'password-hash' });
+      const { session } = await ctx.newSession({ userId: user.id });
+      const deadline = new Date(Date.now() + 3_600_000);
+      const checked = { pinCode: 'old-pin-hash', password: 'password-hash' };
+
+      await expect(repository.elevate(session.id, user.id, checked, deadline)).resolves.toBe(true);
+      await repository.update(session.id, { pinExpiresAt: null });
+      // a PIN change (with its lockAll) lands between the check and the write
+      await ctx.get(UserRepository).update(user.id, { pinCode: 'new-pin-hash' });
+      await expect(repository.elevate(session.id, user.id, checked, deadline)).resolves.toBe(false);
+      expect(await repository.get(session.id)).toEqual(expect.objectContaining({ pinExpiresAt: null }));
+      // another account's session is never elevated
+      const { user: other } = await ctx.newUser({ pinCode: 'old-pin-hash', password: 'password-hash' });
+      await expect(repository.elevate(session.id, other.id, checked, deadline)).resolves.toBe(false);
+    });
+
     it('refreshes an active elevation but cannot resurrect an expired or deleted session', async () => {
       const { ctx } = setup();
       const repository = ctx.get(SessionRepository);

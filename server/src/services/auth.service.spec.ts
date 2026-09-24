@@ -1624,14 +1624,28 @@ describe(AuthService.name, () => {
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       await sut.unlockSession(auth, { pinCode: '123456' });
 
-      expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      // conditional on the credentials the check read (FL-34)
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        new Date('2026-05-08T13:00:00.000Z'),
+      );
       vi.useRealTimers();
+    });
+
+    it('does not elevate when the PIN or password changed after the check (FL-34)', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+      mocks.session.elevate.mockResolvedValue(false);
+
+      await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.session.update).not.toHaveBeenCalled();
     });
 
     it('should throttle repeated PIN failures and reset the count after a successful unlock', async () => {
@@ -1639,14 +1653,14 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.from().session().build();
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       for (let attempt = 0; attempt < 5; attempt++) {
         await expect(sut.unlockSession(auth, { pinCode: '000000' })).rejects.toBeInstanceOf(BadRequestException);
       }
       await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
       expect(mocks.user.getForPinCode).toHaveBeenCalledTimes(5);
-      expect(mocks.session.update).not.toHaveBeenCalled();
+      expect(mocks.session.elevate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(60_001);
       await sut.unlockSession(auth, { pinCode: '123456' });
