@@ -134,25 +134,34 @@
         {@const primaryFace = personFaces[0]}
         {@const isHighlighted = personFaces.some((f) => assetViewerManager.highlightedFaces.some((b) => b.id === f.id))}
         <div class="relative">
+          <!--
+            FL-37: people photos in the information panel are squircles (apple-style.css:137-148).
+            The mask clips rings and outlines, so the face highlight is a squircle backing behind
+            the photo and the focus ring sits on the link.
+          -->
           <a
-            class="group outline-none"
+            class="group block rounded-xl outline-offset-2 outline-immich-primary focus-visible:outline-2 dark:outline-immich-dark-primary"
             href={Route.viewPerson(person, { previousRoute })}
             onfocus={() => assetViewerManager.setHighlightedFaces(personFaces)}
             onblur={() => assetViewerManager.clearHighlightedFaces()}
             onpointerenter={() => assetViewerManager.setHighlightedFaces(personFaces)}
             onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
           >
-            <ImageThumbnail
-              curve
-              shadow
-              url={getPeopleThumbnailUrl(person)}
-              altText={person.name}
-              title={person.name}
-              widthStyle="100%"
-              hidden={person.isHidden}
-              highlighted={isHighlighted}
-              class="outline-offset-2 outline-immich-primary group-focus-visible:outline-2 dark:outline-immich-dark-primary"
-            />
+            <span
+              class="fl-squircle relative block p-1 {isHighlighted
+                ? 'bg-immich-primary dark:bg-immich-dark-primary'
+                : ''}"
+              data-highlighted={isHighlighted || undefined}
+            >
+              <ImageThumbnail
+                url={getPeopleThumbnailUrl(person)}
+                altText={person.name}
+                title={person.name}
+                widthStyle="100%"
+                hidden={person.isHidden}
+                class="fl-squircle"
+              />
+            </span>
             <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
             {#if person.birthDate && person.formattedAge}
               <p class="font-light {visiblePeople.length > 6 ? 'text-xs' : ''}" title={person.formattedBirthDate!}>
@@ -179,13 +188,16 @@
           onfocusout={() => assetViewerManager.clearHighlightedFaces()}
         >
           <div>
-            <div
-              class="aspect-square w-full rounded-xl bg-gray-200 bg-no-repeat shadow-md dark:bg-gray-700 {isHighlighted
-                ? 'outline-2 outline-offset-2 outline-immich-primary dark:outline-immich-dark-primary'
-                : ''}"
-              style={faceCropStyle(face)}
-              aria-hidden="true"
-            ></div>
+            <span
+              class="fl-squircle block p-1 {isHighlighted ? 'bg-immich-primary dark:bg-immich-dark-primary' : ''}"
+              data-highlighted={isHighlighted || undefined}
+            >
+              <span
+                class="fl-squircle block aspect-square w-full bg-gray-200 bg-no-repeat dark:bg-gray-700"
+                style={faceCropStyle(face)}
+                aria-hidden="true"
+              ></span>
+            </span>
             <p class="mt-1 truncate font-medium">{$t('unnamed_person')}</p>
           </div>
           <div class="absolute -inset-e-1 -top-1">

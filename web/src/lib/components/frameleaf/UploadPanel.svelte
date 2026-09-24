@@ -25,7 +25,7 @@
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { quartInOut } from 'svelte/easing';
-  import { scale } from 'svelte/transition';
+  import { motionScale } from '$lib/frameleaf/motion';
 
   /**
    * Upload panel (FL-45), ported from the prototype's `UploadPanel` in
@@ -115,7 +115,7 @@
       <button
         type="button"
         class="fl-pill"
-        in:scale={{ duration: 250, easing: quartInOut }}
+        in:motionScale={{ duration: 250, easing: quartInOut }}
         aria-label={`${$t('frameleaf_transfer_show_uploads')}. ${label}`}
         onclick={() => (minimized = false)}
       >
@@ -123,7 +123,7 @@
         <strong>{$remainingUploads > 0 ? $remainingUploads.toLocaleString($locale) : $stats.errors}</strong>
       </button>
     {:else}
-      <section class="fl-panel" aria-label={$t('upload')} in:scale={{ duration: 250, easing: quartInOut }}>
+      <section class="fl-panel" aria-label={$t('upload')} in:motionScale={{ duration: 250, easing: quartInOut }}>
         <header class="fl-panel-head">
           <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
           <div class="fl-panel-head-text">

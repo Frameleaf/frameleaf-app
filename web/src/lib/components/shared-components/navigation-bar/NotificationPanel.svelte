@@ -13,7 +13,7 @@
   import { mdiBellOutline, mdiClose } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { flip } from 'svelte/animate';
+  import { motionFlip } from '$lib/frameleaf/motion';
 
   /**
    * The notifications panel, in the prototype's design (`SystemPanels.jsx` NotificationsPanel).
@@ -146,7 +146,7 @@
     {:else}
       <ul class="fl-notif-list">
         {#each notificationManager.notifications as notification (notification.id)}
-          <li animate:flip={{ duration: 400 }}>
+          <li animate:motionFlip={{ duration: 400 }}>
             <NotificationItem {notification} {onclick} />
           </li>
         {/each}
