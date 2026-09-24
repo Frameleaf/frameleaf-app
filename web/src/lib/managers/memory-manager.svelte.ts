@@ -49,12 +49,17 @@ export type MemoryState = {
   getAssetHref: (assetId: string) => string | undefined;
 };
 
+/** How long the "Remove from memory" toast offers Undo; an emptied memory is deleted after it. */
+export const MEMORY_REMOVE_UNDO_TIMEOUT_MS = 6000;
+
 class MemoryManager {
   #loading = $state<Promise<void>>();
   #filters = $state<MemoriesSearchDto>({ size: 250, order: MemorySearchOrder.Desc });
   #hasNextPage: boolean = true;
   #page: number = 1;
   #total: number | undefined = $state();
+  /** Memories received from the server, including empty ones that are never listed. */
+  #received = 0;
   #queued: boolean = false;
 
   constructor() {
@@ -207,7 +212,8 @@ class MemoryManager {
     }
 
     const [loaded] = await searchMemories({ id }).catch(() => []);
-    if (!loaded) {
+    // A memory whose items were all removed has nothing to show (it is deleted once its Undo closes).
+    if (!loaded || loaded.assets.length === 0) {
       return;
     }
 
@@ -231,14 +237,13 @@ class MemoryManager {
     this.memories = this.memories.filter((memory) => memory.assets.length > 0);
   }
 
-  /** How long the "Remove from memory" toast offers Undo. */
-  static readonly REMOVE_UNDO_TIMEOUT = 6000;
-
   /**
    * FL-83 (MPY-1): removing the current item from its memory is undoable, as in the
    * prototype's `MemoryPlayer.jsx`. The removal is sent to the server at once (a reload or a
    * closed tab never loses it) and Undo puts the item back through the inverse call. A memory
-   * emptied this way is dropped from the list but not deleted, so Undo can restore it.
+   * emptied this way leaves the list at once and is deleted on the server when its Undo window
+   * closes unused (`MemoryPlayer.jsx` keeps it only while it can still be restored). Until then an
+   * empty memory from the server is never listed, so a reload in between shows nothing broken.
    */
   async removeCurrentAsset() {
     const current = this.current;
@@ -268,7 +273,19 @@ class MemoryManager {
     await this.#goto(nextHref ?? previousHref ?? this.memoriesHref);
 
     const translate = get(t);
-    let undone = false;
+    // Undo and the end of the window race for one outcome; whichever runs first wins.
+    let settled = false;
+    const finalize = emptied
+      ? setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          void deleteMemory({ id: memory.id }).catch((error) =>
+            handleError(error, translate('errors.something_went_wrong')),
+          );
+        }, MEMORY_REMOVE_UNDO_TIMEOUT_MS)
+      : undefined;
     toastManager.primary(
       {
         description: translate('frameleaf_memories_item_removed', { values: { name: asset.originalFileName } }),
@@ -276,17 +293,18 @@ class MemoryManager {
           label: translate('undo'),
           onclick: () => {
             close();
-            if (undone) {
+            if (settled) {
               return;
             }
-            undone = true;
+            settled = true;
+            clearTimeout(finalize);
             void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied).catch((error) =>
               handleError(error, translate('errors.something_went_wrong')),
             );
           },
         }),
       },
-      { timeout: MemoryManager.REMOVE_UNDO_TIMEOUT },
+      { timeout: MEMORY_REMOVE_UNDO_TIMEOUT_MS },
     );
   }
 
@@ -416,6 +434,7 @@ class MemoryManager {
     this.#hasNextPage = true;
     this.#page = 1;
     this.#total = undefined;
+    this.#received = 0;
     this.memories = [];
   }
 
@@ -437,8 +456,10 @@ class MemoryManager {
       return;
     }
 
+    this.#received += items.length;
     for (const item of items) {
-      if (!this.#lookup.has(item.id)) {
+      // Empty memories (every item removed, pending deletion) are never listed.
+      if (item.assets.length > 0 && !this.#lookup.has(item.id)) {
         this.memories.push(item);
       }
     }
@@ -448,7 +469,7 @@ class MemoryManager {
       this.#total = total;
     }
 
-    this.#hasNextPage = this.memories.length < this.#total;
+    this.#hasNextPage = this.#received < this.#total;
     this.#loading = undefined;
   }
 

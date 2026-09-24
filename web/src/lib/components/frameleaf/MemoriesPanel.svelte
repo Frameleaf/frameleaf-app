@@ -90,12 +90,22 @@
   let status = $state('');
   let settingsOpen = $state(false);
 
-  const cardHref = (memory: MemoryResponseDto) =>
-    Route.viewMemory({
-      id: memory.id,
-      assetId: memory.assets[0].id,
-      isSaved: userPreferencesManager.memories.onlyFavorites || undefined,
-    });
+  const cardHref = (memory: MemoryResponseDto) => {
+    const first = memory.assets[0];
+    return first
+      ? Route.viewMemory({
+          id: memory.id,
+          assetId: first.id,
+          isSaved: userPreferencesManager.memories.onlyFavorites || undefined,
+        })
+      : undefined;
+  };
+  const play = (memory: MemoryResponseDto) => {
+    const href = cardHref(memory);
+    if (href) {
+      void goto(href);
+    }
+  };
 
   const toggleFavorite = async (memory: MemoryResponseDto) => {
     const title = $memoryLaneTitle(memory);
@@ -172,7 +182,7 @@
     <div class="fm-card-menu">
       <Menu label={$t('frameleaf_memories_more_actions', { values: { title: $memoryLaneTitle(memory) } })}>
         {#snippet trigger()}<Icon icon={mdiDotsVertical} size="16" aria-hidden="true" />{/snippet}
-        <MenuItem onSelect={() => goto(cardHref(memory))}>
+        <MenuItem onSelect={() => play(memory)}>
           <Icon icon={mdiPlay} size="16" aria-hidden="true" />
           {$t('frameleaf_memories_play')}
         </MenuItem>
