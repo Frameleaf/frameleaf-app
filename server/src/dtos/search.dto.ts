@@ -284,9 +284,10 @@ const searchFilterBranchShape = {
   city: StringFilterNullableSchema,
   state: StringFilterNullableSchema,
   country: StringFilterNullableSchema,
-  make: StringFilterNullableSchema,
-  model: StringFilterNullableSchema,
-  lensModel: StringFilterNullableSchema,
+  // FL-49: cameras and lenses also match "contains" (like/notLike), as the search palette's camera: and lens: do
+  make: StringPatternFilterSchema,
+  model: StringPatternFilterSchema,
+  lensModel: StringPatternFilterSchema,
   description: StringPatternFilterSchema,
   originalFileName: StringPatternFilterSchema,
   originalPath: StringPatternFilterSchema,
@@ -294,6 +295,9 @@ const searchFilterBranchShape = {
   rating: NumberFilterNullableSchema,
   fileSizeInBytes: NumberFilterSchema,
   takenAt: DateFilterSchema,
+  // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
+  // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
+  localDateTime: DateFilterSchema,
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,

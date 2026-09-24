@@ -285,6 +285,37 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(mergePreferences(preferences, { savedSearches: [] }, 'admin').savedSearches).toEqual(searches);
     });
 
+    it('hides a palette search whose typed chips name a Locked person or tag while the session is locked', () => {
+      const lockedTag = '22222222-2222-4222-8222-222222222222';
+      // The web palette stores the compiled query with the resolved ids beside the typed text it shows
+      const typed = {
+        name: 'Jamie at the lake',
+        query: {
+          version: 1,
+          text: 'lake',
+          mode: 'smart',
+          filter: { personIds: { all: [lockedPerson] } },
+          palette: {
+            input: 'person:Jamie lake',
+            mode: 'smart',
+            tokens: [{ raw: 'person:Jamie', ids: [lockedPerson] }],
+          },
+        },
+      };
+      const tagged = {
+        name: 'Not work',
+        query: { version: 1, text: '', mode: 'text', filter: { tagIds: { none: [lockedTag] } } },
+      };
+      const preferences = getPreferences(
+        stored({
+          savedSearches: [searches[0], typed, tagged],
+          privacy: { suppression: { personIds: [lockedPerson], tagIds: [lockedTag], scope: 'owned' } },
+        }),
+      );
+      expect(mapPreferences(preferences, 'locked').savedSearches).toEqual([searches[0]]);
+      expect(mapPreferences(preferences, 'self').savedSearches).toEqual([searches[0], typed, tagged]);
+    });
+
     it('keeps the searches a locked session could not see when it replaces the list', () => {
       const added = { name: 'Snow', query: { filter: { city: { eq: 'Banff' } } } };
       const merged = mergePreferences(withLockedRules(), { savedSearches: [added] }, 'user', { lockedSession: true });
