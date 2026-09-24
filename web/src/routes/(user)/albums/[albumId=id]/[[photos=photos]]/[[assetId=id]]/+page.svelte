@@ -432,6 +432,7 @@
           downloadFileName={albumDownloadFileName}
           {tagOptions}
           onMutated={handleMutated}
+          sidePanelOpen={activityOpen}
           onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
         >
           <Theme theme={appTheme}>

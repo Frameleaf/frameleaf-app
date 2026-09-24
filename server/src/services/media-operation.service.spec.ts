@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   MediaOperationBulkAction,
   MediaOperationDestination,
@@ -65,11 +65,13 @@ describe(MediaOperationService.name, () => {
   let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
   let jobs: { queue: ReturnType<typeof vi.fn> };
   let preservation: Record<string, ReturnType<typeof vi.fn>>;
+  let archiveOperations: { relinkJob: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
     icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    archiveOperations = { relinkJob: vi.fn().mockResolvedValue(true) };
     preservation = {
       activeOperation: vi.fn().mockResolvedValue(undefined),
       getPackage: vi.fn(),
@@ -107,6 +109,7 @@ describe(MediaOperationService.name, () => {
       icloud as never,
       jobs as never,
       preservation as never,
+      archiveOperations as never,
     );
   });
 
@@ -821,6 +824,42 @@ describe(MediaOperationService.name, () => {
       expect(result.id).toBe(existing.id);
     });
 
+    it('refuses a request key whose job belongs to another archive operation or direction (FL-32)', async () => {
+      const archiveOperationId = newUuid();
+      const existing = operationStub({
+        kind: MediaOperationKind.Bulk,
+        snapshot: { action: MediaOperationBulkAction.Archive, assetIds, payload: { archiveOperationId } },
+      });
+      vi.mocked(repository.getBulkByRequestId).mockResolvedValue(existing);
+      const request = { action: MediaOperationBulkAction.Archive, assetIds, requestId: newUuid() };
+
+      await expect(sut.createBulk(authStub.user1, request)).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.createBulk(authStub.user1, request, { archiveOperationId: newUuid() })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(
+        sut.createBulk(
+          authStub.user1,
+          { ...request, action: MediaOperationBulkAction.Unarchive },
+          { archiveOperationId },
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.createBulk(authStub.user1, request, { archiveOperationId })).resolves.toEqual(
+        expect.objectContaining({ id: existing.id }),
+      );
+      // an ordinary job's key never answers for an archive operation
+      vi.mocked(repository.getBulkByRequestId).mockResolvedValue(
+        operationStub({
+          kind: MediaOperationKind.Bulk,
+          snapshot: { action: MediaOperationBulkAction.Archive, assetIds, payload: {} },
+        }),
+      );
+      await expect(sut.createBulk(authStub.user1, request, { archiveOperationId })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('queues Library Care actions only from Library Care, whose gates it cannot see (FL-69)', async () => {
       const payload = { mediaHealth: [{ assetId: assetIds[0], findingId: newUuid(), candidateId: newUuid() }] };
       const request = { action: MediaOperationBulkAction.RecoverDamagedMedia, assetIds: [assetIds[0]], payload };
@@ -1115,6 +1154,24 @@ describe(MediaOperationService.name, () => {
           snapshot: expect.objectContaining({ assetIds: [assetIds[1], assetIds[2], assetIds[3]], requestId: null }),
         }),
       );
+    });
+
+    it('moves a transactional archive’s link to its retry, so the retry can publish (FL-32)', async () => {
+      const archiveOperationId = newUuid();
+      const cancelled = bulkStub({
+        snapshot: { action: MediaOperationBulkAction.Archive, assetIds, payload: { archiveOperationId } },
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(cancelled);
+      vi.mocked(repository.create).mockImplementation((value) =>
+        Promise.resolve(operationStub({ ...value, id: 'retry-job', status: MediaOperationStatus.Queued } as never)),
+      );
+
+      await sut.retry(authStub.user1, cancelled.id);
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshot: expect.objectContaining({ payload: { archiveOperationId } }) }),
+      );
+      expect(archiveOperations.relinkJob).toHaveBeenCalledWith(archiveOperationId, cancelled.id, 'retry-job');
     });
 
     it('includes a batch that was in flight when the job stopped, and items still waiting for their retry', async () => {

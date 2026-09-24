@@ -15,15 +15,19 @@
   import { browser } from '$app/environment';
   import { afterNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
+  import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
   import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
+  import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
@@ -43,10 +47,11 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { AssetVisibility } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { AssetVisibility, type ArchiveOperationResponseDto } from '@immich/sdk';
+  import { Icon, toastManager } from '@immich/ui';
+  import { mdiTuneVariant } from '@mdi/js';
   import { hasRouterStarted } from '$lib/utils/router-started';
-  import { onDestroy, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -121,8 +126,16 @@
     onOpen?: (asset: TimelineAsset) => void;
     /** FL-35: the viewer, opened from the session's open asset. */
     viewer?: Snippet;
-    /** FL-36: the information panel. Work opens it above tablet width only. */
+    /**
+     * FL-36: the information panel. Work opens it above tablet width only. Without one, Work shows
+     * the selected item's information (`LibraryWorkInspector`, FL-33).
+     */
     infoPanel?: Snippet;
+    /**
+     * Another side panel (Activity, the filter panel) is open beside the results. Work's information
+     * panel steps aside while it is, as the template's inspector does (`App.jsx`).
+     */
+    sidePanelOpen?: boolean;
     empty?: Snippet;
     /**
      * A public shared-link page (prototype `PublicViewer.jsx`): header, select bar and grid only. The
@@ -165,6 +178,7 @@
     onOpen,
     viewer,
     infoPanel,
+    sidePanelOpen = false,
     empty,
     publicView = false,
   }: Props = $props();
@@ -183,8 +197,22 @@
   const manager = $derived(timelineManager as TimelineManager);
   /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
   const gridLayout = $derived(publicView ? 'browse' : session.layout);
+  /**
+   * Work's information panel can be closed and opened again (prototype `inspector`); switching to
+   * Work opens it again, as the template's layout switch does.
+   */
+  let inspectorOpen = $state(true);
+  let inspectorLayout: string | undefined;
+  $effect(() => {
+    const layout = gridLayout;
+    if (inspectorLayout !== undefined && layout !== inspectorLayout && layout === 'work') {
+      inspectorOpen = true;
+    }
+    inspectorLayout = layout;
+  });
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
-  const showInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
+  const canShowInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
+  const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen);
   const selecting = $derived(session.selection.length > 0);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
@@ -409,7 +437,61 @@
     runDispatch(id, payload);
   };
 
+  /**
+   * FL-32: the view is the owner's own normal Timeline (the Photos page), the one scope whose
+   * "select everything matching" the server can count and freeze for an archive by itself.
+   */
+  const ownTimeline = $derived(
+    destination?.kind === 'library' &&
+      options?.visibility === AssetVisibility.Timeline &&
+      Object.keys(options).every((key) => ['visibility', 'withStacked', 'withPartners'].includes(key)),
+  );
+
+  /** A matching archive the server has counted and frozen, waiting for the person to confirm it. */
+  let archiveConfirm = $state<ArchiveOperationResponseDto | null>(null);
+  let archiveConfirmOpen = $state(false);
+
+  const prepareMatchingArchive = async () => {
+    const prepared = await bulk.prepareArchive();
+    if (!prepared) {
+      return;
+    }
+    if (prepared.count === 0) {
+      toastManager.primary($t('frameleaf_bulk_archive_nothing'));
+      return;
+    }
+    archiveConfirm = prepared;
+    archiveConfirmOpen = true;
+  };
+
+  const confirmMatchingArchive = async () => {
+    const prepared = archiveConfirm;
+    archiveConfirm = null;
+    archiveConfirmOpen = false;
+    if (prepared && (await bulk.confirmArchive(prepared))) {
+      session.clearSelection();
+    }
+  };
+
+  $effect(() => {
+    if (!archiveConfirmOpen && archiveConfirm) {
+      archiveConfirm = null;
+    }
+  });
+
+  // The server keeps the latest archive's Undo; a reload offers it again (FL-32).
+  onMount(() => {
+    if (!publicView && !noSelectionBar && authManager.authenticated && !authManager.isSharedLink) {
+      void bulk.restoreArchiveUndo();
+    }
+  });
+
   const runDispatch = (id: BulkActionId, payload?: BulkPayload) => {
+    if (snapshot && id === 'archive' && ownTimeline && preparesArchiveOnServer(snapshot)) {
+      // Counted and frozen by the server first; nothing changes until that exact count is confirmed.
+      void prepareMatchingArchive();
+      return;
+    }
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
       void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
@@ -442,6 +524,12 @@
   };
 
   const focusedId = () => session.session.scrollAnchor ?? session.selection.at(-1) ?? null;
+
+  /** The item Work's panel describes: the last one selected, or the one in focus. */
+  const inspectedAsset = $derived.by(() => {
+    const id = session.selection.at(-1) ?? session.session.scrollAnchor;
+    return id ? findAsset(id) : null;
+  });
 
   const loadedIds = () =>
     manager.months.flatMap((month) =>
@@ -569,6 +657,15 @@
         helpOpen = true;
         return;
       }
+      case 'info': {
+        // I shows or hides Work's panel (prototype `case "info"`); in the viewer the key is the viewer's.
+        if (surface !== 'timeline' || !canShowInfoPanel || publicView) {
+          break;
+        }
+        event.preventDefault();
+        inspectorOpen = !inspectorOpen;
+        return;
+      }
       case 'select-all': {
         event.preventDefault();
         session.selectAll(loadedIds());
@@ -674,6 +771,15 @@
           {#if !publicView}
             <ResultsToolbar {session} {onOpenFilterPanel}>
               {@render toolbar?.()}
+              {#if canShowInfoPanel}
+                <IconButton
+                  label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+                  pressed={inspectorOpen}
+                  onclick={() => (inspectorOpen = !inspectorOpen)}
+                >
+                  <Icon icon={mdiTuneVariant} size="18" aria-hidden />
+                </IconButton>
+              {/if}
               {#if session.selection.length >= 2 && !snapshot && !selectionMode}
                 <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
               {/if}
@@ -693,8 +799,23 @@
       {/if}
     </div>
 
-    {#if showInfoPanel}
-      <aside class="fl-library-panel">{@render infoPanel?.()}</aside>
+    {#if showInfoPanel && !publicView}
+      <aside class="fl-library-panel" aria-label={$t('frameleaf_work_inspector_title')}>
+        {#if infoPanel}
+          {@render infoPanel()}
+        {:else}
+          <LibraryWorkInspector
+            asset={inspectedAsset}
+            selectedCount={session.selection.length}
+            onOpen={(asset) => {
+              session.open(asset.id);
+              session.setScrollAnchor(asset.id);
+              onOpen?.(asset);
+            }}
+            onClose={() => (inspectorOpen = false)}
+          />
+        {/if}
+      </aside>
     {/if}
   </div>
 
@@ -727,6 +848,17 @@
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
 </div>
+
+{#if archiveConfirm}
+  <BulkConfirmDialog
+    count={archiveConfirm.count}
+    bind:open={archiveConfirmOpen}
+    labelKey="frameleaf_bulk_archive"
+    messageKey="frameleaf_bulk_archive_matching_confirm"
+    danger={false}
+    onConfirm={() => void confirmMatchingArchive()}
+  />
+{/if}
 
 {#if helpOpen}
   <ShortcutsHelp surface={session.openAssetId ? 'viewer' : 'timeline'} onClose={() => (helpOpen = false)} />

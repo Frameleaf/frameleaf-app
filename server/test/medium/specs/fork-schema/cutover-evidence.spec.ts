@@ -378,7 +378,16 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    expect(observedLocks).toHaveLength(101);
+    // 66 v3.1.0 public + the 37 fork tables: the video version (FL-39) and archive operation (FL-32) tables included
+    expect(observedLocks).toHaveLength(103);
+    expect(observedLocks).toEqual(
+      expect.arrayContaining([
+        'immich_fork.video_edit_version',
+        'immich_fork.video_edit_selection',
+        'immich_fork.archive_operation',
+        'immich_fork.archive_operation_item',
+      ]),
+    );
   });
 
   it.each([

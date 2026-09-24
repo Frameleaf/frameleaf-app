@@ -90,6 +90,8 @@ type EventMap = {
 
   // queue events
   QueueStart: [QueueStartEvent];
+  /** the nightly jobs ran with database cleanup on; in-process cleanups that are not queue jobs (FL-32) */
+  NightlyDatabaseCleanup: [];
 
   // library events
   /** FL-78: a library's folders, exclusions or existence changed; the watching worker re-reads it. */
