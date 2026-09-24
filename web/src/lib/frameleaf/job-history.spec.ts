@@ -25,7 +25,7 @@ const entry = (id: string, queue?: QueueName): JobHistoryEntry => ({
 });
 
 describe('Job manager queue action history (FL-71)', () => {
-  it('keeps the newest commands first, at most 40', () => {
+  it('keeps the newest commands first, at most 120', () => {
     const storage = memory();
     for (let index = 0; index < JOB_HISTORY_LIMIT + 5; index++) {
       recordJobHistory(entry(String(index), QueueName.Ocr), storage);

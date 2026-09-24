@@ -36,7 +36,11 @@ const setupQueueMocks = async (context: BrowserContext) => {
     { name: 'faceDetection', isPaused: false, statistics: statistics({ failed: 3 }) },
     { name: 'backgroundTask', isPaused: false, statistics: statistics() },
   ];
-  const requests = { updates: [] as Array<{ name: string; isPaused: boolean }>, jobs: [] as string[] };
+  const requests = {
+    updates: [] as Array<{ name: string; isPaused: boolean }>,
+    jobs: [] as string[],
+    commands: [] as Array<{ name: string; command: string }>,
+  };
 
   await context.route('**/api/queues', (route) => route.fulfill({ json: queues }));
   await context.route('**/api/queues/*/jobs*', (route) => route.fulfill({ json: [] }));
@@ -52,6 +56,20 @@ const setupQueueMocks = async (context: BrowserContext) => {
       requests.updates.push({ name, isPaused });
     }
     return route.fulfill({ json: queue });
+  });
+  // Legacy queue commands (`PUT /jobs/{name}`), such as clear-failed from "Remove failed records".
+  await context.route('**/api/jobs/*', async (route, request) => {
+    if (request.method() !== 'PUT') {
+      return route.fallback();
+    }
+    const name = new URL(request.url()).pathname.split('/').at(-1)!;
+    const { command } = request.postDataJSON() as { command: string };
+    requests.commands.push({ name, command });
+    const queue = queues.find((item) => item.name === name);
+    if (queue && command === 'clear-failed') {
+      queue.statistics.failed = 0;
+    }
+    return route.fulfill({ json: queue?.statistics ?? {} });
   });
   await context.route('**/api/jobs', async (route, request) => {
     if (request.method() !== 'POST') {
@@ -103,6 +121,20 @@ test.describe('Job manager', () => {
     await history.locator('summary').click();
     await expect(history.getByText('Pause queue')).toBeVisible();
     await expect(history.getByText('Resume queue')).toBeVisible();
+  });
+
+  test('removes failed records through the review, which asks for an acknowledgement', async ({ page }) => {
+    await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Remove failed records', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Remove failed records' });
+    const confirm = review.getByRole('button', { name: 'Remove failed records', exact: true });
+    await expect(confirm).toBeDisabled();
+    await review.getByRole('checkbox').check();
+    await confirm.click();
+
+    await expect.poll(() => requests.commands).toEqual([{ name: 'faceDetection', command: 'clear-failed' }]);
   });
 
   test('edits queue concurrency in the settings draft', async ({ page }) => {

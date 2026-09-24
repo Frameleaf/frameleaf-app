@@ -545,8 +545,9 @@ export class JobRepository {
         timestamp,
         data,
         attemptsMade,
-        // FL-71: the Job manager shows a failed job's last error; bullmq keeps it on the job
-        ...(failedReason && { failedReason }),
+        // FL-71: the Job manager shows a failed job's last error; bullmq keeps it on the job. A
+        // stack-sized message is cut to the 500 characters the manager has room for.
+        ...(failedReason && { failedReason: failedReason.slice(0, 500) }),
       };
     });
   }
