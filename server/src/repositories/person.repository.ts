@@ -981,6 +981,31 @@ export class PersonRepository {
     });
   }
 
+  /**
+   * FL-57: drops verdicts that name a person their owner no longer has (deleted, merged away, or the
+   * owner's account removed). `ownerId` narrows it to one owner; without it every owner is checked.
+   */
+  async deleteOrphanedMergeVerdicts(ownerId?: string): Promise<number> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx);
+      const { numAffectedRows } = await sql`
+        DELETE FROM immich_fork.person_merge_verdict verdict
+        WHERE (${ownerId ?? null}::uuid IS NULL OR verdict."ownerId" = ${ownerId ?? null}::uuid)
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM public.person person
+              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."personId"
+            )
+            OR NOT EXISTS (
+              SELECT 1 FROM public.person person
+              WHERE person."ownerId" = verdict."ownerId" AND person."personGroupId" = verdict."suggestionId"
+            )
+          )
+      `.execute(tx);
+      return Number(numAffectedRows ?? 0n);
+    });
+  }
+
   private async lockForkWrites(tx: Transaction<DB>) {
     const { rows } = await sql<{ phase: ForkSchemaPhase }>`
       SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
