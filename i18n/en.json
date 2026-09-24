@@ -5638,6 +5638,7 @@
     "custom_address": "Custom address",
     "custom_expiry": "Custom date and time",
     "description_placeholder": "Add a title viewers will see",
+    "download_needs_metadata": "Originals contain their camera and location details, so turn on Show metadata to allow downloads.",
     "edit_shared_link_title": "Edit shared link",
     "empty_links_body": "Share an album to create a link anyone can open.",
     "empty_links_title": "No shared links yet",
