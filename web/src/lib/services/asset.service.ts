@@ -21,6 +21,7 @@ import {
   mdiDatabaseRefreshOutline,
   mdiDownload,
   mdiDownloadBox,
+  mdiExportVariant,
   mdiFaceRecognition,
   mdiFilmstrip,
   mdiFolderOpenOutline,
@@ -49,6 +50,7 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
+import { canSendCopies, isSendable, sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
@@ -103,6 +105,18 @@ export const getAssetActions = (
   const SharedLinkDownload: ActionItem = {
     ...Download,
     $if: () => isOwner || !!sharedLink?.allowDownload,
+  };
+
+  /**
+   * FL-35 / FL-54: the native share sheet with the original file, separate from Frameleaf sharing
+   * (App.jsx:818-846). Offered wherever the item may be downloaded, never for a Locked item, and only
+   * where the browser can share files.
+   */
+  const SendCopy: ActionItem = {
+    title: $t('frameleaf_send_copy'),
+    icon: mdiExportVariant,
+    $if: () => (!!authUser || !!sharedLink?.allowDownload) && isSendable(asset) && canSendCopies(),
+    onAction: () => void sendCopiesWithFeedback([asset.id]),
   };
 
   const PlayMotionPhoto: ActionItem = {
@@ -340,6 +354,7 @@ export const getAssetActions = (
     Download,
     DownloadOriginal,
     SharedLinkDownload,
+    SendCopy,
     Offline,
     Info,
     Favorite,
