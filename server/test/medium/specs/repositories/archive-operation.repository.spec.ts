@@ -317,6 +317,23 @@ describe(ArchiveOperationRepository.name, () => {
     expect(await repo.get(auth.user.id, owner, id)).toMatchObject({ count: 2, pending: 2 });
   });
 
+  it('counts another user’s ids the same whether or not they are Locked', async () => {
+    const { result: other } = await context.newUser();
+    const { result: theirOpen } = await context.newAsset({ ownerId: other.id });
+    const { result: theirLocked } = await context.newAsset({ ownerId: other.id });
+    await db
+      .insertInto('asset_lock')
+      .values({ assetId: theirLocked.id, reason: 'marked' } as never)
+      .execute();
+
+    const open = await repo.createSelected(auth, randomUUID(), [theirOpen.id]);
+    const locked = await repo.createSelected(auth, randomUUID(), [theirLocked.id]);
+
+    const reader = { elevated: false };
+    expect(await repo.get(auth.user.id, reader, open)).toMatchObject({ count: 1, skipped: 1 });
+    expect(await repo.get(auth.user.id, reader, locked)).toMatchObject({ count: 1, skipped: 1 });
+  });
+
   it('starts a job once: a second start waits for the lock and sees the first link (P2-6)', async () => {
     const id = await repo.createSelected(auth, randomUUID(), [await asset()]);
     let started = 0;
