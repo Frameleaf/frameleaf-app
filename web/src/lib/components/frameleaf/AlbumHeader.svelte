@@ -19,7 +19,17 @@
   import { fromResponse, timeAgo } from '$lib/frameleaf/classification-rules';
   import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
-  import { canEdit, defaultIconFor, isOwner, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
+  import {
+    canEdit,
+    defaultIconFor,
+    isOwner,
+    monthSpan,
+    othersOf,
+    ownerOf,
+    roleOf,
+    type AlbumDetailsDraft,
+  } from '$lib/frameleaf/album-directory';
+  import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -27,6 +37,7 @@
     handleCreateAlbumEntry,
     handleDeleteAlbum,
     handleDownloadAlbum,
+    handleEditAlbumDetails,
     handleLeaveAlbum,
     handleUpdateAlbumInfo,
   } from '$lib/services/album.service';
@@ -34,6 +45,7 @@
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
     AlbumKind,
+    AlbumUserRole,
     getAlbumMapMarkers,
     createClassificationRule,
     getClassificationRule,
@@ -134,6 +146,8 @@
   const editor = $derived(canEdit(album, currentUserId));
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   const others = $derived(othersOf(album, currentUserId));
+  const albumOwner = $derived(ownerOf(album));
+  const viewOnly = $derived(roleOf(album, currentUserId) === AlbumUserRole.Viewer);
   const name = $derived(album.albumName || $t('unnamed_album'));
   const span = $derived(monthSpan(album.startDate, album.endDate, $locale ?? undefined));
 
@@ -156,7 +170,20 @@
   let leaveOpen = $state(false);
   let createOpen = $state(false);
   let linkFormOpen = $state(false);
+  let editOpen = $state(false);
   let status = $state('');
+
+  /** "Edit details" (`CollectionFormDialog`, CollectionHeader.jsx:1303-1308): name, description, icon, collection. */
+  const saveDetails = async (draft: AlbumDetailsDraft) => {
+    const saved = await handleEditAlbumDetails(album, draft);
+    if (!saved) {
+      return false;
+    }
+    onAlbumChange(saved);
+    status = $t('frameleaf_albums_saved', { values: { name: saved.albumName || $t('unnamed_album') } });
+    await onRefresh();
+    return true;
+  };
 
   /* ---- smart album rule (FL-60): only the owner's own rule is ever returned ---- */
   let rule = $state<ClassificationRuleResponseDto | undefined>();
@@ -272,7 +299,7 @@
   };
 
   const confirmDelete = async () => {
-    const deleted = await handleDeleteAlbum(album, { prompt: false });
+    const deleted = await handleDeleteAlbum(album);
     if (deleted) {
       await goto(Route.albums());
     }
@@ -370,8 +397,14 @@
         {#if album.isSmart}
           <span class="badge-pill"><Icon icon={mdiAutoFix} size="14" />{$t('frameleaf_album_smart_badge')}</span>
         {/if}
-        {#if !owner}
-          <span class="shared-by">{$t('frameleaf_album_shared_with_you')}</span>
+        {#if !owner && albumOwner}
+          <!-- CollectionHeader.jsx:1164-1170: who shared it, and whether this member may only view. -->
+          <span class="shared-by">
+            <span class="owner-avatar" aria-hidden="true"><UserAvatar user={albumOwner} size="full" noTitle /></span>
+            {$t('frameleaf_album_shared_by', { values: { name: albumOwner.name } })}{viewOnly
+              ? ` · ${$t('frameleaf_album_view_only')}`
+              : ''}
+          </span>
         {/if}
       </div>
 
@@ -488,7 +521,8 @@
       <span>{$t('download')}</span>
     </button>
 
-    {#if others.length > 0}
+    <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
+    {#if onToggleActivity}
       <button type="button" class="action" aria-pressed={activityOpen} onclick={() => onToggleActivity?.()}>
         <Icon icon={mdiCommentTextOutline} size="18" />
         <span>{$t('activity')}</span>
@@ -504,6 +538,12 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
+      {#if editor && !rule && !album.isSmart}
+        <MenuItem onSelect={() => (editOpen = true)}>
+          <Icon icon={mdiPencilOutline} size="18" />
+          {$t('frameleaf_album_edit_details')}
+        </MenuItem>
+      {/if}
       {#if canShowOwnerBadges}
         <MenuItem checked={ownerBadges} onSelect={() => onToggleOwnerBadges?.()}>
           <Icon icon={mdiAccountCircleOutline} size="18" />
@@ -578,6 +618,16 @@
 <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
 
 <AlbumCreateDialog
+  kind={album.kind}
+  {album}
+  collections={collections.filter(({ id }) => id !== album.id)}
+  canMove={album.kind === AlbumKind.Album && owner}
+  bind:open={editOpen}
+  onCreate={createChildAlbum}
+  onSave={saveDetails}
+/>
+
+<AlbumCreateDialog
   kind={AlbumKind.Album}
   collections={collections.length > 0 ? collections : [album]}
   defaultParentId={album.id}
@@ -608,7 +658,9 @@
   title={$t('frameleaf_album_delete_title', { values: { name } })}
   body={isCollection
     ? $t('frameleaf_album_delete_collection_body')
-    : $t('frameleaf_album_delete_body', { values: { kind: kindLabel } })}
+    : album.kind === AlbumKind.Space
+      ? $t('frameleaf_album_delete_space_body')
+      : $t('frameleaf_album_delete_body', { values: { kind: kindLabel } })}
   keepNote={isCollection
     ? $t('frameleaf_album_delete_collection_keep', { values: { count: childAlbums.length } })
     : album.isSmart
@@ -748,8 +800,16 @@
     border-radius: 999px;
   }
   .shared-by {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.75rem;
     color: var(--fl-muted);
+  }
+  .owner-avatar {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
   }
   .summary {
     display: flex;
