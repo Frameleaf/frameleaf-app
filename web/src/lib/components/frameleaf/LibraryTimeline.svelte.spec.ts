@@ -160,3 +160,54 @@ describe('LibraryTimeline mounted after the first navigation', () => {
     expect(find).not.toHaveBeenCalled();
   });
 });
+
+// FL-33: the layout control scrolls with the results, so reaching it (a click scrolls it into view)
+// can leave the session's anchored asset off screen. The switch must come back to that asset, not
+// hold whatever happened to be at the top (the e2e deep link regression).
+describe('LibraryTimeline layout switch', () => {
+  const march = inMonth('2024-03', 40);
+  const february = inMonth('2024-02', 40);
+  let manager: TimelineManager;
+  let session: LibrarySessionStore;
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    sdkMock.getTimeBuckets.mockResolvedValue([
+      { timeBucket: '2024-03-01', count: march.length },
+      { timeBucket: '2024-02-01', count: february.length },
+    ]);
+    sdkMock.getTimeBucket.mockImplementation(({ timeBucket }) =>
+      Promise.resolve(toResponseDto(...(timeBucket.startsWith('2024-03') ? march : february))),
+    );
+    manager = new TimelineManager();
+    await manager.updateViewport({ width: 1000, height: 400 });
+    await manager.loadTimelineMonth({ year: 2024, month: 2 }, { cancelable: false });
+    await tick();
+    session = new LibrarySessionStore({ userId: 'user-1', pageSize: 10 });
+  });
+
+  const frames = async (count: number) => {
+    for (let index = 0; index < count; index++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  };
+
+  it('comes back to the session’s anchor when it is off screen, not to the top of the view', async () => {
+    const anchor = february.at(-1)!;
+    render(LibraryTimeline, { timelineManager: manager, session, grouping: 'days' });
+    await tick();
+    session.dispatch({ type: 'anchor', id: anchor.id });
+    const scrollTo = vi.spyOn(manager, 'scrollTo');
+    const anchorTop = () => manager.getTimelineMonthByAssetId(anchor.id)!.findAssetAbsolutePosition(anchor.id)!.top;
+
+    session.setLayout('work');
+    await tick();
+    await frames(4);
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    const landed = scrollTo.mock.calls.at(-1)![0];
+    // the anchor is in the window the scroll lands on
+    expect(landed).toBeGreaterThan(anchorTop() - 400);
+    expect(landed).toBeLessThanOrEqual(anchorTop() + 1);
+  });
+});
