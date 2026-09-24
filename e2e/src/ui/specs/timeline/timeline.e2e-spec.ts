@@ -501,13 +501,18 @@ test.describe('Timeline', () => {
       await checkbox.focus();
       await expect(checkbox).toBeFocused();
       // Scroll the timeline itself, which leaves focus where it is, until the year's first month is
-      // out of reach: the header is then drawn before a later month, as a new element.
+      // out of reach: the header is then drawn before a later month, as a new element. The very
+      // dense first month is several thousand pixels tall, more than the default poll's backoff
+      // scrolls within its timeout on a slow runner, so poll steadily and stop at the first move.
       const firstHeader = await page.getByTestId('frameleaf-group').first().elementHandle();
       await expect
-        .poll(async () => {
-          await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 1000));
-          return firstHeader!.evaluate((element) => element.isConnected);
-        })
+        .poll(
+          async () => {
+            await timelineUtils.locator(page).evaluate((scroller) => scroller.scrollBy(0, 1000));
+            return firstHeader!.evaluate((element) => element.isConnected);
+          },
+          { intervals: [100], timeout: 15_000 },
+        )
         .toBe(false);
       const ids = await thumbnailUtils.idsInViewport(page);
       expect(ids.length).toBeGreaterThan(0);
