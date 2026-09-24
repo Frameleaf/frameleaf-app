@@ -344,9 +344,9 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
   if (url.pathname === '/user-settings') {
     const area = url.searchParams.get('area');
     const utilities = area === 'utilities';
-    // The Library care hub (the `care` area), its tools under Utilities, and the older
-    // `?screen=care` address all belong to the rail's Library Care entry.
-    const care = area === 'care' || url.searchParams.get('screen') === 'care';
+    // The Library care hub (the `care` area) and its tools under Utilities belong to the rail's
+    // Library Care entry.
+    const care = area === 'care';
     if (destination.id === 'settings') {
       return !utilities && !care;
     }
