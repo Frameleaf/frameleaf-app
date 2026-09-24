@@ -203,13 +203,20 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     box-shadow: var(--fl-shadow-2);
+    /* Grows from the inline-start (or, for `end`, inline-end) corner it hangs from. */
     transform-origin: top left;
     animation: fl-menu-in 320ms var(--fl-spring);
+  }
+  [role='menu']:dir(rtl) {
+    transform-origin: top right;
   }
   [role='menu'].end {
     inset-inline-start: auto;
     inset-inline-end: 0;
     transform-origin: top right;
+  }
+  [role='menu'].end:dir(rtl) {
+    transform-origin: top left;
   }
   @keyframes fl-menu-in {
     from {
