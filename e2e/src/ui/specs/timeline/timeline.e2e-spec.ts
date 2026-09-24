@@ -435,6 +435,31 @@ test.describe('Timeline', () => {
       expect(await groupingUtils.dayHeadings(page).allTextContents()).toEqual(dayTitles);
     });
 
+    test('A group header comes before its tiles, in reading and Tab order, and names them', async ({ page }) => {
+      // Prototype `TimelineLibrary.jsx`: <section aria-labelledby={headingId}> opens with the header.
+      await openTimeline(page);
+      await groupingUtils.choose(page, 'Months');
+      const title = monthTitle(assets[0].id);
+      const heading = groupingUtils.groupHeadings(page).filter({ hasText: title });
+      const tile = thumbnailUtils.withAssetId(page, assets[0].id);
+      // The month's tiles sit in a region named by the group's heading.
+      await expect(
+        page.getByRole('region', { name: title, exact: true }).locator(`[data-asset-id="${assets[0].id}"]`),
+      ).toHaveCount(1);
+      const headingFirst = await heading.evaluate((element, id) => {
+        const target = document.querySelector(
+          `[data-testid="frameleaf-asset-tile"][data-asset-id="${CSS.escape(id)}"]`,
+        )!;
+        return Boolean(element.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }, assets[0].id);
+      expect(headingFirst).toBe(true);
+      // From the group's checkbox, Tab moves on to the group's first tile.
+      await page.getByRole('checkbox', { name: `Select all in ${title}` }).focus();
+      await page.keyboard.press('Tab');
+      await assetViewerUtils.expectActiveAssetToBe(page, assets[0].id);
+      await expect(tile).toBeVisible();
+    });
+
     test('A year header stays at the top through every month of its year', async ({ page }) => {
       await openTimeline(page);
       await groupingUtils.choose(page, 'Years');
@@ -469,7 +494,7 @@ test.describe('Timeline', () => {
       const inNewestYear = assets.filter((asset) => captured(assets, asset.id).year === newestYear).length;
       const header = page.getByTestId('frameleaf-group').first();
       await header.getByRole('heading').hover();
-      const checkbox = header.getByRole('checkbox', { name: `Select everything in ${newestYear}` });
+      const checkbox = header.getByRole('checkbox', { name: `Select all in ${newestYear}` });
       await checkbox.click();
       await expect(selectionBarUtils.locator(page)).toContainText(`${inNewestYear} selected`);
       await expect(checkbox).toBeChecked();
@@ -479,6 +504,8 @@ test.describe('Timeline', () => {
     });
 
     test('Ctrl+wheel steps the grouping coarser and finer', async ({ page }) => {
+      // The step cooldown reads Date.now(); the test moves the clock instead of waiting.
+      await page.clock.install();
       await openTimeline(page);
       await timelineUtils.locator(page).hover();
       const scrollTop = await timelineUtils.locator(page).evaluate((element) => element.scrollTop);
@@ -487,8 +514,8 @@ test.describe('Timeline', () => {
         await page.mouse.wheel(0, deltaY);
         await page.keyboard.up('Control');
         await groupingUtils.expectMode(page, mode);
-        // The prototype waits 300 ms before it takes the next step.
-        await page.waitForTimeout(350);
+        // The prototype takes no further step for 300 ms after one.
+        await page.clock.fastForward(300);
       };
       // Scrolling down with the modifier held groups more coarsely, scrolling up more finely.
       await step(120, 'Months');
@@ -526,9 +553,9 @@ test.describe('Timeline', () => {
       await pageUtils.openPhotosPage(page);
       // Day headers and their select-all live in the Timeline layout.
       await timelineUtils.setLayout(page, 'Timeline');
-      await pageUtils.selectDay(page, 'Wed, Dec 11, 2024');
+      await pageUtils.selectDay(page, 'Wednesday, December 11, 2024');
       await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(4);
-      await pageUtils.selectDay(page, 'Wed, Dec 11, 2024');
+      await pageUtils.selectDay(page, 'Wednesday, December 11, 2024');
       await expect(thumbnailUtils.selectedAsset(page)).toHaveCount(0);
     });
 

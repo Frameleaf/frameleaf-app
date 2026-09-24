@@ -13,22 +13,22 @@
   type Props = {
     id: string;
     title: string;
-    /** Tooltip, e.g. the full date of a day. */
-    fullTitle?: string;
     count: number;
     state: 'none' | 'some' | 'all';
     width: number;
     height: number;
     /** The pointer is over the group's items, which shows the checkbox (prototype `.tl-group:hover`). */
     hovered?: boolean;
+    /** A selection is in progress: every group shows its checkbox (prototype `.is-selecting`). */
+    selecting?: boolean;
     onSelect?: (checked: boolean) => void;
   };
 
-  let { id, title, fullTitle, count, state, width, height, hovered = false, onSelect }: Props = $props();
+  let { id, title, count, state, width, height, hovered = false, selecting = false, onSelect }: Props = $props();
 </script>
 
 <header class="fl-group-header" style:width="{width}px" style:height="{height}px">
-  <label class="fl-group-select" class:is-active={state !== 'none'} class:is-hovered={hovered}>
+  <label class="fl-group-select" class:is-active={state !== 'none'} class:is-shown={hovered || selecting}>
     <input
       type="checkbox"
       checked={state === 'all'}
@@ -44,7 +44,7 @@
       {/if}
     </span>
   </label>
-  <h2 {id} title={fullTitle}>{title}</h2>
+  <h2 {id}>{title}</h2>
   <span class="fl-group-count">{$t('items_count', { values: { count } })}</span>
 </header>
 
@@ -89,10 +89,9 @@
   }
   .fl-group-header:hover .fl-group-select,
   :global(.fl-day:hover) .fl-group-select,
-  :global(.is-selecting) .fl-group-select,
   .fl-group-select:focus-within,
   .fl-group-select.is-active,
-  .fl-group-select.is-hovered {
+  .fl-group-select.is-shown {
     opacity: 1;
   }
   .fl-group-select input {
@@ -122,8 +121,15 @@
     outline: 2px solid var(--fl-accent);
     outline-offset: 2px;
   }
-  /* Prototype `timeline-library.css` narrow container: a smaller title and a larger touch target. */
-  @media (max-width: 767px) {
+  /* Prototype `timeline-library.css`: without hover the checkbox always shows. */
+  @media (hover: none) {
+    .fl-group-select {
+      opacity: 1;
+    }
+  }
+  /* Prototype `timeline-library.css` `@container (max-width: 600px)`: a smaller title and a larger
+     touch target. The container is the timeline (`LibraryTimeline` `.fl-timeline`). */
+  @container fl-timeline (max-width: 600px) {
     .fl-group-header h2 {
       font-size: var(--fl-font-small, 12px);
     }
