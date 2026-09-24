@@ -26,9 +26,16 @@
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
   import { albumIconPath } from '$lib/utils/album-icons';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAlbumTree } from '@immich/sdk';
+  import { getAlbumTree, getPartners, PartnerDirection, type PartnerResponseDto } from '@immich/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
-  import { mdiChevronDown, mdiChevronRight, mdiPlus } from '@mdi/js';
+  import {
+    mdiAccountOutline,
+    mdiChevronDoubleLeft,
+    mdiChevronDoubleRight,
+    mdiChevronDown,
+    mdiChevronRight,
+    mdiPlus,
+  } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
@@ -83,8 +90,20 @@
     }
   };
 
+  /** People who share their library with this account (the prototype's partner library entry). */
+  let partners = $state<PartnerResponseDto[]>([]);
+  const refreshPartners = async () => {
+    try {
+      partners = await getPartners({ direction: PartnerDirection.SharedWith });
+    } catch {
+      // The rail still works without the entry; the Sharing page reports partner errors.
+      partners = [];
+    }
+  };
+
   onMount(() => {
     void refreshAlbums();
+    void refreshPartners();
 
     return eventManager.on({
       AlbumCreate: () => void refreshAlbums(),
@@ -179,7 +198,24 @@
   )}
 {/snippet}
 
-<Sidebar ariaLabel={$t('primary')}>
+{#snippet railHeader({ collapsed, toggle }: { collapsed: boolean; toggle: () => void })}
+  <!-- LibraryRail.jsx `rail-header`: the "Library" label and the double-chevron toggle (desktop). -->
+  <div class="frameleaf fl-rail-header" class:fl-icon-only={collapsed} data-theme={appTheme}>
+    {#if !collapsed}<span>{$t('library')}</span>{/if}
+    <button
+      type="button"
+      class="fl-rail-toggle"
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? $t('frameleaf_rail_expand') : $t('frameleaf_rail_collapse')}
+      title={collapsed ? $t('frameleaf_rail_expand') : $t('frameleaf_rail_collapse')}
+      onclick={toggle}
+    >
+      <Icon icon={collapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="18" aria-hidden={true} />
+    </button>
+  </div>
+{/snippet}
+
+<Sidebar ariaLabel={$t('primary')} header={railHeader}>
   <div class="frameleaf fl-rail" class:fl-icon-only={iconOnly} data-theme={appTheme}>
     {#each sections as section (section.id)}
       {#if section.id === 'footer'}
@@ -190,16 +226,18 @@
         {@const create = SECTION_CREATE[section.id]}
         <div class="fl-heading">
           <!-- The heading folds its section away (LibraryRail.jsx `heading`). -->
-          <button
-            type="button"
-            class="fl-heading-toggle"
-            aria-expanded={isSectionOpen(section.id)}
-            aria-controls="fl-rail-section-{section.id}"
-            onclick={() => foldSection(section.id)}
-          >
-            <h2>{$t(section.labelKey)}</h2>
-            <Icon icon={mdiChevronDown} size="14" aria-hidden={true} class="fl-heading-chevron" />
-          </button>
+          <h2>
+            <button
+              type="button"
+              class="fl-heading-toggle"
+              aria-expanded={isSectionOpen(section.id)}
+              aria-controls="fl-rail-section-{section.id}"
+              onclick={() => foldSection(section.id)}
+            >
+              {$t(section.labelKey)}
+              <Icon icon={mdiChevronDown} size="14" aria-hidden={true} class="fl-heading-chevron" />
+            </button>
+          </h2>
           {#if create}
             <a
               class="fl-action"
@@ -263,9 +301,21 @@
           {/if}
         {/each}
 
-        {#if section.id === 'spaces' && !iconOnly}
-          {#each tree.spaces as space (space.id)}
-            {@render spaceLink(space)}
+        {#if section.id === 'spaces'}
+          {#if !iconOnly}
+            {#each tree.spaces as space (space.id)}
+              {@render spaceLink(space)}
+            {/each}
+          {/if}
+          <!-- LibraryRail.jsx: each partner's library follows the spaces ("Jamie's library"). -->
+          {#each partners as partner (partner.id)}
+            {@render railLink(
+              $t('frameleaf_rail_partner_library', { values: { name: partner.name } }),
+              mdiAccountOutline,
+              Route.viewPartner({ id: partner.id }),
+              pathname.startsWith(Route.viewPartner({ id: partner.id })),
+              false,
+            )}
           {/each}
         {/if}
       </div>
@@ -303,6 +353,44 @@
     text-transform: uppercase;
     margin: 0;
   }
+  .fl-rail-header {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: -1.5rem;
+    padding: 0 0.5rem 0.25rem 1rem;
+    color: var(--fl-muted);
+    background: var(--fl-panel);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .fl-rail-header.fl-icon-only {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  /* Narrower screens open and close the drawer from the top bar's menu button. */
+  @media (min-width: 850px) {
+    .fl-rail-header {
+      display: flex;
+    }
+  }
+  .fl-rail-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--fl-radius);
+    background: transparent;
+    color: var(--fl-muted);
+  }
+  .fl-rail-toggle:hover {
+    background: var(--fl-raised);
+    color: var(--fl-text);
+  }
   .fl-heading-toggle {
     display: inline-flex;
     align-items: center;
@@ -313,9 +401,11 @@
     background: transparent;
     color: var(--fl-muted);
     font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
     cursor: pointer;
   }
-  .fl-heading-toggle:hover h2 {
+  .fl-heading-toggle:hover {
     color: var(--fl-text);
   }
   .fl-heading-toggle :global(.fl-heading-chevron) {

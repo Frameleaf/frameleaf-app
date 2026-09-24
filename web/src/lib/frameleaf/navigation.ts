@@ -1,5 +1,4 @@
 import {
-  mdiAccountMultipleOutline,
   mdiAccountOutline,
   mdiArchiveArrowDownOutline,
   mdiClockOutline,
@@ -189,7 +188,6 @@ export type RailDestinationId =
   | 'locked'
   | 'allAlbums'
   | 'sharedLinks'
-  | 'sharing'
   | 'explore'
   | 'people'
   | 'pets'
@@ -306,10 +304,10 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
     {
       id: 'spaces',
       labelKey: 'frameleaf_shared_spaces',
-      // The workspace at Route.sharing() (FL-55) lists every shared space and the
-      // account's partners; each space also gets its own entry below, rendered from
-      // `tree.spaces` the same way collections and albums are.
-      destinations: [destination('sharing', 'frameleaf_spaces_all', mdiAccountMultipleOutline, Route.sharing())],
+      // A plain heading with one entry per space and per partner library (LibraryRail.jsx); the
+      // rail renders them from `tree.spaces` and the account's partners. There is no "All shared
+      // spaces" entry: the Albums page lists every space.
+      destinations: [],
     },
     {
       id: 'tools',

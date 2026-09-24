@@ -33,6 +33,7 @@ beforeEach(() => {
   sidebarCollapsed.set(false);
   authManager.setUser(userAdminFactory.build());
   sdkMock.getAlbumTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
+  sdkMock.getPartners.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -94,5 +95,26 @@ describe('LibraryRail', () => {
     const rail = within(container as HTMLElement);
     expect(rail.getByRole('link', { name: 'Places' })).toBeInTheDocument();
     expect(rail.getByRole('link', { name: 'Workflows' })).toBeInTheDocument();
+  });
+
+  it('heads the rail with "Library" and the double-chevron collapse toggle', async () => {
+    render(LibraryRail);
+    const toggle = screen.getByRole('button', { name: 'Collapse navigation' });
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('lists each partner library under Shared spaces, and no "All shared spaces" entry', async () => {
+    sdkMock.getPartners.mockResolvedValue([
+      { id: 'jamie', name: 'Jamie', email: 'jamie@example.test', profileImagePath: '', avatarColor: 'primary' },
+    ] as never);
+    render(LibraryRail);
+
+    const partner = await screen.findByRole('link', { name: 'Jamie’s library' });
+    expect(partner).toHaveAttribute('href', Route.viewPartner({ id: 'jamie' }));
+    expect(sdkMock.getPartners).toHaveBeenCalledWith({ direction: 'shared-with' });
+    expect(screen.queryByRole('link', { name: 'All shared spaces' })).toBeNull();
   });
 });
