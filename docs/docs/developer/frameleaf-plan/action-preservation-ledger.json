@@ -51800,7 +51800,7 @@
           "evidence": ["web/src/routes/admin/system-settings/JobSettings.svelte"]
         },
         "newUi": {
-          "status": "mapped-unqualified",
+          "status": "Intentional change",
           "target": {
             "module": "web/src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte",
             "area": "processing",

@@ -53,7 +53,7 @@ describe('Queue concurrency dialog (FL-71, ConcurrencyDialog in JobsManager.jsx)
     expect(draft.reviewRequests).toBe(1);
   });
 
-  it('keeps a pending value in the review while its field is emptied', async () => {
+  it('keeps a pending value counted while its field is emptied, and holds the review until it is valid', async () => {
     const draft = store();
     render(JobsConcurrencyDialog, { open: true, store: draft, title });
 
@@ -65,6 +65,11 @@ describe('Queue concurrency dialog (FL-71, ConcurrencyDialog in JobsManager.jsx)
       (draft.draft.job as unknown as Record<string, { concurrency: number }>).thumbnailGeneration.concurrency,
     ).toBe(6);
     expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    // The review would save 6 while the field shows nothing, so it waits for a valid limit.
+    expect(screen.queryByRole('button', { name: /pending settings/ })).toBeNull();
+
+    await fireEvent.input(thumbnails, { target: { value: '7' } });
     expect(screen.getByRole('button', { name: 'Review 1 pending settings' })).toBeInTheDocument();
   });
 
