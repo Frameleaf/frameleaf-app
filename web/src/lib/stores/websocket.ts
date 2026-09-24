@@ -82,7 +82,7 @@ websocket
   })
   .on('on_new_release', (event) => eventManager.emit('ReleaseEvent', event))
   .on('on_session_delete', () => eventManager.emit('SessionDelete'))
-  .on('on_session_lock', () => eventManager.emit('SessionLocked'))
+  .on('on_session_lock', () => eventManager.emit('SessionLockedRemote'))
   .on('on_user_delete', (id) => eventManager.emit('UserAdminDeleted', { id }))
   .on('on_asset_delete', (asset) => eventManager.emit('AssetsDelete', [asset]))
   .on('on_asset_trash', (assets) => eventManager.emit('AssetsDelete', assets))
