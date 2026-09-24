@@ -1,4 +1,5 @@
 import { flushSync, tick } from 'svelte';
+import { flip, type AnimationConfig, type FlipParams } from 'svelte/animate';
 import {
   fade,
   fly,
@@ -37,11 +38,18 @@ const gated =
     prefersReducedMotion() ? crossfade(node, params?.delay) : move(node, params);
 
 /** `fly`, or a crossfade under Reduce Motion. */
-export const motionFly: Transition<FlyParams> = gated(fly);
+export const motionFly: Transition<FlyParams> = gated((node, params) => fly(node, params));
 /** `slide`, or a crossfade under Reduce Motion. */
-export const motionSlide: Transition<SlideParams> = gated(slide);
+export const motionSlide: Transition<SlideParams> = gated((node, params) => slide(node, params));
 /** `scale`, or a crossfade under Reduce Motion. */
-export const motionScale: Transition<ScaleParams> = gated(scale);
+export const motionScale: Transition<ScaleParams> = gated((node, params) => scale(node, params));
+
+/** `animate:flip`, or no movement under Reduce Motion (items take their new place at once). */
+export const motionFlip = (
+  node: Element,
+  boxes: { from: DOMRect; to: DOMRect },
+  params?: FlipParams,
+): AnimationConfig => (prefersReducedMotion() ? { duration: 0 } : flip(node, boxes, params));
 
 type ViewTransitionStarter = (update: () => Promise<void>) => unknown;
 
