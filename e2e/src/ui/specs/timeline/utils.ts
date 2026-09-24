@@ -180,6 +180,55 @@ export const timelineUtils = {
   },
 };
 
+/**
+ * The Timeline layout's grouping (prototype `TimelineLibrary.jsx`): the Years / Months / Days / All
+ * control, ⌘/Ctrl+wheel and pinch. Days draw a header per day; the coarser modes draw one sticky
+ * header per month, year or for everything, over the group's tiles.
+ */
+export const groupingUtils = {
+  button(page: Page, mode: 'Years' | 'Months' | 'Days' | 'All') {
+    return page.getByRole('group', { name: 'Timeline grouping' }).getByRole('button', { name: mode, exact: true });
+  },
+  async choose(page: Page, mode: 'Years' | 'Months' | 'Days' | 'All') {
+    await groupingUtils.button(page, mode).click();
+    await groupingUtils.expectMode(page, mode);
+  },
+  async expectMode(page: Page, mode: 'Years' | 'Months' | 'Days' | 'All') {
+    await expect(groupingUtils.button(page, mode)).toHaveAttribute('aria-pressed', 'true');
+  },
+  /** The month, year or "all" group headers. */
+  groupHeadings(page: Page) {
+    return page.getByTestId('frameleaf-group').getByRole('heading', { level: 2 });
+  },
+  /** The per-day headers of the Days grouping. */
+  dayHeadings(page: Page) {
+    return page.getByTestId('frameleaf-day-group').getByRole('heading', { level: 2 });
+  },
+  /**
+   * Every tile in the scroll area paired with the title of the nearest header above it, read from
+   * the rendered geometry: a tile belongs to the group whose header it is drawn under.
+   */
+  async tilesUnderHeadings(page: Page, headingSelector: string) {
+    return await timelineUtils.locator(page).evaluate(
+      (scroller, { tile, heading }) => {
+        const box = scroller.getBoundingClientRect();
+        const headings = [...scroller.querySelectorAll<HTMLElement>(heading)]
+          .map((element) => ({ title: element.textContent?.trim() ?? '', rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.height > 0)
+          .toSorted((a, b) => a.rect.top - b.rect.top);
+        return [...scroller.querySelectorAll<HTMLElement>(tile)]
+          .map((element) => ({ id: element.dataset.assetId!, rect: element.getBoundingClientRect() }))
+          .filter(({ rect }) => rect.bottom > box.top && rect.top < box.bottom && rect.height > 0)
+          .map(({ id, rect }) => ({
+            id,
+            heading: headings.findLast((candidate) => candidate.rect.bottom <= rect.top + 1)?.title,
+          }));
+      },
+      { tile: TILE, heading: headingSelector },
+    );
+  },
+};
+
 export const scrubberUtils = {
   slider(page: Page) {
     return page.getByRole('slider', { name: 'Jump to a month' });

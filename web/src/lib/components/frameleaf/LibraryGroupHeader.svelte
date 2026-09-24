@@ -19,14 +19,16 @@
     state: 'none' | 'some' | 'all';
     width: number;
     height: number;
+    /** The pointer is over the group's items, which shows the checkbox (prototype `.tl-group:hover`). */
+    hovered?: boolean;
     onSelect?: (checked: boolean) => void;
   };
 
-  let { id, title, fullTitle, count, state, width, height, onSelect }: Props = $props();
+  let { id, title, fullTitle, count, state, width, height, hovered = false, onSelect }: Props = $props();
 </script>
 
 <header class="fl-group-header" style:width="{width}px" style:height="{height}px">
-  <label class="fl-group-select" class:is-active={state !== 'none'}>
+  <label class="fl-group-select" class:is-active={state !== 'none'} class:is-hovered={hovered}>
     <input
       type="checkbox"
       checked={state === 'all'}
@@ -89,7 +91,8 @@
   :global(.fl-day:hover) .fl-group-select,
   :global(.is-selecting) .fl-group-select,
   .fl-group-select:focus-within,
-  .fl-group-select.is-active {
+  .fl-group-select.is-active,
+  .fl-group-select.is-hovered {
     opacity: 1;
   }
   .fl-group-select input {
@@ -114,6 +117,21 @@
   .fl-group-select.is-active > span {
     background: var(--fl-accent);
     border-color: var(--fl-accent);
+  }
+  .fl-group-select:has(input:focus-visible) > span {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+  /* Prototype `timeline-library.css` narrow container: a smaller title and a larger touch target. */
+  @media (max-width: 767px) {
+    .fl-group-header h2 {
+      font-size: var(--fl-font-small, 12px);
+    }
+    .fl-group-select {
+      width: 36px;
+      height: 36px;
+      margin-inline-start: -8px;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .fl-group-select {

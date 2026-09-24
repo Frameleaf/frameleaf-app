@@ -28,9 +28,9 @@
   import { filterIsInOrNearViewport } from '$lib/managers/timeline-manager/utils.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { isAssetViewerRoute } from '$lib/utils/navigation';
-  import type { ScrubberListener } from '$lib/utils/timeline-util';
+  import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
   import { tick, type Snippet } from 'svelte';
-  import { t, type Translations } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
     timelineManager: TimelineManager;
@@ -262,23 +262,82 @@
   const monthIds = (month: TimelineMonth) =>
     month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id));
 
-  /** The months a group header at `month` stands for: itself, its year, or everything. */
-  const groupMonths = (month: TimelineMonth) => {
-    if (effectiveGrouping === 'months') {
-      return [month];
+  /**
+   * A month, year or "all" group: the months it covers, in display order. Prototype
+   * `explore-timeline.mjs` `timelineGroups` keys a group by the capture month, year or "all"; the
+   * manager lays each month out as one flow and reserves the header's space above the group's
+   * first month (`TimelineMonth.startsGroup`).
+   */
+  type DisplayGroup = { key: string; title: string; months: TimelineMonth[] };
+
+  /** Prototype `monthTitle`: the full month name and the year, e.g. "December 2024". */
+  const monthTitle = (month: TimelineMonth) =>
+    fromTimelinePlainYearMonth(month.yearMonth).toLocaleString(
+      { month: 'long', year: 'numeric' },
+      { locale: $locale ?? undefined },
+    );
+
+  const displayGroups = $derived.by<DisplayGroup[]>(() => {
+    if (effectiveGrouping === 'days') {
+      return [];
     }
-    if (effectiveGrouping === 'years') {
-      return timelineManager.months.filter(({ yearMonth }) => yearMonth.year === month.yearMonth.year);
+    const groups: DisplayGroup[] = [];
+    for (const month of timelineManager.months) {
+      const { year } = month.yearMonth;
+      const key =
+        effectiveGrouping === 'all'
+          ? 'all'
+          : effectiveGrouping === 'years'
+            ? String(year)
+            : `${year}-${month.yearMonth.month}`;
+      const current = groups.at(-1);
+      if (current?.key === key) {
+        current.months.push(month);
+        continue;
+      }
+      groups.push({
+        key,
+        title:
+          effectiveGrouping === 'all'
+            ? $t('frameleaf_library_group_all')
+            : effectiveGrouping === 'years'
+              ? String(year)
+              : monthTitle(month),
+        months: [month],
+      });
     }
-    return timelineManager.months;
+    return groups;
+  });
+
+  const groupIds = (group: DisplayGroup) => group.months.flatMap((month) => monthIds(month));
+
+  /** Months not loaded yet hold ids the timeline has not seen, so such a group is never "all" selected. */
+  const displayGroupState = (group: DisplayGroup) => {
+    const state = groupSelectionState(groupIds(group), selection);
+    return state === 'all' && group.months.some((month) => !month.isLoaded) ? 'some' : state;
   };
 
-  const groupTitle = (month: TimelineMonth) =>
-    effectiveGrouping === 'months'
-      ? month.title
-      : effectiveGrouping === 'years'
-        ? String(month.yearMonth.year)
-        : $t('frameleaf_library_group_all');
+  /**
+   * The prototype's group checkbox selects every item in the group. A year or "all" group can reach
+   * months that are not loaded yet, so they are loaded first and the whole group is selected.
+   */
+  const selectDisplayGroup = async (group: DisplayGroup, checked: boolean) => {
+    const pending = group.months.filter((month) => !month.isLoaded);
+    if (pending.length > 0) {
+      rangePending = true;
+      try {
+        await Promise.all(
+          pending.map((month) => timelineManager.loadTimelineMonth(month.yearMonth, { cancelable: false })),
+        );
+      } finally {
+        rangePending = false;
+      }
+    }
+    session.selectGroup(groupIds(group), checked);
+  };
+
+  /** The group under the pointer shows its checkbox, as the prototype's `.tl-group:hover`. */
+  let hoveredMonth = $state<string | null>(null);
 
   /* ------------------------------------------------------------------ */
   /* Scroll restoration                                                  */
@@ -598,7 +657,12 @@
   };
 </script>
 
-<div class="fl-timeline" data-testid="frameleaf-timeline" bind:this={root}>
+<div
+  class="fl-timeline"
+  class:is-groupable={onGroupingChange && showDayHeaders}
+  data-testid="frameleaf-timeline"
+  bind:this={root}
+>
   <section
     class="fl-timeline-scroll"
     tabindex="-1"
@@ -637,20 +701,17 @@
             <Skeleton height={month.height} title={month.title} />
           </div>
         {:else if month.isInOrNearViewport}
-          <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
-            {#if effectiveGrouping !== 'days' && month.startsGroup}
-              {@const months = groupMonths(month)}
-              {@const ids = months.flatMap((groupMonth) => monthIds(groupMonth))}
-              <LibraryGroupHeader
-                id="fl-group-{month.viewId}"
-                title={groupTitle(month)}
-                count={months.reduce((total, groupMonth) => total + groupMonth.assetsCount, 0)}
-                state={groupSelectionState(ids, selection)}
-                width={timelineManager.viewportWidth}
-                height={month.groupHeaderHeight}
-                onSelect={(checked) => session.selectGroup(ids, checked)}
-              />
-            {/if}
+          <div
+            class="fl-month"
+            style:height="{month.height}px"
+            style:transform={`translate3d(0,${month.top}px,0)`}
+            onpointerenter={() => (hoveredMonth = month.viewId)}
+            onpointerleave={() => {
+              if (hoveredMonth === month.viewId) {
+                hoveredMonth = null;
+              }
+            }}
+          >
             {#each filterIsInOrNearViewport(month.timelineDays) as timelineDay (timelineDay.day)}
               <LibraryDayGroup
                 {timelineDay}
@@ -660,7 +721,7 @@
                 {captionFor}
                 showHeader={showDayHeaders}
                 grouped={effectiveGrouping !== 'days'}
-                headerHeight={effectiveGrouping === 'days' ? timelineManager.headerHeight : 0}
+                headerHeight={month.groupHeaderHeight}
                 onOpen={handleOpen}
                 {onToggleSelect}
                 onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
@@ -668,6 +729,35 @@
                 {tileOverlay}
               />
             {/each}
+          </div>
+        {/if}
+      {/each}
+
+      <!--
+        A group header sticks for the whole group, as the prototype's sticky header does inside its
+        group: the band spans every month of the group, and only its header takes the pointer.
+      -->
+      {#each displayGroups as group (group.key)}
+        {#if group.months.some((month) => month.isInOrNearViewport)}
+          {@const first = group.months[0]}
+          {@const last = group.months.at(-1)!}
+          <div
+            class="fl-group-band"
+            data-testid="frameleaf-group"
+            data-group-key={group.key}
+            style:top="{first.top}px"
+            style:height="{last.top + last.height - first.top}px"
+          >
+            <LibraryGroupHeader
+              id="fl-group-{group.key}"
+              title={group.title}
+              count={group.months.reduce((total, month) => total + month.assetsCount, 0)}
+              state={displayGroupState(group)}
+              hovered={group.months.some((month) => month.viewId === hoveredMonth)}
+              width={timelineManager.viewportWidth}
+              height={first.groupHeaderHeight}
+              onSelect={(checked) => void selectDisplayGroup(group, checked)}
+            />
           </div>
         {/if}
       {/each}
@@ -720,6 +810,16 @@
   .fl-timeline-bottom {
     position: absolute;
     inset-inline: 0;
+  }
+  .fl-timeline.is-groupable {
+    /* Prototype `.timeline-library`: a two-finger pinch reaches the grouping, not the page zoom. */
+    touch-action: pan-y;
+  }
+  .fl-group-band {
+    position: absolute;
+    inset-inline: 0;
+    z-index: 3;
+    pointer-events: none;
   }
   .fl-month {
     position: absolute;
