@@ -64,4 +64,21 @@ describe('SharingSettings — People & sharing (CC-52/53/54)', () => {
       expect(sdkMock.createPartner).toHaveBeenCalledWith({ partnerCreateDto: { sharedWithId: 'sam' } }),
     );
   });
+
+  it('still offers Add partner when the recognition group cannot be loaded', async () => {
+    sdkMock.getMyUser.mockRejectedValue(new Error('offline'));
+    render(SharingSettings);
+
+    const add = await screen.findByRole('button', { name: 'Add partner' });
+    await waitFor(() => expect(add).toBeEnabled());
+  });
+
+  it('says when the accounts cannot be loaded and retries', async () => {
+    sdkMock.searchUsers.mockRejectedValueOnce(new Error('offline'));
+    render(SharingSettings);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_people_sharing.accounts_error);
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add partner' })).toBeEnabled());
+  });
 });

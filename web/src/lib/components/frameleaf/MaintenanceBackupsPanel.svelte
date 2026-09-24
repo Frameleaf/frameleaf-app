@@ -9,7 +9,7 @@
   import MaintenanceBackupList from '$lib/components/frameleaf/MaintenanceBackupList.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { handleCreateJob } from '$lib/services/job.service';
-  import { listDatabaseBackups, ManualJobName, type DatabaseBackupDto } from '@immich/sdk';
+  import { getQueuesLegacy, listDatabaseBackups, ManualJobName, type DatabaseBackupDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiDatabaseOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
@@ -24,38 +24,71 @@
     timeoutMs?: number;
   };
 
-  const { backups: initial, expectedVersion, pollMs = 3000, timeoutMs = 300_000 }: Props = $props();
+  const { backups: initial, expectedVersion, pollMs = 3000, timeoutMs = 120_000 }: Props = $props();
 
   // The caller's list until "Create backup now" re-reads it.
   let backups = $derived<DatabaseBackupDto[] | undefined>(initial);
 
   let creating = $state(false);
+  let failed = $state(false);
   let alive = true;
   onDestroy(() => (alive = false));
 
+  /** The backup queue, or undefined when it cannot be read. */
+  const readQueue = async () => {
+    try {
+      return (await getQueuesLegacy()).backupDatabase;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /**
+   * Queues the backup job, then re-reads the list until the new backup appears. It stops and offers
+   * Retry when the job fails (the queue's failed count rises), when the queue goes idle without a new
+   * file, or after `timeoutMs`.
+   */
   const createBackup = async () => {
+    failed = false;
     const before = new Set((backups ?? []).map(({ filename }) => filename));
+    const failedBefore = (await readQueue())?.jobCounts.failed ?? 0;
     if (!(await handleCreateJob({ name: ManualJobName.BackupDatabase }))) {
       return;
     }
     creating = true;
     const startedAt = Date.now();
+    let polls = 0;
+    const stop = (didFail: boolean) => {
+      creating = false;
+      failed = didFail;
+    };
     const poll = async () => {
       if (!alive) {
         return;
       }
+      polls++;
       try {
         const result = await listDatabaseBackups();
         backups = result.backups;
         if (result.backups.some(({ filename }) => !before.has(filename))) {
-          creating = false;
+          stop(false);
           return;
         }
       } catch {
         // Keep waiting; a transient failure must not end the running row early.
       }
+      const queue = await readQueue();
+      if (queue) {
+        const { failed: failedNow, active, waiting, delayed } = queue.jobCounts;
+        const idle = !queue.queueStatus.isActive && active + waiting + delayed === 0;
+        // The first poll may run before the queue picks the job up, so idle only counts after it.
+        if (failedNow > failedBefore || (idle && polls > 1)) {
+          stop(true);
+          return;
+        }
+      }
       if (Date.now() - startedAt >= timeoutMs) {
-        creating = false;
+        stop(true);
         return;
       }
       setTimeout(() => void poll(), pollMs);
@@ -84,6 +117,11 @@
     <p class="mt-running" role="status">
       <span class="mt-status is-running">{$t('admin.frameleaf_maintenance_backups_running')}</span>
       <progress aria-label={$t('admin.frameleaf_maintenance_backups_running')}></progress>
+    </p>
+  {:else if failed}
+    <p class="mt-running mt-failed" role="alert">
+      <span>{$t('admin.frameleaf_maintenance_backups_failed')}</span>
+      <button type="button" class="button" onclick={createBackup}>{$t('retry')}</button>
     </p>
   {/if}
   <MaintenanceBackupList {backups} {expectedVersion} />
@@ -137,6 +175,9 @@
     gap: 12px;
     margin: 0 0 12px;
     font-size: var(--fl-font-small);
+  }
+  .mt-failed {
+    color: var(--fl-danger);
   }
   .mt-running progress {
     flex: 1;

@@ -47,9 +47,17 @@
     <p>{prompt}</p>
   {/if}
   {#snippet actions()}
-    <button type="button" class="button" onclick={() => (open = false)}>{cancelText ?? $t('cancel')}</button>
-    <button type="button" class="button" class:primary={!danger} class:danger data-initial-focus onclick={confirm}
-      >{confirmText}</button
+    <!-- A destructive action never takes the first focus: Enter on open must not delete. -->
+    <button type="button" class="button" data-initial-focus={danger ? '' : undefined} onclick={() => (open = false)}
+      >{cancelText ?? $t('cancel')}</button
+    >
+    <button
+      type="button"
+      class="button"
+      class:primary={!danger}
+      class:danger
+      data-initial-focus={danger ? undefined : ''}
+      onclick={confirm}>{confirmText}</button
     >
   {/snippet}
 </Dialog>
