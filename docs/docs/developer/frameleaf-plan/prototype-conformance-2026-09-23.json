@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 104,
+      "partial": 103,
       "missing": 5,
-      "fixed": 37,
+      "fixed": 38,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -884,7 +884,7 @@
       ],
       "status": "partial",
       "gaps": ["S-19", "SD-12"],
-      "followUp": "Chips open their section, Clear all whenever active, Frameleaf chips on the results page (Save search fixed on codex/FL-49-search-palette)"
+      "followUp": "Chips open their section and Clear all whenever active (S-19); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette"
     },
     {
       "requirementId": "action:search-discovery:command-palette-across-assets-people-albums-places-settings-actions",
@@ -1163,7 +1163,7 @@
       ],
       "status": "partial",
       "gaps": ["S-14"],
-      "followUp": "Rail presets; palette Save search, replace by name and delete in the savedSearches preference fixed on codex/FL-49-search-palette"
+      "followUp": "RailSavedSearches is ready on codex/FL-49-search-palette for the shell to mount in LibraryRail; palette Save search (Smart album, Album snapshot, saved search) fixed there"
     },
     {
       "requirementId": "action:search-discovery:search-assets-inside-shared-spaces-or-named-pets",
@@ -2418,9 +2418,9 @@
         "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/SearchPalette.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["SD-12"],
-      "followUp": "Frameleaf chips on the results page (the search palette, SD-1..SD-11, FP-1..FP-5, fixed on codex/FL-49-search-palette)"
+      "followUp": "Search palette (SD-1..SD-11, FP-1..FP-5) and the results page's palette-style chips (SD-12) fixed on codex/FL-49-search-palette"
     },
     {
       "route": "/share/[key]/[[photos=photos]]/[[assetId=id]]",
