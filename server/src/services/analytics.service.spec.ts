@@ -1,6 +1,10 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { vitest } from 'vitest';
-import type { AnalyticsInventory, AnalyticsScopeTargets } from 'src/repositories/analytics.repository.js';
+import type {
+  AnalyticsInsightRows,
+  AnalyticsInventory,
+  AnalyticsScopeTargets,
+} from 'src/repositories/analytics.repository.js';
 import type { AnalyticsSampleInsert } from 'src/utils/analytics.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -58,6 +62,48 @@ const inventory = (overrides: Partial<AnalyticsInventory> = {}): AnalyticsInvent
   ...overrides,
 });
 
+const insightRows = (overrides: Partial<AnalyticsInsightRows> = {}): AnalyticsInsightRows => ({
+  years: [
+    { year: 2024, count: 60 },
+    { year: 2026, count: 40 },
+  ],
+  punchcard: [
+    { weekday: 6, hour: 17, count: 70 },
+    { weekday: 1, hour: 9, count: 30 },
+  ],
+  lenses: [
+    { name: 'RF 24-70mm', count: 50 },
+    { name: null, count: 50 },
+  ],
+  focalLengths: [
+    { bucket: '17-28', count: 60 },
+    { bucket: 'unknown', count: 40 },
+  ],
+  photoFormats: [
+    { format: 'HEIC', count: 60 },
+    { format: 'RAW', count: 5 },
+    { format: 'JPEG', count: 25 },
+  ],
+  videoResolutions: [
+    { resolution: '4K', count: 6 },
+    { resolution: 'unknown', count: 4 },
+  ],
+  orientation: [
+    { orientation: 'landscape', count: 70 },
+    { orientation: 'portrait', count: 30 },
+  ],
+  livePhotos: 12,
+  hdr: { probedVideos: 0, hdrVideos: 0, dolbyVisionVideos: 0 },
+  records: {
+    oldest: { localDateTime: new Date('2009-06-14T08:00:00.000Z'), name: 'IMG_0001.JPG' },
+    largest: { bytes: 9000, name: 'clip.mov' },
+    longest: { durationMs: 5_400_000, name: 'clip.mov' },
+    videoDurationMs: 9_000_000,
+  },
+  people: null,
+  ...overrides,
+});
+
 describe(AnalyticsService.name, () => {
   const logger = { setContext: vitest.fn(), warn: vitest.fn(), error: vitest.fn(), log: vitest.fn() };
   const analyticsRepository = {
@@ -75,6 +121,7 @@ describe(AnalyticsService.name, () => {
     getCollectorSnapshot: vitest.fn(),
     upsertSamples: vitest.fn(),
     applyRetention: vitest.fn(),
+    getInsights: vitest.fn(),
   };
   const storageRepository = { checkDiskUsage: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
@@ -114,6 +161,7 @@ describe(AnalyticsService.name, () => {
     analyticsRepository.getLatestHostSamples.mockResolvedValue([]);
     analyticsRepository.getCollectorSnapshot.mockResolvedValue([]);
     analyticsRepository.applyRetention.mockResolvedValue({ downsampled: 0, deleted: 0 });
+    analyticsRepository.getInsights.mockResolvedValue(insightRows());
     storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 400_000, available: 350_000 });
     sut = new AnalyticsService(
       logger as never,
@@ -398,6 +446,131 @@ describe(AnalyticsService.name, () => {
       await expect(sut.handleCollect({ attempt: 1 })).resolves.toBe(JobStatus.Failed);
       expect(jobRepository.queue).not.toHaveBeenCalled();
       expect(logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('insights (FL-79)', () => {
+    const read = (auth: ReturnType<typeof user>, scope: string) =>
+      sut.getReport(auth, { scope, range: AnalyticsRange.Year });
+
+    it('fills every bucket so each breakdown adds up to the summary', async () => {
+      const { insights, summary } = await read(user(), `account:${USER_ID}`);
+      const total = (rows: Array<{ count: number }>) => rows.reduce((sum, { count }) => sum + count, 0);
+
+      expect(insights!.punchcard).toHaveLength(168);
+      expect(insights!.punchcard[0]).toEqual({ weekday: 1, hour: 0, count: 0 });
+      expect(insights!.punchcard.find((cell) => cell.weekday === 6 && cell.hour === 17)?.count).toBe(70);
+      expect(total(insights!.punchcard)).toBe(summary.items);
+      expect(total(insights!.capturesByYear)).toBe(summary.items);
+      expect(insights!.focalLengths.map(({ key }) => key)).toEqual([
+        '0-16',
+        '17-28',
+        '29-40',
+        '41-70',
+        '71-135',
+        '136-300',
+        '301+',
+        'unknown',
+      ]);
+      expect(total(insights!.focalLengths)).toBe(summary.items);
+      expect(insights!.photoFormats).toEqual([
+        { key: 'HEIC', count: 60 },
+        { key: 'JPEG', count: 25 },
+        { key: 'RAW', count: 5 },
+        { key: 'PNG', count: 0 },
+        { key: 'OTHER', count: 0 },
+      ]);
+      expect(total(insights!.photoFormats)).toBe(summary.photos);
+      expect(insights!.photoFormats.find(({ key }) => key === 'RAW')?.count).toBe(summary.raw);
+      expect(total(insights!.videoResolutions)).toBe(summary.videos);
+      expect(total(insights!.orientation)).toBe(summary.items);
+      expect(insights!.lenses).toEqual([
+        { name: 'RF 24-70mm', kind: 'named', count: 50 },
+        { name: null, kind: 'unknown', count: 50 },
+      ]);
+      expect(insights!.livePhotos).toBe(12);
+    });
+
+    it('leaves HDR out until a video stream has been read', async () => {
+      await expect(read(user(), `account:${USER_ID}`)).resolves.toMatchObject({ insights: { hdr: null } });
+      analyticsRepository.getInsights.mockResolvedValue(
+        insightRows({ hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 } }),
+      );
+      await expect(read(user(), `account:${USER_ID}`)).resolves.toMatchObject({
+        insights: { hdr: { probedVideos: 8, hdrVideos: 3, dolbyVisionVideos: 1 } },
+      });
+    });
+
+    it('reports records with dates and hours', async () => {
+      const { insights } = await read(user(), `account:${USER_ID}`);
+      expect(insights!.records).toEqual({
+        oldestCapture: { date: '2009-06-14', name: 'IMG_0001.JPG' },
+        largestFile: { bytes: 9000, name: 'clip.mov' },
+        longestVideo: { durationMs: 5_400_000, name: 'clip.mov' },
+        videoDurationMs: 9_000_000,
+        videoHours: 2.5,
+      });
+    });
+
+    it("reads names, people and places only for the owner's own scope", async () => {
+      await read(user(), `account:${USER_ID}`);
+      await read(user(), `library:${USER_LIBRARY}`);
+      await read(admin(), `account:${OTHER_ID}`);
+      await read(admin(), `library:${OTHER_LIBRARY}`);
+      await read(admin(), 'all');
+      expect(analyticsRepository.getInsights.mock.calls.map(([, options]) => options.ownerId)).toEqual([
+        USER_ID,
+        USER_ID,
+        null,
+        null,
+        null,
+      ]);
+    });
+
+    it('never names a Locked person or pet while the session is locked', async () => {
+      const auth = {
+        ...user(),
+        hiddenContent: {
+          userId: USER_ID,
+          includeNsfw: false,
+          tagIds: [],
+          personIds: ['person-locked'],
+          petIds: ['pet-locked'],
+          scope: 'owned' as const,
+        },
+      };
+      await read(auth, `account:${USER_ID}`);
+      expect(analyticsRepository.getInsights).toHaveBeenCalledWith(
+        { kind: AnalyticsScopeKind.Account, userId: USER_ID },
+        { ownerId: USER_ID, suppressedPersonIds: ['person-locked'], suppressedPetIds: ['pet-locked'] },
+      );
+    });
+
+    it('reconciles people and places to the items', async () => {
+      analyticsRepository.getInsights.mockResolvedValue(
+        insightRows({
+          people: {
+            faces: 150,
+            itemsWithFaces: 58,
+            namedPeople: 2,
+            pets: 1,
+            topPeople: [{ id: 'person-1', name: 'Emma', count: 40 }],
+            geotagged: 64,
+            countries: 2,
+            cities: 3,
+            places: [
+              { name: 'Banff', count: 40 },
+              { name: 'Jasper', count: 20 },
+              { name: null, count: 40 },
+            ],
+          },
+        }),
+      );
+      const { insights, summary } = await read(user(), `account:${USER_ID}`);
+      const people = insights!.peopleAndPlaces!;
+      expect(people.itemsWithFaces + people.itemsWithoutFaces).toBe(summary.items);
+      expect(people.places.reduce((sum, { count }) => sum + count, 0)).toBe(summary.items);
+      expect(people.places.at(-1)).toEqual({ name: null, kind: 'unknown', count: 40 });
     });
   });
 });
