@@ -97,6 +97,61 @@ describe(PersonService.name, () => {
     });
   });
 
+  describe('setMergeVerdict', () => {
+    const low = '00000000-0000-4000-8000-000000000001';
+    const high = '00000000-0000-4000-8000-000000000002';
+
+    it('should store the pair in id order whichever way it is given', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([high]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([low]));
+      mocks.person.setMergeVerdict.mockResolvedValue({ verdict: 'later', createdAt: new Date('2026-09-24T00:00:00Z') });
+
+      await expect(sut.setMergeVerdict(auth, { personId: high, suggestionId: low, verdict: 'later' })).resolves.toEqual(
+        {
+          personId: low,
+          suggestionId: high,
+          verdict: 'later',
+          createdAt: '2026-09-24T00:00:00.000Z',
+        },
+      );
+      expect(mocks.person.setMergeVerdict).toHaveBeenCalledWith(auth.user.id, low, high, 'later');
+    });
+
+    it('should require access to both people', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([low]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set());
+
+      await expect(
+        sut.setMergeVerdict(auth, { personId: low, suggestionId: high, verdict: 'different' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.person.setMergeVerdict).not.toHaveBeenCalled();
+    });
+
+    it('should reject a pair of the same person', async () => {
+      const auth = AuthFactory.create();
+      await expect(
+        sut.setMergeVerdict(auth, { personId: low, suggestionId: low, verdict: 'different' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('deleteMergeVerdict', () => {
+    it('should answer 404 when there was no verdict', async () => {
+      const auth = AuthFactory.create();
+      const [low, high] = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'];
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([low]));
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([high]));
+      mocks.person.deleteMergeVerdict.mockResolvedValue(false);
+
+      await expect(sut.deleteMergeVerdict(auth, { personId: low, suggestionId: high })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.person.deleteMergeVerdict).toHaveBeenCalledWith(auth.user.id, low, high);
+    });
+  });
+
   describe('getMergeSuggestions', () => {
     it('should suggest pairs under the facial-recognition distance and drop the rest', async () => {
       const auth = AuthFactory.create();

@@ -112,7 +112,35 @@ const MergeSuggestionsResponseSchema = z
   })
   .meta({ id: 'MergeSuggestionsResponseDto' });
 
+const PersonMergeVerdictSchema = z
+  .enum(['different', 'later'])
+  .describe('"different": never suggest this pair again; "later": skip it for 30 days')
+  .meta({ id: 'PersonMergeVerdict' });
+
+const PersonMergePairSchema = z.object({
+  personId: z.uuidv4().describe('One person of the suggested pair (either order)'),
+  suggestionId: z.uuidv4().describe('The other person of the suggested pair'),
+});
+
+const PersonMergeVerdictCreateSchema = PersonMergePairSchema.extend({
+  verdict: PersonMergeVerdictSchema,
+}).meta({ id: 'PersonMergeVerdictCreateDto' });
+
+const PersonMergeVerdictDeleteSchema = PersonMergePairSchema.meta({ id: 'PersonMergeVerdictDeleteDto' });
+
+const PersonMergeVerdictResponseSchema = z
+  .object({
+    personId: z.uuidv4().describe('The person of the pair whose id sorts first'),
+    suggestionId: z.uuidv4().describe('The other person of the pair'),
+    verdict: PersonMergeVerdictSchema,
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the verdict was recorded'),
+  })
+  .meta({ id: 'PersonMergeVerdictResponseDto' });
+
 export class PersonMergeSuggestionDto extends createZodDto(PersonMergeSuggestionSchema) {}
+export class PersonMergeVerdictCreateDto extends createZodDto(PersonMergeVerdictCreateSchema) {}
+export class PersonMergeVerdictDeleteDto extends createZodDto(PersonMergeVerdictDeleteSchema) {}
+export class PersonMergeVerdictResponseDto extends createZodDto(PersonMergeVerdictResponseSchema) {}
 export class MergeSuggestionsResponseDto extends createZodDto(MergeSuggestionsResponseSchema) {}
 
 // FL-57: correction history. A correction is a face a human explicitly moved onto this

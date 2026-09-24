@@ -71,6 +71,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000110-AssetDevelopRevision' },
       { name: '0000000000120-VideoEditVersions' },
       { name: '0000000000130-ArchiveOperations' },
+      { name: '0000000000140-PersonMergeVerdicts' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

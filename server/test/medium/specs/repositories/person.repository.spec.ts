@@ -1,10 +1,11 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetFileType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -324,6 +325,61 @@ describe(PersonRepository.name, () => {
       // Without face_search embeddings for either person's feature face, no pair can be
       // formed at all — this only asserts the hidden-person filter shape, not distance math.
       expect(suggestions.some((row) => row.personId === visible.personGroupId)).toBe(false);
+    });
+
+    it('should leave out pairs answered "different", and "later" ones for 30 days (FL-57)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const embedding = newEmbedding();
+      const newPersonWithFace = async () => {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id });
+        return person.personGroupId!;
+      };
+      const [a, b, c] = [await newPersonWithFace(), await newPersonWithFace(), await newPersonWithFace()].toSorted();
+      const pairsOf = async () =>
+        (await sut.getMergeSuggestions(user.id, { maxDistance: 0.5, limit: 20 }))
+          .map(({ personId, suggestionId }) => `${personId}:${suggestionId}`)
+          .toSorted();
+
+      await expect(pairsOf()).resolves.toEqual([`${a}:${b}`, `${a}:${c}`, `${b}:${c}`]);
+
+      await expect(sut.setMergeVerdict(user.id, a, b, 'different')).resolves.toEqual(
+        expect.objectContaining({ verdict: 'different' }),
+      );
+      await sut.setMergeVerdict(user.id, a, c, 'later');
+      await expect(pairsOf()).resolves.toEqual([`${b}:${c}`]);
+
+      await sql`
+        UPDATE immich_fork.person_merge_verdict SET "createdAt" = now() - interval '31 days'
+        WHERE "personId" = ${a}::uuid AND "suggestionId" = ${c}::uuid
+      `.execute(ctx.database);
+      await expect(pairsOf()).resolves.toEqual([`${a}:${c}`, `${b}:${c}`]);
+
+      await expect(sut.deleteMergeVerdict(user.id, a, b)).resolves.toBe(true);
+      await expect(sut.deleteMergeVerdict(user.id, a, b)).resolves.toBe(false);
+      await expect(pairsOf()).resolves.toEqual([`${a}:${b}`, `${a}:${c}`, `${b}:${c}`]);
+    });
+
+    it("should not apply one owner's verdict to another owner's suggestions (FL-57)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const embedding = newEmbedding();
+      const ids: string[] = [];
+      for (let index = 0; index < 2; index++) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id });
+        ids.push(person.personGroupId!);
+      }
+      const [a, b] = ids.toSorted();
+
+      await sut.setMergeVerdict(other.id, a, b, 'different');
+      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
     });
   });
 });
