@@ -91,24 +91,80 @@ it.each([AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Lock
   },
 );
 
-it('fails closed on missing privacy rows except an explicit owner mark or safe repair', async () => {
-  const { sut, auth, asset, mark, visible, lockRow } = await setup();
-  const enrichment = new ForkEnrichmentRepository(database);
-  const before = await enrichment.get(asset.id);
-  await new ForkPrivacyRepository(database).delete([asset.id]);
-  await expect(visible()).resolves.toEqual([]);
-  await expect(sut.getAssetEnrichment(auth, asset.id)).rejects.toThrow('Missing fork privacy sidecar');
-  await expect(mark(AssetImageEnrichmentAction.AcceptNsfwResult)).rejects.toThrow('Missing fork privacy sidecar');
-  await expect(enrichment.get(asset.id)).resolves.toEqual(before);
-  await expect(visible()).resolves.toEqual([]);
-  await expect(lockRow()).resolves.toBeUndefined();
-  await mark(AssetImageEnrichmentAction.MarkNsfw);
-  await expect(visible()).resolves.toEqual([]);
-  await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id });
-  await new ForkPrivacyRepository(database).delete([asset.id]);
-  await mark(AssetImageEnrichmentAction.MarkSafe);
-  await expect(visible()).resolves.toEqual([{ id: asset.id }]);
-  await expect(lockRow()).resolves.toBeUndefined();
+// FL-34: after the cutover a missing privacy row is "no classification yet" (not sensitive, no review);
+// reading it returns the defaults and every enrichment write creates it
+describe('an asset without a privacy row after the cutover', () => {
+  const privacyRow = (assetId: string) => new ForkPrivacyRepository(database).get(assetId);
+  const withoutRow = async () => {
+    const context = await setup();
+    await new ForkPrivacyRepository(database).delete([context.asset.id]);
+    await expect(privacyRow(context.asset.id)).resolves.toBeUndefined();
+    return context;
+  };
+
+  it('reads as unclassified without writing a row', async () => {
+    const { sut, auth, asset } = await withoutRow();
+    const response = await sut.getAssetEnrichment(auth, asset.id);
+    expect(response.nsfwDetection?.effectiveIsNsfw ?? false).toBe(false);
+    await expect(privacyRow(asset.id)).resolves.toBeUndefined();
+  });
+
+  it('creates the row, unclassified, when a description is saved', async () => {
+    const { sut, asset } = await withoutRow();
+    const service = sut as unknown as {
+      saveEnrichmentMetadata(id: string, value: object, kysely: Kysely<DB>): Promise<void>;
+    };
+    await database.transaction().execute((trx) =>
+      service.saveEnrichmentMetadata(
+        asset.id,
+        {
+          description: {
+            status: 'success',
+            modelName: 'vlm',
+            updatedAt: '2026-09-24T00:00:00.000Z',
+            result: { description: 'A beach', tags: ['beach'] },
+          },
+        },
+        trx,
+      ),
+    );
+    await expect(privacyRow(asset.id)).resolves.toMatchObject({ isNsfw: false, suppression: null });
+  });
+
+  it.each([true, false])('creates the row with the detection verdict (%s)', async (isNsfw) => {
+    const { sut, ctx, asset, user } = await withoutRow();
+    ctx
+      .getMock(SystemMetadataRepository)
+      .get.mockResolvedValue({ machineLearning: { enabled: true, nsfwDetection: { enabled: true } } });
+    ctx.getMock(AssetJobRepository).getForImageEnrichment.mockResolvedValue({
+      id: asset.id,
+      ownerId: user.id,
+      type: AssetType.Image,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      description: '',
+      previewFile: '/synthetic/preview.webp',
+    } as never);
+    ctx.getMock(MachineLearningRepository).detectNsfw.mockResolvedValue({ isNsfw, score: 0.99, labels: {} });
+
+    await expect(sut.handleNsfwDetection({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+    await expect(privacyRow(asset.id)).resolves.toMatchObject({ isNsfw, suppression: null });
+  });
+
+  it.each([
+    [AssetImageEnrichmentAction.MarkNsfw, true, true],
+    [AssetImageEnrichmentAction.MarkSafe, false, false],
+    [AssetImageEnrichmentAction.AcceptNsfwResult, false, false],
+  ])('creates the row when %s is chosen, with its lock', async (action, isNsfw, locked) => {
+    const { asset, mark, lockRow } = await withoutRow();
+    await mark(action);
+    await expect(privacyRow(asset.id)).resolves.toMatchObject({ isNsfw });
+    await (locked
+      ? expect(lockRow()).resolves.toMatchObject({ assetId: asset.id })
+      : expect(lockRow()).resolves.toBeUndefined());
+  });
 });
 
 it('rolls back the review and its lock when the privacy projection fails', async () => {
