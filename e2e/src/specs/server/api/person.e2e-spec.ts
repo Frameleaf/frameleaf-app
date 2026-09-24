@@ -1,4 +1,4 @@
-import { getPerson, LoginResponseDto, PersonResponseDto } from '@immich/sdk';
+import { getPerson, LoginResponseDto, PeopleListItemDto, PersonResponseDto } from '@immich/sdk';
 import { uuidDto } from 'src/fixtures.js';
 import { errorDto } from 'src/responses.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
@@ -162,6 +162,17 @@ describe('/people', () => {
       ]);
 
       expect(people.some((p) => p.id === hiddenPerson.id)).toBe(false);
+    });
+
+    it('should include per-person asset counts and the latest capture date', async () => {
+      const { status, body } = await request(app).get('/people').set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      const people = body.people as PeopleListItemDto[];
+      expect(people.find((p) => p.id === multipleAssetsPerson.id)).toEqual(
+        expect.objectContaining({ assetCount: 3, lastSeenAt: expect.any(String) }),
+      );
+      expect(people.find((p) => p.id === nameNullPerson4Assets.id)).toEqual(expect.objectContaining({ assetCount: 4 }));
     });
 
     it('should return only visible people', async () => {

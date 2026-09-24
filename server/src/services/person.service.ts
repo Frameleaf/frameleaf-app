@@ -90,7 +90,11 @@ export class PersonService extends BaseService {
     const { total, hidden } = await this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions);
 
     return {
-      people: items.map((person) => mapPerson(person)),
+      people: items.map((person) => ({
+        ...mapPerson(person),
+        assetCount: Number(person.assetCount),
+        lastSeenAt: person.lastSeenAt ? new Date(person.lastSeenAt).toISOString() : null,
+      })),
       hasNextPage,
       total,
       hidden,

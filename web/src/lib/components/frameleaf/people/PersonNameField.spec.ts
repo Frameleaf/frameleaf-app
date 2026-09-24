@@ -1,3 +1,4 @@
+import { searchPerson } from '@immich/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { personFactory } from '@test-data/factories/person-factory';
@@ -66,6 +67,47 @@ describe('PersonNameField', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: CANCEL }));
 
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('is a combobox that suggests existing names from the search endpoint (PN-3)', async () => {
+    vi.useFakeTimers();
+    const grace = personFactory.build({ id: 'p2', name: 'Grace Hopper' });
+    vi.mocked(searchPerson).mockResolvedValue([grace, person]);
+    const onCommit = vi.fn();
+    render(PersonNameField, { person, onCommit, onCancel: vi.fn() });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.input(input, { target: { value: 'Gra' } });
+    await vi.advanceTimersByTimeAsync(250);
+    vi.useRealTimers();
+
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent?.trim())).toEqual(['Grace Hopper']);
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
+    await fireEvent.submit(input.closest('form')!);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith('Grace Hopper');
+  });
+
+  it('closes the suggestions on the first Escape and cancels on the second', async () => {
+    vi.useFakeTimers();
+    vi.mocked(searchPerson).mockResolvedValue([personFactory.build({ id: 'p3', name: 'Grace' })]);
+    const onCancel = vi.fn();
+    render(PersonNameField, { person, onCommit: vi.fn(), onCancel });
+
+    const input = screen.getByRole('combobox');
+    await fireEvent.input(input, { target: { value: 'Gr' } });
+    await vi.advanceTimersByTimeAsync(250);
+    vi.useRealTimers();
+    await screen.findByRole('listbox');
+
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledOnce();
   });
 });

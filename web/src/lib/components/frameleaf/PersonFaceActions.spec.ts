@@ -1,7 +1,7 @@
 import { createPerson, deleteFace, getAllPeople, reassignFacesById, type AssetFaceResponseDto } from '@immich/sdk';
 import { modalManager, toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { personFactory } from '@test-data/factories/person-factory';
+import { peopleListItemFactory, personFactory } from '@test-data/factories/person-factory';
 import PersonFaceActions from './PersonFaceActions.svelte';
 
 /**
@@ -62,7 +62,7 @@ describe('PersonFaceActions', () => {
 
   it('reassigns the face to an existing person through reassignFacesById', async () => {
     const person = personFactory.build({ name: 'Alex', isHidden: false });
-    const target = personFactory.build({ name: 'Bailey' });
+    const target = peopleListItemFactory.build({ name: 'Bailey' });
     const onFacesChanged = vi.fn();
     vi.mocked(getAllPeople).mockResolvedValue({ people: [target], total: 1, hidden: 0, hasNextPage: false });
     vi.mocked(reassignFacesById).mockResolvedValue(target);
@@ -82,8 +82,8 @@ describe('PersonFaceActions', () => {
   });
 
   it('excludes the currently-assigned person from the reassign candidates', async () => {
-    const person = personFactory.build({ name: 'Alex', isHidden: false });
-    const target = personFactory.build({ name: 'Bailey' });
+    const person = peopleListItemFactory.build({ name: 'Alex', isHidden: false });
+    const target = peopleListItemFactory.build({ name: 'Bailey' });
     vi.mocked(getAllPeople).mockResolvedValue({ people: [person, target], total: 2, hidden: 0, hasNextPage: false });
 
     render(PersonFaceActions, { person, face, previousRoute: '/photos', onFacesChanged: vi.fn() });
@@ -162,6 +162,27 @@ describe('PersonFaceActions', () => {
     await waitFor(() => expect(deleteFace).toHaveBeenCalledWith({ id: face.id, assetFaceDeleteDto: { force: false } }));
     expect(onFacesChanged).toHaveBeenCalled();
     expect(toastManager.primary).toHaveBeenCalled();
+  });
+
+  it('offers only Reassign, Create and Remove for an unassigned face (V-22)', async () => {
+    const onFacesChanged = vi.fn();
+    const target = peopleListItemFactory.build({ name: 'Bailey' });
+    vi.mocked(getAllPeople).mockResolvedValue({ people: [target], total: 1, hidden: 0, hasNextPage: false });
+    vi.mocked(reassignFacesById).mockResolvedValue(target);
+
+    render(PersonFaceActions, { person: null, face, previousRoute: '/photos', onFacesChanged });
+
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'frameleaf_faces_open_person' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'frameleaf_faces_hide_face' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'frameleaf_faces_create_new_person' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'frameleaf_faces_remove_face' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_faces_reassign' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: target.name }));
+
+    await waitFor(() => expect(reassignFacesById).toHaveBeenCalledWith({ id: target.id, faceDto: { id: face.id } }));
+    expect(onFacesChanged).toHaveBeenCalled();
   });
 
   it('does not offer Hide face for a person who is already hidden', async () => {

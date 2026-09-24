@@ -10,7 +10,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c"
+      "sha256": "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "ba264e8ca10658bc49b181723d45409147f8094dba83861c0fe4f6747e0feefb",
+  "sourceEvidenceSha256": "00fc443cecc0a863ee9c47e05e8deb9a90e01d57e33a764ca911741a6ad39e1f",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -66018,8 +66018,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66030,8 +66030,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66072,8 +66072,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66084,8 +66084,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66126,8 +66126,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66138,8 +66138,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66180,8 +66180,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66192,8 +66192,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66234,8 +66234,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66246,8 +66246,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66288,8 +66288,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66300,8 +66300,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66342,8 +66342,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66354,8 +66354,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66396,8 +66396,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66408,8 +66408,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66450,8 +66450,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66462,8 +66462,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66504,8 +66504,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66516,8 +66516,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66558,8 +66558,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66570,8 +66570,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66612,8 +66612,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66624,8 +66624,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66666,8 +66666,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66678,8 +66678,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66720,8 +66720,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66732,8 +66732,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66774,8 +66774,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66786,8 +66786,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66828,8 +66828,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66840,8 +66840,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66882,8 +66882,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66894,8 +66894,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66936,8 +66936,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -66948,8 +66948,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -66990,8 +66990,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67002,8 +67002,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67044,8 +67044,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67056,8 +67056,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67098,8 +67098,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67110,8 +67110,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67152,8 +67152,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67164,8 +67164,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67206,8 +67206,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67218,8 +67218,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67260,8 +67260,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67272,8 +67272,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67314,8 +67314,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67326,8 +67326,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67368,8 +67368,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67380,8 +67380,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },
@@ -67422,8 +67422,8 @@
             "web/src/lib/components/asset-viewer/DetailPanelTags.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte",
             "web/src/lib/components/asset-viewer/DetailPanelPeople.svelte",
-            "web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte",
-            "web/src/lib/components/faces-page/AssignFaceSidePanel.svelte",
+            "web/src/lib/components/frameleaf/FaceTagger.svelte",
+            "web/src/lib/components/frameleaf/PersonFaceActions.svelte",
             "web/src/lib/components/asset-viewer/OcrBoundingBox.svelte"
           ],
           "evidence": [
@@ -67434,8 +67434,8 @@
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelTags.svelte:ca9a29f6c1514c774fcb9db2a7de63e97b39c959cca6233a09c1e33cdc94f0b2",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte:968b00910321eacbe7bbf963ab255beed7cf16bfd47608755f6f32ba5f72d3b9",
             "accepted-main:web/src/lib/components/asset-viewer/DetailPanelPeople.svelte:1a667d717e90a716d42eb5f7e0c276655a1a3fc2e15d482ae47f7b6184f5f612",
-            "accepted-main:web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte:97ea67dc5d02a9d5e3907559af6beba44d6585b36a9ac39e1628052f918a7d37",
-            "accepted-main:web/src/lib/components/faces-page/AssignFaceSidePanel.svelte:d4cdfc3ff68aa837eb4e11be1855efdbe8b4032df00711747e7f3f9aa3308453",
+            "accepted-main:web/src/lib/components/frameleaf/FaceTagger.svelte:d1b44b034b4126e0ba2f82c85640b8530feb321218e9231142584d83616cd447",
+            "accepted-main:web/src/lib/components/frameleaf/PersonFaceActions.svelte:3f9f94df31db7678dee25f2ac0f4c67f0161120f4f8cb76973546cca7e626206",
             "accepted-main:web/src/lib/components/asset-viewer/OcrBoundingBox.svelte:b957914bbccc6cb03642225cbc6a585762dbbccc9dc5a64fbd6431536db57115"
           ]
         },

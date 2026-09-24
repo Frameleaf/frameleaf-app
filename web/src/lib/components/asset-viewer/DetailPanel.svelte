@@ -28,9 +28,7 @@
   } from '@immich/sdk';
   import { IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
   import { mdiClose } from '@mdi/js';
-  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
-  import PersonSidePanel from '../faces-page/PersonSidePanel.svelte';
   import OnEvents from '../OnEvents.svelte';
   import UserAvatar from '../shared-components/UserAvatar.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -91,7 +89,6 @@
       return;
     }
 
-    assetViewerManager.closeEditFacesPanel();
     descriptionSource = 'none';
     previousId = asset.id;
   });
@@ -99,209 +96,193 @@
   const handleRefreshPeople = async () => {
     const updatedAsset = await getAssetInfo({ id: asset.id });
     onAssetUpdate?.(updatedAsset);
-    assetViewerManager.closeEditFacesPanel();
     faceManager.clear();
     await faceManager.getAssetFaces(asset.id);
   };
-
-  onDestroy(() => {
-    assetViewerManager.closeEditFacesPanel();
-  });
 </script>
 
 <OnEvents onAlbumAddAssets={() => (albums = refreshAlbums())} />
 
-{#if !assetViewerManager.isEditFacesPanelOpen}
-  <section class="relative p-2">
-    <div class="flex place-items-center gap-2">
-      <IconButton
-        icon={mdiClose}
-        aria-label={$t('close')}
-        onclick={() => assetViewerManager.closeDetailPanel()}
-        shape="round"
-        color="secondary"
-        variant="ghost"
-      />
-      <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('frameleaf_viewer_information_heading')}</p>
-    </div>
-
-    {#if asset.isOffline}
-      <section class="p-4">
-        <div role="alert">
-          <div class="rounded-t bg-red-500 px-4 py-2 font-bold text-white">
-            {$t('asset_offline')}
-          </div>
-          <div class="border border-t-0 border-red-400 bg-red-100 px-4 py-3 text-red-700">
-            <p>
-              {#if authManager.authenticated && authManager.user.isAdmin}
-                {$t('admin.asset_offline_description')}
-              {:else}
-                {$t('asset_offline_description')}
-              {/if}
-            </p>
-          </div>
-          <div class="rounded-b bg-red-500 px-4 py-2 text-sm text-white">
-            <p>{asset.originalPath}</p>
-          </div>
-        </div>
-      </section>
-    {/if}
-
-    <DetailPanelDescription
-      {asset}
-      {isOwner}
-      source={descriptionSource}
-      onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+<section class="relative p-2">
+  <div class="flex place-items-center gap-2">
+    <IconButton
+      icon={mdiClose}
+      aria-label={$t('close')}
+      onclick={() => assetViewerManager.closeDetailPanel()}
+      shape="round"
+      color="secondary"
+      variant="ghost"
     />
-    <DetailPanelImageEnrichment
-      {asset}
-      {isOwner}
-      onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
-      {onAssetSuppressed}
-      onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
-    />
-    <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
-    <VideoMomentsPanel {asset} {isOwner} />
-    <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-    <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
+    <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('frameleaf_viewer_information_heading')}</p>
+  </div>
 
-    <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
-    <div class="p-4">
-      <div class="flex h-10 w-full items-center justify-between text-sm">
-        <Text size="small" color="muted">{$t('frameleaf_info_captured')}</Text>
-      </div>
-
-      {#if !asset.exifInfo}
-        <Text size="small" color="muted">{$t('no_exif_info_available')}</Text>
-      {/if}
-
-      <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-
-      <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-    </div>
-
-    <!--
-      FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
-      puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
-      the path and the checksum owner-only.
-    -->
-    <ViewerDetailRows {asset} {isOwner} />
-
-    {#if authManager.authenticated && authManager.preferences.tags.enabled}
-      <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-    {/if}
-    {#if authManager.authenticated}
-      <DetailPanelClassification {asset} {isOwner} />
-    {/if}
-  </section>
-
-  {#if latlng && featureFlagsManager.value.map}
-    <div class="h-90">
-      {#await import('$lib/components/shared-components/map/Map.svelte')}
-        {#await delay(timeToLoadTheMap) then}
-          <!-- show the loading spinner only if loading the map takes too much time -->
-          <div class="flex size-full items-center justify-center">
-            <LoadingSpinner />
-          </div>
-        {/await}
-      {:then { default: Map }}
-        <Map
-          mapMarkers={[
-            {
-              lat: latlng.lat,
-              lon: latlng.lng,
-              id: asset.id,
-              city: asset.exifInfo?.city ?? null,
-              state: asset.exifInfo?.state ?? null,
-              country: asset.exifInfo?.country ?? null,
-            },
-          ]}
-          center={latlng}
-          zoom={12.5}
-          simplified
-          useLocationPin
-          showSimpleControls={!assetViewerManager.isEditFacesPanelOpen}
-          onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
-        >
-          {#snippet popup({ marker })}
-            {@const { lat, lon } = marker}
-            <div class="flex flex-col items-center gap-1">
-              <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
-              <Link
-                href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
-                class="text-primary"
-              >
-                {$t('open_in_openstreetmap')}
-              </Link>
-            </div>
-          {/snippet}
-        </Map>
-      {/await}
-    </div>
-  {/if}
-
-  {#if currentAlbum && currentAlbum.albumUsers.length > 1 && asset.owner}
-    <section class="mt-4 px-6 dark:text-immich-dark-fg">
-      <Text size="small" color="muted">{$t('shared_by')}</Text>
-      <div class="flex gap-4 pt-4">
-        <div>
-          <UserAvatar user={asset.owner} size="md" />
+  {#if asset.isOffline}
+    <section class="p-4">
+      <div role="alert">
+        <div class="rounded-t bg-red-500 px-4 py-2 font-bold text-white">
+          {$t('asset_offline')}
         </div>
-
-        <div class="my-auto">
+        <div class="border border-t-0 border-red-400 bg-red-100 px-4 py-3 text-red-700">
           <p>
-            {asset.owner.name}
+            {#if authManager.authenticated && authManager.user.isAdmin}
+              {$t('admin.asset_offline_description')}
+            {:else}
+              {$t('asset_offline_description')}
+            {/if}
           </p>
+        </div>
+        <div class="rounded-b bg-red-500 px-4 py-2 text-sm text-white">
+          <p>{asset.originalPath}</p>
         </div>
       </div>
     </section>
   {/if}
 
-  {#await albums then albums}
-    {#if albums.length > 0}
-      <section class="p-6 dark:text-immich-dark-fg">
-        <div class="pb-4">
-          <Text size="small" color="muted">{$t('appears_in')}</Text>
-        </div>
-        {#each albums as album (album.id)}
-          <a href={Route.viewAlbum(album)}>
-            <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
-              <div>
-                <img
-                  alt={album.albumName}
-                  class="size-12.5 rounded-sm object-cover"
-                  src={album.albumThumbnailAssetId &&
-                    getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
-                  draggable="false"
-                />
-              </div>
+  <DetailPanelDescription
+    {asset}
+    {isOwner}
+    source={descriptionSource}
+    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+  />
+  <DetailPanelImageEnrichment
+    {asset}
+    {isOwner}
+    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+    {onAssetSuppressed}
+    onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
+  />
+  <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
+  <VideoMomentsPanel {asset} {isOwner} />
+  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
 
-              <div class="my-auto">
-                <p class="dark:text-immich-dark-primary">{album.albumName}</p>
-                <div class="flex flex-col gap-0 text-sm">
-                  <div>
-                    <AlbumListItemDetails {album} />
-                  </div>
+  <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
+  <div class="p-4">
+    <div class="flex h-10 w-full items-center justify-between text-sm">
+      <Text size="small" color="muted">{$t('frameleaf_info_captured')}</Text>
+    </div>
+
+    {#if !asset.exifInfo}
+      <Text size="small" color="muted">{$t('no_exif_info_available')}</Text>
+    {/if}
+
+    <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+
+    <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  </div>
+
+  <!--
+      FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
+      puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
+      the path and the checksum owner-only.
+    -->
+  <ViewerDetailRows {asset} {isOwner} />
+
+  {#if authManager.authenticated && authManager.preferences.tags.enabled}
+    <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  {/if}
+  {#if authManager.authenticated}
+    <DetailPanelClassification {asset} {isOwner} />
+  {/if}
+</section>
+
+{#if latlng && featureFlagsManager.value.map}
+  <div class="h-90">
+    {#await import('$lib/components/shared-components/map/Map.svelte')}
+      {#await delay(timeToLoadTheMap) then}
+        <!-- show the loading spinner only if loading the map takes too much time -->
+        <div class="flex size-full items-center justify-center">
+          <LoadingSpinner />
+        </div>
+      {/await}
+    {:then { default: Map }}
+      <Map
+        mapMarkers={[
+          {
+            lat: latlng.lat,
+            lon: latlng.lng,
+            id: asset.id,
+            city: asset.exifInfo?.city ?? null,
+            state: asset.exifInfo?.state ?? null,
+            country: asset.exifInfo?.country ?? null,
+          },
+        ]}
+        center={latlng}
+        zoom={12.5}
+        simplified
+        useLocationPin
+        showSimpleControls
+        onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
+      >
+        {#snippet popup({ marker })}
+          {@const { lat, lon } = marker}
+          <div class="flex flex-col items-center gap-1">
+            <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
+            <Link
+              href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
+              class="text-primary"
+            >
+              {$t('open_in_openstreetmap')}
+            </Link>
+          </div>
+        {/snippet}
+      </Map>
+    {/await}
+  </div>
+{/if}
+
+{#if currentAlbum && currentAlbum.albumUsers.length > 1 && asset.owner}
+  <section class="mt-4 px-6 dark:text-immich-dark-fg">
+    <Text size="small" color="muted">{$t('shared_by')}</Text>
+    <div class="flex gap-4 pt-4">
+      <div>
+        <UserAvatar user={asset.owner} size="md" />
+      </div>
+
+      <div class="my-auto">
+        <p>
+          {asset.owner.name}
+        </p>
+      </div>
+    </div>
+  </section>
+{/if}
+
+{#await albums then albums}
+  {#if albums.length > 0}
+    <section class="p-6 dark:text-immich-dark-fg">
+      <div class="pb-4">
+        <Text size="small" color="muted">{$t('appears_in')}</Text>
+      </div>
+      {#each albums as album (album.id)}
+        <a href={Route.viewAlbum(album)}>
+          <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
+            <div>
+              <img
+                alt={album.albumName}
+                class="size-12.5 rounded-sm object-cover"
+                src={album.albumThumbnailAssetId &&
+                  getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
+                draggable="false"
+              />
+            </div>
+
+            <div class="my-auto">
+              <p class="dark:text-immich-dark-primary">{album.albumName}</p>
+              <div class="flex flex-col gap-0 text-sm">
+                <div>
+                  <AlbumListItemDetails {album} />
                 </div>
               </div>
             </div>
-          </a>
-        {/each}
-      </section>
-    {/if}
-  {/await}
+          </div>
+        </a>
+      {/each}
+    </section>
+  {/if}
+{/await}
 
-  <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
-  <DocumentTextSection {asset} />
+<!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
+<DocumentTextSection {asset} />
 
-  <div class="pb-12"></div>
-{/if}
-
-{#if assetViewerManager.isEditFacesPanelOpen}
-  <PersonSidePanel
-    assetId={asset.id}
-    assetType={asset.type}
-    onClose={() => assetViewerManager.closeEditFacesPanel()}
-    onRefresh={handleRefreshPeople}
-  />
-{/if}
+<div class="pb-12"></div>

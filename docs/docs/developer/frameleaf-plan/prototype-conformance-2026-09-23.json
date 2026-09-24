@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 113,
+      "partial": 111,
       "missing": 6,
-      "fixed": 27,
+      "fixed": 29,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -363,10 +363,10 @@
       "requirementId": "action:info-people:add-a-person-draw-bounding-box-search-existing-person-confirm",
       "title": "Add a person: draw bounding box, search existing person, confirm",
       "prototype": ["design/frameleaf/template/src/FaceTagger.jsx", "design/frameleaf/template/src/face-tags.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte"],
+      "production": ["web/src/lib/components/frameleaf/FaceTagger.svelte"],
       "status": "partial",
       "gaps": ["V-28"],
-      "followUp": "Draw-to-tag, numeric inputs, multi-face session, batch save"
+      "followUp": "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face and batch Save face tags ported (FL-38); the stale-revision banner is deferred by the owner and detected face boxes stay read-only until the server can update a face box"
     },
     {
       "requirementId": "action:info-people:add-edit-location",
@@ -417,7 +417,7 @@
       "requirementId": "action:info-people:create-a-person-while-tagging-a-manual-face",
       "title": "Create a person while tagging a manual face",
       "prototype": ["design/frameleaf/template/src/FaceTagger.jsx"],
-      "production": ["web/src/lib/components/asset-viewer/face-editor/FaceEditor.svelte"],
+      "production": ["web/src/lib/components/frameleaf/FaceTagger.svelte"],
       "status": "match",
       "gaps": [],
       "followUp": null
@@ -2307,26 +2307,34 @@
     {
       "route": "/people",
       "prototype": ["design/frameleaf/template/src/People.jsx", "design/frameleaf/template/src/people-data.mjs"],
-      "production": ["web/src/routes/(user)/people/+page.svelte"],
-      "status": "partial",
+      "production": [
+        "web/src/routes/(user)/people/+page.svelte",
+        "web/src/lib/components/frameleaf/people/PersonCard.svelte",
+        "web/src/lib/components/frameleaf/people/MergePeopleDialog.svelte"
+      ],
+      "status": "fixed",
       "gaps": ["PG-1", "PG-2", "PG-3", "PG-4", "PG-5", "PG-6", "PG-7", "PG-8", "PG-9", "PN-1", "PN-2", "PN-3"],
-      "followUp": "People grid conformance (PN-1/PN-2 by fix-discovery)"
+      "followUp": "People grid: sort, Find a person, counts (GET /people assetCount/lastSeenAt), labels, summary, empty/status copy, combobox name editor and Frameleaf merge/birthday dialogs (PN-1/PN-2 by fix-discovery; the rest on codex/FL-37-people-faces)"
     },
     {
       "route": "/people/[personId]/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/PersonDetail.jsx", "design/frameleaf/template/src/People.jsx"],
-      "production": ["web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "partial",
-      "gaps": ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
-      "followUp": "Person hero toolbar, Fix incorrect match, dialogs"
+      "production": [
+        "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/people/PersonHero.svelte",
+        "web/src/lib/components/frameleaf/people/FixMatchPanel.svelte"
+      ],
+      "status": "fixed",
+      "gaps": ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8"],
+      "followUp": "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); PD-9 Correction history stays as an extra action pending an owner decision"
     },
     {
       "route": "/people/manage",
       "prototype": ["design/frameleaf/template/src/ManagePeople.jsx"],
       "production": ["web/src/routes/(user)/people/manage/+page.svelte"],
       "status": "fixed",
-      "gaps": ["MP-1", "MP-2", "MP-3", "MP-4", "MP-5"],
-      "followUp": "Batch labels, pending footer, Discard changes? guard, back button, empty and status copy (fixed on claude/frameleaf-implementation by the people visibility recovery); MP-6 aria remains"
+      "gaps": ["MP-1", "MP-2", "MP-3", "MP-4", "MP-5", "MP-6"],
+      "followUp": "Batch labels, pending footer, Discard changes? guard, back button, empty and status copy (fixed on claude/frameleaf-implementation by the people visibility recovery); MP-6 card aria (name, state, unsaved change) verified present"
     },
     {
       "route": "/pets",

@@ -6,7 +6,7 @@ import { goto } from '$app/navigation';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { personFactory } from '@test-data/factories/person-factory';
+import { peopleListItemFactory } from '@test-data/factories/person-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import ManagePeoplePage from './+page.svelte';
 import ManagePeoplePageTestWrapper from './ManagePeopleVisibility.test-wrapper.svelte';
@@ -27,7 +27,7 @@ vi.mock('$lib/components/layouts/UserPageLayout.svelte', async () => {
 });
 
 const getData = (
-  people: ReturnType<typeof personFactory.build>[],
+  people: ReturnType<typeof peopleListItemFactory.build>[],
   hasNextPage = false,
 ): ComponentProps<typeof ManagePeoplePage>['data'] => ({
   error: undefined,
@@ -51,9 +51,9 @@ describe('People manage page', () => {
 
   it('keeps toggled hidden state when loading more people', async () => {
     const [personA, personB, personC] = [
-      personFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
-      personFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
-      personFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
+      peopleListItemFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
+      peopleListItemFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
+      peopleListItemFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
     ];
 
     const { container, rerender } = render(ManagePeoplePageTestWrapper, { data: getData([personA, personB], true) });
@@ -77,9 +77,9 @@ describe('People manage page', () => {
 
   it('shows newly loaded hidden people as hidden', async () => {
     const [personA, personB, personC] = [
-      personFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
-      personFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
-      personFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
+      peopleListItemFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
+      peopleListItemFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
+      peopleListItemFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
     ];
 
     const { container, rerender } = render(ManagePeoplePageTestWrapper, { data: getData([personA, personB], true) });
@@ -100,7 +100,7 @@ describe('People visibility recovery', () => {
   });
 
   it('keeps a draft until the prototype discard dialog is confirmed', async () => {
-    const person = personFactory.build({ isHidden: false });
+    const person = peopleListItemFactory.build({ isHidden: false });
     const view = render(ManagePeoplePageTestWrapper, { data: getData([person]) });
     const user = userEvent.setup();
     await user.click(view.container.querySelector('button[aria-pressed]')!);
@@ -117,8 +117,8 @@ describe('People visibility recovery', () => {
   });
 
   it('retains failed unnamed-person changes and retries only unconfirmed IDs', async () => {
-    const a = personFactory.build({ id: 'a', name: 'Alex', isHidden: false });
-    const b = personFactory.build({ id: 'b', name: '', isHidden: false });
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const b = peopleListItemFactory.build({ id: 'b', name: '', isHidden: false });
     sdkMock.updatePeople.mockResolvedValueOnce([
       { id: a.id, success: true },
       { id: b.id, success: false },
@@ -146,7 +146,7 @@ describe('People visibility recovery', () => {
   it.each(['restricted', 'account', 'logout', 'dispose'])(
     'does not republish or navigate after %s while a bulk save is pending',
     async (boundary) => {
-      const person = personFactory.build({ isHidden: false });
+      const person = peopleListItemFactory.build({ isHidden: false });
       let complete!: (result: { id: string; success: boolean }[]) => void;
       sdkMock.updatePeople.mockReturnValueOnce(
         new Promise((resolve) => {
@@ -189,8 +189,8 @@ describe('People visibility recovery', () => {
 it.each(['restricted', 'account', 'logout', 'dispose'])(
   'retires a pending page after %s and rejects duplicate observer loads',
   async (boundary) => {
-    const a = personFactory.build({ id: 'a' });
-    const b = personFactory.build({ id: 'b' });
+    const a = peopleListItemFactory.build({ id: 'a' });
+    const b = peopleListItemFactory.build({ id: 'b' });
     let observerCallback!: IntersectionObserverCallback;
     let sentinel!: Element;
     const disconnect = vi.fn();
@@ -247,7 +247,7 @@ it.each(['restricted', 'account', 'logout', 'dispose'])(
 
 it('keeps pending controls immutable and preserves harmless unlock drafts', async () => {
   vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
-  const person = personFactory.build({ isHidden: false });
+  const person = peopleListItemFactory.build({ isHidden: false });
   let complete!: (result: { id: string; success: boolean }[]) => void;
   sdkMock.updatePeople.mockReset().mockReturnValueOnce(
     new Promise((resolve) => {
@@ -270,8 +270,8 @@ it('keeps pending controls immutable and preserves harmless unlock drafts', asyn
 });
 
 it('retries a failed page without dropping earlier visibility drafts or duplicating loaded people', async () => {
-  const a = personFactory.build({ id: 'a', name: 'Alex', isHidden: false });
-  const b = personFactory.build({ id: 'b', name: '', isHidden: true });
+  const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+  const b = peopleListItemFactory.build({ id: 'b', name: '', isHidden: true });
   let observerCallback!: IntersectionObserverCallback;
   let sentinel!: Element;
   vi.stubGlobal(

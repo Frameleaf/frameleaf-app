@@ -53740,6 +53740,102 @@
         },
         "type": "object"
       },
+      "PeopleListItemDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of timeline assets showing this person",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "birthDate": {
+            "description": "Person date of birth",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "color": {
+            "description": "Person color (hex)",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1.126.0",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              }
+            ],
+            "x-immich-state": "Stable"
+          },
+          "id": {
+            "description": "Person ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isFavorite": {
+            "description": "Is favorite",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1.126.0",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              }
+            ],
+            "x-immich-state": "Stable"
+          },
+          "isHidden": {
+            "description": "Is hidden",
+            "type": "boolean"
+          },
+          "lastSeenAt": {
+            "description": "Capture date of the most recent timeline asset showing this person",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "thumbnailPath": {
+            "description": "Thumbnail path",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1.107.0",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              }
+            ],
+            "x-immich-state": "Stable"
+          }
+        },
+        "required": [
+          "assetCount",
+          "birthDate",
+          "id",
+          "isHidden",
+          "lastSeenAt",
+          "name",
+          "thumbnailPath"
+        ],
+        "type": "object"
+      },
       "PeopleResponse": {
         "properties": {
           "enabled": {
@@ -53789,7 +53885,7 @@
           },
           "people": {
             "items": {
-              "$ref": "#/components/schemas/PersonResponseDto"
+              "$ref": "#/components/schemas/PeopleListItemDto"
             },
             "type": "array"
           },
