@@ -45,6 +45,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
+  import { hasRouterStarted } from '$lib/utils/router-started';
   import { onDestroy, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -173,7 +174,8 @@
 
   let helpOpen = $state(false);
   let restored = false;
-  let routerReady = $state(false);
+  // FL-34: mounted by the session privacy gate after the first navigation, the router is ready already
+  let routerReady = $state(hasRouterStarted());
   afterNavigate(() => {
     routerReady = true;
   });

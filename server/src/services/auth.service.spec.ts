@@ -682,7 +682,7 @@ describe(AuthService.name, () => {
       };
 
       mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      mocks.session.update.mockResolvedValue(session);
+      mocks.session.refreshPinExpiry.mockResolvedValue(true);
 
       await expect(
         sut.authenticate({
@@ -699,9 +699,78 @@ describe(AuthService.name, () => {
         }),
       );
 
-      expect(mocks.session.update).toHaveBeenCalledWith(session.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
+      vi.useRealTimers();
+    });
+
+    it('does not extend an elevated session for a status read (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', refreshElevation: false },
+        }),
+      ).resolves.toEqual(expect.objectContaining({ session: { id: session.id, hasElevatedPermission: true } }));
+
+      expect(mocks.session.refreshPinExpiry).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it('does not elevate a request whose refresh loses to a concurrent lock (FL-34)', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T12:00:00.000Z'));
+      const session = SessionFactory.create({ updatedAt: new Date('2026-05-08T12:00:00.000Z') });
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        isPendingSyncReset: false,
+        pinExpiresAt: DateTime.now().plus({ minutes: 1 }).toJSDate(),
+        appVersion: null,
+        oauthSid: null,
+      };
+
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+      mocks.session.refreshPinExpiry.mockResolvedValue(false);
+
+      await expect(
+        sut.authenticate({
+          headers: { cookie: 'immich_access_token=auth_token' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          session: {
+            id: session.id,
+            hasElevatedPermission: false,
+          },
+        }),
+      );
+
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
+      expect(mocks.session.update).not.toHaveBeenCalledWith(
+        session.id,
+        expect.objectContaining({ pinExpiresAt: expect.anything() }),
+      );
       vi.useRealTimers();
     });
 
@@ -1582,14 +1651,28 @@ describe(AuthService.name, () => {
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       await sut.unlockSession(auth, { pinCode: '123456' });
 
-      expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      // conditional on the credentials the check read (FL-34)
+      expect(mocks.session.elevate).toHaveBeenCalledWith(
+        auth.session!.id,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        new Date('2026-05-08T13:00:00.000Z'),
+      );
       vi.useRealTimers();
+    });
+
+    it('does not elevate when the PIN or password changed after the check (FL-34)', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
+      mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+      mocks.session.elevate.mockResolvedValue(false);
+
+      await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.session.update).not.toHaveBeenCalled();
     });
 
     it('should throttle repeated PIN failures and reset the count after a successful unlock', async () => {
@@ -1597,14 +1680,14 @@ describe(AuthService.name, () => {
       const auth = AuthFactory.from().session().build();
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
-      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      mocks.session.elevate.mockResolvedValue(true);
 
       for (let attempt = 0; attempt < 5; attempt++) {
         await expect(sut.unlockSession(auth, { pinCode: '000000' })).rejects.toBeInstanceOf(BadRequestException);
       }
       await expect(sut.unlockSession(auth, { pinCode: '123456' })).rejects.toThrow('Too many failed PIN attempts');
       expect(mocks.user.getForPinCode).toHaveBeenCalledTimes(5);
-      expect(mocks.session.update).not.toHaveBeenCalled();
+      expect(mocks.session.elevate).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(60_001);
       await sut.unlockSession(auth, { pinCode: '123456' });
@@ -1622,6 +1705,15 @@ describe(AuthService.name, () => {
   });
 
   describe('lockSession', () => {
+    it('does not announce a lock before it is persisted', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.session.update.mockRejectedValue(new Error('write failed'));
+
+      await expect(sut.lockSession(auth)).rejects.toThrow('write failed');
+
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
     it('should clear elevated access immediately', async () => {
       const user = UserFactory.create();
       const auth = AuthFactory.from(user).session({ hasElevatedPermission: true }).build();
@@ -1630,6 +1722,8 @@ describe(AuthService.name, () => {
       await sut.lockSession(auth);
 
       expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, { pinExpiresAt: null });
+      // only this session's other tabs are told (FL-34)
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', auth.session!.id);
     });
   });
 
@@ -1642,11 +1736,15 @@ describe(AuthService.name, () => {
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.user.update.mockResolvedValue(user);
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+      mocks.session.lockAll.mockResolvedValue();
 
       await sut.changePinCode(auth, dto);
 
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('123456', '123456 (hashed)');
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: '012345 (hashed)' });
+      // an elevation granted by the old PIN ends with it, in every session (FL-34)
+      expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should fail if the PIN code does not match', async () => {
@@ -1673,6 +1771,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: null });
       expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should throw if the PIN code does not match', async () => {

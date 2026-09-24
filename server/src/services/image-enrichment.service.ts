@@ -341,8 +341,15 @@ export class ImageEnrichmentService extends BaseService {
     // connection isn't held while tag application or job queueing runs —
     // those would compete for the same pool and deadlock under parallel
     // bulk-mark actions.
-    const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-      const m = await this.getEnrichmentMetadata(id, trx);
+    const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      // An explicit owner mark or safe decision may repair a missing privacy projection row (FL-34);
+      // every other action still fails closed on it.
+      const isManualMark =
+        dto.action === AssetImageEnrichmentAction.MarkNsfw || dto.action === AssetImageEnrichmentAction.MarkSafe;
+      if (isManualMark || dto.action === AssetImageEnrichmentAction.AcceptNsfwResult) {
+        await this.lockGroupRows(id, trx);
+      }
+      const m = await this.getEnrichmentMetadata(id, trx, isManualMark);
 
       switch (dto.action) {
         case AssetImageEnrichmentAction.AcceptNsfwResult: {
@@ -375,8 +382,25 @@ export class ImageEnrichmentService extends BaseService {
       }
 
       await this.saveEnrichmentMetadata(id, m, trx);
-      return m;
+
+      // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), marking
+      // it safe unlocks it, and accepting a sensitive detection locks it as detected. The lock record
+      // commits in the same transaction as the review and its privacy projection, so no reader ever
+      // sees one without the other. Albums, favourites and the stored visibility are untouched either
+      // way; stacks and live photos move as a whole.
+      let locked: string[] = [];
+      if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
+        locked = await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id, trx);
+      } else if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
+        await this.assetRepository.unlock([id], trx);
+      } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && m.nsfwDetection?.review?.isNsfw) {
+        locked = await this.assetRepository.lock([id], AssetLockReason.Detected, auth.user.id, trx);
+      }
+
+      return { metadata: m, locked };
     });
+    // the lock is committed: release what a locked photo may no longer be before anything below can fail
+    await this.afterSensitiveLock(locked);
 
     // Phase 2 (no lock): tag application + finalize. These are idempotent on
     // their applied-hash bookkeeping, so the brief unlocked window between
@@ -421,17 +445,6 @@ export class ImageEnrichmentService extends BaseService {
     }
 
     await this.finalizeRepair(id, changed, metadata);
-
-    // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), marking it
-    // safe unlocks it, and accepting a sensitive detection locks it as detected. Albums, favourites and
-    // the stored visibility are untouched either way; stacks and live photos move as a whole.
-    if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
-      await this.lockSensitive([id], AssetLockReason.Marked, auth.user.id);
-    } else if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
-      await this.assetRepository.unlock([id]);
-    } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && metadata.nsfwDetection?.review?.isNsfw) {
-      await this.lockSensitive([id], AssetLockReason.Detected, auth.user.id);
-    }
 
     return this.toResponse(id, await this.getEnrichmentMetadata(id));
   }
@@ -536,7 +549,22 @@ export class ImageEnrichmentService extends BaseService {
 
   /** Locks `assetIds` as sensitive (FL-34) and releases what a locked photo may no longer be. */
   private async lockSensitive(assetIds: string[], reason: AssetLockReason, lockedBy: string | null) {
-    const locked = await this.assetRepository.lock(assetIds, reason, lockedBy);
+    await this.afterSensitiveLock(await this.assetRepository.lock(assetIds, reason, lockedBy));
+  }
+
+  /**
+   * FL-34: first in a metadata transaction that may lock or unlock `id`, takes its whole group's rows
+   * in a fixed order, so parallel reviews or detections of two members of one stack or live photo
+   * cannot deadlock. The unit tests' stand-in transaction is absent; there is nothing to order then.
+   */
+  private async lockGroupRows(id: string, trx: Kysely<DB> | undefined) {
+    if (trx) {
+      await this.assetRepository.lockGroupRows([id], trx);
+    }
+  }
+
+  /** Once a sensitive lock is committed: releases what a locked photo may no longer be (FL-53). */
+  private async afterSensitiveLock(locked: string[]) {
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
     }
@@ -545,14 +573,21 @@ export class ImageEnrichmentService extends BaseService {
   /**
    * FL-34: a sensitive detection locks the asset as `detected`, reviewable and reversible in the Locked
    * view, when the administrator has "hide sensitive detections" on. An owner's own review always
-   * wins: an asset they reviewed is never locked by a detection. Never unlocks anything.
+   * wins: an asset they reviewed is never locked by a detection. Never unlocks anything. Called inside
+   * the metadata transaction `trx` so the lock commits with the classification that caused it; returns
+   * the ids it locked for `afterSensitiveLock` once that transaction is committed.
    */
-  private async lockIfDetected(id: string, metadata: EnrichmentMetadata, hideDetections: boolean) {
+  private async lockIfDetected(
+    id: string,
+    metadata: EnrichmentMetadata,
+    hideDetections: boolean,
+    trx?: Kysely<DB>,
+  ): Promise<string[]> {
     if (!hideDetections || metadata.nsfwDetection?.review || this.getEffectiveNsfw(metadata) !== true) {
-      return;
+      return [];
     }
 
-    await this.lockSensitive([id], AssetLockReason.Detected, null);
+    return this.assetRepository.lock([id], AssetLockReason.Detected, null, trx);
   }
 
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
@@ -665,7 +700,10 @@ export class ImageEnrichmentService extends BaseService {
     // Serialize the RMW of the metadata blob against concurrent reviewer
     // actions and parallel description jobs. Side effects (tag application,
     // sidecar queueing) run afterwards on the regular pool.
-    const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+    const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      if (isNsfwHidingEnabled(machineLearning)) {
+        await this.lockGroupRows(id, trx);
+      }
       const m = await this.getEnrichmentMetadata(id, trx);
       const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
       const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
@@ -682,18 +720,19 @@ export class ImageEnrichmentService extends BaseService {
         ...(review && { review }),
       };
       await this.saveEnrichmentMetadata(id, m, trx);
-      return m;
+      const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
+      return { metadata: m, locked };
     });
+    await this.afterSensitiveLock(locked);
 
-    const changed = await this.applyNsfwTags(id, asset.ownerId, result, metadata);
+    // the owner's review decides which tags apply, not the raw detection (FL-34)
+    const changed = await this.applyNsfwTags(id, asset.ownerId, this.getStoredNsfw(metadata)!, metadata);
     if (changed.metadata) {
       await this.persistAppliedBookkeeping(id, metadata);
     }
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
-
-    await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
     return { status: JobStatus.Success };
   }
@@ -870,9 +909,11 @@ export class ImageEnrichmentService extends BaseService {
 
     // Phase: serialize the RMW so reviewer / NSFW writes can't clobber the
     // description (and vice versa). ML inference is already done above.
-    const { metadata, previousDescription, previousTagValues } = await this.databaseRepository.withAssetMetadataLock(
-      id,
-      async (trx) => {
+    const { metadata, previousDescription, previousTagValues, locked } =
+      await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+        if (isNsfwHidingEnabled(machineLearning)) {
+          await this.lockGroupRows(id, trx);
+        }
         const m = await this.getEnrichmentMetadata(id, trx);
         const previousDescription =
           m.description?.status === 'success' && m.description.appliedDescriptionHash
@@ -904,12 +945,11 @@ export class ImageEnrichmentService extends BaseService {
           ...(identityFlags && { identityFlags }),
         };
         await this.saveEnrichmentMetadata(id, m, trx);
-        return { metadata: m, previousDescription, previousTagValues };
-      },
-    );
-
-    // a sensitive verdict from either the detector or the description locks it (FL-34)
-    await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
+        // a sensitive verdict from either the detector or the description locks it (FL-34)
+        const locked = await this.lockIfDetected(id, m, isNsfwHidingEnabled(machineLearning), trx);
+        return { metadata: m, previousDescription, previousTagValues, locked };
+      });
+    await this.afterSensitiveLock(locked);
 
     // A plan that pinned no search destination (search was off when it was queued) leaves the
     // description embedding alone rather than sending the text to an unpinned destination.
@@ -1399,14 +1439,22 @@ export class ImageEnrichmentService extends BaseService {
     );
   }
 
-  private async getEnrichmentMetadata(id: string, kysely?: Kysely<DB>): Promise<EnrichmentMetadata> {
+  /**
+   * `allowMissingPrivacy` lets an explicit owner mark or safe decision read an asset whose privacy
+   * projection row is missing, so its save can repair the row (FL-34); every other caller fails closed.
+   */
+  private async getEnrichmentMetadata(
+    id: string,
+    kysely?: Kysely<DB>,
+    allowMissingPrivacy = false,
+  ): Promise<EnrichmentMetadata> {
     const database = kysely ?? this.db;
     let authoritativePrivacy: PrivacySidecar | undefined;
     if (this.db) {
       const privacyRepository = new ForkPrivacyRepository(this.db);
       if (await privacyRepository.shouldReadSidecar(database)) {
         authoritativePrivacy = await privacyRepository.get(id, database);
-        if (!authoritativePrivacy) {
+        if (!authoritativePrivacy && !allowMissingPrivacy) {
           throw new Error(`Missing fork privacy sidecar for asset ${id}`);
         }
       }
@@ -1443,7 +1491,8 @@ export class ImageEnrichmentService extends BaseService {
       return;
     }
     const repository = new ForkEnrichmentRepository(this.db);
-    if (!(await repository.shouldReadSidecar(database))) {
+    const sidecarOnly = await repository.shouldReadSidecar(database);
+    if (!sidecarOnly) {
       await this.assetRepository.upsertMetadata(
         id,
         [{ key: AssetMetadataKey.MlEnrichment, value: value as Record<string, unknown> }],
@@ -1451,6 +1500,17 @@ export class ImageEnrichmentService extends BaseService {
       );
     }
     await repository.save(id, value as Record<string, unknown>, database);
+    if (sidecarOnly) {
+      // FL-34: once the sidecars are authoritative, the privacy projection that every read filters on
+      // is written with the enrichment in the caller's transaction (before the cutover
+      // `upsertMetadata` keeps `asset.is_nsfw` and the mirror in step the same way).
+      await new ForkPrivacyRepository(this.db).saveClassification(
+        id,
+        this.getEffectiveNsfw(value),
+        (value.nsfwDetection?.review as Record<string, unknown> | undefined) ?? null,
+        database,
+      );
+    }
   }
 
   private applyPrivacySidecar(metadata: EnrichmentMetadata, privacy: PrivacySidecar): EnrichmentMetadata {

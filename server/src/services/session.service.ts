@@ -79,10 +79,15 @@ export class SessionService extends BaseService {
   async lock(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.SessionLock, ids: [id] });
     await this.sessionRepository.update(id, { pinExpiresAt: null });
+    // FL-34: only the locked session's open tabs are told, once the lock is stored
+    this.websocketRepository.clientSend('on_session_lock', id);
   }
 
   @OnEvent({ name: 'AuthChangePassword' })
   async onAuthChangePassword({ userId, currentSessionId }: ArgOf<'AuthChangePassword'>): Promise<void> {
+    // FL-34: a password change revokes elevation everywhere, the retained session included
+    await this.sessionRepository.lockAll(userId);
+    this.websocketRepository.clientSend('on_session_lock', userId);
     await this.sessionRepository.invalidateAll({ userId, excludeId: currentSessionId });
   }
 }

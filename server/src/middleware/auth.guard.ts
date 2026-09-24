@@ -17,9 +17,16 @@ import { getUserAgentDetails } from 'src/utils/request.js';
 
 type AdminRoute = { admin?: true };
 type SharedLinkRoute = { sharedLink?: true };
-type AuthorizedRoute = { permission?: Permission | false; public?: never; setup?: never } & (
-  AdminRoute | SharedLinkRoute
-);
+type AuthorizedRoute = {
+  permission?: Permission | false;
+  public?: never;
+  setup?: never;
+  /**
+   * FL-34: `false` for a read that only reports the session's state: it must not extend an elevated
+   * (PIN-unlocked) session the way a request the person made does. Defaults to `true`.
+   */
+  refreshElevation?: boolean;
+} & (AdminRoute | SharedLinkRoute);
 type PublicRoute = { public: true; setup?: true; permission?: never; admin?: never; sharedLink?: never };
 export type AuthenticatedOptions = AuthorizedRoute | PublicRoute;
 
@@ -111,12 +118,13 @@ export class AuthGuard implements CanActivate {
     }
 
     const { admin: adminRoute, sharedLink: sharedLinkRoute, permission } = options;
+    const refreshElevation = (options as { refreshElevation?: boolean }).refreshElevation !== false;
     const request = context.switchToHttp().getRequest<AuthRequest>();
 
     request.user = await this.authService.authenticate({
       headers: request.headers,
       queryParams: request.query as Record<string, string>,
-      metadata: { adminRoute, sharedLinkRoute, permission, uri: request.path },
+      metadata: { adminRoute, sharedLinkRoute, permission, uri: request.path, refreshElevation },
     });
 
     return true;

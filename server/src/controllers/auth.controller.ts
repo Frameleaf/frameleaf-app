@@ -110,7 +110,8 @@ export class AuthController {
   }
 
   @Get('status')
-  @Authenticated()
+  // FL-34: reporting the session's state is not activity; it never extends an unlocked session
+  @Authenticated({ refreshElevation: false })
   @Endpoint({
     summary: 'Retrieve auth status',
     description:

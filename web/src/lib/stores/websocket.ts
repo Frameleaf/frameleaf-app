@@ -36,6 +36,8 @@ export interface Events {
   on_config_update: () => void;
   on_new_release: (event: ReleaseEventV1) => void;
   on_session_delete: (sessionId: string) => void;
+  // FL-34: this session's elevated (PIN-unlocked) access was revoked, here or in another tab
+  on_session_lock: () => void;
   on_notification: (notification: NotificationDto) => void;
 
   AppRestartV1: (event: AppRestartEvent) => void;
@@ -80,6 +82,7 @@ websocket
   })
   .on('on_new_release', (event) => eventManager.emit('ReleaseEvent', event))
   .on('on_session_delete', () => eventManager.emit('SessionDelete'))
+  .on('on_session_lock', () => eventManager.emit('SessionLockedRemote'))
   .on('on_user_delete', (id) => eventManager.emit('UserAdminDeleted', { id }))
   .on('on_asset_delete', (asset) => eventManager.emit('AssetsDelete', [asset]))
   .on('on_asset_trash', (assets) => eventManager.emit('AssetsDelete', assets))
