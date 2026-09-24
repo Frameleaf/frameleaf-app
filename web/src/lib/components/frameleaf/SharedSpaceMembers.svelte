@@ -256,13 +256,13 @@
   <AlbumConfirmDialog
     title={self
       ? $t('frameleaf_album_leave_title', { values: { name: space.albumName } })
-      : $t('frameleaf_spaces_remove_title', { values: { name: member.user.name } })}
+      : $t('frameleaf_album_remove_member_title', { values: { name: member.user.name } })}
     body={self
       ? $t('frameleaf_album_leave_body')
-      : $t('frameleaf_spaces_remove_body', { values: { space: space.albumName } })}
+      : $t('frameleaf_album_remove_member_body', { values: { name: space.albumName } })}
     confirmLabel={self
       ? $t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })
-      : $t('frameleaf_spaces_remove_confirm')}
+      : $t('frameleaf_album_remove_member_confirm')}
     bind:open={confirming.open}
     onConfirm={() => remove(member)}
   />

@@ -143,7 +143,7 @@ describe('SharedSpaceMembers', () => {
     expect(removeUserFromAlbum).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'Remove Bo?' })).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_remove_confirm }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_album_remove_member_confirm }));
 
     await waitFor(() => expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'space-1', userId: 'bo' }));
     expect(removeSharedSpaceInvitation).not.toHaveBeenCalled();
