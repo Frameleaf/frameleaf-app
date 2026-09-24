@@ -10,7 +10,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795"
+      "sha256": "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "00fc443cecc0a863ee9c47e05e8deb9a90e01d57e33a764ca911741a6ad39e1f",
+  "sourceEvidenceSha256": "e65a6ddefb81910bd9cb3c9b7482cec3537f7746e44db4d9c815c02076721209",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -68159,7 +68159,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68168,7 +68168,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68203,7 +68203,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68212,7 +68212,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68251,7 +68251,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68260,7 +68260,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68295,7 +68295,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68304,7 +68304,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68343,7 +68343,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68352,7 +68352,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68391,7 +68391,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68400,7 +68400,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68435,7 +68435,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68444,7 +68444,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68483,7 +68483,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68492,7 +68492,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68531,7 +68531,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68540,7 +68540,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68579,7 +68579,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68588,7 +68588,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68627,7 +68627,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68636,7 +68636,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68675,7 +68675,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68684,7 +68684,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68719,7 +68719,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68728,7 +68728,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68767,7 +68767,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68776,7 +68776,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68815,7 +68815,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68824,7 +68824,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68863,7 +68863,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68872,7 +68872,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68907,7 +68907,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68916,7 +68916,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -68955,7 +68955,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -68964,7 +68964,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69003,7 +69003,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69012,7 +69012,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69051,7 +69051,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69060,7 +69060,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69095,7 +69095,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69104,7 +69104,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69139,7 +69139,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69148,7 +69148,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69187,7 +69187,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69196,7 +69196,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69235,7 +69235,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69244,7 +69244,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69283,7 +69283,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69292,7 +69292,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69331,7 +69331,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69340,7 +69340,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
@@ -69379,7 +69379,7 @@
           "paths": [
             "web/src/lib/components/frameleaf/SearchEntry.svelte",
             "web/src/lib/components/frameleaf/FilterPanel.svelte",
-            "web/src/lib/components/frameleaf/SearchDialog.svelte",
+            "web/src/lib/components/frameleaf/SearchPalette.svelte",
             "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
             "web/src/routes/(user)/discover/+page.svelte",
             "server/src/dtos/discovery.dto.ts",
@@ -69388,7 +69388,7 @@
           "evidence": [
             "accepted-main:web/src/lib/components/frameleaf/SearchEntry.svelte:62d504b92a5d5dcb45881f8de79266e696d46e02bcc781d5d858722c3003209b",
             "accepted-main:web/src/lib/components/frameleaf/FilterPanel.svelte:b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b",
-            "accepted-main:web/src/lib/components/frameleaf/SearchDialog.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
+            "accepted-main:web/src/lib/components/frameleaf/SearchPalette.svelte:ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee",
             "accepted-main:web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte:02081e11cb47b48085f993b8eb798dac89b589cc6ae55993a0084fd98527b97a",
             "preserved-dirty-only:web/src/routes/(user)/discover/+page.svelte:3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
             "preserved-dirty-only:server/src/dtos/discovery.dto.ts:0e8dd75366585000a48779b3ae76b57213faa4c99eb09d136ac23165dadef8ec",
