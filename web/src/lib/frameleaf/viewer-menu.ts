@@ -32,6 +32,7 @@ import type { Translations } from 'svelte-i18n';
 export const VIEWER_ACTIONS = [
   'download',
   'download-original',
+  'send-copy',
   'copy-image',
   'restore',
   'add-to-album',
@@ -92,6 +93,8 @@ export interface ViewerMenuContext {
   /** A shared-link viewer: no private actions at all. */
   isSharedLink: boolean;
   canDownload: boolean;
+  /** The browser's share sheet takes files (FL-35 / FL-54 "Send a copy…"). */
+  canSendCopy: boolean;
   canCopyImage: boolean;
   hasStack: boolean;
   stackSize: number;
@@ -139,6 +142,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
     isEdited,
     isPanorama,
     canDownload,
+    canSendCopy,
     canCopyImage,
     hasStack,
     stackSize,
@@ -163,6 +167,8 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
       items: compact([
         canDownload && 'download',
         canDownload && isEdited && 'download-original',
+        // A copy through the native share sheet; a Locked or trashed item is never sent.
+        canDownload && canSendCopy && !isLocked && !isTrashed && 'send-copy',
         isImage && canCopyImage && 'copy-image',
       ]),
     },

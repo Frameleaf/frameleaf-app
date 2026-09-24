@@ -1,6 +1,7 @@
 <script lang="ts">
   import Dialog from './Dialog.svelte';
   import SharedLinkForm from './SharedLinkForm.svelte';
+  import { canSendCopies, sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
   import { SharedLinkType } from '@immich/sdk';
   import { t } from 'svelte-i18n';
 
@@ -11,6 +12,10 @@
    * library" tiles mark individual items as shared with a person, and no server contract exists for
    * that yet: the only per-person sharing the server has is partner sharing, which exposes a whole
    * library, so it must never sit behind a per-item share button (FL-83 audit).
+   *
+   * FL-35 / FL-54: "Send a copy…" sits beside Cancel as in the prototype (SharedLinks.jsx:477-482)
+   * where the browser can share files. It hands copies of the originals to the native share sheet and
+   * creates no link, so it stays separate from Frameleaf sharing.
    */
   let {
     open = $bindable(false),
@@ -39,6 +44,11 @@
   const subject = $derived($t('frameleaf_sharing.individual_items', { values: { count: assetIds.length } }));
   const linkTarget = $derived({ type: SharedLinkType.Individual, assetIds, name: subject });
 
+  const sendCopy = () => {
+    open = false;
+    void sendCopiesWithFeedback(assetIds);
+  };
+
   const openLinkForm = () => {
     open = false;
     linkFormOpen = true;
@@ -48,6 +58,9 @@
 <Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
   <p class="ss-link-copy">{$t('frameleaf_sharing.link_option_description')}</p>
   <div class="ss-actions">
+    {#if canSendCopies()}
+      <button type="button" onclick={sendCopy}>{$t('frameleaf_send_copy')}</button>
+    {/if}
     <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     <button type="button" class="primary" onclick={openLinkForm}>{$t('frameleaf_sharing.create_public_link')}</button>
   </div>
