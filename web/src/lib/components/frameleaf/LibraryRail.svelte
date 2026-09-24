@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import { page } from '$app/state';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
   import {
@@ -7,7 +8,15 @@
     type FrameleafAlbumNode,
     type FrameleafAlbumTree,
   } from '$lib/frameleaf/album-tree';
-  import { buildRailSections, isDestinationCurrent, type RailDestination } from '$lib/frameleaf/navigation';
+  import {
+    buildRailSections,
+    FOLDABLE_RAIL_SECTIONS,
+    isDestinationCurrent,
+    readClosedRailSections,
+    toggleRailSection,
+    type RailDestination,
+    type RailSectionId,
+  } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -15,14 +24,13 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
-  import { handlePromiseError } from '$lib/utils';
   import { albumIconPath } from '$lib/utils/album-icons';
-  import { createAlbumAndRedirect } from '$lib/utils/album-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumTree } from '@immich/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiChevronDown, mdiChevronRight, mdiPlus } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
+  import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -35,6 +43,11 @@
    * the contents are the Frameleaf ones. Destinations come from
    * `$lib/frameleaf/navigation`, the album and collection shape from
    * `$lib/frameleaf/album-tree`.
+   *
+   * September 24 polish pass (`LibraryRail.jsx`): each labelled section folds away from its
+   * heading, remembered per device, and the icon-only rail — which has no headings to reopen a
+   * section — always shows everything. Albums and Shared spaces each carry a "+" that opens the
+   * Albums page with that create dialog, a request the page consumes so All albums never replays it.
    */
 
   interface Props {
@@ -45,6 +58,17 @@
   let { children }: Props = $props();
 
   let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
+  /** Sections folded on this device (`frameleaf.rail.closedSections`, as in the prototype). */
+  let closedSections = $state<RailSectionId[]>(readClosedRailSections(browser ? localStorage : undefined));
+  const foldSection = (id: RailSectionId) => {
+    closedSections = toggleRailSection(closedSections, id, browser ? localStorage : undefined);
+  };
+  /** The "+" beside a heading: New album, New shared space (`addButton` in LibraryRail.jsx). */
+  const SECTION_CREATE: Partial<Record<RailSectionId, { labelKey: Translations; href: string }>> = {
+    albums: { labelKey: 'frameleaf_albums_create_album', href: Route.newAlbum({ kind: 'album' }) },
+    spaces: { labelKey: 'frameleaf_spaces_new', href: Route.newAlbum({ kind: 'space' }) },
+  };
+
   /** Collections whose open state the user has flipped away from the saved default. */
   const flipped = new SvelteSet<string>();
 
@@ -93,6 +117,8 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The icon-only rail applies on desktop only; the mobile sidebar is a full overlay.
   const iconOnly = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
+  const isSectionOpen = (id: RailSectionId) =>
+    iconOnly || !FOLDABLE_RAIL_SECTIONS.includes(id) || !closedSections.includes(id);
 
   const isAlbumCurrent = (node: FrameleafAlbumNode) => pathname.startsWith(Route.viewAlbum({ id: node.id }));
   // A shared space has its own page and is still browsed through the album view, so either is "here".
@@ -161,75 +187,88 @@
       {/if}
 
       {#if section.labelKey && !iconOnly}
+        {@const create = SECTION_CREATE[section.id]}
         <div class="fl-heading">
-          <h2>{$t(section.labelKey)}</h2>
-          {#if section.id === 'albums'}
-            <button
-              type="button"
+          <!-- The heading folds its section away (LibraryRail.jsx `heading`). -->
+          <button
+            type="button"
+            class="fl-heading-toggle"
+            aria-expanded={isSectionOpen(section.id)}
+            aria-controls="fl-rail-section-{section.id}"
+            onclick={() => foldSection(section.id)}
+          >
+            <h2>{$t(section.labelKey)}</h2>
+            <Icon icon={mdiChevronDown} size="14" aria-hidden={true} class="fl-heading-chevron" />
+          </button>
+          {#if create}
+            <a
               class="fl-action"
-              title={$t('new_album')}
-              aria-label={$t('new_album')}
-              onclick={() => handlePromiseError(createAlbumAndRedirect())}
+              href={create.href}
+              title={$t(create.labelKey)}
+              aria-label={$t(create.labelKey)}
+              data-sveltekit-preload-data="hover"
             >
               <Icon icon={mdiPlus} size="1em" aria-hidden={true} />
-            </button>
+            </a>
           {/if}
         </div>
       {/if}
 
-      {#each section.destinations as destination (destination.id)}
-        {@render destinationLink(destination)}
+      <div class="fl-section" id="fl-rail-section-{section.id}" hidden={!isSectionOpen(section.id)}>
+        {#each section.destinations as destination (destination.id)}
+          {@render destinationLink(destination)}
 
-        {#if destination.id === 'allAlbums' && !iconOnly}
-          <!-- Collections, each with the albums inside it. One level deep: in this
+          {#if destination.id === 'allAlbums' && !iconOnly}
+            <!-- Collections, each with the albums inside it. One level deep: in this
                product an album never contains another album, and there is no
                subcollection. -->
-          {#each tree.collections as collection (collection.id)}
-            <div class="fl-branch" class:fl-current={isCollectionCurrent(collection)}>
-              <!-- The twisty only opens the branch; the collection keeps its own page,
+            {#each tree.collections as collection (collection.id)}
+              <div class="fl-branch" class:fl-current={isCollectionCurrent(collection)}>
+                <!-- The twisty only opens the branch; the collection keeps its own page,
                    so every album and collection stays reachable from the rail. -->
-              <button
-                type="button"
-                class="fl-twisty"
-                aria-label={isCollectionOpen(collection.id) ? $t('collapse') : $t('expand')}
-                aria-expanded={isCollectionOpen(collection.id)}
-                onclick={() => toggleCollection(collection.id)}
-              >
-                <Icon
-                  icon={isCollectionOpen(collection.id) ? mdiChevronDown : mdiChevronRight}
-                  size="1em"
-                  aria-hidden={true}
-                  class="fl-chevron"
-                />
-              </button>
-              <a
-                href={Route.viewAlbum({ id: collection.id })}
-                class="fl-link"
-                aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
-                data-sveltekit-preload-data="hover"
-              >
-                <Icon icon={albumIconPath(collection.icon)} size="1.25em" aria-hidden={true} class="fl-icon" />
-                <span class="fl-label">{collection.name}</span>
-              </a>
-            </div>
-            {#if isCollectionOpen(collection.id)}
-              {#each collection.children as album (album.id)}
-                {@render albumLink(album)}
-              {/each}
-            {/if}
-          {/each}
+                <button
+                  type="button"
+                  class="fl-twisty"
+                  aria-label={isCollectionOpen(collection.id) ? $t('collapse') : $t('expand')}
+                  aria-expanded={isCollectionOpen(collection.id)}
+                  onclick={() => toggleCollection(collection.id)}
+                >
+                  <Icon
+                    icon={isCollectionOpen(collection.id) ? mdiChevronDown : mdiChevronRight}
+                    size="1em"
+                    aria-hidden={true}
+                    class="fl-chevron"
+                  />
+                </button>
+                <a
+                  href={Route.viewAlbum({ id: collection.id })}
+                  class="fl-link"
+                  aria-current={isAlbumCurrent(collection) ? 'page' : undefined}
+                  data-sveltekit-preload-data="hover"
+                >
+                  <Icon icon={albumIconPath(collection.icon)} size="1.25em" aria-hidden={true} class="fl-icon" />
+                  <span class="fl-label">{collection.name}</span>
+                </a>
+              </div>
+              {#if isCollectionOpen(collection.id)}
+                {#each collection.children as album (album.id)}
+                  {@render albumLink(album)}
+                {/each}
+              {/if}
+            {/each}
 
-          {#each tree.albums as album (album.id)}
-            {@render albumLink(album)}
+            {#each tree.albums as album (album.id)}
+              {@render albumLink(album)}
+            {/each}
+          {/if}
+        {/each}
+
+        {#if section.id === 'spaces' && !iconOnly}
+          {#each tree.spaces as space (space.id)}
+            {@render spaceLink(space)}
           {/each}
         {/if}
-      {/each}
-
-      {#if section.id === 'spaces' && !iconOnly}
-        {#each tree.spaces as space (space.id)}
-          {@render spaceLink(space)}
-        {/each}
-      {/if}
+      </div>
     {/each}
 
     {@render children?.()}
@@ -264,6 +303,40 @@
     text-transform: uppercase;
     margin: 0;
   }
+  .fl-heading-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+  .fl-heading-toggle:hover h2 {
+    color: var(--fl-text);
+  }
+  .fl-heading-toggle :global(.fl-heading-chevron) {
+    transition: rotate 320ms var(--fl-spring, ease);
+  }
+  .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
+    rotate: -90deg;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-heading-toggle :global(.fl-heading-chevron) {
+      transition: none;
+    }
+  }
+  .fl-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  .fl-section[hidden] {
+    display: none;
+  }
   .fl-separator {
     /* Library Care, Settings and Support sit at the bottom of the rail. */
     margin-top: auto;
@@ -273,6 +346,7 @@
   }
   .fl-action {
     display: inline-flex;
+    text-decoration: none;
     align-items: center;
     justify-content: center;
     min-width: 32px;

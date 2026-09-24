@@ -13,6 +13,14 @@ import AlbumDirectory from './AlbumDirectory.svelte';
 const me = userAdminFactory.build({ id: 'me', isAdmin: false });
 const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie' });
 
+const app = vi.hoisted(() => ({
+  page: { url: new URL('http://localhost/albums'), state: {} },
+  goto: vi.fn(),
+  replaceState: vi.fn(),
+}));
+vi.mock('$app/state', () => ({ page: app.page }));
+vi.mock('$app/navigation', () => ({ goto: app.goto, replaceState: app.replaceState, invalidate: vi.fn() }));
+
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
 }));
@@ -68,6 +76,7 @@ describe('AlbumDirectory', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    app.page.url = new URL('http://localhost/albums');
     localStorage.clear();
     // The view (filter pill, grid or list) is a persisted store that outlives a single mount.
     albumDirectoryView.set({ ...defaultAlbumDirectoryView });
@@ -174,6 +183,23 @@ describe('AlbumDirectory', () => {
     expect(shelf).toHaveTextContent('No shared spaces yet');
     expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
+  });
+
+  it('opens the create dialog the rail asked for, once, and drops the request from the address', async () => {
+    app.page.url = new URL('http://localhost/albums?create=space');
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    expect(await screen.findByRole('dialog', { name: 'New shared space' })).toBeInTheDocument();
+    expect(app.replaceState).toHaveBeenCalledOnce();
+    const [url] = app.replaceState.mock.calls[0] as [URL];
+    expect(url.search).toBe('');
+  });
+
+  it('opens no create dialog on a plain visit to All albums', () => {
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(app.replaceState).not.toHaveBeenCalled();
   });
 
   it('deletes an owned album through the Frameleaf confirmation, keeping its items', async () => {
