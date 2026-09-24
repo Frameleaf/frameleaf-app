@@ -342,14 +342,17 @@ export class ImageEnrichmentService extends BaseService {
     // those would compete for the same pool and deadlock under parallel
     // bulk-mark actions.
     const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-      // An explicit owner mark or safe decision may repair a missing privacy projection row (FL-34);
-      // every other action still fails closed on it.
-      const isManualMark =
-        dto.action === AssetImageEnrichmentAction.MarkNsfw || dto.action === AssetImageEnrichmentAction.MarkSafe;
-      if (isManualMark || dto.action === AssetImageEnrichmentAction.AcceptNsfwResult) {
+      // the actions that may lock or unlock the asset take its group's rows first (FL-34)
+      if (
+        [
+          AssetImageEnrichmentAction.MarkNsfw,
+          AssetImageEnrichmentAction.MarkSafe,
+          AssetImageEnrichmentAction.AcceptNsfwResult,
+        ].includes(dto.action)
+      ) {
         await this.lockGroupRows(id, trx);
       }
-      const m = await this.getEnrichmentMetadata(id, trx, isManualMark);
+      const m = await this.getEnrichmentMetadata(id, trx);
 
       switch (dto.action) {
         case AssetImageEnrichmentAction.AcceptNsfwResult: {
@@ -1440,23 +1443,17 @@ export class ImageEnrichmentService extends BaseService {
   }
 
   /**
-   * `allowMissingPrivacy` lets an explicit owner mark or safe decision read an asset whose privacy
-   * projection row is missing, so its save can repair the row (FL-34); every other caller fails closed.
+   * Once the sidecars are authoritative the privacy row decides the sensitive verdict and review.
+   * A missing row is "no classification yet" (FL-34): the stored enrichment is read as it is, with no
+   * verdict laid over it, and the next save creates the row (`ForkPrivacyRepository.saveClassification`).
    */
-  private async getEnrichmentMetadata(
-    id: string,
-    kysely?: Kysely<DB>,
-    allowMissingPrivacy = false,
-  ): Promise<EnrichmentMetadata> {
+  private async getEnrichmentMetadata(id: string, kysely?: Kysely<DB>): Promise<EnrichmentMetadata> {
     const database = kysely ?? this.db;
     let authoritativePrivacy: PrivacySidecar | undefined;
     if (this.db) {
       const privacyRepository = new ForkPrivacyRepository(this.db);
       if (await privacyRepository.shouldReadSidecar(database)) {
         authoritativePrivacy = await privacyRepository.get(id, database);
-        if (!authoritativePrivacy && !allowMissingPrivacy) {
-          throw new Error(`Missing fork privacy sidecar for asset ${id}`);
-        }
       }
     }
     let metadata: EnrichmentMetadata;
