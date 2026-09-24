@@ -99,4 +99,65 @@ test.describe('Album', () => {
     await expect(page).toHaveURL(new RegExp(String.raw`/map\?albumId=${mapAlbum.id}`));
     await expect(mapMarker).toBeVisible();
   });
+
+  test('edits, links and deletes an album with the Frameleaf dialogs', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await utils.createAlbum(admin.accessToken, { albumName: 'Dialogs album' });
+
+    await page.goto('/albums');
+    const openActions = async (name: string) => {
+      await page
+        .getByRole('button', { name: `Actions for ${name}` })
+        .first()
+        .click();
+      return page.getByRole('menu', { name: `Actions for ${name}` });
+    };
+
+    // CollectionFormDialog (CollectionHeader.jsx:330-455) edits as well as creates (AL-2).
+    let menu = await openActions('Dialogs album');
+    await menu.getByRole('menuitem', { name: 'Edit' }).click();
+    const edit = page.getByRole('dialog', { name: 'Edit album' });
+    await expect(edit.getByLabel('Name')).toHaveValue('Dialogs album');
+    await edit.getByLabel('Name').fill('Dialogs album, renamed');
+    await edit.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved “Dialogs album, renamed”')).toBeVisible();
+
+    // Collections.jsx:349 "Create link" opens the shared-link form, which ends on "Link ready" (AL-7, AL-24).
+    menu = await openActions('Dialogs album, renamed');
+    await menu.getByRole('menuitem', { name: 'Create link' }).click();
+    const link = page.getByRole('dialog', { name: 'Create shared link' });
+    await expect(link.getByRole('switch', { name: /^Show metadata/ })).not.toBeChecked();
+    // Originals carry their EXIF and GPS, so download follows metadata (off and disabled until it is on).
+    const download = link.getByRole('switch', { name: /^Allow download/ });
+    await expect(download).not.toBeChecked();
+    await expect(download).toBeDisabled();
+    await link.getByRole('switch', { name: /^Show metadata/ }).check();
+    await expect(download).toBeEnabled();
+    await link.getByRole('button', { name: 'Create link', exact: true }).click();
+    const ready = page.getByRole('dialog', { name: 'Link ready' });
+    await expect(ready.getByLabel('Link address')).toHaveValue(/\/share\//);
+    await ready.getByRole('button', { name: 'Done' }).click();
+    await expect(ready).toHaveCount(0);
+
+    // DeleteDialog (CollectionHeader.jsx:747-786) in place of the legacy prompt (AL-4).
+    menu = await openActions('Dialogs album, renamed');
+    await menu.getByRole('menuitem', { name: 'Delete' }).click();
+    const remove = page.getByRole('dialog', { name: 'Delete “Dialogs album, renamed”?' });
+    await expect(remove).toContainText('It has no items, so nothing else changes.');
+    await remove.getByRole('button', { name: 'Delete album' }).click();
+    await expect(page.getByRole('article', { name: 'Dialogs album, renamed' })).toHaveCount(0);
+  });
+
+  test('opens the album inside the Frameleaf shell, without the legacy app bar', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    const album = await utils.createAlbum(admin.accessToken, { albumName: 'Shell album' });
+
+    await page.goto(`/albums/${album.id}`);
+    // AL-17: the breadcrumb leads back; the header offers Activity even before anyone else joins (AL-14).
+    const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(crumbs.getByRole('link', { name: 'Albums' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Activity, 0 entries' })).toBeVisible();
+    await crumbs.getByRole('link', { name: 'Albums' }).click();
+    await page.waitForURL(/\/albums(?:\?|$)/);
+  });
 });

@@ -42,13 +42,14 @@
     type PersonResponseDto,
     type StackResponseDto,
   } from '@immich/sdk';
+  import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import { CommandPaletteDefaultProvider } from '@immich/ui';
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
   import ActivityStatus from './ActivityStatus.svelte';
-  import ActivityViewer from './ActivityViewer.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
@@ -720,13 +721,10 @@
       {#if activityPanel}
         {@render activityPanel(asset)}
       {:else}
-        <ActivityViewer
-          disabled={!album.isActivityEnabled}
-          assetType={asset.type}
-          albumUsers={album.albumUsers}
-          albumId={album.id}
-          assetId={asset.id}
-        />
+        <!-- AL-18: the item's likes and comments in the Frameleaf activity panel (ActivityPanel.jsx). -->
+        <Theme theme="dark">
+          <ActivityPanel {album} assetId={asset.id} onClose={() => assetViewerManager.closeActivityPanel()} />
+        </Theme>
       {/if}
     </div>
   {/if}

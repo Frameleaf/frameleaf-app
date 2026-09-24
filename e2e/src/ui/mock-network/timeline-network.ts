@@ -152,6 +152,16 @@ export const setupTimelineMockApiRoutes = async (
     });
   });
 
+  // The album page offers Activity on every album, shared or not (CollectionHeader.jsx), so it
+  // reads the album's likes and comments on open; the mock album has none.
+  await context.route('**/api/activities**', async (route, request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({ json: pathname.endsWith('/statistics') ? { comments: 0, likes: 0 } : [] });
+  });
+
   await context.route('**/api/albums/**', async (route, request) => {
     const pathname = new URL(request.url()).pathname;
     if (pathname === '/api/albums/tree') {

@@ -206,4 +206,13 @@ test.describe('Shared Links', () => {
     await expect(page.locator(`[data-asset-id="${asset.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-asset-id="${asset2.id}"]`)).toHaveCount(1);
   });
+
+  test('the old edit address opens the list with the Frameleaf edit form (AL-23)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+
+    await page.goto(`/shared-links/${sharedLink.id}/edit`);
+    await page.waitForURL(/\/shared-links(?:\?|$)/);
+    await expect(page.getByRole('dialog', { name: 'Edit shared link' })).toBeVisible();
+    expect(new URL(page.url()).searchParams.has('edit')).toBe(false);
+  });
 });
