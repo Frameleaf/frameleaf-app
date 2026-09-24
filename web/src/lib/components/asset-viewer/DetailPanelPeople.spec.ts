@@ -69,7 +69,7 @@ describe('DetailPanelPeople', () => {
     renderPanel(true);
 
     expect(screen.getByText('Alex')).toBeInTheDocument();
-    expect(screen.getByText('frameleaf_faces_unnamed_person')).toBeInTheDocument();
+    expect(screen.getByText('unnamed_person')).toBeInTheDocument();
     expect(screen.getAllByTestId('unassigned-face')).toHaveLength(1);
     // One chip menu per face: Alex's and the unnamed face's.
     expect(screen.getAllByRole('button', { name: 'frameleaf_faces_options_for' })).toHaveLength(2);
@@ -79,7 +79,7 @@ describe('DetailPanelPeople', () => {
     renderPanel(false);
 
     expect(screen.getByText('Alex')).toBeInTheDocument();
-    expect(screen.queryByText('frameleaf_faces_unnamed_person')).toBeNull();
+    expect(screen.queryByText('unnamed_person')).toBeNull();
     expect(screen.queryByRole('button', { name: 'frameleaf_faces_options_for' })).toBeNull();
   });
 
@@ -88,6 +88,6 @@ describe('DetailPanelPeople', () => {
     renderPanel(true);
 
     expect(screen.queryByText('frameleaf_viewer_no_people')).toBeNull();
-    expect(screen.getByText('frameleaf_faces_unnamed_person')).toBeInTheDocument();
+    expect(screen.getByText('unnamed_person')).toBeInTheDocument();
   });
 });

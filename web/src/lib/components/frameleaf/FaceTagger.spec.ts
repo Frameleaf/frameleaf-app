@@ -4,7 +4,7 @@ import { init, register, waitLocale } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
-import { personFactory } from '@test-data/factories/person-factory';
+import { peopleListItemFactory, personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
@@ -17,8 +17,8 @@ import FaceTagger from './FaceTagger.svelte';
  */
 describe('FaceTagger', () => {
   const owner = userAdminFactory.build();
-  const alex = personFactory.build({ name: 'Alex', isHidden: false });
-  const bailey = personFactory.build({ name: 'Bailey', isHidden: false });
+  const alex = peopleListItemFactory.build({ name: 'Alex', isHidden: false });
+  const bailey = peopleListItemFactory.build({ name: 'Bailey', isHidden: false });
   const detectedFace = {
     id: 'face-1',
     imageWidth: 1000,

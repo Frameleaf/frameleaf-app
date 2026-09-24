@@ -28,7 +28,7 @@
   let value = $state('');
   let busy = $state(false);
   const today = DateTime.now().toISODate();
-  const name = $derived(isUnnamedPerson(person) ? $t('frameleaf_people_unnamed_person') : person.name);
+  const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
   const valid = $derived(value === '' || (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today));
   const age = $derived(valid && value ? ageInYears(value) : null);
   const unchanged = $derived((value || null) === (person.birthDate || null));
