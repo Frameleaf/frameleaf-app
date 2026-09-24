@@ -40,9 +40,9 @@ describe('the Command Center page (FL-71)', () => {
     expect(getAdminConfigWithRevision).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the Library Care screen separate', async () => {
+  it('sends the old Library Care screen to the Library care area', async () => {
     auth.user.isAdmin = true;
-    await expect(open('?screen=care')).resolves.toMatchObject({ screen: 'care', system: null });
+    await expect(open('?screen=care')).rejects.toMatchObject({ status: 307, location: '/user-settings?area=care' });
     expect(getAdminConfigWithRevision).not.toHaveBeenCalled();
   });
 });

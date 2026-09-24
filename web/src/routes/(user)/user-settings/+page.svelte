@@ -2,16 +2,14 @@
   /**
    * The Command Center (FL-71): the template's `screen === "admin"` in App.jsx, one full-screen
    * settings screen for every account under the top bar. An administrator also gets the server
-   * settings (`SystemSettings.svelte`); `?screen=care` is the template's separate Library Care screen.
+   * settings (`SystemSettings.svelte`). Library Care is the `care` area; `?screen=care` redirects there.
    */
-  import LibraryCareScreen from '$lib/components/frameleaf/LibraryCareScreen.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
   import { personalSections } from './personal-sections';
@@ -32,31 +30,21 @@
   <SectionBody {section} />
 {/snippet}
 
-{#if data.screen === 'care'}
-  <UserPageLayout title={data.meta.title}>
-    <Container size="large" center>
-      <Theme theme={appTheme}>
-        <LibraryCareScreen />
-      </Theme>
-    </Container>
-  </UserPageLayout>
-{:else}
-  <NavigationBar noBorder />
-  <Theme theme={appTheme}>
-    <div class="command-page">
-      {#if data.system}
-        <SystemSettings
-          current={data.system.current}
-          defaultConfig={data.system.defaultConfig}
-          {personal}
-          {sectionBody}
-        />
-      {:else}
-        <SettingsHost sections={personal} {sectionBody} />
-      {/if}
-    </div>
-  </Theme>
-{/if}
+<NavigationBar noBorder />
+<Theme theme={appTheme}>
+  <div class="command-page">
+    {#if data.system}
+      <SystemSettings
+        current={data.system.current}
+        defaultConfig={data.system.defaultConfig}
+        {personal}
+        {sectionBody}
+      />
+    {:else}
+      <SettingsHost sections={personal} {sectionBody} />
+    {/if}
+  </div>
+</Theme>
 
 <style>
   .command-page {
