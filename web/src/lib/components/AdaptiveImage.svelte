@@ -222,8 +222,10 @@
 <div class="relative size-full overflow-hidden" bind:this={ref}>
   {@render backdrop?.()}
 
+  <!-- FL-35: the fitted photo is what the thumbnail zoom pairs with its tile ($lib/frameleaf/viewer-zoom). -->
   <div
     class="pointer-events-none absolute overflow-hidden"
+    data-viewer-hero
     style:inset-inline-start={insetInlineStart}
     style:top
     style:width={displayWidth}

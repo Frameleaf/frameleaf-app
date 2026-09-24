@@ -230,3 +230,32 @@
     corner-shape: squircle;
   }
 }
+
+/*
+ * FL-35: the thumbnail-to-viewer zoom (apple-style.css:333-352, 471-473). `$lib/frameleaf/viewer-zoom`
+ * names the tile and the viewer's fitted photo `fl-hero` for one navigation and copies the spring
+ * token onto the root as `--fl-hero-easing`, since the transition's pseudo-elements hang off <html>,
+ * outside every .frameleaf root. Under Reduce Motion the script never starts a transition; the rule
+ * below is the CSS half of the same check.
+ */
+::view-transition-group(fl-hero) {
+  animation-duration: 520ms;
+  animation-timing-function: var(--fl-hero-easing, ease-out);
+}
+::view-transition-old(fl-hero),
+::view-transition-new(fl-hero) {
+  animation: none;
+  mix-blend-mode: normal;
+  height: 100%;
+  object-fit: cover;
+  overflow: clip;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(fl-hero) {
+    animation: none;
+  }
+}
