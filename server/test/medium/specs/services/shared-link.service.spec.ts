@@ -409,6 +409,28 @@ describe(SharedLinkService.name, () => {
       expect(assetIds).toEqual(expect.arrayContaining([asset1.id, asset2.id]));
     });
 
+    it('tells a public viewer only the link owner display name (FL-83)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser({ name: 'Riley Owner', email: 'riley.private@example.com' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+
+      const sharedLink = await ctx.get(SharedLinkRepository).create({
+        key: randomBytes(16),
+        id: factory.uuid(),
+        userId: user.id,
+        allowUpload: false,
+        type: SharedLinkType.Individual,
+        assetIds: [asset.id],
+      });
+
+      const auth = factory.auth({ user, sharedLink: { id: sharedLink.id, userId: user.id } });
+      const result = await sut.getMine(auth, []);
+
+      expect(result.owner).toEqual({ name: 'Riley Owner' });
+      expect(JSON.stringify(result)).not.toContain('riley.private@example.com');
+    });
+
     it('should not return trashed assets for an individual shared link', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

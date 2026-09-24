@@ -10,6 +10,7 @@ import { ClassificationRepository } from 'src/repositories/classification.reposi
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -31,6 +32,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       ClassificationRepository,
       MapRepository,
+      PartnerRepository,
       SmartAlbumRepository,
       TagRepository,
       UserRepository,
@@ -267,6 +269,103 @@ describe(AlbumService.name, () => {
       expect(elevatedMarkers.map(({ id }) => id)).toEqual(
         expect.arrayContaining([visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id, tagOnly.id]),
       );
+    });
+
+    it('narrows an album map by the settings sheet without reaching past the album (FL-51)', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: '2026-03-01T00:00:00.000Z' });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: owner.id,
+        visibility: AssetVisibility.Archive,
+        fileCreatedAt: '2026-03-02T00:00:00.000Z',
+      });
+      const { asset: ownerFavorite } = await ctx.newAsset({
+        ownerId: owner.id,
+        isFavorite: true,
+        fileCreatedAt: '2025-06-01T00:00:00.000Z',
+      });
+      const { asset: memberFavorite } = await ctx.newAsset({
+        ownerId: member.id,
+        isFavorite: true,
+        fileCreatedAt: '2026-03-03T00:00:00.000Z',
+      });
+      const { asset: outside } = await ctx.newAsset({ ownerId: owner.id, isFavorite: true });
+      for (const [index, asset] of [plain, archived, ownerFavorite, memberFavorite, outside].entries()) {
+        await ctx.newExif({ assetId: asset.id, latitude: 10 + index, longitude: 10 + index });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [
+        plain.id,
+        archived.id,
+        ownerFavorite.id,
+        memberFavorite.id,
+      ]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      const ownerAuth = factory.auth({ user: { id: owner.id } });
+      const memberAuth = factory.auth({ user: { id: member.id } });
+
+      // no filters: the album as before, archived items included, nothing from outside it
+      await expect(sut.getMapMarkers(ownerAuth, album.id).then(ids)).resolves.toEqual(
+        [plain.id, archived.id, ownerFavorite.id, memberFavorite.id].sort(),
+      );
+      await expect(sut.getMapMarkers(ownerAuth, album.id, { isArchived: false }).then(ids)).resolves.toEqual(
+        [plain.id, ownerFavorite.id, memberFavorite.id].sort(),
+      );
+      // favorites are each viewer's own, and never the favorite outside the album
+      await expect(sut.getMapMarkers(ownerAuth, album.id, { isFavorite: true }).then(ids)).resolves.toEqual([
+        ownerFavorite.id,
+      ]);
+      await expect(sut.getMapMarkers(memberAuth, album.id, { isFavorite: true }).then(ids)).resolves.toEqual([
+        memberFavorite.id,
+      ]);
+      await expect(
+        sut
+          .getMapMarkers(ownerAuth, album.id, {
+            fileCreatedAfter: new Date('2026-01-01T00:00:00.000Z'),
+            fileCreatedBefore: new Date('2026-12-31T00:00:00.000Z'),
+          })
+          .then(ids),
+      ).resolves.toEqual([plain.id, archived.id, memberFavorite.id].sort());
+    });
+
+    it("leaves a partner's or another member's album items out only when the sheet says so (FL-51)", async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: viewer } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: viewer.id });
+
+      const { asset: own } = await ctx.newAsset({ ownerId: viewer.id });
+      const { asset: partnerItem } = await ctx.newAsset({ ownerId: partner.id });
+      const { asset: memberItem } = await ctx.newAsset({ ownerId: member.id });
+      const { asset: partnerOutside } = await ctx.newAsset({ ownerId: partner.id });
+      for (const [index, asset] of [own, partnerItem, memberItem, partnerOutside].entries()) {
+        await ctx.newExif({ assetId: asset.id, latitude: 20 + index, longitude: 20 + index });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: viewer.id }, [own.id, partnerItem.id, memberItem.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: partner.id, role: AlbumUserRole.Editor });
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const ids = (markers: { id: string }[]) => markers.map(({ id }) => id).sort();
+      const auth = factory.auth({ user: { id: viewer.id } });
+
+      await expect(
+        sut.getMapMarkers(auth, album.id, { withPartners: true, withSharedAlbums: true }).then(ids),
+      ).resolves.toEqual([own.id, partnerItem.id, memberItem.id].sort());
+      await expect(sut.getMapMarkers(auth, album.id, { withPartners: false }).then(ids)).resolves.toEqual(
+        [own.id, memberItem.id].sort(),
+      );
+      await expect(sut.getMapMarkers(auth, album.id, { withSharedAlbums: false }).then(ids)).resolves.toEqual(
+        [own.id, partnerItem.id].sort(),
+      );
+      // neither switch reaches the partner's item outside the album
+      await expect(
+        sut.getMapMarkers(auth, album.id, { withPartners: false, withSharedAlbums: false }).then(ids),
+      ).resolves.toEqual([own.id]);
     });
   });
 

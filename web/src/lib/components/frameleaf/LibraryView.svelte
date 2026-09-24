@@ -38,10 +38,7 @@
   } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
-  import {
-    assetMultiSelectManager,
-    type AssetMultiSelectManager,
-  } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
@@ -80,11 +77,6 @@
     loading?: boolean;
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
-    /**
-     * Mirror the session's selection into the existing multi-select manager, so the bulk actions
-     * (FL-32, FL-36) act on exactly what the library shows as selected. One selection, two readers.
-     */
-    multiSelect?: AssetMultiSelectManager | null;
     /** FL-30: rail and top bar. */
     shell?: Snippet;
     /** Rendered above the results toolbar, inside the scrolling area. */
@@ -131,6 +123,13 @@
     /** FL-36: the information panel. Work opens it above tablet width only. */
     infoPanel?: Snippet;
     empty?: Snippet;
+    /**
+     * A public shared-link page (prototype `PublicViewer.jsx`): header, select bar and grid only. The
+     * results toolbar (Timeline/Browse/Work, Filter) and the Work information panel are private-library
+     * chrome, so neither is drawn, and the grid keeps the plain Browse look whatever layout this device
+     * last used in the library.
+     */
+    publicView?: boolean;
   };
 
   let {
@@ -147,7 +146,6 @@
     selectAll = 'matching',
     loading = false,
     enableRouting = false,
-    multiSelect = assetMultiSelectManager,
     bulkContext,
     downloadFileName,
     beforeAction,
@@ -167,6 +165,7 @@
     viewer,
     infoPanel,
     empty,
+    publicView = false,
   }: Props = $props();
 
   timelineManager = new TimelineManager();
@@ -180,8 +179,10 @@
   });
 
   const manager = $derived(timelineManager as TimelineManager);
+  /** The layout the grid is drawn in; a public page has no layout switch and stays on Browse. */
+  const gridLayout = $derived(publicView ? 'browse' : session.layout);
   // Work opens the information panel only above tablet width; on phones it never auto-opens.
-  const showInfoPanel = $derived(session.layout === 'work' && !mediaQueryManager.maxMd);
+  const showInfoPanel = $derived(gridLayout === 'work' && !mediaQueryManager.maxMd);
   const selecting = $derived(session.selection.length > 0);
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */
   const comparing = $derived(session.state.view === 'compare');
@@ -459,14 +460,12 @@
 
   /**
    * The session owns the selection; the multi-select manager is kept in step with it so the
-   * existing bulk actions keep acting on the same items. Assets that are not loaded cannot be
+   * existing bulk actions (FL-32, FL-36) keep acting on the same items. Assets that are not loaded cannot be
    * mirrored, so a "select everything matching" selection still has to be resolved by its owner.
    */
   $effect(() => {
+    const multiSelect = assetMultiSelectManager;
     const ids = new Set(session.selection);
-    if (!multiSelect) {
-      return;
-    }
     for (const asset of multiSelect.assets) {
       if (!ids.has(asset.id)) {
         multiSelect.removeAssetFromMultiselectGroup(asset.id);
@@ -649,7 +648,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={session.layout} bind:this={root}>
+<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={gridLayout} bind:this={root}>
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
@@ -658,8 +657,8 @@
         timelineManager={manager}
         {session}
         {ratingFor}
-        captionFor={session.layout === 'work' ? captionFor : undefined}
-        showDayHeaders={session.layout !== 'browse'}
+        captionFor={gridLayout === 'work' ? captionFor : undefined}
+        showDayHeaders={gridLayout !== 'browse'}
         {enableRouting}
         {selectionMode}
         {singleSelect}
@@ -671,12 +670,14 @@
       >
         {#snippet header()}
           {@render children?.()}
-          <ResultsToolbar {session} {onOpenFilterPanel}>
-            {@render toolbar?.()}
-            {#if session.selection.length >= 2 && !snapshot && !selectionMode}
-              <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
-            {/if}
-          </ResultsToolbar>
+          {#if !publicView}
+            <ResultsToolbar {session} {onOpenFilterPanel}>
+              {@render toolbar?.()}
+              {#if session.selection.length >= 2 && !snapshot && !selectionMode}
+                <Button onclick={() => session.patchView({ view: 'compare' })}>{$t('frameleaf_compare_title')}</Button>
+              {/if}
+            </ResultsToolbar>
+          {/if}
         {/snippet}
       </LibraryTimeline>
 
