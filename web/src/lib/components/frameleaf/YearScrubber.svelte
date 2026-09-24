@@ -24,6 +24,11 @@
     viewportTopMonthScrollPercent?: number;
     timelineScrollPercent?: number;
     onScrub?: ScrubberListener;
+    /**
+     * Jump to the start of a month, for the keyboard (prototype `TimelineScrubber` keyDown →
+     * `jumpTo`). Without it the keys scrub to the month's place on the track.
+     */
+    onJump?: (month: { year: number; month: number }) => void;
     scrubberWidth?: number;
   };
 
@@ -34,6 +39,7 @@
     viewportTopMonthScrollPercent = 0,
     timelineScrollPercent = 0,
     onScrub,
+    onJump,
     scrubberWidth = $bindable(),
   }: Props = $props();
 
@@ -103,6 +109,11 @@
       return null;
     }
     const value = clamp01(fraction);
+    // Above the first month is the lead-in (the page header): that is still the newest month, not
+    // the fallback to the last one.
+    if (value < months[0].start) {
+      return months[0];
+    }
     return months.find((month) => value >= month.start && value < month.end) ?? (months.at(-1) as Marked);
   };
 
@@ -179,6 +190,10 @@
       return;
     }
     event.preventDefault();
+    if (onJump) {
+      onJump({ year: month.year, month: month.month });
+      return;
+    }
     scrubTo(month, month.start);
   };
 
@@ -221,6 +236,7 @@
       <i
         class="fl-scrub-tick"
         class:is-current={month.key === currentKey}
+        data-year-month={month.key}
         style:top="{month.center * 100}%"
         style:width="{4 + Math.round((month.assetCount / maxCount) * 8)}px"
         aria-hidden="true"

@@ -377,7 +377,9 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
     }
     case 'select-group': {
       const selection = selectGroup(session.selection, action.ids, action.checked);
-      const anchor = action.checked ? (action.ids.at(-1) ?? session.anchorId) : session.anchorId;
+      // As in the prototype, a day checkbox never moves the shift-click anchor: only a tile toggle
+      // sets one, so a shift-click after selecting a day with no anchor selects just that tile.
+      const anchor = session.anchorId;
       return withSelection(session, selection, anchor && selection.includes(anchor) ? anchor : null);
     }
     case 'select-all': {
