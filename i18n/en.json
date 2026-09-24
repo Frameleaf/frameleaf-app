@@ -5993,6 +5993,7 @@
   "frameleaf_settings_search_results": "{count, plural, one {# matching section} other {# matching sections}}",
   "frameleaf_shared_spaces": "Shared spaces",
   "frameleaf_sharing": {
+    "albums_load_failed": "Could not load your albums",
     "allow_download": "Allow download",
     "allow_download_description": "Viewers can save originals, one at a time or as an archive.",
     "allow_upload": "Allow upload",
@@ -6038,6 +6039,7 @@
     "link_ready_title": "Link ready",
     "link_types": "Link types",
     "links_intro": "Anyone with a link can view what you shared, even without an account. Passwords, expiry and permissions can be changed at any time.",
+    "links_load_failed": "Could not load your shared links",
     "location_already_seen": "{name} may already have seen locations on items shared before this was turned off.",
     "location_hidden_notice": "Locations are now hidden from {name}.",
     "location_not_sharing_back": "You are not sharing your library with {name}, so there are no locations of yours to share.",

@@ -1,13 +1,15 @@
 import type { ServerConfigDto } from '@immich/sdk';
-import { getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@immich/sdk';
+import { getAllAlbums, getAllSharedLinks, getSharedLinkById, removeSharedLink, SharedLinkType } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
+import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 import SharedLinkList from './SharedLinkList.svelte';
 
 vi.mock('$lib/utils');
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
   getAllSharedLinks: vi.fn(),
@@ -88,6 +90,9 @@ describe('SharedLinkList', () => {
     expect(dialog).toHaveTextContent(
       'Anyone using the link for Rockies loses access immediately. Your photos and the album itself are not affected.',
     );
+    // "Delete link" takes focus first, and both buttons sit in the dialog's footer (SharedLinks.jsx:396-412).
+    expect(screen.getByRole('button', { name: en.delete_link })).toHaveFocus();
+    expect(screen.getByRole('button', { name: en.delete_link }).closest('footer')).not.toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: en.delete_link }));
 
     await waitFor(() => expect(removeSharedLink).toHaveBeenCalledWith({ id: link.id }));
@@ -234,5 +239,27 @@ describe('SharedLinkList', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Open public page for Rockies' }));
     expect(open).toHaveBeenCalledWith(expect.stringContaining('/s/rockies'), '_blank', 'noopener,noreferrer');
+  });
+
+  it('says so when the links cannot be loaded, instead of failing silently', async () => {
+    vi.mocked(getAllSharedLinks).mockRejectedValue(new Error('offline'));
+    render(SharedLinkList);
+    await waitFor(() =>
+      expect(handleError).toHaveBeenCalledWith(expect.any(Error), en.frameleaf_sharing.links_load_failed),
+    );
+    expect(await screen.findByText(en.frameleaf_sharing.empty_links_title)).toBeInTheDocument();
+  });
+
+  it('says so when the albums for a new link cannot be loaded', async () => {
+    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    vi.mocked(getAllAlbums).mockRejectedValue(new Error('offline'));
+    render(SharedLinkList);
+    await screen.findByText(en.frameleaf_sharing.empty_links_title);
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.new_link }));
+
+    await waitFor(() =>
+      expect(handleError).toHaveBeenCalledWith(expect.any(Error), en.frameleaf_sharing.albums_load_failed),
+    );
   });
 });
