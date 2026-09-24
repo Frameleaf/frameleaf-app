@@ -1,4 +1,5 @@
 import {
+  type ArchiveOperationResponseDto,
   confirmArchiveOperation,
   createArchiveOperation,
   getArchiveOperations,
@@ -38,6 +39,13 @@ export const ARCHIVE_OPERATION_MAX_ITEMS = 50_000;
 
 /** How long after an archive its Undo is offered again on a page that was reloaded. */
 export const ARCHIVE_UNDO_RESTORE_MS = 30 * 60 * 1000;
+
+/**
+ * The operation was submitted or confirmed from this session, so this session may offer its Undo.
+ * Read defensively until the regenerated SDK carries `currentSession`.
+ */
+export const isCurrentSession = (operation: ArchiveOperationResponseDto) =>
+  (operation as ArchiveOperationResponseDto & { currentSession?: boolean }).currentSession === true;
 
 /** The server refused to confirm a prepared selection because it expired (HTTP 410). */
 export const isExpiredSelection = (error: unknown) => isHttpError(error) && error.status === 410;
