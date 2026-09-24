@@ -64,7 +64,7 @@ describe(BulkOperationService.name, () => {
   let duplicateDecisions: { applyGroup: any; undoGroup: any; getLockedIds: any };
   let mediaHealth: { applyBulkEntry: any };
   let classification: { applyBulkBatch: any };
-  let archiveOperations: { publish: any; restore: any };
+  let archiveOperations: { publish: any; restore: any; skipUnreached: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
@@ -124,7 +124,7 @@ describe(BulkOperationService.name, () => {
         ),
     };
 
-    archiveOperations = { publish: vi.fn(), restore: vi.fn() };
+    archiveOperations = { publish: vi.fn(), restore: vi.fn(), skipUnreached: vi.fn().mockResolvedValue(0) };
 
     sut = new BulkOperationService(
       mocks.logger as never,
@@ -250,6 +250,35 @@ describe(BulkOperationService.name, () => {
         expect(outcomes).toContainEqual(
           expect.objectContaining({ id: theirs, reasonKey: 'frameleaf_bulk_reason_no_permission' }),
         );
+      });
+
+      it('records an item Locked since the job started as skipped in the operation, for either direction', async () => {
+        for (const action of [MediaOperationBulkAction.Archive, MediaOperationBulkAction.Unarchive]) {
+          archiveOperations.skipUnreached.mockClear();
+          const snapshot = snapshotOf({ action, payload: { archiveOperationId } });
+          const [lockedSince, ...rest] = snapshot.assetIds;
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+          vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([lockedSince]));
+          archiveOperations.publish.mockResolvedValue(new Map(rest.map((id) => [id, 'archived'])));
+          archiveOperations.restore.mockResolvedValue(new Map(rest.map((id) => [id, 'undone'])));
+
+          const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+
+          expect(archiveOperations.skipUnreached).toHaveBeenCalledWith(
+            authStub.user1.user.id,
+            archiveOperationId,
+            jobId,
+            [lockedSince],
+          );
+          const touched =
+            action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
+          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest);
+          expect(outcomes).toContainEqual({
+            id: lockedSince,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_locked',
+          });
+        }
       });
 
       it('archives an ordinary job without an operation as before', async () => {
