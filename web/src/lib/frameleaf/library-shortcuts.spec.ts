@@ -145,4 +145,18 @@ describe('help content', () => {
     // The pointer gesture is documented even though no key press can match it.
     expect(timeline.general.some((row) => row.key.includes('Click'))).toBe(true);
   });
+
+  it('uses the timeline wording where a shared key does something else there', () => {
+    const timeline = libraryShortcutGroups(translate, { surface: 'timeline', mac: false });
+    const viewer = libraryShortcutGroups(translate, { surface: 'viewer', mac: false });
+    const arrows = (groups: typeof timeline) => groups.general.find((row) => row.id === 'navigate-previous');
+    expect(arrows(timeline)?.action).toBe('t:frameleaf_library_shortcut_move_focus');
+    expect(arrows(viewer)?.action).toBe('t:previous_or_next_photo');
+    expect(timeline.general.find((row) => row.id === 'go-to-date')?.action).toBe(
+      't:frameleaf_library_shortcut_go_to_date',
+    );
+    // Shift+Delete deletes permanently only in the viewer.
+    expect(timeline.actions.find((row) => row.id === 'delete')?.info).toBeUndefined();
+    expect(viewer.actions.find((row) => row.id === 'delete')?.info).toBe('t:shift_to_permanent_delete');
+  });
 });

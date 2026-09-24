@@ -38,6 +38,12 @@ export type LibraryShortcut = {
   value?: number;
   /** Matched, but folded into a sibling row in the help (for example the second arrow key). */
   helpHidden?: boolean;
+  /**
+   * The timeline's own wording where a shared key does something else there (prototype
+   * `shortcuts.mjs`: ← → move focus in the timeline and step photos in the viewer). `info: null`
+   * drops a note that only holds in the viewer.
+   */
+  timeline?: { label?: Translations; info?: Translations | null };
 };
 
 const BOTH: readonly LibrarySurface[] = ['timeline', 'viewer'];
@@ -45,7 +51,15 @@ const TIMELINE: readonly LibrarySurface[] = ['timeline'];
 const VIEWER: readonly LibrarySurface[] = ['viewer'];
 
 export const libraryShortcuts: readonly LibraryShortcut[] = [
-  { id: 'select', key: 'x', keys: ['X'], label: 'select', group: 'general', surfaces: BOTH },
+  {
+    id: 'select',
+    key: 'x',
+    keys: ['X'],
+    label: 'select',
+    group: 'general',
+    surfaces: BOTH,
+    timeline: { label: 'frameleaf_library_shortcut_select_focused' },
+  },
   {
     id: 'navigate-previous',
     key: 'ArrowLeft',
@@ -53,6 +67,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     label: 'previous_or_next_photo',
     group: 'general',
     surfaces: BOTH,
+    timeline: { label: 'frameleaf_library_shortcut_move_focus' },
   },
   {
     id: 'navigate-next',
@@ -154,7 +169,15 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     group: 'general',
     surfaces: VIEWER,
   },
-  { id: 'go-to-date', key: 'g', keys: ['G'], label: 'navigate_to_time', group: 'general', surfaces: BOTH },
+  {
+    id: 'go-to-date',
+    key: 'g',
+    keys: ['G'],
+    label: 'navigate_to_time',
+    group: 'general',
+    surfaces: BOTH,
+    timeline: { label: 'frameleaf_library_shortcut_go_to_date' },
+  },
   { id: 'focus-search', key: '/', keys: ['/'], label: 'search_your_photos', group: 'general', surfaces: BOTH },
   { id: 'close', key: 'Escape', keys: ['Esc'], label: 'back_close_deselect', group: 'general', surfaces: BOTH },
   { id: 'help', key: '?', shift: 'any', keys: ['?'], label: 'keyboard_shortcuts', group: 'general', surfaces: BOTH },
@@ -246,6 +269,8 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     info: 'shift_to_permanent_delete',
     group: 'actions',
     surfaces: BOTH,
+    // In the timeline Delete moves the focused item or the selection to the trash; Shift adds nothing.
+    timeline: { info: null },
   },
 ];
 
@@ -328,12 +353,12 @@ export const isMacPlatform = (nav: { platform?: string; userAgent?: string } | n
 export const formatShortcutKeys = (entry: LibraryShortcut, { mac = isMacPlatform() }: { mac?: boolean } = {}) =>
   entry.keys.map((key) => (key === 'Mod' ? (mac ? '⌘' : 'Ctrl') : key));
 
-export type ShortcutHelpEntry = { key: string[]; action: string; info?: string };
+export type ShortcutHelpEntry = { id: string; key: string[]; action: string; info?: string };
 export type ShortcutHelpGroups = { general: ShortcutHelpEntry[]; actions: ShortcutHelpEntry[] };
 
 /**
- * The help content, in the shape the existing shortcuts modal already renders. `translate` is the
- * caller's `$t`, so the table stays free of display strings.
+ * The help content, grouped as the shortcuts sheet lists it (prototype `shortcutGroups`).
+ * `translate` is the caller's `$t`, so the table stays free of display strings.
  */
 export const libraryShortcutGroups = (
   translate: (key: Translations) => string,
@@ -348,10 +373,14 @@ export const libraryShortcutGroups = (
     if (entry.helpHidden || (surface && !entry.surfaces.includes(surface))) {
       continue;
     }
+    const override = surface === 'timeline' ? entry.timeline : undefined;
+    const label = override?.label ?? entry.label;
+    const info = override && 'info' in override ? override.info : entry.info;
     groups[entry.group].push({
+      id: entry.id,
       key: formatShortcutKeys(entry, { mac }),
-      action: translate(entry.label),
-      ...(entry.info && { info: translate(entry.info) }),
+      action: translate(label),
+      ...(info && { info: translate(info) }),
     });
   }
   return groups;
