@@ -8,7 +8,12 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
-import { analyticsAreaUrl, areaForSection, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+import {
+  analyticsAreaUrl,
+  areaForSection,
+  commandCenterUrl,
+  serverSectionKey as legacyServerSectionKey,
+} from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
@@ -19,7 +24,8 @@ export const asMaintenanceSection = (value: string | null | undefined): Maintena
   MAINTENANCE_SECTIONS.find((key) => key === value);
 
 /** The server settings section an `isOpen` key opens; the OAuth group sits in the sign-in methods form. */
-const serverSectionKey = (key: string) => (key === OpenQueryParam.OAUTH ? 'authentication' : key);
+const serverSectionKey = (key: string) =>
+  key === OpenQueryParam.OAUTH ? 'authentication' : legacyServerSectionKey(key);
 
 const asQueueSlug = (name: QueueName) => {
   return name.replaceAll(/[A-Z]/g, (m) => '-' + m.toLowerCase());

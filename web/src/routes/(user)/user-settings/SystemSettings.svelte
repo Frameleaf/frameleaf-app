@@ -17,7 +17,6 @@
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
   import CareHealthSection from './sections/CareHealthSection.svelte';
-  import JobSettings from '../../admin/system-settings/JobSettings.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
   import MachineLearningSettings from '../../admin/system-settings/MachineLearningSettings.svelte';
@@ -82,7 +81,6 @@
     mdiPaletteOutline,
     mdiRobotOutline,
     mdiServerOutline,
-    mdiSync,
     mdiTrashCanOutline,
     mdiTruckOutline,
     mdiUpdate,
@@ -198,14 +196,6 @@
       subtitle: $t('frameleaf_cc_section_health_description'),
       key: 'integrity-checks',
       icon: mdiFileCheckOutline,
-    },
-    {
-      admin: true,
-      component: JobSettings,
-      title: $t('admin.job_settings'),
-      subtitle: $t('admin.job_settings_description'),
-      key: 'job',
-      icon: mdiSync,
     },
     {
       admin: true,

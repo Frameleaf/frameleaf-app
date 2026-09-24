@@ -4,24 +4,33 @@
    * Compute & jobs → Queues & jobs, on the server's real queues. It replaces Immich's queue cards
    * and queue page, keeping every command they had:
    *
-   * - header: All queues (in a queue), Resume n paused, Concurrency (the central settings draft's
-   *   Job settings, with its pending count), Enrichment tasks and the primary Create job;
+   * - header: All queues (in a queue), Resume n paused, Concurrency (the template's concurrency
+   *   dialog on the central settings draft, with its pending count), Enrichment tasks and the
+   *   primary Create job (the template's maintenance job dialog);
    * - the four metrics, the search/category/status filters and the queue table with each queue's
    *   status, counts, workers and pause/resume;
    * - one queue (`?queue=<slug>`, `&tab=`): its pause/resume and start commands (run missing,
    *   reprocess all, refresh faces), the Active/Waiting/Failed/History job tabs listed from the
-   *   server, Clear waiting jobs, Remove failed records, and the jobs-over-time graph.
+   *   server with each job's attempts and last error, Clear waiting jobs, Remove failed records,
+   *   and the jobs-over-time graph;
+   * - the template's "Queue action history": the commands sent from this device.
    *
-   * Queue commands go through the template's review (what it does, scope, affected now); the
-   * destructive ones ask for an acknowledgement, which also covers the face reset confirmation.
-   * The template's account filter, per-job account/worker/attempt/error columns, "Retry failed" and
-   * the device-local action history have no server source and are not shown.
+   * Every queue command, from the page or the command palette, goes through the template's review
+   * (what it does, scope, affected now); the destructive ones ask for an acknowledgement, which
+   * also covers the face reset confirmation. The template's account filter, per-job account and
+   * worker columns and "Retry failed" have no server source and are not shown.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import JobsConcurrencyDialog from '$lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte';
+  import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
+  import QueueGraph from '$lib/components/frameleaf/jobs/QueueGraph.svelte';
+  import QueueStorageMigrationDescription from '$lib/components/frameleaf/jobs/QueueStorageMigrationDescription.svelte';
+  import { historyFor, readJobHistory, recordJobHistory, type JobHistoryEntry } from '$lib/frameleaf/job-history';
   import {
+    FAILED_CLEAN_LIMIT,
     isFeatureOff,
     isJobTab,
     JOB_QUEUE_CATEGORIES,
@@ -30,37 +39,47 @@
     JOB_TAB_STATUSES,
     JOB_TABS,
     jobCounts,
+    jobNameKey,
+    jobQueue,
     jobQueueStatus,
     jobTabCount,
     matchesQueueFilters,
     searchTerms,
     startBlocked,
     sumJobCounts,
+    manualJobKey,
     type JobQueueDefinition,
     type JobQueueStatus,
     type JobTab,
+    type ManualJobDefinition,
   } from '$lib/frameleaf/job-queues';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { fromQueueSlug, Route } from '$lib/route';
-  import { getQueueActions, getQueuesActions, handlePauseQueue, handleResumeQueue } from '$lib/services/queue.service';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
+  import EnrichmentTasksModal from '$lib/modals/EnrichmentTasksModal.svelte';
+  import {
+    handleClearFailedJobs,
+    handleClearWaitingJobs,
+    handlePauseQueue,
+    handleResumeQueue,
+  } from '$lib/services/queue.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import QueueStorageMigrationDescription from '../../../routes/admin/queues/QueueStorageMigrationDescription.svelte';
-  import QueueGraph from '../../../routes/admin/queues/[name]/QueueGraph.svelte';
   import {
-    emptyQueue,
+    createJob,
     getQueueJobs,
     QueueCommand,
     QueueName,
     runQueueCommandLegacy,
+    type JobName,
     type QueueJobResponseDto,
     type QueueJobStatus,
     type QueueResponseDto,
   } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Icon } from '@immich/ui';
+  import { CommandPaletteDefaultProvider, Icon, modalManager, type ActionItem } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAlertCircleOutline,
@@ -70,6 +89,8 @@
     mdiClockOutline,
     mdiClose,
     mdiCogOutline,
+    mdiDeleteSweepOutline,
+    mdiHistory,
     mdiImageSearchOutline,
     mdiMagnify,
     mdiPause,
@@ -120,7 +141,9 @@
   ]);
   const pausedQueues = $derived(rows.filter(({ queue, definition }) => queue.isPaused && definition.canPause));
 
-  const { CreateJob, ManageConcurrency, EnrichmentTasks } = $derived(getQueuesActions($t, queues));
+  let concurrencyOpen = $state(false);
+  let createOpen = $state(false);
+  const openEnrichmentTasks = () => void modalManager.show(EnrichmentTasksModal, {});
 
   /** Concurrency as the settings draft has it; a queue the settings do not list runs one job at a time. */
   type JobSettings = Record<string, { concurrency: number } | undefined>;
@@ -167,14 +190,30 @@
   };
   let main: HTMLElement | undefined = $state();
 
+  // ---- the template's "Queue action history": the commands sent from this device -----------------
+
+  let history = $state<JobHistoryEntry[]>(readJobHistory());
+  const shownHistory = $derived(historyFor(history, selected?.definition.name));
+  const historyDetail = (entry: JobHistoryEntry) => {
+    const definition = jobQueue(entry.queue);
+    return [
+      definition ? title(definition) : $t('frameleaf_jobs_all_queues'),
+      $t('frameleaf_jobs_review_affected_count', { values: { count: entry.affected } }),
+    ].join(' · ');
+  };
+
   // ---- the template's review of a queue command --------------------------------------------------
 
-  type Command = 'pause' | 'resume' | 'clear-waiting' | 'remove-failed' | 'run' | 'force' | 'refresh' | 'resume-all';
+  type Command =
+    'pause' | 'resume' | 'clear-waiting' | 'remove-failed' | 'run' | 'force' | 'refresh' | 'resume-all' | 'manual';
   type Review = {
     command: Command;
     name?: QueueName;
+    manual?: ManualJobDefinition;
     title: string;
     detail: string;
+    /** A limit the server applies to this command, stated in the review. */
+    note?: string;
     affected: number;
     dangerous: boolean;
   };
@@ -186,10 +225,15 @@
   const runLabel = (definition: JobQueueDefinition) => $t(`frameleaf_jobs_run_${definition.run}` as Translations);
   const forceLabel = (definition: JobQueueDefinition) => $t(`frameleaf_jobs_force_${definition.force}` as Translations);
 
-  const request = (command: Command, row?: { definition: JobQueueDefinition; queue: QueueResponseDto }) => {
+  const request = (
+    command: Command,
+    row?: { definition: JobQueueDefinition; queue: QueueResponseDto },
+    manual?: ManualJobDefinition,
+  ) => {
     const queueCounts = row ? jobCounts(row.queue.statistics) : undefined;
     const faces = row?.definition.force === 'reset';
-    const reviews: Record<Command, Omit<Review, 'command' | 'name'>> = {
+    const failed = queueCounts?.failed ?? 0;
+    const reviews: Record<Command, Omit<Review, 'command' | 'name' | 'manual'>> = {
       pause: {
         title: $t('frameleaf_jobs_pause_queue'),
         detail: $t('frameleaf_jobs_review_pause'),
@@ -211,7 +255,12 @@
       'remove-failed': {
         title: $t('frameleaf_jobs_remove_failed'),
         detail: $t('frameleaf_jobs_review_remove_failed'),
-        affected: queueCounts?.failed ?? 0,
+        // The server removes at most 1,000 failed records per request.
+        affected: Math.min(failed, FAILED_CLEAN_LIMIT),
+        note:
+          failed > FAILED_CLEAN_LIMIT
+            ? $t('frameleaf_jobs_review_remove_failed_limit', { values: { limit: FAILED_CLEAN_LIMIT, total: failed } })
+            : undefined,
         dangerous: true,
       },
       run: {
@@ -238,19 +287,30 @@
         affected: pausedQueues.length,
         dangerous: false,
       },
+      manual: {
+        title: manual ? $t(manualJobKey(manual.name) as Translations) : '',
+        detail: manual ? $t(`${manualJobKey(manual.name)}_description` as Translations) : '',
+        affected: 1,
+        dangerous: manual?.dangerous ?? false,
+      },
     };
-    review = { command, name: row?.definition.name, ...reviews[command] };
+    review = { command, name: manual?.queue ?? row?.definition.name, manual, ...reviews[command] };
     acknowledged = false;
     reviewOpen = true;
   };
 
-  const perform = async ({ command, name }: Review) => {
+  const perform = async ({ command, name, manual }: Review) => {
     if (command === 'resume-all') {
       for (const { queue } of pausedQueues) {
-        await runQueueCommandLegacy({
-          name: queue.name,
-          queueCommandDto: { command: QueueCommand.Resume, force: false },
-        });
+        await handleResumeQueue(queue);
+      }
+      return;
+    }
+    if (command === 'manual') {
+      if (manual) {
+        const dto = { name: manual.name };
+        await createJob({ jobCreateDto: dto });
+        eventManager.emit('JobCreate', { dto });
       }
       return;
     }
@@ -258,20 +318,20 @@
       return;
     }
     switch (command) {
-      case 'pause':
+      case 'pause': {
+        await handlePauseQueue({ name });
+        return;
+      }
       case 'resume': {
-        const queue = byName.get(name);
-        if (queue) {
-          await (command === 'pause' ? handlePauseQueue(queue) : handleResumeQueue(queue));
-        }
+        await handleResumeQueue({ name });
         return;
       }
       case 'clear-waiting': {
-        await emptyQueue({ name, queueDeleteDto: { failed: false } });
+        await handleClearWaitingJobs({ name });
         return;
       }
       case 'remove-failed': {
-        await runQueueCommandLegacy({ name, queueCommandDto: { command: QueueCommand.ClearFailed, force: false } });
+        await handleClearFailedJobs({ name });
         return;
       }
       case 'run':
@@ -295,6 +355,13 @@
     try {
       await perform(current);
       notice = $t('frameleaf_jobs_notice_done', { values: { title: current.title } });
+      history = recordJobHistory({
+        id: crypto.randomUUID(),
+        at: new Date().toISOString(),
+        title: current.title,
+        queue: current.command === 'resume-all' ? undefined : current.name,
+        affected: current.affected,
+      });
       reviewOpen = false;
     } catch (error_) {
       error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
@@ -373,10 +440,7 @@
     };
   });
 
-  const humanize = (name: string) => {
-    const words = name.replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
-    return words.charAt(0).toUpperCase() + words.slice(1);
-  };
+  const jobTitle = (name: JobName) => $t(jobNameKey(name) as Translations);
   const subject = (job: QueueJobResponseDto) => {
     const id = job.data?.id;
     return typeof id === 'string' ? id : '';
@@ -385,7 +449,7 @@
     jobs.filter((job) => {
       const terms = searchTerms(query);
       const haystack =
-        `${job.name} ${humanize(job.name)} ${job.id ?? ''} ${JSON.stringify(job.data ?? {})}`.toLowerCase();
+        `${job.name} ${jobTitle(job.name)} ${job.id ?? ''} ${JSON.stringify(job.data ?? {})}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     }),
   );
@@ -425,12 +489,68 @@
         ? $t('frameleaf_jobs_start_busy')
         : '';
   };
+
+  const selectManual = (job: ManualJobDefinition) => {
+    // As in the template, physical deduplication is prepared and reviewed on its Storage page.
+    if (job.opensDeduplication) {
+      void goto(Route.physicalDeduplication());
+      return;
+    }
+    request('manual', undefined, job);
+  };
+
+  // The command palette offers the page's own commands, with its labels, through the same review.
+  const pageActions: ActionItem[] = $derived([
+    {
+      title: $t('frameleaf_jobs_create_job'),
+      icon: mdiPlus,
+      shortcuts: { shift: true, key: 'n' },
+      onAction: () => (createOpen = true),
+    },
+    { title: $t('frameleaf_jobs_concurrency'), icon: mdiTuneVariant, onAction: () => (concurrencyOpen = true) },
+    { title: $t('frameleaf_jobs_enrichment_tasks'), icon: mdiImageSearchOutline, onAction: openEnrichmentTasks },
+    {
+      title: $t('frameleaf_jobs_resume_paused', { values: { count: pausedQueues.length } }),
+      icon: mdiPlay,
+      $if: () => pausedQueues.length > 0,
+      onAction: () => request('resume-all'),
+    },
+  ]);
+  const queueActions: ActionItem[] = $derived(
+    selected
+      ? [
+          {
+            title: $t('frameleaf_jobs_pause_queue'),
+            icon: mdiPause,
+            $if: () => !!selected && selected.definition.canPause && !selected.queue.isPaused,
+            onAction: () => selected && request('pause', selected),
+          },
+          {
+            title: $t('frameleaf_jobs_resume_queue'),
+            icon: mdiPlay,
+            $if: () => !!selected?.queue.isPaused,
+            onAction: () => selected && request('resume', selected),
+          },
+          {
+            title: $t('frameleaf_jobs_clear_waiting'),
+            icon: mdiClose,
+            $if: () => !!selected && selected.queue.statistics.waiting + selected.queue.statistics.paused > 0,
+            onAction: () => selected && request('clear-waiting', selected),
+          },
+          {
+            title: $t('frameleaf_jobs_remove_failed'),
+            icon: mdiDeleteSweepOutline,
+            $if: () => !!selected && selected.queue.statistics.failed > 0,
+            onAction: () => selected && request('remove-failed', selected),
+          },
+        ]
+      : [],
+  );
 </script>
 
-<CommandPaletteDefaultProvider name={$t('admin.queues')} actions={[CreateJob, ManageConcurrency, EnrichmentTasks]} />
+<CommandPaletteDefaultProvider name={$t('frameleaf_jobs_title')} actions={pageActions} />
 {#if selected}
-  {@const { Pause, Resume, Empty, RemoveFailedJobs } = getQueueActions($t, selected.queue)}
-  <CommandPaletteDefaultProvider name={title(selected.definition)} actions={[Pause, Resume, Empty, RemoveFailedJobs]} />
+  <CommandPaletteDefaultProvider name={title(selected.definition)} actions={queueActions} />
 {/if}
 
 <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
@@ -453,17 +573,17 @@
           {$t('frameleaf_jobs_resume_paused', { values: { count: pausedQueues.length } })}
         </Button>
       {/if}
-      <Button onclick={() => void ManageConcurrency.onAction(ManageConcurrency)}>
+      <Button onclick={() => (concurrencyOpen = true)}>
         <Icon icon={mdiTuneVariant} size="1rem" aria-hidden={true} />
         {pendingConcurrency > 0
           ? $t('frameleaf_jobs_concurrency_pending', { values: { count: pendingConcurrency } })
           : $t('frameleaf_jobs_concurrency')}
       </Button>
-      <Button onclick={() => void EnrichmentTasks.onAction(EnrichmentTasks)}>
+      <Button onclick={openEnrichmentTasks}>
         <Icon icon={mdiImageSearchOutline} size="1rem" aria-hidden={true} />
         {$t('frameleaf_jobs_enrichment_tasks')}
       </Button>
-      <Button variant="primary" onclick={() => void CreateJob.onAction(CreateJob)}>
+      <Button variant="primary" onclick={() => (createOpen = true)}>
         <Icon icon={mdiPlus} size="1rem" aria-hidden={true} />
         {$t('frameleaf_jobs_create_job')}
       </Button>
@@ -597,7 +717,7 @@
                   aria-label={$t('frameleaf_jobs_queue_workers', {
                     values: { name, count: workersOf(definition.name) },
                   })}
-                  onclick={() => void ManageConcurrency.onAction(ManageConcurrency)}
+                  onclick={() => (concurrencyOpen = true)}
                 >
                   <strong>{workersOf(definition.name)}</strong>
                   {#if isFixed(definition.name)}
@@ -783,9 +903,12 @@
                     detailOpen = true;
                   }}
                 >
-                  {humanize(job.name)}
+                  {jobTitle(job.name)}
                   {#if subject(job)}
                     <small>{subject(job)}</small>
+                  {/if}
+                  {#if job.status === 'failed' && job.failedReason}
+                    <span class="jm-job-error">{job.failedReason}</span>
                   {/if}
                 </button>
               </th>
@@ -795,7 +918,7 @@
                 <button
                   type="button"
                   class="jm-icon-button"
-                  aria-label={$t('frameleaf_jobs_details_for', { values: { name: humanize(job.name) } })}
+                  aria-label={$t('frameleaf_jobs_details_for', { values: { name: jobTitle(job.name) } })}
                   onclick={() => {
                     detail = job;
                     detailOpen = true;
@@ -843,6 +966,29 @@
       {/if}
     </details>
   {/if}
+
+  <details class="jm-history">
+    <summary>
+      <Icon icon={mdiHistory} size="16px" aria-hidden={true} />
+      {$t('frameleaf_jobs_history')} <span>{shownHistory.length}</span>
+    </summary>
+    <p>{$t('frameleaf_jobs_history_help')}</p>
+    {#if shownHistory.length === 0}
+      <p class="jm-muted">{$t('frameleaf_jobs_history_empty')}</p>
+    {:else}
+      <ol>
+        {#each shownHistory as entry (entry.id)}
+          <li>
+            <div>
+              <strong>{entry.title}</strong>
+              <span>{historyDetail(entry)}</span>
+            </div>
+            <time datetime={entry.at}>{timestamp(Date.parse(entry.at))}</time>
+          </li>
+        {/each}
+      </ol>
+    {/if}
+  </details>
 </section>
 
 {#snippet queueStatus(value: JobQueueStatus | QueueJobStatus)}
@@ -863,6 +1009,9 @@
           <dd>{$t('frameleaf_jobs_review_affected_count', { values: { count: review.affected } })}</dd>
         </div>
       </dl>
+      {#if review.note}
+        <p class="jm-muted">{review.note}</p>
+      {/if}
       <p class="jm-muted">{$t('frameleaf_jobs_review_filter_note')}</p>
       {#if review.dangerous}
         <label class="jm-confirm">
@@ -884,22 +1033,32 @@
   {/if}
 </Dialog>
 
-<Dialog title={detail ? humanize(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
+<Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
   {#if detail}
     <div class="jm-job-detail">
       {@render queueStatus(detail.status)}
       <dl>
         <div>
           <dt>{$t('frameleaf_jobs_detail_job')}</dt>
-          <dd>{humanize(detail.name)}</dd>
+          <dd>{jobTitle(detail.name)}</dd>
         </div>
+        {#if detail.attemptsMade !== undefined}
+          <div>
+            <dt>{$t('frameleaf_jobs_detail_attempt')}</dt>
+            <dd>{number(detail.attemptsMade)}</dd>
+          </div>
+        {/if}
         <div>
           <dt>{$t('frameleaf_jobs_detail_created')}</dt>
           <dd>{timestamp(detail.timestamp)}</dd>
         </div>
       </dl>
       {#if detail.status === 'failed'}
-        <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
+        <div class="jm-failure">
+          <h3>{$t('frameleaf_jobs_detail_error')}</h3>
+          <p>{detail.failedReason || $t('frameleaf_jobs_detail_error_none')}</p>
+          <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
+        </div>
       {/if}
       <details>
         <summary>{$t('frameleaf_jobs_detail_technical')}</summary>
@@ -921,6 +1080,18 @@
     </div>
   {/if}
 </Dialog>
+
+{#if draft}
+  <JobsConcurrencyDialog bind:open={concurrencyOpen} store={draft} disabled={flags.configFile} {title} />
+{/if}
+<JobsCreateDialog
+  bind:open={createOpen}
+  queueTitle={(name) => {
+    const definition = jobQueue(name);
+    return definition ? title(definition) : name;
+  }}
+  onSelect={selectManual}
+/>
 
 <style>
   /* The template's `jobs-manager.css`, on the Frameleaf tokens. */
@@ -1351,6 +1522,64 @@
     border-top: 1px solid var(--fl-border);
     margin-top: 24px;
     padding-top: 15px;
+  }
+  .jm-history summary > span {
+    font-size: 11px;
+    background: var(--fl-panel);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .jm-history ol {
+    padding: 0;
+    list-style: none;
+  }
+  .jm-history li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .jm-history li strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .jm-history li span,
+  .jm-history time {
+    font-size: 11px;
+    color: var(--fl-muted);
+  }
+  .jm-history time {
+    white-space: nowrap;
+  }
+  .jm-job-error {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: var(--jm-red);
+    font-size: 11px;
+    margin-top: 7px;
+    max-width: 350px;
+    line-height: 1.5;
+  }
+  .jm-failure {
+    margin: 14px 0;
+    padding: 13px;
+    border: 1px solid color-mix(in srgb, var(--jm-red) 40%, transparent);
+    border-radius: 6px;
+  }
+  .jm-failure h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: var(--jm-red);
+  }
+  .jm-failure p {
+    margin: 0 0 10px;
+    overflow-wrap: anywhere;
   }
   .jm-history summary {
     cursor: pointer;

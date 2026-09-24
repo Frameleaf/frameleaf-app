@@ -9,6 +9,8 @@
  * with `force: true` (reprocess everything) and "refresh" with no force (face detection only).
  */
 import {
+  JobName,
+  ManualJobName,
   QueueJobStatus,
   QueueName,
   type QueueResponseDto,
@@ -311,8 +313,10 @@ export const startBlocked = (queue: QueueResponseDto, definition: JobQueueDefini
   if (isFeatureOff(definition, flags)) {
     return 'feature-off' as const;
   }
-  const counts = jobCounts(queue.statistics);
-  if (queue.isPaused || counts.active > 0 || counts.pending > 0) {
+  // As the template's review (`jobs-data.mjs`): active, waiting or paused work, or a paused queue,
+  // blocks a start; delayed (scheduled) jobs keep their schedule and do not.
+  const { active, waiting, paused } = queue.statistics;
+  if (queue.isPaused || active > 0 || waiting > 0 || paused > 0) {
     return 'busy' as const;
   }
   return '' as const;
@@ -345,3 +349,74 @@ export const matchesQueueFilters = (
   );
 
 export const searchTerms = (query: string) => query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+/** A queue's concurrency limit, as the settings take it (the template's `validateConcurrency`). */
+export const CONCURRENCY_MIN = 1;
+export const CONCURRENCY_MAX = 1000;
+export const isValidConcurrency = (value: unknown) =>
+  (typeof value === 'number' || typeof value === 'string') &&
+  /^\d+$/.test(String(value)) &&
+  Number.isSafeInteger(Number(value)) &&
+  Number(value) >= CONCURRENCY_MIN &&
+  Number(value) <= CONCURRENCY_MAX;
+
+/** How many failed records one "Remove failed records" clears (the server cleans at most 1,000 at a time). */
+export const FAILED_CLEAN_LIMIT = 1000;
+
+/**
+ * The template's maintenance tasks (`MANUAL_JOBS` in `jobs-data.mjs`) on the server's manual jobs,
+ * with the queue each runs in. Dangerous tasks need the review's acknowledgement; physical
+ * deduplication opens its Storage page instead of running from here. "Collect library analytics"
+ * is production's own task, kept from the old Create job list.
+ */
+export type ManualJobDefinition = {
+  name: ManualJobName;
+  queue: QueueName;
+  dangerous?: boolean;
+  /** Opens Storage → Physical deduplication, where a plan is prepared and reviewed. */
+  opensDeduplication?: boolean;
+};
+
+export const MANUAL_JOBS: readonly ManualJobDefinition[] = Object.freeze([
+  { name: ManualJobName.PersonCleanup, queue: QueueName.BackgroundTask },
+  { name: ManualJobName.TagCleanup, queue: QueueName.BackgroundTask },
+  { name: ManualJobName.UserCleanup, queue: QueueName.BackgroundTask, dangerous: true },
+  { name: ManualJobName.MemoryCleanup, queue: QueueName.BackgroundTask },
+  { name: ManualJobName.MemoryCreate, queue: QueueName.BackgroundTask },
+  { name: ManualJobName.BackupDatabase, queue: QueueName.BackupDatabase },
+  { name: ManualJobName.BestPhotosBackfill, queue: QueueName.BackgroundTask },
+  { name: ManualJobName.AnalyticsCollect, queue: QueueName.BackgroundTask },
+  {
+    name: ManualJobName.PhysicalDeduplicationDryRun,
+    queue: QueueName.StorageTemplateMigration,
+    opensDeduplication: true,
+  },
+  {
+    name: ManualJobName.PhysicalDeduplicationApply,
+    queue: QueueName.StorageTemplateMigration,
+    dangerous: true,
+    opensDeduplication: true,
+  },
+  { name: ManualJobName.IntegrityMissingFiles, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityUntrackedFiles, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityChecksumMismatch, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityMissingFilesRefresh, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityUntrackedFilesRefresh, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityChecksumMismatchRefresh, queue: QueueName.IntegrityCheck },
+  { name: ManualJobName.IntegrityMissingFilesDeleteAll, queue: QueueName.IntegrityCheck, dangerous: true },
+  { name: ManualJobName.IntegrityUntrackedFilesDeleteAll, queue: QueueName.IntegrityCheck, dangerous: true },
+  { name: ManualJobName.IntegrityChecksumMismatchDeleteAll, queue: QueueName.IntegrityCheck, dangerous: true },
+]);
+
+const snake = (value: string) =>
+  value
+    .replaceAll(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replaceAll(/([A-Z])([A-Z][a-z])/g, '$1_$2')
+    .replaceAll('-', '_')
+    .toLowerCase();
+
+/** The i18n key stem of a manual task: `frameleaf_jobs_manual_<name>` and `…_description`. */
+export const manualJobKey = (name: ManualJobName) => `frameleaf_jobs_manual_${snake(name)}`;
+
+/** The i18n key of a job handler's customer-facing name (`frameleaf_jobs_name_<name>`). */
+export const jobNameKey = (name: JobName) => `frameleaf_jobs_name_${snake(name)}`;

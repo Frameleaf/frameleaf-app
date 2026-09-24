@@ -1,5 +1,10 @@
-import { QueueName, type QueueResponseDto, type ServerFeaturesDto } from '@immich/sdk';
+import { JobName, ManualJobName, QueueName, type QueueResponseDto, type ServerFeaturesDto } from '@immich/sdk';
+import en from '../../../../i18n/en.json';
 import {
+  isValidConcurrency,
+  jobNameKey,
+  MANUAL_JOBS,
+  manualJobKey,
   isFeatureOff,
   JOB_QUEUES,
   jobCounts,
@@ -73,6 +78,9 @@ describe('Job manager queue catalogue (FL-71)', () => {
     expect(startBlocked(queue(QueueName.Ocr), ocr, flags({ ocr: false }))).toBe('feature-off');
     expect(startBlocked(queue(QueueName.Ocr, { waiting: 1 }), ocr, flags())).toBe('busy');
     expect(startBlocked(queue(QueueName.Ocr, {}, true), ocr, flags())).toBe('busy');
+    expect(startBlocked(queue(QueueName.Ocr, { paused: 1 }), ocr, flags())).toBe('busy');
+    // Scheduled (delayed) jobs keep their schedule and do not block a start, as in the template.
+    expect(startBlocked(queue(QueueName.Ocr, { delayed: 4 }), ocr, flags())).toBe('');
   });
 
   it('treats the enrichment coordinator as off only when both of its features are off', () => {
@@ -101,5 +109,43 @@ describe('Job manager queue catalogue (FL-71)', () => {
     expect(matchesQueueFilters(busy, ocr, { ...filters, terms: ['faces'], category: 'all', status: 'all' })).toBe(
       false,
     );
+  });
+
+  it('names every job handler and maintenance task in the customer language', () => {
+    const messages = en as unknown as Record<string, string>;
+    for (const name of Object.values(JobName)) {
+      expect(messages[jobNameKey(name)], name).toBeTruthy();
+    }
+    for (const job of MANUAL_JOBS) {
+      expect(messages[manualJobKey(job.name)], job.name).toBeTruthy();
+      expect(messages[`${manualJobKey(job.name)}_description`], job.name).toBeTruthy();
+    }
+    // The old Create job list's tasks all stay available.
+    for (const name of [
+      ManualJobName.PersonCleanup,
+      ManualJobName.TagCleanup,
+      ManualJobName.UserCleanup,
+      ManualJobName.MemoryCleanup,
+      ManualJobName.MemoryCreate,
+      ManualJobName.BackupDatabase,
+      ManualJobName.BestPhotosBackfill,
+      ManualJobName.AnalyticsCollect,
+      ManualJobName.IntegrityMissingFiles,
+      ManualJobName.IntegrityUntrackedFiles,
+      ManualJobName.IntegrityChecksumMismatch,
+      ManualJobName.IntegrityMissingFilesRefresh,
+      ManualJobName.IntegrityUntrackedFilesRefresh,
+      ManualJobName.IntegrityChecksumMismatchRefresh,
+    ]) {
+      expect(
+        MANUAL_JOBS.some((job) => job.name === name),
+        name,
+      ).toBe(true);
+    }
+  });
+
+  it('accepts whole-number concurrency from 1 to 1,000', () => {
+    expect([1, '1000', 250].every((value) => isValidConcurrency(value))).toBe(true);
+    expect([0, 1001, '1.5', '', 'ten', null, -1].some((value) => isValidConcurrency(value))).toBe(false);
   });
 });

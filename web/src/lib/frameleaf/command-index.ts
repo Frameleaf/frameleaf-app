@@ -303,7 +303,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     descriptionKey: 'admin.integrity_checks_settings_description',
     icon: mdiFileCheckOutline,
   },
-  { key: 'job', titleKey: 'admin.job_settings', descriptionKey: 'admin.job_settings_description', icon: mdiSync },
   {
     key: 'external-library',
     titleKey: 'admin.library_settings',
