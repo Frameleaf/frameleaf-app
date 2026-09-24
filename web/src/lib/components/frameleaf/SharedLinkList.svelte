@@ -83,6 +83,8 @@
     loading = true;
     try {
       links = await getAllSharedLinks({});
+    } catch (error) {
+      handleError(error, $t('frameleaf_sharing.links_load_failed'));
     } finally {
       loading = false;
     }
@@ -238,8 +240,13 @@
   const openPicker = async () => {
     dialog = { kind: 'pick' };
     pickOpen = true;
-    albums = await getAllAlbums({ isOwned: true });
-    pickAlbumId = albums[0]?.id ?? '';
+    try {
+      albums = await getAllAlbums({ isOwned: true });
+      pickAlbumId = albums[0]?.id ?? '';
+    } catch (error) {
+      pickOpen = false;
+      handleError(error, $t('frameleaf_sharing.albums_load_failed'));
+    }
   };
 
   const startCreateFromAlbum = () => {
@@ -478,12 +485,13 @@
 {#if dialog?.kind === 'delete'}
   {@const link = dialog.link}
   <!-- AL-22: the prototype's delete dialog says who loses what, and what is kept. -->
+  <!-- The prototype focuses "Delete link" first and keeps both buttons in the dialog footer (SharedLinks.jsx:396-412). -->
   <Dialog title={$t('delete_shared_link')} closeLabel={$t('close')} bind:open={deleteOpen}>
     <p>{$t('frameleaf_sharing.delete_link_body', { values: { name: titleOf(link) } })}</p>
-    <div class="sl-dialog-actions">
+    {#snippet actions()}
       <Button onclick={() => (deleteOpen = false)}>{$t('cancel')}</Button>
-      <Button variant="primary" onclick={confirmDelete}>{$t('delete_link')}</Button>
-    </div>
+      <Button variant="primary" initialFocus onclick={confirmDelete}>{$t('delete_link')}</Button>
+    {/snippet}
   </Dialog>
 {/if}
 
