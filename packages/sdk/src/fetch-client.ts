@@ -1329,6 +1329,14 @@ export type RecentlyAddedResponse = {
     /** Whether the recently added page appears in the web sidebar */
     sidebarWeb: boolean;
 };
+export type SavedSearch = {
+    /** Name shown in the search palette */
+    name: string;
+    /** The search body to run, as the client sends it to the search endpoints */
+    query: {
+        [key: string]: any;
+    };
+};
 export type SharedLinksResponse = {
     /** Whether shared links are enabled */
     enabled: boolean;
@@ -1355,6 +1363,8 @@ export type UserPreferencesResponseDto = {
     recentlyAdded: RecentlyAddedResponse;
     /** Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves */
     revision: string;
+    /** Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked */
+    savedSearches?: SavedSearch[];
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
 };
@@ -1460,6 +1470,8 @@ export type UserPreferencesUpdateDto = {
     purchase?: PurchaseUpdate;
     ratings?: RatingsUpdate;
     recentlyAdded?: RecentlyAddedUpdate;
+    /** Saved searches, replacing the whole list (at most 50). Only the account itself can change them */
+    savedSearches?: SavedSearch[];
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
 };
@@ -1850,6 +1862,120 @@ export type AnalyticsHostDto = {
     /** Bytes */
     volumeUsedBytes: number | null;
 };
+export type AnalyticsYearCountDto = {
+    count: number;
+    year: number;
+};
+export type AnalyticsFocalLengthDto = {
+    count: number;
+    key: AnalyticsFocalLengthDtoKey;
+};
+export type AnalyticsHdrDto = {
+    dolbyVisionVideos: number;
+    /** PQ or HLG transfer, or Dolby Vision */
+    hdrVideos: number;
+    /** Videos whose stream metadata has been read; the only ones HDR can be told for */
+    probedVideos: number;
+};
+export type AnalyticsNamedCountDto = {
+    count: number;
+    kind: AnalyticsNamedCountKind;
+    /** Null for the other and unknown rows */
+    name: string | null;
+};
+export type AnalyticsOrientationDto = {
+    count: number;
+    key: AnalyticsOrientationDtoKey;
+};
+export type AnalyticsPersonCountDto = {
+    /** Items showing them */
+    count: number;
+    /** Person id */
+    id: string;
+    name: string;
+};
+export type AnalyticsPeopleAndPlacesDto = {
+    cities: number;
+    countries: number;
+    /** Visible faces on the items */
+    faces: number;
+    geotagged: number;
+    itemsWithFaces: number;
+    /** itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems */
+    itemsWithoutFaces: number;
+    /** Named, visible people of the owner seen on the items */
+    namedPeople: number;
+    /** The owner's visible pets confirmed on the items */
+    pets: number;
+    /** Items per city, then every other city, then no city */
+    places: AnalyticsNamedCountDto[];
+    /** Most photographed named people; overlapping, as one item can show several */
+    topPeople: AnalyticsPersonCountDto[];
+};
+export type AnalyticsPhotoFormatDto = {
+    count: number;
+    key: AnalyticsPhotoFormatDtoKey;
+};
+export type AnalyticsPunchcardCellDto = {
+    count: number;
+    /** Hour of the local capture time */
+    hour: number;
+    /** ISO weekday of the local capture time, 1 = Monday */
+    weekday: number;
+};
+export type AnalyticsLargestFileDto = {
+    /** Bytes */
+    bytes: number;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsLongestVideoDto = {
+    durationMs: number;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsOldestCaptureDto = {
+    date: string;
+    /** File name; null unless the owner reads their own scope */
+    name: string | null;
+};
+export type AnalyticsRecordsDto = {
+    largestFile: (AnalyticsLargestFileDto) | null;
+    longestVideo: (AnalyticsLongestVideoDto) | null;
+    oldestCapture: (AnalyticsOldestCaptureDto) | null;
+    /** All videos together */
+    videoDurationMs: number;
+    /** videoDurationMs in hours, one decimal */
+    videoHours: number;
+};
+export type AnalyticsVideoResolutionDto = {
+    count: number;
+    key: AnalyticsVideoResolutionDtoKey;
+};
+export type AnalyticsInsightsDto = {
+    /** Items per local capture year, all time */
+    capturesByYear: AnalyticsYearCountDto[];
+    /** Every bucket, in order; adds up to summary.items */
+    focalLengths: AnalyticsFocalLengthDto[];
+    /** Null when no video stream has been read, so HDR cannot be told */
+    hdr: (AnalyticsHdrDto) | null;
+    /** Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise) */
+    hiddenItems: number;
+    /** Items per lens model, then every other lens, then no lens */
+    lenses: AnalyticsNamedCountDto[];
+    /** Photos with a Live Photo motion part */
+    livePhotos: number;
+    /** Every bucket; adds up to summary.items. Panorama is 2:1 or wider */
+    orientation: AnalyticsOrientationDto[];
+    peopleAndPlaces: (AnalyticsPeopleAndPlacesDto) | null;
+    /** Every format; adds up to summary.photos, and RAW equals summary.raw */
+    photoFormats: AnalyticsPhotoFormatDto[];
+    /** All 168 weekday and hour cells of the local capture time */
+    punchcard: AnalyticsPunchcardCellDto[];
+    records: AnalyticsRecordsDto;
+    /** Every bucket; adds up to summary.videos */
+    videoResolutions: AnalyticsVideoResolutionDto[];
+};
 export type AnalyticsMetadataDto = {
     field: AnalyticsMetadataField;
     missing: number;
@@ -1938,6 +2064,8 @@ export type AnalyticsReportResponseDto = {
     generatedAt: string;
     history: AnalyticsHistoryDto;
     host: AnalyticsHostDto;
+    /** Dashboard breakdowns of the same items as summary. People, places and file names are only for the owner reading their own scope */
+    insights?: AnalyticsInsightsDto;
     metadata: AnalyticsMetadataDto[];
     processing: AnalyticsProcessingDto;
     range: AnalyticsRange;
@@ -2724,6 +2852,8 @@ export type AssetEditsCreateDto = {
 export type ImageDescriptionEnrichmentResponseDto = {
     appliedDescription: boolean;
     appliedTags: boolean;
+    /** The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise */
+    confidence?: number | null;
     context?: string;
     description?: string;
     /** The processing destination that generated the description */
@@ -6215,6 +6345,8 @@ export type AskSearchPlanDto = {
 export type SearchFacetCountResponseDto = {
     /** Number of assets with this facet value */
     count: number;
+    /** Display name when the value is an id (a person or a tag); the viewer's own name for it */
+    label?: string | null;
     /** Facet value */
     value: string;
 };
@@ -6272,6 +6404,154 @@ export type SearchExploreResponseDto = {
     /** Explore field name */
     fieldName: string;
     items: SearchExploreItem[];
+};
+export type SearchFacetsDto = {
+    /** Filter by album IDs */
+    albumIds?: string[];
+    /** Filter by city name */
+    city?: string | null;
+    /** Filter by country name */
+    country?: string | null;
+    /** Filter by creation date (after) */
+    createdAfter?: string;
+    /** Filter by creation date (before) */
+    createdBefore?: string;
+    /** Filter by description text */
+    description?: string;
+    /** Most frequent values per facet (default 10) */
+    facetLimit?: number;
+    /** Facets to count, each once (repeats are ignored); every facet when omitted */
+    facets?: SearchFacetField[];
+    filter?: SearchFilter;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by encoded status */
+    isEncoded?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** Filter by motion photo status */
+    isMotion?: boolean;
+    /** Filter assets not in any album */
+    isNotInAlbum?: boolean;
+    /** Filter by offline status */
+    isOffline?: boolean;
+    /** Filter by lens model */
+    lensModel?: string | null;
+    /** Library ID to filter by */
+    libraryId?: string | null;
+    /** Filter by camera make */
+    make?: string | null;
+    /** Filter by camera model */
+    model?: string | null;
+    /** Filter by OCR text content */
+    ocr?: string;
+    /** Filter by person IDs */
+    personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
+    /** Filter by rating [1-5], or null for unrated */
+    rating?: number | null;
+    /** Filter by state/province name */
+    state?: string | null;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter by tag IDs */
+    tagIds?: string[] | null;
+    /** Filter by taken date (after) */
+    takenAfter?: string;
+    /** Filter by taken date (before) */
+    takenBefore?: string;
+    /** Filter by trash date (after) */
+    trashedAfter?: string;
+    /** Filter by trash date (before) */
+    trashedBefore?: string;
+    "type"?: AssetTypeEnum;
+    /** Filter by update date (after) */
+    updatedAfter?: string;
+    /** Filter by update date (before) */
+    updatedBefore?: string;
+    visibility?: AssetVisibility;
+};
+export type SearchFacetsResponseDto = {
+    /** Per facet, the most frequent values, busiest first. type, rating and isFavorite always add up to total; people, places, cameras, lenses and tags count assets that have a value */
+    facets: SearchFacetResponseDto[];
+    /** Number of assets the search body matches, as POST /search/statistics reports */
+    total: number;
+};
+export type SearchHistogramDto = {
+    /** Filter by album IDs */
+    albumIds?: string[];
+    /** Filter by city name */
+    city?: string | null;
+    /** Filter by country name */
+    country?: string | null;
+    /** Filter by creation date (after) */
+    createdAfter?: string;
+    /** Filter by creation date (before) */
+    createdBefore?: string;
+    /** Filter by description text */
+    description?: string;
+    filter?: SearchFilter;
+    /** Bucket size */
+    granularity?: SearchHistogramGranularity;
+    imageEnrichment?: ImageEnrichmentFilter;
+    /** Filter by encoded status */
+    isEncoded?: boolean;
+    /** Filter by favorite status */
+    isFavorite?: boolean;
+    /** Filter by motion photo status */
+    isMotion?: boolean;
+    /** Filter assets not in any album */
+    isNotInAlbum?: boolean;
+    /** Filter by offline status */
+    isOffline?: boolean;
+    /** Filter by lens model */
+    lensModel?: string | null;
+    /** Library ID to filter by */
+    libraryId?: string | null;
+    /** Filter by camera make */
+    make?: string | null;
+    /** Filter by camera model */
+    model?: string | null;
+    /** Filter by OCR text content */
+    ocr?: string;
+    /** Filter by person IDs */
+    personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
+    /** Filter by rating [1-5], or null for unrated */
+    rating?: number | null;
+    /** Filter by state/province name */
+    state?: string | null;
+    /** Return only suppressed content. Requires an elevated session. */
+    suppressedOnly?: boolean;
+    /** Filter by tag IDs */
+    tagIds?: string[] | null;
+    /** Filter by taken date (after) */
+    takenAfter?: string;
+    /** Filter by taken date (before) */
+    takenBefore?: string;
+    /** Filter by trash date (after) */
+    trashedAfter?: string;
+    /** Filter by trash date (before) */
+    trashedBefore?: string;
+    "type"?: AssetTypeEnum;
+    /** Filter by update date (after) */
+    updatedAfter?: string;
+    /** Filter by update date (before) */
+    updatedBefore?: string;
+    visibility?: AssetVisibility;
+};
+export type SearchHistogramBucketDto = {
+    count: number;
+    /** First local capture date of the bucket (YYYY-MM-DD) */
+    date: string;
+};
+export type SearchHistogramResponseDto = {
+    /** Non-empty buckets by local capture date, oldest first */
+    buckets: SearchHistogramBucketDto[];
+    granularity: SearchHistogramGranularity;
+    /** Sum of every bucket; equals POST /search/statistics for the same body */
+    total: number;
 };
 export type MetadataSearchDto = {
     /** Filter by album IDs */
@@ -6521,6 +6801,12 @@ export type SmartSearchDto = {
     withDeleted?: boolean;
     /** Include EXIF data in response */
     withExif?: boolean;
+};
+export type SmartSearchStatisticsResponseDto = {
+    /** More than 1000 assets match; total is the cap */
+    capped: boolean;
+    /** Assets smart search would rank for this body, counted up to 1000 */
+    total: number;
 };
 export type StatisticsSearchDto = {
     /** Filter by album IDs */
@@ -8002,6 +8288,18 @@ export type TimeBucketsResponseDto = {
     /** Number of assets in this time bucket */
     count: number;
     /** Time bucket identifier in YYYY-MM-DD format representing the start of the time period */
+    timeBucket: string;
+};
+export type TimelineHighlightResponseDto = {
+    /** Number of assets in this year or month, the same as the time buckets report */
+    count: number;
+    /** The next best assets in capture order (month cards only), never including the key photo */
+    highlightAssetIds: string[];
+    /** Key photo: highest Best Photos score, then highest star rating, then most recent capture */
+    keyAssetId: string | null;
+    /** Up to three most frequent places (city, else state, else country), busiest first. Empty when the viewer may not see locations */
+    places: string[];
+    /** First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets */
     timeBucket: string;
 };
 export type TrashApplyDto = {
@@ -14433,6 +14731,36 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Search facet counts
+ */
+export function searchFacets({ searchFacetsDto }: {
+    searchFacetsDto: SearchFacetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchFacetsResponseDto;
+    }>("/search/facets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: searchFacetsDto
+    })));
+}
+/**
+ * Search date histogram
+ */
+export function searchHistogram({ searchHistogramDto }: {
+    searchHistogramDto: SearchHistogramDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchHistogramResponseDto;
+    }>("/search/histogram", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: searchHistogramDto
+    })));
+}
+/**
  * Search large assets
  */
 export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
@@ -14591,6 +14919,21 @@ export function searchSmart({ smartSearchDto }: {
         status: 200;
         data: SearchResponseDto;
     }>("/search/smart", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: smartSearchDto
+    })));
+}
+/**
+ * Smart search statistics
+ */
+export function searchSmartStatistics({ smartSearchDto }: {
+    smartSearchDto: SmartSearchDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SmartSearchStatisticsResponseDto;
+    }>("/search/smart/statistics", oazapfts.json({
         ...opts,
         method: "POST",
         body: smartSearchDto
@@ -16577,6 +16920,61 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     }));
 }
 /**
+ * Get timeline highlights
+ */
+export function getTimelineHighlights({ albumId, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+    albumId?: string;
+    bbox?: string;
+    dateType?: TimeBucketDateType;
+    grouping?: TimelineHighlightGrouping;
+    highlightCount?: number;
+    isFavorite?: boolean;
+    isTrashed?: boolean;
+    key?: string;
+    lockReason?: AssetLockReason;
+    order?: AssetOrder;
+    orderBy?: AssetOrderBy;
+    personId?: string;
+    petId?: string;
+    slug?: string;
+    suppressedOnly?: boolean;
+    tagId?: string;
+    userId?: string;
+    visibility?: AssetVisibility;
+    withCoordinates?: boolean;
+    withPartners?: boolean;
+    withStacked?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TimelineHighlightResponseDto[];
+    }>(`/timeline/highlights${QS.query(QS.explode({
+        albumId,
+        bbox,
+        dateType,
+        grouping,
+        highlightCount,
+        isFavorite,
+        isTrashed,
+        key,
+        lockReason,
+        order,
+        orderBy,
+        personId,
+        petId,
+        slug,
+        suppressedOnly,
+        tagId,
+        userId,
+        visibility,
+        withCoordinates,
+        withPartners,
+        withStacked
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Apply a reviewed trash change
  */
 export function applyTrashReview({ trashApplyDto }: {
@@ -17525,6 +17923,42 @@ export enum AnalyticsState {
     Stale = "stale",
     Unknown = "unknown"
 }
+export enum AnalyticsFocalLengthDtoKey {
+    $016 = "0-16",
+    $1728 = "17-28",
+    $2940 = "29-40",
+    $4170 = "41-70",
+    $71135 = "71-135",
+    $136300 = "136-300",
+    $301 = "301+",
+    Unknown = "unknown"
+}
+export enum AnalyticsNamedCountKind {
+    Named = "named",
+    Other = "other",
+    Unknown = "unknown"
+}
+export enum AnalyticsOrientationDtoKey {
+    Landscape = "landscape",
+    Portrait = "portrait",
+    Square = "square",
+    Panorama = "panorama",
+    Unknown = "unknown"
+}
+export enum AnalyticsPhotoFormatDtoKey {
+    Heic = "HEIC",
+    Jpeg = "JPEG",
+    Raw = "RAW",
+    Png = "PNG",
+    Other = "OTHER"
+}
+export enum AnalyticsVideoResolutionDtoKey {
+    $4K = "4K",
+    $1080P = "1080p",
+    $720P = "720p",
+    Sd = "SD",
+    Unknown = "unknown"
+}
 export enum AnalyticsMetadataField {
     CaptureDate = "captureDate",
     Location = "location",
@@ -18439,6 +18873,23 @@ export enum Mode2 {
     Smart = "smart",
     Metadata = "metadata"
 }
+export enum SearchFacetField {
+    People = "people",
+    Type = "type",
+    City = "city",
+    Country = "country",
+    Make = "make",
+    Model = "model",
+    LensModel = "lensModel",
+    Rating = "rating",
+    IsFavorite = "isFavorite",
+    Tags = "tags"
+}
+export enum SearchHistogramGranularity {
+    Day = "day",
+    Month = "month",
+    Year = "year"
+}
 export enum SearchSuggestionType {
     Country = "country",
     State = "state",
@@ -18708,6 +19159,10 @@ export enum AssetLockReason {
 export enum AssetOrderBy {
     TakenAt = "takenAt",
     CreatedAt = "createdAt"
+}
+export enum TimelineHighlightGrouping {
+    Year = "year",
+    Month = "month"
 }
 export enum TrashReviewAction {
     Trash = "trash",

@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
@@ -247,6 +247,73 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(changesLockedRules({ privacy: {} })).toBe(false);
       expect(changesLockedRules({ privacy: { suppression: {} } })).toBe(false);
       expect(changesLockedRules({ tags: { enabled: true } })).toBe(false);
+    });
+  });
+
+  describe('saved searches (FL-49)', () => {
+    const lockedPerson = '11111111-1111-4111-8111-111111111111';
+    const searches = [
+      { name: 'Lisbon', query: { filter: { city: { eq: 'Lisbon' } } } },
+      { name: 'With someone', query: { filter: { personIds: { any: [lockedPerson] } } } },
+    ];
+    const withLockedRules = () =>
+      getPreferences(
+        stored({ savedSearches: searches, privacy: { suppression: { personIds: [lockedPerson], scope: 'owned' } } }),
+      );
+
+    it('defaults to none and stores only a changed list', () => {
+      expect(getPreferences([]).savedSearches).toEqual([]);
+      expect(getPreferencesPartial(getPreferences([]))).not.toHaveProperty('savedSearches');
+      expect(getPreferencesPartial(withLockedRules()).savedSearches).toEqual(searches);
+    });
+
+    it('replaces the whole list on update and changes the revision', () => {
+      const before = getPreferences([]);
+      const revision = getPreferencesRevision(before);
+      const updated = mergePreferences(getPreferences([]), { savedSearches: [searches[0]] }, 'user');
+      expect(updated.savedSearches).toEqual([searches[0]]);
+      expect(getPreferencesRevision(updated)).not.toEqual(revision);
+      expect(mergePreferences(updated, { savedSearches: [] }, 'user').savedSearches).toEqual([]);
+    });
+
+    it('never lets an administrator read or write them', () => {
+      const preferences = withLockedRules();
+      expect(mapPreferences(preferences, 'admin').savedSearches).toEqual([]);
+      expect(restrictPreferencesUpdate(preferences, { savedSearches: [] }, 'admin')).not.toHaveProperty(
+        'savedSearches',
+      );
+      expect(mergePreferences(preferences, { savedSearches: [] }, 'admin').savedSearches).toEqual(searches);
+    });
+
+    it('keeps the searches a locked session could not see when it replaces the list', () => {
+      const added = { name: 'Snow', query: { filter: { city: { eq: 'Banff' } } } };
+      const merged = mergePreferences(withLockedRules(), { savedSearches: [added] }, 'user', { lockedSession: true });
+      expect(merged.savedSearches).toEqual([added, searches[1]]);
+      const unlocked = mergePreferences(withLockedRules(), { savedSearches: [added] }, 'user');
+      expect(unlocked.savedSearches).toEqual([added]);
+    });
+
+    it('refuses a locked-session list that clashes with, or with the kept searches exceeds the limits', () => {
+      const clash = { name: 'WITH SOMEONE', query: {} };
+      expect(() =>
+        mergePreferences(withLockedRules(), { savedSearches: [clash] }, 'user', { lockedSession: true }),
+      ).toThrow(BadRequestException);
+      const full = Array.from({ length: 50 }, (_, index) => ({ name: `search ${index}`, query: {} }));
+      expect(() =>
+        mergePreferences(withLockedRules(), { savedSearches: full }, 'user', { lockedSession: true }),
+      ).toThrow(BadRequestException);
+    });
+
+    it('leaves out a search naming a Locked person while the session is locked', () => {
+      const preferences = withLockedRules();
+      expect(mapPreferences(preferences, 'self').savedSearches).toEqual(searches);
+      expect(mapPreferences(preferences, 'locked').savedSearches).toEqual([searches[0]]);
+      expect(
+        withoutStoredLockedRuleIds({
+          savedSearches: searches,
+          privacy: { suppression: { personIds: [lockedPerson.toUpperCase()] } },
+        }).savedSearches,
+      ).toEqual([searches[0]]);
     });
   });
 });

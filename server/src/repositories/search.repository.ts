@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, NotNull, OrderByDirection, Selectable, ShallowDehydrateObject, sql } from 'kysely';
+import {
+  Kysely,
+  NotNull,
+  OrderByDirection,
+  RawBuilder,
+  SelectQueryBuilder,
+  Selectable,
+  ShallowDehydrateObject,
+  sql,
+} from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -7,7 +16,13 @@ import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
-import { SearchFilter, SearchOrder } from 'src/dtos/search.dto.js';
+import {
+  SMART_SEARCH_COUNT_CAP,
+  SearchFacetField,
+  SearchFilter,
+  SearchHistogramGranularity,
+  SearchOrder,
+} from 'src/dtos/search.dto.js';
 import {
   AssetStatus,
   AssetType,
@@ -27,6 +42,7 @@ import {
   searchRandomV3Examples,
   searchSmartV3Examples,
   searchStatisticsV3Examples,
+  tagIsSuppressed,
   tokenizeForSearch,
   withExifInner,
   withHiddenContentFilter,
@@ -279,6 +295,43 @@ export interface GetCameraLensModelsOptions {
   make?: string;
   model?: string;
 }
+
+/**
+ * FL-49: who is looking and what they may be told. Facets name people and tags from the viewer's own
+ * records only, leave out what the session keeps suppressed, and never place an owner who hides their
+ * locations from the viewer.
+ */
+export interface SearchFacetOptions {
+  viewerId: string;
+  facets: SearchFacetField[];
+  limit: number;
+  /** partners who hide their locations from the viewer: they contribute no city or country */
+  locationHiddenOwnerIds: string[];
+  /** a session that is not unlocked: these people and tags (with their descendants) are never named */
+  suppressedPersonIds: string[];
+  suppressedTagIds: string[];
+}
+
+export type SearchFacetRow = { field: SearchFacetField; value: string; label: string | null; count: number };
+export type SearchFacetResult = { total: number; rows: SearchFacetRow[] };
+export type SearchHistogramRow = { date: string; count: number };
+
+const facetExample: SearchFacetOptions = {
+  viewerId: DummyValue.UUID,
+  facets: Object.values(SearchFacetField),
+  limit: 10,
+  locationHiddenOwnerIds: [DummyValue.UUID_1],
+  suppressedPersonIds: [DummyValue.UUID_1],
+  suppressedTagIds: [DummyValue.UUID_1],
+};
+const legacySearchExample = { takenAfter: DummyValue.DATE, userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
+const v3ScopeExample: AssetSearchScope = { userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
+
+type MatchedAssets = SelectQueryBuilder<DB, 'asset', any>;
+
+const asUuidLiteral = (id: string) => sql`${id}::uuid`;
+
+const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
 
 @Injectable()
 export class SearchRepository {
@@ -751,6 +804,177 @@ export class SearchRepository {
     return searchAssetBuilder(this.db, options, scope)
       .select((qb) => qb.fn.countAll<number>().as('total'))
       .executeTakeFirstOrThrow();
+  }
+
+  /** FL-49: facet counts for a legacy (flat) search body */
+  @GenerateSql({ params: [legacySearchExample, facetExample] })
+  searchFacets(options: AssetSearchOptions, facets: SearchFacetOptions): Promise<SearchFacetResult> {
+    return this.facetsOf(searchAssetBuilderLegacy(this.db, options), facets);
+  }
+
+  /** FL-49: facet counts for a structured search body */
+  @GenerateSql({ params: [{ filter: { isFavorite: { eq: true } } }, v3ScopeExample, facetExample] })
+  searchFacetsV3(
+    options: AssetSearchBuilderV3Options,
+    scope: AssetSearchScope,
+    facets: SearchFacetOptions,
+  ): Promise<SearchFacetResult> {
+    return this.facetsOf(searchAssetBuilder(this.db, options, scope) as MatchedAssets, facets);
+  }
+
+  /** FL-49: matches per local capture day, month or year for a legacy (flat) search body */
+  @GenerateSql({ params: [legacySearchExample, SearchHistogramGranularity.Month] })
+  searchHistogram(options: AssetSearchOptions, granularity: SearchHistogramGranularity) {
+    return this.histogramOf(searchAssetBuilderLegacy(this.db, options), granularity);
+  }
+
+  /** FL-49: matches per local capture day, month or year for a structured search body */
+  @GenerateSql({ params: [{}, v3ScopeExample, SearchHistogramGranularity.Day] })
+  searchHistogramV3(
+    options: AssetSearchBuilderV3Options,
+    scope: AssetSearchScope,
+    granularity: SearchHistogramGranularity,
+  ) {
+    return this.histogramOf(searchAssetBuilder(this.db, options, scope) as MatchedAssets, granularity);
+  }
+
+  /**
+   * FL-49: how many assets smart search would rank for a legacy (flat) body, up to the cap. Smart
+   * search orders every eligible asset with an embedding, so this is the size of its result set.
+   */
+  @GenerateSql({ params: [legacySearchExample] })
+  searchSmartCount(options: AssetSearchOptions) {
+    return this.cappedCount(
+      searchAssetBuilderLegacy(this.db, options).innerJoin('smart_search', 'asset.id', 'smart_search.assetId'),
+    );
+  }
+
+  /** FL-49: the structured twin of `searchSmartCount` */
+  @GenerateSql({ params: [{}, v3ScopeExample] })
+  searchSmartCountV3(options: AssetSearchBuilderV3Options, scope: AssetSearchScope) {
+    return this.cappedCount(
+      (searchAssetBuilder(this.db, options, scope) as MatchedAssets).innerJoin(
+        'smart_search',
+        'asset.id',
+        'smart_search.assetId',
+      ),
+    );
+  }
+
+  private async cappedCount(matched: SelectQueryBuilder<DB, any, any>) {
+    const { rows } = await sql<{ total: string }>`
+      select count(*) as total from (${matched.select('asset.id').limit(SMART_SEARCH_COUNT_CAP + 1)}) capped
+    `.execute(this.db);
+    const total = Number(rows[0]?.total ?? 0);
+    return { total: Math.min(total, SMART_SEARCH_COUNT_CAP), capped: total > SMART_SEARCH_COUNT_CAP };
+  }
+
+  private async histogramOf(matched: MatchedAssets, granularity: SearchHistogramGranularity) {
+    const unit = sql.lit({ day: 'day', month: 'month', year: 'year' }[granularity]);
+    const { rows } = await sql<{ date: string; count: string }>`
+      with matched as (${matched.select('asset.localDateTime')})
+      select
+        to_char(date_trunc(${unit}, matched."localDateTime" at time zone 'UTC'), 'YYYY-MM-DD') as date,
+        count(*) as count
+      from matched
+      group by 1
+      order by 1
+    `.execute(this.db);
+    return rows.map((row): SearchHistogramRow => ({ date: row.date, count: Number(row.count) }));
+  }
+
+  private async facetsOf(matched: MatchedAssets, options: SearchFacetOptions): Promise<SearchFacetResult> {
+    const wanted = new Set(options.facets);
+    const viewer = asUuidLiteral(options.viewerId);
+    const exifFacet = (field: SearchFacetField, column: string, where: RawBuilder<unknown> = sql`true`) =>
+      sql`select ${field}::text as field, ${trimmed(column)} as value, null::text as label, count(*) as count
+        from matched m
+        inner join asset_exif e on e."assetId" = m.id
+        where ${trimmed(column)} is not null and ${where}
+        group by 2`;
+    const locationShared =
+      options.locationHiddenOwnerIds.length > 0
+        ? sql`not (m."ownerId" = ${anyUuid(options.locationHiddenOwnerIds)})`
+        : sql`true`;
+
+    const parts: Array<[SearchFacetField, RawBuilder<unknown>]> = [
+      [
+        SearchFacetField.Type,
+        sql`select ${SearchFacetField.Type}::text as field, m.type::text as value, null::text as label, count(*) as count
+          from matched m group by 2`,
+      ],
+      [
+        SearchFacetField.IsFavorite,
+        // favourites are personal: a partner's favourite is not the viewer's
+        sql`select ${SearchFacetField.IsFavorite}::text as field,
+            (m."isFavorite" and m."ownerId" = ${viewer})::text as value, null::text as label, count(*) as count
+          from matched m group by 2`,
+      ],
+      [
+        SearchFacetField.Rating,
+        sql`select ${SearchFacetField.Rating}::text as field,
+            case when e.rating between 1 and 5 then e.rating::text else 'unrated' end as value,
+            null::text as label, count(*) as count
+          from matched m left join asset_exif e on e."assetId" = m.id group by 2`,
+      ],
+      [SearchFacetField.City, exifFacet(SearchFacetField.City, 'e.city', locationShared)],
+      [SearchFacetField.Country, exifFacet(SearchFacetField.Country, 'e.country', locationShared)],
+      [SearchFacetField.Make, exifFacet(SearchFacetField.Make, 'e.make')],
+      [SearchFacetField.Model, exifFacet(SearchFacetField.Model, 'e.model')],
+      [SearchFacetField.LensModel, exifFacet(SearchFacetField.LensModel, 'e.lensModel')],
+      [
+        SearchFacetField.People,
+        sql`select ${SearchFacetField.People}::text as field, f."personGroupId"::text as value,
+            max(nullif(p.name, '')) as label, count(distinct m.id) as count
+          from matched m
+          inner join asset_face f on f."assetId" = m.id and f."deletedAt" is null and f."isVisible" is true
+          inner join person p on p."personGroupId" = f."personGroupId" and p."ownerId" = ${viewer} and not p."isHidden"
+          where ${
+            options.suppressedPersonIds.length > 0
+              ? sql`not (f."personGroupId" = ${anyUuid(options.suppressedPersonIds)})`
+              : sql`true`
+          }
+          group by f."personGroupId"`,
+      ],
+      [
+        SearchFacetField.Tags,
+        // a tag counts the assets tagged with it or with any tag under it, as the tag filter matches
+        sql`select ${SearchFacetField.Tags}::text as field, t.id::text as value, max(t.value) as label,
+            count(distinct m.id) as count
+          from matched m
+          inner join tag_asset ta on ta."assetId" = m.id
+          inner join tag_closure tc on tc.id_descendant = ta."tagId"
+          inner join tag t on t.id = tc.id_ancestor and t."userId" = ${viewer}
+          where ${options.suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), options.suppressedTagIds)}` : sql`true`}
+          group by t.id`,
+      ],
+    ];
+
+    const selected = parts.filter(([field]) => wanted.has(field)).map(([, query]) => query);
+    // the total comes from the same matched set in the same statement, so it never needs its own scan
+    const total = sql`select 'total'::text as field, null::text as value, null::text as label, count(*) as count
+      from matched`;
+
+    const { rows } = await sql<{
+      field: SearchFacetField | 'total';
+      value: string;
+      label: string | null;
+      count: string;
+    }>`
+      with matched as materialized (${matched.select(['asset.id', 'asset.ownerId', 'asset.type', 'asset.isFavorite'])}),
+      facet_rows as (${sql.join([...selected, total], sql` union all `)}),
+      ranked as (
+        select *, row_number() over (partition by field order by count desc, value asc) as rank
+        from facet_rows
+      )
+      select field, value, label, count from ranked where rank <= ${options.limit} order by field, rank
+    `.execute(this.db);
+    return {
+      total: Number(rows.find((row) => row.field === 'total')?.count ?? 0),
+      rows: rows
+        .filter((row): row is typeof row & { field: SearchFacetField } => row.field !== 'total')
+        .map((row) => ({ ...row, count: Number(row.count) })),
+    };
   }
 
   private smartSearchOrder(options: { embedding: string; query?: string }) {

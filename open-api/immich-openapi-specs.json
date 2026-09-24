@@ -23561,6 +23561,118 @@
         "x-immich-state": "Stable"
       }
     },
+    "/search/facets": {
+      "post": {
+        "description": "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own; places of partners who hide their locations are left out.",
+        "operationId": "searchFacets",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchFacetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchFacetsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search facet counts",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/search/histogram": {
+      "post": {
+        "description": "Count the assets a metadata search body matches per local capture day, month or year. The buckets add up to the POST /search/statistics total for the same body.",
+        "operationId": "searchHistogram",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchHistogramDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchHistogramResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search date histogram",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/search/large-assets": {
       "post": {
         "description": "Search for assets that are considered large based on specified criteria.",
@@ -24782,6 +24894,62 @@
         ],
         "x-immich-permission": "asset.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/search/smart/statistics": {
+      "post": {
+        "description": "How many assets a smart search body would rank, counted up to 1000 and flagged when capped. No text is encoded to answer it.",
+        "operationId": "searchSmartStatistics",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartSearchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartSearchStatisticsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Smart search statistics",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/search/statistics": {
@@ -33254,6 +33422,255 @@
         "x-immich-state": "Internal"
       }
     },
+    "/timeline/highlights": {
+      "get": {
+        "description": "Curated Years and Months cards for the same filters as the time buckets: per year or month the count, a key photo (highest Best Photos score, then rating, then most recent), highlights for months and the top three places.",
+        "operationId": "getTimelineHighlights",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets belonging to a specific album",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "bbox",
+            "required": false,
+            "in": "query",
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "schema": {
+              "example": "11.075683,49.416711,11.117589,49.454875",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateType",
+            "required": false,
+            "in": "query",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date.",
+            "schema": {
+              "$ref": "#/components/schemas/TimeBucketDateType"
+            }
+          },
+          {
+            "name": "grouping",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TimelineHighlightGrouping"
+            }
+          },
+          {
+            "name": "highlightCount",
+            "required": false,
+            "in": "query",
+            "description": "Highlights besides the key photo for each month card (default 4). Year cards carry none",
+            "schema": {
+              "minimum": 0,
+              "maximum": 12,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isTrashed",
+            "required": false,
+            "in": "query",
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lockReason",
+            "required": false,
+            "in": "query",
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetLockReason"
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrder"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "in": "query",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Immich)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetOrderBy"
+            }
+          },
+          {
+            "name": "personId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets containing a specific person (face recognition)",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "petId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suppressedOnly",
+            "required": false,
+            "in": "query",
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "tagId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets with a specific tag",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets by specific user ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "visibility",
+            "required": false,
+            "in": "query",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
+            "schema": {
+              "$ref": "#/components/schemas/AssetVisibility"
+            }
+          },
+          {
+            "name": "withCoordinates",
+            "required": false,
+            "in": "query",
+            "description": "Include location data in the response",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withPartners",
+            "required": false,
+            "in": "query",
+            "description": "Include assets shared by partners",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withStacked",
+            "required": false,
+            "in": "query",
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TimelineHighlightResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get timeline highlights",
+        "tags": [
+          "Timeline"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/trash/apply": {
       "post": {
         "description": "Applies an action to exactly the reviewed set. The set is resolved again with the same ownership, Locked and privacy rules; if it differs from the review in any way the request fails with 409 and nothing changes.",
@@ -38549,6 +38966,37 @@
         ],
         "type": "object"
       },
+      "AnalyticsFocalLengthDto": {
+        "description": "Items per recorded focal length (mm)",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsFocalLengthDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsFocalLengthDtoKey": {
+        "enum": [
+          "0-16",
+          "17-28",
+          "29-40",
+          "41-70",
+          "71-135",
+          "136-300",
+          "301+",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "AnalyticsGrain": {
         "description": "Analytics grain",
         "enum": [
@@ -38556,6 +39004,33 @@
           "day"
         ],
         "type": "string"
+      },
+      "AnalyticsHdrDto": {
+        "properties": {
+          "dolbyVisionVideos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hdrVideos": {
+            "description": "PQ or HLG transfer, or Dolby Vision",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probedVideos": {
+            "description": "Videos whose stream metadata has been read; the only ones HDR can be told for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dolbyVisionVideos",
+          "hdrVideos",
+          "probedVideos"
+        ],
+        "type": "object"
       },
       "AnalyticsHistoryDto": {
         "properties": {
@@ -38635,6 +39110,145 @@
         ],
         "type": "object"
       },
+      "AnalyticsInsightsDto": {
+        "properties": {
+          "capturesByYear": {
+            "description": "Items per local capture year, all time",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsYearCountDto"
+            },
+            "type": "array"
+          },
+          "focalLengths": {
+            "description": "Every bucket, in order; adds up to summary.items",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsFocalLengthDto"
+            },
+            "type": "array"
+          },
+          "hdr": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsHdrDto"
+              }
+            ],
+            "description": "Null when no video stream has been read, so HDR cannot be told",
+            "nullable": true
+          },
+          "hiddenItems": {
+            "description": "Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lenses": {
+            "description": "Items per lens model, then every other lens, then no lens",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsNamedCountDto"
+            },
+            "type": "array"
+          },
+          "livePhotos": {
+            "description": "Photos with a Live Photo motion part",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orientation": {
+            "description": "Every bucket; adds up to summary.items. Panorama is 2:1 or wider",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsOrientationDto"
+            },
+            "type": "array"
+          },
+          "peopleAndPlaces": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsPeopleAndPlacesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "photoFormats": {
+            "description": "Every format; adds up to summary.photos, and RAW equals summary.raw",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPhotoFormatDto"
+            },
+            "type": "array"
+          },
+          "punchcard": {
+            "description": "All 168 weekday and hour cells of the local capture time",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPunchcardCellDto"
+            },
+            "type": "array"
+          },
+          "records": {
+            "$ref": "#/components/schemas/AnalyticsRecordsDto"
+          },
+          "videoResolutions": {
+            "description": "Every bucket; adds up to summary.videos",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsVideoResolutionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "capturesByYear",
+          "focalLengths",
+          "hdr",
+          "hiddenItems",
+          "lenses",
+          "livePhotos",
+          "orientation",
+          "peopleAndPlaces",
+          "photoFormats",
+          "punchcard",
+          "records",
+          "videoResolutions"
+        ],
+        "type": "object"
+      },
+      "AnalyticsLargestFileDto": {
+        "properties": {
+          "bytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsLongestVideoDto": {
+        "properties": {
+          "durationMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "durationMs",
+          "name"
+        ],
+        "type": "object"
+      },
       "AnalyticsMeasurementScope": {
         "description": "Analytics measurement scope",
         "enum": [
@@ -38679,6 +39293,210 @@
           "cameraModel",
           "aiDescription",
           "checksum"
+        ],
+        "type": "string"
+      },
+      "AnalyticsNamedCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AnalyticsNamedCountKind"
+          },
+          "name": {
+            "description": "Null for the other and unknown rows",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsNamedCountKind": {
+        "enum": [
+          "named",
+          "other",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsOldestCaptureDto": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "name": {
+            "description": "File name; null unless the owner reads their own scope",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsOrientationDto": {
+        "description": "Items per displayed orientation",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsOrientationDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsOrientationDtoKey": {
+        "enum": [
+          "landscape",
+          "portrait",
+          "square",
+          "panorama",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsPeopleAndPlacesDto": {
+        "description": "The owner's own people and places, only when the owner reads their own scope",
+        "properties": {
+          "cities": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "countries": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faces": {
+            "description": "Visible faces on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "geotagged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "itemsWithFaces": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "itemsWithoutFaces": {
+            "description": "itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "namedPeople": {
+            "description": "Named, visible people of the owner seen on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pets": {
+            "description": "The owner's visible pets confirmed on the items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "places": {
+            "description": "Items per city, then every other city, then no city",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsNamedCountDto"
+            },
+            "type": "array"
+          },
+          "topPeople": {
+            "description": "Most photographed named people; overlapping, as one item can show several",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPersonCountDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cities",
+          "countries",
+          "faces",
+          "geotagged",
+          "itemsWithFaces",
+          "itemsWithoutFaces",
+          "namedPeople",
+          "pets",
+          "places",
+          "topPeople"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPersonCountDto": {
+        "properties": {
+          "count": {
+            "description": "Items showing them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person id",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPhotoFormatDto": {
+        "description": "Photos per original file format",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsPhotoFormatDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsPhotoFormatDtoKey": {
+        "enum": [
+          "HEIC",
+          "JPEG",
+          "RAW",
+          "PNG",
+          "OTHER"
         ],
         "type": "string"
       },
@@ -38738,6 +39556,33 @@
         ],
         "type": "object"
       },
+      "AnalyticsPunchcardCellDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hour": {
+            "description": "Hour of the local capture time",
+            "maximum": 23,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "weekday": {
+            "description": "ISO weekday of the local capture time, 1 = Monday",
+            "maximum": 7,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "hour",
+          "weekday"
+        ],
+        "type": "object"
+      },
       "AnalyticsRange": {
         "description": "Analytics date range",
         "enum": [
@@ -38745,6 +39590,54 @@
           "year"
         ],
         "type": "string"
+      },
+      "AnalyticsRecordsDto": {
+        "properties": {
+          "largestFile": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsLargestFileDto"
+              }
+            ],
+            "nullable": true
+          },
+          "longestVideo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsLongestVideoDto"
+              }
+            ],
+            "nullable": true
+          },
+          "oldestCapture": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsOldestCaptureDto"
+              }
+            ],
+            "nullable": true
+          },
+          "videoDurationMs": {
+            "description": "All videos together",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videoHours": {
+            "description": "videoDurationMs in hours, one decimal",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "largestFile",
+          "longestVideo",
+          "oldestCapture",
+          "videoDurationMs",
+          "videoHours"
+        ],
+        "type": "object"
       },
       "AnalyticsReportResponseDto": {
         "properties": {
@@ -38782,6 +39675,10 @@
           },
           "host": {
             "$ref": "#/components/schemas/AnalyticsHostDto"
+          },
+          "insights": {
+            "$ref": "#/components/schemas/AnalyticsInsightsDto",
+            "description": "Dashboard breakdowns of the same items as summary. People, places and file names are only for the owner reading their own scope"
           },
           "metadata": {
             "items": {
@@ -39111,6 +40008,34 @@
         ],
         "type": "string"
       },
+      "AnalyticsVideoResolutionDto": {
+        "description": "Videos per resolution",
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "$ref": "#/components/schemas/AnalyticsVideoResolutionDtoKey"
+          }
+        },
+        "required": [
+          "count",
+          "key"
+        ],
+        "type": "object"
+      },
+      "AnalyticsVideoResolutionDtoKey": {
+        "enum": [
+          "4K",
+          "1080p",
+          "720p",
+          "SD",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "AnalyticsView": {
         "enum": [
           "timeline",
@@ -39151,6 +40076,25 @@
           "total",
           "videos",
           "view"
+        ],
+        "type": "object"
+      },
+      "AnalyticsYearCountDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "year": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "year"
         ],
         "type": "object"
       },
@@ -47976,6 +48920,20 @@
           },
           "appliedTags": {
             "type": "boolean"
+          },
+          "confidence": {
+            "description": "The model's confidence in the description, 0 to 1, when the processing destination reported one; null otherwise",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "context": {
             "type": "string"
@@ -59747,6 +60705,26 @@
         ],
         "type": "object"
       },
+      "SavedSearch": {
+        "properties": {
+          "name": {
+            "description": "Name shown in the search palette",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {},
+            "description": "The search body to run, as the client sends it to the search endpoints",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "query"
+        ],
+        "type": "object"
+      },
       "SearchAlbumResponseDto": {
         "properties": {
           "count": {
@@ -59920,6 +60898,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "label": {
+            "description": "Display name when the value is an id (a person or a tag); the viewer's own name for it",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "value": {
             "description": "Facet value",
             "type": "string"
@@ -59930,6 +60919,21 @@
           "value"
         ],
         "type": "object"
+      },
+      "SearchFacetField": {
+        "enum": [
+          "people",
+          "type",
+          "city",
+          "country",
+          "make",
+          "model",
+          "lensModel",
+          "rating",
+          "isFavorite",
+          "tags"
+        ],
+        "type": "string"
       },
       "SearchFacetResponseDto": {
         "properties": {
@@ -59947,6 +60951,705 @@
         "required": [
           "counts",
           "fieldName"
+        ],
+        "type": "object"
+      },
+      "SearchFacetsDto": {
+        "properties": {
+          "albumIds": {
+            "deprecated": true,
+            "description": "Filter by album IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "city": {
+            "deprecated": true,
+            "description": "Filter by city name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "country": {
+            "deprecated": true,
+            "description": "Filter by country name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdAfter": {
+            "deprecated": true,
+            "description": "Filter by creation date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdBefore": {
+            "deprecated": true,
+            "description": "Filter by creation date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "description": {
+            "deprecated": true,
+            "description": "Filter by description text",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "facetLimit": {
+            "description": "Most frequent values per facet (default 10)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "facets": {
+            "description": "Facets to count, each once (repeats are ignored); every facet when omitted",
+            "items": {
+              "$ref": "#/components/schemas/SearchFacetField"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "isEncoded": {
+            "deprecated": true,
+            "description": "Filter by encoded status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isFavorite": {
+            "deprecated": true,
+            "description": "Filter by favorite status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isMotion": {
+            "deprecated": true,
+            "description": "Filter by motion photo status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isNotInAlbum": {
+            "deprecated": true,
+            "description": "Filter assets not in any album",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isOffline": {
+            "deprecated": true,
+            "description": "Filter by offline status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "lensModel": {
+            "deprecated": true,
+            "description": "Filter by lens model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "libraryId": {
+            "deprecated": true,
+            "description": "Library ID to filter by",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "make": {
+            "deprecated": true,
+            "description": "Filter by camera make",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "model": {
+            "deprecated": true,
+            "description": "Filter by camera model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "ocr": {
+            "deprecated": true,
+            "description": "Filter by OCR text content",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "personIds": {
+            "deprecated": true,
+            "description": "Filter by person IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "rating": {
+            "deprecated": true,
+            "description": "Filter by rating [1-5], or null for unrated",
+            "maximum": 5,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v2.6.0",
+                "state": "Updated",
+                "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+              },
+              {
+                "version": "v3",
+                "state": "Updated",
+                "description": "Using -1 as a rating is no longer valid."
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "state": {
+            "deprecated": true,
+            "description": "Filter by state/province name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagIds": {
+            "deprecated": true,
+            "description": "Filter by tag IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenAfter": {
+            "deprecated": true,
+            "description": "Filter by taken date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenBefore": {
+            "deprecated": true,
+            "description": "Filter by taken date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedAfter": {
+            "deprecated": true,
+            "description": "Filter by trash date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedBefore": {
+            "deprecated": true,
+            "description": "Filter by trash date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedAfter": {
+            "deprecated": true,
+            "description": "Filter by update date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedBefore": {
+            "deprecated": true,
+            "description": "Filter by update date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          }
+        },
+        "type": "object"
+      },
+      "SearchFacetsResponseDto": {
+        "properties": {
+          "facets": {
+            "description": "Per facet, the most frequent values, busiest first. type, rating and isFavorite always add up to total; people, places, cameras, lenses and tags count assets that have a value",
+            "items": {
+              "$ref": "#/components/schemas/SearchFacetResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Number of assets the search body matches, as POST /search/statistics reports",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "facets",
+          "total"
         ],
         "type": "object"
       },
@@ -60165,6 +61868,726 @@
             "$ref": "#/components/schemas/EnumFilterAssetVisibility"
           }
         },
+        "type": "object"
+      },
+      "SearchHistogramBucketDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "date": {
+            "description": "First local capture date of the bucket (YYYY-MM-DD)",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "date"
+        ],
+        "type": "object"
+      },
+      "SearchHistogramDto": {
+        "properties": {
+          "albumIds": {
+            "deprecated": true,
+            "description": "Filter by album IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "city": {
+            "deprecated": true,
+            "description": "Filter by city name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "country": {
+            "deprecated": true,
+            "description": "Filter by country name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdAfter": {
+            "deprecated": true,
+            "description": "Filter by creation date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdBefore": {
+            "deprecated": true,
+            "description": "Filter by creation date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "description": {
+            "deprecated": true,
+            "description": "Filter by description text",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SearchFilter",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/SearchHistogramGranularity",
+            "default": "month",
+            "description": "Bucket size"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "isEncoded": {
+            "deprecated": true,
+            "description": "Filter by encoded status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isFavorite": {
+            "deprecated": true,
+            "description": "Filter by favorite status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isMotion": {
+            "deprecated": true,
+            "description": "Filter by motion photo status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isNotInAlbum": {
+            "deprecated": true,
+            "description": "Filter assets not in any album",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isOffline": {
+            "deprecated": true,
+            "description": "Filter by offline status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "lensModel": {
+            "deprecated": true,
+            "description": "Filter by lens model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "libraryId": {
+            "deprecated": true,
+            "description": "Library ID to filter by",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "make": {
+            "deprecated": true,
+            "description": "Filter by camera make",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "model": {
+            "deprecated": true,
+            "description": "Filter by camera model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "ocr": {
+            "deprecated": true,
+            "description": "Filter by OCR text content",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "personIds": {
+            "deprecated": true,
+            "description": "Filter by person IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "rating": {
+            "deprecated": true,
+            "description": "Filter by rating [1-5], or null for unrated",
+            "maximum": 5,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v2.6.0",
+                "state": "Updated",
+                "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+              },
+              {
+                "version": "v3",
+                "state": "Updated",
+                "description": "Using -1 as a rating is no longer valid."
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "state": {
+            "deprecated": true,
+            "description": "Filter by state/province name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagIds": {
+            "deprecated": true,
+            "description": "Filter by tag IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenAfter": {
+            "deprecated": true,
+            "description": "Filter by taken date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenBefore": {
+            "deprecated": true,
+            "description": "Filter by taken date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedAfter": {
+            "deprecated": true,
+            "description": "Filter by trash date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedBefore": {
+            "deprecated": true,
+            "description": "Filter by trash date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedAfter": {
+            "deprecated": true,
+            "description": "Filter by update date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedBefore": {
+            "deprecated": true,
+            "description": "Filter by update date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          }
+        },
+        "type": "object"
+      },
+      "SearchHistogramGranularity": {
+        "enum": [
+          "day",
+          "month",
+          "year"
+        ],
+        "type": "string"
+      },
+      "SearchHistogramResponseDto": {
+        "properties": {
+          "buckets": {
+            "description": "Non-empty buckets by local capture date, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/SearchHistogramBucketDto"
+            },
+            "type": "array"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/SearchHistogramGranularity"
+          },
+          "total": {
+            "description": "Sum of every bucket; equals POST /search/statistics for the same body",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "buckets",
+          "granularity",
+          "total"
+        ],
         "type": "object"
       },
       "SearchOrder": {
@@ -62635,6 +65058,25 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "SmartSearchStatisticsResponseDto": {
+        "properties": {
+          "capped": {
+            "description": "More than 1000 assets match; total is the cap",
+            "type": "boolean"
+          },
+          "total": {
+            "description": "Assets smart search would rank for this body, counted up to 1000",
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capped",
+          "total"
+        ],
         "type": "object"
       },
       "SourceType": {
@@ -69006,6 +71448,57 @@
         ],
         "type": "object"
       },
+      "TimelineHighlightGrouping": {
+        "default": "month",
+        "description": "One card per year or per month",
+        "enum": [
+          "year",
+          "month"
+        ],
+        "type": "string"
+      },
+      "TimelineHighlightResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Number of assets in this year or month, the same as the time buckets report",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "highlightAssetIds": {
+            "description": "The next best assets in capture order (month cards only), never including the key photo",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "keyAssetId": {
+            "description": "Key photo: highest Best Photos score, then highest star rating, then most recent capture",
+            "nullable": true,
+            "type": "string"
+          },
+          "places": {
+            "description": "Up to three most frequent places (city, else state, else country), busiest first. Empty when the viewer may not see locations",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "timeBucket": {
+            "description": "First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets",
+            "example": "2024-01-01",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "highlightAssetIds",
+          "keyAssetId",
+          "places",
+          "timeBucket"
+        ],
+        "type": "object"
+      },
       "ToggleParameters": {
         "properties": {
           "enabled": {
@@ -70313,6 +72806,19 @@
             "description": "Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves",
             "type": "string"
           },
+          "savedSearches": {
+            "description": "Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked",
+            "items": {
+              "$ref": "#/components/schemas/SavedSearch"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "sharedLinks": {
             "$ref": "#/components/schemas/SharedLinksResponse"
           },
@@ -70379,6 +72885,20 @@
           },
           "recentlyAdded": {
             "$ref": "#/components/schemas/RecentlyAddedUpdate"
+          },
+          "savedSearches": {
+            "description": "Saved searches, replacing the whole list (at most 50). Only the account itself can change them",
+            "items": {
+              "$ref": "#/components/schemas/SavedSearch"
+            },
+            "maxItems": 50,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "sharedLinks": {
             "$ref": "#/components/schemas/SharedLinksUpdate"

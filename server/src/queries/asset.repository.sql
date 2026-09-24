@@ -556,6 +556,136 @@ group by
 order by
   "timeBucket" desc
 
+-- AssetRepository.getTimelineHighlights
+SELECT
+  to_regclass('immich_fork.state')::text AS "stateTable"
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
+with
+  asset as (
+    (
+      select
+        date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "timeBucket",
+        "asset"."id",
+        "asset"."ownerId",
+        asset."localDateTime" as "sortDate"
+      from
+        "asset"
+      where
+        "asset"."deletedAt" is null
+        and (
+          "asset"."visibility" in ('archive', 'timeline')
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
+    )
+  ),
+  ranked as (
+    select
+      a.id,
+      a."timeBucket",
+      a."sortDate",
+      row_number() over (
+        partition by
+          a."timeBucket"
+        order by
+          s.score desc nulls last,
+          nullif(greatest(e.rating, 0), 0) desc nulls last,
+          a."sortDate" desc,
+          a.id asc
+      ) as rank
+    from
+      asset a
+      left join asset_exif e on e."assetId" = a.id
+      left join "public"."asset_best_photo_score" s on s."assetId" = a.id
+  ),
+  places as (
+    select
+      a."timeBucket",
+      coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      ) as place,
+      row_number() over (
+        partition by
+          a."timeBucket"
+        order by
+          count(*) desc,
+          coalesce(
+            nullif(trim(e.city), ''),
+            nullif(trim(e.state), ''),
+            nullif(trim(e.country), '')
+          ) asc
+      ) as rank
+    from
+      asset a
+      inner join asset_exif e on e."assetId" = a.id
+    where
+      true
+      and true
+      and coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      ) is not null
+    group by
+      a."timeBucket",
+      coalesce(
+        nullif(trim(e.city), ''),
+        nullif(trim(e.state), ''),
+        nullif(trim(e.country), '')
+      )
+  )
+select
+  (r."timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+  count(*) as count,
+  (
+    array_agg(r.id::text) filter (
+      where
+        r.rank = 1
+    )
+  ) [1] as "keyAssetId",
+  array_agg(
+    r.id::text
+    order by
+      r."sortDate" desc,
+      r.id
+  ) filter (
+    where
+      r.rank > 1
+      and r.rank <= $1
+  ) as "highlightAssetIds",
+  (
+    select
+      array_agg(
+        p.place
+        order by
+          p.rank
+      )
+    from
+      places p
+    where
+      p."timeBucket" = r."timeBucket"
+      and p.rank <= $2
+  ) as places
+from
+  ranked r
+group by
+  r."timeBucket"
+order by
+  r."timeBucket" desc
+
 -- AssetRepository.getTimeBucket
 with
   "cte" as (
