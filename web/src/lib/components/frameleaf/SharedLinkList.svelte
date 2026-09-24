@@ -18,6 +18,8 @@
     type SharedLinkResponseDto,
   } from '@immich/sdk';
   import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -61,8 +63,23 @@
     }
   };
 
+  /** `?edit={id}` (the old `/shared-links/{id}/edit` address) opens that link's form once loaded. */
+  const openRequestedEdit = () => {
+    const id = page.url.searchParams.get('edit');
+    if (!id) {
+      return;
+    }
+    const link = links.find((entry) => entry.id === id);
+    const url = new URL(page.url);
+    url.searchParams.delete('edit');
+    replaceState(url, page.state);
+    if (link) {
+      openEdit(link);
+    }
+  };
+
   onMount(() => {
-    void refresh();
+    void refresh().then(openRequestedEdit);
   });
 
   const onSharedLinkCreate = (link: SharedLinkResponseDto) => {

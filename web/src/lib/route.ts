@@ -167,8 +167,9 @@ export const Route = {
     `/sharing/${spaceId}/photos/${assetId}`,
 
   // shared links
-  sharedLinks: (params?: { filter?: SharedLinkTab }) => '/shared-links' + asQueryString(params),
-  editSharedLink: ({ id }: { id: string }) => `/shared-links/${id}/edit`,
+  sharedLinks: (params?: { filter?: SharedLinkTab; edit?: string }) => '/shared-links' + asQueryString(params),
+  /** Editing is the list's Frameleaf form (AL-23); the old `/shared-links/{id}/edit` address redirects here. */
+  editSharedLink: ({ id }: { id: string }) => '/shared-links' + asQueryString({ edit: id }),
   viewSharedLink: ({ slug, key }: { slug?: string | null; key: string }) =>
     slug ? `/s/${encodeURIComponent(slug)}` : `/share/${key}`,
 
