@@ -202,6 +202,34 @@ describe('Frameleaf theme contract', () => {
     }
   });
 
+  it('leaves @immich/ui form controls to their own ring', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const rules = [...withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+      selector: selector.trim(),
+      body,
+    }));
+    const exclusion = ":not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *)";
+    const fieldChrome = rules.filter(
+      ({ selector, body }) => /border(-color)?:/.test(body) && /\b(input|select|textarea)\b/.test(selector),
+    );
+    expect(fieldChrome.length).toBeGreaterThanOrEqual(2);
+    for (const { selector } of fieldChrome) {
+      // A second border inside the Input/PasswordInput/Textarea ring, accent on focus, is the bug.
+      expect(selector).toContain(exclusion);
+    }
+    // The hook the exclusion relies on: @immich/ui draws its field ring with the ring-1 utility.
+    const immichStyles = readFileSync('node_modules/@immich/ui/dist/styles.js', 'utf8');
+    expect(immichStyles).toMatch(/inputContainerCommon: '[^']*\bring-1\b/);
+  });
+
+  it('spaces only fields placed directly in a dialog, not those in a gap-spaced form', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const spaced = [...withoutComments.matchAll(/([^{}]+)\{([^{}]*margin-bottom: 18px[^{}]*)\}/g)];
+    expect(spaced).toHaveLength(1);
+    expect(spaced[0][1]).toContain(':is(.frameleaf.dialog, .frameleaf.dialog > .dialog-body)');
+    expect(spaced[0][1]).toMatch(/\)\s*>\s*label:has\(/);
+  });
+
   it('keeps the primary hover readable in both themes', () => {
     const channels = (color: string) => [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
     const toHex = (values: number[]) =>

@@ -155,11 +155,12 @@
     overflow: auto;
     min-height: 0;
     /*
-     * Room for the 2px focus ring (outline-offset 1px) of a full-width field, which the
-     * scrolling body would otherwise clip; the negative margin keeps the prototype's edges.
+     * Room for a full-width field's focus ring, which the scrolling body would otherwise clip:
+     * tokens.css draws it 2px wide at a 3px offset (5px out from the field), so 6px clears it.
+     * The negative margin keeps the prototype's edges.
      */
-    padding: 4px;
-    margin: -4px;
+    padding: 6px;
+    margin: -6px;
   }
   @media (max-width: 700px) {
     .dialog {

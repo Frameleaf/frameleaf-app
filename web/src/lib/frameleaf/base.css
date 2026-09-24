@@ -164,7 +164,13 @@
     background: var(--fl-accent-hover);
   }
 
-  :where(.frameleaf input, .frameleaf select, .frameleaf textarea) {
+  /*
+   * The field chrome skips @immich/ui form controls: an Input or PasswordInput draws its ring
+   * on the container around the <input>, and a Textarea on itself, both with the `ring-1`
+   * utility (as does the legacy `immich-form-input`). A second 1px border inside that ring
+   * would otherwise show, and turn accent on focus.
+   */
+  :where(.frameleaf :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *)) {
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
@@ -174,7 +180,10 @@
     transition: border-color var(--fl-motion-fast) var(--fl-ease);
   }
 
-  :where(.frameleaf input:focus-visible, .frameleaf select:focus-visible, .frameleaf textarea:focus-visible) {
+  :where(
+    .frameleaf
+      :is(input, select, textarea):not([class~='ring-1'], .immich-form-input, [class~='ring-1'] > *):focus-visible
+  ) {
     border-color: var(--fl-accent);
     outline-offset: 1px;
   }
@@ -196,7 +205,9 @@
 
   /*
    * The prototype stacks every label over its field (styles.css `label`) and spaces the
-   * fields in a dialog (`.dialog label`). Here that applies only to the prototype's field
+   * fields in a dialog (`.dialog label`). The dialog spacing applies only to a field placed
+   * directly in the dialog or its body: a form or row that spaces its fields with a grid or
+   * flex gap would otherwise get both. Here that applies only to the prototype's field
    * markup, a label whose first element is its caption <span> followed by the control. Search
    * bars (an icon then an input), text-plus-control rows and checkbox or radio labels keep
    * the inline layout the production screens were built on.
@@ -219,8 +230,8 @@
   }
 
   :where(
-    .frameleaf.dialog
-      label:has(> span:first-child + :is(input:not([type='checkbox'], [type='radio']), select, textarea))
+    :is(.frameleaf.dialog, .frameleaf.dialog > .dialog-body)
+      > label:has(> span:first-child + :is(input:not([type='checkbox'], [type='radio']), select, textarea))
   ) {
     margin-bottom: 18px;
   }
