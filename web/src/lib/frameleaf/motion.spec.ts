@@ -14,6 +14,7 @@ vi.mock('$lib/stores/media-query-manager.svelte', () => ({
 const {
   REDUCED_MOTION_FADE_MS,
   animateFlip,
+  motionFlip,
   motionFly,
   motionScale,
   motionSlide,
@@ -57,6 +58,16 @@ describe('Frameleaf motion', () => {
       node.remove();
     });
   }
+
+  it('flips list items normally and places them at once under Reduce Motion', () => {
+    const node = document.createElement('li');
+    document.body.append(node);
+    const boxes = { from: rect(0, 0, 100), to: rect(0, 50, 100) };
+    expect(motionFlip(node, boxes, { duration: 400 }).duration).toBe(400);
+    media.reducedMotion = true;
+    expect(motionFlip(node, boxes, { duration: 400 })).toEqual({ duration: 0 });
+    node.remove();
+  });
 
   it('runs the update directly without view transition support or under Reduce Motion', async () => {
     const update = vi.fn();
@@ -126,7 +137,13 @@ describe('Frameleaf motion', () => {
   });
 
   it('leaves no ungated moving transition or ad-hoc Reduce Motion query in Frameleaf, viewer or route code', () => {
-    const roots = ['src/lib/components/frameleaf', 'src/lib/components/asset-viewer', 'src/routes'];
+    const roots = [
+      'src/lib/components/frameleaf',
+      'src/lib/components/asset-viewer',
+      'src/lib/components/shared-components',
+      'src/lib/components/album-page',
+      'src/routes',
+    ];
     const offenders: string[] = [];
     for (const root of roots) {
       for (const entry of readdirSync(root, { recursive: true, encoding: 'utf8' })) {
@@ -134,11 +151,15 @@ describe('Frameleaf motion', () => {
           continue;
         }
         const source = readFileSync(join(root, entry), 'utf8');
-        const imported = /import\s*{([^}]*)}\s*from\s*'svelte\/transition'/.exec(source)?.[1] ?? '';
+        const imported = /import\s*{([^}]*)}\s*from\s*['"]svelte\/transition['"]/.exec(source)?.[1] ?? '';
         if (/\b(fly|slide|scale)\b/.test(imported)) {
           offenders.push(`${root}/${entry}: svelte/transition ${imported.trim()}`);
         }
-        if (/matchMedia\(\s*'\(prefers-reduced-motion/.test(source)) {
+        const animate = /import\s*{([^}]*)}\s*from\s*['"]svelte\/animate['"]/.exec(source)?.[1] ?? '';
+        if (/\bflip\b/.test(animate)) {
+          offenders.push(`${root}/${entry}: svelte/animate flip`);
+        }
+        if (/matchMedia\(\s*['"`]\(prefers-reduced-motion/.test(source)) {
           offenders.push(`${root}/${entry}: matchMedia reduced motion`);
         }
       }
