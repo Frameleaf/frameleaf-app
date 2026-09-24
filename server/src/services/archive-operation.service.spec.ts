@@ -50,6 +50,9 @@ describe(ArchiveOperationService.name, () => {
       get: vi.fn(),
       list: vi.fn(),
       orderedAssetIds: vi.fn(),
+      pendingAssetIds: vi.fn(),
+      skipLocked: vi.fn().mockResolvedValue(0),
+      prune: vi.fn().mockResolvedValue(0),
       linkArchiveJob: vi.fn().mockResolvedValue(true),
       linkUndoJob: vi.fn().mockResolvedValue(true),
     };
@@ -65,7 +68,7 @@ describe(ArchiveOperationService.name, () => {
       repository.get
         .mockResolvedValueOnce(operation)
         .mockResolvedValueOnce({ ...operation, archiveJobId, archiveJobStatus: MediaOperationStatus.Queued });
-      repository.orderedAssetIds.mockResolvedValue(ids);
+      repository.pendingAssetIds.mockResolvedValue(ids);
       mediaOperations.createBulk.mockResolvedValue({ id: archiveJobId });
 
       const response = await sut.create(authStub.user1, { requestKey: operation.requestKey, assetIds: ids });
@@ -137,7 +140,7 @@ describe(ArchiveOperationService.name, () => {
       const operation = summaryOf({ scope: ArchiveOperationScope.MatchingOwnedTimeline });
       const ids = [newUuid()];
       repository.get.mockResolvedValue(operation);
-      repository.orderedAssetIds.mockResolvedValue(ids);
+      repository.pendingAssetIds.mockResolvedValue(ids);
       mediaOperations.createBulk.mockResolvedValue({ id: archiveJobId });
 
       await sut.confirm(authStub.user1, operation.id, operation.requestKey);
@@ -148,10 +151,43 @@ describe(ArchiveOperationService.name, () => {
       );
     });
 
+    it('leaves out items Locked since the selection was frozen instead of refusing the confirmation', async () => {
+      const operation = summaryOf({ scope: ArchiveOperationScope.MatchingOwnedTimeline });
+      const ids = [newUuid()];
+      repository.get.mockResolvedValue(operation);
+      repository.skipLocked.mockResolvedValue(2);
+      repository.pendingAssetIds.mockResolvedValue(ids);
+      mediaOperations.createBulk.mockResolvedValue({ id: archiveJobId });
+
+      await sut.confirm(authStub.user1, operation.id, operation.requestKey);
+
+      expect(repository.skipLocked).toHaveBeenCalledWith(authStub.user1.user.id, operation.id);
+      expect(repository.skipLocked.mock.invocationCallOrder[0]).toBeLessThan(
+        repository.pendingAssetIds.mock.invocationCallOrder[0],
+      );
+      expect(mediaOperations.createBulk).toHaveBeenCalledWith(
+        authStub.user1,
+        expect.objectContaining({ assetIds: ids }),
+        expect.anything(),
+      );
+    });
+
+    it('keeps Locked items in an unlocked session’s archive', async () => {
+      const operation = summaryOf({ scope: ArchiveOperationScope.MatchingOwnedTimeline });
+      repository.get.mockResolvedValue(operation);
+      repository.pendingAssetIds.mockResolvedValue([newUuid()]);
+      mediaOperations.createBulk.mockResolvedValue({ id: archiveJobId });
+      const unlocked = { ...authStub.user1, session: { id: newUuid(), hasElevatedPermission: true } };
+
+      await sut.confirm(unlocked, operation.id, operation.requestKey);
+
+      expect(repository.skipLocked).not.toHaveBeenCalled();
+    });
+
     it('starts nothing for an empty selection', async () => {
       const operation = summaryOf({ count: 0, pending: 0 });
       repository.get.mockResolvedValue(operation);
-      repository.orderedAssetIds.mockResolvedValue([]);
+      repository.pendingAssetIds.mockResolvedValue([]);
 
       await sut.confirm(authStub.user1, operation.id, operation.requestKey);
 
@@ -235,6 +271,18 @@ describe(ArchiveOperationService.name, () => {
       repository.linkUndoJob.mockResolvedValue(false);
 
       await expect(sut.undo(authStub.user1, operation.id, newUuid())).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('onNightlyDatabaseCleanup', () => {
+    it('forgets operations nobody can act on any more', async () => {
+      await sut.onNightlyDatabaseCleanup();
+      expect(repository.prune).toHaveBeenCalledWith(30);
+    });
+
+    it('waits for the next night when the store cannot be written', async () => {
+      repository.prune.mockRejectedValue(new Error('handoff'));
+      await expect(sut.onNightlyDatabaseCleanup()).resolves.toBeUndefined();
     });
   });
 
