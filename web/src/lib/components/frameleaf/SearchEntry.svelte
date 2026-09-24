@@ -16,7 +16,7 @@
   import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import { searchContextFor } from '$lib/frameleaf/search-context';
-  import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
+  import { FILTER_PANEL_EVENT, SEARCH_SHORTCUT_EVENT, type FilterPanelRequest } from '$lib/frameleaf/search-shortcuts';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -48,6 +48,8 @@
   }: { section?: DiscoveryFilterSection; onOpen?: () => void } = $props();
 
   let showSearch = $state(false);
+  /** The section the results toolbar's Filter control asked for, while the palette it opened is up. */
+  let requestedSection = $state<DiscoveryFilterSection>();
   let paletteQuery = $state<string | null>(null);
   /** Which entries the open palette offers: everything, or just the settings group (admin/settings routes). */
   let paletteScope = $state<'all' | 'settings'>('all');
@@ -174,6 +176,7 @@
 
   const closeAll = () => {
     showSearch = false;
+    requestedSection = undefined;
     paletteQuery = null;
     paletteScope = 'all';
     catalogueController?.abort();
@@ -196,6 +199,21 @@
     addEventListener(SEARCH_SHORTCUT_EVENT, onShortcut);
     return () => removeEventListener(SEARCH_SHORTCUT_EVENT, onShortcut);
   });
+
+  // The results toolbar's Filter control and its "Choose a filter" menu open the Advanced filters
+  // at a section (prototype `openFilters`); the palette is the one filter panel.
+  $effect(() => {
+    const onFilters = (event: Event) => {
+      const detail = (event as CustomEvent<FilterPanelRequest>).detail;
+      if (isSettings || !detail?.section) {
+        return;
+      }
+      requestedSection = detail.section;
+      openSearch();
+    };
+    addEventListener(FILTER_PANEL_EVENT, onFilters);
+    return () => removeEventListener(FILTER_PANEL_EVENT, onFilters);
+  });
 </script>
 
 <svelte:document
@@ -216,7 +234,7 @@
     query={currentQuery}
     unsupported={currentContext.unsupported}
     {commandIndex}
-    {section}
+    section={requestedSection ?? section}
     onClose={closeAll}
     onCommand={runCommand}
     onOpenPalette={(text) => openPalette(text)}
