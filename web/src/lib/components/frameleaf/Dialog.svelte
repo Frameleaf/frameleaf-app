@@ -68,7 +68,7 @@
 
 <dialog
   bind:this={dialog}
-  class="frameleaf dialog"
+  class="frameleaf dialog fl-continuous-corners"
   class:wide
   class:with-actions={!!actions}
   data-theme={appTheme}
@@ -136,7 +136,6 @@
   }
   @supports (corner-shape: squircle) {
     .dialog {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-sheet) * 1.8);
     }
   }

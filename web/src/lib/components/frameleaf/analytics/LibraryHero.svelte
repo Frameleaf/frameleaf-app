@@ -54,7 +54,7 @@
   });
 </script>
 
-<section class="an-hero" aria-label={$t('frameleaf_analytics_hero_label')}>
+<section class="an-hero fl-continuous-corners" aria-label={$t('frameleaf_analytics_hero_label')}>
   <div class="main">
     <p class="an-kicker">{kicker}</p>
     <p class="number">{f.number(report.summary.items)}</p>
@@ -146,7 +146,6 @@
   }
   @supports (corner-shape: squircle) {
     .an-hero {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-sheet) * 1.8);
     }
   }

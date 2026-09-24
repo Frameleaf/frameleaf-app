@@ -153,7 +153,7 @@
 
 <dialog
   bind:this={dialog}
-  class="command-palette frameleaf"
+  class="command-palette frameleaf fl-continuous-corners"
   class:reduced-motion={reducedMotion}
   data-theme={appTheme}
   aria-label={$t('frameleaf_search_command_palette')}
@@ -261,7 +261,6 @@
   }
   @supports (corner-shape: squircle) {
     .command-palette {
-      corner-shape: squircle;
       border-radius: 36px;
     }
   }

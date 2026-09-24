@@ -261,6 +261,15 @@ describe('Frameleaf theme contract', () => {
     expect(appCss).toMatch(/\.fl-squircle :where\(img, figure\) {\s*border-radius: 0 !important;/);
   });
 
+  it('sets continuous corners on component surfaces through one global class', () => {
+    // Global, not .frameleaf-scoped: search result chips and the Tags and Folders panes render
+    // outside a .frameleaf root. The components keep only their grown radius (sheet-chrome.spec.ts).
+    const withoutComments = appCss.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    const corners = blockAfter(withoutComments, '@supports (corner-shape: squircle)');
+    expect(corners).toMatch(/:where\(\.fl-continuous-corners\) {\s*corner-shape: squircle;\s*}/);
+    expect(baseline).not.toContain('fl-continuous-corners');
+  });
+
   it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
     const stack = /font-family: ([^;]+);/.exec(blockAfter(css, '.frameleaf {'))?.[1];
     expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));

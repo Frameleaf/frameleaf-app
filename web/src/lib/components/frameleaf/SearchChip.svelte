@@ -31,7 +31,7 @@
   } = $props();
 </script>
 
-<span class="search-chip" class:exclude {title}>
+<span class="search-chip fl-continuous-corners" class:exclude {title}>
   {#if person}
     <PersonAvatar {person} size={18} />
   {/if}
@@ -57,7 +57,6 @@
   }
   @supports (corner-shape: squircle) {
     .search-chip {
-      corner-shape: squircle;
       border-radius: 14px;
     }
   }
