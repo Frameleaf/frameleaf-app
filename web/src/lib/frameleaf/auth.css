@@ -976,9 +976,6 @@
   word-break: break-all;
   font-size: 13px;
 }
-.auth-screen .ob-template-preview.invalid code {
-  color: var(--fl-warning);
-}
 .auth-screen .ob-template input {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

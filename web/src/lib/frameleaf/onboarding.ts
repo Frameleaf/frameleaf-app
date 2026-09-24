@@ -167,11 +167,16 @@ export const STORAGE_TEMPLATE_PRESETS: readonly { id: string; label: Translation
   { id: 'camera', label: 'frameleaf_onboarding_preset_camera', pattern: '{{make}} {{model}}/{{y}}/{{filename}}' },
 ];
 
-/** Expands a storage template against the sample asset (the prototype's `renderStorageTemplate`). */
+/**
+ * Expands a storage template against the sample asset (the prototype's `renderStorageTemplate`) for
+ * the live example. The server supports more than the sample knows (`{{#if album}}` blocks, album
+ * dates, lens model…), so a token the sample cannot fill only means there is no example for it: the
+ * pattern is still saved and the server validates it. `previewable` is false in that case.
+ */
 export const renderStorageTemplate = (pattern: string, storageLabel: string) => {
   const unknown: string[] = [];
   const source = pattern.slice(0, STORAGE_TEMPLATE_MAX_LENGTH);
-  const body = source.replaceAll(/{{\s*([A-Za-z]+)\s*}}/g, (match, key: string) => {
+  const body = source.replaceAll(/{{\s*([^{}]*?)\s*}}/g, (match, key: string) => {
     if (Object.hasOwn(SAMPLE, key)) {
       return SAMPLE[key];
     }
@@ -182,8 +187,7 @@ export const renderStorageTemplate = (pattern: string, storageLabel: string) => 
     .replaceAll(/\/+/g, '/')
     .replaceAll(/^\/|\/$/g, '')
     .trim();
-  const valid = clean.length > 0 && unknown.length === 0 && !clean.includes('..');
-  return { path: `library/${storageLabel}/${clean || '…'}.jpg`, unknown, valid };
+  return { path: `library/${storageLabel}/${clean || '…'}.jpg`, unknown, previewable: unknown.length === 0 };
 };
 
 /** Inserts `token` over the selection of `pattern`, returning the new pattern and caret. */

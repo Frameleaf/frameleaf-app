@@ -4,8 +4,10 @@
    * (`AuthScreens.jsx:1005-1072`) — "Organise originals into folders", preset chips, the pattern with
    * variables inserted at the cursor, and a live example — in place of the embedded legacy
    * `StorageTemplateSettings`. It starts from the server's current template and, when the step
-   * closes, saves the switch and (when the example is valid) the pattern to the storage template
-   * settings, as the old step did.
+   * closes, saves the switch and the pattern to the storage template settings, as the old step did.
+   * The server validates the pattern: the example only covers the sample's variables, so a token it
+   * cannot fill says so instead of blocking the save, and a pattern the server rejects is reported by
+   * the save's error message and left unchanged.
    */
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import {
@@ -43,7 +45,7 @@
   };
 
   onDestroy(async () => {
-    const template = preview.valid ? pattern.trim() : initial.template;
+    const template = pattern.trim() || initial.template;
     if (enabled === initial.enabled && template === initial.template) {
       return;
     }
@@ -90,12 +92,12 @@
         </button>
       {/each}
     </div>
-    <div class="ob-template-preview" class:invalid={!preview.valid} aria-live="polite">
+    <div class="ob-template-preview" aria-live="polite">
       <span>{$t('frameleaf_onboarding_storage_example')}</span>
       <code>{preview.path}</code>
       {#if preview.unknown.length > 0}
         <span>
-          {$t('frameleaf_onboarding_storage_unknown', {
+          {$t('frameleaf_onboarding_storage_no_preview', {
             values: { count: preview.unknown.length, variables: preview.unknown.join(', ') },
           })}
         </span>
