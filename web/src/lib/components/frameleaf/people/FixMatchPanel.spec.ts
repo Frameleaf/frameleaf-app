@@ -74,7 +74,7 @@ describe('FixMatchPanel (PD-3)', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it('removes a face that is nobody', async () => {
+  it('takes a face that is nobody off the person with a recoverable soft delete', async () => {
     sdkMock.deleteFace.mockResolvedValue(undefined as never);
     render(FixMatchPanel, { person, close: vi.fn() });
 
@@ -82,7 +82,35 @@ describe('FixMatchPanel (PD-3)', () => {
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Not a face of anyone' }));
 
     await waitFor(() =>
-      expect(sdkMock.deleteFace).toHaveBeenCalledWith({ id: 'f1', assetFaceDeleteDto: { force: true } }),
+      expect(sdkMock.deleteFace).toHaveBeenCalledWith({ id: 'f1', assetFaceDeleteDto: { force: false } }),
     );
+  });
+
+  it('does not skip photos on Show more after faces moved away', async () => {
+    const page = (ids: string[], next: string | null) =>
+      ({
+        assets: { items: ids.map((id) => asset(id)), nextPage: next, nextCursor: null, count: 0, total: 0, facets: [] },
+      }) as never;
+    const ids = Array.from({ length: 25 }, (_, index) => `p${index}`);
+    sdkMock.searchAssets.mockResolvedValueOnce(page(ids, '2'));
+    sdkMock.getFaces.mockImplementation(({ id }) => Promise.resolve([face(`f-${id}`, 'ada')]));
+    sdkMock.reassignFacesById.mockResolvedValue(other);
+    render(FixMatchPanel, { person, close: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Not this person in p0.jpg' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'This is Grace' }));
+    await waitFor(() => expect(sdkMock.reassignFacesById).toHaveBeenCalledOnce());
+
+    // p0 left the results, so the server's page 2 now starts one photo later: reading page 1 again
+    // finds the photo that shifted onto it.
+    sdkMock.searchAssets.mockResolvedValueOnce(page([...ids.slice(1), 'shifted'], '2'));
+    sdkMock.searchAssets.mockResolvedValueOnce(page(['late'], null));
+    await fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+
+    expect(await screen.findByText('shifted.jpg')).toBeTruthy();
+    expect(await screen.findByText('late.jpg')).toBeTruthy();
+    expect(sdkMock.searchAssets).toHaveBeenNthCalledWith(2, {
+      metadataSearchDto: expect.objectContaining({ page: 1 }),
+    });
   });
 });
