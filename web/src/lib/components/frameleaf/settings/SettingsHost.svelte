@@ -20,6 +20,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
@@ -614,6 +615,15 @@
             />
           {:else if selected}
             <section class="cc-section" id="setting-{selected.key}">
+              {#if area === 'storage' && selected.key === 'trash'}
+                <!-- The template's Storage → Trash & retention links to the account's own trash. -->
+                <div class="cc-section-link">
+                  <Button onclick={() => navigate('trash', 'contents')}>
+                    <Icon icon={mdiDeleteOutline} size="1rem" aria-hidden />
+                    {$t('frameleaf_cc_open_trash')}
+                  </Button>
+                </div>
+              {/if}
               {#if selected.component}
                 <selected.component />
               {:else}
@@ -931,6 +941,9 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+  }
+  .cc-section-link {
+    margin-bottom: 16px;
   }
   .cc-section + .cc-section {
     margin-top: 16px;

@@ -51,6 +51,11 @@ export type SettingsAreaDefinition = {
   personal?: string[];
   /** Areas only an administrator opens (screens of their own, or areas holding only server settings). */
   adminOnly?: boolean;
+  /**
+   * The display order when the template interleaves server and account sections; otherwise server
+   * sections come first. Lists every key of `sections` and `personal`.
+   */
+  order?: string[];
 };
 
 /** The template's area order (`settingsAreas` in settings-catalog.mjs); the rail groups them by `group`. */
@@ -76,7 +81,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
   // The template's Library care (settings-catalog.mjs:905-977): media health & integrity with its
   // integrity check settings, repair queues and enrichment completeness.
-  { id: 'care', group: 'library', sections: ['integrity-checks', 'enrichment-care'], personal: ['repair'] },
+  {
+    id: 'care',
+    group: 'library',
+    sections: ['integrity-checks', 'enrichment-care'],
+    personal: ['repair'],
+    order: ['integrity-checks', 'repair', 'enrichment-care'],
+  },
   // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
   // and /admin/render-workers pages are sections of Compute & jobs, with the job and nightly settings.
   {
@@ -195,10 +206,14 @@ export const personalSectionKey = (key: string) => PERSONAL_ALIASES[key] ?? key;
 export const areaForPersonalSection = (sectionKey: string): SettingsAreaId | undefined =>
   SETTINGS_AREAS.find((area) => area.personal?.includes(personalSectionKey(sectionKey)))?.id;
 
-/** Every section key of an area, server sections first, in display order. */
+/** Orders an area's keys as it displays them: its `order`, else server sections first. */
+const inDisplayOrder = <T>(area: SettingsAreaDefinition, items: T[], key: (item: T) => string): T[] =>
+  area.order ? [...items].sort((a, b) => area.order!.indexOf(key(a)) - area.order!.indexOf(key(b))) : items;
+
+/** Every section key of an area, in display order (server sections first unless the area orders them). */
 export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
   const area = SETTINGS_AREAS.find((item) => item.id === areaId);
-  return area ? [...area.sections, ...(area.personal ?? [])] : [];
+  return area ? inDisplayOrder(area, [...area.sections, ...(area.personal ?? [])], (key) => key) : [];
 };
 
 /**
@@ -263,7 +278,7 @@ export const searchSettingsSections = <T extends SearchableSection>(sections: re
   );
 };
 
-/** Sections of one area that the caller offers, ordered as the area lists them; unknown keys are ignored. */
+/** Sections of one area that the caller offers, in the area's display order; unknown keys are ignored. */
 export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
   sections: readonly T[],
   areaId: SettingsAreaId,
@@ -276,5 +291,5 @@ export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
     keys
       .map((key) => sections.find((section) => section.key === key && Boolean(section.admin) === admin))
       .filter((section): section is T => section !== undefined);
-  return [...pick(area.sections, true), ...pick(area.personal ?? [], false)];
+  return inDisplayOrder(area, [...pick(area.sections, true), ...pick(area.personal ?? [], false)], ({ key }) => key);
 };
