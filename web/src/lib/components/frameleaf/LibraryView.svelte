@@ -27,7 +27,7 @@
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
-  import { preparesArchiveOnServer, type ArchiveOperationResponseDto } from '$lib/frameleaf/archive-operations';
+  import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
@@ -47,7 +47,7 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { AssetVisibility } from '@immich/sdk';
+  import { AssetVisibility, type ArchiveOperationResponseDto } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
   import { mdiTuneVariant } from '@mdi/js';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';

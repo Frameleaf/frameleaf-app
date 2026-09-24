@@ -1,4 +1,4 @@
-import type { MediaOperationDto } from '@immich/sdk';
+import { Scope, type ArchiveOperationResponseDto, type MediaOperationDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
@@ -6,10 +6,8 @@ import {
   ARCHIVE_OPERATION_MAX_ITEMS,
   ARCHIVE_UNDO_RESTORE_MS,
   archiveGateway,
-  ArchiveOperationError,
-  ArchiveOperationScope,
+  isExpiredSelection,
   type ArchiveGateway,
-  type ArchiveOperationResponseDto,
 } from '$lib/frameleaf/archive-operations';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import {
@@ -62,6 +60,9 @@ export type BulkUndoEntry = {
 
 const requestKey = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `fl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+/** Archives this page load has already announced, so moving between library pages never repeats one. */
+const announcedArchives = new Set<string>();
 
 export class BulkController {
   #dispatch: (action: LibrarySessionAction) => void;
@@ -429,7 +430,7 @@ export class BulkController {
     this.busy = true;
     try {
       return await this.#archive.prepareArchiveOperation({
-        archiveOperationPrepareDto: { requestKey: requestKey(), scope: ArchiveOperationScope.MatchingOwnedTimeline },
+        archiveOperationPrepareDto: { requestKey: requestKey(), scope: Scope.MatchingOwnedTimeline },
       });
     } catch (error) {
       const translate = await getFormatter();
@@ -452,7 +453,7 @@ export class BulkController {
       return true;
     } catch (error) {
       const translate = await getFormatter();
-      if (error instanceof ArchiveOperationError && error.status === 410) {
+      if (isExpiredSelection(error)) {
         toastManager.warning(translate('frameleaf_bulk_archive_expired'));
       } else {
         handleError(error, translate('frameleaf_bulk_reason_failed'));
@@ -467,14 +468,24 @@ export class BulkController {
   async #announceArchive(operation: ArchiveOperationResponseDto) {
     const translate = await getFormatter();
     this.undo = operation.undoable ? await this.#archiveUndo(operation) : null;
-    const undo = this.undo;
-    toastManager.primary({
-      description: translate('frameleaf_bulk_queued', {
+    announcedArchives.add(operation.id);
+    this.#toastArchive(
+      translate('frameleaf_bulk_queued', {
         values: { action: translate('frameleaf_bulk_archive'), count: operation.count },
       }),
+      this.undo,
+      translate('undo'),
+    );
+    this.#queued();
+  }
+
+  /** A toast in the prototype's shape (`setToast({ text, action })`): the message, and Undo on it. */
+  #toastArchive(description: string, undo: BulkUndoEntry | null, undoLabel: string) {
+    toastManager.primary({
+      description,
       ...(undo && {
         button: (close: () => void) => ({
-          label: translate('undo'),
+          label: undoLabel,
           onclick: () => {
             close();
             void undo.run();
@@ -482,7 +493,6 @@ export class BulkController {
         }),
       }),
     });
-    this.#queued();
   }
 
   async #archiveUndo(operation: ArchiveOperationResponseDto): Promise<BulkUndoEntry> {
@@ -509,8 +519,10 @@ export class BulkController {
   }
 
   /**
-   * Offer the Undo of the latest archive again after a reload. The server keeps what the archive
-   * changed, so the offer is only an entry point; the undo itself is still guarded item by item.
+   * Offer the Undo of the latest archive again after a reload: in the selection bar, and once per
+   * page load as the prototype's toast, so it is reachable without selecting anything. The server
+   * keeps what the archive changed, so the offer is only an entry point; the undo itself is still
+   * guarded item by item.
    */
   async restoreArchiveUndo(now = Date.now()) {
     if (this.undo) {
@@ -522,7 +534,17 @@ export class BulkController {
         (operation) => operation.undoable && now - Date.parse(operation.createdAt) <= ARCHIVE_UNDO_RESTORE_MS,
       );
       if (latest && !this.undo) {
-        this.undo = await this.#archiveUndo(latest);
+        const undo = await this.#archiveUndo(latest);
+        this.undo = undo;
+        if (!announcedArchives.has(latest.id)) {
+          announcedArchives.add(latest.id);
+          const translate = await getFormatter();
+          this.#toastArchive(
+            translate('frameleaf_bulk_archive_undo_available', { values: { count: latest.archived } }),
+            undo,
+            translate('undo'),
+          );
+        }
       }
     } catch {
       // nothing to offer: the archive and its record are unaffected

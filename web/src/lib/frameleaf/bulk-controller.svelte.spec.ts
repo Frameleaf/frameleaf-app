@@ -1,6 +1,7 @@
+import { ArchiveOperationScope, type ArchiveOperationResponseDto } from '@immich/sdk';
+import { toastManager } from '@immich/ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArchiveGateway, ArchiveOperationResponseDto } from '$lib/frameleaf/archive-operations';
-import { ArchiveOperationError, ArchiveOperationScope } from '$lib/frameleaf/archive-operations';
+import type { ArchiveGateway } from '$lib/frameleaf/archive-operations';
 import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
 import { DURABLE_BULK_THRESHOLD, type BulkGateway } from '$lib/frameleaf/bulk-operations';
 import {
@@ -16,6 +17,11 @@ vi.mock('$lib/utils/i18n', () => ({
 vi.mock('$lib/utils/asset-utils', () => ({ downloadArchive: vi.fn() }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() } }));
+// an HTTP refusal, as the generated SDK reports one
+vi.mock('@immich/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@immich/sdk')>()),
+  isHttpError: (error: unknown) => error instanceof Error && 'status' in error,
+}));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({ activitySession: { refresh: vi.fn() } }));
 
 // FL-48: a structured search pages by cursor, so the next page is announced as `nextCursor`
@@ -282,7 +288,7 @@ describe('the bulk controller', () => {
     });
 
     it('starts nothing when the prepared selection expired before it was confirmed', async () => {
-      archive.confirmArchiveOperation.mockRejectedValue(new ArchiveOperationError('expired', 410));
+      archive.confirmArchiveOperation.mockRejectedValue(Object.assign(new Error('expired'), { status: 410 }));
 
       expect(await controller.confirmArchive(operationOf({ prepared: true }))).toBe(false);
       expect(controller.undo).toBeNull();
@@ -300,6 +306,16 @@ describe('the bulk controller', () => {
       await controller.undo!.run();
 
       expect(archive.undoArchiveOperation).toHaveBeenCalledWith(expect.objectContaining({ id: 'recent' }));
+
+      // shown once as the prototype's toast, with Undo on it, without a selection
+      expect(toastManager.primary).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'frameleaf_bulk_archive_undo_available', button: expect.any(Function) }),
+      );
+      vi.mocked(toastManager.primary).mockClear();
+      controller.undo = null;
+      await controller.restoreArchiveUndo(now);
+      expect(controller.undo).not.toBeNull();
+      expect(toastManager.primary).not.toHaveBeenCalled();
 
       controller.undo = null;
       archive.getArchiveOperations.mockResolvedValue([operationOf({ createdAt: '2026-09-23T10:00:00.000Z' })]);
