@@ -1,8 +1,14 @@
-import { ArchiveOperationPrepareScope, type ArchiveOperationResponseDto, type MediaOperationDto } from '@immich/sdk';
+import {
+  ArchiveOperationPrepareScope,
+  isHttpError,
+  type ArchiveOperationResponseDto,
+  type MediaOperationDto,
+} from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import {
+  isCurrentSession,
   ARCHIVE_OPERATION_MAX_ITEMS,
   ARCHIVE_UNDO_RESTORE_MS,
   archiveGateway,
@@ -222,7 +228,11 @@ export class BulkController {
   async #queue(action: BulkActionId, ids: string[], payload?: BulkPayload) {
     this.busy = true;
     try {
-      if (this.#archivesAsOperation(action, ids)) {
+      if (action === 'archive') {
+        if (!this.#archivesAsOperation(ids)) {
+          await this.#refuseTooMany();
+          return;
+        }
         await this.#archiveIds(ids);
         return;
       }
@@ -342,6 +352,14 @@ export class BulkController {
       this.#dispatch({ type: 'operation-finish', requestId, succeeded: 0, failed: 0, skipped: 0, ...patch });
 
     try {
+      // A hand-off Retry after the archive was accepted but its answer was lost sends the same
+      // selection under the same key, so the server answers with the operation it already has.
+      const handedOff = action === 'archive' ? this.#archiveSelections.get(requestId) : undefined;
+      if (handedOff) {
+        await this.#archiveIds(handedOff, requestId, () => this.#dispatch({ type: 'operation-dismiss', requestId }));
+        return;
+      }
+
       const resolved = await resolveMatchingIds(scope, {
         gateway: this.#gateway,
         signal,
@@ -363,8 +381,16 @@ export class BulkController {
         return;
       }
 
-      if (this.#archivesAsOperation(action, resolved.ids)) {
+      if (action === 'archive') {
+        // The same limit the server-counted archive has: a matching set larger than one operation is
+        // refused rather than archived short, since its Undo could not cover what was left out.
+        if (resolved.truncated || !this.#archivesAsOperation(resolved.ids)) {
+          finishWith({ errorKey: 'frameleaf_bulk_reason_archive_too_many', truncated: resolved.truncated });
+          return;
+        }
+        this.#archiveSelections.set(requestId, resolved.ids);
         await this.#archiveIds(resolved.ids, requestId, () => this.#dispatch({ type: 'operation-dismiss', requestId }));
+        this.#archiveSelections.delete(requestId);
         return;
       }
 
@@ -397,8 +423,16 @@ export class BulkController {
   /* Transactional archive (FL-32)                                             */
   /* ------------------------------------------------------------------------ */
 
-  #archivesAsOperation(action: BulkActionId, ids: readonly string[]) {
-    return action === 'archive' && new Set(ids).size <= ARCHIVE_OPERATION_MAX_ITEMS;
+  /** Hand-offs whose archive was submitted, by request key, until the server has answered. */
+  #archiveSelections = new Map<string, string[]>();
+
+  #archivesAsOperation(ids: readonly string[]) {
+    return new Set(ids).size <= ARCHIVE_OPERATION_MAX_ITEMS;
+  }
+
+  async #refuseTooMany() {
+    const translate = await getFormatter();
+    toastManager.warning(translate('frameleaf_bulk_reason_archive_too_many'));
   }
 
   /**
@@ -410,7 +444,9 @@ export class BulkController {
     const operation = await this.#archive.createArchiveOperation({
       archiveOperationCreateDto: { requestKey: requestId, assetIds: selection },
     });
-    if (operation.archiveJobId) {
+    // Tile loaders read the job's cursor against these ids, so they only follow a job that holds
+    // exactly this selection; when the server left some out, Activity still follows it.
+    if (operation.archiveJobId && operation.pending === selection.length) {
       const view = this.#context().view;
       if (view) {
         this.#tracker.track('archive', operation.archiveJobId, selection, view);
@@ -456,7 +492,7 @@ export class BulkController {
       return true;
     } catch (error) {
       const translate = await getFormatter();
-      if (isExpiredSelection(error)) {
+      if (isExpiredSelection(error) || (isHttpError(error) && error.status === 404)) {
         toastManager.warning(translate('frameleaf_bulk_archive_expired'));
       } else {
         handleError(error, translate('frameleaf_bulk_reason_failed'));
@@ -470,6 +506,12 @@ export class BulkController {
   /** The prototype's toast: what was queued, with Undo on it. */
   async #announceArchive(operation: ArchiveOperationResponseDto) {
     const translate = await getFormatter();
+    if (!operation.archiveJobId) {
+      // nothing was queued: none of the items could be archived from here
+      this.undo = null;
+      toastManager.primary(translate('frameleaf_bulk_archive_nothing_selected'));
+      return;
+    }
     this.undo = operation.undoable ? await this.#archiveUndo(operation) : null;
     announcedArchives.add(operation.id);
     this.#toastArchive(
@@ -500,23 +542,30 @@ export class BulkController {
 
   async #archiveUndo(operation: ArchiveOperationResponseDto): Promise<BulkUndoEntry> {
     const translate = await getFormatter();
+    // One key per Undo offer: a second click, or a retry after a lost answer, is the same undo.
+    const undoKey = requestKey();
+    let running: Promise<void> | null = null;
     const entry: BulkUndoEntry = {
       label: translate('frameleaf_bulk_archive'),
-      run: async () => {
-        if (this.undo === entry) {
-          this.undo = null;
-        }
-        try {
-          await this.#archive.undoArchiveOperation({
-            id: operation.id,
-            archiveOperationUndoDto: { requestKey: requestKey() },
-          });
-          toastManager.primary(translate('frameleaf_bulk_archive_undo_queued'));
-          this.#queued();
-        } catch (error) {
-          handleError(error, translate('frameleaf_bulk_archive_undo_failed'));
-        }
-      },
+      run: () =>
+        (running ??= (async () => {
+          if (this.undo === entry) {
+            this.undo = null;
+          }
+          try {
+            await this.#archive.undoArchiveOperation({
+              id: operation.id,
+              archiveOperationUndoDto: { requestKey: undoKey },
+            });
+            toastManager.primary(translate('frameleaf_bulk_archive_undo_queued'));
+            this.#queued();
+          } catch (error) {
+            handleError(error, translate('frameleaf_bulk_archive_undo_failed'));
+            // still on offer, under the same key
+            this.undo ??= entry;
+            running = null;
+          }
+        })()),
     };
     return entry;
   }
@@ -533,8 +582,12 @@ export class BulkController {
     }
     try {
       const operations = await this.#archive.getArchiveOperations();
+      // only this session's own archives: another device's Undo is not offered here (Activity lists all)
       const latest = operations.find(
-        (operation) => operation.undoable && now - Date.parse(operation.createdAt) <= ARCHIVE_UNDO_RESTORE_MS,
+        (operation) =>
+          operation.undoable &&
+          isCurrentSession(operation) &&
+          now - Date.parse(operation.createdAt) <= ARCHIVE_UNDO_RESTORE_MS,
       );
       if (latest && !this.undo) {
         const undo = await this.#archiveUndo(latest);
