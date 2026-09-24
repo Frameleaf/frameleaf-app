@@ -86,6 +86,13 @@ describe('AccountSecurityPanel (FL-76)', () => {
     expect(screen.getByRole('button', { name: en.frameleaf_users_device_revoke })).toBeInTheDocument();
   });
 
+  it('shows whether a sign-in provider is connected (CC-31)', () => {
+    render(AccountSecurityPanel, { user: { ...user, oauthId: 'oidc|123' }, sessions: [] });
+
+    expect(screen.getByText(en.frameleaf_users_provider_title)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(String.raw`^\s*${en.frameleaf_users_provider_connected} ·`))).toBeInTheDocument();
+  });
+
   it('never offers to revoke the current device, and never asks the endpoint to', () => {
     render(AccountSecurityPanel, { user, sessions: [session({ id: 'session-current', current: true })] });
 

@@ -182,6 +182,24 @@ describe('AccountDetailTabs (FL-76)', () => {
     });
   });
 
+  it('shows the four snapshot stats, physical originals included (CC-29)', () => {
+    render(AccountDetailTabs, {
+      user,
+      preferences,
+      statistics,
+      sessions: [],
+      libraries: [],
+      physicalBytes: 1024,
+      preferencesEditable: true,
+      savePreferences: vi.fn(),
+      loadPreferences: vi.fn(),
+    });
+
+    expect(screen.getByText(en.frameleaf_account_detail_originals_logical)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_account_detail_originals_physical)).toBeInTheDocument();
+    expect(screen.getByText('1 KiB')).toBeInTheDocument();
+  });
+
   it("Overview's quick actions jump straight to Features and Security", async () => {
     renderTabs();
 
@@ -212,7 +230,9 @@ describe('AccountDetailTabs (FL-76)', () => {
         en.frameleaf_account_history_password_reset_change_required,
         en.frameleaf_account_history_library_scan_queued,
       ]);
-      expect(items[2].querySelector('span')?.textContent).toMatch(/^Trip photos · /);
+      expect(items[2].querySelector('span')?.textContent).toMatch(/^\s*Trip photos · /);
+      // The audit actor is named when the server recorded one.
+      expect(items[0].querySelector('span')?.textContent).toContain('by Ada');
       expect(getUserHistoryAdmin).toHaveBeenCalledWith({ id: user.id, before: undefined, take: 50 });
     });
 
