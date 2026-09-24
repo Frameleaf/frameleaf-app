@@ -770,7 +770,6 @@
   />
 {/if}
 
-
 {#if ruleEdit.rule && ruleEdit.album}
   <SmartAlbumRuleDialog
     album={ruleEdit.album}
