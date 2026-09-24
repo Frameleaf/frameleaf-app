@@ -20,10 +20,13 @@ import {
   SharedSpacePersonLinkDto,
   SharedSpacePersonResponseDto,
   SharedSpacePreviewResponseDto,
+  RecipientGroupCreateDto,
+  RecipientGroupResponseDto,
+  RecipientGroupUpdateDto,
 } from 'src/dtos/shared-space.dto.js';
 import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
 import { AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
-import { SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
+import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import {
@@ -120,6 +123,88 @@ type CommentRow = {
  */
 @Injectable()
 export class SharedSpaceService extends BaseService {
+  /* ------------------------------------------------------------------------ */
+  /* Named recipient shortcuts (FL-55)                                         */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * The owner's saved groups of people to invite together. Only ever the caller's own: a group, its
+   * name and who is in it are never shown to anyone else, the people in it included.
+   */
+  async getRecipientGroups(auth: AuthDto): Promise<RecipientGroupResponseDto[]> {
+    const [groups, users] = await Promise.all([
+      this.albumUserRepository.getRecipientGroups(auth.user.id),
+      this.userRepository.getList({}),
+    ]);
+    return groups.map((group) => this.mapRecipientGroup(group, users));
+  }
+
+  /**
+   * Save a named group. It is a shortcut only: nothing is shared and nobody is invited until the
+   * owner applies it to a space and sends the invitations it proposes.
+   */
+  async createRecipientGroup(auth: AuthDto, dto: RecipientGroupCreateDto): Promise<RecipientGroupResponseDto> {
+    const users = await this.userRepository.getList({});
+    const userIds = this.recipientIds(auth, dto.userIds, users);
+    const group = await this.albumUserRepository.createRecipientGroup(auth.user.id, dto.name, userIds);
+    return this.mapRecipientGroup(group, users);
+  }
+
+  /**
+   * Rename a group or change who is in it. Only the group changes: people already invited to or
+   * members of a space keep exactly the access they have, and people added here are not invited
+   * anywhere until the owner applies the group again.
+   */
+  async updateRecipientGroup(
+    auth: AuthDto,
+    id: string,
+    dto: RecipientGroupUpdateDto,
+  ): Promise<RecipientGroupResponseDto> {
+    const users = await this.userRepository.getList({});
+    const userIds = dto.userIds === undefined ? undefined : this.recipientIds(auth, dto.userIds, users);
+    const group = await this.albumUserRepository.updateRecipientGroup(auth.user.id, id, { name: dto.name, userIds });
+    if (!group) {
+      throw new NotFoundException('Recipient group not found');
+    }
+    return this.mapRecipientGroup(group, users);
+  }
+
+  /** Delete a group. Nobody loses access to anything. */
+  async deleteRecipientGroup(auth: AuthDto, id: string): Promise<void> {
+    const deleted = await this.albumUserRepository.deleteRecipientGroup(auth.user.id, id);
+    if (!deleted) {
+      throw new NotFoundException('Recipient group not found');
+    }
+  }
+
+  /** The people a group may hold: existing accounts other than the owner, each once. */
+  private recipientIds(auth: AuthDto, ids: string[], users: { id: string }[]): string[] {
+    const known = new Set(users.map(({ id }) => id));
+    const wanted = [...new Set(ids)].filter((id) => id !== auth.user.id);
+    if (wanted.some((id) => !known.has(id))) {
+      throw new BadRequestException('Invalid user');
+    }
+    return wanted;
+  }
+
+  private mapRecipientGroup(
+    group: RecipientGroup,
+    users: Parameters<typeof mapUser>[0][],
+  ): RecipientGroupResponseDto {
+    const byId = new Map(users.map((user) => [user.id, user]));
+    return {
+      id: group.id,
+      name: group.name,
+      users: group.userIds
+        .map((id) => byId.get(id))
+        .filter((user) => user !== undefined)
+        .map((user) => mapUser(user))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+      createdAt: asDateTimeString(group.createdAt),
+      updatedAt: asDateTimeString(group.updatedAt),
+    };
+  }
+
   /** Every space this person has been invited to and has not answered. */
   async getInvitations(auth: AuthDto): Promise<SharedSpacePreviewResponseDto[]> {
     const invites = await this.albumUserRepository.getInvitesForUser(auth.user.id);

@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -17,6 +18,19 @@ import { isLocked } from 'src/utils/locked.js';
 export type AlbumPermissionId = {
   albumId: string;
   userId: string;
+};
+
+/**
+ * A named recipient shortcut (FL-55): the owner's own saved list of people to invite together.
+ * It grants nothing and is never shown to anyone but its owner.
+ */
+export type RecipientGroup = {
+  id: string;
+  ownerId: string;
+  name: string;
+  userIds: string[];
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 /** A pending invitation to a shared space. It grants nothing until accepted. */
@@ -114,6 +128,76 @@ export type SharedSpaceCommentThread = {
 @Injectable()
 export class AlbumUserRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /** FL-55: one owner's named recipient shortcuts, by name. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getRecipientGroups(ownerId: string): Promise<RecipientGroup[]> {
+    const { rows } = await sql<RecipientGroup>`
+      SELECT id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
+      FROM immich_fork.recipient_group
+      WHERE "ownerId" = ${ownerId}::uuid
+      ORDER BY lower(name), id
+    `.execute(this.db);
+    return rows;
+  }
+
+  /** FL-55: a shortcut, only when `ownerId` owns it — anyone else's reads as not found. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async getRecipientGroup(ownerId: string, id: string): Promise<RecipientGroup | undefined> {
+    const { rows } = await sql<RecipientGroup>`
+      SELECT id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
+      FROM immich_fork.recipient_group
+      WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /**
+   * FL-55: saves a named shortcut. Writes only the shortcut itself — never an album user, an
+   * invitation or any other grant — through the fork-writer guard like every fork-owned table.
+   */
+  async createRecipientGroup(ownerId: string, name: string, userIds: string[]): Promise<RecipientGroup> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
+      const { rows } = await sql<RecipientGroup>`
+        INSERT INTO immich_fork.recipient_group ("ownerId", name, "userIds")
+        VALUES (${ownerId}::uuid, ${name}, ${userIds}::uuid[])
+        RETURNING id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
+      `.execute(tx);
+      return rows[0];
+    });
+  }
+
+  /** FL-55: renames or re-lists an owner's shortcut; undefined when it is not theirs. */
+  async updateRecipientGroup(
+    ownerId: string,
+    id: string,
+    { name, userIds }: { name?: string; userIds?: string[] },
+  ): Promise<RecipientGroup | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
+      const { rows } = await sql<RecipientGroup>`
+        UPDATE immich_fork.recipient_group
+        SET name = coalesce(${name ?? null}::text, name),
+            "userIds" = coalesce(${userIds ?? null}::uuid[], "userIds"),
+            "updatedAt" = clock_timestamp()
+        WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
+        RETURNING id::text AS id, "ownerId"::text AS "ownerId", name, "userIds"::text[] AS "userIds", "createdAt", "updatedAt"
+      `.execute(tx);
+      return rows[0];
+    });
+  }
+
+  /** FL-55: deletes an owner's shortcut; false when it is not theirs. Nobody's access changes. */
+  async deleteRecipientGroup(ownerId: string, id: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Recipient groups are unavailable during database handoff');
+      const { numAffectedRows } = await sql`
+        DELETE FROM immich_fork.recipient_group WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid
+      `.execute(tx);
+      return (numAffectedRows ?? 0n) > 0n;
+    });
+  }
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
   create(albumUser: Insertable<AlbumUserTable>) {

@@ -41,6 +41,97 @@ describe(SharedSpaceService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('recipient groups (FL-55)', () => {
+    const group = (ownerId: string, userIds: string[], name = 'Family') => ({
+      id: newUuid(),
+      ownerId,
+      name,
+      userIds,
+      createdAt: newDate(),
+      updatedAt: newDate(),
+    });
+
+    it('lists only the caller’s own groups, with the people who still have an account', async () => {
+      const owner = UserFactory.create();
+      const jamie = UserFactory.create({ name: 'Jamie' });
+      const saved = group(owner.id, [jamie.id, newUuid()]);
+      mocks.albumUser.getRecipientGroups.mockResolvedValue([saved]);
+      mocks.user.getList.mockResolvedValue([owner, jamie] as never);
+
+      const groups = await sut.getRecipientGroups(AuthFactory.create(owner));
+
+      expect(mocks.albumUser.getRecipientGroups).toHaveBeenCalledWith(owner.id);
+      expect(groups).toEqual([expect.objectContaining({ id: saved.id, name: 'Family' })]);
+      // A deleted account drops out of the group rather than failing it.
+      expect(groups[0].users.map(({ id }) => id)).toEqual([jamie.id]);
+    });
+
+    it('saves a group without inviting anybody or changing any access', async () => {
+      const owner = UserFactory.create();
+      const jamie = UserFactory.create();
+      mocks.user.getList.mockResolvedValue([owner, jamie] as never);
+      mocks.albumUser.createRecipientGroup.mockResolvedValue(group(owner.id, [jamie.id]));
+
+      await sut.createRecipientGroup(AuthFactory.create(owner), {
+        name: 'Family',
+        userIds: [jamie.id, jamie.id, owner.id],
+      });
+
+      // Yourself and repeats are dropped; the strict album-user mock proves nothing else was written.
+      expect(mocks.albumUser.createRecipientGroup).toHaveBeenCalledWith(owner.id, 'Family', [jamie.id]);
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown person', async () => {
+      const owner = UserFactory.create();
+      mocks.user.getList.mockResolvedValue([owner] as never);
+
+      await expect(
+        sut.createRecipientGroup(AuthFactory.create(owner), { name: 'Family', userIds: [newUuid()] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.albumUser.createRecipientGroup).not.toHaveBeenCalled();
+    });
+
+    it('edits a group without touching invitations or memberships made from it', async () => {
+      const owner = UserFactory.create();
+      const jamie = UserFactory.create();
+      const sam = UserFactory.create();
+      const saved = group(owner.id, [sam.id], 'Hiking');
+      mocks.user.getList.mockResolvedValue([owner, jamie, sam] as never);
+      mocks.albumUser.updateRecipientGroup.mockResolvedValue(saved);
+
+      await sut.updateRecipientGroup(AuthFactory.create(owner), saved.id, { name: 'Hiking', userIds: [sam.id] });
+
+      expect(mocks.albumUser.updateRecipientGroup).toHaveBeenCalledWith(owner.id, saved.id, {
+        name: 'Hiking',
+        userIds: [sam.id],
+      });
+      // Jamie was taken out of the group, but nobody is removed from or invited to any space.
+      expect(mocks.albumUser.delete).not.toHaveBeenCalled();
+      expect(mocks.albumUser.deleteInvite).not.toHaveBeenCalled();
+      expect(mocks.albumUser.createInvite).not.toHaveBeenCalled();
+    });
+
+    it('treats somebody else’s group as not found, for reading, editing and deleting', async () => {
+      const stranger = UserFactory.create();
+      mocks.user.getList.mockResolvedValue([stranger] as never);
+      mocks.albumUser.updateRecipientGroup.mockResolvedValue(undefined);
+      mocks.albumUser.deleteRecipientGroup.mockResolvedValue(false);
+      const id = newUuid();
+
+      await expect(sut.updateRecipientGroup(AuthFactory.create(stranger), id, { name: 'Mine now' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(sut.deleteRecipientGroup(AuthFactory.create(stranger), id)).rejects.toBeInstanceOf(NotFoundException);
+      // The lookups are always scoped to the caller as owner.
+      expect(mocks.albumUser.updateRecipientGroup).toHaveBeenCalledWith(stranger.id, id, {
+        name: 'Mine now',
+        userIds: undefined,
+      });
+      expect(mocks.albumUser.deleteRecipientGroup).toHaveBeenCalledWith(stranger.id, id);
+    });
+  });
+
   describe('getPreview', () => {
     it('shows an invited recipient what the space exposes, without any asset', async () => {
       const recipient = UserFactory.create();
