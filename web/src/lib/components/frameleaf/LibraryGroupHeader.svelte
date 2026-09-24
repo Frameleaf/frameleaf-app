@@ -21,10 +21,22 @@
     hovered?: boolean;
     /** A selection is in progress: every group shows its checkbox (prototype `.is-selecting`). */
     selecting?: boolean;
-    onSelect?: (checked: boolean) => void;
+    /**
+     * Called with the checkbox's new state. Resolving `false` means the change did not take effect
+     * (the group could not be loaded, or the view moved on), and the checkbox shows `state` again.
+     */
+    onSelect?: (checked: boolean) => void | boolean | Promise<boolean>;
   };
 
   let { id, title, count, state, width, height, hovered = false, selecting = false, onSelect }: Props = $props();
+
+  const change = async (input: HTMLInputElement) => {
+    const applied = await onSelect?.(input.checked);
+    if (applied === false) {
+      input.checked = state === 'all';
+      input.indeterminate = state === 'some';
+    }
+  };
 </script>
 
 <header class="fl-group-header" style:width="{width}px" style:height="{height}px">
@@ -34,7 +46,7 @@
       checked={state === 'all'}
       indeterminate={state === 'some'}
       aria-label={$t('frameleaf_library_select_all_in_group', { values: { title } })}
-      onchange={(event) => onSelect?.(event.currentTarget.checked)}
+      onchange={(event) => void change(event.currentTarget)}
     />
     <span aria-hidden="true">
       {#if state === 'all'}
@@ -44,7 +56,8 @@
       {/if}
     </span>
   </label>
-  <h2 {id}>{title}</h2>
+  <!-- A long title (a day's full date in a narrow group) is cut short; the tooltip keeps it whole. -->
+  <h2 {id} {title}>{title}</h2>
   <span class="fl-group-count">{$t('items_count', { values: { count } })}</span>
 </header>
 
