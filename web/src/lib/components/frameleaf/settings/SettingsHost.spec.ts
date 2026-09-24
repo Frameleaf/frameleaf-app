@@ -137,6 +137,13 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
+  it("links Storage → Trash & retention to the account's own trash", async () => {
+    open('/user-settings?area=storage&section=trash');
+    render(SettingsHost, { sections });
+    await userEvent.click(screen.getByRole('button', { name: 'Open your trash' }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=trash&section=contents', expect.any(Object));
+  });
+
   it('keeps the Viewing scope when moving between areas', async () => {
     open('/user-settings?area=storage&scope=user%3Aada');
     render(SettingsHost, { sections });

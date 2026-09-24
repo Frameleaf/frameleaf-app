@@ -1,15 +1,15 @@
 <script lang="ts">
   /**
    * Users → People with server access (FL-71, FL-76): the old `/admin/users` pages in the Command
-   * Center. The account list, the events that keep it fresh and the Create action are production's;
-   * one account opens inside the section (`?user=<id>`), and the create and edit forms open over it
+   * Center, laid out as the template's Users manager (`AccountsLibraries.jsx`): the "Command center /
+   * Users" heading with its primary Create account action, the account list, and one account's
+   * detail (`?user=<id>`) below the list, scrolled into view. The create and edit forms open over it
    * (`?new=1`, `?edit=1`). The old addresses only redirect here.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
   import AccountTable from '$lib/components/frameleaf/AccountTable.svelte';
-  import CommandCenterActions from '$lib/components/frameleaf/settings/CommandCenterActions.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { UUID_REGEX } from '$lib/constants';
   import { Route } from '$lib/route';
@@ -58,27 +58,40 @@
   };
 
   const { Create } = $derived(getUserAdminsActions($t));
+
+  // The template scrolls an account's detail into view when it opens (`AccountsLibraries.jsx`).
+  let detailElement: HTMLElement | undefined = $state();
+  $effect(() => {
+    if (selected && detailElement) {
+      detailElement.scrollIntoView?.({ block: 'start' });
+    }
+  });
 </script>
 
-{#if selected}
-  <a class="cc-back-link" href={Route.users()}>← {$t('frameleaf_settings_area_users')}</a>
-  <UserDetail id={selected} />
-{:else}
-  <OnEvents
-    onUserAdminCreate={onUpdate}
-    onUserAdminUpdate={onUpdate}
-    onUserAdminDelete={onUpdate}
-    onUserAdminRestore={onUpdate}
-    {onUserAdminDeleted}
-  />
+<OnEvents
+  onUserAdminCreate={onUpdate}
+  onUserAdminUpdate={onUpdate}
+  onUserAdminDelete={onUpdate}
+  onUserAdminRestore={onUpdate}
+  {onUserAdminDeleted}
+/>
 
-  <CommandPaletteDefaultProvider name={$t('users')} actions={[Create]} />
+<CommandPaletteDefaultProvider name={$t('users')} actions={[Create]} />
 
-  <header class="users-heading">
-    <h1>{$t('frameleaf_settings_area_users')}</h1>
-    <p>{$t('frameleaf_users_subtitle')}</p>
+<section class="fl-users" aria-label={$t('frameleaf_users_accounts_label')}>
+  <header class="resource-heading">
+    <div>
+      <p class="resource-eyebrow">{$t('frameleaf_users_eyebrow')}</p>
+      <h1>{$t('frameleaf_settings_area_users')}</h1>
+      <p>{$t('frameleaf_users_subtitle')}</p>
+    </div>
+    <div class="resource-actions">
+      <button type="button" class="resource-button primary" onclick={() => void goto(Route.newUser())}>
+        {$t('frameleaf_users_create')}
+      </button>
+    </div>
   </header>
-  <CommandCenterActions actions={[Create]} />
+
   {#if loaded}
     <AccountTable {users} />
   {:else if failed}
@@ -87,34 +100,95 @@
     <p role="status">{$t('loading')}</p>
   {/if}
 
-  {#if creating}
-    <AccountFormDialog onClose={onCreateClose} />
+  <!-- As in the template, one account's detail opens below the list, which stays in view above it. -->
+  {#if selected}
+    <div class="resource-detail" bind:this={detailElement}>
+      <UserDetail id={selected} />
+    </div>
   {/if}
+</section>
+
+{#if creating}
+  <AccountFormDialog onClose={onCreateClose} />
 {/if}
 
 <style>
-  .users-heading {
-    margin-bottom: 16px;
+  /* The template's `accounts-libraries.css` resource heading and detail panel. */
+  .fl-users {
+    min-width: 0;
+    color: var(--fl-text);
   }
-  .users-heading h1 {
-    margin: 0;
+  .resource-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 28px;
+  }
+  .resource-heading h1 {
     font-size: 28px;
-    font-weight: 550;
-    letter-spacing: -0.9px;
+    letter-spacing: -0.035em;
+    font-weight: 580;
+    margin: 8px 0;
   }
-  .users-heading p {
-    margin: 8px 0 0;
+  .resource-heading p {
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
   }
-  .cc-back-link {
-    display: inline-block;
-    margin-bottom: 12px;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
+  .resource-heading .resource-eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
   }
-  .cc-back-link:hover {
-    color: var(--fl-accent);
+  .resource-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .resource-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    border: 1px solid var(--fl-border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .resource-button.primary {
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    border-color: transparent;
+    font-weight: 650;
+  }
+  .resource-button:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 3px;
+  }
+  .resource-detail {
+    margin-top: 24px;
+    border: 1px solid var(--fl-border);
+    border-radius: 8px;
+    padding: 24px;
+    background: var(--fl-panel);
+    scroll-margin-top: 16px;
+  }
+  @media (max-width: 767px) {
+    .resource-heading {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .resource-detail {
+      padding: 16px;
+    }
   }
 </style>

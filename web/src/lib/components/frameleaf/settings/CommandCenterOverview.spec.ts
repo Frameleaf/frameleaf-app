@@ -61,6 +61,14 @@ describe('Command Center measured Overview', () => {
       'href',
       '/user-settings?area=processing&section=queues',
     );
+    // The template's links: the latest backup opens Database backups, the ML endpoint Compute & jobs.
+    expect(screen.getByRole('link', { name: /Latest database backup/ })).toHaveAttribute(
+      'href',
+      '/user-settings?area=backup&section=backup',
+    );
+    expect(screen.getByRole('link', { name: /ML endpoint/ })).toHaveAttribute('href', '/user-settings?area=processing');
+    expect(screen.getByText('GPU Studio')).toBeInTheDocument();
+    expect(screen.getByText('1 thing needs attention')).toBeInTheDocument();
     expect(screen.getAllByText(en.frameleaf_cc_unmeasured).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(en.frameleaf_cc_storage_unmeasured)).toBeInTheDocument();
   });
