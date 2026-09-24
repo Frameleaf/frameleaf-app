@@ -5,7 +5,7 @@
   import { IconButton, Select } from '@immich/ui';
   import { mdiUnfoldLessHorizontal, mdiUnfoldMoreHorizontal } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { slide } from 'svelte/transition';
+  import { motionSlide } from '$lib/frameleaf/motion';
 
   interface Props {
     placesGroups: string[];
@@ -31,7 +31,7 @@
 </div>
 
 {#if $placesViewSettings.groupBy !== PlacesGroupBy.None}
-  <span transition:slide={{ axis: 'x', duration: 250 }}>
+  <span transition:motionSlide={{ axis: 'x', duration: 250 }}>
     <!-- Expand Countries Groups -->
     <div class="hidden gap-0 xl:flex">
       <div class="block">
