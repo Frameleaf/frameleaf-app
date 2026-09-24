@@ -73,13 +73,14 @@ describe(CliService.name, () => {
 
       mocks.user.getAdmin.mockResolvedValue(admin);
       mocks.user.update.mockResolvedValue(admin);
-      mocks.session.invalidateAll.mockResolvedValue(void 0);
+      mocks.session.invalidateAll.mockResolvedValue(['admin-session']);
 
       const ask = vitest.fn().mockResolvedValue({ newPassword: 'new-password', invalidateSessions: true });
 
       await sut.resetAdminPassword(ask);
 
       expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: admin.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'admin-session' });
     });
   });
 

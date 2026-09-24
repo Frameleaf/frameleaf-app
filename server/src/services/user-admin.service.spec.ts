@@ -28,7 +28,7 @@ describe(UserAdminService.name, () => {
     // the session repository mock is strict: PIN changes lock sessions, deletion signs them out and
     // an administrator can revoke one (FL-76)
     mocks.session.lockAll.mockResolvedValue();
-    mocks.session.invalidateAll.mockResolvedValue();
+    mocks.session.invalidateAll.mockResolvedValue([]);
     mocks.session.delete.mockResolvedValue();
   });
 
@@ -302,10 +302,12 @@ describe(UserAdminService.name, () => {
     it("should sign out the account's devices, so a restored account signs in again (FL-76)", async () => {
       mocks.user.get.mockResolvedValue(userStub.user1);
       mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.session.invalidateAll.mockResolvedValue(['account-session']);
 
       await sut.delete(authStub.admin, userStub.user1.id, {});
 
       expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: userStub.user1.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'account-session' });
     });
 
     it('should leave sessions alone when the account cannot be deleted', async () => {
@@ -523,6 +525,7 @@ describe(UserAdminService.name, () => {
       await sut.deleteSession(authStub.admin, userStub.user1.id, session.id);
 
       expect(mocks.session.delete).toHaveBeenCalledWith(session.id);
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: session.id });
     });
 
     it('refuses a session id that belongs to a different account', async () => {
@@ -533,6 +536,7 @@ describe(UserAdminService.name, () => {
         NotFoundException,
       );
       expect(mocks.session.delete).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('SessionDelete', expect.anything());
     });
   });
 
