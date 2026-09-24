@@ -150,6 +150,10 @@ const TimeBucketAssetResponseSchema = z
       .describe(
         'Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF',
       ),
+    originalFileName: z
+      .array(z.string())
+      .optional()
+      .describe('Array of original file names. Omitted for shared links that hide EXIF'),
     city: z.array(z.string().nullable()).optional().describe('Array of city names extracted from EXIF GPS data'),
     country: z.array(z.string().nullable()).optional().describe('Array of country names extracted from EXIF GPS data'),
     latitude: z

@@ -736,6 +736,7 @@ with
         1
       ) as "ratio",
       "asset_exif"."rating",
+      "asset"."originalFileName",
       "asset_exif"."city",
       "asset_exif"."country",
       "stack"
@@ -816,6 +817,7 @@ with
       coalesce(array_agg("city"), '{}') as "city",
       coalesce(array_agg("country"), '{}') as "country",
       coalesce(array_agg("rating"), '{}') as "rating",
+      coalesce(array_agg("originalFileName"), '{}') as "originalFileName",
       coalesce(json_agg("stack"), '[]') as "stack"
     from
       "cte"
