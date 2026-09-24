@@ -44,7 +44,7 @@
       {#if group && group !== areaTitle}
         <h2>{group}</h2>
       {/if}
-      <div class="cc-directory-list">
+      <div class="cc-directory-list fl-continuous-corners">
         {#each rows.filter((row) => (row.group ?? '') === group) as row (row.id)}
           <button type="button" onclick={row.onSelect}>
             <span class="copy">
@@ -84,7 +84,6 @@
   }
   @supports (corner-shape: squircle) {
     .cc-directory-list {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }

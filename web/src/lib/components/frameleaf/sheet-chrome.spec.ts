@@ -20,7 +20,45 @@ describe('September 24 sheet chrome', () => {
     expect(css).toMatch(/fl-sheet-rise 480ms var\(--fl-spring\)/);
     expect(css).toMatch(/@keyframes fl-sheet-rise {\s*from {\s*translate: 0 40px;\s*scale: 0\.96;/);
     expect(css).toMatch(/\.dialog::backdrop {[^}]*background: rgb\(0 0 0 \/ 40%\);[^}]*backdrop-filter: blur\(12px\);/);
-    expect(css).toMatch(/@supports \(corner-shape: squircle\) {\s*\.dialog {\s*corner-shape: squircle;/);
+    // The continuous corner comes from app.css through `fl-continuous-corners`; the dialog grows its radius.
+    expect(css).toMatch(
+      /@supports \(corner-shape: squircle\) {\s*\.dialog {\s*border-radius: calc\(var\(--fl-radius-sheet\) \* 1\.8\);/,
+    );
+    const source = readFileSync('src/lib/components/frameleaf/Dialog.svelte', 'utf8');
+    expect(source).toContain('class="frameleaf dialog fl-continuous-corners"');
+  });
+
+  it('gives every component surface that grows its radius the continuous-corner class', () => {
+    // svelte-check's CSS service rejects `corner-shape` in component styles, so the shape is set by the
+    // global `fl-continuous-corners` class (app.css) and each component keeps only its larger radius.
+    const surfaces: Array<[string, string]> = [
+      ['Dialog.svelte', 'dialog'],
+      ['Pane.svelte', ''],
+      ['CommandPalette.svelte', 'command-palette'],
+      ['SearchChip.svelte', 'search-chip'],
+      ['SearchPalette.svelte', 'search-palette'],
+      ['settings/SettingsHost.svelte', 'tile'],
+      ['settings/SettingsHost.svelte', 'cc-section'],
+      ['settings/SettingsDirectory.svelte', 'cc-directory-list'],
+      ['analytics/AnalyticsPanel.svelte', 'an-panel'],
+      ['analytics/LibraryAnalytics.svelte', 'card'],
+      ['analytics/LibraryHero.svelte', 'an-hero'],
+    ];
+    for (const [file, surface] of surfaces) {
+      const source = readFileSync(`src/lib/components/frameleaf/${file}`, 'utf8');
+      const css = styles(file);
+      expect(css, file).not.toMatch(/corner-shape:\s*squircle;/);
+      expect(css, file).toMatch(/@supports \(corner-shape: squircle\) {\s*[^{]+{\s*border-radius:/);
+      const tags = [...source.slice(0, source.indexOf('<style>')).matchAll(/class="([^"]*)"/g)].map(([, value]) =>
+        value.split(/\s+/),
+      );
+      // Every element drawn with the surface's class carries it (Pane styles its bare <section>).
+      const owners = surface ? tags.filter((classes) => classes.includes(surface)) : tags;
+      expect(owners.length, `${file} .${surface}`).toBeGreaterThan(0);
+      for (const classes of owners) {
+        expect(classes, `${file} .${surface}`).toContain('fl-continuous-corners');
+      }
+    }
   });
 
   it('turns the dialog rise into a crossfade under Reduce Motion and drops the blur for Increase Contrast', () => {

@@ -3,7 +3,7 @@
   let { label, children }: { label: string; children: Snippet } = $props();
 </script>
 
-<section aria-label={label}>{@render children()}</section>
+<section class="fl-continuous-corners" aria-label={label}>{@render children()}</section>
 
 <style>
   /* A grouped container in the Sept 24 language: card radius, continuous corners where supported. */
@@ -16,7 +16,6 @@
   }
   @supports (corner-shape: squircle) {
     section {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }

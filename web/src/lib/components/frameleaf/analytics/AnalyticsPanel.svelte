@@ -20,7 +20,7 @@
   const headingId = $props.id();
 </script>
 
-<section class="an-panel" class:an-wide={wide} aria-labelledby={headingId} data-panel={id}>
+<section class="an-panel fl-continuous-corners" class:an-wide={wide} aria-labelledby={headingId} data-panel={id}>
   <header class="an-panel-head">
     <div>
       {#if kicker}<p class="an-kicker">{kicker}</p>{/if}
@@ -44,7 +44,6 @@
   }
   @supports (corner-shape: squircle) {
     .an-panel {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }

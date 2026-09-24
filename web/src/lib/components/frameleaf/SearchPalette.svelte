@@ -870,7 +870,7 @@
 
 <dialog
   bind:this={dialog}
-  class="search-palette frameleaf"
+  class="search-palette frameleaf fl-continuous-corners"
   class:reduced-motion={reducedMotion}
   data-theme={appTheme}
   aria-label={$t('frameleaf_search_title')}
@@ -1390,7 +1390,6 @@
   }
   @supports (corner-shape: squircle) {
     .search-palette {
-      corner-shape: squircle;
       border-radius: 36px;
     }
   }

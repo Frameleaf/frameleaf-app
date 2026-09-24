@@ -501,7 +501,7 @@
               onclick={() => navigate(item.id)}
             >
               <!-- FL-76: a coloured icon tile per area, like System Settings (apple-style.css:565-640). -->
-              <span class="tile" style:--tile={AREA_TILE_COLORS[item.id]}>
+              <span class="tile fl-continuous-corners" style:--tile={AREA_TILE_COLORS[item.id]}>
                 <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
               </span>
               <span>{areaCopy[item.id].title}</span>
@@ -637,7 +637,7 @@
           <!-- The template hides the heading on the Libraries manager, which carries its own. -->
           {@render areaPanel?.(area)}
           {#each areaSections as section (section.key)}
-            <section class="cc-section" id="setting-{section.key}">
+            <section class="cc-section fl-continuous-corners" id="setting-{section.key}">
               {#if section.component}
                 <section.component />
               {:else}
@@ -673,7 +673,7 @@
           {:else if selected}
             <div class="cc-settings-content">
               <section
-                class="cc-section"
+                class="cc-section fl-continuous-corners"
                 class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
                 id="setting-{selected.key}"
               >
@@ -834,7 +834,6 @@
   }
   @supports (corner-shape: squircle) {
     .tile {
-      corner-shape: squircle;
       border-radius: 10px;
     }
   }
@@ -1017,7 +1016,6 @@
   }
   @supports (corner-shape: squircle) {
     .cc-section {
-      corner-shape: squircle;
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
   }
