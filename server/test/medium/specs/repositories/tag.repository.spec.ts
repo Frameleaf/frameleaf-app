@@ -140,7 +140,7 @@ describe(TagRepository.name, () => {
         color: '#000000',
       });
 
-      await sut.update(tag.id, { value: 'updatedTagA' });
+      await sut.update(tag.id, { name: 'updatedTagA' });
 
       await expect(
         ctx.database

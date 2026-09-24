@@ -61,35 +61,13 @@ export class TagService extends BaseService {
     await this.requireTag(auth, Permission.TagUpdate, id);
 
     const { name, color, parentId } = dto;
-    const existing = await this.findOrFail(id);
-    const leaf = name || (existing.value.split('/').at(-1) as string);
-
-    let value;
-    if (parentId === undefined) {
-      const parts = existing.value.split('/');
-      parts[parts.length - 1] = leaf;
-      value = parts.join('/');
-    } else if (parentId === null) {
-      value = leaf;
-    } else {
+    if (parentId) {
       // FL-46: moving a tag, like creating one, needs the new parent to be a tag this user can read
       await this.requireTag(auth, Permission.TagRead, parentId);
-      if (parentId === id || (await this.tagRepository.isAncestor(id, parentId))) {
-        throw new BadRequestException('A tag cannot be moved under itself or one of its descendants');
-      }
-      const parent = await this.findOrFail(parentId);
-      value = `${parent.value}/${leaf}`;
     }
 
-    if (value !== existing.value && (await this.tagRepository.getByValue(auth.user.id, value))) {
-      throw new BadRequestException('A tag with that name already exists');
-    }
-
-    const tag = await this.tagRepository.update(id, {
-      value,
-      color,
-      ...(parentId !== undefined && { parentId }),
-    });
+    // the path, cycle and duplicate checks run with the owner's tags locked (see TagRepository.update)
+    const tag = await this.tagRepository.update(id, { name, color, parentId });
     return mapTag(tag);
   }
 

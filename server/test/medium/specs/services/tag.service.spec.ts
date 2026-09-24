@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { JobStatus } from 'src/enum.js';
@@ -172,6 +173,49 @@ describe(TagService.name, () => {
 
         await expect(sut.update(auth, d.id, { parentId: null })).rejects.toThrow('already exists');
         await expect(sut.update(auth, x.id, { name: 'D' })).rejects.toThrow('already exists');
+      });
+
+      it('lets only one of two concurrent crossing moves through', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const [a, b] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['A', 'B'] });
+
+        const results = await Promise.allSettled([
+          sut.update(auth, a.id, { parentId: b.id }),
+          sut.update(auth, b.id, { parentId: a.id }),
+        ]);
+
+        expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+        const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        expect(rejected?.reason).toBeInstanceOf(BadRequestException);
+        const values = await ctx.database
+          .selectFrom('tag')
+          .select('value')
+          .where('id', 'in', [a.id, b.id])
+          .execute()
+          .then((rows) => rows.map(({ value }) => value).toSorted());
+        // either B moved under A or A under B, never both
+        expect([
+          ['A', 'A/B'],
+          ['B', 'B/A'],
+        ]).toContainEqual(values);
+      });
+
+      it('answers a concurrent rename onto the same path with 400', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const [a, b] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['A', 'B'] });
+
+        const results = await Promise.allSettled([
+          sut.update(auth, a.id, { name: 'C' }),
+          sut.update(auth, b.id, { name: 'C' }),
+        ]);
+
+        expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+        const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        expect(rejected?.reason).toBeInstanceOf(BadRequestException);
       });
 
       it("rejects another user's tag as the new parent", async () => {
