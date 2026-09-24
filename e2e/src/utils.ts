@@ -626,6 +626,50 @@ export const utils = {
     return setCookie;
   },
 
+  /**
+   * Ends maintenance mode a web test left on, so a failure does not turn every later test into an
+   * HTML 404 (a failed restore keeps the server in maintenance mode by design). A restore that is
+   * still running is left to finish. The End request needs a maintenance token: the browser's, or
+   * `fallbackToken` for a test that entered maintenance mode through the API.
+   */
+  endMaintenance: async (context: BrowserContext, fallbackToken?: string) => {
+    const token =
+      (await context.cookies()).find(({ name }) => name === 'immich_maintenance_token')?.value ?? fallbackToken;
+    const headers = { cookie: `immich_maintenance_token=${token}`, 'content-type': 'application/json' };
+    const inMaintenance = async () => {
+      try {
+        const response = await fetch(`${app}/server/config`);
+        return !response.ok || (await response.json()).maintenanceMode === true;
+      } catch {
+        // restarting
+        return true;
+      }
+    };
+
+    // Inside the default 30 s test timeout, so a stuck server fails with this message, not a hook timeout.
+    const deadline = Date.now() + 25_000;
+    while (await inMaintenance()) {
+      if (!token || Date.now() > deadline) {
+        throw new Error(`The server did not leave maintenance mode${token ? '' : ': no maintenance token'}`);
+      }
+      const status = await fetch(`${app}/admin/maintenance/status`, { headers })
+        .then((response) => (response.ok ? response.json() : undefined))
+        .catch(() => undefined);
+      const canEnd =
+        status &&
+        status.action !== MaintenanceAction.End &&
+        !(status.action === MaintenanceAction.RestoreDatabase && !status.error);
+      if (canEnd) {
+        await fetch(`${app}/admin/maintenance`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: MaintenanceAction.End }),
+        }).catch(() => undefined);
+      }
+      await setAsyncTimeout(1000);
+    }
+  },
+
   resetTempFolder: () => {
     rmSync(`${testAssetDir}/temp`, { recursive: true, force: true });
     mkdirSync(`${testAssetDir}/temp`, { recursive: true });

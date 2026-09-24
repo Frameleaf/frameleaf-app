@@ -6,11 +6,18 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('Maintenance', () => {
   let admin: LoginResponseDto;
+  // Set by a test that enters maintenance mode through the API, where the browser holds no token.
+  let apiToken: string | undefined;
 
   test.beforeAll(async () => {
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
+  });
+
+  // A failed test must not leave the server in maintenance mode for the tests after it.
+  test.afterEach(async ({ context }) => {
+    await utils.endMaintenance(context, apiToken);
   });
 
   test('enter and exit maintenance mode', async ({ context, page }) => {
@@ -36,6 +43,7 @@ test.describe('Maintenance', () => {
       ?.find(([name]) => name === 'immich_maintenance_token');
 
     expect(cookie).toBeTruthy();
+    apiToken = cookie![1];
 
     await expect(async () => {
       await page.goto('/');

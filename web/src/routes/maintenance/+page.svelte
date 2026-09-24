@@ -24,8 +24,9 @@
   // The websocket layer (see web/src/lib/stores/websocket.ts) already updates
   // maintenanceStore.status whenever a MaintenanceStatusV1 event arrives,
   // and the connection is opened for the maintenance route even without auth
-  // (see openWebsocketConnection). We only need a single status fetch at mount
-  // time to populate the store; live updates arrive via the websocket.
+  // (see openWebsocketConnection). A status fetch at mount time populates the
+  // store; live updates arrive via the websocket (and a running restore is also
+  // re-read below).
   onMount(() => {
     // One-shot initial load — websocket events take over after that.
     void loadMaintenanceStatus().catch(() => undefined);
@@ -39,6 +40,27 @@
     });
 
     return () => cleanup();
+  });
+
+  // Status is only pushed over the websocket, and an update sent before the socket joins its room
+  // is lost, so a restore that fails in that window would show its progress forever. While a
+  // restore runs without an error, re-read the status as well.
+  const restoreRunning = $derived($status?.action === MaintenanceAction.RestoreDatabase && !$status.error);
+  let loading = false;
+  $effect(() => {
+    if (!restoreRunning) {
+      return;
+    }
+    const timer = setInterval(() => {
+      if (loading) {
+        return;
+      }
+      loading = true;
+      void loadMaintenanceStatus()
+        .catch(() => undefined)
+        .finally(() => (loading = false));
+    }, 2000);
+    return () => clearInterval(timer);
   });
 
   // strip token from URL after load
