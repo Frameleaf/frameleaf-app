@@ -858,6 +858,28 @@ export class AssetRepository {
     await lockAssetRowsInOrder(kysely, await this.getLockGroupIds(kysely, ids));
   }
 
+  /**
+   * FL-34: `lockGroupRows`, returning each member of the group with its owner and whether it is locked
+   * as read under those row locks, for a caller that reviews and unlocks the whole group in `kysely`.
+   */
+  async lockGroupMembers(
+    ids: string[],
+    kysely: Kysely<DB>,
+  ): Promise<{ id: string; ownerId: string; isLocked: boolean }[]> {
+    const groupIds = await this.getLockGroupIds(kysely, ids);
+    if (groupIds.length === 0) {
+      return [];
+    }
+    await lockAssetRowsInOrder(kysely, groupIds);
+    return kysely
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.ownerId'])
+      .select(isLocked('asset').as('isLocked'))
+      .where('asset.id', '=', anyUuid(groupIds))
+      .orderBy('asset.id')
+      .execute();
+  }
+
   /** `lock` inside the caller's transaction `tx`. */
   private async lockIn(
     tx: Kysely<DB>,

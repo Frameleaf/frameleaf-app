@@ -107,6 +107,9 @@ type EnrichmentMetadata = {
   nsfwDetection?: NsfwEnrichmentTask;
 };
 
+/** An owner's safe review written in a transaction, for its tag follow-up once that commits (FL-34). */
+type SafeReview = { id: string; ownerId: string; metadata: EnrichmentMetadata };
+
 /** Provenance pinned on a generated result (FL-59). */
 type EnrichmentResultProvenance = {
   /** The ML destination that produced it (FL-110). */
@@ -321,9 +324,10 @@ export class ImageEnrichmentService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
-    // FL-34: marking a locked asset safe unlocks it, which only its owner's elevated session may do
-    if (dto.action === AssetImageEnrichmentAction.MarkSafe && isLockedRow(asset)) {
-      requireElevatedPermission(auth);
+    // FL-34: marking safe reviews and unlocks the asset's whole stack or live photo in one transaction
+    if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
+      await this.markGroupSafe(auth, id);
+      return this.toResponse(id, await this.getEnrichmentMetadata(id));
     }
 
     // Queue-only actions don't touch asset_metadata — no lock needed.
@@ -342,14 +346,8 @@ export class ImageEnrichmentService extends BaseService {
     // those would compete for the same pool and deadlock under parallel
     // bulk-mark actions.
     const { metadata, locked } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-      // the actions that may lock or unlock the asset take its group's rows first (FL-34)
-      if (
-        [
-          AssetImageEnrichmentAction.MarkNsfw,
-          AssetImageEnrichmentAction.MarkSafe,
-          AssetImageEnrichmentAction.AcceptNsfwResult,
-        ].includes(dto.action)
-      ) {
+      // the actions that may lock the asset take its group's rows first (FL-34)
+      if ([AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult].includes(dto.action)) {
         await this.lockGroupRows(id, trx);
       }
       const m = await this.getEnrichmentMetadata(id, trx);
@@ -366,8 +364,7 @@ export class ImageEnrichmentService extends BaseService {
           break;
         }
         case AssetImageEnrichmentAction.MarkSafe: {
-          const nsfw = this.ensureManualNsfwMetadata(m, false);
-          nsfw.review = this.getReview(auth, 'marked-safe', false);
+          // Unreachable: handled above by `markGroupSafe`, for the whole group in one transaction.
           break;
         }
         case AssetImageEnrichmentAction.ClearGeneratedDescription:
@@ -386,16 +383,14 @@ export class ImageEnrichmentService extends BaseService {
 
       await this.saveEnrichmentMetadata(id, m, trx);
 
-      // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), marking
-      // it safe unlocks it, and accepting a sensitive detection locks it as detected. The lock record
-      // commits in the same transaction as the review and its privacy projection, so no reader ever
-      // sees one without the other. Albums, favourites and the stored visibility are untouched either
-      // way; stacks and live photos move as a whole.
+      // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), and
+      // accepting a sensitive detection locks it as detected (marking it safe unlocks it, in
+      // `markGroupSafe`). The lock record commits in the same transaction as the review and its privacy
+      // projection, so no reader ever sees one without the other. Albums, favourites and the stored
+      // visibility are untouched either way; stacks and live photos move as a whole.
       let locked: string[] = [];
       if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
         locked = await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id, trx);
-      } else if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
-        await this.assetRepository.unlock([id], trx);
       } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && m.nsfwDetection?.review?.isNsfw) {
         locked = await this.assetRepository.lock([id], AssetLockReason.Detected, auth.user.id, trx);
       }
@@ -418,10 +413,6 @@ export class ImageEnrichmentService extends BaseService {
       }
       case AssetImageEnrichmentAction.MarkNsfw: {
         changed = await this.applyNsfwTags(id, asset.ownerId, this.getStoredNsfw(metadata)!, metadata);
-        break;
-      }
-      case AssetImageEnrichmentAction.MarkSafe: {
-        changed = await this.clearAppliedNsfwTags(id, asset.ownerId, metadata);
         break;
       }
       case AssetImageEnrichmentAction.ClearGeneratedDescription: {
@@ -456,48 +447,116 @@ export class ImageEnrichmentService extends BaseService {
    * Unlock (FL-34): removes the lock, whatever its reason, from assets the caller owns. Only an elevated
    * session may unlock, since it shows what was hidden. The stored visibility is untouched, so each asset
    * returns exactly where it was (its albums, the timeline or the archive); stacks and live photos
-   * unlock as a whole. The owner's unlock is also their review: a sensitive verdict on the asset is
-   * overridden (`recordOwnerUnlock`), so a later detection never locks it again.
+   * unlock as a whole. The owner's unlock is also their review: a sensitive verdict on each unlocked
+   * asset is overridden (`recordOwnerUnlock`), so a later detection never locks it again. The unlock and
+   * those reviews commit in one transaction, so no asset is ever left unlocked without its review.
    */
   async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     requireElevatedPermission(auth);
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const unlocked = (await this.assetRepository.unlock(dto.ids)).map(({ assetId }) => assetId);
-    await this.recordOwnerUnlock(auth, unlocked);
+    const { unlocked, reviewed } = await this.inTransaction(async (trx) => {
+      const unlocked = [...new Set((await this.assetRepository.unlock(dto.ids, trx)).map(({ assetId }) => assetId))];
+      const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
+      return { unlocked, reviewed };
+    });
+    await this.clearSafeReviewTags(reviewed);
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
   }
 
   /**
-   * FL-34: after its owner unlocked `assetIds`, records "safe" as their own review on every one of
-   * them, whatever the sensitive-content check says now, so the owner's choice wins over the model:
-   * no later detection ever locks it again. The lock itself is already gone; nothing else is touched.
-   * An asset already reviewed as safe is left as it is.
+   * FL-34: in the caller's transaction `trx`, after its owner unlocked `assetIds`, records "safe" as
+   * their own review on every one of them, whatever the sensitive-content check says now, so the owner's
+   * choice wins over the model: no later detection ever locks it again. An asset already reviewed as
+   * safe keeps its review. Returns what it reviewed, for `clearSafeReviewTags` once `trx` commits.
    */
-  async recordOwnerUnlock(auth: AuthDto, assetIds: string[]): Promise<void> {
-    for (const id of assetIds) {
-      // access was checked by the unlock; stack members and live-photo parts share their owner
-      const asset = await this.assetRepository.getById(id);
-      if (!asset) {
+  async recordOwnerUnlock(auth: AuthDto, assetIds: string[], trx: Kysely<DB>): Promise<SafeReview[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const unlocked = new Set(assetIds);
+    // the unlock checked access; its stack members and live-photo parts share their owner
+    const members = await this.assetRepository.lockGroupMembers(assetIds, trx);
+    return this.reviewSafe(
+      auth,
+      members.filter(({ id }) => unlocked.has(id)),
+      trx,
+      false,
+    );
+  }
+
+  /**
+   * FL-34: Mark Safe on one asset unlocks its whole stack or live photo (`AssetRepository.unlock`), so it
+   * is the owner's safe review of every member, written in the same transaction. Were only the clicked
+   * asset reviewed, a sibling would keep its sensitive verdict with no review, and the next sweep of
+   * unreviewed detections would lock the whole group again. Unlocking needs the owner's elevated
+   * session, checked against the group as read under its row locks. An explicit Mark Safe is also a
+   * repair: a member already reviewed as safe keeps its review, and its privacy projection is written
+   * again (`saveClassification` creates a missing row).
+   */
+  private async markGroupSafe(auth: AuthDto, id: string): Promise<void> {
+    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+      const members = await this.assetRepository.lockGroupMembers([id], trx);
+      if (members.some((member) => isLockedRow(member))) {
+        requireElevatedPermission(auth);
+      }
+      const ownerId = members.find((member) => member.id === id)?.ownerId;
+      const unlocked = (await this.assetRepository.unlock([id], trx)).map(({ assetId }) => assetId);
+      const reviewed = await this.reviewSafe(
+        auth,
+        members.filter((member) => member.ownerId === ownerId),
+        trx,
+        true,
+      );
+      return { unlocked, reviewed };
+    });
+    await this.clearSafeReviewTags(reviewed);
+    await this.notifyAssetsUpdated(unlocked, auth.user.id);
+  }
+
+  /**
+   * Writes the owner's safe review on each of `members` in `trx`, with its privacy projection. An asset
+   * already reviewed as safe keeps its review; with `repair` its projection is written again and it is
+   * still returned, so its applied sensitive tags are cleared as a fresh review's are.
+   */
+  private async reviewSafe(
+    auth: AuthDto,
+    members: { id: string; ownerId: string }[],
+    trx: Kysely<DB>,
+    repair: boolean,
+  ): Promise<SafeReview[]> {
+    const reviewed: SafeReview[] = [];
+    for (const { id, ownerId } of members) {
+      const metadata = await this.getEnrichmentMetadata(id, trx);
+      if (metadata.nsfwDetection?.review?.isNsfw === false) {
+        if (repair) {
+          await this.saveEnrichmentMetadata(id, metadata, trx);
+          reviewed.push({ id, ownerId, metadata });
+        }
         continue;
       }
 
-      const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-        const m = await this.getEnrichmentMetadata(id, trx);
-        if (m.nsfwDetection?.review?.isNsfw === false) {
-          return;
-        }
-
-        const nsfw = this.ensureManualNsfwMetadata(m, false);
-        nsfw.review = this.getReview(auth, 'marked-safe', false);
-        await this.saveEnrichmentMetadata(id, m, trx);
-        return m;
-      });
-
-      if (metadata) {
-        const changed = await this.clearAppliedNsfwTags(id, asset.ownerId, metadata);
-        await this.finalizeRepair(id, changed, metadata);
-      }
+      const nsfw = this.ensureManualNsfwMetadata(metadata, false);
+      nsfw.review = this.getReview(auth, 'marked-safe', false);
+      await this.saveEnrichmentMetadata(id, metadata, trx);
+      reviewed.push({ id, ownerId, metadata });
     }
+    return reviewed;
+  }
+
+  /** Once safe reviews are committed: removes the sensitive tags they had applied. */
+  private async clearSafeReviewTags(reviewed: SafeReview[]) {
+    for (const { id, ownerId, metadata } of reviewed) {
+      const changed = await this.clearAppliedNsfwTags(id, ownerId, metadata);
+      await this.finalizeRepair(id, changed, metadata);
+    }
+  }
+
+  /**
+   * One transaction for a write that spans several assets' groups. The unit tests have no database;
+   * their stand-in transaction is absent, as `withAssetMetadataLock`'s mock passes it.
+   */
+  private inTransaction<R>(callback: (trx: Kysely<DB>) => Promise<R>): Promise<R> {
+    return this.db ? this.db.transaction().execute(callback) : callback(undefined as never);
   }
 
   /**
