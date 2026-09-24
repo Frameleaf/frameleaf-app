@@ -209,6 +209,31 @@ describe(StorageRepository.name, () => {
     }
   });
 
+  it('adds up the bytes of every file under a folder without following symlinks (FL-79)', async () => {
+    mockfs({
+      '/data/thumbs/a/1.webp': 'x'.repeat(100),
+      '/data/thumbs/a/b/2.jpeg': 'x'.repeat(50),
+      '/data/thumbs/3.webp': 'x'.repeat(7),
+      '/elsewhere/big.bin': 'x'.repeat(10_000),
+      // eslint-disable-next-line import-x/no-named-as-default-member
+      '/data/thumbs/link': mockfs.symlink({ path: '/elsewhere' }),
+    });
+    await expect(sut.getFolderBytes('/data/thumbs')).resolves.toBe(157);
+    await expect(sut.getFolderBytes('/data/missing')).resolves.toBe(0);
+  });
+
+  it('reads a large folder in bounded batches with the same total', async () => {
+    mockfs(Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`/data/encoded-video/${index}.mp4`, 'xx'])));
+    await expect(sut.getFolderBytes('/data/encoded-video', 16)).resolves.toBe(80);
+    await expect(sut.getFolderBytes('/data/encoded-video', 1)).resolves.toBe(80);
+  });
+
+  it('reads the device of a path, or null when it cannot be read', async () => {
+    mockfs({ '/data/thumbs/a.webp': 'x' });
+    await expect(sut.getDevice('/data/thumbs')).resolves.toEqual(expect.any(Number));
+    await expect(sut.getDevice('/data/missing')).resolves.toBeNull();
+  });
+
   it('resumes bounded traversal across directories and roots without repeating files or following symlinks', async () => {
     mockfs({
       '/first/a/1.jpg': '',

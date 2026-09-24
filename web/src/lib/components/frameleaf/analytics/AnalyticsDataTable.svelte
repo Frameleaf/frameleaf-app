@@ -7,8 +7,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { t } from 'svelte-i18n';
 
-  type Props = { table: AnalyticsTable; open?: boolean; caption?: string };
-  let { table, open = false, caption }: Props = $props();
+  type Props = { table: AnalyticsTable; open?: boolean; caption?: string; summary?: string };
+  let { table, open = false, caption, summary }: Props = $props();
 
   const format = (value: number, unit: string) =>
     new Intl.NumberFormat(
@@ -18,8 +18,13 @@
 </script>
 
 <details class="data-table" {open} data-table-id={table.id}>
-  <summary aria-label={$t('frameleaf_analytics_view_table_for', { values: { title: table.title } })}>
-    {$t('frameleaf_analytics_view_table')}
+  <!-- The accessible name starts with the visible text (WCAG 2.5.3, label in name). -->
+  <summary
+    aria-label={summary
+      ? $t('frameleaf_analytics_summary_for', { values: { summary, title: table.title } })
+      : $t('frameleaf_analytics_view_table_for', { values: { title: table.title } })}
+  >
+    {summary ?? $t('frameleaf_analytics_view_table')}
   </summary>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
@@ -29,7 +34,11 @@
     aria-label={$t('frameleaf_analytics_table_region', { values: { title: table.title } })}
   >
     <table>
-      <caption>{caption ?? $t('frameleaf_analytics_table_caption', { values: { title: table.title } })}</caption>
+      <caption
+        >{caption ??
+          table.caption ??
+          $t('frameleaf_analytics_table_caption', { values: { title: table.title } })}</caption
+      >
       <thead>
         <tr>
           {#each table.columns as column (column.label)}

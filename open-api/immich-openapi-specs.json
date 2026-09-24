@@ -39234,6 +39234,28 @@
         ],
         "type": "string"
       },
+      "AnalyticsCoverageDto": {
+        "description": "Out of summary.items minus hiddenItems",
+        "properties": {
+          "facesChecked": {
+            "description": "Items face detection has run on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "searchIndexed": {
+            "description": "Items with a smart-search embedding",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "facesChecked",
+          "searchIndexed"
+        ],
+        "type": "object"
+      },
       "AnalyticsDayDto": {
         "properties": {
           "captured": {
@@ -39365,6 +39387,14 @@
       "AnalyticsHostDto": {
         "description": "The library volume, always the whole host whatever is selected",
         "properties": {
+          "breakdown": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsVolumeBreakdownDto"
+              }
+            ],
+            "nullable": true
+          },
           "capacityBytes": {
             "description": "Bytes",
             "maximum": 9007199254740991,
@@ -39412,6 +39442,9 @@
               "$ref": "#/components/schemas/AnalyticsYearCountDto"
             },
             "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AnalyticsCoverageDto"
           },
           "focalLengths": {
             "description": "Every bucket, in order; adds up to summary.items",
@@ -39490,6 +39523,7 @@
         },
         "required": [
           "capturesByYear",
+          "coverage",
           "focalLengths",
           "hdr",
           "hiddenItems",
@@ -40163,6 +40197,10 @@
           "library.physicalBytes",
           "host.volumeUsedBytes",
           "host.capacityBytes",
+          "host.thumbnailBytes",
+          "host.encodedVideoBytes",
+          "host.thumbnailOtherDiskBytes",
+          "host.encodedVideoOtherDiskBytes",
           "library.arrivals",
           "library.captures",
           "processing.completed",
@@ -40372,6 +40410,78 @@
           "view"
         ],
         "type": "object"
+      },
+      "AnalyticsVolumeBreakdownDto": {
+        "description": "What uses the library volume, only in the whole-server report; the parts and otherBytes add up to volumeUsedBytes",
+        "properties": {
+          "databaseBytes": {
+            "description": "This server database on disk (pg_database_size)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "encodedVideoBytes": {
+            "description": "Encoded video folder, from the nightly collector; null before its first reading",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "exceedsUsed": {
+            "description": "The measured parts add up to more than the volume used, for example a database on another disk; otherBytes is then 0",
+            "type": "boolean"
+          },
+          "generatedObservedAt": {
+            "description": "When the generated folders were last measured",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "onOtherDisk": {
+            "description": "Generated folders the collector found on another disk than the library; not part of volumeUsedBytes",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsVolumePart"
+            },
+            "type": "array"
+          },
+          "originalsBytes": {
+            "description": "Uploaded original files on the volume, each shared file counted once (Locked excluded)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "otherBytes": {
+            "description": "volumeUsedBytes minus every measured part: other files on the volume, Locked originals and anything unmeasured",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previewsBytes": {
+            "description": "Thumbnail and preview folder, from the nightly collector; null before its first reading",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "databaseBytes",
+          "encodedVideoBytes",
+          "exceedsUsed",
+          "generatedObservedAt",
+          "onOtherDisk",
+          "originalsBytes",
+          "otherBytes",
+          "previewsBytes"
+        ],
+        "type": "object"
+      },
+      "AnalyticsVolumePart": {
+        "enum": [
+          "previews",
+          "encodedVideo"
+        ],
+        "type": "string"
       },
       "AnalyticsYearCountDto": {
         "properties": {

@@ -58,7 +58,8 @@
 <section class="mt-card" aria-labelledby="{reasonId}-title">
   <div class="mt-card-title">
     <div>
-      <h2 id="{reasonId}-title">{$t('admin.frameleaf_maintenance_mode_title')}</h2>
+      <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
+      <h2 class="sr-only" id="{reasonId}-title">{$t('admin.frameleaf_maintenance_mode_title')}</h2>
       <p>{$t('admin.frameleaf_maintenance_mode_description')}</p>
     </div>
     <span class="mt-status" class:is-on={active}>

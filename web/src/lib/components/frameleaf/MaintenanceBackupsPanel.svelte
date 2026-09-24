@@ -100,7 +100,8 @@
 <section class="mt-card" aria-labelledby="fl-maintenance-backups-title">
   <div class="mt-card-title">
     <div>
-      <h2 id="fl-maintenance-backups-title">{$t('admin.frameleaf_maintenance_backups_title')}</h2>
+      <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
+      <h2 class="sr-only" id="fl-maintenance-backups-title">{$t('admin.frameleaf_maintenance_backups_title')}</h2>
       <p>{$t('admin.frameleaf_maintenance_backups_description')}</p>
     </div>
     <div class="mt-actions">

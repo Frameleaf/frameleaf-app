@@ -138,6 +138,8 @@ export type AnalyticsInsightRows = {
   orientation: Array<{ orientation: string; count: number }>;
   livePhotos: number;
   hdr: { probedVideos: number; hdrVideos: number; dolbyVisionVideos: number };
+  /** items face detection has run on, and items with a smart-search embedding */
+  coverage: { facesChecked: number; searchIndexed: number };
   records: {
     oldest: { localDateTime: Date; name: string } | null;
     largest: { bytes: number; name: string } | null;
@@ -155,6 +157,14 @@ export type AnalyticsInsightRows = {
     cities: number;
     places: Array<{ name: string | null; count: number }>;
   } | null;
+};
+
+/** Leaves out the assets (`a`) the reading session keeps hidden: Locked people and tags, sensitive content. */
+const visibleTo = (privacy?: HiddenContentQueryOptions): RawBuilder<boolean> => {
+  const hiddenContent = getHiddenContentFilter(privacy);
+  return hiddenContent
+    ? sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('a.id'), hiddenContent)}`
+    : sql<boolean>`true`;
 };
 
 const IMAGE = sql.lit(AssetType.Image);
@@ -368,14 +378,17 @@ export class AnalyticsRepository {
     return rows.map((row) => ({ day: row.day, items: num(row.items) }));
   }
 
-  /** Items per EXIF make and model; `make` and `model` are null when not recorded. */
-  async getCameras(scope: AnalyticsScope) {
+  /**
+   * Items per EXIF make and model; `make` and `model` are null when not recorded. The reading
+   * session's hidden content is left out, as in the insights, so the cameras add up to the same items.
+   */
+  async getCameras(scope: AnalyticsScope, privacy?: HiddenContentQueryOptions) {
     const { rows } = await sql<{ make: string | null; model: string | null; items: string }>`
       select nullif(trim(e."make"), '') as make, nullif(trim(e."model"), '') as model, count(*) as items
       from asset a
       left join asset_exif e on e."assetId" = a.id
       where a.type in (${IMAGE}, ${VIDEO}) and a.visibility <> ${HIDDEN} and ${isNotLocked('a')}
-        and ${scopeCondition(scope)}
+        and ${scopeCondition(scope)} and ${visibleTo(privacy)}
       group by 1, 2
     `.execute(this.db);
     return rows.map((row) => ({ make: row.make, model: row.model, items: num(row.items) }));
@@ -390,8 +403,7 @@ export class AnalyticsRepository {
   async getInsights(scope: AnalyticsScope, options: AnalyticsInsightOptions): Promise<AnalyticsInsightRows> {
     // what the reading session keeps hidden (Locked people and tags, sensitive content) is left out of
     // every breakdown, so no record, place or lens can point at it
-    const hiddenContent = getHiddenContentFilter(options.privacy);
-    const visible = hiddenContent ? sql`not ${hiddenContentAssetIdExists(sql.ref('a.id'), hiddenContent)}` : sql`true`;
+    const visible = visibleTo(options.privacy);
     const items = sql`
       select
         a.id, a.type, a."localDateTime", a."originalFileName", a.duration, a."livePhotoVideoId",
@@ -486,6 +498,8 @@ export class AnalyticsRepository {
           hdrVideos: string;
           dolbyVisionVideos: string;
           videoDurationMs: string;
+          facesChecked: string;
+          searchIndexed: string;
         }>(sql`
           select
             count(*) as items,
@@ -496,9 +510,12 @@ export class AnalyticsRepository {
                 and (v."colorTransfer" in (${sql.lit(ColorTransfer.Smpte2084)}, ${sql.lit(ColorTransfer.AribStdB67)}) or v."dvProfile" is not null)
             ) as "hdrVideos",
             count(v."assetId") filter (where items.type = ${VIDEO} and v."dvProfile" is not null) as "dolbyVisionVideos",
-            coalesce(sum(items.duration) filter (where items.type = ${VIDEO} and items.duration > 0), 0) as "videoDurationMs"
+            coalesce(sum(items.duration) filter (where items.type = ${VIDEO} and items.duration > 0), 0) as "videoDurationMs",
+            count(*) filter (where j."facesRecognizedAt" is not null) as "facesChecked",
+            count(*) filter (where exists (select 1 from smart_search s where s."assetId" = items.id)) as "searchIndexed"
           from items
-          left join asset_video v on v."assetId" = items.id`),
+          left join asset_video v on v."assetId" = items.id
+          left join asset_job_status j on j."assetId" = items.id`),
         run<{ kind: string; localDateTime: Date | null; name: string | null; value: string | null }>(sql`
           (select 'oldest' as kind, items."localDateTime", ${name(sql`items."originalFileName"`)} as name, null::bigint as value
             from items order by items."localDateTime" asc, items.id limit 1)
@@ -532,6 +549,10 @@ export class AnalyticsRepository {
         probedVideos: num(counts[0]?.probedVideos),
         hdrVideos: num(counts[0]?.hdrVideos),
         dolbyVisionVideos: num(counts[0]?.dolbyVisionVideos),
+      },
+      coverage: {
+        facesChecked: num(counts[0]?.facesChecked),
+        searchIndexed: num(counts[0]?.searchIndexed),
       },
       records: {
         oldest: oldest?.localDateTime
@@ -697,14 +718,27 @@ export class AnalyticsRepository {
     return row?.observedAt ? new Date(row.observedAt as unknown as string) : null;
   }
 
-  /** The newest host volume readings, if any. */
-  async getLatestHostSamples(): Promise<AnalyticsSampleRow[]> {
+  /**
+   * The size of this server's database on disk (`pg_database_size`). Read only for the whole-server
+   * report an administrator opens.
+   */
+  async getDatabaseBytes(): Promise<number> {
+    const { rows } = await sql<{ bytes: string }>`select pg_database_size(current_database()) as bytes`.execute(
+      this.db,
+    );
+    return num(rows[0]?.bytes);
+  }
+
+  /** The newest host readings of the given series (the volume by default), if any. */
+  async getLatestHostSamples(
+    series: AnalyticsSeriesId[] = [AnalyticsSeriesId.HostVolumeUsedBytes, AnalyticsSeriesId.HostCapacityBytes],
+  ): Promise<AnalyticsSampleRow[]> {
     const rows = await this.db
       .selectFrom('operational_metric_sample')
       .distinctOn('series')
       .select(['series', 'value', 'observedAt'])
       .where('scopeKey', '=', 'host')
-      .where('series', 'in', [AnalyticsSeriesId.HostVolumeUsedBytes, AnalyticsSeriesId.HostCapacityBytes])
+      .where('series', 'in', series)
       .orderBy('series')
       .orderBy('observedAt', 'desc')
       .execute();
