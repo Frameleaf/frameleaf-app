@@ -2,7 +2,7 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
-  import { requestSessionLock } from '$lib/frameleaf/session-lock';
+  import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
   import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
@@ -173,13 +173,17 @@
     element?.remove();
     // FL-83: the root owns lock retries even when a PIN route or dialog has unmounted.
     sessionAccess.retryLock = requestSessionLock;
-    if (sessionAccess.lockPending) {
+    const stopWatchingLockOwner = watchSessionLockOwner();
+    // Only a signed-in session has anything to lock; a signed-out tab keeps the flag until the next
+    // sign-in or sign-out drops it.
+    if (sessionAccess.lockPending && authManager.authenticated) {
       void requestSessionLock();
     }
     // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
     const removeSearchShortcuts = installSearchShortcuts();
     return () => {
       sessionAccess.retryLock = undefined;
+      stopWatchingLockOwner();
       removeSearchShortcuts?.();
     };
   });

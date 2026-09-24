@@ -3,11 +3,34 @@
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
   import { Theme, themeManager } from '@immich/ui';
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let { active, children }: { active: boolean; children: Snippet } = $props();
   let shieldDialog = $state<HTMLDialogElement>();
+  const locking = $derived(sessionAccess.lockStatus === 'locking');
+
+  // FL-83: leaving an unlocked tab hides only this tab's content (the prototype's "Content hides
+  // when you leave this tab"). It never locks the server session, which other tabs share, and never
+  // touches uploads or downloads; the explicit Lock and the server's idle timeout end the session.
+  onMount(() => {
+    const onVisibilityChange = () => {
+      sessionAccess.concealed = document.hidden && sessionAccess.isElevated;
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      sessionAccess.concealed = false;
+    };
+  });
+  $effect(() => {
+    // an unlock that completes while hidden is concealed too; a lock always reveals the locked view
+    sessionAccess.concealed = sessionAccess.isElevated && document.hidden;
+  });
+  $effect(() => {
+    document.documentElement.classList.toggle('session-concealed', sessionAccess.concealed);
+    return () => document.documentElement.classList.remove('session-concealed');
+  });
 
   $effect(() => {
     if (!shieldDialog) {
@@ -34,7 +57,16 @@
 >
   {#if active}
     <p id="session-lock-title">{$t('frameleaf_locked_hidden')}</p>
-    <Button variant="primary" disabled={!sessionAccess.retryLock} onclick={() => void sessionAccess.retryLock?.()}>
+    {#if locking}
+      <p class="session-lock-status" role="status">{$t('frameleaf_session_lock_locking')}</p>
+    {:else if sessionAccess.lockStatus === 'failed'}
+      <p class="session-lock-status" role="alert">{$t('frameleaf_session_lock_failed')}</p>
+    {/if}
+    <Button
+      variant="primary"
+      disabled={!sessionAccess.retryLock || locking}
+      onclick={() => void sessionAccess.retryLock?.()}
+    >
       {$t('retry')}
     </Button>
   {/if}
@@ -43,6 +75,15 @@
 <style>
   .session-lock-content-hidden {
     display: none;
+  }
+  /* A hidden unlocked tab: nothing of it (portals and top-layer dialogs included) is painted. */
+  :global(html.session-concealed body) {
+    visibility: hidden !important;
+  }
+  .session-lock-status {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: 0.875rem;
   }
   /* Portals are attached directly to body, and native dialogs enter the browser top layer. */
   :global(body:has(.session-lock-shield[open]) > :not(:has(.session-lock-shield))),

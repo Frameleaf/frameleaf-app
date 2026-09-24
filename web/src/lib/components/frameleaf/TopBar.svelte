@@ -140,11 +140,14 @@
       SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated && !sessionAccess.lockPending),
     });
 
-    // The prototype hides Locked content as soon as the tab is left ("Content hides when you
-    // leave this tab or after one hour"); the hour is the server's elevated-session lifetime.
+    // FL-83: a hidden tab conceals only its own content (the root shield does that); the server
+    // lock is explicit or the server's idle timeout. Coming back re-reads the session, and a lock
+    // that is still pending (for example after going offline) is retried.
     const onVisibilityChange = () => {
-      if ((document.hidden && (isElevated || isSessionLoading)) || sessionAccess.lockPending) {
+      if (sessionAccess.lockPending) {
         handlePromiseError(lockSession());
+      } else if (!document.hidden && !lockFlight) {
+        void refreshAuthStatus();
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -180,9 +183,6 @@
       const status = await getAuthStatus();
       if (revision === sessionRevision && privacyRevision === sessionAccess.revision && !sessionAccess.lockPending) {
         isElevated = status.isElevated;
-        if (document.hidden && isElevated) {
-          void lockSession();
-        }
       }
     } catch (error) {
       console.error('Failed to load elevated session status', error);
@@ -199,7 +199,7 @@
 
   const onUnlocked = async () => {
     sessionRevision++;
-    if (document.hidden || sessionAccess.lockPending) {
+    if (sessionAccess.lockPending) {
       await lockSession();
       return;
     }
