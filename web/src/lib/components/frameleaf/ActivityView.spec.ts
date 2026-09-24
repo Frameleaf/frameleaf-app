@@ -230,7 +230,7 @@ describe('Frameleaf Activity page', () => {
   it('declares its own theme scope so the Frameleaf colours resolve', async () => {
     const { container } = await mount([]);
 
-    expect(container.querySelector('main.frameleaf')?.getAttribute('data-theme')).toMatch(/^(dark|light)$/);
+    expect(container.querySelector<HTMLElement>('main.frameleaf')?.dataset.theme).toMatch(/^(dark|light)$/);
   });
 
   it('names a row whose id holds spaces, and never draws an upload picture', async () => {
