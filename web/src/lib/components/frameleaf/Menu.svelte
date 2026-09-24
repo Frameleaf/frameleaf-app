@@ -6,9 +6,9 @@
    * returns focus to the trigger, and Tab or a pointer press outside closes it.
    *
    * Items are supplied by the caller as MenuItem components. Listeners are attached to the
-   * popup imperatively so the container carries only its ARIA role and no handlers, and the
-   * open animation uses the shared motion tokens, which the token sheet already clamps
-   * under prefers-reduced-motion.
+   * popup imperatively so the container carries only its ARIA role and no handlers. It opens
+   * on the September 24 spring (apple-style.css:322-332), growing from the corner it hangs
+   * from, and crossfades instead under Reduce Motion (apple-style.css:488-490).
    *
    * Activating an item closes the popup and returns focus to the trigger, unless that
    * MenuItem was given `keepOpen` (FL-38: a "Reassign…" command that swaps the popup's
@@ -203,20 +203,39 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     box-shadow: var(--fl-shadow-2);
-    animation: fl-menu-in var(--fl-motion-fast) var(--fl-ease);
+    /* Grows from the inline-start (or, for `end`, inline-end) corner it hangs from. */
+    transform-origin: top left;
+    animation: fl-menu-in 320ms var(--fl-spring);
+  }
+  [role='menu']:dir(rtl) {
+    transform-origin: top right;
   }
   [role='menu'].end {
     inset-inline-start: auto;
     inset-inline-end: 0;
+    transform-origin: top right;
+  }
+  [role='menu'].end:dir(rtl) {
+    transform-origin: top left;
   }
   @keyframes fl-menu-in {
     from {
       opacity: 0;
-      transform: translateY(-0.25rem);
+      scale: 0.9;
     }
-    to {
-      opacity: 1;
-      transform: none;
+  }
+  @keyframes fl-menu-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  /*
+   * Beats the tokens.css clamp (same !important, higher specificity) so the popup still
+   * crossfades rather than snapping in; nothing moves.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    [role='menu'] {
+      animation: fl-menu-fade 150ms ease !important;
     }
   }
 </style>

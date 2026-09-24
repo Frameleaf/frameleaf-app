@@ -191,3 +191,25 @@
     @apply bg-subtle rounded-lg;
   }
 }
+
+/*
+ * FL-37 / FL-29: every people photo is a squircle (apple-style.css:49 and 137-148,
+ * INTERACTION-REQUIREMENTS.md "People photos use a squircle shape everywhere"). A mask rather
+ * than `corner-shape`, so the shape is identical in every engine. It is global, not scoped to
+ * .frameleaf, because people photos also render in the asset viewer's information panel and in
+ * shared upstream components (UserAvatar). Anything inside the masked box that carried its own
+ * circle drops it, so the squircle is the only outline.
+ */
+:root {
+  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E");
+}
+
+.fl-squircle,
+.fl-squircle :where(img, figure) {
+  border-radius: 0 !important;
+}
+
+.fl-squircle {
+  -webkit-mask: var(--fl-squircle) center / 100% 100% no-repeat;
+  mask: var(--fl-squircle) center / 100% 100% no-repeat;
+}

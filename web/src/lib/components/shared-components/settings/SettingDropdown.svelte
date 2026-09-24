@@ -3,7 +3,7 @@
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { quintOut } from 'svelte/easing';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
 
   interface Props {
     title: string;
@@ -36,7 +36,7 @@
       </label>
       {#if isEdited}
         <div
-          transition:fly={{ x: 10, duration: 200, easing: quintOut }}
+          transition:motionFly={{ x: 10, duration: 200, easing: quintOut }}
           class="rounded-full bg-orange-100 px-2 text-[10px] text-orange-900"
         >
           {$t('unsaved_change')}

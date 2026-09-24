@@ -14,7 +14,7 @@
 {#if users.length > 0}
   <span class="avatars" title={names} aria-label={$t('frameleaf_albums_shared_with', { values: { names } })}>
     {#each shown as user (user.id)}
-      <span class="avatar"><UserAvatar {user} {size} noTitle /></span>
+      <span class="avatar fl-squircle"><UserAvatar {user} {size} noTitle /></span>
     {/each}
     {#if more > 0}
       <span class="more">+{more}</span>
@@ -28,10 +28,11 @@
     align-items: center;
     flex-shrink: 0;
   }
+  /* A panel-coloured squircle ring separates the overlapping photos; a mask clips any shadow. */
   .avatar {
     display: inline-flex;
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px var(--fl-panel);
+    padding: 2px;
+    background: var(--fl-panel);
   }
   .avatar + .avatar,
   .avatar + .more {

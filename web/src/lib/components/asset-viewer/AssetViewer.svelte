@@ -49,7 +49,7 @@
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
-  import { fly } from 'svelte/transition';
+  import { motionFly } from '$lib/frameleaf/motion';
   import ActivityStatus from './ActivityStatus.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
@@ -668,7 +668,7 @@
 
   {#if showDetailPanel}
     <div
-      transition:fly={{ duration: 150 }}
+      transition:motionFly={{ duration: 150 }}
       id="detail-panel"
       class="row-span-4 row-start-1 w-90 overflow-y-auto bg-light transition-all dark:border-l dark:border-s-immich-dark-gray"
       translate="yes"
@@ -730,7 +730,7 @@
 
   {#if isShared && album && assetViewerManager.isShowActivityPanel && authManager.authenticated}
     <div
-      transition:fly={{ duration: 150 }}
+      transition:motionFly={{ duration: 150 }}
       id="activity-panel"
       class="row-span-5 row-start-1 w-90 overflow-y-auto transition-all md:w-115 dark:border-l dark:border-s-immich-dark-gray"
       translate="yes"

@@ -15,6 +15,7 @@
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { lockBadgeLabelKey } from '$lib/frameleaf/locked-view';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
@@ -125,9 +126,6 @@
     return null;
   });
 
-  const reducedMotion = () =>
-    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
   const durationLabel = (seconds: number) => {
     if (!Number.isFinite(seconds) || seconds < 0) {
       return '0:00';
@@ -166,7 +164,7 @@
   });
 
   const beginPreview = (mode: 'video' | 'live', delay: number) => {
-    if (!previewSource || reducedMotion()) {
+    if (!previewSource || prefersReducedMotion()) {
       return;
     }
     clearTimers();
