@@ -27,7 +27,7 @@ import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
-import { addAssets, getMyPartnerIds, removeAssets } from 'src/utils/asset.util.js';
+import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -198,16 +198,14 @@ export class AlbumService extends BaseService {
       return this.mapRepository.getAlbumMapMarkers(id, this.nsfwOptions(auth));
     }
 
-    const { withPartners, withSharedAlbums, ...filters } = dto;
+    // As in the prototype's filterMapAssets, "Partner items" covers every item someone else owns, so
+    // switching it off keeps only the viewer's own album items. "Shared spaces" only hides the viewer's
+    // own items that reach them solely through a shared space, which an album's own markers never are,
+    // so withSharedAlbums narrows nothing here.
+    const { withPartners, withSharedAlbums: _withSharedAlbums, ...filters } = dto;
     const options: AlbumMapMarkerSearchOptions = { ...filters, favoriteOwnerId: auth.user.id };
-    if (withPartners === false || withSharedAlbums === false) {
-      const partnerIds = await getMyPartnerIds({ userId: auth.user.id, repository: this.partnerRepository });
-      options.ownerScope = {
-        viewerId: auth.user.id,
-        partnerIds: [...partnerIds],
-        withPartners: withPartners !== false,
-        withOthers: withSharedAlbums !== false,
-      };
+    if (withPartners === false) {
+      options.onlyOwnerId = auth.user.id;
     }
 
     return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
