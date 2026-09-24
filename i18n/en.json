@@ -6358,6 +6358,7 @@
   "frameleaf_users_device_last_seen": "Last seen {date}",
   "frameleaf_users_device_revoke": "Sign out",
   "frameleaf_users_device_revoke_confirm": "Sign this device out? It will need to sign in again to access the library.",
+  "frameleaf_users_device_revoke_title": "Sign out device",
   "frameleaf_users_device_revoked": "Device signed out.",
   "frameleaf_users_devices_none": "No signed-in devices.",
   "frameleaf_users_devices_title": "Signed-in devices",

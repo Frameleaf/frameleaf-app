@@ -30,6 +30,7 @@
     type LicenseResponseDto,
   } from '@immich/sdk';
   import { modalManager, toastManager } from '@immich/ui';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -80,11 +81,11 @@
   };
 
   const removePersonal = async () => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_supporter_remove_title'),
       prompt: $t('frameleaf_access_supporter_remove_prompt'),
       confirmText: $t('frameleaf_access_supporter_remove'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -102,11 +103,11 @@
   };
 
   const removeServer = async () => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_server_key_remove'),
       prompt: $t('frameleaf_access_server_key_remove_prompt'),
       confirmText: $t('frameleaf_access_server_key_remove'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;
