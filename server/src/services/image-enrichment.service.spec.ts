@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { defaults } from 'src/config.js';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
@@ -11,8 +12,6 @@ import {
   JobStatus,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -54,6 +53,7 @@ describe(ImageEnrichmentService.name, () => {
     mocks.asset.lockGroupMembers.mockImplementation((ids) =>
       Promise.resolve(ids.map((id) => ({ id, ownerId, isLocked: false }))),
     );
+    mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
   });
 
   it('should store NSFW results and apply visible NSFW tags when only NSFW detection is enabled', async () => {
@@ -634,8 +634,10 @@ describe(ImageEnrichmentService.name, () => {
 
     // the metadata transaction the review is written in; the lock must join it (FL-34, PR127)
     const trx = { isTransaction: true } as never;
-    const inMetadataTransaction = () =>
+    const inMetadataTransaction = () => {
       mocks.database.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(trx));
+      mocks.database.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(trx));
+    };
 
     it('locks an asset its owner marks sensitive, as their own lock', async () => {
       inMetadataTransaction();
@@ -735,6 +737,7 @@ describe(ImageEnrichmentService.name, () => {
 
     it('needs the unlocked session when only another member of the group is locked', async () => {
       const siblingId = newUuid();
+      mocks.asset.findLockGroupIds.mockResolvedValue([assetId, siblingId]);
       mocks.asset.lockGroupMembers.mockResolvedValue([
         { id: assetId, ownerId, isLocked: false },
         { id: siblingId, ownerId, isLocked: true },
@@ -750,6 +753,7 @@ describe(ImageEnrichmentService.name, () => {
 
     it('writes the safe review on every member of the group it unlocks, in the same transaction', async () => {
       const siblingId = newUuid();
+      mocks.asset.findLockGroupIds.mockResolvedValue([assetId, siblingId]);
       mocks.asset.lockGroupMembers.mockResolvedValue([
         { id: assetId, ownerId, isLocked: true },
         { id: siblingId, ownerId, isLocked: true },
@@ -765,6 +769,8 @@ describe(ImageEnrichmentService.name, () => {
         action: AssetImageEnrichmentAction.MarkSafe,
       });
 
+      // every member's metadata lock, before the group's rows
+      expect(mocks.database.withAssetMetadataLocks).toHaveBeenCalledWith([assetId, siblingId], expect.any(Function));
       for (const id of [assetId, siblingId]) {
         expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
           id,
@@ -790,9 +796,14 @@ describe(ImageEnrichmentService.name, () => {
         reviewedAt: '2026-01-01T00:00:00.000Z',
         reviewedBy: ownerId,
       };
+      mocks.asset.findLockGroupIds.mockResolvedValue([assetId, siblingId]);
       mocks.asset.lockGroupMembers.mockResolvedValue([
-        { id: assetId, ownerId, isLocked: false },
-        { id: siblingId, ownerId, isLocked: false },
+        { id: assetId, ownerId, isLocked: true },
+        { id: siblingId, ownerId, isLocked: true },
+      ]);
+      mocks.asset.unlock.mockResolvedValue([
+        { assetId, reason: AssetLockReason.Marked },
+        { assetId: siblingId, reason: AssetLockReason.Marked },
       ]);
       mocks.asset.getMetadataByKey.mockImplementation((id) =>
         Promise.resolve(
@@ -806,7 +817,9 @@ describe(ImageEnrichmentService.name, () => {
       );
       inMetadataTransaction();
 
-      await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+      await sut.updateAssetEnrichment(authStub.adminWithElevatedPermission, assetId, {
+        action: AssetImageEnrichmentAction.MarkSafe,
+      });
 
       expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
         siblingId,
@@ -817,6 +830,55 @@ describe(ImageEnrichmentService.name, () => {
         ],
         trx,
       );
+    });
+
+    it('leaves a sibling that was not locked with its detector verdict', async () => {
+      const siblingId = newUuid();
+      mocks.asset.findLockGroupIds.mockResolvedValue([assetId, siblingId]);
+      mocks.asset.lockGroupMembers.mockResolvedValue([
+        { id: assetId, ownerId, isLocked: false },
+        { id: siblingId, ownerId, isLocked: false },
+      ]);
+      mocks.asset.unlock.mockResolvedValue([]);
+      mocks.asset.getMetadataByKey.mockImplementation(() => Promise.resolve(structuredClone(detectedMetadata)));
+      inMetadataTransaction();
+
+      await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(assetId, expect.any(Array), trx);
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalledWith(siblingId, expect.anything(), expect.anything());
+      expect(mocks.asset.getMetadataByKey).not.toHaveBeenCalledWith(siblingId, expect.anything(), expect.anything());
+    });
+
+    it('writes nothing when the group grew after its metadata locks were taken', async () => {
+      const joinedId = newUuid();
+      mocks.asset.lockGroupMembers.mockResolvedValue([
+        { id: assetId, ownerId, isLocked: true },
+        { id: joinedId, ownerId, isLocked: true },
+      ]);
+      inMetadataTransaction();
+
+      await expect(
+        sut.updateAssetEnrichment(authStub.adminWithElevatedPermission, assetId, {
+          action: AssetImageEnrichmentAction.MarkSafe,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('aborts when the unlock releases a member the elevation check never saw', async () => {
+      const joinedId = newUuid();
+      mocks.asset.lockGroupMembers.mockResolvedValue([{ id: assetId, ownerId, isLocked: false }]);
+      mocks.asset.unlock.mockResolvedValue([{ assetId: joinedId, reason: AssetLockReason.Marked }]);
+      inMetadataTransaction();
+
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkSafe }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
     });
 
     it('locks a new detection as detected when hiding sensitive detections is on', async () => {
@@ -1024,24 +1086,27 @@ describe(ImageEnrichmentService.name, () => {
       mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Detected }]);
       mocks.asset.getMetadataByKey.mockResolvedValue(structuredClone(detectedMetadata));
       const transaction = { isTransaction: true } as never;
-      const execute = vi.fn((callback: (trx: never) => Promise<unknown>) => callback(transaction));
-      Object.assign(sut, { db: { transaction: () => ({ execute }) } });
-      const privacy = vi.spyOn(ForkPrivacyRepository.prototype, 'shouldReadSidecar').mockResolvedValue(false);
-      const enrichment = vi.spyOn(ForkEnrichmentRepository.prototype, 'shouldReadSidecar').mockResolvedValue(false);
-      const save = vi.spyOn(ForkEnrichmentRepository.prototype, 'save').mockResolvedValue();
-      try {
-        await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
-      } finally {
-        privacy.mockRestore();
-        enrichment.mockRestore();
-        save.mockRestore();
-      }
+      mocks.database.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(transaction));
 
-      expect(execute).toHaveBeenCalledTimes(1);
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
+
+      // one transaction, holding every group member's metadata lock
+      expect(mocks.database.withAssetMetadataLocks).toHaveBeenCalledTimes(1);
+      expect(mocks.database.withAssetMetadataLocks).toHaveBeenCalledWith([assetId], expect.any(Function));
       expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId], transaction);
       expect(mocks.asset.lockGroupMembers).toHaveBeenCalledWith([assetId], transaction);
       // the review is written in that transaction, not in a per-asset follow-up one
       expect(mocks.asset.upsertMetadata.mock.calls[0]).toEqual([assetId, expect.any(Array), transaction]);
+    });
+
+    it('writes no review when the unlock reaches beyond the metadata-locked group', async () => {
+      mocks.asset.unlock.mockResolvedValue([{ assetId: newUuid(), reason: AssetLockReason.Marked }]);
+
+      await expect(sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
     });
 
     it('reviews nothing when nothing was unlocked', async () => {
