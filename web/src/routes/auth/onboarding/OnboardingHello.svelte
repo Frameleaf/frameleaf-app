@@ -1,23 +1,28 @@
 <script lang="ts">
-  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
+  /** Onboarding → Welcome (FL-80 ON-1): the prototype's hello step (`AuthScreens.jsx:895-917`). */
+  import cabin from '$lib/assets/frameleaf/auth-cabin.webp';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { OnboardingRole } from '$lib/types';
   import { t } from 'svelte-i18n';
 
-  let userRole = $derived(
-    authManager.user.isAdmin && !serverConfigManager.value.isOnboarded ? OnboardingRole.SERVER : OnboardingRole.USER,
-  );
+  const server = $derived(authManager.user.isAdmin && !serverConfigManager.value.isOnboarded);
 </script>
 
-<div class="gap-4">
-  <FrameleafLogo variant="icon" size="giant" class="mb-2" />
-  <p class="mb-6 text-6xl font-medium text-primary">
-    {$t('onboarding_welcome_user', { values: { user: authManager.user.name } })}
+<div class="ob-hello">
+  <div class="ob-hero"><img src={cabin} alt="" /></div>
+  <p>
+    {server
+      ? $t('frameleaf_onboarding_hello_server', { values: { user: authManager.user.name } })
+      : $t('frameleaf_onboarding_hello_user', { values: { user: authManager.user.name } })}
   </p>
-  <p class="pb-6 text-3xl font-light">
-    {userRole === OnboardingRole.SERVER
-      ? $t('onboarding_server_welcome_description')
-      : $t('onboarding_user_welcome_description')}
-  </p>
+  <ul class="ob-list">
+    <li>
+      <strong>{$t('frameleaf_onboarding_hello_minutes')}</strong> — {server
+        ? $t('frameleaf_onboarding_hello_minutes_server')
+        : $t('frameleaf_onboarding_hello_minutes_user')}
+    </li>
+    <li>
+      <strong>{$t('frameleaf_onboarding_hello_local')}</strong> — {$t('frameleaf_onboarding_hello_local_detail')}
+    </li>
+  </ul>
 </div>

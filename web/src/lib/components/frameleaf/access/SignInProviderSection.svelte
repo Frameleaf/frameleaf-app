@@ -14,7 +14,8 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
-  import { modalManager, toastManager } from '@immich/ui';
+  import { toastManager } from '@immich/ui';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
@@ -54,13 +55,13 @@
   };
 
   const disconnect = async () => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_provider_disconnect_title'),
       prompt: featureFlagsManager.value.passwordLogin
         ? $t('frameleaf_access_provider_disconnect_prompt')
         : $t('frameleaf_access_provider_disconnect_no_password_prompt'),
       confirmText: $t('frameleaf_access_provider_disconnect'),
-      confirmColor: 'danger',
+      danger: true,
     });
     if (!confirmed) {
       return;

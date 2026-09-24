@@ -32,15 +32,25 @@ test.describe('Registration', () => {
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // onboarding
+    // FL-80 ON-1: the prototype's onboarding — a step rail, Next through every step, then the
+    // summary's "Open Frameleaf". The server's first administrator sees all nine steps.
     await expect(page).toHaveURL('/auth/onboarding');
-    await page.getByRole('button', { name: 'Theme' }).click();
-    await page.getByRole('button', { name: 'Language' }).click();
-    await page.getByRole('button', { name: 'Server Privacy' }).click();
-    await page.getByRole('button', { name: 'User Privacy' }).click();
-    await page.getByRole('button', { name: 'Storage Template' }).click();
-    await page.getByRole('button', { name: 'Backups' }).click();
-    await page.getByRole('button', { name: 'Mobile App' }).click();
-    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
+    for (const title of [
+      'Choose your language',
+      'Pick a theme',
+      'Server Privacy',
+      'Your privacy',
+      'Storage template',
+      'Back up your phone',
+      'Get the mobile app',
+      "You're all set",
+    ]) {
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    }
+    await expect(page.getByText('Step 9 of 9')).toBeAttached();
+    await page.getByRole('button', { name: 'Open Frameleaf' }).click();
 
     // success
     await expect(page).toHaveURL(/\/photos(\?|$)/);
@@ -87,12 +97,21 @@ test.describe('Registration', () => {
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // onboarding
+    // FL-80 ON-1: an account on an onboarded server skips the server steps.
     await expect(page).toHaveURL('/auth/onboarding');
-    await page.getByRole('button', { name: 'Theme' }).click();
-    await page.getByRole('button', { name: 'Language' }).click();
-    await page.getByRole('button', { name: 'User Privacy' }).click();
-    await page.getByRole('button', { name: 'Mobile App' }).click();
-    await page.getByRole('button', { name: 'Done' }).click();
+    for (const title of [
+      'Choose your language',
+      'Pick a theme',
+      'Your privacy',
+      'Back up your phone',
+      'Get the mobile app',
+      "You're all set",
+    ]) {
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    }
+    await expect(page.getByRole('button', { name: 'Storage' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open Frameleaf' }).click();
 
     // success
     await expect(page).toHaveURL(/\/photos/);

@@ -59,6 +59,8 @@
     libraries: LibraryResponseDto[];
     /** Each listed library's statistics, by library id. */
     libraryStatistics?: Record<string, LibraryStatsResponseDto>;
+    /** CC-29: the account's uploads counting each shared original once; null when unknown. */
+    physicalBytes?: number | null;
     /** False for a deleted account: the server only updates preferences of live accounts. */
     preferencesEditable: boolean;
     savePreferences: (update: UserPreferencesUpdateDto) => Promise<UserPreferencesResponseDto>;
@@ -75,6 +77,7 @@
     sessions,
     libraries,
     libraryStatistics = {},
+    physicalBytes = null,
     preferencesEditable,
     savePreferences,
     loadPreferences,
@@ -181,10 +184,15 @@
       <dd>{statistics.videos.toLocaleString($locale)}</dd>
     </div>
     <div>
-      <dt>{$t('storage')}</dt>
+      <dt>{$t('frameleaf_account_detail_originals_logical')}</dt>
       <dd>{getByteUnitString(usedBytes, $locale, 1)}</dd>
     </div>
+    <div>
+      <dt>{$t('frameleaf_account_detail_originals_physical')}</dt>
+      <dd>{physicalBytes === null ? '—' : getByteUnitString(physicalBytes, $locale, 1)}</dd>
+    </div>
   </dl>
+  <p class="resource-footnote">{$t('frameleaf_account_detail_originals_footnote')}</p>
 
   <div class="resource-two-column">
     <div>
@@ -273,7 +281,10 @@
       {#each history as event (event.id)}
         <li>
           <strong>{describeAdminEvent(event, $t, formatBytes)}</strong>
-          <span>{event.subject} · {formatHistoryDate(event.createdAt, editedLocale)}</span>
+          <span>
+            {event.subject} · {formatHistoryDate(event.createdAt, editedLocale)}{#if event.actorName}
+              · {$t('frameleaf_account_history_by', { values: { actor: event.actorName } })}{/if}
+          </span>
         </li>
       {/each}
     </ol>
@@ -321,7 +332,7 @@
   }
   .resource-stats {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1rem;
     margin: 0 0 0.625rem;
   }

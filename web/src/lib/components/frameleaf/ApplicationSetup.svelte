@@ -20,7 +20,7 @@
     type AndroidArchitecture,
     type AppPlatform,
   } from '$lib/frameleaf/app-releases';
-  import ServerAboutModal from '$lib/modals/ServerAboutModal.svelte';
+  import AboutDialog from '$lib/components/frameleaf/AboutDialog.svelte';
   import { Route } from '$lib/route';
   import { handleCreateApiKey } from '$lib/services/api-key.service';
   import { userInteraction } from '$lib/stores/user.svelte';
@@ -118,7 +118,7 @@
     ]);
     userInteraction.aboutInfo = info;
     userInteraction.versions = versions;
-    await modalManager.show(ServerAboutModal, { info, versions });
+    await modalManager.show(AboutDialog, { info, versions });
   };
 </script>
 
