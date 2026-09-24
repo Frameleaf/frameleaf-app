@@ -38,9 +38,10 @@ export const FLOAT_INTERMEDIATE_PIXEL_FORMAT = 'gbrpf32le';
 /**
  * Quantising float to integer always loses something. Error-diffusion dither spends that loss
  * as noise instead of as banding, which is what a gradient test measures. `sws_dither` is a
- * swscale option the `scale` filter accepts per invocation.
+ * swscale option the `scale` filter accepts per invocation; `ed` is its error-diffusion value
+ * (ffmpeg rejects the spelled-out `error_diffusion` and the whole render with it).
  */
-export const FLOAT_TO_INTEGER_DITHER = 'error_diffusion';
+export const FLOAT_TO_INTEGER_DITHER = 'ed';
 
 /** The delivery bit depth used for any source that carries more than 8 bits per component. */
 export const HIGH_BIT_DEPTH_DELIVERY = 10;
