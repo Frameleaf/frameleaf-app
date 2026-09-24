@@ -569,7 +569,7 @@ describe(SearchService.name, () => {
   });
 
   describe('getCityAssetCounts (FL-51)', () => {
-    it('counts timeline photos and videos per city and never Locked, trashed or partner-hidden media', async () => {
+    it("counts timeline photos and videos per city and never Locked, trashed or other users' media", async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: stranger } = await ctx.newUser();
@@ -586,13 +586,18 @@ describe(SearchService.name, () => {
       await inCity('Rome', { ownerId: user.id, deletedAt: new Date() });
       await inCity('Rome', { ownerId: user.id, visibility: AssetVisibility.Archive });
       await inCity('Secret', { ownerId: user.id, visibility: AssetVisibility.Locked });
+      await inCity('Lisbon', { ownerId: user.id, type: AssetType.Video });
       await inCity('Paris', { ownerId: stranger.id });
 
       const counts = await sut.getCityAssetCounts(factory.auth({ user: { id: user.id } }));
       expect(counts).toEqual([
+        { city: 'Lisbon', count: 1 },
         { city: 'Paris', count: 2 },
         { city: 'Rome', count: 1 },
       ]);
+      // the places list itself shows photo cities only, so the video-only city is counted but not listed
+      const listed = await sut.getAssetsByCity(factory.auth({ user: { id: user.id } }));
+      expect(listed.map((asset) => asset.exifInfo?.city)).toEqual(['Paris', 'Rome']);
     });
   });
 });

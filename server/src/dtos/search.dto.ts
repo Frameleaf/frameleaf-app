@@ -121,7 +121,7 @@ const PlacesResponseSchema = z
 
 const SearchCityCountResponseSchema = z
   .object({
-    city: z.string().describe('City name, as grouped by GET /search/cities'),
+    city: z.string().describe('City name, grouped as in GET /search/cities (which lists only cities with a photo)'),
     count: z.int().min(1).describe('Number of timeline photos and videos in this city'),
   })
   .meta({ id: 'SearchCityCountResponseDto' });
