@@ -54,6 +54,8 @@ const waitForWriter = async (db: Kysely<DB>, writerPid: number, tableName: strin
       JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
       WHERE activity.pid = ${writerPid} AND namespace.nspname = 'immich_fork'
         AND relation.relname = ${tableName} AND NOT lock.granted
+        -- pg_locks shows the queued lock before pg_stat_activity leaves the writer's previous sample
+        AND activity.wait_event_type = 'Lock'
     `.execute(db);
     if (waiting.rows[0]) {
       return waiting.rows[0];
