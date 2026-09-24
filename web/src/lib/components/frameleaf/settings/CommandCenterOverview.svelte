@@ -13,6 +13,7 @@
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import {
     AnalyticsRange,
+    AnalyticsScopeKind,
     getAboutInfo,
     getAnalyticsReport,
     getQueues,
@@ -69,9 +70,13 @@
         : $t('frameleaf_cc_not_yet_measured');
   const storageNote = $derived(
     breakdown === null
-      ? $t('frameleaf_cc_storage_whole_server')
+      ? $t(
+          report?.scopeKind === AnalyticsScopeKind.Host
+            ? 'frameleaf_cc_storage_volume_unread'
+            : 'frameleaf_cc_storage_whole_server',
+        )
       : generatedMeasured
-        ? breakdown.exceedsUsed
+        ? breakdown.exceedsUsed || breakdown.onOtherDisk.length > 0
           ? $t('frameleaf_cc_storage_elsewhere')
           : $t('frameleaf_cc_storage_note')
         : $t('frameleaf_cc_storage_pending'),

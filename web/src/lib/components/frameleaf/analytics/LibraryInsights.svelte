@@ -311,6 +311,9 @@
           values: { scope: report.scopeLabel || $t('frameleaf_analytics_scope_all') },
         })}
       {/if}
+      {#if host.breakdown && host.breakdown.onOtherDisk.length > 0}
+        {$t('frameleaf_analytics_parts_other_disk')}
+      {/if}
       {#if host.freeBytes === null && volume}
         {$t('frameleaf_analytics_not_in_use_note')}
       {/if}

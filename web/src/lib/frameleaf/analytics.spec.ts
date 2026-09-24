@@ -1,4 +1,4 @@
-import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
+import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState, AnalyticsVolumePart } from '@immich/sdk';
 import {
   analyticsCsv,
   analyticsTables,
@@ -348,6 +348,7 @@ describe('the storage donut (FL-79)', () => {
           originalsBytes: 300_000,
           previewsBytes: 100_000,
           encodedVideoBytes: 50_000,
+          onOtherDisk: [],
           generatedObservedAt: '2026-09-19T00:05:00.000Z',
           databaseBytes: 30_000,
           otherBytes: 120_000,
@@ -390,6 +391,7 @@ describe('the storage donut (FL-79)', () => {
           originalsBytes: 500_000,
           previewsBytes: null,
           encodedVideoBytes: null,
+          onOtherDisk: [],
           generatedObservedAt: null,
           databaseBytes: 900_000,
           otherBytes: 0,
@@ -398,6 +400,36 @@ describe('the storage donut (FL-79)', () => {
       },
     });
     expect(volumeSegments(report, t)!.segments.map((segment) => segment.id)).toEqual(['used', 'free', 'reserved']);
+    // the parts table carries the same fallback as its caption
+    const table = analyticsTables(report, 'items', t).find((item) => item.id === 'volume-parts')!;
+    expect(table.caption).toBe('frameleaf_analytics_parts_exceed_caption');
     expect(volumeSegments(analyticsReportFixture({ host: { ...base.host, capacityBytes: null } }), t)).toBeNull();
+  });
+
+  it('lists a generated folder on another disk but leaves it out of the donut', () => {
+    const report = analyticsReportFixture({
+      host: {
+        ...base.host,
+        breakdown: {
+          originalsBytes: 300_000,
+          previewsBytes: 2_000_000,
+          encodedVideoBytes: 50_000,
+          onOtherDisk: [AnalyticsVolumePart.Previews],
+          generatedObservedAt: '2026-09-19T00:05:00.000Z',
+          databaseBytes: 30_000,
+          otherBytes: 220_000,
+          exceedsUsed: false,
+        },
+      },
+    });
+    const volume = volumeSegments(report, t)!;
+    expect(volume.segments.map((segment) => segment.id)).not.toContain('previews');
+    expect(sum(volume.segments)).toBe(report.host.capacityBytes);
+    expect(sum(volume.segments.filter((segment) => !segment.free))).toBe(report.host.volumeUsedBytes);
+    const table = analyticsTables(report, 'items', t).find((item) => item.id === 'volume-parts')!;
+    expect(table.rows.map((row) => row[0])).toContain(
+      'frameleaf_analytics_on_other_disk(frameleaf_analytics_part_previews)',
+    );
+    expect(table.caption).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-import type { AnalyticsVolumeBreakdownDto } from '@immich/sdk';
+import { AnalyticsScopeKind, AnalyticsVolumePart, type AnalyticsVolumeBreakdownDto } from '@immich/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -72,13 +72,21 @@ describe('Command Center measured Overview', () => {
     expect(screen.getByText('GPU Studio')).toBeInTheDocument();
     expect(screen.getByText('1 thing needs attention')).toBeInTheDocument();
     expect(screen.getAllByText(en.frameleaf_cc_unmeasured).length).toBeGreaterThanOrEqual(2);
-    // an account or library report has no volume breakdown: the parts stay unmeasured here
-    expect(screen.getByText(en.frameleaf_cc_storage_whole_server)).toBeInTheDocument();
+    // a whole-server report without a breakdown (no live volume reading) leaves the parts unmeasured
+    expect(screen.getByText(en.frameleaf_cc_storage_volume_unread)).toBeInTheDocument();
+  });
+  it('points an account or library view to the whole server for the parts', async () => {
+    sdk.getAnalyticsReport.mockResolvedValue(
+      analyticsReportFixture({ scope: 'account:me', scopeKind: AnalyticsScopeKind.Account, scopeLabel: 'Ada' }),
+    );
+    render(CommandCenterOverview);
+    expect(await screen.findByText(en.frameleaf_cc_storage_whole_server)).toBeInTheDocument();
   });
   const breakdown: AnalyticsVolumeBreakdownDto = {
     originalsBytes: 300 * 1024 ** 2,
     previewsBytes: 100 * 1024 ** 2,
     encodedVideoBytes: 50 * 1024 ** 2,
+    onOtherDisk: [],
     generatedObservedAt: '2026-09-19T00:05:00.000Z',
     databaseBytes: 30 * 1024 ** 2,
     otherBytes: 120 * 1024 ** 2,
@@ -95,6 +103,18 @@ describe('Command Center measured Overview', () => {
     await screen.findByText(en.frameleaf_cc_storage_note);
     expect(storageRow(en.frameleaf_cc_derivatives)).toBe(formatBytes(150 * 1024 ** 2));
     expect(storageRow(en.frameleaf_cc_other)).toBe(formatBytes(150 * 1024 ** 2));
+  });
+  it('says when the whole-server volume could not be read instead of pointing to the server view', async () => {
+    const base = analyticsReportFixture();
+    sdk.getAnalyticsReport.mockResolvedValue(analyticsReportFixture({ host: { ...base.host, breakdown: null } }));
+    render(CommandCenterOverview);
+    await screen.findByText(en.frameleaf_cc_storage_volume_unread);
+    expect(storageRow(en.frameleaf_cc_derivatives)).toBe(en.frameleaf_cc_unmeasured);
+  });
+  it('notes a generated folder on another disk', async () => {
+    sdk.getAnalyticsReport.mockResolvedValue(withBreakdown({ onOtherDisk: [AnalyticsVolumePart.EncodedVideo] }));
+    render(CommandCenterOverview);
+    expect(await screen.findByText(en.frameleaf_cc_storage_elsewhere)).toBeInTheDocument();
   });
   it('shows both as not yet measured before the first nightly reading', async () => {
     sdk.getAnalyticsReport.mockResolvedValue(withBreakdown({ previewsBytes: null, encodedVideoBytes: null }));

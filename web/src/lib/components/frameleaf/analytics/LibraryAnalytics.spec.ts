@@ -338,6 +338,7 @@ describe('LibraryAnalytics', () => {
               originalsBytes: 300_000,
               previewsBytes: 100_000,
               encodedVideoBytes: 50_000,
+              onOtherDisk: [],
               generatedObservedAt: '2026-09-19T00:05:00.000Z',
               databaseBytes: 30_000,
               otherBytes: 120_000,
