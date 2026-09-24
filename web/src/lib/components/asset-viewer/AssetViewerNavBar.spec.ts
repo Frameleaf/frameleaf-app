@@ -1,12 +1,16 @@
 import { AssetTypeEnum } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import { setSharedLink } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewerNavBar from './AssetViewerNavBar.svelte';
 
@@ -242,5 +246,66 @@ describe('AssetViewerNavBar component', () => {
       const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
       expect(queryByTestId('viewer-exif-line')).not.toBeInTheDocument();
     });
+  });
+  // FL-83: a shared link's viewer has no More menu, so its slideshow sits in the bar, gated as the
+  // old public header gated it.
+  describe('on a shared link', () => {
+    const slideshow = 'frameleaf_viewer_play_slideshow';
+
+    beforeEach(() => {
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    });
+
+    afterEach(() => {
+      setSharedLink(undefined);
+    });
+
+    it('offers Play slideshow in the bar when the link allows downloads', async () => {
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
+      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      const { getByLabelText, queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+        canNavigateCollection: true,
+      });
+      expect(queryByLabelText('frameleaf_viewer_more_actions')).not.toBeInTheDocument();
+      await fireEvent.click(getByLabelText(slideshow));
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+      slideshowStore.slideshowState.set(SlideshowState.None);
+    });
+
+    it('leaves the slideshow out when the link does not allow downloads', () => {
+      setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
+      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+        canNavigateCollection: true,
+      });
+      expect(queryByLabelText(slideshow)).not.toBeInTheDocument();
+    });
+
+    it('leaves the slideshow out when there is nothing to move to', () => {
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
+      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+        canNavigateCollection: false,
+      });
+      expect(queryByLabelText(slideshow)).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps the slideshow in the More menu, not the bar, for a signed-in library viewer', () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+    const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
+      asset,
+      ...additionalProps,
+      canNavigateCollection: true,
+    });
+    expect(queryByLabelText('frameleaf_viewer_more_actions')).toBeInTheDocument();
+    expect(queryByLabelText('frameleaf_viewer_play_slideshow')).not.toBeInTheDocument();
   });
 });
