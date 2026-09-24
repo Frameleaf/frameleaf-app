@@ -2,6 +2,7 @@ import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import Hls from 'hls.js';
+import type { Component, ComponentProps } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -15,6 +16,13 @@ import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewerNavBar from './AssetViewerNavBar.svelte';
 import VideoNativeViewer from './VideoNativeViewer.svelte';
+
+type ViewerProps = ComponentProps<typeof VideoNativeViewer>;
+
+// TestWrapper's generic needs an index-signature props type, which the viewer's Props interface lacks.
+const ViewerWrapper = TestWrapper as Component<{ component: typeof VideoNativeViewer; componentProps: ViewerProps }>;
+const renderViewer = (props: ViewerProps) =>
+  render(ViewerWrapper, { component: VideoNativeViewer, componentProps: props });
 
 const hlsMocks = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -154,7 +162,7 @@ describe('VideoNativeViewer component', () => {
   it('uses the navbar source choice even when realtime transcoding is enabled', async () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     const props = videoProps();
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     await waitFor(() =>
       expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.asset.id)),
     );
@@ -184,7 +192,7 @@ describe('VideoNativeViewer component', () => {
   it('shows an accessible failure and retries the same original without falling back to HLS', async () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     const props = { ...videoProps(), playOriginalVideo: true };
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     const video = viewer.container.querySelector('video')!;
     const src = video.getAttribute('src');
     await fireEvent.error(video);
@@ -203,7 +211,7 @@ describe('VideoNativeViewer component', () => {
 
   it('keeps the encoded playback URL when realtime transcoding is disabled', () => {
     const props = videoProps();
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     expect(viewer.container.querySelector('video')).toHaveAttribute(
       'src',
       getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
@@ -220,7 +228,7 @@ describe('VideoNativeViewer component', () => {
     );
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
     const props = videoProps();
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
     const api = hlsMocks.instances[0];
     const manifestHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1];
@@ -247,7 +255,7 @@ describe('VideoNativeViewer component', () => {
     );
     const onVideoStarted = vi.fn();
     const props = { ...videoProps(), onVideoStarted };
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     const video = viewer.container.querySelector('video')!;
     Object.defineProperty(video, 'paused', { configurable: true, value: false });
     await fireEvent.canPlay(video);
@@ -264,7 +272,7 @@ describe('VideoNativeViewer component', () => {
     featureFlagsManager.value.realtimeTranscoding = true;
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     const props = videoProps();
-    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const viewer = renderViewer(props);
     await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
     const api = hlsMocks.instances[0];
     const errorHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
