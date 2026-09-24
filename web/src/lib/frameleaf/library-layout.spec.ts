@@ -82,13 +82,21 @@ describe('library layout anchoring', () => {
     expect(sdkMock.getTimeBucket).toHaveBeenCalledTimes(requests);
   });
 
-  it('anchors the first asset on screen when the focused one is not visible', () => {
+  it('never swaps the session’s anchor for another asset when the anchor is off screen', () => {
+    // the layout control scrolls with the results: reaching it can leave the anchor off screen, and
+    // the anchor, not whatever is at the top, must stay the asset the switch comes back to
     scrollToShow(february[0].id, 0);
 
-    const anchor = captureLibraryAnchor(manager, march[0].id);
+    expect(captureLibraryAnchor(manager, march[0].id)).toBeUndefined();
+  });
 
-    expect(anchor?.assetId).not.toBe(march[0].id);
-    expect(anchor?.offset).toBeLessThanOrEqual(0.5);
+  it('anchors the first asset on screen when the session has no anchor', () => {
+    scrollToShow(february[0].id, 0);
+
+    const anchor = captureLibraryAnchor(manager);
+
+    expect(anchor?.assetId).toBe(february[0].id);
+    expect(anchor?.offset).toBeCloseTo(0, 0);
   });
 
   it('never fetches or resurrects an asset that left the view', () => {
