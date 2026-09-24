@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
+  import { page } from '$app/state';
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -91,11 +92,17 @@
 
   // FL-56: an action refused because the link was revoked or expired while this page was open
   // reloads the route; the fresh link lookup fails and the unavailable state replaces the content.
+  // A reload that finds the link still valid means the 401 had another cause: it is shown as usual.
+  const onUnauthorized = async (showError: () => void) => {
+    setSharedLink(undefined);
+    await invalidateAll();
+    if (!page.error && page.data.sharedLink) {
+      showError();
+    }
+  };
+
   onMount(() => {
-    setUnauthorizedHandler(() => {
-      setSharedLink(undefined);
-      void invalidateAll();
-    });
+    setUnauthorizedHandler((showError) => void onUnauthorized(showError));
   });
 
   onDestroy(() => {
