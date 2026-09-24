@@ -230,31 +230,39 @@ test.describe('Timeline', () => {
 
     test('Open /photos, open asset-viewer, next photo 15x, backwardsArrow', async ({ page }) => {
       await pageUtils.deepLinkPhotosPage(page, assets[0].id);
+      // Browse's dense grid shows many items at once: step past everything on screen, at least 15.
+      const onScreen = new Set(await thumbnailUtils.idsInViewport(page));
       await thumbnailUtils.clickAssetId(page, assets[0].id);
       await assetViewerUtils.waitForViewerLoad(page, assets[0]);
-      for (let i = 1; i <= 15; i++) {
+      let index = 0;
+      while (index < 15 || onScreen.has(assets[index].id)) {
+        index++;
         await page.getByLabel('View next asset').click();
-        await assetViewerUtils.waitForViewerLoad(page, assets[i]);
+        await assetViewerUtils.waitForViewerLoad(page, assets[index]);
       }
       await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
-      await thumbnailUtils.expectInViewport(page, assets[15].id);
-      await thumbnailUtils.expectBottomIsTimelineBottom(page, assets[15].id);
+      await thumbnailUtils.expectInViewport(page, assets[index].id);
+      await thumbnailUtils.expectBottomIsTimelineBottom(page, assets[index].id);
     });
 
     test('Open /photos, open asset-viewer, previous photo 15x, backwardsArrow', async ({ page }) => {
       const lastAsset = assets.at(-1)!;
       await pageUtils.deepLinkPhotosPage(page, lastAsset.id);
+      // Browse's dense grid shows many items at once: step past everything on screen, at least 15.
+      const onScreen = new Set(await thumbnailUtils.idsInViewport(page));
       await thumbnailUtils.clickAssetId(page, lastAsset.id);
       await assetViewerUtils.waitForViewerLoad(page, lastAsset);
-      for (let i = 1; i <= 15; i++) {
+      let back = 0;
+      while (back < 15 || onScreen.has(assets.at(-1 - back)!.id)) {
+        back++;
         await page.getByLabel('View previous asset').click();
-        await assetViewerUtils.waitForViewerLoad(page, assets.at(-1 - i)!);
+        await assetViewerUtils.waitForViewerLoad(page, assets.at(-1 - back)!);
       }
       await page.getByRole('button', { name: /^(Go back|Close viewer \(Escape\))$/ }).click();
       await expect.poll(() => new URL(page.url()).pathname).toBe('/photos');
-      await thumbnailUtils.expectInViewport(page, assets.at(-1 - 15)!.id);
-      await thumbnailUtils.expectTopIsTimelineTop(page, assets.at(-1 - 15)!.id);
+      await thumbnailUtils.expectInViewport(page, assets.at(-1 - back)!.id);
+      await thumbnailUtils.expectTopIsTimelineTop(page, assets.at(-1 - back)!.id);
     });
 
     test('Layout switch keeps the anchored item in view, and reload restores the layout', async ({ page }) => {
@@ -369,7 +377,12 @@ test.describe('Timeline', () => {
         // Prototype `App.jsx` jump(): the Timeline layout, grouped by the key's unit.
         await expect(timelineUtils.layoutButton(page, 'Timeline')).toHaveAttribute('aria-pressed', 'true');
         await expect.poll(() => timelineUtils.grouping(page)).toBe(grouping);
-        await thumbnailUtils.expectTimelineHasOnScreenAssets(page);
+        // Years and Months are curated cards (September 24); Days shows the tiles.
+        if (grouping === 'days') {
+          await thumbnailUtils.expectTimelineHasOnScreenAssets(page);
+        } else {
+          await expect(groupingUtils.cards(page).first()).toBeVisible();
+        }
       });
     }
 
@@ -479,8 +492,14 @@ test.describe('Timeline', () => {
       await scrubberUtils.clickMonth(page, getYearMonth(assets, target.id));
       await expect.poll(() => thumbnailUtils.idsInViewport(page)).not.toEqual([]);
       const before = await thumbnailUtils.idsInViewport(page);
-      await groupingUtils.choose(page, 'Years');
-      await groupingUtils.choose(page, 'Days');
+      // Y and D switch where the timeline is; the grouping buttons sit above the photos, so reaching
+      // them scrolls to the top first and the top is where Days then comes back to.
+      await timelineUtils.locator(page).hover();
+      await page.keyboard.press('y');
+      await groupingUtils.expectMode(page, 'Years');
+      await expect(groupingUtils.cards(page).first()).toBeVisible();
+      await page.keyboard.press('d');
+      await groupingUtils.expectMode(page, 'Days');
       await expect.poll(() => thumbnailUtils.idsInViewport(page)).toContain(before[0]);
     });
 
@@ -535,7 +554,10 @@ test.describe('Timeline', () => {
       await header.getByRole('heading').hover();
       const checkbox = header.getByRole('checkbox', { name: `Select all in ${ALL_TITLE}` });
       await checkbox.click();
-      await expect(selectionBarUtils.locator(page)).toContainText(`${assets.length} selected`);
+      // Every month of the library is loaded one at a time before the selection is made.
+      await expect(selectionBarUtils.locator(page)).toContainText(`${assets.length.toLocaleString('en')} selected`, {
+        timeout: 30_000,
+      });
       await expect(checkbox).toBeChecked();
       await checkbox.click();
       await expect(checkbox).not.toBeChecked();
@@ -597,11 +619,20 @@ test.describe('Timeline', () => {
       const before = await tileBox(page, assets[0].id);
       expect(Math.abs(before.width - before.height)).toBeLessThanOrEqual(1);
       await timelineUtils.locator(page).hover();
-      await page.keyboard.press('+');
+      // Columns are minmax(size × 0.8, 1fr), as in the template: one step may keep the same column
+      // count, so step to the largest size, then to the smallest.
+      for (let step = 0; step < 3; step++) {
+        await page.keyboard.press('+');
+      }
       await expect.poll(() => tileWidth(page, assets[0].id)).toBeGreaterThan(before.width);
-      await page.keyboard.press('-');
-      await page.keyboard.press('-');
+      for (let step = 0; step < 5; step++) {
+        await page.keyboard.press('-');
+      }
       await expect.poll(() => tileWidth(page, assets[0].id)).toBeLessThan(before.width);
+      // The reflow animation has finished (interactions.js animateGridChange runs 420 ms).
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[data-asset-id]')].every((tile) => tile.getAnimations().length === 0),
+      );
       // Browser zoom keeps Ctrl + and Ctrl −.
       const settled = await tileWidth(page, assets[0].id);
       await page.keyboard.press('Control+Minus');
