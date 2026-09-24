@@ -130,7 +130,6 @@
         sharedAlbums={data.sharedAlbums}
         userSettings={$albumViewSettings}
         showOwner
-        showContextMenu={false}
         {searchQuery}
         getAlbumHref={Route.suppressedAlbum}
         bind:albumGroupIds={albumGroups}

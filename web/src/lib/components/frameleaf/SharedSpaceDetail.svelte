@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -29,20 +31,26 @@
     SPACE_PANELS,
     type SpacePanel,
   } from '$lib/frameleaf/shared-space';
-  import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
+  import type { AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import { Route } from '$lib/route';
-  import { handleDeleteAlbum, handleDownloadAlbum, handleRemoveUserFromAlbum } from '$lib/services/album.service';
+  import {
+    handleDeleteAlbum,
+    handleDownloadAlbum,
+    handleEditAlbumDetails,
+    handleLeaveAlbum,
+  } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
-  import type {
-    AlbumResponseDto,
-    AssetResponseDto,
-    SharedSpaceActivityResponseDto,
-    SharedSpaceAlbumResponseDto,
-    SharedSpaceMemberResponseDto,
-    SharedSpaceNewResponseDto,
-    SharedSpacePeopleResponseDto,
+  import {
+    AlbumKind,
+    type AlbumResponseDto,
+    type AssetResponseDto,
+    type SharedSpaceActivityResponseDto,
+    type SharedSpaceAlbumResponseDto,
+    type SharedSpaceMemberResponseDto,
+    type SharedSpaceNewResponseDto,
+    type SharedSpacePeopleResponseDto,
   } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
     mdiArrowLeft,
     mdiDeleteOutline,
@@ -215,32 +223,38 @@
   let busy = $state(false);
   let status = $state('');
 
-  const edit = async () => {
-    await modalManager.show(AlbumEditModal, { album: space });
-    await onRefresh();
+  let editOpen = $state(false);
+  let leaveOpen = $state(false);
+  let deleteOpen = $state(false);
+
+  /** The Frameleaf edit dialog (`CollectionFormDialog`) in place of the legacy modal (AL-42). */
+  const saveDetails = async (draft: AlbumDetailsDraft) => {
+    const saved = await handleEditAlbumDetails(space, draft);
+    if (saved) {
+      status = $t('frameleaf_albums_saved', { values: { name: saved.albumName || $t('unnamed_album') } });
+      await onRefresh();
+    }
+    return !!saved;
   };
 
-  const leave = async () => {
+  /** Leave and delete confirm in the Frameleaf dialogs (`LeaveDialog`, `DeleteDialog`); AL-43. */
+  const confirmLeave = async () => {
     busy = true;
     try {
-      await handleRemoveUserFromAlbum(space, authManager.user);
-      await goto(Route.sharing());
-    } catch (error) {
-      handleError(error, $t('frameleaf_spaces_error_members'));
+      if (await handleLeaveAlbum(space)) {
+        await goto(Route.sharing());
+      }
     } finally {
       busy = false;
     }
   };
 
-  const remove = async () => {
+  const confirmDelete = async () => {
     busy = true;
     try {
-      const deleted = await handleDeleteAlbum(space);
-      if (deleted) {
+      if (await handleDeleteAlbum(space)) {
         await goto(Route.sharing());
       }
-    } catch (error) {
-      handleError(error, $t('frameleaf_spaces_error_members'));
     } finally {
       busy = false;
     }
@@ -274,7 +288,7 @@
         {$t('frameleaf_spaces_open_photos')}
       </a>
       {#if contributor}
-        <button type="button" onclick={edit}>
+        <button type="button" onclick={() => (editOpen = true)}>
           <Icon icon={mdiPencilOutline} size="16" aria-hidden={true} />
           {$t('edit')}
         </button>
@@ -286,12 +300,12 @@
         </button>
       {/if}
       {#if owner}
-        <button type="button" class="danger" disabled={busy} onclick={remove}>
+        <button type="button" class="danger" disabled={busy} onclick={() => (deleteOpen = true)}>
           <Icon icon={mdiDeleteOutline} size="16" aria-hidden={true} />
           {$t('frameleaf_spaces_delete')}
         </button>
       {:else}
-        <button type="button" class="danger" disabled={busy} onclick={leave}>
+        <button type="button" class="danger" disabled={busy} onclick={() => (leaveOpen = true)}>
           <Icon icon={mdiLogoutVariant} size="16" aria-hidden={true} />
           {$t('frameleaf_spaces_leave')}
         </button>
@@ -359,6 +373,32 @@
     </div>
   {/key}
 </section>
+
+<AlbumCreateDialog
+  bind:open={editOpen}
+  kind={AlbumKind.Space}
+  album={space}
+  collections={[]}
+  onCreate={() => Promise.resolve(false)}
+  onSave={saveDetails}
+/>
+
+<AlbumConfirmDialog
+  title={$t('frameleaf_album_delete_title', { values: { name: space.albumName || $t('unnamed_album') } })}
+  body={$t('frameleaf_album_delete_space_body')}
+  keepNote={$t('frameleaf_album_delete_keep', { values: { count: space.assetCount } })}
+  confirmLabel={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  bind:open={deleteOpen}
+  onConfirm={confirmDelete}
+/>
+
+<AlbumConfirmDialog
+  title={$t('frameleaf_album_leave_title', { values: { name: space.albumName || $t('unnamed_album') } })}
+  body={$t('frameleaf_album_leave_body')}
+  confirmLabel={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  bind:open={leaveOpen}
+  onConfirm={confirmLeave}
+/>
 
 <!--
   The space's own viewer. It walks the same photo set the grid draws, and its side panel is the
