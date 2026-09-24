@@ -3686,7 +3686,7 @@
             "state": "Alpha"
           }
         ],
-        "x-immich-permission": "album.read",
+        "x-immich-permission": "album.update",
         "x-immich-state": "Alpha"
       }
     },

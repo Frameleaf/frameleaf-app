@@ -90,7 +90,7 @@ export class AlbumController {
   }
 
   @Put('order')
-  @Authenticated({ permission: Permission.AlbumRead })
+  @Authenticated({ permission: Permission.AlbumUpdate })
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Arrange a group of the album directory',
