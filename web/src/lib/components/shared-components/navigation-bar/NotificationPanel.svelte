@@ -103,6 +103,15 @@
     }
   };
 
+  /** The prototype's per-row dismiss (SystemPanels.jsx `notif-dismiss`, September 24 "Small actions"). */
+  const dismiss = async (notification: NotificationDto) => {
+    try {
+      await notificationManager.dismiss(notification.id);
+    } catch (error) {
+      handleError(error, $t('errors.frameleaf_notification_dismiss_failed'));
+    }
+  };
+
   const onclick = async (notification: NotificationDto) => {
     await markAsRead(notification.id);
     await handleNotificationAction(notification);
@@ -148,6 +157,15 @@
         {#each notificationManager.notifications as notification (notification.id)}
           <li animate:motionFlip={{ duration: 400 }}>
             <NotificationItem {notification} {onclick} />
+            <button
+              type="button"
+              class="fl-icon-button fl-notif-dismiss"
+              aria-label={$t('frameleaf_notifications_dismiss', { values: { title: notification.title } })}
+              title={$t('dismiss')}
+              onclick={() => void dismiss(notification)}
+            >
+              <Icon icon={mdiClose} size="14" aria-hidden="true" />
+            </button>
           </li>
         {/each}
       </ul>
@@ -248,6 +266,27 @@
     margin: 0;
     padding: 0.375rem;
     list-style: none;
+  }
+  /* Per-notification dismiss: bottom-right of the row, revealed on hover or focus (system.css). */
+  .fl-notif-list li {
+    position: relative;
+  }
+  .fl-notif-dismiss {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 26px;
+    height: 26px;
+    opacity: 0;
+    transition: opacity var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-notif-list li:is(:hover, :focus-within) .fl-notif-dismiss {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .fl-notif-dismiss {
+      opacity: 1;
+    }
   }
   .fl-notif-empty {
     display: grid;
