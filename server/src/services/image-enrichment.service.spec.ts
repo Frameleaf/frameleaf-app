@@ -644,6 +644,35 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
     });
 
+    it('releases what a locked photo may no longer be even when a later tag step fails', async () => {
+      inMetadataTransaction();
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      mocks.tag.upsertValue.mockRejectedValue(new Error('tag write failed'));
+
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw }),
+      ).rejects.toThrow('tag write failed');
+
+      // the lock committed, so its follow-up ran before the tag step
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
+    });
+
+    it('releases what a detected lock may no longer show even when a later tag step fails', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: false },
+        },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.95, labels: { explicit: 0.95 } });
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      mocks.tag.upsertValue.mockRejectedValue(new Error('tag write failed'));
+
+      await expect(sut.handleNsfwDetection({ id: assetId })).rejects.toThrow('tag write failed');
+
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
+    });
+
     it('runs no lock follow-up when the lock fails inside the review transaction', async () => {
       inMetadataTransaction();
       mocks.asset.lock.mockRejectedValue(new Error('lock unavailable'));
