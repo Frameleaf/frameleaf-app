@@ -11,6 +11,7 @@
   import AccountFormDialog from '$lib/components/frameleaf/AccountFormDialog.svelte';
   import AccountTable from '$lib/components/frameleaf/AccountTable.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import '$lib/frameleaf/libraries.css';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { UUID_REGEX } from '$lib/constants';
@@ -84,7 +85,7 @@
 <section class="fl-libraries" aria-label={$t('frameleaf_users_accounts_label')}>
   <header class="resource-heading">
     <div>
-      <p class="resource-eyebrow">{$t('frameleaf_users_eyebrow')}</p>
+      <SettingsOverline>{$t('frameleaf_users_eyebrow')}</SettingsOverline>
       <h1>{$t('frameleaf_settings_area_users')}</h1>
       <p>{$t('frameleaf_users_subtitle')}</p>
     </div>

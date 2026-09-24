@@ -78,6 +78,36 @@ const AnalyticsSummarySchema = z
   })
   .meta({ id: 'AnalyticsSummaryDto' });
 
+const AnalyticsVolumeBreakdownSchema = z
+  .object({
+    originalsBytes: bytes().describe(
+      'Uploaded original files on the volume, each shared file counted once (Locked excluded)',
+    ),
+    previewsBytes: bytes()
+      .nullable()
+      .describe('Thumbnail and preview folder, from the nightly collector; null before its first reading'),
+    encodedVideoBytes: bytes()
+      .nullable()
+      .describe('Encoded video folder, from the nightly collector; null before its first reading'),
+    generatedObservedAt: dateTime().nullable().describe('When the generated folders were last measured'),
+    databaseBytes: bytes().describe('This server database on disk (pg_database_size)'),
+    otherBytes: bytes().describe(
+      'volumeUsedBytes minus every measured part: other files on the volume, Locked originals and anything unmeasured',
+    ),
+    onOtherDisk: z
+      .array(z.enum(['previews', 'encodedVideo']).meta({ id: 'AnalyticsVolumePart' }))
+      .describe('Generated folders the collector found on another disk than the library; not part of volumeUsedBytes'),
+    exceedsUsed: z
+      .boolean()
+      .describe(
+        'The measured parts add up to more than the volume used, for example a database on another disk; otherBytes is then 0',
+      ),
+  })
+  .describe(
+    'What uses the library volume, only in the whole-server report; the parts and otherBytes add up to volumeUsedBytes',
+  )
+  .meta({ id: 'AnalyticsVolumeBreakdownDto' });
+
 const AnalyticsHostSchema = z
   .object({
     state: AnalyticsStateSchema,
@@ -85,6 +115,8 @@ const AnalyticsHostSchema = z
     volumeUsedBytes: bytes().nullable(),
     capacityBytes: bytes().nullable(),
     freeBytes: bytes().nullable(),
+    // optional so clients built before the breakdown keep compiling; always sent, null outside the host scope
+    breakdown: AnalyticsVolumeBreakdownSchema.nullable().optional(),
   })
   .describe('The library volume, always the whole host whatever is selected')
   .meta({ id: 'AnalyticsHostDto' });
@@ -280,6 +312,14 @@ const AnalyticsRecordsSchema = z
   })
   .meta({ id: 'AnalyticsRecordsDto' });
 
+const AnalyticsCoverageSchema = z
+  .object({
+    facesChecked: count().describe('Items face detection has run on'),
+    searchIndexed: count().describe('Items with a smart-search embedding'),
+  })
+  .describe('Out of summary.items minus hiddenItems')
+  .meta({ id: 'AnalyticsCoverageDto' });
+
 const AnalyticsInsightsSchema = z
   .object({
     hiddenItems: count().describe(
@@ -304,6 +344,7 @@ const AnalyticsInsightsSchema = z
       .describe('Every bucket; adds up to summary.items. Panorama is 2:1 or wider'),
     livePhotos: count().describe('Photos with a Live Photo motion part'),
     hdr: AnalyticsHdrSchema.nullable().describe('Null when no video stream has been read, so HDR cannot be told'),
+    coverage: AnalyticsCoverageSchema,
     peopleAndPlaces: AnalyticsPeopleAndPlacesSchema.nullable(),
     records: AnalyticsRecordsSchema,
   })
@@ -343,3 +384,4 @@ export type AnalyticsScopeOption = z.infer<typeof AnalyticsScopeOptionSchema>;
 export type AnalyticsSeriesDefinitionDto = z.infer<typeof AnalyticsSeriesDefinitionSchema>;
 export type AnalyticsBucketDto = z.infer<typeof AnalyticsBucketSchema>;
 export type AnalyticsInsightsDto = z.infer<typeof AnalyticsInsightsSchema>;
+export type AnalyticsVolumeBreakdownDto = z.infer<typeof AnalyticsVolumeBreakdownSchema>;

@@ -629,4 +629,105 @@ describe('AnalyticsRepository.getInsights (FL-79)', () => {
     }
     expect(total(locked.people!.places)).toBe(locked.items);
   });
+
+  it('reads coverage and cameras over the same visible items, never counting a hidden one', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const vector = `[${Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0)).join(',')}]`;
+    const checked = await newItem(ctx, user.id, { originalFileName: 'a.jpg' }, { model: 'EOS R5' });
+    const indexed = await newItem(ctx, user.id, { originalFileName: 'b.jpg' }, { model: 'EOS R5' });
+    await newItem(ctx, user.id, { originalFileName: 'c.jpg' }, { make: null, model: null });
+    const secret = await newItem(ctx, user.id, { originalFileName: 'secret.jpg' }, { model: 'Secret camera' });
+    for (const asset of [checked, secret]) {
+      await db.insertInto('asset_job_status').values({ assetId: asset.id, facesRecognizedAt: new Date() }).execute();
+    }
+    // a job status row that never ran face detection is not coverage
+    await db.insertInto('asset_job_status').values({ assetId: indexed.id, facesRecognizedAt: null }).execute();
+    for (const asset of [indexed, secret]) {
+      await db.insertInto('smart_search').values({ assetId: asset.id, embedding: vector }).execute();
+    }
+    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Kept Private' });
+    await ctx.newAssetFace({ assetId: secret.id, personGroupId: person.personGroupId });
+    const privacy = {
+      hiddenContent: {
+        userId: user.id,
+        includeNsfw: false,
+        personIds: [person.personGroupId],
+        tagIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      },
+    };
+
+    const scope = account(user.id);
+    const [unlocked, locked, allCameras, visibleCameras] = await Promise.all([
+      sut.getInsights(scope, noNames),
+      sut.getInsights(scope, { ...noNames, privacy }),
+      sut.getCameras(scope),
+      sut.getCameras(scope, privacy),
+    ]);
+    expect(unlocked.coverage).toEqual({ facesChecked: 2, searchIndexed: 2 });
+    expect(locked.items).toBe(3);
+    expect(locked.coverage).toEqual({ facesChecked: 1, searchIndexed: 1 });
+
+    const cameraTotal = (rows: Array<{ items: number }>) => rows.reduce((sum, row) => sum + row.items, 0);
+    expect(cameraTotal(allCameras)).toBe(unlocked.items);
+    // cameras add up to the same items as every other breakdown, and name nothing hidden
+    expect(cameraTotal(visibleCameras)).toBe(locked.items);
+    expect(visibleCameras).not.toContainEqual(expect.objectContaining({ model: 'Secret camera' }));
+  });
+});
+
+describe('AnalyticsRepository volume parts (FL-79)', () => {
+  it('reads the database size and the newest generated-folder readings', async () => {
+    const { sut } = await setup();
+    await expect(sut.getDatabaseBytes()).resolves.toBeGreaterThan(0);
+    const reading = (series: AnalyticsSeriesId, value: number, day: string): AnalyticsSampleInsert => ({
+      series,
+      scopeKey: 'host',
+      userId: null,
+      libraryId: null,
+      grain: AnalyticsSampleGrain.Day,
+      bucketStart: new Date(`${day}T00:00:00Z`),
+      value,
+      observedAt: new Date(`${day}T00:05:00Z`),
+    });
+    await sut.upsertSamples([
+      reading(AnalyticsSeriesId.HostThumbnailBytes, 100, '2026-09-18'),
+      reading(AnalyticsSeriesId.HostThumbnailBytes, 150, '2026-09-19'),
+      reading(AnalyticsSeriesId.HostEncodedVideoBytes, 70, '2026-09-19'),
+      reading(AnalyticsSeriesId.HostVolumeUsedBytes, 1000, '2026-09-19'),
+    ]);
+    const generated = await sut.getLatestHostSamples([
+      AnalyticsSeriesId.HostThumbnailBytes,
+      AnalyticsSeriesId.HostEncodedVideoBytes,
+    ]);
+    expect(generated.map(({ series, value }) => ({ series, value })).toSorted((a, b) => a.value - b.value)).toEqual([
+      { series: AnalyticsSeriesId.HostEncodedVideoBytes, value: 70 },
+      { series: AnalyticsSeriesId.HostThumbnailBytes, value: 150 },
+    ]);
+    // the volume readings stay what the default asks for
+    expect((await sut.getLatestHostSamples()).map(({ series }) => series)).toEqual([
+      AnalyticsSeriesId.HostVolumeUsedBytes,
+    ]);
+  });
+
+  it('refuses generated-folder readings for anything but the whole server', async () => {
+    const { ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    await expect(
+      sut.upsertSamples([
+        {
+          series: AnalyticsSeriesId.HostThumbnailBytes,
+          scopeKey: `account:${user.id}`,
+          userId: user.id,
+          libraryId: null,
+          grain: AnalyticsSampleGrain.Day,
+          bucketStart: new Date('2026-09-19T00:00:00Z'),
+          value: 1,
+          observedAt: new Date('2026-09-19T00:05:00Z'),
+        },
+      ]),
+    ).rejects.toThrow(/not defined for the account scope/);
+  });
 });

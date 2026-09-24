@@ -74,7 +74,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
-  { id: 'backup', group: 'library', sections: ['backup'], personal: ['takeout', 'preservation'] },
+  // Imports first, then protection, as the template lists them (settings-catalog.mjs `backup`).
+  {
+    id: 'backup',
+    group: 'library',
+    sections: ['backup'],
+    personal: ['takeout', 'preservation'],
+    order: ['takeout', 'backup', 'preservation'],
+  },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   // The template's People & sharing: partner sharing moved out of the personal settings list.
@@ -136,6 +143,32 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   // saved settings changes there.
   { id: 'history', group: 'personal', sections: [], adminOnly: true },
 ]);
+
+/**
+ * Each area's coloured icon tile in the settings navigation, like System Settings (FL-76; the
+ * template's apple-style.css:565-640 `--tile` per area). The icon is drawn white on the tile.
+ */
+export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object.freeze({
+  overview: '#0a84ff',
+  analytics: '#bf5af2',
+  storage: '#8e8e93',
+  backup: '#30b0c7',
+  intelligence: '#5e5ce6',
+  editing: '#ff9f0a',
+  sharing: '#0a84ff',
+  care: '#30d158',
+  libraries: '#64d2ff',
+  utilities: '#636366',
+  trash: '#8e8e93',
+  processing: '#636366',
+  security: '#0a84ff',
+  notifications: '#ff453a',
+  server: '#8e8e93',
+  maintenance: '#636366',
+  users: '#0a84ff',
+  preferences: '#8e8e93',
+  history: '#636366',
+});
 
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
   'command',
@@ -300,4 +333,121 @@ export const sectionsForArea = <T extends { key: string; admin?: boolean }>(
       .map((key) => sections.find((section) => section.key === key && Boolean(section.admin) === admin))
       .filter((section): section is T => section !== undefined);
   return inDisplayOrder(area, [...pick(area.sections, true), ...pick(area.personal ?? [], false)], ({ key }) => key);
+};
+
+// ── Area directories (FL-71, FL-10) ─────────────────────────────────────────
+
+/**
+ * Who a section applies to. Most areas are server-wide, so a directory tags only the rows whose
+ * scope differs from the rest of their area (the template's `SectionDirectory` and
+ * `directoryScope`, CommandCenter.jsx:2586-2757).
+ */
+export type SectionScope = 'server' | 'account' | 'device';
+
+/** Account sections stored in this browser rather than on the server (the template's `device` scope). */
+const DEVICE_SECTIONS: ReadonlySet<string> = new Set(['app-settings']);
+
+export const sectionScope = (section: { key: string; admin?: boolean }): SectionScope =>
+  section.admin ? 'server' : DEVICE_SECTIONS.has(section.key) ? 'device' : 'account';
+
+/** The scope most rows of a directory share; ties go to the first row's scope. */
+export const usualScope = (scopes: readonly SectionScope[]): SectionScope | undefined => {
+  let usual: SectionScope | undefined;
+  let most = 0;
+  for (const scope of scopes) {
+    const count = scopes.filter((item) => item === scope).length;
+    if (count > most) {
+      usual = scope;
+      most = count;
+    }
+  }
+  return usual;
+};
+
+/** Directory group headings (`frameleaf_cc_group_<id>`), the template's `directoryGroups` and `sectionGroup`. */
+export type DirectoryGroupId =
+  | 'storage'
+  | 'identical_files'
+  | 'trash'
+  | 'import'
+  | 'protection'
+  | 'search'
+  | 'smart_albums'
+  | 'recognition'
+  | 'photos'
+  | 'video_playback'
+  | 'sharing'
+  | 'health'
+  | 'repairs'
+  | 'tools'
+  | 'workers'
+  | 'job_management'
+  | 'schedules'
+  | 'sign_in'
+  | 'locked_content'
+  | 'devices'
+  | 'email'
+  | 'this_server'
+  | 'updates'
+  | 'maps'
+  | 'account'
+  | 'library'
+  | 'downloads'
+  | 'more';
+
+const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryGroupId>>> = {
+  storage: {
+    'storage-template': 'storage',
+    migration: 'storage',
+    deduplication: 'identical_files',
+    trash: 'trash',
+    'user-settings': 'trash',
+  },
+  backup: { takeout: 'import', backup: 'protection', preservation: 'protection' },
+  intelligence: { 'machine-learning': 'search', 'smart-albums': 'smart_albums', metadata: 'recognition' },
+  editing: { image: 'photos', 'video-transcoding': 'video_playback' },
+  sharing: { sharing: 'sharing' },
+  care: { 'integrity-checks': 'health', repair: 'repairs', 'enrichment-care': 'repairs' },
+  processing: {
+    workers: 'workers',
+    routing: 'workers',
+    'render-workers': 'workers',
+    queues: 'job_management',
+    'nightly-tasks': 'schedules',
+  },
+  security: {
+    authentication: 'sign_in',
+    password: 'sign_in',
+    oauth: 'sign_in',
+    'user-pin-code-settings': 'locked_content',
+    'suppressed-content': 'locked_content',
+    'authorized-devices': 'devices',
+    'api-keys': 'devices',
+  },
+  notifications: { notifications: 'email', 'email-preferences': 'email' },
+  server: {
+    server: 'this_server',
+    theme: 'this_server',
+    'version-check': 'updates',
+    logging: 'updates',
+    configuration: 'updates',
+    location: 'maps',
+  },
+  preferences: {
+    account: 'account',
+    'user-usage-info': 'account',
+    'user-purchase-settings': 'account',
+    'app-settings': 'library',
+    feature: 'library',
+    'download-settings': 'downloads',
+  },
+};
+
+/**
+ * The group heading a section sits under in its area's directory. Areas without groups (Maintenance)
+ * have none; an unlisted section of a grouped area goes under "More".
+ */
+export const directoryGroup = (area: SettingsAreaId, key: string): DirectoryGroupId | undefined => {
+  const groups = DIRECTORY_GROUPS[area];
+  return groups ? (groups[key] ?? 'more') : undefined;
 };

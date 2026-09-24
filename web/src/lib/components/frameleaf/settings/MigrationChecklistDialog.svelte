@@ -183,6 +183,7 @@
     flex-direction: column;
     gap: 1rem;
     margin-top: 1rem;
+    font-variant-numeric: tabular-nums;
   }
   .workflow > p,
   .steps p,

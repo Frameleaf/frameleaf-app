@@ -115,6 +115,23 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('gives every area a coloured icon tile, like System Settings (FL-76)', () => {
+    open('/user-settings?area=storage');
+    render(SettingsHost, { sections });
+    const tile = (name: string) =>
+      screen.getByRole('button', { name }).querySelector<HTMLElement>('.tile')!.style.getPropertyValue('--tile');
+    expect(tile('Overview')).toBe('#0a84ff');
+    expect(tile('Library analytics')).toBe('#bf5af2');
+    expect(tile('Import & protection')).toBe('#30b0c7');
+    expect(tile('Library care')).toBe('#30d158');
+    expect(tile('Notifications')).toBe('#ff453a');
+    for (const button of screen
+      .getByRole('navigation', { name: 'Settings navigation' })
+      .querySelectorAll('button.area')) {
+      expect(button.querySelector(':scope .tile svg')).not.toBeNull();
+    }
+  });
+
   it('shows an area as a section directory and one section at a time with its breadcrumb', async () => {
     open('/user-settings?area=storage');
     const { container } = render(SettingsHost, { sections });
@@ -137,19 +154,40 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
-  it('makes Library care the hub for fixes: its sections, then the repair tools', async () => {
+  it('draws an area directory as grouped lists without repeated icons (FL-71, FL-10)', () => {
+    open('/user-settings?area=storage');
+    const { container } = render(SettingsHost, { sections });
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    expect(
+      within(directory)
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Storage', 'Trash']);
+    // Only the chevron: no area icon repeated on every row.
+    for (const row of within(directory).getAllByRole('button')) {
+      expect(row.querySelectorAll('svg')).toHaveLength(1);
+    }
+    // Every row is a server setting, like the area, so none carries a scope tag.
+    expect(directory.querySelector('.cc-directory-scope')).toBeNull();
+  });
+
+  it('tags only the rows whose scope differs from the rest of the area', () => {
+    open('/user-settings?area=notifications');
+    const { container } = render(SettingsHost, { sections });
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    const tags = [...directory.querySelectorAll('.cc-directory-scope')].map((tag) => tag.textContent);
+    expect(tags).toEqual(['Just you']);
+    expect(within(directory).getByRole('button', { name: /Your email notifications/ })).toHaveTextContent('Just you');
+    expect(within(directory).getByRole('button', { name: /Email delivery/ })).not.toHaveTextContent('Just you');
+  });
+
+  it("lists Library care's repair tools after its sections", async () => {
     open('/user-settings?area=care');
     const { container } = render(SettingsHost, { sections });
-    const tools = container.querySelectorAll<HTMLElement>('.cc-directory')[1];
-    expect(screen.getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
-    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
-      'Duplicate review',
-      'Missing media',
-      'Damaged media',
-      'Live Photo pairing',
-    ]);
-    await userEvent.click(within(tools).getByRole('button', { name: /Duplicate review/ }));
-    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
+    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
+    expect(within(directory).getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
+    await userEvent.click(within(directory).getByRole('button', { name: /Missing media/ }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
   });
 
   it('lists only the repair tools an account without administration may run', () => {
@@ -157,11 +195,35 @@ describe('the Command Center (FL-71)', () => {
     const { container } = render(SettingsHost, {
       sections: [...sections.filter((section) => !section.admin), accountSection('repair', 'Repair queues')],
     });
-    const tools = container.querySelectorAll<HTMLElement>('.cc-directory')[1];
+    const tools = within(container.querySelector<HTMLElement>('.cc-directory')!)
+      .getByRole('heading', { level: 2, name: 'Tools' })
+      .closest('section')!;
     expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
       'Duplicate review',
       'Live Photo pairing',
     ]);
+  });
+
+  it('does not repeat a page name that matches its area in the overline', () => {
+    open('/user-settings?area=trash');
+    render(SettingsHost, { sections });
+    const heading = screen.getByRole('heading', { level: 1, name: 'Trash' }).parentElement!;
+    expect(within(heading).queryByRole('button', { name: 'Trash' })).toBeNull();
+    expect(heading.querySelector('.cc-overline')).toHaveTextContent('Your library');
+  });
+
+  it('gives administration tools the page width without a card around their own grouped containers', () => {
+    open('/user-settings?area=processing&section=render-workers');
+    const { container } = render(SettingsHost, {
+      sections: [...sections, serverSection('render-workers', 'Render workers')],
+    });
+    expect(container.querySelector('#setting-render-workers')).toHaveClass('cc-manager');
+  });
+
+  it('keeps an ordinary settings page as one grouped list', () => {
+    open('/user-settings?area=storage&section=trash');
+    const { container } = render(SettingsHost, { sections });
+    expect(container.querySelector('#setting-trash')).not.toHaveClass('cc-manager');
   });
 
   it("links Storage → Trash & retention to the account's own trash", async () => {

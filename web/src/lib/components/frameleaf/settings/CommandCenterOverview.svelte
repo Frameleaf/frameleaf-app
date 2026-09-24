@@ -13,6 +13,7 @@
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import {
     AnalyticsRange,
+    AnalyticsScopeKind,
     getAboutInfo,
     getAnalyticsReport,
     getQueues,
@@ -51,6 +52,35 @@
       .at(-1)?.filename,
   );
   const href = (area: SettingsAreaId, section?: string) => commandCenterUrl(area, section);
+  /**
+   * The storage key (CommandCenter.jsx:1839-1867): thumbnails & proxies, and database & other, read
+   * the whole-server report's measured breakdown (FL-79). Before the nightly collector has measured
+   * the generated folders both read "Not yet measured"; outside the whole-server scope, and when
+   * the volume could not be read, they stay "Not measured".
+   */
+  const breakdown = $derived(report?.host.breakdown ?? null);
+  const generatedMeasured = $derived(
+    breakdown !== null && breakdown.previewsBytes !== null && breakdown.encodedVideoBytes !== null,
+  );
+  const storageValue = (bytes: () => number) =>
+    breakdown === null
+      ? $t('frameleaf_cc_unmeasured')
+      : generatedMeasured
+        ? formatBytes(bytes())
+        : $t('frameleaf_cc_not_yet_measured');
+  const storageNote = $derived(
+    breakdown === null
+      ? $t(
+          report?.scopeKind === AnalyticsScopeKind.Host
+            ? 'frameleaf_cc_storage_volume_unread'
+            : 'frameleaf_cc_storage_whole_server',
+        )
+      : generatedMeasured
+        ? breakdown.exceedsUsed || breakdown.onOtherDisk.length > 0
+          ? $t('frameleaf_cc_storage_elsewhere')
+          : $t('frameleaf_cc_storage_note')
+        : $t('frameleaf_cc_storage_pending'),
+  );
   /** A queue's title as the Job manager shows it. */
   const queueTitle = (name: QueueName) => {
     const definition = jobQueue(name);
@@ -206,14 +236,14 @@
         </div>
         <div>
           <dt>{$t('frameleaf_cc_derivatives')}</dt>
-          <dd>{$t('frameleaf_cc_unmeasured')}</dd>
+          <dd>{storageValue(() => breakdown!.previewsBytes! + breakdown!.encodedVideoBytes!)}</dd>
         </div>
         <div>
           <dt>{$t('frameleaf_cc_other')}</dt>
-          <dd>{$t('frameleaf_cc_unmeasured')}</dd>
+          <dd>{storageValue(() => breakdown!.databaseBytes + breakdown!.otherBytes)}</dd>
         </div>
       </dl>
-      <p class="subtle">{$t('frameleaf_cc_storage_unmeasured')}</p>
+      <p class="subtle">{storageNote}</p>
     </section>
     <section class="panel">
       <header>

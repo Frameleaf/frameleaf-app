@@ -42,72 +42,98 @@
   };
 </script>
 
-<div class="field">
-  <div class="label-line">
-    <label for={id}>{label}</label>
-    {#if required}
-      <span class="required" aria-hidden="true">*</span>
-    {/if}
-    {#if isEdited}
-      <span class="unsaved">{$t('unsaved_change')}</span>
+<!--
+  Sept 24 compact row. A multi-line value (templates, prompts, custom CSS) keeps the full width of
+  the page under its label instead of the narrow control column.
+-->
+<div class="field" class:edited={isEdited}>
+  <div class="copy">
+    <div class="label-line">
+      <label for={id}>{label}</label>
+      {#if required}
+        <span class="required" aria-hidden="true">*</span>
+      {/if}
+      {#if isEdited}
+        <span class="unsaved">{$t('unsaved_change')}</span>
+      {/if}
+    </div>
+
+    {#if description}
+      <p id={descId}>{description}</p>
+    {:else if descriptionSnippet}
+      <div id={descId} class="description">{@render descriptionSnippet()}</div>
     {/if}
   </div>
-
-  {#if description}
-    <p id={descId}>{description}</p>
-  {:else if descriptionSnippet}
-    <div id={descId} class="description">{@render descriptionSnippet()}</div>
-  {/if}
 
   <textarea aria-describedby={descId} {id} name={id} {required} {value} oninput={handleInput} {disabled}></textarea>
 </div>
 
 <style>
   .field {
+    display: grid;
+    gap: 8px;
     width: 100%;
-    margin-bottom: 1rem;
+    padding: 14px 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .field:first-child {
+    border-top: 0;
+  }
+  .field.edited {
+    margin-inline-start: -12px;
+    padding-inline-start: 12px;
+    box-shadow: inset 3px 0 var(--fl-warning);
+  }
+  .copy {
+    min-width: 0;
   }
   .label-line {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    min-height: 1.5rem;
-  }
-  label {
-    font-weight: 550;
-    color: var(--fl-text);
-  }
-  .required {
-    color: var(--fl-danger);
+    gap: 6px;
   }
   .unsaved {
     display: inline-flex;
     align-items: center;
-    padding: 0 0.5rem;
-    min-height: 1.25rem;
-    border-radius: var(--fl-radius-pill);
-    background: var(--fl-warning);
-    color: var(--fl-warning-text);
-    font-size: var(--fl-font-micro);
+    gap: 5px;
+    color: var(--fl-warning);
+    font-size: 11px;
     font-weight: 600;
+  }
+  .unsaved::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    background: currentColor;
+    border-radius: 50%;
+  }
+  label {
+    color: var(--fl-text);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .required {
+    color: var(--fl-danger);
   }
   p,
   .description {
-    margin: 0.125rem 0 0.5rem;
+    margin: 4px 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    line-height: 1.5;
+    font-size: 12.5px;
+    line-height: 1.45;
   }
   textarea {
     width: 100%;
-    min-height: 6rem;
-    padding: 0.5rem 0.75rem;
+    min-height: 5.5rem;
+    padding: 8px 10px;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     font: inherit;
+    font-size: 13px;
+    line-height: 1.5;
     resize: vertical;
   }
   textarea:disabled {
