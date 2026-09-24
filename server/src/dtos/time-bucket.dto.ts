@@ -11,6 +11,9 @@ import {
 } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
+export const TIMELINE_HIGHLIGHT_DEFAULT = 4;
+export const TIMELINE_HIGHLIGHT_MAX = 12;
+
 const TimeBucketQueryBaseSchema = z
   .object({
     userId: z.uuidv4().optional().describe('Filter assets by specific user ID'),
@@ -170,7 +173,49 @@ const TimeBucketsResponseSchema = z
   })
   .meta({ id: 'TimeBucketsResponseDto' });
 
+/** FL-33: the curated Years and Months timeline (`timeline-highlights.mjs` in the design reference) */
+const TimelineHighlightsSchema = TimeBucketQueryBaseSchema.extend({
+  grouping: z
+    .enum(['year', 'month'])
+    .default('month')
+    .describe('One card per year or per month')
+    .meta({ id: 'TimelineHighlightGrouping' }),
+  highlightCount: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(TIMELINE_HIGHLIGHT_MAX)
+    .optional()
+    .describe(
+      `Highlights besides the key photo for each month card (default ${TIMELINE_HIGHLIGHT_DEFAULT}). Year cards carry none`,
+    ),
+}).meta({ id: 'TimelineHighlightsDto' });
+
+const TimelineHighlightResponseSchema = z
+  .object({
+    timeBucket: z
+      .string()
+      .describe('First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets')
+      .meta({ example: '2024-01-01' }),
+    count: z.int().min(0).describe('Number of assets in this year or month, the same as the time buckets report'),
+    keyAssetId: z
+      .string()
+      .nullable()
+      .describe('Key photo: highest Best Photos score, then highest star rating, then most recent capture'),
+    highlightAssetIds: z
+      .array(z.string())
+      .describe('The next best assets in capture order (month cards only), never including the key photo'),
+    places: z
+      .array(z.string())
+      .describe(
+        'Up to three most frequent places (city, else state, else country), busiest first. Empty when the viewer may not see locations',
+      ),
+  })
+  .meta({ id: 'TimelineHighlightResponseDto' });
+
 export class TimeBucketDto extends createZodDto(TimeBucketSchema) {}
 export class TimeBucketAssetDto extends createZodDto(TimeBucketAssetSchema) {}
 export class TimeBucketAssetResponseDto extends createZodDto(TimeBucketAssetResponseSchema) {}
 export class TimeBucketsResponseDto extends createZodDto(TimeBucketsResponseSchema) {}
+export class TimelineHighlightsDto extends createZodDto(TimelineHighlightsSchema) {}
+export class TimelineHighlightResponseDto extends createZodDto(TimelineHighlightResponseSchema) {}

@@ -73,4 +73,41 @@ describe(UserController.name, () => {
       );
     });
   });
+
+  describe('PUT /users/me/preferences savedSearches (FL-49)', () => {
+    const put = (savedSearches: unknown) =>
+      request(ctx.getHttpServer())
+        .put(`/users/me/preferences`)
+        .set('Authorization', `Bearer token`)
+        .send({ savedSearches });
+
+    it('accepts named search bodies', async () => {
+      const { status } = await put([{ name: ' Beach ', query: { filter: { city: { eq: 'Lisbon' } } } }]);
+      expect(status).toBe(200);
+      expect(service.updateMyPreferences).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ savedSearches: [{ name: 'Beach', query: { filter: { city: { eq: 'Lisbon' } } } }] }),
+      );
+    });
+
+    it('rejects an empty name, duplicate names and too many searches', async () => {
+      expect((await put([{ name: '  ', query: {} }])).status).toBe(400);
+      expect(
+        (
+          await put([
+            { name: 'A', query: {} },
+            { name: 'a', query: {} },
+          ])
+        ).status,
+      ).toBe(400);
+      expect((await put(Array.from({ length: 51 }, (_, index) => ({ name: `s${index}`, query: {} })))).status).toBe(
+        400,
+      );
+    });
+
+    it('rejects an oversized query and a query that is not an object', async () => {
+      expect((await put([{ name: 'big', query: { text: 'x'.repeat(9000) } }])).status).toBe(400);
+      expect((await put([{ name: 'list', query: ['a'] }])).status).toBe(400);
+    });
+  });
 });

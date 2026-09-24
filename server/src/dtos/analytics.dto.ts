@@ -192,6 +192,123 @@ const AnalyticsProcessingSchema = z
   })
   .meta({ id: 'AnalyticsProcessingDto' });
 
+// ── FL-79 insights: every partition adds up to summary.items (or summary.photos / summary.videos) ──
+
+export const ANALYTICS_FOCAL_BUCKETS = [
+  '0-16',
+  '17-28',
+  '29-40',
+  '41-70',
+  '71-135',
+  '136-300',
+  '301+',
+  'unknown',
+] as const;
+export const ANALYTICS_PHOTO_FORMATS = ['HEIC', 'JPEG', 'RAW', 'PNG', 'OTHER'] as const;
+export const ANALYTICS_VIDEO_RESOLUTIONS = ['4K', '1080p', '720p', 'SD', 'unknown'] as const;
+export const ANALYTICS_ORIENTATIONS = ['landscape', 'portrait', 'square', 'panorama', 'unknown'] as const;
+
+const AnalyticsNamedCountSchema = z
+  .object({
+    name: z.string().nullable().describe('Null for the other and unknown rows'),
+    kind: z.enum(['named', 'other', 'unknown']).meta({ id: 'AnalyticsNamedCountKind' }),
+    count: count(),
+  })
+  .meta({ id: 'AnalyticsNamedCountDto' });
+
+const AnalyticsYearCountSchema = z.object({ year: z.int(), count: count() }).meta({ id: 'AnalyticsYearCountDto' });
+
+const AnalyticsPunchcardCellSchema = z
+  .object({
+    weekday: z.int().min(1).max(7).describe('ISO weekday of the local capture time, 1 = Monday'),
+    hour: z.int().min(0).max(23).describe('Hour of the local capture time'),
+    count: count(),
+  })
+  .meta({ id: 'AnalyticsPunchcardCellDto' });
+
+const bucketCount = <T extends readonly [string, ...string[]]>(values: T, id: string, description: string) =>
+  z
+    .object({ key: z.enum(values).meta({ id: `${id}Key` }), count: count() })
+    .describe(description)
+    .meta({ id });
+
+const AnalyticsPersonCountSchema = z
+  .object({ id: z.string().describe('Person id'), name: z.string(), count: count().describe('Items showing them') })
+  .meta({ id: 'AnalyticsPersonCountDto' });
+
+const AnalyticsPeopleAndPlacesSchema = z
+  .object({
+    faces: count().describe('Visible faces on the items'),
+    itemsWithFaces: count(),
+    itemsWithoutFaces: count().describe('itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems'),
+    namedPeople: count().describe('Named, visible people of the owner seen on the items'),
+    pets: count().describe("The owner's visible pets confirmed on the items"),
+    topPeople: z
+      .array(AnalyticsPersonCountSchema)
+      .describe('Most photographed named people; overlapping, as one item can show several'),
+    geotagged: count(),
+    countries: count(),
+    cities: count(),
+    places: z.array(AnalyticsNamedCountSchema).describe('Items per city, then every other city, then no city'),
+  })
+  .describe("The owner's own people and places, only when the owner reads their own scope")
+  .meta({ id: 'AnalyticsPeopleAndPlacesDto' });
+
+const AnalyticsHdrSchema = z
+  .object({
+    probedVideos: count().describe('Videos whose stream metadata has been read; the only ones HDR can be told for'),
+    hdrVideos: count().describe('PQ or HLG transfer, or Dolby Vision'),
+    dolbyVisionVideos: count(),
+  })
+  .meta({ id: 'AnalyticsHdrDto' });
+
+const AnalyticsRecordSchema = z
+  .object({
+    name: z.string().nullable().describe('File name; null unless the owner reads their own scope'),
+  })
+  .meta({ id: 'AnalyticsRecordDto' });
+
+const AnalyticsRecordsSchema = z
+  .object({
+    oldestCapture: AnalyticsRecordSchema.extend({ date: day() }).meta({ id: 'AnalyticsOldestCaptureDto' }).nullable(),
+    largestFile: AnalyticsRecordSchema.extend({ bytes: bytes() }).meta({ id: 'AnalyticsLargestFileDto' }).nullable(),
+    longestVideo: AnalyticsRecordSchema.extend({ durationMs: count() })
+      .meta({ id: 'AnalyticsLongestVideoDto' })
+      .nullable(),
+    videoDurationMs: count().describe('All videos together'),
+    videoHours: z.number().meta({ format: 'double' }).min(0).describe('videoDurationMs in hours, one decimal'),
+  })
+  .meta({ id: 'AnalyticsRecordsDto' });
+
+const AnalyticsInsightsSchema = z
+  .object({
+    hiddenItems: count().describe(
+      'Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise)',
+    ),
+    capturesByYear: z.array(AnalyticsYearCountSchema).describe('Items per local capture year, all time'),
+    punchcard: z
+      .array(AnalyticsPunchcardCellSchema)
+      .describe('All 168 weekday and hour cells of the local capture time'),
+    lenses: z.array(AnalyticsNamedCountSchema).describe('Items per lens model, then every other lens, then no lens'),
+    focalLengths: z
+      .array(bucketCount(ANALYTICS_FOCAL_BUCKETS, 'AnalyticsFocalLengthDto', 'Items per recorded focal length (mm)'))
+      .describe('Every bucket, in order; adds up to summary.items'),
+    photoFormats: z
+      .array(bucketCount(ANALYTICS_PHOTO_FORMATS, 'AnalyticsPhotoFormatDto', 'Photos per original file format'))
+      .describe('Every format; adds up to summary.photos, and RAW equals summary.raw'),
+    videoResolutions: z
+      .array(bucketCount(ANALYTICS_VIDEO_RESOLUTIONS, 'AnalyticsVideoResolutionDto', 'Videos per resolution'))
+      .describe('Every bucket; adds up to summary.videos'),
+    orientation: z
+      .array(bucketCount(ANALYTICS_ORIENTATIONS, 'AnalyticsOrientationDto', 'Items per displayed orientation'))
+      .describe('Every bucket; adds up to summary.items. Panorama is 2:1 or wider'),
+    livePhotos: count().describe('Photos with a Live Photo motion part'),
+    hdr: AnalyticsHdrSchema.nullable().describe('Null when no video stream has been read, so HDR cannot be told'),
+    peopleAndPlaces: AnalyticsPeopleAndPlacesSchema.nullable(),
+    records: AnalyticsRecordsSchema,
+  })
+  .meta({ id: 'AnalyticsInsightsDto' });
+
 const AnalyticsReportSchema = z
   .object({
     scope: z.string(),
@@ -212,6 +329,10 @@ const AnalyticsReportSchema = z
     views: z.array(AnalyticsViewSchema),
     albums: AnalyticsAlbumsSchema,
     processing: AnalyticsProcessingSchema,
+    // always sent; optional in the schema so clients built before these insights keep compiling
+    insights: AnalyticsInsightsSchema.optional().describe(
+      'Dashboard breakdowns of the same items as summary. People, places and file names are only for the owner reading their own scope',
+    ),
   })
   .meta({ id: 'AnalyticsReportResponseDto' });
 
@@ -221,3 +342,4 @@ export class AnalyticsReportResponseDto extends createZodDto(AnalyticsReportSche
 export type AnalyticsScopeOption = z.infer<typeof AnalyticsScopeOptionSchema>;
 export type AnalyticsSeriesDefinitionDto = z.infer<typeof AnalyticsSeriesDefinitionSchema>;
 export type AnalyticsBucketDto = z.infer<typeof AnalyticsBucketSchema>;
+export type AnalyticsInsightsDto = z.infer<typeof AnalyticsInsightsSchema>;

@@ -407,12 +407,12 @@ const MetadataSearchSchema = withShapeExclusivity(
   }),
 ).meta({ id: 'MetadataSearchDto' });
 
-const StatisticsSearchSchema = withShapeExclusivity(
-  BaseSearchSchema.extend({
-    description: z.string().trim().optional().describe('Filter by description text').meta(DEPRECATED_FLAT_FIELD),
-    filter: filterField,
-  }),
-).meta({ id: 'StatisticsSearchDto' });
+const StatisticsSearchBaseSchema = BaseSearchSchema.extend({
+  description: z.string().trim().optional().describe('Filter by description text').meta(DEPRECATED_FLAT_FIELD),
+  filter: filterField,
+});
+
+const StatisticsSearchSchema = withShapeExclusivity(StatisticsSearchBaseSchema).meta({ id: 'StatisticsSearchDto' });
 
 const SmartSearchSchema = withShapeExclusivity(
   BaseSearchWithResultsSchema.extend({
@@ -450,6 +450,12 @@ const SearchFacetCountResponseSchema = z
   .object({
     count: z.int().min(0).describe('Number of assets with this facet value'),
     value: z.string().describe('Facet value'),
+    label: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Display name when the value is an id (a person or a tag); the viewer's own name for it")
+      .meta(ADDED_V3_2),
   })
   .meta({ id: 'SearchFacetCountResponseDto' });
 
@@ -500,6 +506,103 @@ const SearchStatisticsResponseSchema = z
   .meta({ id: 'SearchStatisticsResponseDto' });
 
 export class SearchStatisticsResponseDto extends createZodDto(SearchStatisticsResponseSchema) {}
+
+/** FL-49: facet fields the search palette refines by (`search-palette.mjs` in the design reference) */
+export enum SearchFacetField {
+  People = 'people',
+  Type = 'type',
+  City = 'city',
+  Country = 'country',
+  Make = 'make',
+  Model = 'model',
+  LensModel = 'lensModel',
+  Rating = 'rating',
+  IsFavorite = 'isFavorite',
+  Tags = 'tags',
+}
+
+export const SearchFacetFieldSchema = z.enum(SearchFacetField).meta({ id: 'SearchFacetField' });
+
+export const SEARCH_FACET_DEFAULT_LIMIT = 10;
+export const SEARCH_FACET_MAX_LIMIT = 100;
+/** smart search ranks every eligible asset; its scope count stops here and says so */
+export const SMART_SEARCH_COUNT_CAP = 1000;
+
+const facetRequestShape = {
+  facets: z
+    .array(SearchFacetFieldSchema)
+    .min(1)
+    .max(Object.values(SearchFacetField).length)
+    .optional()
+    .describe('Facets to count, each once (repeats are ignored); every facet when omitted'),
+  facetLimit: z
+    .int()
+    .min(1)
+    .max(SEARCH_FACET_MAX_LIMIT)
+    .optional()
+    .describe(`Most frequent values per facet (default ${SEARCH_FACET_DEFAULT_LIMIT})`),
+};
+
+const SearchFacetsSchema = withShapeExclusivity(StatisticsSearchBaseSchema.extend(facetRequestShape)).meta({
+  id: 'SearchFacetsDto',
+});
+
+const SearchFacetsResponseSchema = z
+  .object({
+    total: z.int().min(0).describe('Number of assets the search body matches, as POST /search/statistics reports'),
+    facets: z
+      .array(SearchFacetResponseSchema)
+      .describe(
+        'Per facet, the most frequent values, busiest first. type, rating and isFavorite always add up to total; people, places, cameras, lenses and tags count assets that have a value',
+      ),
+  })
+  .meta({ id: 'SearchFacetsResponseDto' });
+
+export enum SearchHistogramGranularity {
+  Day = 'day',
+  Month = 'month',
+  Year = 'year',
+}
+
+const SearchHistogramGranularitySchema = z.enum(SearchHistogramGranularity).meta({ id: 'SearchHistogramGranularity' });
+
+const SearchHistogramSchema = withShapeExclusivity(
+  StatisticsSearchBaseSchema.extend({
+    granularity: SearchHistogramGranularitySchema.default(SearchHistogramGranularity.Month).describe('Bucket size'),
+  }),
+).meta({ id: 'SearchHistogramDto' });
+
+const SearchHistogramBucketSchema = z
+  .object({
+    date: z.string().meta({ format: 'date' }).describe('First local capture date of the bucket (YYYY-MM-DD)'),
+    count: z.int().min(1),
+  })
+  .meta({ id: 'SearchHistogramBucketDto' });
+
+const SearchHistogramResponseSchema = z
+  .object({
+    granularity: SearchHistogramGranularitySchema,
+    total: z.int().min(0).describe('Sum of every bucket; equals POST /search/statistics for the same body'),
+    buckets: z.array(SearchHistogramBucketSchema).describe('Non-empty buckets by local capture date, oldest first'),
+  })
+  .meta({ id: 'SearchHistogramResponseDto' });
+
+const SmartSearchStatisticsResponseSchema = z
+  .object({
+    total: z
+      .int()
+      .min(0)
+      .max(SMART_SEARCH_COUNT_CAP)
+      .describe(`Assets smart search would rank for this body, counted up to ${SMART_SEARCH_COUNT_CAP}`),
+    capped: z.boolean().describe(`More than ${SMART_SEARCH_COUNT_CAP} assets match; total is the cap`),
+  })
+  .meta({ id: 'SmartSearchStatisticsResponseDto' });
+
+export class SearchFacetsDto extends createZodDto(SearchFacetsSchema) {}
+export class SearchFacetsResponseDto extends createZodDto(SearchFacetsResponseSchema) {}
+export class SearchHistogramDto extends createZodDto(SearchHistogramSchema) {}
+export class SearchHistogramResponseDto extends createZodDto(SearchHistogramResponseSchema) {}
+export class SmartSearchStatisticsResponseDto extends createZodDto(SmartSearchStatisticsResponseSchema) {}
 
 const SearchExploreItemSchema = z
   .object({

@@ -192,6 +192,16 @@ const withPinnedConfig = (
 
 const GENERATED_DESCRIPTION_PREFIX = 'AI description:';
 const HIGH_CONFIDENCE = 'high';
+
+/**
+ * FL-36: the description confidence a destination reported, as a number from 0 to 1, or null.
+ * Anything else (a low/medium/high label, a percentage, a missing value) is null: a confidence is
+ * never inferred or rescaled.
+ */
+export const descriptionConfidence = (result: { confidence?: unknown } | undefined): number | null => {
+  const value = result?.confidence;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+};
 const STRONG_NSFW_INDICATORS = new Set([
   'adult-nudity',
   'bare-buttocks',
@@ -966,6 +976,9 @@ export class ImageEnrichmentService extends BaseService {
       }
     }
 
+    // FL-36: keep a reported confidence only when it is a real 0-1 number; never invent one
+    result = { ...result, confidence: descriptionConfidence(result) };
+
     // The original was replaced while the model was working: this description is of a file the
     // library no longer holds. Publish nothing; the next run describes the new original.
     if (fingerprintBefore && (await this.getSourceFingerprint(id)) !== fingerprintBefore) {
@@ -1247,6 +1260,7 @@ export class ImageEnrichmentService extends BaseService {
               modelName: description.modelName,
               updatedAt: description.updatedAt,
               description: description.result.description,
+              confidence: descriptionConfidence(description.result),
               tags: description.result.tags,
               objects: description.result.objects,
               people: description.result.people,
@@ -1264,6 +1278,7 @@ export class ImageEnrichmentService extends BaseService {
               updatedAt: description?.updatedAt,
               error: description?.status === 'failed' ? description.error : undefined,
               skipReason: description?.status === 'skipped' ? description.reason : undefined,
+              confidence: null,
               appliedDescription: false,
               appliedTags: false,
             },

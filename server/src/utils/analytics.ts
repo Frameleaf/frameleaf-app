@@ -448,6 +448,26 @@ export const groupCameras = (rows: CameraRow[], limit = ANALYTICS_CAMERA_LIMIT):
   return groups;
 };
 
+// ── Insights (FL-79) ──────────────────────────────────────────────────────
+
+/** How many lenses, places and people the dashboard names before grouping the rest. */
+export const ANALYTICS_LENS_LIMIT = 7;
+export const ANALYTICS_PLACE_LIMIT = 8;
+export const ANALYTICS_TOP_PEOPLE_LIMIT = 5;
+
+export type NamedGroup = { name: string | null; count: number; kind: 'named' | 'other' | 'unknown' };
+
+/**
+ * The same partition as `groupCameras` for any named breakdown (lenses, places): the most common
+ * names, one row for every other name, one for items without one. Always adds up to every item.
+ */
+export const groupNamed = (rows: CameraRow[], limit: number): NamedGroup[] =>
+  groupCameras(rows, limit).map((row) => ({ ...row, kind: row.kind === 'model' ? 'named' : row.kind }));
+
+/** Fixed rows in a fixed order, zero-filled, so a breakdown always lists every bucket. */
+export const fixedBuckets = <K extends string>(keys: readonly K[], rows: Array<{ key: string; count: number }>) =>
+  keys.map((key) => ({ key, count: rows.filter((row) => row.key === key).reduce((sum, row) => sum + row.count, 0) }));
+
 /** A camera label from EXIF make and model, without repeating the make ("Canon Canon EOS R6"). */
 export const cameraName = (make: string | null, model: string | null) => {
   const cleanMake = make?.trim() || '';
