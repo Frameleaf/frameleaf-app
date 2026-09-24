@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -52,5 +52,43 @@ describe('LibraryView', () => {
     expect(screen.queryByRole('group', { name: 'frameleaf_library_layout' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('work-panel')).not.toBeInTheDocument();
     expect(screen.getByTestId('frameleaf-library')).toHaveAttribute('data-layout', 'browse');
+  });
+  describe('Work’s information panel (FL-33)', () => {
+    const setupWork = async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.setLayout('work');
+      await tick();
+    };
+
+    it('describes the selection itself when the page supplies no panel of its own', async () => {
+      await setupWork();
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+      expect(screen.getByText('frameleaf_work_inspector_empty')).toBeInTheDocument();
+    });
+
+    it('closes, opens again from the toolbar and from the I key, and reopens on a switch to Work', async () => {
+      await setupWork();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_close' }));
+      expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_work_inspector_show' }));
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+
+      await fireEvent.keyDown(document, { key: 'i' });
+      expect(screen.queryByTestId('frameleaf-work-inspector')).not.toBeInTheDocument();
+
+      librarySession.setLayout('browse');
+      await tick();
+      librarySession.setLayout('work');
+      await tick();
+      expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
   });
 });
