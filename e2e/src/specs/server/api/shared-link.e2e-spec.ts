@@ -215,6 +215,20 @@ describe('/shared-links', () => {
       expect(body).toEqual({ message: 'Invalid share key' });
     });
 
+    it('says an expired link expired, with the same message and nothing about the link', async () => {
+      const expired = await utils.createSharedLink(user1.accessToken, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+      });
+      const client = await utils.connectDatabase();
+      await client.query(`UPDATE shared_link SET "expiresAt" = now() - interval '1 day' WHERE id = $1`, [expired.id]);
+
+      const { status, body } = await request(app).get('/shared-links/me').query({ key: expired.key });
+
+      expect(status).toBe(401);
+      expect(body).toEqual({ message: 'Invalid share key', reason: 'expired' });
+    });
+
     it('should return unauthorized if target has been soft deleted', async () => {
       const { status, body } = await request(app).get('/shared-links/me').query({ key: linkWithDeletedAlbum.key });
 

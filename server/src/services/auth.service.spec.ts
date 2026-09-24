@@ -434,6 +434,20 @@ describe(AuthService.name, () => {
       });
     });
 
+    it('does not say a link of a removed account expired', async () => {
+      mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.expired, user: null } as any);
+
+      const error = await sut
+        .authenticate({
+          headers: { 'x-immich-share-key': 'key' },
+          queryParams: {},
+          metadata: { adminRoute: false, sharedLinkRoute: true, uri: 'test' },
+        })
+        .catch((error_: UnauthorizedException) => error_);
+
+      expect((error as UnauthorizedException).getResponse()).not.toHaveProperty('reason');
+    });
+
     it('gives an unknown key no reason', async () => {
       mocks.sharedLink.getByKey.mockResolvedValue(void 0);
 
