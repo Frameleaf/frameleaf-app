@@ -79,7 +79,7 @@
   let historyOpen = $state(false);
 
   const unnamed = $derived(isUnnamedPerson(person));
-  const name = $derived(unnamed ? $t('frameleaf_people_unnamed_person') : person.name);
+  const name = $derived(unnamed ? $t('unnamed_person') : person.name);
   const age = $derived(ageInYears(person.birthDate));
   const birthday = $derived(
     person.birthDate

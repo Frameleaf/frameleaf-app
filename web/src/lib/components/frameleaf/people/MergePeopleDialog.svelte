@@ -40,8 +40,7 @@
   const rows = $derived(sortMergeCandidates(people, person.id, query));
   const target = $derived(people.find((candidate) => candidate.id === choice) ?? null);
   const self = $derived(people.find((candidate) => candidate.id === person.id));
-  const nameOf = (candidate: { name: string }) =>
-    isUnnamedPerson(candidate) ? $t('frameleaf_people_unnamed_person') : candidate.name;
+  const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
   const itemCount = (count: number | undefined) =>
     count === undefined ? '' : $t('frameleaf_people_items_count', { values: { count } });
 

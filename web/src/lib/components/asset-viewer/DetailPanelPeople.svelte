@@ -186,7 +186,7 @@
               style={faceCropStyle(face)}
               aria-hidden="true"
             ></div>
-            <p class="mt-1 truncate font-medium">{$t('frameleaf_faces_unnamed_person')}</p>
+            <p class="mt-1 truncate font-medium">{$t('unnamed_person')}</p>
           </div>
           <div class="absolute -inset-e-1 -top-1">
             <PersonFaceActions person={null} {face} {previousRoute} {onFacesChanged} />
