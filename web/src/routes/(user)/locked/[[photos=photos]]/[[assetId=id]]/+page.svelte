@@ -10,7 +10,6 @@
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { lockedTimelineOptions, parseLockedFilter, type LockedFilter } from '$lib/frameleaf/locked-view';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -69,12 +68,7 @@
 
 <OnEvents {onSessionLocked} />
 
-<UserPageLayout
-  title={data.meta.title}
-  actions={[LockSession]}
-  hideNavbar={librarySession.selection.length > 0}
-  scrollbar={false}
->
+<UserPageLayout title={data.meta.title} actions={[LockSession]} scrollbar={false}>
   {#snippet buttons()}
     <LockedReasonFilter value={filter} onChange={(next) => void setFilter(next)} />
   {/snippet}

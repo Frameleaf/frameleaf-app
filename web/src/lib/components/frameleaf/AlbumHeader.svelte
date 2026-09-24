@@ -248,12 +248,14 @@
   // not a dialog over the album.
   const openMap = () => goto(Route.mapAlbum({ id: album.id }));
 
+  /** Creating inside a collection stays here and says so (CollectionHeader.jsx); the strip refreshes. */
   const createChildAlbum = async (dto: CreateAlbumDto) => {
     const created = await handleCreateAlbumEntry(dto);
     if (!created) {
       return false;
     }
-    await goto(Route.viewAlbum({ id: created.id }));
+    status = $t('frameleaf_albums_created', { values: { name: created.albumName || $t('unnamed_album') } });
+    await onRefresh();
     return true;
   };
 
@@ -305,7 +307,11 @@
 
 <header class="album-header" aria-label={kindLabel}>
   <nav class="crumbs" aria-label={$t('frameleaf_album_breadcrumb')}>
-    <a href={Route.albums()}>{album.kind === AlbumKind.Space ? $t('sharing') : $t('albums')}</a>
+    {#if album.kind === AlbumKind.Space}
+      <a href={Route.sharing()}>{$t('frameleaf_shared_spaces')}</a>
+    {:else}
+      <a href={Route.albums()}>{$t('albums')}</a>
+    {/if}
     {#if parent}
       <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
       <a href={Route.viewAlbum({ id: parent.id })}>{parent.albumName || $t('unnamed_album')}</a>

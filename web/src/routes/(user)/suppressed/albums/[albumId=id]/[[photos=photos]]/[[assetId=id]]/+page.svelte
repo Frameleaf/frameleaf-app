@@ -7,7 +7,6 @@
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -51,7 +50,7 @@
   const bulkContext = $derived({ albumId: isEditor ? album.id : null });
 </script>
 
-<UserPageLayout title={data.meta.title} hideNavbar={librarySession.selection.length > 0} scrollbar={false}>
+<UserPageLayout title={data.meta.title} scrollbar={false}>
   {#snippet buttons()}
     <IconButton
       aria-label={$t('go_back')}

@@ -831,6 +831,7 @@
         count={session.selection.length}
         total={selectAll === 'loaded' ? (manager.assetCount ?? null) : session.total}
         assets={selectedAssets}
+        selectedIds={session.selection}
         context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
         {tagOptions}
         operations={session.session.operations}
