@@ -17,6 +17,14 @@ const confirmRestore = async (page: Page) => {
   await confirmButton.click();
 };
 
+/**
+ * FL-71: database backups are the Command Center's Maintenance → Database backups section (the old
+ * `/admin/maintenance?isOpen=backups` address redirects there). Maintenance mode returns to the page
+ * it was started from, so the restore flows come back to that section.
+ */
+const databaseBackups = '/user-settings?area=maintenance&section=backups';
+const backToMaintenance = '/user-settings?area=maintenance**';
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Database Backups', () => {
@@ -41,12 +49,12 @@ test.describe('Database Backups', () => {
       '/data/backups/immich-db-backup-20260114T184016-v2.5.0-pg14.19.sql.gz',
     );
 
-    await page.goto('/admin/maintenance?isOpen=backups');
+    await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
-    await page.waitForURL('/admin/maintenance**', { timeout: 60_000 });
+    await page.waitForURL(backToMaintenance, { timeout: 60_000 });
   });
 
   test('handle backup restore failure', async ({ context, page }) => {
@@ -56,14 +64,14 @@ test.describe('Database Backups', () => {
     await utils.prepareTestBackup('corrupted');
     await utils.setAuthCookies(context, admin.accessToken);
 
-    await page.goto('/admin/maintenance?isOpen=backups');
+    await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('IM CORRUPTED')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'End maintenance mode' }).click();
-    await page.waitForURL('/admin/maintenance**');
+    await page.waitForURL(backToMaintenance);
   });
 
   test('rollback to restore point if backup is missing admin', async ({ context, page }) => {
@@ -73,14 +81,14 @@ test.describe('Database Backups', () => {
     await utils.prepareTestBackup('empty');
     await utils.setAuthCookies(context, admin.accessToken);
 
-    await page.goto('/admin/maintenance?isOpen=backups');
+    await page.goto(databaseBackups);
     await page.getByRole('button', { name: 'Restore', exact: true }).click();
     await confirmRestore(page);
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByText('Server health check failed, no admin exists.')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'End maintenance mode' }).click();
-    await page.waitForURL('/admin/maintenance**');
+    await page.waitForURL(backToMaintenance);
   });
 
   test('restore a backup from onboarding', async ({ context, page }) => {

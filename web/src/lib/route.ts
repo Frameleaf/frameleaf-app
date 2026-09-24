@@ -12,6 +12,12 @@ import { analyticsAreaUrl, areaForSection, commandCenterUrl } from '$lib/framele
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
+/** The sections of the Command Center's Maintenance area (FL-71), as the old maintenance page's `isOpen` named them. */
+export const MAINTENANCE_SECTIONS = ['mode', 'backups', 'integrity'] as const;
+export type MaintenanceSectionKey = (typeof MAINTENANCE_SECTIONS)[number];
+export const asMaintenanceSection = (value: string | null | undefined): MaintenanceSectionKey | undefined =>
+  MAINTENANCE_SECTIONS.find((key) => key === value);
+
 /** The server settings section an `isOpen` key opens; the OAuth group sits in the sign-in methods form. */
 const serverSectionKey = (key: string) => (key === OpenQueryParam.OAUTH ? 'authentication' : key);
 
@@ -191,8 +197,9 @@ export const Route = {
   libraryAnalytics: (params?: { scope?: string; range?: string }) => analyticsAreaUrl(params),
   // FL-71: the old administration pages are Command Center sections; their addresses redirect.
   physicalDeduplication: () => commandCenterUrl('storage', 'deduplication'),
-  systemMaintenance: (params?: { continue?: string }) =>
-    commandCenterUrl('maintenance', undefined, { continue: params?.continue }),
+  /** Maintenance (FL-71): the area's directory, or one of its sections (mode, database backups, integrity checks). */
+  systemMaintenance: (params?: { section?: MaintenanceSectionKey; continue?: string }) =>
+    commandCenterUrl('maintenance', params?.section, { continue: params?.continue }),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
   systemProcessingDestinations: () => commandCenterUrl('processing', 'routing'),
   /** Workers & endpoints (FL-72): the worker inventory at the top of the same page. */

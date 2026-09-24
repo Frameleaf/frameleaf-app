@@ -22,7 +22,8 @@ test.describe.skip('Integrity', () => {
 
     await utils.waitForQueueFinish(admin.accessToken, QueueName.IntegrityCheck);
 
-    await page.goto('/admin/maintenance');
+    // FL-71: integrity checks are the Command Center's Maintenance → Integrity checks section.
+    await page.goto('/user-settings?area=maintenance&section=integrity');
 
     const count = page.getByText('Untracked Files').locator('..').locator('..').locator('div').nth(1);
 

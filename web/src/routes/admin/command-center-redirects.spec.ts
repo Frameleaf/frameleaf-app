@@ -26,6 +26,26 @@ describe('old addresses of Command Center sections', () => {
       '/user-settings?area=maintenance',
     ],
     [
+      '/admin/maintenance?isOpen=backups',
+      () => maintenance({ url: at('/admin/maintenance?isOpen=backups') } as never),
+      '/user-settings?area=maintenance&section=backups',
+    ],
+    [
+      '/admin/maintenance?isOpen=mode',
+      () => maintenance({ url: at('/admin/maintenance?isOpen=mode') } as never),
+      '/user-settings?area=maintenance&section=mode',
+    ],
+    [
+      '/admin/maintenance?isOpen=integrity',
+      () => maintenance({ url: at('/admin/maintenance?isOpen=integrity') } as never),
+      '/user-settings?area=maintenance&section=integrity',
+    ],
+    [
+      '/admin/maintenance?isOpen=unknown',
+      () => maintenance({ url: at('/admin/maintenance?isOpen=unknown') } as never),
+      '/user-settings?area=maintenance',
+    ],
+    [
       '/admin/maintenance/integrity-report/missing_file',
       () =>
         integrityReport({
@@ -83,6 +103,19 @@ describe('old addresses of Command Center sections', () => {
     ],
   ])('redirects %s', async (_path, load, location) => {
     await expect(load()).rejects.toMatchObject({ status: 307, location });
+  });
+
+  it("opens Workers & endpoints for the old page's #workers anchor", async () => {
+    const previous = `${location.pathname}${location.search}${location.hash}`;
+    history.replaceState(null, '', '/admin/processing-destinations#workers');
+    try {
+      await expect(destinations({ url: at('/admin/processing-destinations') } as never)).rejects.toMatchObject({
+        status: 307,
+        location: '/user-settings?area=processing&section=workers',
+      });
+    } finally {
+      history.replaceState(null, '', previous);
+    }
   });
 
   it('refuses an account without administration before redirecting', async () => {
