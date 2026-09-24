@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { matchesShortcut, shouldIgnoreEvent } from '$lib/actions/shortcut';
   import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
   import DeleteAction from '$lib/components/asset-viewer/actions/DeleteAction.svelte';
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
@@ -20,7 +21,7 @@
     type PersonResponseDto,
     type StackResponseDto,
   } from '@immich/sdk';
-  import { ActionButton, Tooltip, type ActionItem } from '@immich/ui';
+  import { ActionButton, isModalOpen, Tooltip, type ActionItem } from '@immich/ui';
   import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -77,7 +78,38 @@
 
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }, album));
   const sharedLink = getSharedLink();
+
+  /**
+   * The viewer's action keys (I, Escape, F, Shift+D, L, T, P, E, Shift+F, ...). These used to be
+   * dispatched by the upstream command palette, which FL-83 disabled; the viewer now dispatches
+   * its own actions with the same rules (first enabled match wins, skipped while a modal is open,
+   * inside text fields, or when the key was already handled).
+   */
+  const viewerActions = $derived([Close, Cast, PlayOriginalVideo, ...Object.values(Actions)]);
+  const onActionShortcut = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || isModalOpen()) {
+      return;
+    }
+    for (const action of viewerActions) {
+      const shortcuts = action.shortcuts ? [action.shortcuts].flat() : [];
+      if (shortcuts.every((shortcut) => !matchesShortcut(event, shortcut)) || (action.$if && !action.$if())) {
+        continue;
+      }
+      const { ignoreInputFields = true, preventDefault = true } = action.shortcutOptions ?? {};
+      if (ignoreInputFields && shouldIgnoreEvent(event)) {
+        continue;
+      }
+      if (preventDefault) {
+        event.preventDefault();
+      }
+      void action.onAction(action);
+      return;
+    }
+  };
 </script>
+
+<!-- On body, like the palette listener it replaces, so it runs before the document-level handlers. -->
+<svelte:body onkeydown={onActionShortcut} />
 
 <div
   class="flex h-16 place-items-center justify-between gap-3 bg-linear-to-b from-black/40 px-3 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)] transition-transform duration-200"
