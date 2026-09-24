@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   MediaOperationBulkCreateDto,
@@ -17,6 +23,7 @@ import {
   Permission,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -283,6 +290,7 @@ export class MediaOperationService {
     private icloud: ICloudSyncRepository,
     private jobs: JobRepository,
     private preservation: PreservationRepository,
+    private archiveOperations: ArchiveOperationRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -375,6 +383,16 @@ export class MediaOperationService {
     if (dto.requestId) {
       const existing = await this.repository.getBulkByRequestId(auth.user.id, dto.requestId);
       if (existing) {
+        // FL-32: a key answers with its first job only when it asks for the same thing. A transactional
+        // archive's job answers only for its own operation and direction; anything else is a conflict.
+        const earlier = asObject(existing.snapshot);
+        const earlierOperationId = asObject(earlier.payload).archiveOperationId;
+        if (
+          (options.archiveOperationId || earlierOperationId) &&
+          (earlierOperationId !== options.archiveOperationId || earlier.action !== dto.action)
+        ) {
+          throw new ConflictException('This request key already belongs to a different job');
+        }
         return this.present(auth, existing);
       }
     }
@@ -737,6 +755,13 @@ export class MediaOperationService {
       totalUnits: String(remaining.length),
       maxAttempts: operation.maxAttempts,
     });
+
+    // FL-32: a transactional archive or undo follows its retry, so the retry may publish and the
+    // operation reports the job that is actually running.
+    const archiveOperationId = snapshot.payload.archiveOperationId;
+    if (archiveOperationId) {
+      await this.archiveOperations.relinkJob(archiveOperationId, operation.id, retried.id);
+    }
 
     this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
     return this.present(auth, retried);
