@@ -64,6 +64,8 @@ export type AnalyticsColumn = {
 export type AnalyticsTable = {
   id: string;
   title: string;
+  /** A caption that replaces the default "exact plotted values" one, for a table that needs a caveat. */
+  caption?: string;
   /** Whether the values describe the selection or always the whole host. */
   measurementScope: AnalyticsMeasurementScope;
   columns: AnalyticsColumn[];
@@ -164,6 +166,8 @@ export const analyticsTables = (
         {
           id: 'volume-parts',
           title: t('frameleaf_analytics_volume_parts'),
+          // the donut falls back to used and free then; the table says why
+          caption: report.host.breakdown?.exceedsUsed ? t('frameleaf_analytics_parts_exceed_caption') : undefined,
           measurementScope: AnalyticsMeasurementScope.Host,
           columns: bytesColumns,
           rows: parts.map((part) => [part.label, toGiB(part.bytes), part.bytes]),
@@ -309,7 +313,7 @@ export const analyticsTables = (
 
 // ── The library volume (FL-79, AnalyticsDashboard.jsx StoragePanel) ──────
 
-export type VolumeSegment = { id: string; label: string; bytes: number; free?: boolean };
+export type VolumeSegment = { id: string; label: string; bytes: number; free?: boolean; otherDisk?: boolean };
 
 /**
  * What uses the volume, from the whole-server report's `host.breakdown`: originals, previews and
@@ -321,14 +325,29 @@ export const volumeParts = (report: AnalyticsReportResponseDto, t: Translate): V
   if (!breakdown) {
     return null;
   }
-  const parts: Array<[string, string, number | null]> = [
-    ['originals', 'frameleaf_analytics_part_originals', breakdown.originalsBytes],
-    ['previews', 'frameleaf_analytics_part_previews', breakdown.previewsBytes],
-    ['encoded-video', 'frameleaf_analytics_part_encoded_video', breakdown.encodedVideoBytes],
-    ['database', 'frameleaf_analytics_part_database', breakdown.databaseBytes],
-    ['other', 'frameleaf_analytics_part_other', breakdown.otherBytes],
+  const elsewhere = new Set<string>(breakdown.onOtherDisk);
+  const parts: Array<[string, string, number | null, boolean]> = [
+    ['originals', 'frameleaf_analytics_part_originals', breakdown.originalsBytes, false],
+    ['previews', 'frameleaf_analytics_part_previews', breakdown.previewsBytes, elsewhere.has('previews')],
+    [
+      'encoded-video',
+      'frameleaf_analytics_part_encoded_video',
+      breakdown.encodedVideoBytes,
+      elsewhere.has('encodedVideo'),
+    ],
+    ['database', 'frameleaf_analytics_part_database', breakdown.databaseBytes, false],
+    ['other', 'frameleaf_analytics_part_other', breakdown.otherBytes, false],
   ];
-  return parts.flatMap(([id, key, bytes]) => (bytes === null ? [] : [{ id, label: t(key), bytes }]));
+  // A folder on another disk is listed, but it is not part of this volume.
+  return parts.flatMap(([id, key, bytes, otherDisk]) =>
+    bytes === null
+      ? []
+      : [
+          otherDisk
+            ? { id, label: t('frameleaf_analytics_on_other_disk', { part: t(key) }), bytes, otherDisk }
+            : { id, label: t(key), bytes },
+        ],
+  );
 };
 
 /**
@@ -343,7 +362,8 @@ export const volumeSegments = (report: AnalyticsReportResponseDto, t: Translate)
   if (used === null || capacity === null || capacity <= 0) {
     return null;
   }
-  const parts = breakdown && !breakdown.exceedsUsed ? volumeParts(report, t) : null;
+  const parts =
+    breakdown && !breakdown.exceedsUsed ? (volumeParts(report, t)?.filter((part) => !part.otherDisk) ?? null) : null;
   const segments: VolumeSegment[] = parts ?? [{ id: 'used', label: t('frameleaf_analytics_volume_used'), bytes: used }];
   const unused = Math.max(0, capacity - used);
   if (free === null) {
