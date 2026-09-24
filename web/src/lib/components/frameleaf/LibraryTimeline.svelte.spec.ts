@@ -341,7 +341,7 @@ describe('LibraryTimeline curated Years and Months', () => {
   it('adds a highlight strip to month cards and opens Days', async () => {
     const { container, onGroupingChange } = renderGrouping('months');
     const card = await screen.findByRole('button', { name: 'frameleaf_timeline_card_show_days' });
-    expect(container.querySelectorAll(':scope .fl-card-strip img')).toHaveLength(1);
+    expect(container.querySelectorAll(':scope .fl-tl-card-strip img')).toHaveLength(1);
     await fireEvent.click(card);
     expect(onGroupingChange).toHaveBeenCalledWith('days');
   });

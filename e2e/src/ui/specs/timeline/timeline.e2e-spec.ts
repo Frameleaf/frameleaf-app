@@ -421,18 +421,18 @@ test.describe('Timeline', () => {
       await expect(page.getByRole('status').filter({ hasText: 'Grouped by months' })).toHaveCount(1);
       await expect(groupingUtils.dayHeadings(page)).toHaveCount(0);
       const month = groupingUtils.cards(page).first();
-      await expect(month.locator('.fl-card-title')).toHaveText(monthTitle(assets[0].id));
+      await expect(month.locator('.fl-tl-card-title')).toHaveText(monthTitle(assets[0].id));
       await expect(month).toContainText(new RegExp(String.raw`\b${assetsInMonth(yearMonths[0]).length} items`));
       // Months add a strip of highlights under the key photo.
-      await expect(month.locator('.fl-card-strip img').first()).toBeVisible();
+      await expect(month.locator('.fl-tl-card-strip img').first()).toBeVisible();
 
       await groupingUtils.choose(page, 'Years');
       await expect.poll(() => timelineUtils.grouping(page)).toBe('years');
       await expect(groupingUtils.dayHeadings(page)).toHaveCount(0);
       const year = groupingUtils.cards(page).first();
-      await expect(year.locator('.fl-card-title')).toHaveText(yearTitle(assets[0].id));
+      await expect(year.locator('.fl-tl-card-title')).toHaveText(yearTitle(assets[0].id));
       await expect(year).toContainText(new RegExp(String.raw`\b${inYear(newestYear())} items`));
-      await expect(year.locator('.fl-card-strip')).toHaveCount(0);
+      await expect(year.locator('.fl-tl-card-strip')).toHaveCount(0);
 
       await groupingUtils.choose(page, 'Days');
       await expect.poll(() => timelineUtils.grouping(page)).toBe('days');
@@ -538,9 +538,9 @@ test.describe('Timeline', () => {
       };
       // Scrolling down with the modifier held groups more coarsely, scrolling up more finely.
       await step(120, 'Months');
-      await expect(groupingUtils.cards(page).first().locator('.fl-card-title')).toHaveText(monthTitle(assets[0].id));
+      await expect(groupingUtils.cards(page).first().locator('.fl-tl-card-title')).toHaveText(monthTitle(assets[0].id));
       await step(120, 'Years');
-      await expect(groupingUtils.cards(page).first().locator('.fl-card-title')).toHaveText(yearTitle(assets[0].id));
+      await expect(groupingUtils.cards(page).first().locator('.fl-tl-card-title')).toHaveText(yearTitle(assets[0].id));
       await step(-120, 'Months');
       await step(-120, 'Days');
       await expect(groupingUtils.cards(page)).toHaveCount(0);
@@ -554,10 +554,10 @@ test.describe('Timeline', () => {
       await timelineUtils.locator(page).hover();
       await page.keyboard.press('m');
       await groupingUtils.expectMode(page, 'Months');
-      await expect(groupingUtils.cards(page).first().locator('.fl-card-title')).toHaveText(monthTitle(assets[0].id));
+      await expect(groupingUtils.cards(page).first().locator('.fl-tl-card-title')).toHaveText(monthTitle(assets[0].id));
       await page.keyboard.press('y');
       await groupingUtils.expectMode(page, 'Years');
-      await expect(groupingUtils.cards(page).first().locator('.fl-card-title')).toHaveText(yearTitle(assets[0].id));
+      await expect(groupingUtils.cards(page).first().locator('.fl-tl-card-title')).toHaveText(yearTitle(assets[0].id));
       await page.keyboard.press('d');
       await groupingUtils.expectMode(page, 'Days');
       await expect(groupingUtils.cards(page)).toHaveCount(0);

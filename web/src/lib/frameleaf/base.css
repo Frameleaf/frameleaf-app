@@ -166,6 +166,19 @@
       border-radius: calc(var(--fl-radius-card) * 1.8);
     }
 
+    /*
+     * FL-33 library tiles and Timeline cards (apple-style.css:109-135 `.asset-tile:not([data-layout="browse"])
+     * .at-open`); Browse's dense grid keeps square corners, and a Work tile rounds only its photo.
+     */
+    :where(
+      .frameleaf .fl-tile:not([data-layout='browse'], .has-caption),
+      .frameleaf .fl-tile.has-caption .fl-tile-open,
+      .frameleaf .fl-tl-card-open
+    ) {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+
     :where(.frameleaf .fl-material-sheet, .frameleaf.fl-material-sheet) {
       border-radius: calc(var(--fl-radius-sheet) * 1.8);
     }
