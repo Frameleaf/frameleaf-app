@@ -49130,6 +49130,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "reason": {
+            "description": "Why the server is in maintenance, as set by the administrator (public)",
+            "type": "string"
+          },
           "task": {
             "type": "string"
           }
@@ -60799,6 +60803,11 @@
           "keepSafetyBackup": {
             "description": "Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails",
             "type": "boolean"
+          },
+          "reason": {
+            "description": "Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters)",
+            "maxLength": 200,
+            "type": "string"
           },
           "restoreBackupFilename": {
             "description": "Restore backup filename",
