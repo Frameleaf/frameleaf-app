@@ -36,6 +36,20 @@ export const otherStackMembers = (db: Kysely<DB>, assetIds: string[]) =>
     .where('member.id', '!=', sql<string>`all(${`{${assetIds}}`}::uuid[])`);
 
 /**
+ * FL-34: takes the row locks of `assetIds` in id order. Every writer that locks or unlocks a group
+ * (a stack, a live photo) calls this first in its transaction, before it writes `asset_lock` or the
+ * group's `asset` rows, so two of them — a Move to Locked and a sensitive mark of the same stack, say —
+ * queue on the first row instead of each holding what the other then waits for.
+ */
+export const lockAssetRowsInOrder = async (db: Kysely<DB>, assetIds: string[]) => {
+  if (assetIds.length > 0) {
+    await sql`select asset.id from asset where asset.id = ${anyUuid(assetIds)} order by asset.id for no key update`.execute(
+      db,
+    );
+  }
+};
+
+/**
  * Touches the assets a cascade just locked, so every device syncs the change.
  */
 const touch = async (db: Kysely<DB>, assetIds: string[]) => {
@@ -90,6 +104,17 @@ export const onStacksJoined = async (db: Kysely<DB>, stackIds: string[]): Promis
     return [];
   }
 
+  // the whole stacks' rows first, in id order, like every other lock writer (FL-34)
+  const { rows: members } = await sql<{ id: string }>`
+    select member.id from asset as member where member."stackId" = ${anyUuid(stackIds)}
+    union
+    select member."livePhotoVideoId" from asset as member
+    where member."stackId" = ${anyUuid(stackIds)} and member."livePhotoVideoId" is not null
+  `.execute(db);
+  await lockAssetRowsInOrder(
+    db,
+    members.map(({ id }) => id),
+  );
   // with the video part of every live photo in the stack, and the reason of the stack's own lock
   const moved = await lockRestOfStacks(db, stackIds);
   // A photo newly locked with its stack locks what was published from it, too (FL-106).
