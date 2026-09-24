@@ -201,4 +201,33 @@ describe(ArchiveOperationRepository.name, () => {
     expect(await repo.get(auth.user.id, old)).toBeUndefined();
     expect(await repo.get(auth.user.id, recent)).toBeDefined();
   });
+  it('records unreached items a job left alone as skipped, only for its own job, keeping archived ones', async () => {
+    const [archived, unreached] = [await asset(), await asset()];
+    const id = await confirmSelected([archived, unreached]);
+    await repo.publish(auth.user.id, id, archiveJob, [archived]);
+
+    expect(await repo.skipUnreached(auth.user.id, id, undoJob, [unreached])).toBe(0);
+    expect(await repo.skipUnreached(auth.user.id, id, archiveJob, [archived, unreached])).toBe(1);
+
+    expect(await repo.get(auth.user.id, id)).toMatchObject({ archived: 1, skipped: 1, pending: 0 });
+  });
+
+  it('leaves Locked items out of what an undo without the PIN may touch', async () => {
+    const [open, locked] = [await asset(), await asset()];
+    const id = await confirmSelected([open, locked]);
+    await repo.publish(auth.user.id, id, archiveJob, [open, locked]);
+    await db
+      .insertInto('asset_lock')
+      .values({ assetId: locked, reason: 'marked' } as never)
+      .execute();
+
+    expect(await repo.undoAssetIds(auth.user.id, id, false)).toEqual([open]);
+    expect(await repo.undoAssetIds(auth.user.id, id, true)).toEqual([open, locked]);
+
+    await repo.linkUndoJob(id, undoJob);
+    await repo.restore(auth.user.id, id, undoJob, [open]);
+    expect(await visibility(open)).toBe(AssetVisibility.Timeline);
+    expect(await visibility(locked)).toBe(AssetVisibility.Archive);
+    expect(await repo.get(auth.user.id, id)).toMatchObject({ undone: 1, archived: 1 });
+  });
 });

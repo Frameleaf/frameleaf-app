@@ -163,7 +163,16 @@ export class ArchiveOperationService {
       }
     }
 
-    const assetIds = await this.repository.orderedAssetIds(id);
+    // FL-34: without the PIN, the undo leaves Locked items as they are and restores the rest. Unreached
+    // Locked items are recorded as skipped; archived ones stay archived. None of them is named.
+    const elevated = auth.session?.hasElevatedPermission === true;
+    if (!elevated) {
+      await this.repository.skipLocked(auth.user.id, id);
+    }
+    const assetIds = await this.repository.undoAssetIds(auth.user.id, id, elevated);
+    if (assetIds.length === 0) {
+      throw new ConflictException('This archive has nothing left that this session can undo');
+    }
     const job = await this.mediaOperations.createBulk(
       auth,
       {

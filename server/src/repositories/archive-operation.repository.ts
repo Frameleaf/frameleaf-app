@@ -316,6 +316,46 @@ export class ArchiveOperationRepository {
   }
 
   /**
+   * Mark, as skipped, items one of this operation's own jobs left alone before reaching them (FL-34:
+   * Locked since the job started, and the job was submitted without the PIN). Only unreached items
+   * change: an item the archive already changed stays archived, so its count stays exact. Nothing
+   * about which items they were leaves the server.
+   */
+  async skipUnreached(ownerId: string, operationId: string, jobId: string, ids: string[]): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockWrites(tx);
+      const operation = await this.lockOwned(tx, ownerId, operationId);
+      if (!operation || (operation.archiveJobId !== jobId && operation.undoJobId !== jobId)) {
+        return 0;
+      }
+      const { rows } = await sql`
+        UPDATE immich_fork.archive_operation_item SET status = 'skipped'
+        WHERE "operationId" = ${operationId}::uuid AND "assetId" = ANY(${ids}::uuid[]) AND status = 'pending'
+        RETURNING "assetId"
+      `.execute(tx);
+      return rows.length;
+    });
+  }
+
+  /**
+   * The frozen set an undo from this session may touch, in order: without the PIN, items that are
+   * Locked now are left out (they stay as they are, and are never named).
+   */
+  async undoAssetIds(ownerId: string, id: string, elevated: boolean): Promise<string[]> {
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT item."assetId" FROM immich_fork.archive_operation_item item
+      LEFT JOIN asset ON asset.id = item."assetId" AND asset."ownerId" = ${ownerId}::uuid
+      WHERE item."operationId" = ${id}::uuid
+        AND (${elevated} OR asset.id IS NULL OR NOT ${isLocked('asset')})
+      ORDER BY item.ordinal
+    `.execute(this.db);
+    return rows.map(({ assetId }) => assetId);
+  }
+
+  /**
    * Forget operations nobody can act on any more (nightly): unconfirmed selections that expired,
    * and operations older than `days` whose archive and undo jobs are no longer running.
    */

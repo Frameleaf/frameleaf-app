@@ -51,6 +51,7 @@ describe(ArchiveOperationService.name, () => {
       list: vi.fn(),
       orderedAssetIds: vi.fn(),
       pendingAssetIds: vi.fn(),
+      undoAssetIds: vi.fn(),
       skipLocked: vi.fn().mockResolvedValue(0),
       prune: vi.fn().mockResolvedValue(0),
       linkArchiveJob: vi.fn().mockResolvedValue(true),
@@ -206,7 +207,7 @@ describe(ArchiveOperationService.name, () => {
       const ids = [newUuid(), newUuid(), newUuid()];
       const requestKey = newUuid();
       repository.get.mockResolvedValueOnce(operation).mockResolvedValueOnce({ ...operation, undoJobId });
-      repository.orderedAssetIds.mockResolvedValue(ids);
+      repository.undoAssetIds.mockResolvedValue(ids);
       mediaOperations.createBulk.mockResolvedValue({ id: undoJobId });
 
       const response = await sut.undo(authStub.user1, operation.id, requestKey);
@@ -224,7 +225,7 @@ describe(ArchiveOperationService.name, () => {
     it('does not cancel an archive that already finished', async () => {
       const operation = summaryOf({ archiveJobId, archiveJobStatus: MediaOperationStatus.Completed, archived: 3 });
       repository.get.mockResolvedValue(operation);
-      repository.orderedAssetIds.mockResolvedValue([newUuid()]);
+      repository.undoAssetIds.mockResolvedValue([newUuid()]);
       mediaOperations.createBulk.mockResolvedValue({ id: undoJobId });
 
       await sut.undo(authStub.user1, operation.id, newUuid());
@@ -266,11 +267,51 @@ describe(ArchiveOperationService.name, () => {
     it('refuses when a concurrent undo linked its job first', async () => {
       const operation = summaryOf({ archiveJobId, archiveJobStatus: MediaOperationStatus.Completed, archived: 3 });
       repository.get.mockResolvedValue(operation);
-      repository.orderedAssetIds.mockResolvedValue([newUuid()]);
+      repository.undoAssetIds.mockResolvedValue([newUuid()]);
       mediaOperations.createBulk.mockResolvedValue({ id: undoJobId });
       repository.linkUndoJob.mockResolvedValue(false);
 
       await expect(sut.undo(authStub.user1, operation.id, newUuid())).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('leaves Locked items out of an undo from a session without the PIN and restores the rest', async () => {
+      const operation = summaryOf({ archiveJobId, archiveJobStatus: MediaOperationStatus.Completed, archived: 3 });
+      const restorable = [newUuid(), newUuid()];
+      repository.get.mockResolvedValue(operation);
+      repository.undoAssetIds.mockResolvedValue(restorable);
+      mediaOperations.createBulk.mockResolvedValue({ id: undoJobId });
+
+      await sut.undo(authStub.user1, operation.id, newUuid());
+
+      expect(repository.skipLocked).toHaveBeenCalledWith(authStub.user1.user.id, operation.id);
+      expect(repository.undoAssetIds).toHaveBeenCalledWith(authStub.user1.user.id, operation.id, false);
+      expect(mediaOperations.createBulk).toHaveBeenCalledWith(
+        authStub.user1,
+        expect.objectContaining({ assetIds: restorable }),
+        expect.anything(),
+      );
+    });
+
+    it('undoes Locked items too from an unlocked session', async () => {
+      const operation = summaryOf({ archiveJobId, archiveJobStatus: MediaOperationStatus.Completed, archived: 3 });
+      repository.get.mockResolvedValue(operation);
+      repository.undoAssetIds.mockResolvedValue([newUuid()]);
+      mediaOperations.createBulk.mockResolvedValue({ id: undoJobId });
+      const unlocked = { ...authStub.user1, session: { id: newUuid(), hasElevatedPermission: true } };
+
+      await sut.undo(unlocked, operation.id, newUuid());
+
+      expect(repository.skipLocked).not.toHaveBeenCalled();
+      expect(repository.undoAssetIds).toHaveBeenCalledWith(authStub.user1.user.id, operation.id, true);
+    });
+
+    it('refuses, without naming anything, when every remaining item is Locked for this session', async () => {
+      const operation = summaryOf({ archiveJobId, archiveJobStatus: MediaOperationStatus.Completed, archived: 1 });
+      repository.get.mockResolvedValue(operation);
+      repository.undoAssetIds.mockResolvedValue([]);
+
+      await expect(sut.undo(authStub.user1, operation.id, newUuid())).rejects.toBeInstanceOf(ConflictException);
+      expect(mediaOperations.createBulk).not.toHaveBeenCalled();
     });
   });
 
