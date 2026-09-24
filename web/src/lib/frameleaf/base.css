@@ -1,0 +1,208 @@
+/*
+ * Inter 400/500/600, bundled from the September 22 template (@fontsource/inter 5.3.0, see
+ * ../assets/fonts/Inter/README.md) so the `font-family: Inter` in tokens.css actually loads.
+ * No remote font service is used.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../assets/fonts/Inter/inter-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('../assets/fonts/Inter/inter-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('../assets/fonts/Inter/inter-latin-600-normal.woff2') format('woff2');
+}
+
+/*
+ * September 22 prototype styles.css: the shared element and control baseline, scoped to
+ * .frameleaf. Every selector is wrapped in :where() so the baseline carries zero
+ * specificity: a component's own scoped styles always win over it, and so do the 44px/48px
+ * control floors in tokens.css. The prototype's 34px `.button` height is therefore not
+ * ported; hit targets stay at the token floor.
+ */
+
+:where(.frameleaf *, .frameleaf *::before, .frameleaf *::after) {
+  box-sizing: border-box;
+}
+
+:where(.frameleaf button, .frameleaf input, .frameleaf select, .frameleaf textarea) {
+  font: inherit;
+}
+
+:where(.frameleaf button) {
+  color: inherit;
+  background: none;
+  border: 0;
+}
+
+:where(.frameleaf button:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+:where(.frameleaf img) {
+  display: block;
+  max-width: 100%;
+}
+
+:where(.frameleaf svg) {
+  flex-shrink: 0;
+}
+
+:where(.frameleaf h1, .frameleaf h2, .frameleaf h3) {
+  margin: 0;
+}
+
+:where(.frameleaf h1) {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  line-height: 1.3;
+}
+
+:where(.frameleaf h2) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+:where(.frameleaf h3) {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:where(.frameleaf p) {
+  margin: 12px 0;
+}
+
+:where(.frameleaf .muted) {
+  color: var(--fl-muted);
+}
+
+:where(.frameleaf .grow) {
+  flex: 1;
+}
+
+:where(.frameleaf .sr-only) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:where(.frameleaf .button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  transition:
+    background var(--fl-motion-fast) var(--fl-ease),
+    border-color var(--fl-motion-fast) var(--fl-ease),
+    color var(--fl-motion-fast) var(--fl-ease),
+    transform var(--fl-motion-fast) var(--fl-ease);
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  padding: 7px 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+:where(.frameleaf .button:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+}
+
+:where(.frameleaf .button.active) {
+  background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
+  border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
+  color: var(--fl-text);
+}
+
+:where(.frameleaf .button:active:not(:disabled)) {
+  transform: translateY(1px);
+}
+
+:where(.frameleaf .button.primary) {
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+  border-color: var(--fl-accent);
+  font-weight: 600;
+}
+
+:where(.frameleaf .button.primary:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--fl-accent), white 10%);
+}
+
+:where(.frameleaf input, .frameleaf select, .frameleaf textarea) {
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  color: var(--fl-text);
+  padding: 9px 10px;
+  min-width: 0;
+  transition: border-color var(--fl-motion-fast) var(--fl-ease);
+}
+
+:where(.frameleaf input:focus-visible, .frameleaf select:focus-visible, .frameleaf textarea:focus-visible) {
+  border-color: var(--fl-accent);
+  outline-offset: 1px;
+}
+
+:where(.frameleaf input::placeholder, .frameleaf textarea::placeholder) {
+  color: var(--fl-muted);
+}
+
+:where(.frameleaf input[type='range']) {
+  padding: 0;
+  accent-color: var(--fl-accent);
+  height: 20px;
+  cursor: pointer;
+}
+
+:where(.frameleaf input[type='checkbox'], .frameleaf input[type='radio']) {
+  accent-color: var(--fl-accent);
+}
+
+/*
+ * The prototype stacks every label over its field. A label that wraps a checkbox or radio
+ * keeps its inline layout here: the prototype gives those their own classes, and the
+ * production screens rely on the inline default.
+ */
+:where(.frameleaf label:not(:has(> input[type='checkbox'], > input[type='radio']))) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--fl-muted);
+}
+
+:where(
+  .frameleaf label:not(:has(> input[type='checkbox'], > input[type='radio'])) input,
+  .frameleaf label select,
+  .frameleaf label textarea
+) {
+  width: 100%;
+}
+
+:where(.frameleaf textarea) {
+  resize: vertical;
+  min-height: 70px;
+}

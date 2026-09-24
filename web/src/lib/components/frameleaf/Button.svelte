@@ -46,8 +46,10 @@
     transition:
       background var(--fl-motion-fast) var(--fl-ease),
       border-color var(--fl-motion-fast) var(--fl-ease),
-      color var(--fl-motion-fast) var(--fl-ease);
+      color var(--fl-motion-fast) var(--fl-ease),
+      transform var(--fl-motion-fast) var(--fl-ease);
   }
+  /* The 44px/48px height floor comes from tokens.css; the prototype's 34px is not ported. */
   button:hover:not(:disabled) {
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
@@ -58,7 +60,7 @@
     border-color: var(--fl-accent);
   }
   button.primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
+    background: color-mix(in srgb, var(--fl-accent), white 10%);
   }
   button.quiet {
     background: transparent;
@@ -72,11 +74,12 @@
     background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
     border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
   }
-  /* Last so a disabled button of any variant reads as disabled. */
+  button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  /* Last so a disabled button of any variant reads as disabled, as the prototype dims it. */
   button:disabled {
-    /* Dim the surface rather than the text so the label keeps its contrast. */
-    color: var(--fl-muted);
-    background: var(--fl-canvas);
-    border-color: var(--fl-border);
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 </style>
