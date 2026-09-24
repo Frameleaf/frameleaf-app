@@ -137,6 +137,16 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       },
     });
   });
+  // The session privacy guard (FL-34) holds the app until the session status is verified; a signed-in
+  // test session is not elevated. Specs that need another status register their own route later,
+  // which takes precedence.
+  await context.route('**/api/auth/status', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { isElevated: false, password: true, pinCode: false },
+    });
+  });
   await context.route('**/api/server/config', async (route) => {
     return route.fulfill({
       status: 200,

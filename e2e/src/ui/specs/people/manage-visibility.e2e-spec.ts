@@ -46,7 +46,18 @@ test('keeps a rejected unnamed visibility change retryable and returns to the di
   });
   await context.route('**/api/albums*', (route) => route.fulfill({ json: [] }));
   await context.route('**/api/notifications*', (route) => route.fulfill({ json: [] }));
-  await context.route('**/api/auth/status', (route) => route.fulfill({ json: { isElevated: true, pinCode: false } }));
+  // An elevated status the session privacy guard can verify: a PIN expiry and the server's clock.
+  await context.route('**/api/auth/status', (route) =>
+    route.fulfill({
+      headers: { date: new Date().toUTCString() },
+      json: {
+        isElevated: true,
+        password: true,
+        pinCode: true,
+        pinExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      },
+    }),
+  );
   await context.route('**/api/albums/tree', (route) =>
     route.fulfill({ json: { collections: [], albums: [], spaces: [] } }),
   );
