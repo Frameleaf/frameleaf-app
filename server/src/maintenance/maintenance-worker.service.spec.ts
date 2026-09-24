@@ -88,6 +88,65 @@ describe(MaintenanceWorkerService.name, () => {
         `/maintenance?${new URLSearchParams({ continue: '/user-settings?area=maintenance&section=backups' })}`,
       );
     });
+
+    it('keeps only the path of an auth page, never its callback code', () => {
+      const redirect = vi.fn();
+      const url = '/auth/login?code=secret&state=abc';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '/auth/login', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      expect(redirect).toHaveBeenCalledWith(`/maintenance?${new URLSearchParams({ continue: '/auth/login' })}`);
+    });
+
+    it('keeps a hostile address inside the encoded continue value', () => {
+      const redirect = vi.fn();
+      const url = '//evil.example/x?a=%0d%0a';
+      sut.ssr([])(
+        { url, originalUrl: url, path: '//evil.example/x', method: 'GET' } as never,
+        { redirect } as never,
+        vi.fn(),
+      );
+
+      const [location] = redirect.mock.calls[0];
+      expect(location).toMatch(/^\/maintenance\?continue=/);
+      expect(new URLSearchParams(location.split('?', 2)[1]).get('continue')).toBe(url);
+    });
+
+    it('serves the maintenance page itself, and passes API and non-GET requests on', () => {
+      const send = vi.fn();
+      const res = { redirect: vi.fn(), status: () => res, type: () => res, header: () => res, send };
+      const next = vi.fn();
+      const handler = sut.ssr([]);
+
+      handler(
+        {
+          url: '/maintenance?token=x',
+          originalUrl: '/maintenance?token=x',
+          path: '/maintenance',
+          method: 'GET',
+        } as never,
+        res as never,
+        next,
+      );
+      handler(
+        {
+          url: '/api/server/config',
+          originalUrl: '/api/server/config',
+          path: '/api/server/config',
+          method: 'GET',
+        } as never,
+        res as never,
+        next,
+      );
+      handler({ url: '/photos', originalUrl: '/photos', path: '/photos', method: 'POST' } as never, res as never, next);
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(2);
+      expect(res.redirect).not.toHaveBeenCalled();
+    });
   });
   describe.skip('detectMediaLocation');
 

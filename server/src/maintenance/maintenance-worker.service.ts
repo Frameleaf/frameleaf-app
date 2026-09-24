@@ -152,7 +152,8 @@ export class MaintenanceWorkerService {
         const params = new URLSearchParams();
         // The whole address, query included: Command Center sections live in the query
         // (`/user-settings?area=maintenance&section=backups`); the web page checks it is same-origin.
-        params.set('continue', request.originalUrl);
+        // An auth page keeps only its path, so a callback's one-time `code`/`state` is not copied.
+        params.set('continue', request.path.startsWith('/auth/') ? request.path : request.originalUrl);
         return res.redirect(`${maintenancePath}?${params}`);
       }
 
