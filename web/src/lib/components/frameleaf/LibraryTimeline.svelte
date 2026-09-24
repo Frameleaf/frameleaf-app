@@ -240,6 +240,34 @@
   let measuredHeight = $state(0);
   let measuredWidth = $state(0);
   let measuredTop = $state(0);
+  let topElement = $state<HTMLElement>();
+  let topEnd = $state<HTMLElement>();
+  /** The header content's height: where its end marker sits, re-read whenever a part resizes. */
+  $effect(() => {
+    const element = topElement;
+    const end = topEnd;
+    if (!element || !end || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const measure = () => {
+      measuredTop = end.offsetTop;
+    };
+    const resize = new ResizeObserver(measure);
+    const observeChildren = () => {
+      resize.disconnect();
+      for (const child of element.children) {
+        resize.observe(child);
+      }
+      measure();
+    };
+    const mutations = new MutationObserver(observeChildren);
+    mutations.observe(element, { childList: true });
+    observeChildren();
+    return () => {
+      resize.disconnect();
+      mutations.disconnect();
+    };
+  });
   $effect(() => {
     if (measuredWidth === 0 || measuredHeight === 0) {
       return;
@@ -1096,11 +1124,17 @@
       aria-busy={rangePending || groupPending}
     >
       <div class="fl-timeline-body" style:height="{timelineManager.totalViewerHeight}px">
-        <div class="fl-timeline-top" bind:clientHeight={measuredTop}>
+        <!--
+          The header block spans the whole scroll height so a host's toolbar inside it can stick for
+          the length of the library (apple-style.css "#3 materials"); the rows paint over it. Its
+          measured height is where its content ends, marked by the last element.
+        -->
+        <div class="fl-timeline-top" bind:this={topElement}>
           {@render top()}
           {#if isEmpty}
             {@render empty?.()}
           {/if}
+          <div class="fl-timeline-top-end" bind:this={topEnd}></div>
         </div>
 
         {#each timelineManager.months as month (month.viewId)}
@@ -1240,6 +1274,14 @@
   .fl-timeline-bottom {
     position: absolute;
     inset-inline: 0;
+  }
+  .fl-timeline-top {
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+  .fl-timeline-top > :global(*) {
+    pointer-events: auto;
   }
   /* Months and the bottom spacer are placed by their transform alone, from the body's top, even
      when a host makes the header block sticky (in flow) above them. */
