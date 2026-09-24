@@ -1129,6 +1129,26 @@
       "identity": "immich_fork.orphaned_records.sourceTable"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.person_merge_verdict.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_merge_verdict.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_merge_verdict.personId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_merge_verdict.suggestionId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.person_merge_verdict.verdict"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.physical_file.canonicalAssetId"
     },
@@ -6827,6 +6847,18 @@
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
     },
     {
+      "definition": "CHECK (\"personId\" < \"suggestionId\")",
+      "identity": "immich_fork.person_merge_verdict.person_merge_verdict_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"personId\", \"suggestionId\")",
+      "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
+    },
+    {
+      "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text]))",
+      "identity": "immich_fork.person_merge_verdict.person_merge_verdict_verdict_check"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.physical_file.physical_file_pkey"
     },
@@ -8563,7 +8595,8 @@
     "0000000000100-AlbumKind",
     "0000000000110-AssetDevelopRevision",
     "0000000000120-VideoEditVersions",
-    "0000000000130-ArchiveOperations"
+    "0000000000130-ArchiveOperations",
+    "0000000000140-PersonMergeVerdicts"
   ],
   "functions": [
     {
@@ -9943,6 +9976,10 @@
     {
       "definition": "CREATE UNIQUE INDEX orphaned_records_pkey ON immich_fork.orphaned_records USING btree (\"sourceTable\", \"sourceKey\")",
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX person_merge_verdict_pkey ON immich_fork.person_merge_verdict USING btree (\"ownerId\", \"personId\", \"suggestionId\")",
+      "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
@@ -12362,6 +12399,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.orphaned_records"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.person_merge_verdict"
     },
     {
       "definition": "table",

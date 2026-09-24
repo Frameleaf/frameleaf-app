@@ -24,6 +24,9 @@ import {
   PersonCorrectionsResponseDto,
   PersonCreateDto,
   PersonMergeSuggestionDto,
+  PersonMergeVerdictCreateDto,
+  PersonMergeVerdictDeleteDto,
+  PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
@@ -48,6 +51,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
+import { asDateTimeString } from 'src/utils/date.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -100,8 +104,9 @@ export class PersonService extends BaseService {
    * (`machineLearning.facialRecognition.maxDistance`) rather than a second, invented
    * threshold, so a suggestion here is calibrated the same way automatic clustering is.
    *
-   * "Accept" is just the existing `POST /people/merge`. "Reject"/"skip" have no server
-   * state of their own yet — see the FL-57 handoff report for that gap.
+   * "Accept" is just the existing `POST /people/merge`. "Different people" and "decide later" are
+   * recorded with `setMergeVerdict`, which keeps the pair out of these suggestions (for good, or for
+   * 30 days); `deleteMergeVerdict` is the undo.
    */
   async getMergeSuggestions(auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
     const { machineLearning } = await this.getConfig({ withCache: true });
@@ -140,6 +145,39 @@ export class PersonService extends BaseService {
     }
 
     return { suggestions };
+  }
+
+  /** FL-57: records "different people" or "decide later" for a suggested pair of the user's people. */
+  async setMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictCreateDto): Promise<PersonMergeVerdictResponseDto> {
+    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const { verdict, createdAt } = await this.personRepository.setMergeVerdict(
+      auth.user.id,
+      personId,
+      suggestionId,
+      dto.verdict,
+    );
+    return { personId, suggestionId, verdict, createdAt: asDateTimeString(createdAt) };
+  }
+
+  /** FL-57: undoes a recorded merge-suggestion verdict, so the pair can be suggested again. */
+  async deleteMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictDeleteDto): Promise<void> {
+    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const deleted = await this.personRepository.deleteMergeVerdict(auth.user.id, personId, suggestionId);
+    if (!deleted) {
+      throw new NotFoundException('Merge suggestion verdict not found');
+    }
+  }
+
+  /** Both people of a pair must be the user's own (and visible to this session), stored in id order. */
+  private async requireMergePair(auth: AuthDto, { personId, suggestionId }: PersonMergeVerdictDeleteDto) {
+    if (personId === suggestionId) {
+      throw new BadRequestException('A merge suggestion pairs two different people');
+    }
+    await this.requirePerson(auth, Permission.PersonRead, personId);
+    await this.requirePerson(auth, Permission.PersonRead, suggestionId);
+    // uuids compare bytewise in Postgres, which is the order of their lowercase hex form
+    const [first, second] = [personId.toLowerCase(), suggestionId.toLowerCase()];
+    return first < second ? [first, second] : [second, first];
   }
 
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */

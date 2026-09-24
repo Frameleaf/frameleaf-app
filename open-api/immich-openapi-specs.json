@@ -18987,6 +18987,109 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/people/merge-suggestions/verdicts": {
+      "delete": {
+        "description": "Remove the recorded verdict for a pair of people, so the pair can be suggested again.",
+        "operationId": "deleteMergeVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeVerdictDeleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a merge suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Record that a suggested pair of people are different people (never suggested again) or should be decided later (not suggested for 30 days). Replaces an earlier verdict for the same pair; the pair may be given in either order.",
+        "operationId": "setMergeVerdict",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMergeVerdictCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMergeVerdictResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a merge suggestion verdict",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/people/{id}": {
       "delete": {
         "description": "Delete an individual person.",
@@ -54045,6 +54148,91 @@
           "distance",
           "person",
           "suggestion"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdict": {
+        "description": "\"different\": never suggest this pair again; \"later\": skip it for 30 days",
+        "enum": [
+          "different",
+          "later"
+        ],
+        "type": "string"
+      },
+      "PersonMergeVerdictCreateDto": {
+        "properties": {
+          "personId": {
+            "description": "One person of the suggested pair (either order)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the suggested pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonMergeVerdict"
+          }
+        },
+        "required": [
+          "personId",
+          "suggestionId",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdictDeleteDto": {
+        "properties": {
+          "personId": {
+            "description": "One person of the suggested pair (either order)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the suggested pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId",
+          "suggestionId"
+        ],
+        "type": "object"
+      },
+      "PersonMergeVerdictResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the verdict was recorded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person of the pair whose id sorts first",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "suggestionId": {
+            "description": "The other person of the pair",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PersonMergeVerdict"
+          }
+        },
+        "required": [
+          "createdAt",
+          "personId",
+          "suggestionId",
+          "verdict"
         ],
         "type": "object"
       },
