@@ -859,6 +859,14 @@ export class AssetRepository {
   }
 
   /**
+   * FL-34: the ids a lock or unlock of `ids` covers, read outside any transaction: what a caller takes
+   * the per-asset metadata locks of before it takes the group's rows (see `lockGroupMembers`).
+   */
+  findLockGroupIds(ids: string[]): Promise<string[]> {
+    return ids.length === 0 ? Promise.resolve([]) : this.getLockGroupIds(this.db, ids);
+  }
+
+  /**
    * FL-34: `lockGroupRows`, returning each member of the group with its owner and whether it is locked
    * as read under those row locks, for a caller that reviews and unlocks the whole group in `kysely`.
    */

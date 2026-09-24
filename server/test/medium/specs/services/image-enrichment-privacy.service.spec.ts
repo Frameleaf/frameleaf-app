@@ -500,22 +500,71 @@ describe('Mark Safe on a stack', () => {
     });
   });
 
-  it('repairs a missing projection of a member already reviewed safe, keeping its review', async () => {
+  it('repairs a missing projection of an asset already reviewed safe, keeping its review', async () => {
     const { asset, sibling, mark } = await setupStack();
+    await mark(AssetImageEnrichmentAction.MarkNsfw);
     await mark(AssetImageEnrichmentAction.MarkSafe);
     const privacy = new ForkPrivacyRepository(database);
-    const safe = await privacy.get(sibling.id);
-    await privacy.delete([sibling.id]);
+    const safe = await privacy.get(asset.id);
+    await privacy.delete([asset.id]);
 
     await expect(mark(AssetImageEnrichmentAction.MarkSafe)).resolves.toMatchObject({
       nsfwDetection: { effectiveIsNsfw: false },
     });
 
-    await expect(privacy.get(sibling.id)).resolves.toMatchObject({
-      isNsfw: false,
-      suppression: safe!.suppression,
+    await expect(privacy.get(asset.id)).resolves.toEqual(
+      expect.objectContaining({ isNsfw: false, suppression: safe!.suppression }),
+    );
+    await expect(privacy.get(sibling.id)).resolves.toMatchObject({ isNsfw: false });
+  });
+
+  it('leaves a detected but unlocked sibling with its detector verdict', async () => {
+    const { sut, ctx, asset, sibling, user, mark, lockRows } = await setupStack();
+    // hiding is off, so the detection flags the sibling without locking it
+    ctx.getMock(SystemMetadataRepository).get.mockResolvedValue({
+      machineLearning: { enabled: true, nsfwDetection: { enabled: true, hideFromLibrary: false } },
     });
-    await expect(privacy.get(asset.id)).resolves.toMatchObject({ isNsfw: false });
+    ctx.getMock(AssetJobRepository).getForImageEnrichment.mockResolvedValue({
+      id: sibling.id,
+      ownerId: user.id,
+      type: AssetType.Image,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      description: '',
+      previewFile: '/synthetic/sibling.webp',
+    } as never);
+    ctx.getMock(MachineLearningRepository).detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.99, labels: {} });
+    await expect(sut.handleNsfwDetection({ id: sibling.id })).resolves.toBe(JobStatus.Success);
+    await expect(lockRows()).resolves.toEqual([]);
+
+    await mark(AssetImageEnrichmentAction.MarkSafe);
+
+    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+      isNsfw: false,
+      suppression: { action: 'marked-safe', reviewedBy: user.id },
+    });
+    await expect(new ForkPrivacyRepository(database).get(sibling.id)).resolves.toMatchObject({
+      isNsfw: true,
+      suppression: null,
+    });
+    // viewers who hide sensitive content still do not see it
+    await expect(
+      database.selectFrom('asset').select('id').where('id', '=', sibling.id).$call(withoutNsfwAssets).execute(),
+    ).resolves.toEqual([]);
+  });
+
+  it('marks two members of one stack safe in parallel without a deadlock', async () => {
+    const { sut, auth, asset, sibling, mark, lockRows } = await setupStack();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await mark(AssetImageEnrichmentAction.MarkNsfw);
+      await Promise.all(
+        [asset.id, sibling.id].map((id) =>
+          sut.updateAssetEnrichment(auth, id, { action: AssetImageEnrichmentAction.MarkSafe }),
+        ),
+      );
+      await expect(lockRows()).resolves.toEqual([]);
+    }
   });
 });
 

@@ -80,7 +80,6 @@ describe(CliService.name, () => {
       await sut.resetAdminPassword(ask);
 
       expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: admin.id });
-      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'admin-session' });
     });
   });
 

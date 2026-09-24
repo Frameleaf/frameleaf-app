@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
@@ -105,6 +105,17 @@ type NsfwEnrichmentTask = EnrichmentTask<NsfwDetectionResult> & {
 type EnrichmentMetadata = {
   description?: DescriptionEnrichmentTask;
   nsfwDetection?: NsfwEnrichmentTask;
+};
+
+/**
+ * FL-34: aborts (rolling the transaction back) when a lock group, worked out again under its row locks,
+ * reaches assets outside the ones already checked and metadata-locked: a concurrent stack join.
+ */
+const requireUnchangedGroup = (ids: string[], checkedIds: string[]) => {
+  const checked = new Set(checkedIds);
+  if (ids.some((id) => !checked.has(id))) {
+    throw new ConflictException('The stack or live photo changed meanwhile, try again');
+  }
 };
 
 /** An owner's safe review written in a transaction, for its tag follow-up once that commits (FL-34). */
@@ -454,8 +465,11 @@ export class ImageEnrichmentService extends BaseService {
   async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     requireElevatedPermission(auth);
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const { unlocked, reviewed } = await this.inTransaction(async (trx) => {
+    // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
+    const groupIds = await this.assetRepository.findLockGroupIds(dto.ids);
+    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
       const unlocked = [...new Set((await this.assetRepository.unlock(dto.ids, trx)).map(({ assetId }) => assetId))];
+      requireUnchangedGroup(unlocked, groupIds);
       const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
       return { unlocked, reviewed };
     });
@@ -486,24 +500,35 @@ export class ImageEnrichmentService extends BaseService {
 
   /**
    * FL-34: Mark Safe on one asset unlocks its whole stack or live photo (`AssetRepository.unlock`), so it
-   * is the owner's safe review of every member, written in the same transaction. Were only the clicked
-   * asset reviewed, a sibling would keep its sensitive verdict with no review, and the next sweep of
-   * unreviewed detections would lock the whole group again. Unlocking needs the owner's elevated
-   * session, checked against the group as read under its row locks. An explicit Mark Safe is also a
-   * repair: a member already reviewed as safe keeps its review, and its privacy projection is written
-   * again (`saveClassification` creates a missing row).
+   * is the owner's safe review of the asset and of every member that unlock released, written in the same
+   * transaction. Were only the clicked asset reviewed, a released sibling would keep its sensitive verdict
+   * with no review, and the next sweep of unreviewed detections would lock the whole group again. A
+   * sibling that was not locked is not reviewed: the owner never saw it, so a detection on it stands.
+   *
+   * The members' metadata locks are taken in id order, then the group's rows, as every other writer does.
+   * Unlocking needs the owner's elevated session, checked against the group as read under its row locks;
+   * should the group have changed since (a concurrent stack join), nothing is written. An explicit Mark
+   * Safe is also a repair: an asset already reviewed as safe keeps its review, and its privacy projection
+   * is written again (`saveClassification` creates a missing row).
    */
   private async markGroupSafe(auth: AuthDto, id: string): Promise<void> {
-    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+    const groupIds = await this.assetRepository.findLockGroupIds([id]);
+    const lockIds = [...new Set([id, ...groupIds])];
+    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
       const members = await this.assetRepository.lockGroupMembers([id], trx);
+      const memberIds = members.map((member) => member.id);
+      requireUnchangedGroup(memberIds, lockIds);
       if (members.some((member) => isLockedRow(member))) {
         requireElevatedPermission(auth);
       }
-      const ownerId = members.find((member) => member.id === id)?.ownerId;
       const unlocked = (await this.assetRepository.unlock([id], trx)).map(({ assetId }) => assetId);
+      // the unlock works the group out again: it may release only what the elevation check saw
+      requireUnchangedGroup(unlocked, memberIds);
+      const ownerId = members.find((member) => member.id === id)?.ownerId;
+      const reviewIds = new Set([id, ...unlocked]);
       const reviewed = await this.reviewSafe(
         auth,
-        members.filter((member) => member.ownerId === ownerId),
+        members.filter((member) => reviewIds.has(member.id) && member.ownerId === ownerId),
         trx,
         true,
       );
@@ -549,14 +574,6 @@ export class ImageEnrichmentService extends BaseService {
       const changed = await this.clearAppliedNsfwTags(id, ownerId, metadata);
       await this.finalizeRepair(id, changed, metadata);
     }
-  }
-
-  /**
-   * One transaction for a write that spans several assets' groups. The unit tests have no database;
-   * their stand-in transaction is absent, as `withAssetMetadataLock`'s mock passes it.
-   */
-  private inTransaction<R>(callback: (trx: Kysely<DB>) => Promise<R>): Promise<R> {
-    return this.db ? this.db.transaction().execute(callback) : callback(undefined as never);
   }
 
   /**
