@@ -106,6 +106,19 @@ describe(PartnerService.name, () => {
       expect(mocks.partner.remove).toHaveBeenCalledWith({ sharedById: user1.id, sharedWithId: user2.id });
     });
 
+    it('tells both people at once so open pages drop what they loaded (FL-54)', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      mocks.partner.get.mockResolvedValue(getForPartner(partner));
+
+      await sut.remove(AuthFactory.create({ id: user1.id }), user2.id);
+
+      const payload = { sharedById: user1.id, sharedWithId: user2.id };
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('PartnerRevokeV1', user2.id, payload);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('PartnerRevokeV1', user1.id, payload);
+    });
+
     it('should throw an error when the partner does not exist', async () => {
       const user2 = UserFactory.create();
       const auth = AuthFactory.create();
@@ -115,6 +128,7 @@ describe(PartnerService.name, () => {
       await expect(sut.remove(auth, user2.id)).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.partner.remove).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
     });
   });
 

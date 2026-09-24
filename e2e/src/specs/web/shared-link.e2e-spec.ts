@@ -6,6 +6,7 @@ import {
   SharedLinkType,
   createAlbum,
   removeSharedLink,
+  updateSharedLink,
 } from '@immich/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';

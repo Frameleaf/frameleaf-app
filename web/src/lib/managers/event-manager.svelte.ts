@@ -50,6 +50,9 @@ export type Events = {
   AlbumUserUpdate: [{ albumId: string; userId: string; role: AlbumUserRole }];
   AlbumUserDelete: [{ albumId: string; userId: string }];
 
+  /** FL-54: `sharedById` stopped sharing their library with `sharedWithId`, here or elsewhere. */
+  PartnerRevoke: [{ sharedById: string; sharedWithId: string }];
+
   PersonUpdate: [PersonResponseDto];
   PersonThumbnailReady: [{ id: string }];
   PersonAssetDelete: [{ id: string; assetId: string }];

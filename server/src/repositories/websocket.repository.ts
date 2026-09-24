@@ -63,6 +63,11 @@ export interface ClientEventMap {
    * and dialogs the new role no longer allows without waiting for a reload.
    */
   AlbumUserUpdateV1: [{ albumId: string; userId: string; role: AlbumUserRole | null }];
+  /**
+   * Fork-only (FL-54): `sharedById` stopped sharing their library with `sharedWithId`. Sent to both,
+   * so the recipient's open timeline, partner page and viewer drop what they held at once.
+   */
+  PartnerRevokeV1: [{ sharedById: string; sharedWithId: string }];
 }
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;

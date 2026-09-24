@@ -82,8 +82,13 @@ describe('SharedLinkList', () => {
     render(SharedLinkList);
     await screen.findByText('Rockies');
 
+    await fireEvent.click(screen.getByRole('button', { name: en.delete }));
+    // AL-22: the prototype's delete dialog says who loses access and what is kept.
+    const dialog = await screen.findByRole('dialog', { name: en.delete_shared_link });
+    expect(dialog).toHaveTextContent(
+      'Anyone using the link for Rockies loses access immediately. Your photos and the album itself are not affected.',
+    );
     await fireEvent.click(screen.getByRole('button', { name: en.delete_link }));
-    await fireEvent.click(screen.getByRole('button', { name: en.delete_shared_link }));
 
     await waitFor(() => expect(removeSharedLink).toHaveBeenCalledWith({ id: link.id }));
     await waitFor(() => expect(screen.queryByText('Rockies')).toBeNull());
@@ -120,5 +125,114 @@ describe('SharedLinkList', () => {
     await waitFor(() => expect(getSharedLinkById).toHaveBeenCalledWith({ id: 'missing-id' }));
     await waitFor(() => expect(warning).toHaveBeenCalledWith(en.frameleaf_sharing.link_not_found));
     expect(screen.queryByRole('heading', { name: en.frameleaf_sharing.edit_shared_link_title })).toBeNull();
+  });
+
+  it('opens with the prototype intro copy (AL-19)', async () => {
+    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    render(SharedLinkList);
+    expect(await screen.findByText(en.frameleaf_sharing.links_intro)).toBeInTheDocument();
+  });
+
+  it('moves between tabs with the arrow keys, Home and End, keeping one tab stop (AL-20)', async () => {
+    vi.mocked(getAllSharedLinks).mockResolvedValue([
+      sharedLinkFactory.build({
+        type: SharedLinkType.Album,
+        album: { id: 'a', albumName: 'Rockies' } as never,
+        assets: [],
+      }),
+      sharedLinkFactory.build({
+        type: SharedLinkType.Individual,
+        assets: [{ id: 'x', originalFileName: 'beach.jpg' } as never],
+      }),
+    ]);
+    render(SharedLinkList);
+    await screen.findByText('Rockies');
+
+    const [all, albums, individual] = screen.getAllByRole('tab');
+    expect(all).toHaveAttribute('aria-selected', 'true');
+    expect([all, albums, individual].map((tab) => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+
+    all.focus();
+    await fireEvent.keyDown(all, { key: 'ArrowRight' });
+    expect(albums).toHaveAttribute('aria-selected', 'true');
+    expect(albums).toHaveFocus();
+    expect([all, albums, individual].map((tab) => tab.getAttribute('tabindex'))).toEqual(['-1', '0', '-1']);
+    expect(screen.queryByText('beach.jpg')).toBeNull();
+
+    await fireEvent.keyDown(albums, { key: 'End' });
+    expect(individual).toHaveAttribute('aria-selected', 'true');
+    expect(individual).toHaveFocus();
+    expect(screen.getByText('beach.jpg')).toBeInTheDocument();
+
+    await fireEvent.keyDown(individual, { key: 'ArrowRight' });
+    expect(all).toHaveAttribute('aria-selected', 'true');
+    await fireEvent.keyDown(all, { key: 'ArrowLeft' });
+    expect(individual).toHaveAttribute('aria-selected', 'true');
+    await fireEvent.keyDown(individual, { key: 'Home' });
+    expect(all).toHaveFocus();
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'sl-tab-all');
+  });
+
+  it('marks each link with its expiry, password, download, upload and metadata badges (AL-21)', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    vi.mocked(getAllSharedLinks).mockResolvedValue([
+      sharedLinkFactory.build({
+        type: SharedLinkType.Album,
+        album: { id: 'open', albumName: 'Open link' } as never,
+        assets: [],
+        password: 'x',
+        allowDownload: true,
+        allowUpload: true,
+        showMetadata: true,
+        expiresAt: soon,
+        description: '',
+      }),
+      sharedLinkFactory.build({
+        type: SharedLinkType.Album,
+        album: { id: 'old', albumName: 'Old link' } as never,
+        assets: [],
+        password: null,
+        allowDownload: false,
+        allowUpload: false,
+        showMetadata: false,
+        expiresAt: past,
+      }),
+    ]);
+    render(SharedLinkList);
+    await screen.findByText('Open link');
+
+    const [open, old] = screen.getAllByRole('list', { name: en.frameleaf_sharing.link_details });
+    expect([...open.querySelectorAll('li')].map((item) => item.textContent?.trim())).toEqual([
+      en.password,
+      'Downloads',
+      'Uploads',
+      'Metadata',
+      'Expires in 3 days',
+    ]);
+    expect(open.querySelector('[data-tone="info"]')).toHaveTextContent('Expires in 3 days');
+    expect(old.querySelector('[data-tone="danger"]')).toHaveTextContent(en.expired);
+    expect(screen.getByText(en.frameleaf_sharing.no_description)).toBeInTheDocument();
+    // An album link opens the album itself; the public page opens from its own action.
+    expect(screen.getByRole('link', { name: 'Open album Open link' })).toHaveAttribute('href', '/albums/open');
+    expect(screen.getByRole('button', { name: 'Open public page for Open link' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy link for Open link' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'QR code for Open link' })).toBeInTheDocument();
+  });
+
+  it('opens the public page in a new tab from the card (AL-21)', async () => {
+    const open = vi.spyOn(globalThis, 'open').mockImplementation(() => null);
+    const link = sharedLinkFactory.build({
+      type: SharedLinkType.Album,
+      album: { id: 'album-1', albumName: 'Rockies' } as never,
+      assets: [],
+      slug: 'rockies',
+    });
+    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    render(SharedLinkList);
+    await screen.findByText('Rockies');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open public page for Rockies' }));
+    expect(open).toHaveBeenCalledWith(expect.stringContaining('/s/rockies'), '_blank', 'noopener,noreferrer');
   });
 });
