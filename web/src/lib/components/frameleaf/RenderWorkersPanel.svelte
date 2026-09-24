@@ -90,7 +90,8 @@
 <Pane label={$t('frameleaf_render_workers_title')}>
   <div class="head">
     <div>
-      <h2>{$t('frameleaf_render_workers_title')}</h2>
+      <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
+      <h2 class="sr-only">{$t('frameleaf_render_workers_title')}</h2>
       <p>{$t('frameleaf_render_workers_subtitle')}</p>
     </div>
     <Button variant="primary" onclick={onEnrol}>{$t('frameleaf_render_workers_enrol')}</Button>

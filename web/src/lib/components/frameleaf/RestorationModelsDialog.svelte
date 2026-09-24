@@ -160,6 +160,7 @@
     flex-direction: column;
     gap: 0.75rem;
     max-width: 40rem;
+    font-variant-numeric: tabular-nums;
   }
   .body p,
   .body h4 {
@@ -188,13 +189,21 @@
     font-size: var(--fl-font-small);
     overflow-wrap: anywhere;
   }
-  .model {
+  /* The models are one grouped list with hairline rows (the Sept 24 settings language). */
+  .models {
+    gap: 0;
+    overflow: hidden;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
-    padding: 0.75rem;
+  }
+  .model {
+    padding: 0.75rem 0.875rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+  .model + .model {
+    border-top: 1px solid var(--fl-border);
   }
   .model header {
     display: flex;

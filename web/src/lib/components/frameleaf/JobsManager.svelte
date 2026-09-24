@@ -1156,7 +1156,7 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     border: 1px solid var(--fl-border);
-    border-radius: 9px;
+    border-radius: var(--fl-radius-card);
     overflow: hidden;
     margin-bottom: 22px;
     background: var(--fl-panel);
@@ -1210,7 +1210,7 @@
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 5px;
+    border-radius: var(--fl-radius-control);
     min-height: 35px;
     padding: 6px 9px;
     outline-offset: 3px;
@@ -1221,7 +1221,7 @@
     gap: 8px;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 5px;
+    border-radius: var(--fl-radius-control);
     padding: 0 11px;
     min-width: 200px;
     flex: 1;
@@ -1253,7 +1253,7 @@
   .jm-table-wrap {
     overflow-x: auto;
     border: 1px solid var(--fl-border);
-    border-radius: 7px;
+    border-radius: var(--fl-radius-card);
   }
   .jobs-manager table {
     border-collapse: collapse;
@@ -1340,13 +1340,13 @@
     place-items: center;
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 7px;
+    border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
   }
   .jm-error-count {
     color: var(--jm-red);
     background: color-mix(in srgb, var(--jm-red) 13%, transparent);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-pill);
     padding: 2px 7px;
     font-weight: 650;
   }
@@ -1441,7 +1441,7 @@
   .jm-tabs button span {
     font-size: 11px;
     background: var(--fl-panel);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-pill);
     padding: 1px 5px;
     font-variant-numeric: tabular-nums;
   }
@@ -1502,7 +1502,7 @@
     padding: 11px 13px;
     margin: 10px 0;
     border: 1px solid var(--fl-border);
-    border-radius: 6px;
+    border-radius: var(--fl-radius-card);
     font-size: 12px;
     background: var(--fl-panel);
     color: var(--fl-muted);
@@ -1530,7 +1530,7 @@
     font-size: 11px;
     background: var(--fl-panel);
     padding: 1px 5px;
-    border-radius: 3px;
+    border-radius: var(--fl-radius-pill);
   }
   .jm-history ol {
     padding: 0;
@@ -1573,7 +1573,7 @@
     margin: 14px 0;
     padding: 13px;
     border: 1px solid color-mix(in srgb, var(--jm-red) 40%, transparent);
-    border-radius: 6px;
+    border-radius: var(--fl-radius-card);
   }
   .jm-failure h3 {
     margin: 0 0 4px;
@@ -1630,7 +1630,7 @@
     font-size: 12px;
     padding: 10px;
     background: var(--fl-canvas);
-    border-radius: 6px;
+    border-radius: var(--fl-radius-control);
   }
   .jm-muted {
     color: var(--fl-muted);
@@ -1643,7 +1643,7 @@
     padding: 13px;
     background: color-mix(in srgb, var(--jm-red) 8%, transparent);
     border: 1px solid var(--fl-border);
-    border-radius: 6px;
+    border-radius: var(--fl-radius-card);
     font-size: 12px;
   }
   .jm-confirm input {

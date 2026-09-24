@@ -407,8 +407,9 @@
   <div class="inventory">
     <div class="heading">
       <div>
-        <h2>{$t('admin.frameleaf_workers_title')}</h2>
-        <p>{$t('admin.frameleaf_workers_description')}</p>
+        <!-- The page heading already names this section (a section named like its area does not repeat the name). -->
+        <h2 class="sr-only">{$t('admin.frameleaf_workers_title')}</h2>
+        <p class="sr-only">{$t('admin.frameleaf_workers_description')}</p>
       </div>
       <Button onclick={() => void reload()} disabled={refreshing}>
         {refreshing ? $t('admin.frameleaf_workers_refreshing') : $t('admin.frameleaf_workers_refresh')}

@@ -198,6 +198,20 @@ describe('the Command Center (FL-71)', () => {
     expect(heading.querySelector('.cc-overline')).toHaveTextContent('Your library');
   });
 
+  it('gives administration tools the page width without a card around their own grouped containers', () => {
+    open('/user-settings?area=processing&section=render-workers');
+    const { container } = render(SettingsHost, {
+      sections: [...sections, serverSection('render-workers', 'Render workers')],
+    });
+    expect(container.querySelector('#setting-render-workers')).toHaveClass('cc-manager');
+  });
+
+  it('keeps an ordinary settings page as one grouped list', () => {
+    open('/user-settings?area=storage&section=trash');
+    const { container } = render(SettingsHost, { sections });
+    expect(container.querySelector('#setting-trash')).not.toHaveClass('cc-manager');
+  });
+
   it("links Storage → Trash & retention to the account's own trash", async () => {
     open('/user-settings?area=storage&section=trash');
     render(SettingsHost, { sections });
