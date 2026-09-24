@@ -11,6 +11,7 @@
     disabled = false,
     pressed,
     label,
+    initialFocus = false,
     onclick,
     children,
   }: {
@@ -21,12 +22,22 @@
     pressed?: boolean;
     /** Only needed when the visible content is not a sufficient accessible name. */
     label?: string;
+    /** Marks the control a Frameleaf Dialog focuses when it opens, as the prototype's `data-initial-focus`. */
+    initialFocus?: boolean;
     onclick?: (event: MouseEvent) => void;
     children: Snippet;
   } = $props();
 </script>
 
-<button {type} {disabled} class={variant} aria-pressed={pressed} aria-label={label} {onclick}>
+<button
+  {type}
+  {disabled}
+  class={variant}
+  aria-pressed={pressed}
+  aria-label={label}
+  data-initial-focus={initialFocus ? '' : undefined}
+  {onclick}
+>
   {@render children()}
 </button>
 

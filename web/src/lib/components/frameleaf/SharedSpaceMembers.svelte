@@ -142,7 +142,7 @@
     if (userIds.length === 0) {
       return;
     }
-    await run(
+    const sent = await run(
       () =>
         addUsersToAlbum({
           id: space.id,
@@ -150,7 +150,10 @@
         }).then(() => {}),
       $t('frameleaf_recipient_groups_invites_sent', { values: { count: userIds.length } }),
     );
-    review = { open: false, userIds: [] };
+    // A failed send keeps the sheet open with the same people picked, so it can be retried.
+    if (sent) {
+      review = { open: false, userIds: [] };
+    }
   };
 
   const run = async (work: () => Promise<void>, message: string) => {
@@ -159,8 +162,10 @@
       await work();
       status = message;
       await onChanged();
+      return true;
     } catch (error) {
       handleError(error, $t('frameleaf_spaces_error_members'));
+      return false;
     } finally {
       busy = false;
     }

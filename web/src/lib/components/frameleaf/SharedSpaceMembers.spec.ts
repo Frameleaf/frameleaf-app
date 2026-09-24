@@ -257,6 +257,25 @@ describe('SharedSpaceMembers', () => {
       expect(JSON.stringify(vi.mocked(addUsersToAlbum).mock.calls)).not.toContain('Family');
     });
 
+    it('keeps the review sheet open with the same people picked when sending fails', async () => {
+      vi.mocked(searchUsers).mockResolvedValue([ada, bo, cy, dee, eve]);
+      vi.mocked(getRecipientGroups).mockResolvedValue([family]);
+      vi.mocked(addUsersToAlbum).mockRejectedValue(new Error('offline'));
+      render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
+
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_invite }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Invite Family, 4 people' }));
+      const sheet = within(await screen.findByRole('dialog', { name: 'Invite “Family”' }));
+      await fireEvent.click(sheet.getByRole('checkbox', { name: /Eve/ }));
+      await fireEvent.click(sheet.getByRole('button', { name: 'Send 1 invitation' }));
+
+      await waitFor(() => expect(addUsersToAlbum).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole('dialog', { name: 'Invite “Family”' })).toBeInTheDocument();
+      expect(sheet.getByRole('checkbox', { name: /Dee/ })).toBeChecked();
+      expect(sheet.getByRole('checkbox', { name: /Eve/ })).not.toBeChecked();
+      expect(sheet.getByRole('button', { name: 'Send 1 invitation' })).toBeEnabled();
+    });
+
     it('offers the shortcuts to the owner only', () => {
       signedInId = 'bo';
       render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
