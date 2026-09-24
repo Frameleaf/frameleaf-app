@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
 import {
   AddUsersDto,
@@ -21,12 +22,12 @@ import {
   mapAlbum,
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
-import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
+import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
-import { addAssets, removeAssets } from 'src/utils/asset.util.js';
+import { addAssets, getMyPartnerIds, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -183,14 +184,33 @@ export class AlbumService extends BaseService {
     };
   }
 
-  async getMapMarkers(auth: AuthDto, id: string): Promise<MapMarkerResponseDto[]> {
+  async getMapMarkers(auth: AuthDto, id: string, dto: AlbumMapMarkerDto = {}): Promise<MapMarkerResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
 
     if (auth.sharedLink && !auth.sharedLink.showExif) {
       return [];
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, this.nsfwOptions(auth));
+    // FL-51: the map settings sheet narrows a signed-in viewer's album map. A shared link acts as the
+    // link's owner, so its visitors get the album's markers unfiltered: a favorites filter would
+    // otherwise tell them which items the owner has favorited.
+    if (auth.sharedLink) {
+      return this.mapRepository.getAlbumMapMarkers(id, this.nsfwOptions(auth));
+    }
+
+    const { withPartners, withSharedAlbums, ...filters } = dto;
+    const options: AlbumMapMarkerSearchOptions = { ...filters, favoriteOwnerId: auth.user.id };
+    if (withPartners === false || withSharedAlbums === false) {
+      const partnerIds = await getMyPartnerIds({ userId: auth.user.id, repository: this.partnerRepository });
+      options.ownerScope = {
+        viewerId: auth.user.id,
+        partnerIds: [...partnerIds],
+        withPartners: withPartners !== false,
+        withOthers: withSharedAlbums !== false,
+      };
+    }
+
+    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {

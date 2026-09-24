@@ -1,17 +1,16 @@
 <script lang="ts">
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
-  import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import PublicShellFrame from '$lib/components/frameleaf/PublicShellFrame.svelte';
   import IndividualSharedViewer from '$lib/components/share-page/IndividualSharedViewer.svelte';
-  import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { setSharedLink } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { sharedLinkLogin, SharedLinkType, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -71,10 +70,6 @@
   onDestroy(() => {
     setSharedLink(undefined);
   });
-
-  // FL-56: own layout, no LibraryRail/TopBar/account menu — a public visitor never sees
-  // private navigation.
-  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <svelte:head>
@@ -82,10 +77,8 @@
   <meta name="description" content={description} />
 </svelte:head>
 {#if passwordRequired}
-  <main class="frameleaf pv-password-shell" data-theme={appTheme}>
-    <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-      <Brand />
-    </a>
+  <!-- FL-56: the prototype draws the password prompt inside the public frame, with no private navigation. -->
+  <PublicShellFrame hero>
     <form class="pv-password-card" novalidate {onsubmit}>
       <h1>{$t('frameleaf_public_password_title')}</h1>
       <p>{$t('frameleaf_public_password_body')}</p>
@@ -107,7 +100,7 @@
       </div>
       <Button type="submit" variant="primary">{$t('continue')}</Button>
     </form>
-  </main>
+  </PublicShellFrame>
 {/if}
 
 {#if !passwordRequired && sharedLink?.type === SharedLinkType.Album}
@@ -120,20 +113,6 @@
 {/if}
 
 <style>
-  .pv-password-shell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2rem;
-    min-height: 100dvh;
-    padding: 1.5rem;
-    color: var(--fl-text);
-    background: var(--fl-canvas);
-  }
-  .pv-brand {
-    display: inline-flex;
-  }
   .pv-password-card {
     display: flex;
     flex-direction: column;

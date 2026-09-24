@@ -26,7 +26,6 @@ import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import AlbumAddUsersModal from '$lib/modals/AlbumAddUsersModal.svelte';
 import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
@@ -84,20 +83,7 @@ export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseD
   return { SetCover };
 };
 
-export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto, assets: TimelineAsset[]) => {
-  const AddAssets: ActionItem = {
-    title: $t('add_assets'),
-    color: 'primary',
-    icon: mdiPlusBoxOutline,
-    $if: () => assets.length > 0,
-    onAction: () =>
-      addAssetsToAlbums(
-        [album.id],
-        assets.map(({ id }) => id),
-        { notify: true },
-      ).then(() => undefined),
-  };
-
+export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
   const Upload: ActionItem = {
     title: $t('select_from_computer'),
     description: $t('album_upload_assets'),
@@ -105,7 +91,7 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
     onAction: () => void openFileUploadDialog({ albumId: album.id }),
   };
 
-  return { AddAssets, Upload };
+  return { Upload };
 };
 
 export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {

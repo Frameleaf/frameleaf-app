@@ -107,6 +107,20 @@ select
           "asset"."fileCreatedAt" asc
       ) as agg
   ) as "assets",
+  (
+    select
+      to_json(obj)
+    from
+      (
+        select
+          "user"."name"
+        from
+          "user"
+        where
+          "user"."id" = "shared_link"."userId"
+          and "user"."deletedAt" is null
+      ) as obj
+  ) as "owner",
   to_json("album") as "album"
 from
   "shared_link"

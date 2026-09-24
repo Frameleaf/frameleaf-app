@@ -20,26 +20,32 @@ export const lang = persisted<string>('lang', preferredLocale || defaultLang.cod
   },
 });
 
+/**
+ * The Map screen's settings sheet (prototype `defaultMapSettings`): a date preset, what to include
+ * and whether the in-view list is open. Shared spaces and partner items are included by default.
+ */
 export interface MapSettings {
-  allowDarkMode: boolean;
+  datePreset: 'all' | '30d' | 'year' | 'custom';
+  /** Custom range start, `YYYY-MM-DD`; empty when unset. */
+  dateAfter: string;
+  /** Custom range end, `YYYY-MM-DD`; empty when unset. */
+  dateBefore: string;
   includeArchived: boolean;
-  onlyFavorites: boolean;
-  withPartners: boolean;
   withSharedAlbums: boolean;
+  withPartners: boolean;
+  onlyFavorites: boolean;
   showAssetPanel: boolean;
-  relativeDate: string;
-  dateAfter?: string;
-  dateBefore?: string;
 }
 
-const defaultMapSettings = {
-  allowDarkMode: true,
+const defaultMapSettings: MapSettings = {
+  datePreset: 'all',
+  dateAfter: '',
+  dateBefore: '',
   includeArchived: false,
+  withSharedAlbums: true,
+  withPartners: true,
   onlyFavorites: false,
-  withPartners: false,
-  withSharedAlbums: false,
   showAssetPanel: false,
-  relativeDate: '',
 };
 
 const persistedObject = <T>(key: string, defaults: T) =>

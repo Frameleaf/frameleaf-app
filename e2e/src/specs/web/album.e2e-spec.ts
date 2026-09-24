@@ -12,7 +12,7 @@ test.describe('Album', () => {
     admin = await utils.adminSetup();
   });
 
-  test('keeps a new album after leaving Add photos without choosing anything', async ({ context, page }) => {
+  test('sends Select from library to the Library and keeps the new album', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
     // Albums page -> Create album opens the create dialog (Collections.jsx), then the new album.
@@ -26,10 +26,15 @@ test.describe('Album', () => {
     // CollectionHeader.jsx: Add photos -> Select from library / Upload from computer.
     await page.getByRole('button', { name: 'Add photos' }).click();
     await expect(page.getByRole('menuitem', { name: 'Upload from computer' })).toBeVisible();
+    const albumUrl = page.url();
     await page.getByRole('menuitem', { name: 'Select from library' }).click();
-    await page.keyboard.press('Escape');
 
-    await page.reload();
+    // App.jsx onAddPhotos: the Library is where photos are picked, with a hint toast pointing at the
+    // selection bar's "Add to album".
+    await page.waitForURL(/\/photos/);
+    await expect(page.getByText('Select photos, then choose Add to album in the selection bar.')).toBeVisible();
+
+    await page.goto(albumUrl);
     await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
   });
 
@@ -58,8 +63,26 @@ test.describe('Album', () => {
     await mapButton.click();
     await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
-    const mapMarker = page.getByRole('img', { name: /Map marker/i }).first();
+    const mapMarker = page.getByRole('img', { name: /^Open item/ }).first();
     await expect(mapMarker).toBeVisible();
+
+    // MapView.jsx in album scope keeps the settings sheet, whose switches narrow the album's items.
+    const tools = page.getByRole('toolbar', { name: 'Map tools' });
+    await tools.getByRole('button', { name: 'Map settings' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Map settings' });
+    await expect(sheet.getByRole('switch', { name: 'Partner items' })).toHaveAttribute('aria-checked', 'true');
+    await sheet.getByRole('switch', { name: 'Only favorites' }).click();
+    await expect(page.getByText('No located items match these settings')).toBeVisible();
+    await sheet.getByRole('switch', { name: 'Only favorites' }).click();
+    await expect(mapMarker).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // "Search this area" is offered in album scope too, once the view has moved.
+    await tools.getByRole('button', { name: 'Zoom out' }).click();
+    await expect(page.getByRole('button', { name: 'Search this area' })).toBeVisible();
+    await tools.getByRole('button', { name: 'Show all items' }).click();
+
     await mapMarker.click();
 
     const viewer = page.locator('#immich-asset-viewer');

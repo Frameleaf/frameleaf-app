@@ -28,6 +28,33 @@ const MapMarkerSchema = z
   })
   .meta({ id: 'MapMarkerDto' });
 
+/**
+ * The map settings sheet's filters for one album's markers (FL-51, prototype `MapView.jsx` in album
+ * scope). Each only narrows what the album already shows its viewer: no filter reaches an asset outside
+ * the album, and the album's hidden and Locked rules still apply. Omitting a filter keeps the album's
+ * own behaviour, so an old client that sends none gets the same markers as before. Unlike the library
+ * map, where `withPartners` and `withSharedAlbums` add other people's items, here `false` leaves the
+ * album's items from those people out.
+ */
+const AlbumMapMarkerSchema = z
+  .object({
+    isArchived: stringToBool.optional().describe('Include archived items (the album default); false leaves them out'),
+    isFavorite: stringToBool
+      .optional()
+      .describe("Filter by the viewer's own favorites; other members' favorites are never matched"),
+    fileCreatedAfter: isoDatetimeToDate.optional().describe('Filter assets created after this date'),
+    fileCreatedBefore: isoDatetimeToDate.optional().describe('Filter assets created before this date'),
+    withPartners: stringToBool
+      .optional()
+      .describe("Include the album's items owned by your partners (the album default); false leaves them out"),
+    withSharedAlbums: stringToBool
+      .optional()
+      .describe(
+        "Include the album's items owned by other members who are not your partners (the album default); false leaves them out",
+      ),
+  })
+  .meta({ id: 'AlbumMapMarkerDto' });
+
 const MapMarkerResponseSchema = z
   .object({
     id: z.uuidv4().describe('Asset ID'),
@@ -42,4 +69,5 @@ const MapMarkerResponseSchema = z
 export class MapReverseGeocodeDto extends createZodDto(MapReverseGeocodeSchema) {}
 export class MapReverseGeocodeResponseDto extends createZodDto(MapReverseGeocodeResponseSchema) {}
 export class MapMarkerDto extends createZodDto(MapMarkerSchema) {}
+export class AlbumMapMarkerDto extends createZodDto(AlbumMapMarkerSchema) {}
 export class MapMarkerResponseDto extends createZodDto(MapMarkerResponseSchema) {}

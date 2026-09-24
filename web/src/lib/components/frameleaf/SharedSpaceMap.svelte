@@ -71,7 +71,6 @@
           clickable={false}
           mapMarkers={markers}
           onSelect={(assetIds: string[]) => onSelect?.(assetIds)}
-          showSettings={false}
           rounded
           autoFitBounds
         />
