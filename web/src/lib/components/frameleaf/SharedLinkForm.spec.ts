@@ -81,20 +81,32 @@ describe('SharedLinkForm', () => {
     expect(Date.parse(dto.expiresAt as string)).toBeGreaterThan(before);
   });
 
-  it('starts with metadata off and download on, and keeps download independent of metadata', async () => {
+  it('ties download to metadata: originals carry EXIF and GPS, so hiding metadata turns download off', async () => {
     render(SharedLinkForm, {
       props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
     });
 
-    const download = screen.getByRole('switch', { name: new RegExp(en.frameleaf_sharing.allow_download) });
-    const metadata = screen.getByRole('switch', { name: new RegExp(en.show_metadata) });
+    const download = screen.getByRole('switch', { name: new RegExp(`^${en.frameleaf_sharing.allow_download}`) });
+    const metadata = screen.getByRole('switch', { name: new RegExp(`^${en.show_metadata}`) });
+    // The design's default hides metadata, so a new link starts without downloads.
     expect(metadata).not.toBeChecked();
-    expect(download).toBeChecked();
+    expect(download).not.toBeChecked();
+    expect(download).toBeDisabled();
+    expect(screen.getByText(en.frameleaf_sharing.download_needs_metadata)).toBeInTheDocument();
+
+    await fireEvent.click(metadata);
     expect(download).toBeEnabled();
+    await fireEvent.click(download);
+    expect(download).toBeChecked();
+
+    // Turning metadata off again turns download off with it.
+    await fireEvent.click(metadata);
+    expect(download).not.toBeChecked();
+    expect(download).toBeDisabled();
 
     await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
     expect(handleCreateSharedLink).toHaveBeenCalledWith(
-      expect.objectContaining({ showMetadata: false, allowDownload: true }),
+      expect.objectContaining({ showMetadata: false, allowDownload: false }),
     );
   });
 
