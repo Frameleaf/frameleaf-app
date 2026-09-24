@@ -7,10 +7,9 @@ import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
-import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { getForAlbum, getForPartner } from 'test/mappers.js';
+import { getForAlbum } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1217,27 +1216,21 @@ describe(AlbumService.name, () => {
       expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, { favoriteOwnerId: auth.user.id });
     });
 
-    it("leaves partners' or other members' items out only when the sheet switches them off", async () => {
+    it("keeps only the viewer's own items when Partner items is off, as the prototype does", async () => {
       const auth = AuthFactory.create();
-      const partner = PartnerFactory.from().sharedBy(UserFactory.create()).sharedWith({ id: auth.user.id }).build();
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
-      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
 
       await sut.getMapMarkers(auth, albumId, { withPartners: false, withSharedAlbums: true });
       expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
         favoriteOwnerId: auth.user.id,
-        ownerScope: { viewerId: auth.user.id, partnerIds: [partner.sharedById], withPartners: false, withOthers: true },
+        onlyOwnerId: auth.user.id,
       });
 
+      // "Shared spaces" only hides the viewer's own shared-space-only items, which album markers never are
       await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: false });
-      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, {
-        favoriteOwnerId: auth.user.id,
-        ownerScope: { viewerId: auth.user.id, partnerIds: [partner.sharedById], withPartners: true, withOthers: false },
-      });
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, { favoriteOwnerId: auth.user.id });
 
-      mocks.partner.getAll.mockClear();
       await sut.getMapMarkers(auth, albumId, { withPartners: true, withSharedAlbums: true });
-      expect(mocks.partner.getAll).not.toHaveBeenCalled();
       expect(mocks.map.getAlbumMapMarkers).toHaveBeenLastCalledWith(albumId, { favoriteOwnerId: auth.user.id });
     });
 

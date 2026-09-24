@@ -4276,7 +4276,7 @@
             "name": "withPartners",
             "required": false,
             "in": "query",
-            "description": "Include the album's items owned by your partners (the album default); false leaves them out",
+            "description": "Include the album's items owned by anyone else (the album default); false keeps only your own",
             "schema": {
               "type": "boolean"
             }
@@ -4285,7 +4285,7 @@
             "name": "withSharedAlbums",
             "required": false,
             "in": "query",
-            "description": "Include the album's items owned by other members who are not your partners (the album default); false leaves them out",
+            "description": "Accepted for the shared map settings; has no effect on an album map",
             "schema": {
               "type": "boolean"
             }

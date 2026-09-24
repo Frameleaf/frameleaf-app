@@ -332,7 +332,7 @@ describe(AlbumService.name, () => {
       ).resolves.toEqual([plain.id, archived.id, memberFavorite.id].sort());
     });
 
-    it("leaves a partner's or another member's album items out only when the sheet says so (FL-51)", async () => {
+    it("keeps only the viewer's own album items when Partner items is off, as the prototype does (FL-51)", async () => {
       const { sut, ctx } = setup(await getKyselyDB());
       const { user: viewer } = await ctx.newUser();
       const { user: partner } = await ctx.newUser();
@@ -356,11 +356,11 @@ describe(AlbumService.name, () => {
       await expect(
         sut.getMapMarkers(auth, album.id, { withPartners: true, withSharedAlbums: true }).then(ids),
       ).resolves.toEqual([own.id, partnerItem.id, memberItem.id].sort());
-      await expect(sut.getMapMarkers(auth, album.id, { withPartners: false }).then(ids)).resolves.toEqual(
-        [own.id, memberItem.id].sort(),
-      );
+      // the prototype treats every item someone else owns as a partner item, partner or not
+      await expect(sut.getMapMarkers(auth, album.id, { withPartners: false }).then(ids)).resolves.toEqual([own.id]);
+      // "Shared spaces" only hides the viewer's own shared-space-only items, which album markers never are
       await expect(sut.getMapMarkers(auth, album.id, { withSharedAlbums: false }).then(ids)).resolves.toEqual(
-        [own.id, partnerItem.id].sort(),
+        [own.id, partnerItem.id, memberItem.id].sort(),
       );
       // neither switch reaches the partner's item outside the album
       await expect(
