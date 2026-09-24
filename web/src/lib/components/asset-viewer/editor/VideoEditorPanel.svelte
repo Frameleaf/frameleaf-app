@@ -133,7 +133,7 @@
 
   let { asset = $bindable(), onClose, onUnsavedChange, onDraftChange, onReady }: Props = $props();
 
-  let selectedTool = $state<Tool>('auto');
+  let selectedTool = $state<Tool>('trim');
   let isSaving = $state(false);
   let isLoading = $state(true);
   let originalVideo = $state<{ width: number; height: number; durationMs: number }>();

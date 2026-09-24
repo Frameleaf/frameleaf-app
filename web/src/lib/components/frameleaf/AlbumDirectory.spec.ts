@@ -1,5 +1,5 @@
 import { AlbumKind, AlbumUserRole, type AlbumTreeResponseDto } from '@immich/sdk';
-import { fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -167,6 +167,42 @@ describe('AlbumDirectory', () => {
     expect(shelf).toHaveTextContent('No shared spaces yet');
     expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
+  });
+
+  it('deletes an owned album through the Frameleaf confirmation, keeping its items', async () => {
+    const onRefresh = vi.fn();
+    sdkMock.deleteAlbum.mockResolvedValue(undefined as never);
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    // Owner-only; the key renders literally until the copy lands in en.json.
+    expect(menu.getByRole('menuitem', { name: /^(Create link|frameleaf_albums_create_link)$/ })).toBeInTheDocument();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Delete “Summer in the Rockies”?' });
+    expect(dialog).toHaveTextContent('Its 10 items stay in your library.');
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete album' }));
+
+    await waitFor(() => expect(sdkMock.deleteAlbum).toHaveBeenCalledWith({ id: 'rockies' }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('leaves a shared album through the Frameleaf confirmation as “me”', async () => {
+    const onRefresh = vi.fn();
+    sdkMock.removeUserFromAlbum.mockResolvedValue(undefined as never);
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Trail camera' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Trail camera' }));
+    expect(menu.queryByRole('menuitem', { name: /^(Create link|frameleaf_albums_create_link)$/ })).toBeNull();
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Leave' }));
+
+    await screen.findByRole('dialog', { name: 'Leave “Trail camera”?' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Leave album' }));
+
+    await waitFor(() => expect(sdkMock.removeUserFromAlbum).toHaveBeenCalledWith({ id: 'trail', userId: 'me' }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
   it('never lets a viewer drag someone else’s album', () => {

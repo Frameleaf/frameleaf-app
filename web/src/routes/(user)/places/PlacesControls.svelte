@@ -23,7 +23,7 @@
 </script>
 
 <div class="hidden h-10 md:block xl:w-60 2xl:w-80">
-  <SearchBar placeholder={$t('search_places')} bind:name={searchQuery} showLoadingSpinner={false} />
+  <SearchBar placeholder={$t('frameleaf_places_find')} bind:name={searchQuery} showLoadingSpinner={false} />
 </div>
 
 <div title={$t('group_places_by')}>

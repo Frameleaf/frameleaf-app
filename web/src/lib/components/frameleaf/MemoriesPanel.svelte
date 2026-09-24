@@ -19,7 +19,10 @@
    * concept in the real API (only permanent removal), so this ports it as "Remove memory"
    * (`memoryManager.removeMemory`), matching the action the legacy viewer already exposed.
    */
+  import { goto } from '$app/navigation';
   import { clickOutside } from '$lib/actions/click-outside';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
@@ -102,10 +105,31 @@
       : $t('frameleaf_memories_removed_from_favorites', { values: { title } });
   };
 
-  const removeMemory = async (memory: MemoryResponseDto) => {
-    const title = $memoryLaneTitle(memory);
-    await memoryManager.removeMemory(memory.id);
-    status = $t('frameleaf_memories_removed', { values: { title } });
+  // FL-83 (MI-1): removal is permanent (there is no hidden state to restore from), so it is
+  // the one memories action that asks first rather than offering undo.
+  let removing = $state<MemoryResponseDto | undefined>();
+  let removeOpen = $state(false);
+  let removingBusy = $state(false);
+
+  const confirmRemove = (memory: MemoryResponseDto) => {
+    removing = memory;
+    removeOpen = true;
+  };
+
+  const removeMemory = async () => {
+    const memory = removing;
+    if (!memory || removingBusy) {
+      return;
+    }
+    removingBusy = true;
+    try {
+      const title = $memoryLaneTitle(memory);
+      await memoryManager.removeMemory(memory.id);
+      status = $t('frameleaf_memories_removed', { values: { title } });
+      removeOpen = false;
+    } finally {
+      removingBusy = false;
+    }
   };
 
   const applySetting = async (patch: Partial<MemoriesPreferences>) => {
@@ -133,13 +157,13 @@
         <small>
           {#if isEventStory(memory)}
             {formatLocalDateRange(memory.data.startDate, memory.data.endDate, $locale)}
-            ·
+            <span aria-hidden="true"> · </span>
             {$t('frameleaf_memories_story_days', { values: { count: memory.data.dayCount } })}
-            ·
+            <span aria-hidden="true"> · </span>
           {/if}
           {$t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
           {#if memory.isSaved}
-            · <Icon icon={mdiHeart} size="12" aria-hidden="true" /> {$t('favorite')}
+            <span aria-hidden="true"> · </span><Icon icon={mdiHeart} size="12" aria-hidden="true" /> {$t('favorite')}
           {/if}
         </small>
       </span>
@@ -148,11 +172,15 @@
     <div class="fm-card-menu">
       <Menu label={$t('frameleaf_memories_more_actions', { values: { title: $memoryLaneTitle(memory) } })}>
         {#snippet trigger()}<Icon icon={mdiDotsVertical} size="16" aria-hidden="true" />{/snippet}
+        <MenuItem onSelect={() => goto(cardHref(memory))}>
+          <Icon icon={mdiPlay} size="16" aria-hidden="true" />
+          {$t('frameleaf_memories_play')}
+        </MenuItem>
         <MenuItem onSelect={() => toggleFavorite(memory)}>
           <Icon icon={memory.isSaved ? mdiHeart : mdiHeartOutline} size="16" aria-hidden="true" />
           {memory.isSaved ? $t('unfavorite') : $t('favorite')}
         </MenuItem>
-        <MenuItem onSelect={() => removeMemory(memory)}>
+        <MenuItem onSelect={() => confirmRemove(memory)}>
           <Icon icon={mdiDeleteOutline} size="16" aria-hidden="true" />
           {$t('remove_memory')}
         </MenuItem>
@@ -255,7 +283,38 @@
   </section>
 </div>
 
+{#if removing}
+  {@const target = removing}
+  <Dialog title={$t('frameleaf_memories_remove_title')} closeLabel={$t('close')} bind:open={removeOpen}>
+    <div class="fm-remove">
+      <p>{$t('frameleaf_memories_remove_body', { values: { title: $memoryLaneTitle(target) } })}</p>
+      <div class="fm-remove-actions">
+        <Button disabled={removingBusy} onclick={() => (removeOpen = false)}>{$t('cancel')}</Button>
+        <Button variant="primary" disabled={removingBusy} onclick={() => void removeMemory()}>
+          {$t('frameleaf_memories_remove_confirm')}
+        </Button>
+      </div>
+    </div>
+  </Dialog>
+{/if}
+
 <style>
+  .fm-remove {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-block-start: 1rem;
+    width: min(28rem, calc(100vw - 4rem));
+  }
+  .fm-remove p {
+    margin: 0;
+    font-size: 0.875rem;
+  }
+  .fm-remove-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
   .fm {
     display: flex;
     flex-direction: column;

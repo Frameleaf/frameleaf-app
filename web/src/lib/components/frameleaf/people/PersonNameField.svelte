@@ -2,6 +2,8 @@
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
   import type { PersonResponseDto } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
+  import { mdiCheck, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -29,7 +31,7 @@
   let searchedPeopleLocal: PersonResponseDto[] = $state([]);
   let showLoadingSpinner = $state(false);
   let active = $state(-1);
-  let wrap: HTMLFormElement | undefined = $state();
+  const formId = $props.id();
 
   const suggestions = $derived(searchedPeopleLocal.filter((candidate) => candidate.id !== person.id && candidate.name));
 
@@ -56,18 +58,22 @@
   };
 
   const onfocusout = (event: FocusEvent) => {
-    const next = event.relatedTarget as Node | null;
-    if (wrap && next && wrap.contains(next)) {
+    // Focus moving to another control of this same editor (the buttons, a suggestion) is
+    // not leaving it. Matched by id rather than `contains`, which happy-dom's proxied form
+    // element answers wrongly.
+    const next = event.relatedTarget;
+    if (next instanceof Element && next.closest('form')?.id === formId) {
       return;
     }
-    // Matches the production people grid's existing blur-to-save behaviour.
-    commit(value);
+    // FL-83 (PN-1): leaving the editor abandons the rename, as in the prototype's
+    // `PersonNameEditor`; only Enter, the check button or a suggestion commits.
+    onCancel();
   };
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Escape from the field inside cancels the edit) -->
 <form
-  bind:this={wrap}
+  id={formId}
   class="name-field"
   autocomplete="off"
   {onsubmit}
@@ -85,11 +91,24 @@
     onReset={() => (active = -1)}
     onSearch={() => (active = -1)}
   />
-  <button type="submit" class="save" aria-label={$t('frameleaf_people_save_name')}>
-    {$t('done')}
+  <!-- FL-83 (PN-2): icon buttons, as in the prototype. The mousedown guard keeps focus on
+       the input so a click here never reads as leaving the editor (which cancels). -->
+  <button
+    type="submit"
+    class="save"
+    aria-label={$t('frameleaf_people_save_name')}
+    onmousedown={(event) => event.preventDefault()}
+  >
+    <Icon icon={mdiCheck} size="16" aria-hidden="true" />
   </button>
-  <button type="button" class="cancel" aria-label={$t('frameleaf_people_cancel_rename')} onclick={() => onCancel()}>
-    {$t('cancel')}
+  <button
+    type="button"
+    class="cancel"
+    aria-label={$t('frameleaf_people_cancel_rename')}
+    onmousedown={(event) => event.preventDefault()}
+    onclick={() => onCancel()}
+  >
+    <Icon icon={mdiClose} size="16" aria-hidden="true" />
   </button>
   {#if suggestions.length > 0}
     <ul class="suggestions" role="listbox" aria-label={$t('frameleaf_people_name_suggestions')}>
@@ -119,8 +138,12 @@
   }
   .save,
   .cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
     min-width: 44px;
+    min-height: 44px;
     padding: 0.375rem 0.5rem;
     font-size: var(--fl-font-small);
     color: var(--fl-text);
