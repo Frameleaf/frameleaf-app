@@ -275,21 +275,28 @@ test.describe('Timeline', () => {
   });
 
   test.describe('September 24 chrome', () => {
-    test('rows start where their group header starts under the sticky toolbar', async ({ page }) => {
-      await pageUtils.openPhotosPage(page);
-      await timelineUtils.setLayout(page, 'Timeline');
-      const band = page.getByTestId('frameleaf-group').first();
-      const month = page.locator('.fl-month').first();
-      await expect(month).toBeVisible();
-      // The band is placed by its own top and each month by its transform; both measure from the
-      // body's top, so an in-flow sticky header block must not push the months down.
-      await expect
-        .poll(async () => {
+    for (const layout of ['Timeline', 'Browse', 'Work'] as const) {
+      test(`${layout}: rows start right below the sticky header block, not a header height lower`, async ({ page }) => {
+        await pageUtils.openPhotosPage(page);
+        await timelineUtils.setLayout(page, layout);
+        const top = page.locator('.fl-timeline-top');
+        const month = page.locator('.fl-month').first();
+        await expect(month).toBeVisible();
+        // Months are placed by their transform from the body's top; an in-flow sticky header
+        // block must not push them down by its own height.
+        await expect
+          .poll(async () => {
+            const [topBox, monthBox] = await Promise.all([top.boundingBox(), month.boundingBox()]);
+            return Math.round((monthBox?.y ?? Infinity) - ((topBox?.y ?? 0) + (topBox?.height ?? 0)));
+          })
+          .toBeLessThanOrEqual(24);
+        if (layout === 'Timeline') {
+          const band = page.getByTestId('frameleaf-group').first();
           const [bandBox, monthBox] = await Promise.all([band.boundingBox(), month.boundingBox()]);
-          return Math.round(Math.abs((bandBox?.y ?? 0) - (monthBox?.y ?? Infinity)));
-        })
-        .toBeLessThanOrEqual(1);
-    });
+          expect(Math.abs(bandBox!.y - monthBox!.y)).toBeLessThanOrEqual(1);
+        }
+      });
+    }
 
     test('the frosted results toolbar stays at the top while the photos scroll', async ({ page }) => {
       await pageUtils.openPhotosPage(page);

@@ -27,6 +27,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
+  import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
@@ -611,18 +612,26 @@
       host.style.setProperty('--fl-left', `${Math.max(0, Math.round(box.left))}px`);
       host.style.setProperty('--fl-right', `${Math.max(0, Math.round(innerWidth - box.right))}px`);
       const strip = toolbarStrip;
-      const top = strip?.offsetParent as HTMLElement | null;
-      if (strip && top) {
-        host.style.setProperty('--fl-toolbar-top', `${strip.offsetTop}px`);
-        host.style.setProperty('--fl-sticky-offset', `${Math.round(top.offsetHeight - strip.offsetTop)}px`);
+      if (!strip) {
+        return;
       }
+      // Timeline rows: the whole header block sticks, so the strip is the toolbar plus the grouping
+      // row below it. Years and Months cards: the toolbar itself sticks in the cards' scroller.
+      const top = strip.closest<HTMLElement>('.fl-timeline-top');
+      const offsetTop = top ? strip.offsetTop : 0;
+      host.style.setProperty('--fl-toolbar-top', `${offsetTop}px`);
+      host.style.setProperty(
+        '--fl-sticky-offset',
+        `${Math.round(top ? top.offsetHeight - offsetTop : strip.offsetHeight)}px`,
+      );
     };
     const observer = new ResizeObserver(measure);
     observer.observe(area);
     if (toolbarStrip) {
       observer.observe(toolbarStrip);
-      if (toolbarStrip.offsetParent) {
-        observer.observe(toolbarStrip.offsetParent);
+      const top = toolbarStrip.closest('.fl-timeline-top');
+      if (top) {
+        observer.observe(top);
       }
     }
     // The window and the rail change the photo area's own size, so observing it covers both.
@@ -710,6 +719,7 @@
   ]);
 
   const showStatusBar = $derived(statusBar && !publicView && !selectionMode && !noSelectionBar);
+  const thumbnailControl = $derived(!!destination && !['person', 'pet'].includes(destination.kind) && !options?.userId);
 
   /*
    * The status bar's "X of Y items" (App.jsx footer: `visible.length of collectionAssets.length`).
@@ -1027,7 +1037,14 @@
       selected={session.selection.length}
       saved={savedOnDevice}
       hidden={selecting}
-    />
+    >
+      {#snippet controls()}
+        <!-- App.jsx: Thumbnail size on the library's own screen, not a person's or partner's. -->
+        {#if thumbnailControl}
+          <ThumbnailSizeControl />
+        {/if}
+      {/snippet}
+    </LibraryStatusBar>
   {/if}
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
@@ -1081,6 +1098,12 @@
   }
   .fl-library-toolbar {
     position: relative;
+  }
+  /* Years and Months cards scroll in their own container: the toolbar sticks there by itself. */
+  .has-sticky-toolbar :global(.fl-tl-cards-scroll > .fl-library-toolbar) {
+    position: sticky;
+    top: 0;
+    z-index: 4;
   }
   .fl-library-toolbar::before {
     /* The frosted strip spans the scroller's width, under the toolbar and the grouping row below it. */
