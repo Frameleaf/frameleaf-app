@@ -10,6 +10,12 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { init: vi.fn(), value: { smartSearch: true, trash: true, map: true } },
 }));
 
+const navigation = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$app/navigation')>()),
+  goto: navigation.goto,
+}));
+
 const infoPanel = createRawSnippet(() => ({ render: () => '<p data-testid="work-panel">details</p>' }));
 
 beforeAll(() => {
@@ -124,6 +130,63 @@ describe('LibraryView', () => {
       librarySession.setLayout('work');
       await tick();
       expect(screen.getByTestId('frameleaf-work-inspector')).toBeInTheDocument();
+    });
+  });
+
+  describe('one toolbar and the status bar (FL-32, FL-33)', () => {
+    const setupBars = async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+    };
+
+    afterEach(() => {
+      librarySession.clearSelection();
+    });
+
+    it('shows the status bar with nothing selected and no Compare in the results toolbar', async () => {
+      await setupBars();
+
+      const bar = screen.getByTestId('library-status-bar');
+      expect(bar).not.toHaveAttribute('aria-hidden', 'true');
+      expect(screen.getByTestId('frameleaf-results-toolbar')).not.toHaveTextContent('frameleaf_compare_title');
+    });
+
+    it('lets the selection bar take the status bar’s place, carrying Compare and Open in Studio', async () => {
+      await setupBars();
+      librarySession.dispatch({ type: 'selection', ids: ['a', 'b'] });
+      await tick();
+
+      expect(screen.getByTestId('library-status-bar')).toHaveAttribute('aria-hidden', 'true');
+      expect(screen.getByTestId('selection-leading-compare')).toBeEnabled();
+      // No viewer on this page, so there is nothing to open the quick editor in.
+      expect(screen.queryByTestId('selection-leading-quick-edit')).not.toBeInTheDocument();
+
+      await fireEvent.click(screen.getByTestId('selection-leading-studio'));
+      expect(navigation.goto).toHaveBeenCalledWith('/studio?assets=a%2Cb');
+    });
+
+    it('offers Compare only for two or more items', async () => {
+      await setupBars();
+      librarySession.dispatch({ type: 'selection', ids: ['a'] });
+      await tick();
+
+      expect(screen.getByTestId('selection-leading-compare')).toBeDisabled();
+    });
+
+    it('draws no status bar for a picking step', async () => {
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        noSelectionBar: true,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+
+      expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
     });
   });
 });
