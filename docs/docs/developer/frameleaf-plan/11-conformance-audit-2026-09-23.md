@@ -40,6 +40,14 @@ Validation: the web unit suites for `src/lib/frameleaf`, `src/lib/components/fra
 
 Open: `viewport-fit=cover` is not yet set in `app.html`, because the top bar does not pad for the notch yet (Packet 2). Whether pets get the squircle is still an owner decision; they follow the people pattern for now. The global Reduce Motion clamp in `tokens.css` still reduces descendant CSS animations to an instant change; the Dialog (which is its own `.frameleaf` scope) and Menu opt back into a crossfade.
 
+### September 24 grids, Thumbnail size and curated Timeline (FL-33, FL-50)
+
+Packet 2 rows 2h–2j are on `codex/FL-33-sept24-grid`. No gap id is closed here; T-6, T-7 and T-8 are addressed in part and are left for the lead to re-audit. The prototype is authoritative, and the deviations from it are:
+
+- **Month-boundary row gap (open owner decision FL-143).** Browse and Work lay each month out as its own cell grid, because the timeline manager loads and virtualizes a month at a time. A month that ends part-way along a row leaves the rest of that row empty, where the template's single `.media-grid` runs straight on into the next month. This is the same shape of deviation as the grouped-month rows in `frameleaf-plan/13-agent-handoff-2026-09-23-evening.md` §6.
+- **Default Thumbnail size 200.** The template's `DEFAULT_THUMB_SIZE` is 190, which is not a stop on the 140–290 step-30 scale; 200 is the default and the size at which Timeline rows keep their default height.
+- **Thumbnail size control not mounted yet.** `ThumbnailSizeControl` waits for the shell's status bar (2f). Until then the size changes by pinch, Ctrl-scroll and + / −.
+
 ## 1. Coverage
 
 | Slice                                                                                                           | Prototype modules                                                                                                                                                                                                                                                                                               | Status                               |
