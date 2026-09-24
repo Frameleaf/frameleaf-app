@@ -66,6 +66,41 @@ describe(JobRepository.name, () => {
     );
   });
 
+  describe('searchJobs', () => {
+    it("returns each job's attempts and a failed job's last error (FL-71)", async () => {
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: { id: 'asset-1' },
+          attemptsMade: 3,
+          failedReason: 'Machine learning is unreachable',
+        },
+        { id: '2', name: JobName.AssetDetectFaces, timestamp: 2000, data: {}, attemptsMade: 0, failedReason: '' },
+      ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      await expect(repository.searchJobs(QueueName.FaceDetection, { status: [] })).resolves.toEqual([
+        {
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: { id: 'asset-1' },
+          attemptsMade: 3,
+          failedReason: 'Machine learning is unreachable',
+        },
+        { id: '2', name: JobName.AssetDetectFaces, timestamp: 2000, data: {}, attemptsMade: 0 },
+      ]);
+    });
+  });
+
   it('should use a longer lock for the database backup worker', () => {
     sut.startWorkers();
 
