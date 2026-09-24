@@ -5168,6 +5168,28 @@ export type MergeSuggestionsResponseDto = {
     /** Suggested pairs of people that may be the same person */
     suggestions: PersonMergeSuggestionDto[];
 };
+export type PersonMergeVerdictDeleteDto = {
+    /** One person of the suggested pair (either order) */
+    personId: string;
+    /** The other person of the suggested pair */
+    suggestionId: string;
+};
+export type PersonMergeVerdictCreateDto = {
+    /** One person of the suggested pair (either order) */
+    personId: string;
+    /** The other person of the suggested pair */
+    suggestionId: string;
+    verdict: PersonMergeVerdict;
+};
+export type PersonMergeVerdictResponseDto = {
+    /** When the verdict was recorded */
+    createdAt: string;
+    /** The person of the pair whose id sorts first */
+    personId: string;
+    /** The other person of the pair */
+    suggestionId: string;
+    verdict: PersonMergeVerdict;
+};
 export type PersonUpdateDto = {
     /** Person date of birth */
     birthDate?: string | null;
@@ -13208,6 +13230,33 @@ export function getMergeSuggestions(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Undo a merge suggestion verdict
+ */
+export function deleteMergeVerdict({ personMergeVerdictDeleteDto }: {
+    personMergeVerdictDeleteDto: PersonMergeVerdictDeleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/people/merge-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: personMergeVerdictDeleteDto
+    })));
+}
+/**
+ * Record a merge suggestion verdict
+ */
+export function setMergeVerdict({ personMergeVerdictCreateDto }: {
+    personMergeVerdictCreateDto: PersonMergeVerdictCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonMergeVerdictResponseDto;
+    }>("/people/merge-suggestions/verdicts", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personMergeVerdictCreateDto
+    })));
+}
+/**
  * Delete person
  */
 export function deletePerson({ id }: {
@@ -18074,6 +18123,10 @@ export enum RestorationModelState {
 export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
+}
+export enum PersonMergeVerdict {
+    Different = "different",
+    Later = "later"
 }
 export enum PetSpecies {
     Cat = "cat",

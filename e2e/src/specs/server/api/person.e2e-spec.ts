@@ -343,4 +343,39 @@ describe('/people', () => {
       expect(body).toEqual(errorDto.badRequest('Cannot merge a person into themselves'));
     });
   });
+
+  describe('PUT /people/merge-suggestions/verdicts', () => {
+    it('should require authentication', async () => {
+      const { status } = await request(app)
+        .put('/people/merge-suggestions/verdicts')
+        .send({ personId: visiblePerson.id, suggestionId: hiddenPerson.id, verdict: 'different' });
+      expect(status).toBe(401);
+    });
+
+    it('should record a verdict and undo it', async () => {
+      const { status, body } = await request(app)
+        .put('/people/merge-suggestions/verdicts')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ personId: visiblePerson.id, suggestionId: nameAlicePerson.id, verdict: 'later' });
+      expect(status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({
+          personId: [visiblePerson.id, nameAlicePerson.id].toSorted((a, b) => a.localeCompare(b))[0],
+          verdict: 'later',
+        }),
+      );
+
+      const undo = await request(app)
+        .delete('/people/merge-suggestions/verdicts')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ personId: nameAlicePerson.id, suggestionId: visiblePerson.id });
+      expect(undo.status).toBe(204);
+
+      const again = await request(app)
+        .delete('/people/merge-suggestions/verdicts')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ personId: nameAlicePerson.id, suggestionId: visiblePerson.id });
+      expect(again.status).toBe(404);
+    });
+  });
 });

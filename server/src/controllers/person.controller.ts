@@ -26,6 +26,9 @@ import {
   PeopleUpdateDto,
   PersonCorrectionsResponseDto,
   PersonCreateDto,
+  PersonMergeVerdictCreateDto,
+  PersonMergeVerdictDeleteDto,
+  PersonMergeVerdictResponseDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
@@ -106,6 +109,33 @@ export class PersonController {
   })
   getMergeSuggestions(@Auth() auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
     return this.service.getMergeSuggestions(auth);
+  }
+
+  @Put('merge-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Record a merge suggestion verdict',
+    description:
+      'Record that a suggested pair of people are different people (never suggested again) or should be decided later (not suggested for 30 days). Replaces an earlier verdict for the same pair; the pair may be given in either order.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setMergeVerdict(
+    @Auth() auth: AuthDto,
+    @Body() dto: PersonMergeVerdictCreateDto,
+  ): Promise<PersonMergeVerdictResponseDto> {
+    return this.service.setMergeVerdict(auth, dto);
+  }
+
+  @Delete('merge-suggestions/verdicts')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Undo a merge suggestion verdict',
+    description: 'Remove the recorded verdict for a pair of people, so the pair can be suggested again.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deleteMergeVerdict(@Auth() auth: AuthDto, @Body() dto: PersonMergeVerdictDeleteDto): Promise<void> {
+    return this.service.deleteMergeVerdict(auth, dto);
   }
 
   @Get(':id')
