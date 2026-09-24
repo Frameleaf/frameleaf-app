@@ -153,12 +153,15 @@ export class SessionRepository {
   }
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, excludeId: DummyValue.UUID }] })
-  async invalidateAll({ userId, excludeId }: { userId: string; excludeId?: string }) {
-    await this.db
+  async invalidateAll({ userId, excludeId }: { userId: string; excludeId?: string }): Promise<string[]> {
+    // the deleted ids, so each revoked session's open tabs can be told (FL-34)
+    const deleted = await this.db
       .deleteFrom('session')
       .where('userId', '=', userId)
       .$if(!!excludeId, (qb) => qb.where('id', '!=', excludeId!))
+      .returning('id')
       .execute();
+    return deleted.map(({ id }) => id);
   }
 
   @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING] })

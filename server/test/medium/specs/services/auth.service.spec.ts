@@ -167,6 +167,26 @@ describe(AuthService.name, () => {
     });
   });
 
+  // FL-34: every revocation tells the revoked sessions' tabs, so the bulk delete names what it removed
+  describe('session deletion notices', () => {
+    it('returns exactly the sessions a bulk revocation deleted', async () => {
+      const { ctx } = setup();
+      const repository = ctx.get(SessionRepository);
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { session: current } = await ctx.newSession({ userId: user.id });
+      const { session: first } = await ctx.newSession({ userId: user.id });
+      const { session: second } = await ctx.newSession({ userId: user.id });
+      const { session: foreign } = await ctx.newSession({ userId: other.id });
+
+      const deleted = await repository.invalidateAll({ userId: user.id, excludeId: current.id });
+      expect(deleted.toSorted()).toEqual([first.id, second.id].toSorted());
+      await expect(repository.invalidateAll({ userId: user.id, excludeId: current.id })).resolves.toEqual([]);
+      await expect(repository.invalidateAll({ userId: user.id })).resolves.toEqual([current.id]);
+      expect(await repository.get(foreign.id)).toBeDefined();
+    });
+  });
+
   describe('adminSignUp', () => {
     it(`should sign up the admin`, async () => {
       const { sut, ctx } = setup();
