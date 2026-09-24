@@ -403,6 +403,20 @@ set
   "stackId" = $1
 where
   "asset"."stackId" = $2
+select
+  member.id
+from
+  asset as member
+where
+  member."stackId" = any ($1::uuid[])
+union
+select
+  member."livePhotoVideoId"
+from
+  asset as member
+where
+  member."stackId" = any ($2::uuid[])
+  and member."livePhotoVideoId" is not null
 with
   source as (
     select distinct
