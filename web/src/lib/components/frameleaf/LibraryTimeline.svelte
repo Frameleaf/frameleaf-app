@@ -15,6 +15,8 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import LibraryDayGroup from '$lib/components/frameleaf/LibraryDayGroup.svelte';
   import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
+  import { cellGridOptions, THUMBNAIL_SIZE_DEFAULT, type TileLayout } from '$lib/frameleaf/library-grid';
+  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { captureLibraryAnchor, restoreLibraryAnchor, type LibraryAnchor } from '$lib/frameleaf/library-layout';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
@@ -39,10 +41,19 @@
   type Props = {
     timelineManager: TimelineManager;
     session: LibrarySessionStore;
-    /** Rating for an asset, supplied by the host; the timeline model does not carry one. */
+    /** Rating override for an asset; by default each tile shows the asset's own rating. */
     ratingFor?: (asset: TimelineAsset) => number | null;
-    /** Browse hides the sticky day headers; Timeline and Work keep them. */
+    /** Only the Timeline layout draws the sticky day headers; the Browse and Work grids have none. */
     showDayHeaders?: boolean;
+    /**
+     * The tile layout (FL-33): Timeline's justified rows, Browse's square grid or Work's 3:2 grid with
+     * captions. Browse and Work are cell grids, still laid out and mounted a month at a time.
+     */
+    tileLayout?: TileLayout;
+    /** The per-device Thumbnail size (140–290) the grids and Timeline rows scale with. */
+    thumbnailSize?: number;
+    /** Work: show file names in the captions. */
+    showFileNames?: boolean;
     /**
      * Group by day, month, year or everything (prototype `TimelineLibrary.jsx`). Applies where group
      * headers show; Browse, which has none, keeps its day flow.
@@ -50,7 +61,6 @@
     grouping?: TimelineGrouping;
     /** Show the grouping control and accept ⌘/Ctrl+wheel and pinch; called with the new grouping. */
     onGroupingChange?: (grouping: TimelineGrouping) => void;
-    captionFor?: (asset: TimelineAsset) => string | null;
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
     onOpen?: (asset: TimelineAsset) => void;
@@ -80,9 +90,11 @@
     session,
     ratingFor,
     showDayHeaders = true,
+    tileLayout = 'timeline',
+    thumbnailSize = THUMBNAIL_SIZE_DEFAULT,
+    showFileNames = false,
     grouping = 'days',
     onGroupingChange,
-    captionFor,
     enableRouting = false,
     onOpen,
     selectionMode = false,
@@ -108,10 +120,20 @@
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
+  /** Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. */
+  const cells = $derived(
+    tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone),
+  );
+
   $effect(() => {
+    if (cells) {
+      // One gutter between months, so the grid reads as one surface (apple-style.css `gap: 2px`).
+      timelineManager.setLayoutOptions({ headerHeight: cells.gap, gap: cells.gap, fillRowWidth: true, cells });
+      return;
+    }
     // The filling justified layout is what makes a short day group span the timeline. The space the
     // manager reserves above each day's rows is exactly what the day group draws there: its header
-    // in Timeline and Work, a plain gap in Browse, which has none.
+    // in the Timeline, a plain gap where there is none.
     timelineManager.setLayoutOptions(
       maxMd
         ? { rowHeight: 100, headerHeight: showDayHeaders ? 32 : 8, gap: 8, fillRowWidth: true }
@@ -903,9 +925,11 @@
                 {selection}
                 {selecting}
                 {ratingFor}
-                {captionFor}
+                layout={tileLayout}
+                captionHeight={cells?.captionHeight ?? 0}
+                {showFileNames}
                 showHeader={showDayHeaders}
-                grouped={effectiveGrouping !== 'days'}
+                grouped={effectiveGrouping !== 'days' || !!cells}
                 headerHeight={month.groupHeaderHeight}
                 onOpen={handleOpen}
                 {onToggleSelect}

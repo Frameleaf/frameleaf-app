@@ -1,3 +1,4 @@
+import { cellGrid } from '$lib/frameleaf/library-grid';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
@@ -10,6 +11,12 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
   }
   if (!month.isLoaded) {
     const viewportWidth = timelineManager.viewportWidth;
+    if (!month.isHeightActual && timelineManager.cells) {
+      // A cell grid depends on the count alone, so even a month that is not loaded gets its exact height.
+      const grid = cellGrid(month.assetsCount, viewportWidth, timelineManager.cells);
+      month.height = month.groupHeaderHeight + grid.height;
+      return;
+    }
     if (!month.isHeightActual) {
       const unwrappedWidth = (3 / 2) * month.assetsCount * timelineManager.rowHeight * (7 / 10);
       const rows = Math.ceil(unwrappedWidth / viewportWidth);
@@ -22,6 +29,10 @@ export function updateGeometry(timelineManager: TimelineManager, month: Timeline
 }
 
 export function layoutTimelineMonth(timelineManager: TimelineManager, month: TimelineMonth, noDefer: boolean = false) {
+  if (timelineManager.cells) {
+    layoutCellMonth(timelineManager, month);
+    return;
+  }
   if (timelineManager.grouping !== 'days') {
     layoutGroupedMonth(timelineManager, month);
     return;
@@ -83,12 +94,42 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
  * deviation for the owner in `frameleaf-plan/13-agent-handoff-2026-09-23-evening.md` §6.
  */
 function layoutGroupedMonth(timelineManager: TimelineManager, month: TimelineMonth) {
-  const days = month.timelineDays;
-  const viewerAssets = days.flatMap((day) => day.viewerAssets);
+  const viewerAssets = month.timelineDays.flatMap((day) => day.viewerAssets);
   const geometry = getJustifiedLayoutFromAssets(
     viewerAssets.map((viewerAsset) => viewerAsset.asset),
     timelineManager.justifiedLayoutOptions,
   );
+  placeMonthFlow(month, geometry);
+}
+
+/**
+ * Browse and Work (FL-33): the month is one grid of equal cells — square in Browse, 3:2 with a
+ * caption row in Work — as the template's `.media-grid` lays out the library. Like the grouped
+ * flow, the days stay the data model and each holds its share of the month's positions.
+ *
+ * Months are laid out one at a time (they load one at a time), so a month that ends part-way
+ * along a row leaves the rest of that row empty, where the template's single grid runs on.
+ */
+function layoutCellMonth(timelineManager: TimelineManager, month: TimelineMonth) {
+  const count = month.timelineDays.reduce((total, day) => total + day.viewerAssets.length, 0);
+  const grid = cellGrid(count, timelineManager.viewportWidth, timelineManager.cells!);
+  placeMonthFlow(month, {
+    containerWidth: grid.width,
+    containerHeight: grid.height,
+    getPosition: (index) => grid.position(index),
+  });
+}
+
+type MonthFlow = {
+  containerWidth: number;
+  containerHeight: number;
+  getPosition: (index: number) => { top: number; left: number; width: number; height: number };
+};
+
+/** Hand each day its share of a month-wide flow, all measured from the month's first row. */
+function placeMonthFlow(month: TimelineMonth, geometry: MonthFlow) {
+  const days = month.timelineDays;
+  const viewerAssets = days.flatMap((day) => day.viewerAssets);
   const height = viewerAssets.length === 0 ? 0 : geometry.containerHeight;
   let index = 0;
   for (const day of days) {
