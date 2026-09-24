@@ -156,7 +156,7 @@ test.describe('Album', () => {
     // AL-17: the breadcrumb leads back; the header offers Activity even before anyone else joins (AL-14).
     const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(crumbs.getByRole('link', { name: 'Albums' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Activity' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Activity, 0 entries' })).toBeVisible();
     await crumbs.getByRole('link', { name: 'Albums' }).click();
     await page.waitForURL(/\/albums(?:\?|$)/);
   });
