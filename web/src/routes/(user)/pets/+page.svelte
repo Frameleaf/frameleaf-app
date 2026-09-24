@@ -409,7 +409,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    min-width: min(24rem, 80vw);
+    min-width: min(24rem, 100%);
   }
   .form label {
     display: flex;

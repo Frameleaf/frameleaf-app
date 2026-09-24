@@ -28,6 +28,8 @@
     children: Snippet;
   } = $props();
 
+  const formId = $props.id();
+
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
     if (!valid) {
@@ -39,24 +41,26 @@
 </script>
 
 <Dialog bind:open {title} closeLabel={$t('cancel')}>
-  <form onsubmit={submit}>
+  <form id={formId} onsubmit={submit}>
     {@render children()}
     {#if preview}
       <p class="preview" aria-live="polite">{preview}</p>
     {/if}
-    <footer>
-      <button type="button" onclick={() => (open = false)}>{$t('cancel')}</button>
-      <button type="submit" class:primary={!danger} class:danger disabled={!valid}>{submitLabel}</button>
-    </footer>
   </form>
+  {#snippet actions()}
+    <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
+    <!-- The prototype's footer sits outside the scrolling body, so the submit button joins the form by id. -->
+    <button type="submit" form={formId} class="button" class:primary={!danger} class:danger disabled={!valid}
+      >{submitLabel}</button
+    >
+  {/snippet}
 </Dialog>
 
 <style>
   form {
     display: grid;
     gap: 0.75rem;
-    margin-top: 0.75rem;
-    min-width: min(28rem, 100%);
+    min-width: 0;
     font-size: 0.875rem;
   }
   /* The fields themselves live in the calling dialog, so they are styled globally within this form. */
@@ -112,30 +116,13 @@
     font-size: 0.75rem;
     margin: 0;
   }
-  footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  footer button {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 1rem;
-    font-size: 0.875rem;
-  }
-  footer .primary {
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
+  /* The prototype's `.dialog .button.danger`, with the token foreground that clears 4.5:1 on it. */
+  .button.danger {
+    background: var(--fl-danger);
+    color: var(--fl-danger-text);
     border-color: transparent;
   }
-  footer .danger {
-    background: #b3261e;
-    color: #ffffff;
-    border-color: transparent;
-  }
-  footer button:disabled {
-    opacity: 0.5;
+  .button.danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--fl-danger), white 10%);
   }
 </style>

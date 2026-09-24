@@ -841,6 +841,8 @@
   }
   .cc-account-scope {
     display: flex;
+    /* Its caption sits beside the select, not over it as the base.css field labels do. */
+    flex-direction: row;
     align-items: center;
     gap: 8px;
     color: var(--fl-muted);

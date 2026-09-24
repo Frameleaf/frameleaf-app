@@ -630,8 +630,10 @@
   padding-top: 20px;
   border-top: 1px solid var(--fl-border);
 }
-.fl-libraries dialog {
+/* The template's resource dialog is 620px, wider than the shared Dialog's 510px default. */
+.fl-libraries dialog.dialog {
   width: min(620px, calc(100vw - 32px));
+  max-width: min(620px, calc(100vw - 32px));
   box-sizing: border-box;
   overflow: auto;
 }

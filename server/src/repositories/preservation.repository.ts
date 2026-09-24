@@ -23,7 +23,17 @@ export type PreservationRestoreItem = Selectable<PreservationRestoreItemTable>;
 export type PreservationSelection = { filter?: SearchFilter; assetIds?: string[] };
 
 /** A package's items by state, how many are Locked, and the bytes of what was copied. */
-export type PreservationItemCounts = { states: Record<string, number>; locked: number; bytes: number };
+export type PreservationItemCounts = {
+  states: Record<string, number>;
+  locked: number;
+  bytes: number;
+  /**
+   * Skipped items whose original could not be read — gone, trashed or no longer this owner's — as
+   * opposed to Locked items a package deliberately left out. A package missing any of them is not
+   * complete (FL-74).
+   */
+  unavailable: number;
+};
 
 export type PreservationPreviewCounts = {
   items: number;
@@ -285,16 +295,20 @@ export class PreservationRepository {
         sql<string>`count(*)`.as('count'),
         sql<string>`count(*) filter (where ${lockedPackageItem})`.as('locked'),
         sql<string>`coalesce(sum(("entry"->'original'->>'bytes')::bigint), 0)`.as('bytes'),
+        sql<string>`count(*) filter (where preservation_item.state = 'skipped' and preservation_item."reasonKey" is distinct from 'locked_excluded')`.as(
+          'unavailable',
+        ),
       ])
       .where('packageId', '=', anyUuid(packageIds))
       .$if(!!options.excludeLocked, (qb) => qb.where(sql<boolean>`not ${lockedPackageItem}`))
       .groupBy(['packageId', 'state'])
       .execute();
     for (const row of rows) {
-      const entry = counts.get(row.packageId) ?? { states: {}, locked: 0, bytes: 0 };
+      const entry = counts.get(row.packageId) ?? { states: {}, locked: 0, bytes: 0, unavailable: 0 };
       entry.states[row.state] = Number(row.count);
       entry.locked += Number(row.locked);
       entry.bytes += Number(row.bytes);
+      entry.unavailable += Number(row.unavailable);
       counts.set(row.packageId, entry);
     }
     return counts;

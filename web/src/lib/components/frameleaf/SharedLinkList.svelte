@@ -249,7 +249,7 @@
 <Dialog title={$t('frameleaf_sharing.pick_album_title')} closeLabel={$t('close')} bind:open={pickOpen}>
   {#if albums.length}
     <label>
-      {$t('album')}
+      <span>{$t('album')}</span>
       <select bind:value={pickAlbumId}>
         {#each albums as album (album.id)}
           <option value={album.id}>{album.albumName}</option>

@@ -319,7 +319,9 @@ describe(PreservationService.name, () => {
     it('counts a package’s items without its Locked ones for an ordinary session', async () => {
       const found = packageOf();
       repository.getPackage.mockResolvedValue(found);
-      repository.countItems.mockResolvedValue(new Map([[found.id, { states: { copied: 3 }, locked: 2, bytes: 30 }]]));
+      repository.countItems.mockResolvedValue(
+        new Map([[found.id, { states: { copied: 3 }, locked: 2, bytes: 30, unavailable: 0 }]]),
+      );
 
       const ordinary = await sut.getPackage(owner, found.id);
       expect(repository.countItems).toHaveBeenLastCalledWith([found.id], { excludeLocked: true });

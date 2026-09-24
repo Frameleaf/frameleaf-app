@@ -2,7 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, UnauthorizedExcept
 import { parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
-import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
+import {
+  FRAMELEAF_MOBILE_REDIRECT,
+  FRAMELEAF_MOBILE_REDIRECT_PATH,
+  LOGIN_DUMMY_HASH,
+  LOGIN_URL,
+  MOBILE_REDIRECT,
+  SALT_ROUNDS,
+} from 'src/constants.js';
 import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
@@ -86,6 +93,42 @@ export type ValidateRequest = {
     /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
     refreshElevation?: boolean;
   };
+};
+
+const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
+const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
+
+/**
+ * The HTTP address that forwards an OAuth callback to the Frameleaf app, derived from the
+ * configured Immich mobile redirect (FL-131).
+ *
+ * The override exists because some identity providers only accept `https` callbacks. The Immich
+ * app's callback is replaced by the configured `…/oauth/mobile-redirect`; the Frameleaf app's by
+ * the sibling `…/oauth/frameleaf-mobile-redirect` on the same server, so the provider hands each
+ * app back its own callback and neither app is opened for the other's sign-in.
+ *
+ * Only an override that is this server's `…/oauth/mobile-redirect` has a known sibling. Any other
+ * address may not be this server at all, so there is nothing safe to derive, and the Frameleaf
+ * callback is refused with setup guidance instead of being sent somewhere else.
+ */
+const frameleafRedirectUri = (mobileRedirectUri: string): string => {
+  let url: URL | undefined;
+  try {
+    url = new URL(mobileRedirectUri);
+  } catch {
+    url = undefined;
+  }
+  if (!url || !LEGACY_MOBILE_REDIRECT_PATH.test(url.pathname)) {
+    throw new BadRequestException(
+      "Frameleaf app sign-in needs the mobile redirect override to be this server's " +
+        '/api/oauth/mobile-redirect address, with /api/oauth/frameleaf-mobile-redirect also registered ' +
+        'as a redirect URI with the identity provider',
+    );
+  }
+  url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, () => FRAMELEAF_MOBILE_REDIRECT_PATH);
+  url.search = '';
+  url.hash = '';
+  return url.href;
 };
 
 @Injectable()
@@ -337,6 +380,11 @@ export class AuthService extends BaseService {
 
   getMobileRedirect(url: string) {
     return `${MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
+  }
+
+  /** The Frameleaf app's counterpart of {@link getMobileRedirect} (FL-131). */
+  getFrameleafMobileRedirect(url: string) {
+    return `${FRAMELEAF_MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
   }
 
   async authorize(dto: OAuthConfigDto) {
@@ -796,7 +844,9 @@ export class AuthService extends BaseService {
     url: string,
   ) {
     if (mobileOverrideEnabled && mobileRedirectUri) {
-      return url.replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri);
+      return url
+        .replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri)
+        .replace(FRAMELEAF_CALLBACK, () => frameleafRedirectUri(mobileRedirectUri));
     }
     return url;
   }

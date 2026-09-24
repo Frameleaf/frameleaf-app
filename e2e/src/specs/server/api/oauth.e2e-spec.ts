@@ -407,6 +407,14 @@ describe(`/oauth`, () => {
     });
   });
 
+  describe('GET /oauth/frameleaf-mobile-redirect', () => {
+    it('should forward the callback to the Frameleaf app (FL-131)', async () => {
+      const { status, headers } = await request(app).get('/oauth/frameleaf-mobile-redirect?code=abc123&state=xyz789');
+      expect(status).toBe(307);
+      expect(headers.location).toBe('frameleaf-auth:///oauth-callback?code=abc123&state=xyz789');
+    });
+  });
+
   describe('mobile redirect override', () => {
     beforeAll(async () => {
       await setupOAuth(admin.accessToken, {
@@ -432,6 +440,16 @@ describe(`/oauth`, () => {
       expect(params.get('response_type')).toBe('code');
       expect(params.get('redirect_uri')).toBe(mobileOverrideRedirectUri);
       expect(params.get('state')).toBeDefined();
+    });
+
+    it('should send the Frameleaf app its own callback beside the mobile redirect (FL-131)', async () => {
+      const { status, body } = await request(app)
+        .post('/oauth/authorize')
+        .send({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+      expect(status).toBe(201);
+
+      const params = new URL(body.url).searchParams;
+      expect(params.get('redirect_uri')).toBe('https://photos.immich.app/oauth/frameleaf-mobile-redirect');
     });
 
     it('should auto register the user by default', async () => {
