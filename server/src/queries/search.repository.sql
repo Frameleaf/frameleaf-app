@@ -964,7 +964,10 @@ where
     )
     or "asset"."ownerId" = $2::uuid
   )
-  and f_unaccent ("asset_exif"."description") not ilike ('%' || f_unaccent ($3) || '%')
+  and (
+    "asset_exif"."description" is null
+    or f_unaccent ("asset_exif"."description") not ilike ('%' || f_unaccent ($3) || '%')
+  )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc

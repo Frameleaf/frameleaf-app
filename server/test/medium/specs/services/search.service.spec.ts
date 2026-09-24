@@ -547,7 +547,10 @@ describe(SearchService.name, () => {
       await expect(ids({ make: { like: 'son' } })).resolves.toEqual([sony.id]);
       await expect(ids({ model: { like: 'r5' } })).resolves.toEqual([canon.id]);
       await expect(ids({ lensModel: { like: '24-70' } })).resolves.toEqual([sony.id]);
-      await expect(ids({ lensModel: { notLike: '24-70' } })).resolves.toEqual([canon.id]);
+      const { asset: noExif } = await ctx.newAsset({ ownerId: user.id });
+      // A photo with no lens does not contain "24-70", so an exclusion keeps it
+      await expect(ids({ lensModel: { notLike: '24-70' } })).resolves.toEqual([canon.id, noExif.id].sort());
+      await expect(ids({ make: { notLike: 'son' } })).resolves.toEqual([canon.id, noExif.id].sort());
       await expect(sut.searchStatistics(auth, { filter: { make: { like: 'o' } } })).resolves.toEqual({ total: 2 });
     });
 
