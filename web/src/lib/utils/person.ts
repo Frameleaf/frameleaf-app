@@ -1,6 +1,4 @@
 import type { PersonResponseDto } from '@immich/sdk';
-import { t } from 'svelte-i18n';
-import { derived } from 'svelte/store';
 import { normalizeSearchString } from './string-utils';
 
 export const searchNameLocal = (
@@ -28,7 +26,3 @@ export const searchNameLocal = (
         })
         .slice(0, slice);
 };
-
-export const getPersonNameWithHiddenValue = derived(t, ($t) => {
-  return (name: string, isHidden: boolean) => $t('person_hidden', { values: { name, hidden: isHidden } });
-});

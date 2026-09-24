@@ -5,11 +5,17 @@
    * (`design/frameleaf/template/src/MediaViewer.jsx`, `PeopleSection`).
    *
    * Every action below calls the real face/person endpoints that already ship in
-   * production Immich — `reassignFacesById`, `createPerson`, `deleteFace` — the same ones
-   * `PersonSidePanel.svelte` and `AssignFaceSidePanel.svelte` use for the full "Edit
-   * people" workflow. Nothing here writes to a derived/local view: the prototype's
-   * `face-tags.mjs` localStorage model is design evidence only, not something production
-   * reproduces (see the FL-38 Jira ticket and `AGENT-BRIEF.md`).
+   * production Immich — `reassignFacesById`, `createPerson`, `deleteFace`. Since V-22 this
+   * menu is the only per-face editing surface in the info panel (the legacy "Edit people"
+   * side panel is gone), so it also serves unassigned faces: the prototype's `peopleChips`
+   * (media-viewer.mjs) gives every detected face a chip, named "Unnamed person" when it has
+   * no person, with the chip menu of MediaViewer.jsx:2182-2218. For such a face this menu
+   * offers Reassign / Create / Remove: Open person needs a person, and Hide face is kept
+   * for assigned faces only (FL-38 V-22 scope; the prototype also offers it there).
+   *
+   * Nothing here writes to a derived/local view: the prototype's `face-tags.mjs`
+   * localStorage model is design evidence only, not something production reproduces (see
+   * the FL-38 Jira ticket and `AGENT-BRIEF.md`).
    *
    * "Remove face" and "Hide face" both go through `deleteFace`, which already exposes a
    * `force` flag: `force: true` permanently deletes the face (`person.repository.ts`
@@ -43,7 +49,8 @@
   import { t } from 'svelte-i18n';
 
   type Props = {
-    person: PersonResponseDto;
+    /** Absent for a detected face that nobody has been assigned to yet. */
+    person?: PersonResponseDto | null;
     face: AssetFaceResponseDto;
     previousRoute: string;
     /** Re-reads the asset's faces from the server after a mutation lands. */
@@ -51,6 +58,8 @@
   };
 
   const { person, face, previousRoute, onFacesChanged }: Props = $props();
+
+  const name = $derived(person?.name || $t('frameleaf_faces_unnamed_person'));
 
   let open = $state(false);
   let mode = $state<'menu' | 'reassign' | 'create'>('menu');
@@ -81,10 +90,10 @@
     mode = 'reassign';
     isLoadingCandidates = true;
     try {
-      // closestAssetId takes a face id here (see AssignFaceSidePanel.svelte), returning
-      // people ranked by similarity to this face rather than alphabetically.
+      // closestAssetId takes a face id here (the server's person search ranks by that
+      // face's embedding), returning people ordered by similarity rather than alphabetically.
       const { people } = await getAllPeople({ withHidden: true, closestAssetId: face.id });
-      candidates = people.filter((candidate) => candidate.id !== person.id);
+      candidates = people.filter((candidate) => candidate.id !== person?.id);
     } catch (error) {
       handleError(error, $t('errors.cant_get_faces'));
       candidates = [];
@@ -141,7 +150,7 @@
   const removeFace = async () => {
     open = false;
     const isConfirmed = await modalManager.showDialog({
-      prompt: $t('frameleaf_faces_confirm_remove', { values: { name: person.name } }),
+      prompt: $t('frameleaf_faces_confirm_remove', { values: { name } }),
     });
     if (!isConfirmed) {
       return;
@@ -149,7 +158,7 @@
     try {
       // Permanent: deletes the asset_face row outright.
       await deleteFace({ id: face.id, assetFaceDeleteDto: { force: true } });
-      toastManager.primary($t('frameleaf_faces_removed_toast', { values: { name: person.name } }));
+      toastManager.primary($t('frameleaf_faces_removed_toast', { values: { name } }));
       await onFacesChanged();
     } catch (error) {
       handleError(error, $t('frameleaf_faces_remove_error'));
@@ -162,7 +171,7 @@
       // Recoverable: soft-deletes the asset_face row (sets deletedAt) instead of
       // removing it, so it can come back through a re-detection pass.
       await deleteFace({ id: face.id, assetFaceDeleteDto: { force: false } });
-      toastManager.primary($t('frameleaf_faces_hidden_toast', { values: { name: person.name } }));
+      toastManager.primary($t('frameleaf_faces_hidden_toast', { values: { name } }));
       await onFacesChanged();
     } catch (error) {
       handleError(error, $t('frameleaf_faces_hide_error'));
@@ -171,7 +180,9 @@
 
   const openPerson = () => {
     open = false;
-    void goto(Route.viewPerson(person, { previousRoute }));
+    if (person) {
+      void goto(Route.viewPerson(person, { previousRoute }));
+    }
   };
 
   $effect(() => {
@@ -182,15 +193,17 @@
 </script>
 
 <div class="fl-face-trigger">
-  <Menu label={$t('frameleaf_faces_options_for', { values: { name: person.name } })} align="end" bind:open>
+  <Menu label={$t('frameleaf_faces_options_for', { values: { name } })} align="end" bind:open>
     {#snippet trigger()}
       <Icon icon={mdiDotsVertical} aria-hidden="true" size="16" />
     {/snippet}
     {#if mode === 'menu'}
-      <MenuItem onSelect={openPerson}>
-        <Icon icon={mdiAccountOutline} aria-hidden="true" size="18" />
-        {$t('frameleaf_faces_open_person')}
-      </MenuItem>
+      {#if person}
+        <MenuItem onSelect={openPerson}>
+          <Icon icon={mdiAccountOutline} aria-hidden="true" size="18" />
+          {$t('frameleaf_faces_open_person')}
+        </MenuItem>
+      {/if}
       <MenuItem onSelect={enterReassignMode} disabled={isBusy} keepOpen>
         <Icon icon={mdiAccountEditOutline} aria-hidden="true" size="18" />
         {$t('frameleaf_faces_reassign')}
@@ -203,7 +216,7 @@
         <Icon icon={mdiClose} aria-hidden="true" size="18" />
         {$t('frameleaf_faces_remove_face')}
       </MenuItem>
-      {#if !person.isHidden}
+      {#if person && !person.isHidden}
         <MenuItem onSelect={hideFace} disabled={isBusy}>
           <Icon icon={mdiEyeOffOutline} aria-hidden="true" size="18" />
           {$t('frameleaf_faces_hide_face')}
