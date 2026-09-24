@@ -387,7 +387,7 @@
             type="button"
             class="action"
             class:icon-only={leading.length > 0}
-            title={$t('more')}
+            title={$t('frameleaf_selection_more_actions')}
             aria-label={$t('frameleaf_selection_more_actions')}
             aria-haspopup="menu"
             aria-expanded={menuOpen}

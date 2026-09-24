@@ -660,12 +660,24 @@
     onOpen?.(asset);
   };
 
-  /** Studio receives the selection in order through its handoff link (FL-88), capped as Studio caps it. */
+  /**
+   * What Studio may receive: the selection in order through its handoff link (FL-88), capped as
+   * Studio caps it. Locked items never cross into Studio (`studio/assets.ts`), so from the Locked
+   * view — or a view revealing locked items — nothing is offered, and a locked item selected
+   * elsewhere is left out rather than written into the address.
+   */
+  const studioIds = $derived.by(() => {
+    if (snapshot || !options || options.visibility === AssetVisibility.Locked || revealsLocks(options)) {
+      return [];
+    }
+    return session.selection.filter((id) => findAsset(id)?.visibility !== AssetVisibility.Locked);
+  });
+
   const openInStudio = () => {
-    if (snapshot || session.selection.length === 0) {
+    if (studioIds.length === 0) {
       return;
     }
-    void goto(Route.studio({ assetIds: session.selection.slice(0, maxStudioHandoffAssets) }));
+    void goto(Route.studio({ assetIds: studioIds.slice(0, maxStudioHandoffAssets) }));
   };
 
   const leadingActions = $derived<SelectionBarLeadingAction[]>([
@@ -692,7 +704,7 @@
       label: $t('frameleaf_selection_open_in_studio'),
       icon: mdiOpenInNew,
       primary: true,
-      disabled: !!snapshot,
+      disabled: studioIds.length === 0,
       onClick: openInStudio,
     },
   ]);
