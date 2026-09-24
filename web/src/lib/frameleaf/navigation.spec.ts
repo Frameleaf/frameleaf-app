@@ -102,7 +102,6 @@ describe('Frameleaf rail destinations', () => {
       'places',
       'documents',
       'allAlbums',
-      'sharing',
       'workflows',
       'libraryCare',
       'settings',
