@@ -32,9 +32,10 @@
   const subtitleId = $derived(subtitle ? `${id}-subtitle` : undefined);
 </script>
 
-<div class="row" class:edited={isEdited}>
+<!-- Sept 24 compact row: the switch sits right-aligned beside its label (CommandCenter.jsx:1639-1655). -->
+<div class="field" class:edited={isEdited}>
   <div class="copy">
-    <div class="title-line">
+    <div class="label-line">
       <span class="title" id="{id}-title">{title}</span>
       {#if isEdited}
         <span class="unsaved">{$t('unsaved_change')}</span>
@@ -45,53 +46,74 @@
     {/if}
     {@render children?.()}
   </div>
-  <Toggle
-    label={title}
-    bind:checked
-    {disabled}
-    onLabel={$t('enabled')}
-    offLabel={$t('disabled')}
-    describedBy={subtitleId}
-    onChange={onToggle}
-  />
+  <div class="control">
+    <Toggle
+      label={title}
+      bind:checked
+      {disabled}
+      onLabel={$t('enabled')}
+      offLabel={$t('disabled')}
+      describedBy={subtitleId}
+      onChange={onToggle}
+    />
+  </div>
 </div>
 
 <style>
-  .row {
+  .field {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.625rem 0;
+    gap: 16px;
+    width: 100%;
+    padding: 14px 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .field:first-child {
+    border-top: 0;
+  }
+  .field.edited {
+    margin-inline-start: -12px;
+    padding-inline-start: 12px;
+    box-shadow: inset 3px 0 var(--fl-warning);
   }
   .copy {
+    flex: 1;
     min-width: 0;
   }
-  .title-line {
+  .label-line {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  .title {
-    font-weight: 550;
-    color: var(--fl-text);
+    gap: 6px;
   }
   .unsaved {
     display: inline-flex;
     align-items: center;
-    padding: 0 0.5rem;
-    min-height: 1.25rem;
-    border-radius: var(--fl-radius-pill);
-    background: var(--fl-warning);
-    color: var(--fl-warning-text);
-    font-size: var(--fl-font-micro);
+    gap: 5px;
+    color: var(--fl-warning);
+    font-size: 11px;
     font-weight: 600;
   }
+  .unsaved::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    background: currentColor;
+    border-radius: 50%;
+  }
+  .title {
+    color: var(--fl-text);
+    font-size: 14px;
+    font-weight: 500;
+  }
   p {
-    margin: 0.25rem 0 0;
+    margin: 4px 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    line-height: 1.5;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .control {
+    flex-shrink: 0;
   }
 </style>

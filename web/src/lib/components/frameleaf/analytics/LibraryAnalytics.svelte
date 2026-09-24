@@ -1,37 +1,45 @@
 <script lang="ts">
   /**
    * Command center → Library analytics (FL-79), ported from the design template's
-   * `SettingsAnalytics.jsx`. The template drew a fictional journal; this page reads `GET /analytics`
-   * for the chosen scope and date range and shows only what the server measured.
+   * `SettingsAnalytics.jsx` and the Sept 24 dashboard (`AnalyticsDashboard.jsx`,
+   * `library-insights.mjs`). The template drew a fictional journal; this page reads `GET /analytics`
+   * for the chosen scope and date range and shows only what the server measured: the hero, growth,
+   * then the dashboard panels (`LibraryInsights`), arrivals, processing, metadata, views and albums.
    *
    * What differs from the template, on purpose:
    * - No "Sample data" badge: the notice says when the library was read and whether growth history
    *   is current, out of date (stale) or not collected yet (unknown).
-   * - "What uses the disk" never subtracts anything from the volume. The selection's originals and
-   *   the whole volume are shown side by side, each labelled with what it measures; there is no
-   *   "other files" row, because it could only be invented.
+   * - The storage donut splits the whole volume only from what the server measured, and only in
+   *   the administrator's whole-server report (`host.breakdown`: originals, previews and
+   *   thumbnails, encoded video, the database, and other files as the rest of the space used). For
+   *   an account or library it shows the volume as used and free; nothing is estimated from the
+   *   selection. Every donut segment is a share of the capacity, like its centre figure.
    * - Processing is recorded for the whole server; for an account or library it is left out, not
    *   drawn as zero. Its cost is an estimate from configured rates, never a bill, and absent when no
    *   rate is configured. There are no GPU or invoice charts.
    * - Charts, their tables and the CSV come from the same rows (`analyticsTables`).
+   * - Every dashboard breakdown adds up to the report's items less the items this session keeps
+   *   hidden (Locked people and tags, sensitive content); a quiet note says how many when any are.
+   * - People and places are only for the owner reading their own library; otherwise the panel says
+   *   so instead of showing other accounts' names.
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
   import AnalyticsDataTable from '$lib/components/frameleaf/analytics/AnalyticsDataTable.svelte';
+  import LibraryHero from '$lib/components/frameleaf/analytics/LibraryHero.svelte';
+  import LibraryInsights from '$lib/components/frameleaf/analytics/LibraryInsights.svelte';
+  import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import {
     analyticsCsv,
+    analyticsFormats,
     analyticsTables,
-    calendarWeeks,
-    cameraLabel,
+    breakdownTotal,
     csvFileName,
     historyNotice,
     inventoryRows,
-    originalsRows,
     scopeLabel,
-    toGiB,
     type AnalyticsTable,
-    type CalendarKind,
     type GrowthMetric,
     type Translate,
   } from '$lib/frameleaf/analytics';
@@ -43,7 +51,6 @@
   import {
     AnalyticsRange,
     AnalyticsScopeKind,
-    AnalyticsState,
     type AnalyticsReportResponseDto,
     type AnalyticsScopeOptionDto,
   } from '@immich/sdk';
@@ -57,7 +64,6 @@
   const range = $derived(report.range);
   const scope = $derived(report.scope);
   let metric = $state<GrowthMetric>('items');
-  let calendar = $state<CalendarKind>('captured');
   let loading = $state(false);
   let exportStatus = $state('');
 
@@ -65,8 +71,8 @@
   const tables = $derived(analyticsTables(report, metric, tr));
   const table = (id: string) => tables.find((item) => item.id === id) as AnalyticsTable;
 
+  const f = $derived(analyticsFormats($locale, tr));
   const number = (value: number) => new Intl.NumberFormat($locale, { maximumFractionDigits: 2 }).format(value);
-  const gib = (bytes: number) => $t('frameleaf_analytics_gib', { values: { value: number(toGiB(bytes)!) } });
   const day = (value: string) =>
     new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
@@ -88,10 +94,10 @@
   const labels = $derived(report.series.map((row) => bucketLabel(row.key)));
   const notice = $derived(historyNotice(report));
   const added = $derived(report.series.reduce((sum, row) => sum + row.photos + row.videos, 0));
-  const addedPhotos = $derived(report.series.reduce((sum, row) => sum + row.photos, 0));
-  const addedVideos = $derived(report.series.reduce((sum, row) => sum + row.videos, 0));
-  const weeks = $derived(calendarWeeks(report.days, calendar));
-  const calendarTotal = $derived(report.days.reduce((sum, row) => sum + row[calendar], 0));
+  // People and places come only with the owner's own scope, which the hero calls "Your library".
+  const heroKicker = $derived(
+    report.insights?.peopleAndPlaces ? $t('frameleaf_analytics_your_library') : selectedLabel,
+  );
   const settingsArea = (area: SettingsAreaId) => commandCenterUrl(area);
 
   /** The route's load reads the report for the new address; this page never fetches on its own. */
@@ -138,7 +144,7 @@
 <div class="analytics" aria-busy={loading}>
   <header class="page-heading">
     <div>
-      <p class="eyebrow">{$t('frameleaf_analytics_eyebrow')}</p>
+      <SettingsOverline>{$t('frameleaf_analytics_eyebrow')}</SettingsOverline>
       <h1>{$t('frameleaf_analytics_heading')}</h1>
       <p>{$t('frameleaf_analytics_subheading')}</p>
     </div>
@@ -203,52 +209,7 @@
   </div>
   <p class="export-status" role="status">{exportStatus}</p>
 
-  <dl class="stat-strip">
-    <div>
-      <dt>{$t('frameleaf_analytics_library_items')}</dt>
-      <dd>{number(report.summary.items)}</dd>
-      <span
-        >{$t('frameleaf_analytics_photos_videos', {
-          values: { photos: number(report.summary.photos), videos: number(report.summary.videos) },
-        })}</span
-      >
-    </div>
-    <div>
-      <dt>{$t('frameleaf_analytics_added_period')}</dt>
-      <dd>+{number(added)}</dd>
-      <span
-        >{$t('frameleaf_analytics_photos_videos', {
-          values: { photos: number(addedPhotos), videos: number(addedVideos) },
-        })}</span
-      >
-    </div>
-    <div>
-      <dt>{$t('frameleaf_analytics_physical_originals')}</dt>
-      <dd>{gib(report.summary.physicalBytes)}</dd>
-      <span>{$t('frameleaf_analytics_saved_by_dedup', { values: { size: gib(report.summary.savedBytes) } })}</span>
-    </div>
-    <div>
-      <dt>{$t('frameleaf_analytics_whole_volume_used')}</dt>
-      {#if report.host.volumeUsedBytes === null || report.host.capacityBytes === null}
-        <dd class="unknown">{$t('frameleaf_analytics_unknown_value')}</dd>
-        <span>{$t('frameleaf_analytics_volume_unreadable')}</span>
-      {:else}
-        <dd>{gib(report.host.volumeUsedBytes)}</dd>
-        <span>
-          {#if report.host.freeBytes === null}
-            {$t('frameleaf_analytics_volume_of', { values: { capacity: gib(report.host.capacityBytes) } })}
-          {:else}
-            {$t('frameleaf_analytics_volume_of_free', {
-              values: { capacity: gib(report.host.capacityBytes), free: gib(report.host.freeBytes) },
-            })}
-          {/if}
-          {#if report.host.state === AnalyticsState.Stale && report.host.observedAt}
-            · {$t('frameleaf_analytics_read_on', { values: { date: dateTime(report.host.observedAt) } })}
-          {/if}
-        </span>
-      {/if}
-    </div>
-  </dl>
+  <LibraryHero {report} kicker={heroKicker} />
 
   <div class="card growth-card">
     <figure class="growth">
@@ -257,7 +218,7 @@
           <span>{$t('frameleaf_analytics_growth')}</span>
           <strong>
             {metric === 'storage'
-              ? gib(report.summary.physicalBytes)
+              ? f.size(report.summary.physicalBytes)
               : $t('frameleaf_analytics_items_count', { values: { count: number(report.summary.items) } })}
           </strong>
         </div>
@@ -308,6 +269,22 @@
     </figure>
   </div>
 
+  {#if report.insights}
+    {#if report.insights.hiddenItems > 0}
+      <!-- The breakdowns leave out what this session keeps hidden; say so, quietly. -->
+      <p class="hidden-note" role="note">
+        {$t('frameleaf_analytics_hidden_note', {
+          values: {
+            count: report.insights.hiddenItems,
+            value: number(report.insights.hiddenItems),
+            total: number(breakdownTotal(report)),
+          },
+        })}
+      </p>
+    {/if}
+    <LibraryInsights {report} insights={report.insights} {tables} />
+  {/if}
+
   <div class="grid">
     <section class="card">
       {@render cardHeading($t('frameleaf_analytics_arrivals'), $t('frameleaf_analytics_arrivals_caption'))}
@@ -322,68 +299,6 @@
         ]}
       />
       <AnalyticsDataTable table={table('arrivals')} />
-    </section>
-
-    <section class="card">
-      {@render cardHeading(
-        $t('frameleaf_analytics_cameras'),
-        $t('frameleaf_analytics_cameras_caption', { values: { count: number(report.summary.items) } }),
-      )}
-      {#if report.cameras.length === 0}
-        <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
-      {:else}
-        <AnalyticsChart
-          title={$t('frameleaf_analytics_cameras_title')}
-          horizontal
-          labels={report.cameras.map((row) => cameraLabel(row, tr))}
-          unit={$t('frameleaf_analytics_unit_items')}
-          datasets={[
-            {
-              label: $t('frameleaf_analytics_col_items'),
-              values: table('cameras').rows.map((row) => row[1] as number),
-            },
-          ]}
-        />
-      {/if}
-      <AnalyticsDataTable table={table('cameras')} />
-    </section>
-
-    <section class="card">
-      {@render cardHeading($t('frameleaf_analytics_disk'), $t('frameleaf_analytics_disk_caption'), {
-        href: settingsArea('storage'),
-        label: $t('frameleaf_analytics_storage_settings'),
-      })}
-      <AnalyticsChart
-        title={$t('frameleaf_analytics_originals_title')}
-        horizontal
-        unit="GiB"
-        height={140}
-        labels={originalsRows(report, tr).map(([name]) => name)}
-        datasets={[
-          { label: selectedLabel, values: table('originals').rows.map((row) => row[1] as number), tone: 'secondary' },
-        ]}
-      />
-      <p class="note">{$t('frameleaf_analytics_disk_note', { values: { scope: selectedLabel } })}</p>
-      <AnalyticsDataTable table={table('originals')} />
-      <h3 class="subheading">{$t('frameleaf_analytics_volume')}</h3>
-      {#if report.host.volumeUsedBytes === null || report.host.capacityBytes === null}
-        <p class="empty" role="status">{$t('frameleaf_analytics_volume_unreadable')}</p>
-      {:else}
-        <div
-          class="meter"
-          role="meter"
-          aria-valuemin={0}
-          aria-valuemax={report.host.capacityBytes}
-          aria-valuenow={report.host.volumeUsedBytes}
-          aria-label={$t('frameleaf_analytics_volume')}
-        >
-          <span
-            style:width="{Math.min(100, (report.host.volumeUsedBytes / Math.max(1, report.host.capacityBytes)) * 100)}%"
-          ></span>
-        </div>
-      {/if}
-      <p class="note">{$t('frameleaf_analytics_volume_note')}</p>
-      <AnalyticsDataTable table={table('volume')} />
     </section>
 
     <section class="card">
@@ -508,82 +423,6 @@
       {/if}
       <AnalyticsDataTable table={table('albums')} />
     </section>
-
-    <section class="calendar-section">
-      <div class="card-heading">
-        <div>
-          <h2>{$t('frameleaf_analytics_calendar')}</h2>
-          <label class="calendar-control">
-            {$t('frameleaf_analytics_calendar_dates')}
-            <select bind:value={calendar}>
-              <option value="captured">{$t('frameleaf_analytics_date_taken')}</option>
-              <option value="uploaded">{$t('frameleaf_analytics_date_uploaded')}</option>
-            </select>
-          </label>
-          <p>
-            {$t(
-              calendar === 'uploaded'
-                ? 'frameleaf_analytics_calendar_uploads'
-                : 'frameleaf_analytics_calendar_captures',
-              {
-                values: { count: number(calendarTotal), days: number(report.days.length) },
-              },
-            )}
-          </p>
-        </div>
-      </div>
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="scroll"
-        tabindex="0"
-        role="region"
-        aria-label={$t(
-          calendar === 'uploaded' ? 'frameleaf_analytics_upload_calendar' : 'frameleaf_analytics_capture_calendar',
-        )}
-      >
-        <table class="calendar" data-calendar={calendar}>
-          <caption>{$t('frameleaf_analytics_calendar_caption')}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{$t('frameleaf_analytics_week_of')}</th>
-              {#each weeks as week (week[0].date)}
-                <th scope="col">
-                  {new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-                    new Date(`${week[0].date}T00:00:00Z`),
-                  )}
-                </th>
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each [0, 1, 2, 3, 4, 5, 6] as weekday (weekday)}
-              <tr>
-                <th scope="row">
-                  {new Intl.DateTimeFormat($locale, { weekday: 'short', timeZone: 'UTC' }).format(
-                    new Date(Date.UTC(2026, 0, 5 + weekday)),
-                  )}
-                </th>
-                {#each weeks as week (week[weekday].date)}
-                  {@const cell = week[weekday]}
-                  <td
-                    data-level={cell.level}
-                    title={cell.value === null
-                      ? $t('frameleaf_analytics_outside_range', { values: { date: cell.date } })
-                      : `${cell.date}: ${number(cell.value)}`}
-                    aria-label={cell.value === null
-                      ? $t('frameleaf_analytics_outside_range', { values: { date: cell.date } })
-                      : `${cell.date}: ${number(cell.value)}`}
-                  >
-                    {cell.value === null ? '—' : cell.value}
-                  </td>
-                {/each}
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <p class="note">{$t('frameleaf_analytics_calendar_note')}</p>
-    </section>
   </div>
 
   <section class="card">
@@ -649,6 +488,15 @@
 
 <style>
   .analytics {
+    /* Chart series from the foundation tokens (analytics-dashboard.css:1-12). */
+    --an-1: var(--fl-accent);
+    --an-2: var(--fl-teal);
+    --an-3: var(--fl-blue);
+    --an-4: color-mix(in srgb, var(--fl-muted) 78%, var(--fl-panel));
+    --an-5: var(--fl-warning);
+    --an-6: color-mix(in srgb, var(--fl-muted) 45%, var(--fl-panel));
+    --an-free: color-mix(in srgb, var(--fl-text) 10%, transparent);
+    --an-cell: color-mix(in srgb, var(--fl-text) 7%, transparent);
     container-type: inline-size;
     width: 100%;
     max-width: 1440px;
@@ -674,20 +522,15 @@
     margin-bottom: 22px;
   }
   .page-heading h1 {
-    font-size: clamp(23px, 2.3vw, 30px);
-    letter-spacing: -0.8px;
+    margin: 0;
+    font-size: 28px;
+    font-weight: 550;
+    letter-spacing: -0.9px;
   }
   .page-heading p,
   .card-heading p {
     margin: 6px 0 0;
     color: var(--fl-muted);
-  }
-  .eyebrow {
-    margin: 0 0 10px !important;
-    font-size: 10px;
-    font-weight: 550;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
   }
   .export {
     display: inline-flex;
@@ -696,7 +539,7 @@
     gap: 16px;
     padding: 9px 13px;
     border: 1px solid var(--fl-border);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
     color: var(--fl-text);
     font-size: 12px;
@@ -710,7 +553,7 @@
     gap: 12px;
     padding: 12px 14px;
     border: 1px solid var(--fl-border);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
   }
   .notice p {
@@ -750,7 +593,7 @@
     min-width: 150px;
     padding: 8px 32px 8px 10px;
     border: 1px solid var(--fl-border);
-    border-radius: 4px;
+    border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
     color: var(--fl-text);
     font: inherit;
@@ -798,9 +641,6 @@
     font-weight: 550;
     letter-spacing: -0.7px;
   }
-  .stat-strip dd.unknown {
-    color: var(--fl-muted);
-  }
   .stat-strip span {
     display: block;
     color: var(--fl-muted);
@@ -817,8 +657,19 @@
     margin-bottom: 18px;
     padding: 22px;
     border: 1px solid var(--fl-border);
-    border-radius: 5px;
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
+  }
+  @supports (corner-shape: squircle) {
+    .card {
+      corner-shape: squircle;
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+  }
+  .hidden-note {
+    margin: 0 0 12px;
+    color: var(--fl-muted);
+    font-size: 11.5px;
   }
   .grid > .card {
     margin-bottom: 0;
@@ -838,11 +689,6 @@
     max-width: 620px;
     font-size: 11px;
     line-height: 1.6;
-  }
-  .subheading {
-    margin: 18px 0 8px;
-    font-size: 12px;
-    font-weight: 550;
   }
   .text-button {
     display: inline-flex;
@@ -905,17 +751,6 @@
     color: var(--fl-muted);
     text-align: center;
   }
-  .meter {
-    height: 8px;
-    overflow: hidden;
-    border-radius: 4px;
-    background: var(--fl-canvas);
-  }
-  .meter span {
-    display: block;
-    height: 100%;
-    background: #7f96a8;
-  }
   .scroll {
     max-width: 100%;
     overflow: auto;
@@ -954,60 +789,6 @@
     color: var(--fl-muted);
     text-align: left;
     white-space: normal;
-  }
-  .calendar {
-    width: auto;
-    border-collapse: separate;
-    border-spacing: 3px;
-  }
-  .calendar th,
-  .calendar td {
-    min-width: 42px;
-    padding: 6px 4px;
-    border: none;
-    font-size: 9px;
-    text-align: center;
-  }
-  .calendar th:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    min-width: 65px;
-    padding-right: 12px;
-    background: var(--fl-panel);
-  }
-  .calendar td {
-    border-radius: 2px;
-    color: var(--fl-text);
-  }
-  .calendar td[data-level='1'] {
-    background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-panel));
-  }
-  .calendar td[data-level='2'] {
-    background: color-mix(in srgb, var(--fl-accent) 23%, var(--fl-panel));
-  }
-  .calendar td[data-level='3'] {
-    background: color-mix(in srgb, var(--fl-accent) 38%, var(--fl-panel));
-  }
-  .calendar td[data-level='4'] {
-    background: color-mix(in srgb, var(--fl-accent) 53%, var(--fl-panel));
-  }
-  .calendar td[data-level='empty'] {
-    color: var(--fl-muted);
-    background: var(--fl-canvas);
-  }
-  .calendar-control {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin: 10px 0;
-    color: var(--fl-muted);
-    font-size: 11px;
-  }
-  .calendar-control select {
-    min-width: 0;
-    padding: 6px 10px;
-    background: var(--fl-canvas);
   }
   .library-views .stat-strip,
   .album-views .stat-strip {

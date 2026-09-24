@@ -237,9 +237,12 @@
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
   }
+  /* Chart text uses the interface font with tabular figures, like the template's chart labels. */
   .tick {
     fill: var(--fl-muted);
+    font-family: inherit;
     font-size: 10px;
+    font-variant-numeric: tabular-nums;
   }
   .category {
     font-size: 11px;
@@ -259,17 +262,18 @@
     fill: var(--fl-accent);
     stroke: var(--fl-accent);
   }
+  /* Series tones from the foundation tokens (analytics-dashboard.css:1-12). */
   [data-tone='secondary'] {
-    fill: #7f96a8;
-    stroke: #7f96a8;
+    fill: var(--fl-teal);
+    stroke: var(--fl-teal);
   }
   [data-tone='missing'] {
-    fill: #647078;
-    stroke: #647078;
+    fill: color-mix(in srgb, var(--fl-muted) 55%, var(--fl-panel));
+    stroke: color-mix(in srgb, var(--fl-muted) 55%, var(--fl-panel));
   }
   [data-tone='failure'] {
-    fill: #bf856f;
-    stroke: #bf856f;
+    fill: var(--fl-danger);
+    stroke: var(--fl-danger);
   }
   path.line {
     fill: none;

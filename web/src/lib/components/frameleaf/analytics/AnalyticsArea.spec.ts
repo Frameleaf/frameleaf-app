@@ -9,6 +9,7 @@ import en from '../../../../../../i18n/en.json';
 /** FL-79: the command center's analytics area reads its scope and range from the address. */
 
 const state = vi.hoisted(() => ({ url: new URL('http://localhost/admin/system-settings?area=analytics') }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me', isAdmin: true } } }));
 vi.mock('$app/state', () => ({
   page: {
     get url() {
