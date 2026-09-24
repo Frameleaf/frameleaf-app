@@ -6,6 +6,7 @@ import {
   advanceUploads,
   cancelDownload,
   cancelUploads,
+  clearFinishedUploads,
   dismissUploadErrors,
   downloadSummary,
   formatBytes,
@@ -305,6 +306,11 @@ export function UploadPanel({
     onDismissErrors ? onDismissErrors() : onChange?.(dismissUploadErrors(list));
   const cancel = () => (onCancel ? onCancel() : onChange?.(cancelUploads(list)));
   const finish = () => (onClose ? onClose() : onChange?.([]));
+  const clearFinished = () => {
+    const kept = clearFinishedUploads(list);
+    releaseUploadThumbnails(list.filter((item) => !kept.includes(item)));
+    onChange?.(kept);
+  };
   if (minimized)
     return (
       <button
@@ -430,6 +436,11 @@ export function UploadPanel({
                 Dismiss errors
               </Button>
             </>
+          )}
+          {summary.active && summary.done + summary.duplicates > 0 && (
+            <Button type="button" onClick={clearFinished}>
+              Clear finished
+            </Button>
           )}
           {summary.active ? (
             <Button type="button" onClick={cancel}>

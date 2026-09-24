@@ -315,3 +315,50 @@ test("timeline renders justified rows, sticky group headers with select-all and 
   assert.ok(badges, "video tiles show a duration badge");
   assert.match(badges.textContent, /0:24/);
 });
+
+test("timeline Years and Months are curated cards that open the next level", async () => {
+  const assets = [
+    ...media,
+    { ...media[0], id: "old-a", takenAt: "2019-03-02T09:00:00", date: "2019-03-02", bestPhotosScore: 40 },
+    { ...media[1], id: "old-b", takenAt: "2019-03-04T09:00:00", date: "2019-03-04", bestPhotosScore: 88 },
+  ];
+  const calls = [];
+  const props = {
+    assets,
+    selected: new Set(),
+    onGroupingChange: (value) => calls.push(value),
+  };
+  await render(React.createElement(TimelineLibrary, { ...props, grouping: "years" }));
+  const years = [...document.querySelectorAll(".tl-card-year")];
+  assert.deepEqual(
+    years.map((card) => card.dataset.groupId),
+    ["2026", "2019"],
+  );
+  assert.equal(document.querySelectorAll('.asset-tile[data-layout="timeline"]').length, 0);
+  assert.equal(document.querySelectorAll(".tl-card [data-asset-id]").length, 0);
+  const best = media.reduce((a, b) => (b.bestPhotosScore > a.bestPhotosScore ? b : a));
+  assert.equal(years[0].querySelector(".tl-card-media img").getAttribute("src"), best.image);
+  assert.equal(years[0].querySelector(".tl-card-title").textContent, "2026");
+  assert.match(years[0].querySelector(".tl-card-meta").textContent, /\d+ items · .*(Banff|Jasper|Lake Louise)/);
+  assert.equal(years[1].querySelector(".tl-card-media img").getAttribute("src"), media[1].image);
+  const open = years[1].querySelector(".tl-card-open");
+  assert.match(open.getAttribute("aria-label"), /^2019, 2 items.*Show months$/);
+  await click(open);
+  assert.deepEqual(calls, ["months"]);
+  await rerender(React.createElement(TimelineLibrary, { ...props, grouping: "months" }));
+  const months = [...document.querySelectorAll(".tl-card-month")];
+  assert.deepEqual(
+    months.map((card) => card.querySelector(".tl-card-title").textContent),
+    ["August 2026", "March 2019"],
+  );
+  assert.equal(months[0].querySelectorAll(".tl-card-strip img").length, 4);
+  assert.equal(months[1].querySelectorAll(".tl-card-strip img").length, 1);
+  await click(months[0].querySelector(".tl-card-open"));
+  assert.deepEqual(calls, ["months", "days"]);
+  await rerender(React.createElement(TimelineLibrary, { ...props, grouping: "days" }));
+  assert.equal(document.querySelectorAll(".tl-card").length, 0);
+  assert.equal(
+    document.querySelectorAll('.asset-tile[data-layout="timeline"]').length,
+    assets.length,
+  );
+});

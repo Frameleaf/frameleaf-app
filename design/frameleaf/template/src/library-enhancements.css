@@ -188,12 +188,6 @@
     display: none;
   }
 }
-.app[data-screen="admin"] .topbar > .locked-control {
-  margin-left: auto;
-}
-.app[data-screen="admin"] .topbar > .profile {
-  margin-left: 0;
-}
 .inspector-heading {
   display: flex;
   justify-content: space-between;

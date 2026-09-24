@@ -126,7 +126,12 @@ export const PRESETS = [
     label: "Cool",
     params: { temperature: -30, tint: -4, contrast: 6 },
   },
-  { id: "Mono", label: "Mono", params: { contrast: 8 }, look: { grayscale: 100 } },
+  {
+    id: "Mono",
+    label: "Mono",
+    params: { contrast: 8 },
+    look: { grayscale: 100 },
+  },
   {
     id: "Silvertone",
     label: "Silvertone",
@@ -175,7 +180,11 @@ export function effectiveDevelop(edit) {
   const strength = clamp(finite(edit?.presetStrength, 100), 0, 100) / 100;
   const params = {};
   for (const item of DEVELOP_PARAMS) {
-    const base = clamp(finite(edit?.[item.id], item.default), item.min, item.max);
+    const base = clamp(
+      finite(edit?.[item.id], item.default),
+      item.min,
+      item.max,
+    );
     const nudge = finite(preset.params?.[item.id]) * strength;
     params[item.id] = round(clamp(base + nudge, item.min, item.max), 3);
   }
@@ -277,8 +286,13 @@ export function cssFilterFor(edit) {
  * bytes in place, so histograms match the preview in every browser.
  */
 export function tonePixels(data, numeric, params = {}) {
-  const { brightness = 1, contrast = 1, saturate = 1, grayscale = 0, sepia = 0 } =
-    numeric || {};
+  const {
+    brightness = 1,
+    contrast = 1,
+    saturate = 1,
+    grayscale = 0,
+    sepia = 0,
+  } = numeric || {};
   const warm = (finite(params.temperature) / 100) * 28;
   const tint = (finite(params.tint) / 100) * 22;
   for (let i = 0; i < data.length; i += 4) {
@@ -402,7 +416,8 @@ export const isFullRect = (rect) =>
 
 /** Largest centred normalized rect with the given display ratio. */
 export function fitCropRect(ratio, frameWidth, frameHeight) {
-  if (!ratio || !(frameWidth > 0) || !(frameHeight > 0)) return { ...FULL_RECT };
+  if (!ratio || !(frameWidth > 0) || !(frameHeight > 0))
+    return { ...FULL_RECT };
   let h = 1;
   let w = (ratio * frameHeight) / frameWidth;
   if (w > 1) {
@@ -503,7 +518,10 @@ export function straightenScale(width, height, degrees) {
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
   return round(
-    Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height),
+    Math.max(
+      (width * cos + height * sin) / width,
+      (width * sin + height * cos) / height,
+    ),
     4,
   );
 }
@@ -560,4 +578,22 @@ export function renderedDuration(edit) {
   }
   if (end > cursor) total += (end - cursor) / base;
   return round(total, 3);
+}
+
+/**
+ * Hold-to-compare keys for the photo editor. Backslash is the primary key:
+ * Apple Photos uses M, but M already means "Group by month" in the library
+ * shortcuts, and backslash is Lightroom's before/after key. Y stays as the
+ * earlier binding. A press with a command modifier is never a compare, but a
+ * release always is, so a held original can't get stuck.
+ */
+export function isCompareKey(event, { release = false } = {}) {
+  if (!event) return false;
+  if (!release && (event.metaKey || event.ctrlKey || event.altKey))
+    return false;
+  return (
+    event.key === "\\" ||
+    event.code === "Backslash" ||
+    String(event.key || "").toLowerCase() === "y"
+  );
 }

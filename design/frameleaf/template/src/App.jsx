@@ -158,7 +158,8 @@ import { settingsAreas, settingsSections } from "./settings-catalog.mjs";
 import { paginate } from "./search.mjs";
 import { PeopleLibrary, PeoplePanel, PersonAvatar } from "./People";
 import { FilterPanel } from "./FilterPanel";
-import { SearchDialog, searchModes } from "./SearchDialog";
+import { SearchPalette, searchModes } from "./SearchPalette";
+import { animateGridChange, viewerTransition } from "./interactions";
 import {
   normalizeSearchQuery,
   searchSampleAssets,
@@ -191,7 +192,11 @@ const LIBRARY_SCREENS = ["library", "person", "partner"];
 /** Depth-first flatten of the nested collection tree for rails and pickers. */
 const flattenTree = (nodes = []) =>
   nodes.flatMap((node) => [node, ...flattenTree(node.children || [])]);
-const PARTNER = { id: "jamie", name: "Jamie", image: "/media/avatar-jamie.png" };
+const PARTNER = {
+  id: "jamie",
+  name: "Jamie",
+  image: "/media/avatar-jamie.png",
+};
 const AUTH_SCREENS = [
   "login",
   "register",
@@ -270,6 +275,8 @@ function init() {
   return session;
 }
 export { Button, Dialog } from "./Controls";
+// Thumbnail size slider default; the timeline's rows scale relative to it.
+const DEFAULT_THUMB_SIZE = 190;
 
 export function App() {
   const [session, dispatch] = useReducer(reduceLibrarySession, undefined, init);
@@ -301,7 +308,15 @@ export function App() {
   const [inspector, setInspector] = useState(
     session.layout === "work" && window.innerWidth > 1000,
   );
-  const [size, setSize] = useState(190);
+  const [size, setSize] = useState(DEFAULT_THUMB_SIZE);
+  // Work is the editing surface: ratings always, file names only on request.
+  const [showFilenames, setShowFilenames] = useState(() => {
+    try {
+      return localStorage.getItem("frameleaf-work-filenames") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [ratings, setRatings] = useState(saved.ratings || {});
   const [ratingHistory, setRatingHistory] = useState([]);
   const [drafts, setDrafts] = useState(saved.drafts);
@@ -322,7 +337,14 @@ export function App() {
   });
   const [unlocked, setUnlocked] = useState(false);
   const [unlockRequest, setUnlockRequest] = useState(0);
-  const [viewerId, setViewerId] = useState(null);
+  const [viewerId, setViewerIdState] = useState(null);
+  const viewerIdRef = useRef(null);
+  viewerIdRef.current = viewerId;
+  // #11 open/close the viewer through the zoom transition.
+  const setViewerId = (next) => {
+    const value = typeof next === "function" ? next(viewerIdRef.current) : next;
+    viewerTransition(viewerIdRef.current, value, () => setViewerIdState(value));
+  };
   const [viewerOrigin, setViewerOrigin] = useState("collection");
   const [slideshow, setSlideshow] = useState(false);
   const [actionAssetId, setActionAssetId] = useState(null);
@@ -503,10 +525,16 @@ export function App() {
         ? [
             ...new Map(
               [
-                ...scopeMedia(collectionAssets, session.state.scope, snapshotIds),
+                ...scopeMedia(
+                  collectionAssets,
+                  session.state.scope,
+                  snapshotIds,
+                ),
                 ...collections.collections
                   .filter((item) => item.parentId === currentCollection.id)
-                  .flatMap((item) => collectionAssetsOf(item, collectionAssets)),
+                  .flatMap((item) =>
+                    collectionAssetsOf(item, collectionAssets),
+                  ),
               ].map((asset) => [asset.id, asset]),
             ).values(),
           ].filter((asset) => !snapshotIds || snapshotIds.includes(asset.id))
@@ -761,6 +789,61 @@ export function App() {
     setViewerId(null);
     setPanel("quick");
   };
+  const applySearch = (next, mode, scope, text) => {
+    setSearchBy(mode);
+    setRecentSearches((current) =>
+      text.trim()
+        ? [
+            { text: text.trim(), mode, query: next },
+            ...current.filter(
+              (item) => item.text !== text.trim() || item.mode !== mode,
+            ),
+          ].slice(0, 5)
+        : current,
+    );
+    if (scope === "library") {
+      setCollection("Library");
+      setSnapshotIds(null);
+    }
+    patchView({
+      ...(scope === "library" ? { scope: { kind: "library" } } : {}),
+      query: next,
+      view: "grid",
+    });
+    setScreen("library");
+    setPanel(null);
+  };
+  // Opening a result from search applies the search first, then opens the viewer on it.
+  const [pendingOpen, setPendingOpen] = useState(null);
+  // #8 Native share sheet (AirDrop, Messages…): sends a copy; Frameleaf sharing stays separate.
+  const sendCopy = async (ids) => {
+    const items = catalog.filter(
+      (asset) => ids.includes(asset.id) && !classifyLocked(asset),
+    );
+    if (!items.length) return;
+    try {
+      const files = await Promise.all(
+        items.map(async (asset) => {
+          const blob = await (
+            await fetch(asset.mediaSrc || asset.image)
+          ).blob();
+          return new File([blob], asset.name, { type: blob.type });
+        }),
+      );
+      await navigator.share(
+        navigator.canShare?.({ files })
+          ? {
+              files,
+              title:
+                items.length === 1 ? items[0].name : `${items.length} items`,
+            }
+          : { title: items[0].name, url: location.href },
+      );
+    } catch (error) {
+      if (error?.name !== "AbortError")
+        setToast("This item could not be sent from this browser.");
+    }
+  };
   const shareAsset = (id) => {
     const asset = collectionAssets.find((asset) => asset.id === id);
     if (!asset) return false;
@@ -915,8 +998,7 @@ export function App() {
       return false;
     }
   };
-  const countLabel = (n, verb) =>
-    `${verb} ${n} ${n === 1 ? "item" : "items"}`;
+  const countLabel = (n, verb) => `${verb} ${n} ${n === 1 ? "item" : "items"}`;
   const trashAssets = (ids) => {
     let next = null;
     const done = [];
@@ -949,7 +1031,12 @@ export function App() {
     const targets = catalog.filter((asset) => ids.includes(asset.id));
     setJobs((current) => [
       ...targets.map((asset) => ({
-        ...createSimulatedJob(kind, asset, drafts[asset.id]?.edit || initialEdit, "local"),
+        ...createSimulatedJob(
+          kind,
+          asset,
+          drafts[asset.id]?.edit || initialEdit,
+          "local",
+        ),
         destination: "local",
       })),
       ...current,
@@ -987,7 +1074,11 @@ export function App() {
         return bulkChange(ids, { visibility: "timeline" }, label("Unarchived"));
       case "mark-sensitive":
       case "lock":
-        return bulkChange(ids, { isSensitive: true }, label("Marked Sensitive:"));
+        return bulkChange(
+          ids,
+          { isSensitive: true },
+          label("Marked Sensitive:"),
+        );
       case "unmark-sensitive":
       case "unlock":
         return bulkChange(
@@ -1021,7 +1112,9 @@ export function App() {
       case "untag":
         return patchEach(
           (asset) => ({
-            tagIds: asset.tagIds.filter((id) => !(payload.tagIds || []).includes(id)),
+            tagIds: asset.tagIds.filter(
+              (id) => !(payload.tagIds || []).includes(id),
+            ),
           }),
           "Updated tags on",
         );
@@ -1037,12 +1130,19 @@ export function App() {
         const time = payload.time || "07:14:00";
         return bulkChange(
           ids,
-          { date: payload.date, takenAt: `${payload.date}T${time.length === 5 ? `${time}:00` : time}` },
+          {
+            date: payload.date,
+            takenAt: `${payload.date}T${time.length === 5 ? `${time}:00` : time}`,
+          },
           label("Changed the date of"),
         );
       }
       case "change-description":
-        return bulkChange(ids, { description: payload.description ?? "" }, label("Described"));
+        return bulkChange(
+          ids,
+          { description: payload.description ?? "" },
+          label("Described"),
+        );
       case "change-location":
         return bulkChange(
           ids,
@@ -1059,7 +1159,11 @@ export function App() {
         );
       case "stack": {
         const primary = payload.primaryId || ids[0];
-        return bulkChange(ids, { stackId: `stack-${primary}` }, label("Stacked"));
+        return bulkChange(
+          ids,
+          { stackId: `stack-${primary}` },
+          label("Stacked"),
+        );
       }
       case "unstack":
         return bulkChange(ids, { stackId: null }, label("Unstacked"));
@@ -1075,7 +1179,12 @@ export function App() {
       }
       case "stack-keep-this": {
         const others = catalog
-          .filter((asset) => asset.stackId && asset.stackId === targets[0].stackId && asset.id !== targets[0].id)
+          .filter(
+            (asset) =>
+              asset.stackId &&
+              asset.stackId === targets[0].stackId &&
+              asset.id !== targets[0].id,
+          )
           .map((asset) => asset.id);
         bulkChange([targets[0].id], { stackId: null });
         return others.length ? trashAssets(others) : true;
@@ -1139,7 +1248,13 @@ export function App() {
       targets.length === 1
         ? targets[0].name
         : `Frameleaf-${targets.length}-items.zip`;
-    setDownloads((current) => [...current, createDownload(name, targets.map((asset) => asset.id))]);
+    setDownloads((current) => [
+      ...current,
+      createDownload(
+        name,
+        targets.map((asset) => asset.id),
+      ),
+    ]);
     return true;
   };
   const setCollectionCover = (assetId, albumId) => {
@@ -1165,7 +1280,8 @@ export function App() {
       ),
     );
     if (!Object.keys(rest).length) return true;
-    if (rest.takenAt && !rest.date) rest.date = String(rest.takenAt).slice(0, 10);
+    if (rest.takenAt && !rest.date)
+      rest.date = String(rest.takenAt).slice(0, 10);
     return mutateAsset(id, rest);
   };
   const faceAction = (assetId, action) => {
@@ -1178,7 +1294,9 @@ export function App() {
       next = faces.filter((face) => face.id !== action.faceId);
     else if (action.type === "reassign")
       next = faces.map((face) =>
-        face.id === action.faceId ? { ...face, personId: action.personId } : face,
+        face.id === action.faceId
+          ? { ...face, personId: action.personId }
+          : face,
       );
     else if (action.type === "create") {
       const id = newPersonId();
@@ -1246,7 +1364,10 @@ export function App() {
       case "rerun-sensitive":
         return bulkAction(action, [id]);
       case "set-album-cover":
-        return setCollectionCover(id, payload?.albumId || session.state.scope.id);
+        return setCollectionCover(
+          id,
+          payload?.albumId || session.state.scope.id,
+        );
       case "set-person-featured":
         return setPersonFeatured(payload?.personId, id);
       case "set-profile-picture":
@@ -1265,7 +1386,11 @@ export function App() {
         );
         return true;
       case "copy-image":
-        setToast(payload?.copied ? "Image copied." : "Copy is unavailable in this browser.");
+        setToast(
+          payload?.copied
+            ? "Image copied."
+            : "Copy is unavailable in this browser.",
+        );
         return true;
       case "open-folder":
         setViewerId(null);
@@ -1371,8 +1496,7 @@ export function App() {
         else if (payload.id === "new-collection") {
           setScreen("collections");
           setCreateRequest({ kind: "album", key: Date.now() });
-        }
-        else if (payload.id === "shortcuts") setHelpOpen(true);
+        } else if (payload.id === "shortcuts") setHelpOpen(true);
         else if (payload.id === "toggle-theme")
           setTheme(theme === "dark" ? "light" : "dark");
         else if (payload.id === "lock")
@@ -1406,12 +1530,23 @@ export function App() {
     settingsSections,
     actions: [
       { id: "upload", title: "Upload photos", icon: "mdiUpload" },
-      { id: "new-collection", title: "New album", icon: "mdiFolderPlusOutline" },
-      { id: "shortcuts", title: "Keyboard shortcuts", icon: "mdiKeyboardOutline", shortcut: "?" },
+      {
+        id: "new-collection",
+        title: "New album",
+        icon: "mdiFolderPlusOutline",
+      },
+      {
+        id: "shortcuts",
+        title: "Keyboard shortcuts",
+        icon: "mdiKeyboardOutline",
+        shortcut: "?",
+      },
       {
         id: "toggle-theme",
-        title: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
-        icon: theme === "dark" ? "mdiWhiteBalanceSunny" : "mdiMoonWaningCrescent",
+        title:
+          theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+        icon:
+          theme === "dark" ? "mdiWhiteBalanceSunny" : "mdiMoonWaningCrescent",
       },
       {
         id: "lock",
@@ -1541,7 +1676,8 @@ export function App() {
   useEffect(() => setPage(1), [visibleKey]);
   useEffect(() => {
     try {
-      if (avatar) localStorage.setItem("frameleaf:avatar:v1", JSON.stringify(avatar));
+      if (avatar)
+        localStorage.setItem("frameleaf:avatar:v1", JSON.stringify(avatar));
       else localStorage.removeItem("frameleaf:avatar:v1");
     } catch {}
   }, [avatar]);
@@ -1788,7 +1924,9 @@ export function App() {
             element.dataset.assetId === focusedAssetId,
         );
         const next =
-          items[Math.max(0, Math.min(items.length - 1, Math.max(index, 0) + delta))];
+          items[
+            Math.max(0, Math.min(items.length - 1, Math.max(index, 0) + delta))
+          ];
         next?.querySelector("button")?.focus();
       };
       const columns = () => {
@@ -1798,7 +1936,8 @@ export function App() {
         return Math.max(
           1,
           items.filter(
-            (element) => Math.abs(element.getBoundingClientRect().top - top) < 2,
+            (element) =>
+              Math.abs(element.getBoundingClientRect().top - top) < 2,
           ).length,
         );
       };
@@ -1839,10 +1978,14 @@ export function App() {
           jump("years");
           break;
         case "go-to-date":
-          jump(session.state.grouping === "all" ? "days" : session.state.grouping);
+          jump(
+            session.state.grouping === "all" ? "days" : session.state.grouping,
+          );
           setTimeout(
             () =>
-              document.querySelector('.timeline-library [role="slider"]')?.focus(),
+              document
+                .querySelector('.timeline-library [role="slider"]')
+                ?.focus(),
             50,
           );
           break;
@@ -1863,7 +2006,9 @@ export function App() {
         case "favorite":
           if (targets.length)
             bulkAction(
-              targets.every((id) => catalog.find((asset) => asset.id === id)?.favorite)
+              targets.every(
+                (id) => catalog.find((asset) => asset.id === id)?.favorite,
+              )
                 ? "unfavorite"
                 : "favorite",
               targets,
@@ -1964,36 +2109,112 @@ export function App() {
     ? personAssets(personView, accessibleAssets)
     : [];
   const layoutSwitch = (
-                <div className="layout-switch" aria-label="Library layout">
-                  {(collection === "Locked"
-                    ? ["timeline"]
-                    : ["timeline", "browse", "work"]
-                  ).map((layout) => (
-                    <button
-                      key={layout}
-                      aria-pressed={session.layout === layout}
-                      className={session.layout === layout ? "current" : ""}
-                      onClick={() => {
-                        dispatch({ type: "layout", layout });
-                        setInspector(
-                          layout === "work" && window.innerWidth > 1000,
-                        );
-                        if (
-                          layout === "timeline" &&
-                          session.state.grouping === "all"
-                        )
-                          patchView({ grouping: "days" });
-                      }}
-                    >
-                      {layout === "timeline"
-                        ? "Timeline"
-                        : layout === "browse"
-                          ? "Browse"
-                          : "Work"}
-                    </button>
-                  ))}
-                </div>
+    <div className="layout-switch" aria-label="Library layout">
+      {(collection === "Locked"
+        ? ["timeline"]
+        : ["timeline", "browse", "work"]
+      ).map((layout) => (
+        <button
+          key={layout}
+          aria-pressed={session.layout === layout}
+          className={session.layout === layout ? "current" : ""}
+          onClick={() => {
+            dispatch({ type: "layout", layout });
+            setInspector(layout === "work" && window.innerWidth > 1000);
+            if (layout === "timeline" && session.state.grouping === "all")
+              patchView({ grouping: "days" });
+          }}
+        >
+          {layout === "timeline"
+            ? "Timeline"
+            : layout === "browse"
+              ? "Browse"
+              : "Work"}
+        </button>
+      ))}
+    </div>
   );
+  useEffect(() => {
+    if (pendingOpen && visible.some((asset) => asset.id === pendingOpen)) {
+      setPendingOpen(null);
+      openViewer(pendingOpen);
+    }
+  }, [pendingOpen, visible]);
+  // #12 grid zoom: pinch (ctrl+wheel on trackpads) or +/−; browser zoom keeps ⌘/Ctrl +/−.
+  const zoomGrid = (direction) => {
+    const next = Math.min(290, Math.max(140, size + direction * 30));
+    if (next !== size) animateGridChange(grid.current, () => setSize(next));
+  };
+  const zoomGridRef = useRef(zoomGrid);
+  zoomGridRef.current = zoomGrid;
+  const layoutRef = useRef(session.layout);
+  layoutRef.current = session.layout;
+  useEffect(() => {
+    const container = grid.current;
+    if (!container) return;
+    let accumulated = 0;
+    const wheel = (event) => {
+      // Timeline owns pinch and ⌘-scroll: they step Years/Months/Days there.
+      if (
+        !event.ctrlKey ||
+        event.defaultPrevented ||
+        layoutRef.current === "timeline"
+      )
+        return;
+      event.preventDefault();
+      accumulated += event.deltaY;
+      if (Math.abs(accumulated) < 30) return;
+      zoomGridRef.current(accumulated < 0 ? 1 : -1);
+      accumulated = 0;
+    };
+    container.addEventListener("wheel", wheel, { passive: false });
+    return () => container.removeEventListener("wheel", wheel);
+  }, [screen]);
+  useEffect(() => {
+    const key = (event) => {
+      if (
+        !["+", "=", "-"].includes(event.key) ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        screen !== "library" ||
+        layoutRef.current === "timeline" ||
+        document.querySelector("dialog[open]") ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName) ||
+        event.target.isContentEditable
+      )
+        return;
+      event.preventDefault();
+      zoomGridRef.current(event.key === "-" ? -1 : 1);
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [screen]);
+  // #9 browser and installed-app chrome match the active theme's canvas.
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="theme-color"]:not([media])');
+    if (!meta) {
+      meta = Object.assign(document.createElement("meta"), {
+        name: "theme-color",
+      });
+      document.head.append(meta);
+    }
+    meta.content = theme === "light" ? "#f4f6f7" : "#101416";
+  }, [theme]);
+  // Timeline day headers and the scrubber stick below the frosted toolbar, whatever its height.
+  useEffect(() => {
+    const container = grid.current;
+    const toolbar = container?.querySelector(":scope > .results-toolbar");
+    if (!toolbar || typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(([entry]) =>
+      container.style.setProperty(
+        "--fl-sticky-offset",
+        `${Math.round(entry.target.getBoundingClientRect().height)}px`,
+      ),
+    );
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [screen, session.layout]);
   const pageOf = paginate(visible, page, 60);
   if (screen === "public") {
     const link =
@@ -2110,9 +2331,13 @@ export function App() {
           aria-controls={screen === "admin" ? "settings-navigation" : undefined}
           onClick={() => setNavOpen(!navOpen)}
         />
-        <button className="brand" onClick={() => setScreen("library")}>
+        <button
+          className="brand"
+          aria-label="Frameleaf"
+          onClick={() => setScreen("library")}
+        >
           <img src="/brand/frameleaf-symbol.svg" alt="" />
-          <strong>Frameleaf</strong>
+          <strong aria-hidden="true">Frameleaf</strong>
         </button>
         <nav className="primary-nav" aria-label="Primary">
           {["library", "studio", "activity"].map((value) => (
@@ -2205,6 +2430,54 @@ export function App() {
           }}
         />
       )}
+      {/* #7 phones: the main sections sit in a tab bar; the ☰ drawer keeps every other destination. */}
+      {!["studio", "admin", "review"].includes(screen) && (
+        <nav className="fl-tabbar" aria-label="Sections">
+          {[
+            [
+              "library",
+              "Library",
+              "mdiImageMultipleOutline",
+              () => navigate("Library"),
+            ],
+            [
+              "memories",
+              "Memories",
+              "mdiHistory",
+              () => {
+                setScreen("memories");
+                setPanel(null);
+                setViewerId(null);
+              },
+            ],
+            [
+              "collections",
+              "Albums",
+              "mdiFolderMultipleOutline",
+              () => {
+                setCreateRequest(null);
+                setScreen("collections");
+                setPanel(null);
+              },
+            ],
+            ["search", "Search", "mdiMagnify", () => setPanel("search")],
+          ].map(([id, label, icon, go]) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={
+                (id === "search" ? panel === "search" : screen === id)
+                  ? "page"
+                  : undefined
+              }
+              onClick={go}
+            >
+              <Icon name={icon} size={24} />
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
       <div className="workspace">
         {screen !== "studio" && screen !== "admin" && screen !== "review" && (
           <LibraryRail
@@ -2219,6 +2492,8 @@ export function App() {
             )}
             onCollection={navigateCollection}
             onCollections={() => {
+              // A pending "New album" request would otherwise replay on remount.
+              setCreateRequest(null);
               setScreen("collections");
               setNavOpen(false);
               setPanel(null);
@@ -2278,8 +2553,14 @@ export function App() {
               setPanel(null);
               setCreateRequest({ kind: "album", key: Date.now() });
             }}
+            onNewSpace={() => {
+              setScreen("collections");
+              setNavOpen(false);
+              setPanel(null);
+              setCreateRequest({ kind: "space", key: Date.now() });
+            }}
             onCare={() => {
-              setSettingsStart("utilities");
+              setSettingsStart("care");
               setScreen("admin");
               setNavOpen(false);
               setPanel(null);
@@ -2315,9 +2596,10 @@ export function App() {
             }}
             onDownload={(id) =>
               startDownload(
-                collectionAssetsOf(findCollection(collections, id), catalog).map(
-                  (asset) => asset.id,
-                ),
+                collectionAssetsOf(
+                  findCollection(collections, id),
+                  catalog,
+                ).map((asset) => asset.id),
               )
             }
             onDeleted={(id, assetIds) =>
@@ -2463,341 +2745,6 @@ export function App() {
         {LIBRARY_SCREENS.includes(screen) && (
           <>
             <main className="library">
-              {screen === "person" && personView ? (
-                <>
-                  <PersonHeader
-                    person={personView}
-                    assets={personAssetList}
-                    overrides={peopleOverrides}
-                    onChange={changePeople}
-                    allPeople={people}
-                    onOpenSettings={() => openSettings("sharing", "partner")}
-                    onOpenAsset={(id) => openViewer(id)}
-                    onSelectFeatured={(assetId) =>
-                      setPersonFeatured(personView.id, assetId)
-                    }
-                    faces={personAssetList.flatMap((asset) =>
-                      (asset.manualFaces || []).map((face) => ({
-                        assetId: asset.id,
-                        faceId: face.id,
-                        box: face.box,
-                        personId: face.personId,
-                      })),
-                    )}
-                    onFaceAction={(assetId, action) => {
-                      if (!action?.faceId) {
-                        setToast(
-                          "Only manually tagged faces can be corrected in this preview.",
-                        );
-                        return true;
-                      }
-                      return faceAction(
-                        assetId,
-                        action.type === "new-person"
-                          ? { type: "create", faceId: action.faceId, name: action.name }
-                          : action,
-                      );
-                    }}
-                    onBack={() => setScreen("people")}
-                  />
-                  <div className="collection-header compact">{layoutSwitch}</div>
-                </>
-              ) : screen === "partner" ? (
-                <>
-                  <PartnerHeader
-                    partner={PARTNER}
-                    count={visible.length}
-                    settings={partnerSettings}
-                    onChange={(patch) => {
-                      if (patch?.sharing === false) {
-                        setToast(`Stopped sharing with ${PARTNER.name}.`);
-                        navigate("Library");
-                      } else
-                        setPartnerSettings((current) => ({ ...current, ...patch }));
-                    }}
-                    onOpenSettings={() => openSettings("sharing", "partner")}
-                  />
-                  <div className="collection-header compact">{layoutSwitch}</div>
-                </>
-              ) : currentCollection ? (
-                <>
-                  <CollectionHeader
-                    collection={currentCollection}
-                    assets={scopedAssets}
-                    allAssets={accessibleAssets}
-                    people={people}
-                    users={resources.users}
-                    tags={tags}
-                    state={collections}
-                    onState={setCollections}
-                    onChange={(patch) => {
-                      setCollections((state) =>
-                        updateCollection(state, currentCollection.id, patch),
-                      );
-                      if (patch?.name) setCollection(patch.name);
-                    }}
-                    onNavigate={(id) =>
-                      id ? openCollectionById(id) : navigate("Library")
-                    }
-                    onAddPhotos={() => {
-                      navigate("Library");
-                      setToast(
-                        "Select photos, then choose Add to album in the selection bar.",
-                      );
-                    }}
-                    onUpload={() => {
-                      setUploadTargetId(currentCollection.id);
-                      uploadInput.current?.click();
-                    }}
-                    onShare={(userId, role) =>
-                      setToast(
-                        `Invited ${resources.users.find((user) => user.id === userId)?.name || "a person"} as ${role}.`,
-                      )
-                    }
-                    onCreateLink={() => {
-                      setLinkTarget({
-                        type: "album",
-                        albumId: currentCollection.id,
-                        name: currentCollection.name,
-                      });
-                      setPanel("share-link");
-                    }}
-                    onManageLinks={() => setScreen("shared-links")}
-                    onSlideshow={() =>
-                      visible.length && openViewer(visible[0].id, "collection", true)
-                    }
-                    onDownload={() => startDownload(visible.map((asset) => asset.id))}
-                    onOpenMap={() => {
-                      setMapScope("collection");
-                      setMapFocus(null);
-                      setScreen("map");
-                    }}
-                    onSelectCover={(assetId) =>
-                      setCollectionCover(assetId, currentCollection.id)
-                    }
-                    onDelete={() => {
-                      const result = deleteCollection(collections, currentCollection.id, {
-                        assets: catalog,
-                      });
-                      setCollections(result.state || result);
-                      if (result.assetIds?.length)
-                        bulkAction("remove-from-album", result.assetIds, {
-                          albumId: currentCollection.id,
-                        });
-                      setToast(
-                        currentCollection.kind === "collection"
-                          ? "Collection deleted. Its albums are now on their own."
-                          : "Album deleted. Your photos stay in the library.",
-                      );
-                      navigate("Library");
-                    }}
-                    onLeave={() => {
-                      setCollections((state) =>
-                        leaveCollection(state, currentCollection.id, "taylor"),
-                      );
-                      setToast(`You left ${currentCollection.name}.`);
-                      navigate("Library");
-                    }}
-                    onOpenActivity={() => setActivityOpen((value) => !value)}
-                    onReevaluate={(ids) =>
-                      setToast(countLabel(ids?.length || 0, "Matching now:"))
-                    }
-                    activity={activityFor(collections, currentCollection.id)}
-                  />
-                  <div className="collection-header compact">{layoutSwitch}</div>
-                </>
-              ) : (
-              <div className="collection-header">
-                <div>
-                  <div className="breadcrumbs">
-                    Library <span>/</span>{" "}
-                    {session.state.scope.kind === "space"
-                      ? "Shared spaces"
-                      : session.state.scope.kind === "album"
-                        ? "Albums"
-                        : "All media"}
-                  </div>
-                  <h1>{collection}</h1>
-                </div>
-                {layoutSwitch}
-              </div>
-              )}
-              {(activeChips.length > 0 || query.text) && (
-                <div className="active-filter-bar">
-                  <div className="chips">
-                    {query.text && (
-                      <span className="chip">
-                        <Icon name="mdiMagnify" size={15} />
-                        {query.text}
-                        <button
-                          aria-label="Remove search text"
-                          onClick={() => patchQuery({ text: "" })}
-                        >
-                          <Icon name="mdiClose" size={14} />
-                        </button>
-                      </span>
-                    )}
-                    {activeChips.map((chip) => (
-                      <span className="chip" key={chip.field}>
-                        {chip.field === "personIds" &&
-                          [...new Set(Object.values(filter.personIds).flat())]
-                            .slice(0, 3)
-                            .map((id) => (
-                              <PersonAvatar
-                                key={id}
-                                person={people.find(
-                                  (person) => person.id === id,
-                                )}
-                                size={22}
-                              />
-                            ))}
-                        <button
-                          className="chip-label"
-                          onClick={() =>
-                            openFilters(
-                              chip.field === "personIds"
-                                ? "people"
-                                : chip.field === "tagIds"
-                                  ? "tags"
-                                  : "camera",
-                            )
-                          }
-                        >
-                          {chip.label}
-                        </button>
-                        <button
-                          aria-label={`Remove ${chip.label}`}
-                          onClick={() => setCondition(chip.field, null)}
-                        >
-                          <Icon name="mdiClose" size={14} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => patchQuery({ text: "", filter: {} })}
-                  >
-                    Clear all
-                  </button>
-                </div>
-              )}
-              <div className="toolbar results-toolbar">
-                <span className="result-count" aria-live="polite">
-                  {visible.length} {visible.length === 1 ? "item" : "items"}
-                </span>
-                <span className="grow" />
-                <div className="filter-control" ref={filterMenu}>
-                  <Button
-                    icon="mdiTuneVariant"
-                    active={panel === "filters"}
-                    aria-expanded={panel === "filters"}
-                    onClick={() =>
-                      panel === "filters"
-                        ? setPanel(null)
-                        : openFilters(filterSection || "people")
-                    }
-                  >
-                    Filter
-                    {activeChips.length + (query.text ? 1 : 0) > 0 && (
-                      <span className="filter-badge">
-                        {activeChips.length + (query.text ? 1 : 0)}
-                      </span>
-                    )}
-                  </Button>
-                  <Button
-                    icon="mdiChevronDown"
-                    className="filter-control-more"
-                    aria-label="Choose a filter"
-                    aria-haspopup="menu"
-                    aria-expanded={filterMenuOpen}
-                    onClick={() => setFilterMenuOpen((value) => !value)}
-                  />
-                  {filterMenuOpen && (
-                    <div className="filter-menu" role="menu">
-                      {[
-                        ["people", "People", "mdiAccountMultipleOutline"],
-                        ["date", "Date", "mdiCalendarRange"],
-                        ["places", "Places", "mdiMapMarker"],
-                        ["media", "Media", "mdiPlayBoxOutline"],
-                        ["tags", "Tags", "mdiTagOutline"],
-                        ["camera", "All filters", "mdiTuneVariant"],
-                      ].map(([section, label, icon]) => (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          key={section}
-                          onClick={() => {
-                            setFilterMenuOpen(false);
-                            openFilters(section);
-                          }}
-                        >
-                          <Icon name={icon} size={16} />
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Button
-                  icon="mdiPlayBoxOutline"
-                  disabled={!visible.length}
-                  onClick={() =>
-                    openViewer(
-                      visible.some((asset) => asset.id === selected.id)
-                        ? selected.id
-                        : visible[0]?.id,
-                      "collection",
-                      true,
-                    )
-                  }
-                >
-                  Slideshow
-                </Button>
-                <Button
-                  icon="mdiTuneVariant"
-                  aria-label={
-                    inspector
-                      ? "Hide information panel"
-                      : "Show information panel"
-                  }
-                  active={inspector}
-                  onClick={() => setInspector(!inspector)}
-                />
-                <label className="sort">
-                  <Icon name="mdiSort" />
-                  <select
-                    aria-label="Sort assets"
-                    value={session.state.sort}
-                    onChange={(event) =>
-                      patchView({ sort: event.target.value })
-                    }
-                  >
-                    <option value="captured-desc">Captured — newest</option>
-                    <option value="captured-asc">Captured — oldest</option>
-                    <option value="imported-desc">Added — newest</option>
-                    <option value="filename">Filename</option>
-                    <option value="rating">Rating — highest</option>
-                  </select>
-                </label>
-                <Button
-                  icon="mdiViewGridOutline"
-                  aria-label="Grid view"
-                  active={session.state.view === "grid"}
-                  onClick={() => patchView({ view: "grid" })}
-                />
-                <Button
-                  icon="mdiFormatListBulleted"
-                  aria-label="List view"
-                  active={session.state.view === "list"}
-                  onClick={() => patchView({ view: "list" })}
-                />
-                <Button
-                  icon="mdiDotsHorizontal"
-                  aria-label="More library actions"
-                  onClick={() => setPanel("actions")}
-                />
-              </div>
               <div
                 className="media-scroll"
                 ref={grid}
@@ -2820,6 +2767,391 @@ export function App() {
                   setScrollEpoch((value) => value + 1);
                 }}
               >
+                {screen === "person" && personView ? (
+                  <>
+                    <PersonHeader
+                      person={personView}
+                      assets={personAssetList}
+                      overrides={peopleOverrides}
+                      onChange={changePeople}
+                      allPeople={people}
+                      onOpenSettings={() => openSettings("sharing", "partner")}
+                      onOpenAsset={(id) => openViewer(id)}
+                      onSelectFeatured={(assetId) =>
+                        setPersonFeatured(personView.id, assetId)
+                      }
+                      faces={personAssetList.flatMap((asset) =>
+                        (asset.manualFaces || []).map((face) => ({
+                          assetId: asset.id,
+                          faceId: face.id,
+                          box: face.box,
+                          personId: face.personId,
+                        })),
+                      )}
+                      onFaceAction={(assetId, action) => {
+                        if (!action?.faceId) {
+                          setToast(
+                            "Only manually tagged faces can be corrected in this preview.",
+                          );
+                          return true;
+                        }
+                        return faceAction(
+                          assetId,
+                          action.type === "new-person"
+                            ? {
+                                type: "create",
+                                faceId: action.faceId,
+                                name: action.name,
+                              }
+                            : action,
+                        );
+                      }}
+                      onBack={() => setScreen("people")}
+                    />
+                    <div className="collection-header compact">
+                      {layoutSwitch}
+                    </div>
+                  </>
+                ) : screen === "partner" ? (
+                  <>
+                    <PartnerHeader
+                      partner={PARTNER}
+                      count={visible.length}
+                      settings={partnerSettings}
+                      onChange={(patch) => {
+                        if (patch?.sharing === false) {
+                          setToast(`Stopped sharing with ${PARTNER.name}.`);
+                          navigate("Library");
+                        } else
+                          setPartnerSettings((current) => ({
+                            ...current,
+                            ...patch,
+                          }));
+                      }}
+                      onOpenSettings={() => openSettings("sharing", "partner")}
+                    />
+                    <div className="collection-header compact">
+                      {layoutSwitch}
+                    </div>
+                  </>
+                ) : currentCollection ? (
+                  <>
+                    <CollectionHeader
+                      collection={currentCollection}
+                      assets={scopedAssets}
+                      allAssets={accessibleAssets}
+                      people={people}
+                      users={resources.users}
+                      tags={tags}
+                      state={collections}
+                      onState={setCollections}
+                      onChange={(patch) => {
+                        setCollections((state) =>
+                          updateCollection(state, currentCollection.id, patch),
+                        );
+                        if (patch?.name) setCollection(patch.name);
+                      }}
+                      onNavigate={(id) =>
+                        id ? openCollectionById(id) : navigate("Library")
+                      }
+                      onAddPhotos={() => {
+                        navigate("Library");
+                        setToast(
+                          "Select photos, then choose Add to album in the selection bar.",
+                        );
+                      }}
+                      onUpload={() => {
+                        setUploadTargetId(currentCollection.id);
+                        uploadInput.current?.click();
+                      }}
+                      onShare={(userId, role) =>
+                        setToast(
+                          `Invited ${resources.users.find((user) => user.id === userId)?.name || "a person"} as ${role}.`,
+                        )
+                      }
+                      onCreateLink={() => {
+                        setLinkTarget({
+                          type: "album",
+                          albumId: currentCollection.id,
+                          name: currentCollection.name,
+                        });
+                        setPanel("share-link");
+                      }}
+                      onManageLinks={() => setScreen("shared-links")}
+                      onSlideshow={() =>
+                        visible.length &&
+                        openViewer(visible[0].id, "collection", true)
+                      }
+                      onDownload={() =>
+                        startDownload(visible.map((asset) => asset.id))
+                      }
+                      onOpenMap={() => {
+                        setMapScope("collection");
+                        setMapFocus(null);
+                        setScreen("map");
+                      }}
+                      onSelectCover={(assetId) =>
+                        setCollectionCover(assetId, currentCollection.id)
+                      }
+                      onDelete={() => {
+                        const result = deleteCollection(
+                          collections,
+                          currentCollection.id,
+                          {
+                            assets: catalog,
+                          },
+                        );
+                        setCollections(result.state || result);
+                        if (result.assetIds?.length)
+                          bulkAction("remove-from-album", result.assetIds, {
+                            albumId: currentCollection.id,
+                          });
+                        setToast(
+                          currentCollection.kind === "collection"
+                            ? "Collection deleted. Its albums are now on their own."
+                            : "Album deleted. Your photos stay in the library.",
+                        );
+                        navigate("Library");
+                      }}
+                      onLeave={() => {
+                        setCollections((state) =>
+                          leaveCollection(
+                            state,
+                            currentCollection.id,
+                            "taylor",
+                          ),
+                        );
+                        setToast(`You left ${currentCollection.name}.`);
+                        navigate("Library");
+                      }}
+                      onOpenActivity={() => setActivityOpen((value) => !value)}
+                      onReevaluate={(ids) =>
+                        setToast(countLabel(ids?.length || 0, "Matching now:"))
+                      }
+                      activity={activityFor(collections, currentCollection.id)}
+                    />
+                    <div className="collection-header compact">
+                      {layoutSwitch}
+                    </div>
+                  </>
+                ) : (
+                  <div className="collection-header">
+                    <div>
+                      {/* Top-level destinations are their own context; a
+                          "Library / All media" trail would only repeat the title. */}
+                      {(session.state.scope.kind === "space" ||
+                        session.state.scope.kind === "album") && (
+                        <div className="breadcrumbs">
+                          Library <span>/</span>{" "}
+                          {session.state.scope.kind === "space"
+                            ? "Shared spaces"
+                            : "Albums"}
+                        </div>
+                      )}
+                      <h1>{collection}</h1>
+                    </div>
+                    {layoutSwitch}
+                  </div>
+                )}
+                {(activeChips.length > 0 || query.text) && (
+                  <div className="active-filter-bar">
+                    <div className="chips">
+                      {query.text && (
+                        <span className="chip">
+                          <Icon name="mdiMagnify" size={15} />
+                          {query.text}
+                          <button
+                            aria-label="Remove search text"
+                            onClick={() => patchQuery({ text: "" })}
+                          >
+                            <Icon name="mdiClose" size={14} />
+                          </button>
+                        </span>
+                      )}
+                      {activeChips.map((chip) => (
+                        <span className="chip" key={chip.field}>
+                          {chip.field === "personIds" &&
+                            [...new Set(Object.values(filter.personIds).flat())]
+                              .slice(0, 3)
+                              .map((id) => (
+                                <PersonAvatar
+                                  key={id}
+                                  person={people.find(
+                                    (person) => person.id === id,
+                                  )}
+                                  size={22}
+                                />
+                              ))}
+                          <button
+                            className="chip-label"
+                            onClick={() =>
+                              openFilters(
+                                chip.field === "personIds"
+                                  ? "people"
+                                  : chip.field === "tagIds"
+                                    ? "tags"
+                                    : "camera",
+                              )
+                            }
+                          >
+                            {chip.label}
+                          </button>
+                          <button
+                            aria-label={`Remove ${chip.label}`}
+                            onClick={() => setCondition(chip.field, null)}
+                          >
+                            <Icon name="mdiClose" size={14} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      className="text-button"
+                      onClick={() => patchQuery({ text: "", filter: {} })}
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                )}
+                <div className="toolbar results-toolbar">
+                  <span className="result-count" aria-live="polite">
+                    {visible.length} {visible.length === 1 ? "item" : "items"}
+                  </span>
+                  <span className="grow" />
+                  <div className="filter-control" ref={filterMenu}>
+                    <Button
+                      icon="mdiTuneVariant"
+                      active={panel === "filters"}
+                      aria-expanded={panel === "filters"}
+                      onClick={() =>
+                        panel === "filters"
+                          ? setPanel(null)
+                          : openFilters(filterSection || "people")
+                      }
+                    >
+                      Filter
+                      {activeChips.length + (query.text ? 1 : 0) > 0 && (
+                        <span className="filter-badge">
+                          {activeChips.length + (query.text ? 1 : 0)}
+                        </span>
+                      )}
+                    </Button>
+                    <Button
+                      icon="mdiChevronDown"
+                      className="filter-control-more"
+                      aria-label="Choose a filter"
+                      aria-haspopup="menu"
+                      aria-expanded={filterMenuOpen}
+                      onClick={() => setFilterMenuOpen((value) => !value)}
+                    />
+                    {filterMenuOpen && (
+                      <div className="filter-menu" role="menu">
+                        {[
+                          ["people", "People", "mdiAccountMultipleOutline"],
+                          ["date", "Date", "mdiCalendarRange"],
+                          ["places", "Places", "mdiMapMarker"],
+                          ["media", "Media", "mdiPlayBoxOutline"],
+                          ["tags", "Tags", "mdiTagOutline"],
+                          ["camera", "All filters", "mdiTuneVariant"],
+                        ].map(([section, label, icon]) => (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={section}
+                            onClick={() => {
+                              setFilterMenuOpen(false);
+                              openFilters(section);
+                            }}
+                          >
+                            <Icon name={icon} size={16} />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    icon="mdiPlayBoxOutline"
+                    disabled={!visible.length}
+                    onClick={() =>
+                      openViewer(
+                        visible.some((asset) => asset.id === selected.id)
+                          ? selected.id
+                          : visible[0]?.id,
+                        "collection",
+                        true,
+                      )
+                    }
+                  >
+                    Slideshow
+                  </Button>
+                  <Button
+                    icon="mdiTuneVariant"
+                    aria-label={
+                      inspector
+                        ? "Hide information panel"
+                        : "Show information panel"
+                    }
+                    active={inspector}
+                    onClick={() => setInspector(!inspector)}
+                  />
+                  <label className="sort">
+                    <Icon name="mdiSort" />
+                    <select
+                      aria-label="Sort assets"
+                      value={session.state.sort}
+                      onChange={(event) =>
+                        patchView({ sort: event.target.value })
+                      }
+                    >
+                      <option value="captured-desc">Captured — newest</option>
+                      <option value="captured-asc">Captured — oldest</option>
+                      <option value="imported-desc">Added — newest</option>
+                      <option value="filename">Filename</option>
+                      <option value="rating">Rating — highest</option>
+                    </select>
+                  </label>
+                  <Button
+                    icon="mdiViewGridOutline"
+                    aria-label="Grid view"
+                    active={session.state.view === "grid"}
+                    onClick={() => patchView({ view: "grid" })}
+                  />
+                  <Button
+                    icon="mdiFormatListBulleted"
+                    aria-label="List view"
+                    active={session.state.view === "list"}
+                    onClick={() => patchView({ view: "list" })}
+                  />
+                  {session.layout === "work" &&
+                    session.state.view === "grid" && (
+                      <Button
+                        icon="mdiFormatText"
+                        aria-label={
+                          showFilenames ? "Hide file names" : "Show file names"
+                        }
+                        title={
+                          showFilenames ? "Hide file names" : "Show file names"
+                        }
+                        active={showFilenames}
+                        onClick={() => {
+                          const next = !showFilenames;
+                          setShowFilenames(next);
+                          try {
+                            localStorage.setItem(
+                              "frameleaf-work-filenames",
+                              String(next),
+                            );
+                          } catch {}
+                        }}
+                      />
+                    )}
+                  <Button
+                    icon="mdiDotsHorizontal"
+                    aria-label="More library actions"
+                    onClick={() => setPanel("actions")}
+                  />
+                </div>
                 {collection === "Locked" && !unlocked ? (
                   <div className="locked-library-empty">
                     <Icon name="mdiShieldLockOutline" size={42} />
@@ -2889,6 +3221,7 @@ export function App() {
                 ) : collection === "Locked" || session.layout === "timeline" ? (
                   <TimelineLibrary
                     assets={visible}
+                    rowScale={size / DEFAULT_THUMB_SIZE}
                     selected={new Set(session.selection)}
                     grouping={session.state.grouping}
                     order={
@@ -2919,7 +3252,7 @@ export function App() {
                   </div>
                 ) : (
                   <div
-                    className={`media-grid ${session.state.view === "list" ? "media-list" : ""}`}
+                    className={`media-grid ${session.state.view === "list" ? "media-list" : ""} ${showFilenames ? "show-filenames" : ""}`}
                     style={{ "--thumb-size": `${size}px` }}
                   >
                     {pageOf.visible.map(assetTile)}
@@ -3304,7 +3637,9 @@ export function App() {
           <HighRiskWorkflows back={() => setScreen("library")} />
         )}
       </div>
-      {screen !== "admin" && screen !== "review" && (
+      {/* Counts, selection and draft state only mean something where photos
+          are browsed; Studio keeps its own save status. */}
+      {["library", "person", "partner"].includes(screen) && (
         <footer className="bottom-bar">
           <span>
             {visible.length} of {collectionAssets.length} items <i />
@@ -3312,34 +3647,8 @@ export function App() {
             {session.selection.length > selectedVisible.length &&
               ` (${session.selection.length - selectedVisible.length} outside these results)`}
           </span>
-          <span className="grow" />
-          {screen === "library" && (
-            <>
-              <Button
-                className="compare-button"
-                icon="mdiCompare"
-                disabled={selectedVisible.length < 2}
-                onClick={() => patchView({ view: "compare" })}
-              >
-                Compare
-              </Button>
-              <Button
-                icon="mdiPencilOutline"
-                disabled={!visible.some((asset) => asset.id === selected.id)}
-                onClick={() => setPanel("quick")}
-              >
-                Quick edit
-              </Button>
-              <Button
-                primary
-                icon="mdiOpenInNew"
-                disabled={!visible.some((asset) => asset.id === selected.id)}
-                onClick={() => setScreen("studio")}
-              >
-                Open in Studio
-              </Button>
-            </>
-          )}
+          {/* Compare, Quick edit and Open in Studio live on the selection bar,
+              which takes this bar's place while anything is selected. */}
           <span className="grow" />
           <span
             className="saved-label"
@@ -3381,6 +3690,7 @@ export function App() {
       )}
       {viewerId && (
         <MediaViewer
+          slideshowTitle={collection}
           assets={viewableAssets}
           assetId={viewerId}
           allowLocked={unlocked}
@@ -3457,6 +3767,13 @@ export function App() {
             setLinkTarget(target);
             setPanel("share-link");
           }}
+          onSendCopy={() =>
+            sendCopy(
+              actionAssetId
+                ? [actionAssetId]
+                : selectedVisible.map((asset) => asset.id),
+            )
+          }
           onClose={() => setPanel(null)}
           onAction={(kind, payload) => {
             const ids = (
@@ -3594,6 +3911,29 @@ export function App() {
           onAction={selectionAction}
           onClear={clearSelection}
           onSelectAll={selectAllVisible}
+          // #1 one toolbar: while selecting, the library bar's own actions join the selection bar.
+          leading={[
+            {
+              id: "compare",
+              label: "Compare",
+              icon: "mdiCompare",
+              disabled: selectedVisible.length < 2,
+              onClick: () => patchView({ view: "compare" }),
+            },
+            {
+              id: "quick-edit",
+              label: "Quick edit",
+              icon: "mdiPencilOutline",
+              onClick: () => setPanel("quick"),
+            },
+            {
+              id: "studio",
+              label: "Open in Studio",
+              icon: "mdiOpenInNew",
+              primary: true,
+              onClick: () => setScreen("studio"),
+            },
+          ]}
         />
       )}
       {helpOpen && <ShortcutsHelp close={() => setHelpOpen(false)} />}
@@ -3663,7 +4003,10 @@ export function App() {
           onClose={() => setPanel(null)}
         />
       )}
-      <DragDropOverlay active={dragActive} onDrop={(files) => addUploads(files)} />
+      <DragDropOverlay
+        active={dragActive}
+        onDrop={(files) => addUploads(files)}
+      />
       {(uploads.length > 0 || downloads.length > 0) && (
         <PanelDock>
           {uploads.length > 0 && (
@@ -3704,7 +4047,7 @@ export function App() {
         </div>
       )}
       {panel === "search" && (
-        <SearchDialog
+        <SearchPalette
           query={query}
           searchBy={searchBy}
           collection={collection}
@@ -3721,29 +4064,14 @@ export function App() {
             setPaletteQuery(text || "");
           }}
           close={() => setPanel(null)}
-          submit={(next, mode, scope, text) => {
-            setSearchBy(mode);
-            setRecentSearches((current) =>
-              text.trim()
-                ? [
-                    { text: text.trim(), mode, query: next },
-                    ...current.filter(
-                      (item) => item.text !== text.trim() || item.mode !== mode,
-                    ),
-                  ].slice(0, 5)
-                : current,
-            );
-            if (scope === "library") {
-              setCollection("Library");
-              setSnapshotIds(null);
-            }
-            patchView({
-              ...(scope === "library" ? { scope: { kind: "library" } } : {}),
-              query: next,
-              view: "grid",
-            });
-            setScreen("library");
-            setPanel(null);
+          submit={applySearch}
+          save={(...args) => {
+            applySearch(...args);
+            setPanel("save");
+          }}
+          openAsset={(id, ...args) => {
+            applySearch(...args);
+            setPendingOpen(id);
           }}
         />
       )}

@@ -734,3 +734,25 @@
     display: none;
   }
 }
+
+/* per-notification dismiss: bottom-right of the row, revealed on hover or focus */
+.notif-list li {
+  position: relative;
+}
+.notif-dismiss {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  transition: opacity var(--fl-motion-fast) var(--fl-ease);
+}
+.notif-list li:is(:hover, :focus-within) .notif-dismiss {
+  opacity: 1;
+}
+@media (hover: none) {
+  .notif-dismiss {
+    opacity: 1;
+  }
+}

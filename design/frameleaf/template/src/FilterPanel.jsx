@@ -74,6 +74,7 @@ function MultiFilter({ field, label, items, condition, setCondition, people }) {
             )
             .join(", ")}{" "}
           <button
+            type="button"
             className="text-button"
             onClick={() => setPreferred(group)}
             aria-label={`Edit ${label.toLowerCase()} ${setGroupLabels[group].toLowerCase()} group`}
@@ -88,6 +89,7 @@ function MultiFilter({ field, label, items, condition, setCondition, people }) {
             .filter((group) => group !== mode && !condition?.[group]?.length)
             .map((group) => (
               <button
+                type="button"
                 className="text-button"
                 key={group}
                 onClick={() => setPreferred(group)}
@@ -153,12 +155,15 @@ export function FilterPanel({
   close,
   save,
   focusSection = "people",
+  // Inside the search palette: the palette owns Escape, focus and the count.
+  embedded = false,
 }) {
   const panel = useRef(null);
   const closeRef = useRef(close);
   closeRef.current = close;
   const filter = query.filter;
   useEffect(() => {
+    if (embedded) return undefined;
     const previousFocus = document.activeElement;
     const onKeyDown = (event) => {
       if (event.key === "Escape" && !event.defaultPrevented) {
@@ -174,11 +179,12 @@ export function FilterPanel({
     };
   }, []);
   useEffect(() => {
+    if (embedded) return;
     panel.current
       ?.querySelector(`[data-section="${focusSection}"]`)
       ?.scrollIntoView({ block: "nearest" });
     panel.current?.querySelector("h2")?.focus({ preventScroll: true });
-  }, [focusSection]);
+  }, [focusSection, embedded]);
   const typeValue = equalityControlValue(filter.type, (value) =>
     ["IMAGE", "VIDEO"].includes(value),
   );
@@ -303,16 +309,22 @@ export function FilterPanel({
     );
   };
   return (
-    <aside className="filter-panel" aria-label="Library filters" ref={panel}>
-      <div className="filter-panel-header">
-        <div>
-          <h2 tabIndex={-1}>Filters</h2>
-          <span className="muted" aria-live="polite">
-            {count} matching · {collection}
-          </span>
+    <aside
+      className={`filter-panel${embedded ? " embedded" : ""}`}
+      aria-label="Library filters"
+      ref={panel}
+    >
+      {!embedded && (
+        <div className="filter-panel-header">
+          <div>
+            <h2 tabIndex={-1}>Filters</h2>
+            <span className="muted" aria-live="polite">
+              {count} matching · {collection}
+            </span>
+          </div>
+          <Button icon="mdiClose" aria-label="Close filters" onClick={close} />
         </div>
-        <Button icon="mdiClose" aria-label="Close filters" onClick={close} />
-      </div>
+      )}
       <div className="filter-panel-scroll">
         <div data-section="people">
           <MultiFilter
@@ -336,6 +348,7 @@ export function FilterPanel({
               ["VIDEO", "Videos"],
             ].map(([value, label]) => (
               <button
+                type="button"
                 key={value}
                 aria-pressed={typeValue === value}
                 onClick={() =>
@@ -387,6 +400,7 @@ export function FilterPanel({
             ))}
           </div>
           <button
+            type="button"
             className="text-button"
             onClick={() =>
               setCondition("takenAt", { gte: "2026-08-01", lte: "2026-08-31" })
@@ -488,9 +502,11 @@ export function FilterPanel({
       </div>
       <div className="filter-panel-footer">
         <Button onClick={clear}>Reset filters</Button>
-        <Button icon="mdiFolderSearchOutline" onClick={save}>
-          Save preset
-        </Button>
+        {!embedded && (
+          <Button icon="mdiFolderSearchOutline" onClick={save}>
+            Save preset
+          </Button>
+        )}
       </div>
     </aside>
   );
