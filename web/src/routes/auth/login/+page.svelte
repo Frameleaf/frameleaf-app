@@ -7,9 +7,7 @@
   import {
     clearRememberMePreference,
     clearOAuthContinue,
-    getForcedPasswordContinue,
     getOAuthContinue,
-    preserveOAuthContinueForPasswordChange,
     rememberMePreference,
     setOAuthContinue,
     setRememberMePreference,
@@ -38,12 +36,9 @@
   const publicConfig = $derived(data.publicConfig);
 
   const onSuccess = async (user: LoginResponseDto) => {
-    await goto(
-      oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : getForcedPasswordContinue(data.continueUrl),
-      {
-        invalidateAll: true,
-      },
-    );
+    await goto(oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl, {
+      invalidateAll: true,
+    });
     clearRememberMePreference();
     eventManager.emit('AuthLogin', user);
   };
@@ -61,11 +56,7 @@
     if (oauth.isCallback(location)) {
       try {
         const user = await oauth.login(location, rememberMe);
-        if (!user.isAdmin && user.shouldChangePassword) {
-          preserveOAuthContinueForPasswordChange();
-          await onFirstLogin();
-          return;
-        }
+        // Upstream behaviour: an OAuth user is never sent to the forced password change.
         if (!user.isOnboarded) {
           await onOnboarding();
           return;
@@ -86,9 +77,9 @@
         (publicConfig.oauth.autoLaunch && !oauth.isAutoLaunchDisabled(location)) ||
         oauth.isAutoLaunchEnabled(location)
       ) {
-        const continueUrl = getForcedPasswordContinue(data.continueUrl);
+        const continueUrl = data.continueUrl;
         if (!setRememberMePreference(rememberMe) || !setOAuthContinue(continueUrl)) {
-          oauthError = 'Allow tab storage in this browser to complete sign in.';
+          oauthError = $t('frameleaf_auth_error_storage_sign_in');
           oauthLoading = false;
           return;
         }
@@ -106,17 +97,18 @@
     if (loading) {
       return;
     }
-    const address = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-      errorMessage = 'Enter a valid email address.';
+    // The server validates the address (it accepts single-label hosts such as admin@localhost).
+    const address = email.trim();
+    if (!address) {
+      errorMessage = $t('frameleaf_auth_error_email_required');
       return;
     }
     if (!password) {
-      errorMessage = 'Enter your password.';
+      errorMessage = $t('frameleaf_auth_error_password_required');
       return;
     }
     if (!setRememberMePreference(rememberMe)) {
-      errorMessage = 'Allow tab storage in this browser to keep this session choice.';
+      errorMessage = $t('frameleaf_auth_error_storage_session_choice');
       return;
     }
     try {
@@ -148,7 +140,7 @@
     oauthLoading = true;
     oauthError = '';
     if (!setRememberMePreference(rememberMe) || !setOAuthContinue(data.continueUrl)) {
-      oauthError = 'Allow tab storage in this browser to complete sign in.';
+      oauthError = $t('frameleaf_auth_error_storage_sign_in');
       oauthLoading = false;
       return;
     }
@@ -168,8 +160,8 @@
 
 <AuthShell hero="summit" attribution>
   <div class="auth-heading">
-    <h1>Welcome back</h1>
-    <p>Sign in to your photo library.</p>
+    <h1>{$t('frameleaf_auth_welcome_title')}</h1>
+    <p>{$t('frameleaf_auth_welcome_body')}</p>
   </div>
 
   {#if publicConfig.server.loginPageMessage}
@@ -183,7 +175,7 @@
 
   {#if oauthLoading}
     <p class="auth-info" role="status">
-      <Icon icon={mdiInformationOutline} size="16" /><span>Connecting to your sign-in provider…</span>
+      <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_oauth_connecting')}</span>
     </p>
   {:else}
     <form class="auth-card auth-form" {onsubmit} novalidate>
@@ -192,7 +184,7 @@
             <Icon icon={mdiAlertCircleOutline} size="16" /><span>{errorMessage}</span>
           </p>{/if}
         <div class="auth-field">
-          <label for="auth-email">Email</label>
+          <label for="auth-email">{$t('frameleaf_auth_email')}</label>
           <!-- svelte-ignore a11y_autofocus (first sign-in field) -->
           <input
             id="auth-email"
@@ -203,40 +195,43 @@
             autofocus
             bind:value={email}
             aria-invalid={!!errorMessage || undefined}
-            placeholder="you@example.test"
+            placeholder={$t('frameleaf_auth_email_placeholder')}
           />
         </div>
         <AuthPasswordField
           id="auth-password"
-          label="Password"
+          label={$t('frameleaf_auth_password')}
           autocomplete="current-password"
           bind:value={password}
           invalid={!!errorMessage}
         />
         <div class="auth-row">
-          <label class="auth-check"><input type="checkbox" bind:checked={rememberMe} />Keep me signed in</label>
+          <label class="auth-check"
+            ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
+          >
           <button type="button" class="auth-link" aria-expanded={forgot} onclick={() => (forgot = !forgot)}
-            >Forgot your password?</button
+            >{$t('frameleaf_auth_forgot_password')}</button
           >
         </div>
         {#if forgot}
           <p class="auth-info">
-            <Icon icon={mdiInformationOutline} size="16" /><span>
-              Passwords are reset by your server administrator. Ask them for a temporary password from Users, then sign
-              in and choose your own.
-            </span>
+            <Icon icon={mdiInformationOutline} size="16" /><span>{$t('frameleaf_auth_forgot_password_help')}</span>
           </p>
         {/if}
         <button type="submit" class="button primary auth-submit" disabled={loading}
-          >{loading ? 'Signing in…' : 'Sign in'}</button
+          >{loading ? $t('frameleaf_auth_signing_in') : $t('frameleaf_auth_sign_in')}</button
         >
       {/if}
 
       {#if publicConfig.oauth.enabled}
         {#if !publicConfig.passwordLogin.enabled}
-          <label class="auth-check"><input type="checkbox" bind:checked={rememberMe} />Keep me signed in</label>
+          <label class="auth-check"
+            ><input type="checkbox" bind:checked={rememberMe} />{$t('frameleaf_auth_keep_signed_in')}</label
+          >
         {/if}
-        {#if publicConfig.passwordLogin.enabled}<div class="auth-divider" aria-hidden="true">or</div>{/if}
+        {#if publicConfig.passwordLogin.enabled}<div class="auth-divider" aria-hidden="true">
+            {$t('frameleaf_auth_or')}
+          </div>{/if}
         {#if oauthError}<p class="auth-error" role="alert">
             <Icon icon={mdiAlertCircleOutline} size="16" /><span>{oauthError}</span>
           </p>{/if}
@@ -253,6 +248,6 @@
   {/if}
 
   <div class="auth-server">
-    <Icon icon={mdiServerOutline} size="16" /><span>Server</span><code>{data.serverUrl}</code>
+    <Icon icon={mdiServerOutline} size="16" /><span>{$t('frameleaf_auth_server')}</span><code>{data.serverUrl}</code>
   </div>
 </AuthShell>
