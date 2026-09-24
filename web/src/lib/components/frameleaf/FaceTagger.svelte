@@ -282,19 +282,12 @@
     fieldBefore = null;
   };
 
-  // Escape, the close button, Cancel and the dialog's own cancel ask before throwing away
-  // unsaved face tags.
-  let confirmDiscard = $state(false);
+  // Escape, the close button, Cancel and the dialog's own cancel close at once, unsaved tags and
+  // all, unless a save is in flight (FaceTagger.jsx:316-318, 387-389, 406, 731).
   const requestClose = () => {
-    if (saving) {
-      return;
+    if (!saving) {
+      onClose();
     }
-    commitField();
-    if (changed) {
-      confirmDiscard = true;
-      return;
-    }
-    onClose();
   };
 
   const addBox = async (box: FaceBox = DEFAULT_FACE_BOX) => {
@@ -563,9 +556,7 @@
     event.stopPropagation();
     if (event.key === 'Escape') {
       event.preventDefault();
-      if (confirmDiscard) {
-        confirmDiscard = false;
-      } else if (!cancelGesture()) {
+      if (!cancelGesture()) {
         requestClose();
       }
       return;
@@ -872,13 +863,6 @@
   </div>
   {#if error}
     <div class="ft-message error" role="alert">{error}</div>
-  {/if}
-  {#if confirmDiscard}
-    <div class="ft-message confirm" role="alertdialog" aria-label={$t('frameleaf_face_tagger_discard')}>
-      <span>{$t('frameleaf_face_tagger_discard')}</span>
-      <Button onclick={() => (confirmDiscard = false)}>{$t('frameleaf_face_tagger_keep_editing')}</Button>
-      <Button variant="primary" onclick={onClose}>{$t('frameleaf_face_tagger_discard_confirm')}</Button>
-    </div>
   {/if}
   <footer class="ft-footer">
     <span>{statusText}</span>
@@ -1203,15 +1187,6 @@
   }
   .ft-message.error {
     color: var(--fl-danger);
-  }
-  .ft-message.confirm {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-  .ft-message.confirm > span {
-    margin-right: auto;
   }
   .ft-image-error {
     color: var(--fl-muted);
