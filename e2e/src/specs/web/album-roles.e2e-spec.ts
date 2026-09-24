@@ -70,7 +70,9 @@ test.describe('Album roles', () => {
       await utils.setAuthCookies(context, row.user.accessToken);
       const page = await context.newPage();
       await page.goto(`/albums/${album.id}`);
-      await expect(page.getByRole('heading', { name: 'Role matrix' })).toBeVisible();
+      // For an owner or editor the title is the prototype's inline-edit button inside the h1, whose
+      // accessible name is "Edit title" (CollectionHeader.jsx:1092-1104), so wait on the breadcrumb.
+      await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByText('Role matrix')).toBeVisible();
 
       // Add (select from library) and upload share one menu.
       await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(row.add ? 1 : 0);
