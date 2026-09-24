@@ -72,6 +72,9 @@ export const ArchiveOperationResponseSchema = z
     undone: z.int().min(0).describe('Restored by Undo'),
     conflict: z.int().min(0).describe('Changed after the archive, so Undo left them as they are'),
     undoable: z.boolean().describe('Undo is available for this operation'),
+    currentSession: z
+      .boolean()
+      .describe('The operation was submitted or confirmed from the session asking, so it may offer its Undo'),
   })
   .meta({ id: 'ArchiveOperationResponseDto' });
 
