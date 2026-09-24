@@ -37,6 +37,22 @@ export class OAuthController {
     };
   }
 
+  @Get('frameleaf-mobile-redirect')
+  @Authenticated({ public: true })
+  @Redirect()
+  @Endpoint({
+    summary: 'Redirect OAuth to the Frameleaf mobile app',
+    description:
+      'Requests to this URL are automatically forwarded to the Frameleaf mobile app (frameleaf-auth:///oauth-callback), and is used when an identity provider only accepts HTTP callbacks.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  redirectOAuthToFrameleafMobile(@Req() request: Request) {
+    return {
+      url: this.service.getFrameleafMobileRedirect(request.url),
+      statusCode: HttpStatus.TEMPORARY_REDIRECT,
+    };
+  }
+
   @Post('authorize')
   @Authenticated({ public: true })
   @Endpoint({

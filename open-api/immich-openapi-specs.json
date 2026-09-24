@@ -18144,6 +18144,28 @@
         "x-immich-state": "Stable"
       }
     },
+    "/oauth/frameleaf-mobile-redirect": {
+      "get": {
+        "description": "Requests to this URL are automatically forwarded to the Frameleaf mobile app (frameleaf-auth:///oauth-callback), and is used when an identity provider only accepts HTTP callbacks.",
+        "operationId": "redirectOAuthToFrameleafMobile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Redirect OAuth to the Frameleaf mobile app",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/oauth/link": {
       "post": {
         "description": "Link an OAuth account to the authenticated user.",

@@ -2,7 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, UnauthorizedExcept
 import { parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
-import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
+import {
+  FRAMELEAF_MOBILE_REDIRECT,
+  FRAMELEAF_MOBILE_REDIRECT_PATH,
+  LOGIN_DUMMY_HASH,
+  LOGIN_URL,
+  MOBILE_REDIRECT,
+  SALT_ROUNDS,
+} from 'src/constants.js';
 import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
@@ -86,6 +93,32 @@ export type ValidateRequest = {
     /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
     refreshElevation?: boolean;
   };
+};
+
+/**
+ * The HTTP address that forwards an OAuth callback to the Frameleaf app, derived from the
+ * configured Immich mobile redirect (FL-131).
+ *
+ * The override exists because some identity providers only accept `https` callbacks. The Immich
+ * app's callback is replaced by the configured `…/oauth/mobile-redirect`; the Frameleaf app's by
+ * the sibling `…/oauth/frameleaf-mobile-redirect` on the same server, so the provider hands each
+ * app back its own callback and neither app is opened for the other's sign-in. A configured
+ * address that is not a mobile-redirect path gets the endpoint at the server's API root.
+ */
+const frameleafRedirectUri = (mobileRedirectUri: string): string => {
+  let url: URL;
+  try {
+    url = new URL(mobileRedirectUri);
+  } catch {
+    return mobileRedirectUri;
+  }
+  const legacyPath = /\/oauth\/mobile-redirect\/?$/;
+  url.pathname = legacyPath.test(url.pathname)
+    ? url.pathname.replace(legacyPath, () => FRAMELEAF_MOBILE_REDIRECT_PATH)
+    : `/api${FRAMELEAF_MOBILE_REDIRECT_PATH}`;
+  url.search = '';
+  url.hash = '';
+  return url.href;
 };
 
 @Injectable()
@@ -337,6 +370,11 @@ export class AuthService extends BaseService {
 
   getMobileRedirect(url: string) {
     return `${MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
+  }
+
+  /** The Frameleaf app's counterpart of {@link getMobileRedirect} (FL-131). */
+  getFrameleafMobileRedirect(url: string) {
+    return `${FRAMELEAF_MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
   }
 
   async authorize(dto: OAuthConfigDto) {
@@ -796,7 +834,9 @@ export class AuthService extends BaseService {
     url: string,
   ) {
     if (mobileOverrideEnabled && mobileRedirectUri) {
-      return url.replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri);
+      return url
+        .replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri)
+        .replace(/frameleaf-auth:\/+oauth-callback/, () => frameleafRedirectUri(mobileRedirectUri));
     }
     return url;
   }

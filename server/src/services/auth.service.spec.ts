@@ -993,6 +993,18 @@ describe(AuthService.name, () => {
     });
   });
 
+  describe('getFrameleafMobileRedirect (FL-131)', () => {
+    it('passes the query to the Frameleaf app callback', () => {
+      expect(sut.getFrameleafMobileRedirect('/api/oauth/frameleaf-mobile-redirect?code=123&state=456')).toEqual(
+        'frameleaf-auth:///oauth-callback?code=123&state=456',
+      );
+    });
+
+    it('works without query params', () => {
+      expect(sut.getFrameleafMobileRedirect('https://immich.app')).toEqual('frameleaf-auth:///oauth-callback?');
+    });
+  });
+
   describe('authorize', () => {
     it('should fail if oauth is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: false } });
@@ -1006,6 +1018,31 @@ describe(AuthService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
 
       await sut.authorize({ redirectUri: 'https://demo.immich.app' });
+    });
+
+    it('sends each app its own callback when the mobile redirect override is on (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
+
+      await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+      await sut.authorize({ redirectUri: 'app.immich:///oauth-callback' });
+
+      expect(mocks.oauth.authorize.mock.calls.map(([, redirectUri]) => redirectUri)).toEqual([
+        'http://mobile-redirect/api/oauth/frameleaf-mobile-redirect',
+        'http://mobile-redirect',
+      ]);
+    });
+
+    it('passes the Frameleaf callback through when the override is off (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+
+      await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+
+      expect(mocks.oauth.authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        'frameleaf-auth:///oauth-callback',
+        undefined,
+        undefined,
+      );
     });
   });
 
@@ -1172,6 +1209,49 @@ describe(AuthService.name, () => {
         );
       });
     }
+
+    for (const url of ['frameleaf-auth:/oauth-callback?code=abc123', 'frameleaf-auth:///oauth-callback?code=abc123']) {
+      it(`should use the Frameleaf mobile redirect for a url of ${url} (FL-131)`, async () => {
+        mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
+        mocks.user.getByOAuthId.mockResolvedValue(UserFactory.create());
+        mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create() });
+        mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+        await sut.callback({ url, state: 'xyz789', codeVerifier: 'foo' }, {}, loginDetails);
+
+        expect(mocks.oauth.getProfileAndOAuthSid).toHaveBeenCalledWith(
+          expect.objectContaining({}),
+          'http://mobile-redirect/api/oauth/frameleaf-mobile-redirect?code=abc123',
+          'xyz789',
+          'foo',
+        );
+      });
+    }
+
+    it('keeps the Frameleaf callback beside a configured mobile-redirect path (FL-131)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        oauth: {
+          ...systemConfigStub.oauthWithMobileOverride.oauth,
+          mobileRedirectUri: 'https://photos.example.test/immich/api/oauth/mobile-redirect',
+        },
+      });
+      mocks.user.getByOAuthId.mockResolvedValue(UserFactory.create());
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({ profile: OAuthProfileFactory.create() });
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.callback(
+        { url: 'frameleaf-auth:///oauth-callback?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+        {},
+        loginDetails,
+      );
+
+      expect(mocks.oauth.getProfileAndOAuthSid).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+        'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect?code=abc123',
+        'xyz789',
+        'foo',
+      );
+    });
 
     it('should use the default quota', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithStorageQuota);
