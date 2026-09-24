@@ -757,6 +757,7 @@
         tileLayout={gridLayout}
         thumbnailSize={libraryGridPreferences.thumbnailSize}
         showFileNames={libraryGridPreferences.showFileNames}
+        onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
         showDayHeaders={gridLayout === 'timeline'}
         grouping={gridLayout === 'timeline' ? session.state.grouping : 'days'}
         onGroupingChange={gridLayout === 'timeline' ? (grouping) => session.patchView({ grouping }) : undefined}

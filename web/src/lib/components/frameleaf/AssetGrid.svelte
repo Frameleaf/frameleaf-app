@@ -17,8 +17,10 @@
    * mounts the viewer and the session carries the selection.
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
+  import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
   import { cellGrid, cellGridOptions, type TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import { animateFlip } from '$lib/frameleaf/motion';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -70,6 +72,7 @@
   let width = $state(0);
   let sentinel = $state<HTMLElement>();
   let rowsElement = $state<HTMLElement>();
+  let root = $state<HTMLElement>();
 
   const maxMd = $derived(mediaQueryManager.maxMd);
   const selection = $derived(session.selection);
@@ -132,6 +135,27 @@
       observer?.disconnect();
       target.removeEventListener('scroll', readScroll);
     };
+  });
+
+  /**
+   * Browse and Work zoom with pinch, Ctrl-scroll and + / − (template `App.jsx` `zoomGrid`): one
+   * step of the per-device Thumbnail size, with the tiles sliding to their new boxes (instant under
+   * Reduce Motion).
+   */
+  $effect(() => {
+    const element = root;
+    if (!element || !cells) {
+      return;
+    }
+    return bindGridZoom(element, {
+      onZoom: (direction) => {
+        const next = libraryGridPreferences.nextSize(direction);
+        if (next !== null) {
+          animateFlip(element, () => (libraryGridPreferences.thumbnailSize = next));
+        }
+      },
+      enabled: () => !session.openAssetId,
+    });
   });
 
   /** The cells to mount: the rows in or near the viewport, never the whole result list. */
@@ -210,7 +234,14 @@
   };
 </script>
 
-<div class="fl-grid" data-testid="frameleaf-asset-grid" data-layout={tileLayout} bind:clientWidth={width}>
+<div
+  class="fl-grid"
+  class:is-zoomable={!!cells}
+  data-testid="frameleaf-asset-grid"
+  data-layout={tileLayout}
+  bind:this={root}
+  bind:clientWidth={width}
+>
   {@render header?.()}
 
   {#if assets.length === 0}
@@ -253,6 +284,10 @@
   .fl-grid {
     position: relative;
     width: 100%;
+  }
+  /* A two-finger pinch zooms the grid, not the page. */
+  .fl-grid.is-zoomable {
+    touch-action: pan-y;
   }
   .fl-grid-rows {
     position: relative;
