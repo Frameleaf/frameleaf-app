@@ -49,6 +49,8 @@ export interface Events {
   VideoEditVersionFailedV1: (data: { assetId: string; versionId: string | null }) => void;
   /** Fork-only (FL-53): somebody's album role changed, or they left or were removed (`role: null`). */
   AlbumUserUpdateV1: (data: { albumId: string; userId: string; role: AlbumUserRole | null }) => void;
+  /** Fork-only (FL-54): a partner stopped sharing their library. */
+  PartnerRevokeV1: (data: { sharedById: string; sharedWithId: string }) => void;
 }
 
 const websocket: Socket<Events> = io({
@@ -95,6 +97,7 @@ websocket
   .on('on_person_thumbnail', (id) => eventManager.emit('PersonThumbnailReady', { id }))
   .on('on_notification', () => notificationManager.refresh())
   // FL-53: a role change made elsewhere reaches this page as the same event a local change raises.
+  .on('PartnerRevokeV1', (data) => eventManager.emit('PartnerRevoke', data))
   .on('AlbumUserUpdateV1', ({ albumId, userId, role }) =>
     role
       ? eventManager.emit('AlbumUserUpdate', { albumId, userId, role })

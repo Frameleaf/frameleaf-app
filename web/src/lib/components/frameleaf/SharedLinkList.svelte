@@ -1,11 +1,20 @@
 <script lang="ts">
   import ShareCover from '../../../routes/(user)/shared-links/(list)/ShareCover.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
+  import IconButton from './IconButton.svelte';
   import SharedLinkForm from './SharedLinkForm.svelte';
   import QrCode from './QrCode.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
+  import {
+    isLinkExpired,
+    relativeTime,
+    sharedLinkBadges,
+    type SharedLinkBadgeId,
+  } from '$lib/frameleaf/shared-link-badges';
+  import { Route } from '$lib/route';
   import { asUrl } from '$lib/services/shared-link.service';
   import { copyToClipboard } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -18,11 +27,26 @@
     type AlbumResponseDto,
     type SharedLinkResponseDto,
   } from '@immich/sdk';
-  import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
+  import {
+    mdiClockOutline,
+    mdiContentCopy,
+    mdiDeleteOutline,
+    mdiDownloadOutline,
+    mdiInformationOutline,
+    mdiLinkVariant,
+    mdiLockOutline,
+    mdiMagnify,
+    mdiOpenInNew,
+    mdiPencilOutline,
+    mdiPlus,
+    mdiQrcode,
+    mdiUpload,
+  } from '@mdi/js';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, untrack } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   // Mounted directly as route content (no Frameleaf ancestor supplies the token scope), so
   // the class and theme attribute are applied on this component's own root, matching the
@@ -148,7 +172,68 @@
     ),
   );
 
-  const isExpired = (link: SharedLinkResponseDto) => !!link.expiresAt && Date.parse(link.expiresAt) <= Date.now();
+  const isExpired = (link: SharedLinkResponseDto) => isLinkExpired(link);
+
+  /* ---- AL-20: the tabs are a real tablist — arrows, Home and End move and select, one tab stop ---- */
+  let tabButtons: HTMLButtonElement[] = $state([]);
+  const onTabKeydown = (event: KeyboardEvent) => {
+    const index = TABS.findIndex(({ id }) => id === tab);
+    const delta = { ArrowRight: 1, ArrowLeft: -1, Home: -index, End: TABS.length - 1 - index }[event.key];
+    if (delta === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const next = (index + delta + TABS.length) % TABS.length;
+    tab = TABS[next].id;
+    tabButtons[next]?.focus();
+  };
+
+  /* ---- AL-21: what each card says about its link (SharedLinks.jsx `Badges`, `sl-meta`) ---- */
+  const badgeIcons: Record<SharedLinkBadgeId, string> = {
+    expired: mdiClockOutline,
+    password: mdiLockOutline,
+    download: mdiDownloadOutline,
+    upload: mdiUpload,
+    metadata: mdiInformationOutline,
+    expiry: mdiClockOutline,
+  };
+  const badgeLabel = (id: SharedLinkBadgeId, at?: string) => {
+    switch (id) {
+      case 'expired': {
+        return $t('expired');
+      }
+      case 'password': {
+        return $t('password');
+      }
+      case 'download': {
+        return $t('frameleaf_sharing.badge_downloads');
+      }
+      case 'upload': {
+        return $t('frameleaf_sharing.badge_uploads');
+      }
+      case 'metadata': {
+        return $t('frameleaf_sharing.badge_metadata');
+      }
+      case 'expiry': {
+        return $t('frameleaf_sharing.badge_expires', {
+          values: { when: relativeTime(at ?? Date.now(), Date.now(), $locale ?? undefined) },
+        });
+      }
+    }
+  };
+  const createdLabel = (link: SharedLinkResponseDto) =>
+    $t('frameleaf_sharing.created_when', {
+      values: { when: relativeTime(link.createdAt, Date.now(), $locale ?? undefined) },
+    });
+
+  /** An album link opens the album here; a selection opens the public page, as a visitor sees it. */
+  const openPublic = (link: SharedLinkResponseDto) => window.open(asUrl(link), '_blank', 'noopener,noreferrer');
+
+  let status = $state('');
+  const copy = async (link: SharedLinkResponseDto) => {
+    await copyToClipboard(asUrl(link));
+    status = $t('frameleaf_sharing.link_copied_for', { values: { name: titleOf(link) } });
+  };
 
   const openPicker = async () => {
     dialog = { kind: 'pick' };
@@ -190,6 +275,7 @@
     try {
       await removeSharedLink({ id: link.id });
       eventManager.emit('SharedLinkDelete', link);
+      status = $t('frameleaf_sharing.link_deleted_for', { values: { name: titleOf(link) } });
       toastManager.primary($t('deleted_shared_link'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_delete_shared_link'));
@@ -201,23 +287,36 @@
 
 <OnEvents {onSharedLinkCreate} {onSharedLinkUpdate} {onSharedLinkDelete} />
 
+<!-- The shared links screen, ported from the design's SharedLinks.jsx (AL-19..AL-22). -->
 <section class="frameleaf sl-screen" data-theme={appTheme} aria-labelledby="sl-heading">
   <header class="sl-head">
     <div>
       <h1 id="sl-heading">{$t('shared_links')}</h1>
+      <p>{$t('frameleaf_sharing.links_intro')}</p>
     </div>
-    <button type="button" class="primary" disabled={loading} onclick={openPicker}>
+    <Button variant="primary" disabled={loading} onclick={openPicker}>
+      <Icon icon={mdiPlus} size="18" aria-hidden={true} />
       {$t('frameleaf_sharing.new_link')}
-    </button>
+    </Button>
   </header>
 
   <div class="sl-toolbar">
-    <div class="sl-tabs" role="tablist" aria-label={$t('show_shared_links')}>
-      {#each TABS as entry (entry.id)}
+    <div
+      class="sl-tabs"
+      role="tablist"
+      aria-label={$t('frameleaf_sharing.link_types')}
+      tabindex="-1"
+      onkeydown={onTabKeydown}
+    >
+      {#each TABS as entry, index (entry.id)}
         <button
+          bind:this={tabButtons[index]}
           type="button"
           role="tab"
+          id={`sl-tab-${entry.id}`}
           aria-selected={tab === entry.id}
+          aria-controls="sl-panel"
+          tabindex={tab === entry.id ? 0 : -1}
           class="sl-tab"
           onclick={() => (tab = entry.id)}
         >
@@ -227,61 +326,109 @@
       {/each}
     </div>
     <label class="sl-search">
+      <Icon icon={mdiMagnify} size="18" aria-hidden={true} />
       <input
         type="search"
         bind:value={query}
         placeholder={$t('frameleaf_sharing.search_links')}
-        aria-label={$t('frameleaf_sharing.search_links')}
+        aria-label={$t('frameleaf_sharing.search_shared_links')}
       />
     </label>
   </div>
 
-  {#if loading}
-    <p role="status">{$t('loading')}</p>
-  {:else if visible.length}
-    <ul class="sl-grid">
-      {#each visible as link (link.id)}
-        {@const title = titleOf(link)}
-        {@const expired = isExpired(link)}
-        <li class="sl-card" data-expired={expired || undefined}>
-          <a class="sl-cover" href={asUrl(link)} target="_blank" rel="noopener noreferrer" aria-label={title}>
-            <ShareCover sharedLink={link} />
-            {#if expired}<span class="sl-cover-flag">{$t('expired')}</span>{/if}
-          </a>
-          <div class="sl-body">
-            <div class="sl-heading">
-              <h2>{title}</h2>
-              <span class="sl-type">{link.type === SharedLinkType.Album ? $t('album') : $t('individual_share')}</span>
+  <p class="sr-only" role="status" aria-live="polite">{status}</p>
+
+  <div id="sl-panel" role="tabpanel" aria-labelledby={`sl-tab-${tab}`}>
+    {#if loading}
+      <p class="muted">{$t('loading')}</p>
+    {:else if visible.length}
+      <ul class="sl-grid">
+        {#each visible as link (link.id)}
+          {@const title = titleOf(link)}
+          {@const expired = isExpired(link)}
+          {@const isAlbum = link.type === SharedLinkType.Album}
+          <li class="sl-card" data-expired={expired || undefined}>
+            {#if isAlbum && link.album}
+              <a
+                class="sl-cover"
+                href={Route.viewAlbum({ id: link.album.id })}
+                aria-label={$t('frameleaf_sharing.open_album_named', { values: { name: title } })}
+              >
+                <ShareCover sharedLink={link} />
+                {#if expired}<span class="sl-cover-flag">{$t('expired')}</span>{/if}
+              </a>
+            {:else}
+              <a
+                class="sl-cover"
+                href={asUrl(link)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={$t('frameleaf_sharing.open_shared_page_for', { values: { name: title } })}
+              >
+                <ShareCover sharedLink={link} />
+                {#if expired}<span class="sl-cover-flag">{$t('expired')}</span>{/if}
+              </a>
+            {/if}
+            <div class="sl-body">
+              <div class="sl-heading">
+                <h2>{title}</h2>
+                <span class="sl-type">{isAlbum ? $t('album') : $t('frameleaf_sharing.type_individual')}</span>
+              </div>
+              <p class="sl-desc">{link.description || $t('frameleaf_sharing.no_description')}</p>
+              <ul class="sl-badges" aria-label={$t('frameleaf_sharing.link_details')}>
+                {#each sharedLinkBadges(link) as badge (badge.id)}
+                  <li class="sl-badge" data-tone={badge.tone}>
+                    <Icon icon={badgeIcons[badge.id]} size="14" aria-hidden={true} />
+                    {badgeLabel(badge.id, badge.at)}
+                  </li>
+                {/each}
+              </ul>
+              <p class="sl-meta">{createdLabel(link)} · {link.slug ? `/s/${link.slug}` : link.id}</p>
             </div>
-            {#if link.description}<p class="sl-desc">{link.description}</p>{/if}
-            <ul class="sl-badges" aria-label={$t('frameleaf_sharing.link_ready_title')}>
-              {#if link.password}<li>{$t('password')}</li>{/if}
-              {#if link.allowDownload}<li>{$t('download')}</li>{/if}
-              {#if link.allowUpload}<li>{$t('upload')}</li>{/if}
-              {#if link.showMetadata}<li>{$t('show_metadata')}</li>{/if}
-              {#if link.expiresAt}<li>
-                  {$t('expires_date', { values: { date: new Date(link.expiresAt).toLocaleString() } })}
-                </li>{/if}
-            </ul>
-          </div>
-          <div class="sl-actions">
-            <button type="button" onclick={() => copyToClipboard(asUrl(link))}>{$t('copy_link')}</button>
-            <button type="button" onclick={() => openQr(link)}>{$t('view_qr_code')}</button>
-            <span class="grow"></span>
-            <button type="button" onclick={() => openEdit(link)}>{$t('edit_link')}</button>
-            <button type="button" class="danger" onclick={() => openDelete(link)}>{$t('delete_link')}</button>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <div class="sl-empty">
-      <h2>
-        {links.length > 0 ? $t('frameleaf_sharing.empty_matches_title') : $t('frameleaf_sharing.empty_links_title')}
-      </h2>
-      <p>{links.length > 0 ? $t('frameleaf_sharing.empty_matches_body') : $t('frameleaf_sharing.empty_links_body')}</p>
-    </div>
-  {/if}
+            <div class="sl-actions">
+              <IconButton
+                label={$t('frameleaf_sharing.copy_link_for', { values: { name: title } })}
+                onclick={() => void copy(link)}
+              >
+                <Icon icon={mdiContentCopy} size="18" />
+              </IconButton>
+              <IconButton
+                label={$t('frameleaf_sharing.qr_code_for', { values: { name: title } })}
+                onclick={() => openQr(link)}
+              >
+                <Icon icon={mdiQrcode} size="18" />
+              </IconButton>
+              <IconButton
+                label={$t('frameleaf_sharing.open_public_page_for', { values: { name: title } })}
+                onclick={() => openPublic(link)}
+              >
+                <Icon icon={mdiOpenInNew} size="18" />
+              </IconButton>
+              <span class="grow"></span>
+              <Button onclick={() => openEdit(link)}>
+                <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />
+                {$t('edit')}
+              </Button>
+              <button type="button" class="sl-danger" onclick={() => openDelete(link)}>
+                <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />
+                {$t('delete')}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <div class="sl-empty">
+        <Icon icon={mdiLinkVariant} size="40" aria-hidden={true} />
+        <h2>
+          {links.length > 0 ? $t('frameleaf_sharing.empty_matches_title') : $t('frameleaf_sharing.empty_links_title')}
+        </h2>
+        <p>
+          {links.length > 0 ? $t('frameleaf_sharing.empty_matches_body') : $t('frameleaf_sharing.empty_links_body')}
+        </p>
+      </div>
+    {/if}
+  </div>
 </section>
 
 <Dialog title={$t('frameleaf_sharing.pick_album_title')} closeLabel={$t('close')} bind:open={pickOpen}>
@@ -296,10 +443,8 @@
     </label>
     <p class="muted">{$t('frameleaf_sharing.pick_album_hint')}</p>
     <div class="sl-dialog-actions">
-      <button type="button" onclick={() => (pickOpen = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary" disabled={!pickAlbumId} onclick={startCreateFromAlbum}
-        >{$t('continue')}</button
-      >
+      <Button onclick={() => (pickOpen = false)}>{$t('cancel')}</Button>
+      <Button variant="primary" disabled={!pickAlbumId} onclick={startCreateFromAlbum}>{$t('continue')}</Button>
     </div>
   {:else}
     <p class="muted">{$t('frameleaf_sharing.pick_album_hint')}</p>
@@ -313,10 +458,15 @@
 {/if}
 
 {#if dialog?.kind === 'qr'}
-  <Dialog title={$t('view_qr_code')} closeLabel={$t('close')} bind:open={qrOpen}>
+  <Dialog
+    title={$t('frameleaf_sharing.qr_title', { values: { name: titleOf(dialog.link) } })}
+    closeLabel={$t('close')}
+    bind:open={qrOpen}
+  >
+    <p class="muted">{$t('frameleaf_sharing.qr_hint')}</p>
     <QrCode
       value={asUrl(dialog.link)}
-      label={$t('view_qr_code')}
+      label={$t('frameleaf_sharing.qr_code_for', { values: { name: titleOf(dialog.link) } })}
       copyLabel={$t('copy_link')}
       downloadLabel={$t('download')}
       errorLabel={$t('frameleaf_sharing.qr_error')}
@@ -326,168 +476,278 @@
 {/if}
 
 {#if dialog?.kind === 'delete'}
+  {@const link = dialog.link}
+  <!-- AL-22: the prototype's delete dialog says who loses what, and what is kept. -->
   <Dialog title={$t('delete_shared_link')} closeLabel={$t('close')} bind:open={deleteOpen}>
-    <p>{$t('confirm_delete_shared_link')}</p>
+    <p>{$t('frameleaf_sharing.delete_link_body', { values: { name: titleOf(link) } })}</p>
     <div class="sl-dialog-actions">
-      <button type="button" onclick={() => (deleteOpen = false)}>{$t('cancel')}</button>
-      <button type="button" class="danger" onclick={confirmDelete}>{$t('delete_shared_link')}</button>
+      <Button onclick={() => (deleteOpen = false)}>{$t('cancel')}</Button>
+      <Button variant="primary" onclick={confirmDelete}>{$t('delete_link')}</Button>
     </div>
   </Dialog>
 {/if}
 
 <style>
+  /* Ported from the design's sharing.css (Shared links screen, lines 4-300 and 1297-1330). */
   .sl-screen {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    color: var(--fl-text);
+    padding: 1.625rem 1.875rem 2.25rem;
+    max-width: 1400px;
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 0 auto;
   }
   .sl-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 1.25rem;
+    margin-bottom: 1.375rem;
   }
   h1 {
-    font-size: 1.25rem;
+    margin: 0;
+    font-size: 1.625rem;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+  }
+  .sl-head p {
+    color: var(--fl-muted);
+    font-size: 0.8125rem;
+    margin: 0.5rem 0 0;
+    line-height: 1.6;
+    max-width: 62ch;
   }
   .sl-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.875rem;
     flex-wrap: wrap;
+    margin-bottom: 1.125rem;
   }
   .sl-tabs {
-    display: flex;
-    gap: 0.25rem;
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
   }
   .sl-tab {
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.75rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    min-height: 32px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition:
+      background var(--fl-motion) var(--fl-ease),
+      color var(--fl-motion) var(--fl-ease);
+  }
+  .sl-tab:hover {
+    color: var(--fl-text);
   }
   .sl-tab[aria-selected='true'] {
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-    border-color: var(--fl-accent);
+    background: var(--fl-raised);
+    color: var(--fl-text);
   }
   .sl-count {
-    font-size: 0.75rem;
-    opacity: 0.8;
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+    background: color-mix(in srgb, var(--fl-text), transparent 90%);
+    border-radius: var(--fl-radius-pill);
+    padding: 1px 7px;
+    min-width: 18px;
+    text-align: center;
+  }
+  .sl-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    color: var(--fl-muted);
+    min-width: 240px;
+    flex: 0 1 300px;
+  }
+  .sl-search :global(svg) {
+    position: absolute;
+    left: 10px;
+    pointer-events: none;
   }
   .sl-search input {
+    width: 100%;
+    padding-left: 34px;
+    min-height: 34px;
     background: var(--fl-raised);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0.5rem;
+    border-radius: var(--fl-radius-control);
   }
   .sl-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-    gap: 1rem;
     list-style: none;
     margin: 0;
     padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
   }
   .sl-card {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
     background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
-    padding: 0.75rem;
+    border-radius: var(--fl-radius-card);
+    overflow: hidden;
+    min-width: 0;
+    transition:
+      transform var(--fl-motion) var(--fl-ease),
+      box-shadow var(--fl-motion) var(--fl-ease);
   }
-  .sl-card[data-expired] {
-    opacity: 0.7;
+  .sl-screen[data-theme='light'] .sl-card {
+    border: 1px solid var(--fl-border);
+  }
+  .sl-card:hover {
+    box-shadow: var(--fl-shadow-1);
+  }
+  .sl-card[data-expired] .sl-cover {
+    filter: saturate(0.4);
+    opacity: 0.75;
   }
   .sl-cover {
     position: relative;
     display: block;
+    width: 100%;
+    background: var(--fl-raised);
   }
   .sl-cover-flag {
     position: absolute;
-    top: 0.5rem;
-    left: 0.5rem;
-    background: var(--fl-canvas);
-    color: var(--fl-text);
-    border-radius: var(--fl-radius);
-    padding: 0 0.375rem;
-    font-size: 0.75rem;
+    left: 10px;
+    top: 10px;
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: color-mix(in srgb, var(--fl-danger), black 15%);
+    border-radius: var(--fl-radius-pill);
+    padding: 3px 9px;
+  }
+  .sl-body {
+    padding: 14px 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
   }
   .sl-heading {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
   h2 {
-    font-size: 1rem;
-    overflow-wrap: anywhere;
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 580;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
   .sl-type {
-    color: var(--fl-muted);
-    font-size: 0.75rem;
     flex-shrink: 0;
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
   .sl-desc {
+    margin: 0;
+    font-size: 0.8125rem;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .sl-meta {
+    margin: auto 0 0;
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sl-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
     list-style: none;
     margin: 0;
     padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
-  .sl-badges li {
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.5rem;
-    font-size: 0.75rem;
+  .sl-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fl-font-micro);
+    line-height: 1;
     color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-pill);
+    padding: 5px 9px;
+  }
+  .sl-badge[data-tone='danger'] {
+    color: var(--fl-danger);
+    background: color-mix(in srgb, var(--fl-danger), transparent 86%);
+  }
+  .sl-badge[data-tone='info'] {
+    color: var(--fl-teal);
+    background: color-mix(in srgb, var(--fl-teal), transparent 86%);
   }
   .sl-actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--fl-border);
   }
   .sl-actions .grow {
     flex: 1;
   }
-  .sl-actions button,
-  .sl-head button,
-  .sl-dialog-actions button {
+  .sl-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4375rem 0.6875rem;
+    color: var(--fl-danger);
     background: var(--fl-raised);
-    color: var(--fl-text);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    padding: 0 0.75rem;
+    border-radius: var(--fl-radius-control);
   }
-  .sl-actions button.danger,
-  .sl-dialog-actions button.danger {
-    color: var(--fl-accent);
-    border-color: var(--fl-accent);
-  }
-  .sl-head button.primary,
-  .sl-dialog-actions button.primary {
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-    border-color: var(--fl-accent);
+  .sl-danger:hover {
+    border-color: color-mix(in srgb, var(--fl-danger), transparent 50%);
   }
   .sl-empty {
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 60px 20px;
     color: var(--fl-muted);
-    padding: 2rem;
+    text-align: center;
+  }
+  .sl-empty h2 {
+    color: var(--fl-text);
+    white-space: normal;
+  }
+  .sl-empty p {
+    margin: 0;
   }
   .sl-dialog-actions {
     display: flex;
@@ -497,5 +757,43 @@
   }
   .muted {
     color: var(--fl-muted);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  @media (max-width: 700px) {
+    .sl-screen {
+      padding: 18px 16px 32px;
+    }
+    .sl-head {
+      flex-direction: column;
+    }
+    .sl-grid {
+      grid-template-columns: 1fr;
+    }
+    .sl-search {
+      flex: 1 1 100%;
+      min-width: 0;
+    }
+    .sl-tabs {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .sl-tab {
+      flex: 1;
+      justify-content: center;
+      min-height: 40px;
+    }
+    .sl-actions {
+      flex-wrap: wrap;
+    }
   }
 </style>

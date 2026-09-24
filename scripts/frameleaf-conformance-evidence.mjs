@@ -1644,7 +1644,7 @@ const routes = {
       "AL-28",
       "AL-29",
     ],
-    "Shared links list (AL-19..AL-22) and form preview/slug availability (AL-25, AL-26); AL-23, AL-24, AL-27..AL-29 fixed",
+    "Shared links form preview/slug availability (AL-25, AL-26); AL-19..AL-24, AL-27..AL-29 fixed",
     [
       `${P}/SharedLinks.jsx`,
       `${P}/SharedLinkForm.jsx`,

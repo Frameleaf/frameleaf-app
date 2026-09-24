@@ -188,4 +188,23 @@ test.describe('Album roles', () => {
     await page.waitForURL(/\/albums(?:\?|$)/);
     await expect(page.getByText('You are no longer a member of “Removed live”.')).toBeVisible();
   });
+
+  test('keeps the owner’s share dialog true when a recipient leaves while it is open (FL-54)', async ({
+    context,
+    page,
+  }) => {
+    const album = await sharedAlbum('Recipient leaves');
+    await utils.setAuthCookies(context, owner.accessToken);
+    await page.goto(`/albums/${album.id}`);
+    await page.getByRole('button', { name: 'Share', exact: true }).click();
+    const access = page.getByRole('region', { name: 'Who has access' });
+    await expect(access.getByText('Vera Viewer')).toBeVisible();
+
+    // The viewer leaves from their own device while the owner's dialog is open.
+    await removeUserFromAlbum({ id: album.id, userId: 'me' }, { headers: asBearerAuth(viewer.accessToken) });
+
+    await expect(access.getByText('Vera Viewer')).toHaveCount(0);
+    await expect(access.getByText('Eddie Editor')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove Vera Viewer' })).toHaveCount(0);
+  });
 });
