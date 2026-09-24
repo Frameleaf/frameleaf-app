@@ -946,11 +946,13 @@ describe(SearchService.name, () => {
       const me = authStub.user1.user.id;
       const hiding = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: false });
       mocks.partner.getAll.mockResolvedValue([getForPartner(hiding)]);
-      mocks.search.searchStatistics.mockResolvedValue({ total: 3 });
-      mocks.search.searchFacets.mockResolvedValue([
-        { field: SearchFacetField.Type, value: 'IMAGE', label: null, count: 3 },
-        { field: SearchFacetField.People, value: 'person-1', label: 'Emma', count: 2 },
-      ]);
+      mocks.search.searchFacets.mockResolvedValue({
+        total: 3,
+        rows: [
+          { field: SearchFacetField.Type, value: 'IMAGE', label: null, count: 3 },
+          { field: SearchFacetField.People, value: 'person-1', label: 'Emma', count: 2 },
+        ],
+      });
       const hiddenContent = {
         userId: me,
         includeNsfw: false,
@@ -963,7 +965,8 @@ describe(SearchService.name, () => {
 
       const result = await sut.searchFacets(auth, {
         city: 'Lisbon',
-        facets: [SearchFacetField.Type, SearchFacetField.People],
+        // a repeated facet is counted once
+        facets: [SearchFacetField.Type, SearchFacetField.People, SearchFacetField.Type],
       });
 
       expect(result).toEqual({
@@ -978,7 +981,8 @@ describe(SearchService.name, () => {
       expect(options).toEqual(
         expect.objectContaining({ userIds: [me], visibility: 'not-locked', hiddenContent, hideLockedMotion: true }),
       );
-      expect(mocks.search.searchStatistics).toHaveBeenCalledWith(options);
+      // the total comes from the facet statement, not a second statistics scan
+      expect(mocks.search.searchStatistics).not.toHaveBeenCalled();
       expect(facetOptions).toEqual({
         viewerId: me,
         facets: [SearchFacetField.Type, SearchFacetField.People],
@@ -990,8 +994,7 @@ describe(SearchService.name, () => {
     });
 
     it('uses the structured scope for a filter body', async () => {
-      mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
-      mocks.search.searchFacetsV3.mockResolvedValue([]);
+      mocks.search.searchFacetsV3.mockResolvedValue({ total: 0, rows: [] });
       const result = await sut.searchFacets(authStub.user1, { filter: { isFavorite: { eq: true } } });
       expect(result.facets.map(({ fieldName }) => fieldName)).toEqual(Object.values(SearchFacetField));
       expect(mocks.search.searchFacetsV3).toHaveBeenCalledWith(

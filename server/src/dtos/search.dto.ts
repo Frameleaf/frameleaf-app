@@ -529,7 +529,12 @@ export const SEARCH_FACET_MAX_LIMIT = 100;
 export const SMART_SEARCH_COUNT_CAP = 1000;
 
 const facetRequestShape = {
-  facets: z.array(SearchFacetFieldSchema).min(1).optional().describe('Facets to count; every facet when omitted'),
+  facets: z
+    .array(SearchFacetFieldSchema)
+    .min(1)
+    .max(Object.values(SearchFacetField).length)
+    .optional()
+    .describe('Facets to count, each once (repeats are ignored); every facet when omitted'),
   facetLimit: z
     .int()
     .min(1)

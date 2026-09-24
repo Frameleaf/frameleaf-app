@@ -268,6 +268,10 @@ describe(SearchController.name, () => {
       expect(mixed.status).toBe(400);
       const limit = await request(ctx.getHttpServer()).post('/search/facets').send({ facetLimit: 101 });
       expect(limit.status).toBe(400);
+      const tooMany = await request(ctx.getHttpServer())
+        .post('/search/facets')
+        .send({ facets: Array.from({ length: 11 }, () => 'city') });
+      expect(tooMany.status).toBe(400);
     });
 
     it('POST /search/histogram defaults to months and rejects other granularities', async () => {
