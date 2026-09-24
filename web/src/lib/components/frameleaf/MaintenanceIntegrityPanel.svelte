@@ -7,13 +7,20 @@
    * `integrityReport` summary.
    *
    * Production keeps one standing report per check (its findings, re-read by the refresh jobs), not a
-   * report per run, and records no run time, so a check shows its findings count instead of "Last
-   * run …". Deleting a report acts on its findings (files are deleted or items trashed, see
+   * report per run. The server records when each check last ran in full (`getIntegrityCheckRuns`),
+   * so a check reads "Last run …" / "Never run" and its findings, as the template's does
+   * (`Maintenance.jsx:466-469`). Deleting a report acts on its findings (files are deleted or items trashed, see
    * `handleRemoveAllIntegrityReportItems`), which the confirmation says in full.
    */
   import { Route } from '$lib/route';
   import { handleRemoveAllIntegrityReportItems } from '$lib/services/integrity.service';
-  import { IntegrityReport, ManualJobName, type IntegrityReportSummaryResponseDto } from '@immich/sdk';
+  import { locale } from '$lib/stores/preferences.store';
+  import {
+    IntegrityReport,
+    ManualJobName,
+    type IntegrityCheckRunsResponseDto,
+    type IntegrityReportSummaryResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiFileAlertOutline,
@@ -28,6 +35,8 @@
   type Props = {
     reportTypes: IntegrityReport[];
     integrityReport: IntegrityReportSummaryResponseDto;
+    /** When each check last ran in full; without it (not loaded) a check shows its findings only. */
+    runs?: IntegrityCheckRunsResponseDto;
     jobNames: Record<IntegrityReport, ManualJobName>;
     activeJobs: Set<ManualJobName>;
     getReportTypeTranslation: (report: IntegrityReport) => Translations;
@@ -39,6 +48,7 @@
   const {
     reportTypes,
     integrityReport,
+    runs,
     jobNames,
     activeJobs,
     getReportTypeTranslation,
@@ -57,6 +67,23 @@
   const reports = $derived(reportTypes.filter((type) => integrityReport[type] > 0));
 
   const findings = (count: number) => $t('admin.frameleaf_maintenance_findings', { values: { count } });
+  // The template's `when` (`Maintenance.jsx:39-45`): medium date, short time.
+  const when = (value: string) =>
+    new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  /**
+   * "Last run …" / "Never run", then " · n findings" once the check has a report: after any run, or
+   * findings from before runs were recorded (`Maintenance.jsx:466-469`).
+   */
+  const runLine = (type: IntegrityReport, count: number) => {
+    if (!runs) {
+      return findings(count);
+    }
+    const lastRun = runs[type];
+    const run = lastRun
+      ? $t('admin.frameleaf_maintenance_last_run', { values: { date: when(lastRun) } })
+      : $t('admin.frameleaf_maintenance_never_run');
+    return lastRun || count > 0 ? `${run} · ${findings(count)}` : run;
+  };
 </script>
 
 <section class="mt-card" aria-labelledby="fl-maintenance-integrity-title">
@@ -76,28 +103,32 @@
       {@const title = $t(getReportTypeTranslation(reportType))}
       {@const running = activeJobs.has(jobNames[reportType])}
       {@const count = integrityReport[reportType]}
+      {@const neverRun = !running && count === 0 && runs !== undefined && runs[reportType] === null}
       <article class="mt-check" aria-label={title}>
         <header>
           <Icon icon={icons[reportType]} size="20" aria-hidden={true} />
           <strong>{title}</strong>
+          <!-- The template's checkStatusLabel (maintenance-data.mjs:626-633): a check that never ran is "Not run yet". -->
           <span
             class="mt-status"
             class:is-running={running}
             class:is-issue={!running && count > 0}
-            class:is-ok={!running && count === 0}
+            class:is-ok={!running && count === 0 && !neverRun}
           >
             {running
               ? $t('admin.frameleaf_maintenance_check_running_status')
               : count > 0
                 ? $t('admin.frameleaf_maintenance_check_issues')
-                : $t('admin.frameleaf_maintenance_check_passed')}
+                : neverRun
+                  ? $t('admin.frameleaf_maintenance_check_not_run')
+                  : $t('admin.frameleaf_maintenance_check_passed')}
           </span>
         </header>
         <p>{$t(getReportTypeDescriptionKey(reportType))}</p>
         {#if running}
           <progress aria-label={$t('admin.frameleaf_maintenance_check_progress', { values: { title } })}></progress>
         {/if}
-        <small>{findings(count)}</small>
+        <small>{runLine(reportType, count)}</small>
         <div class="mt-actions">
           <button type="button" class="button" disabled={running} onclick={() => onCheck(reportType)}>
             {running ? $t('admin.frameleaf_maintenance_check_running') : $t('admin.frameleaf_maintenance_run_check')}
