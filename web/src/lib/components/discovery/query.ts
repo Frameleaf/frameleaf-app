@@ -201,11 +201,9 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   city: stringNullableOperators,
   state: stringNullableOperators,
   country: stringNullableOperators,
-  make: stringNullableOperators,
-  model: stringNullableOperators,
-  lensModel: stringNullableOperators,
   ...Object.fromEntries(
-    ['description', 'originalFileName', 'originalPath'].map((field) => [
+    // FL-49: cameras and lenses take the pattern operators too, for camera: and lens: "contains"
+    ['description', 'originalFileName', 'originalPath', 'make', 'model', 'lensModel'].map((field) => [
       field,
       {
         ...stringNullableOperators,
@@ -220,6 +218,7 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   rating: { eq: nullable(finite), ne: nullable(finite), ...numberRangeOperators },
   fileSizeInBytes: { eq: finite, ne: finite, ...numberRangeOperators },
   takenAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
+  localDateTime: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   createdAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   updatedAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   trashedAt: { eq: nullable(dateBound), ne: nullable(isIsoDatetime), ...dateRangeOperators },
@@ -945,7 +944,7 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
   people: ['personIds', 'hasPeople'],
   // FL-58: the owner's own pets, matched on confirmed observations only
   pets: ['petIds'],
-  date: ['takenAt', 'createdAt', 'updatedAt', 'trashedAt'],
+  date: ['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt'],
   places: ['city', 'state', 'country'],
   media: [
     'type',
@@ -1063,7 +1062,7 @@ export const withoutDiscoveryFilters = (query: DiscoveryQuery): DiscoveryQuery =
 export type DiscoverySearchDto = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 
 const DAY_MS = 86_400_000;
-const DATE_FILTER_FIELDS = ['takenAt', 'createdAt', 'updatedAt', 'trashedAt'] as const;
+const DATE_FILTER_FIELDS = ['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt'] as const;
 const dayStart = (day: string) => `${day}T00:00:00.000Z`;
 const nextDayStart = (day: string) => new Date(Date.parse(dayStart(day)) + DAY_MS).toISOString();
 

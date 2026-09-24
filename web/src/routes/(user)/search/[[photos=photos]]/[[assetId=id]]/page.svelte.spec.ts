@@ -174,3 +174,23 @@ it('replaces a text request when its endpoint capability changes, without resett
   });
   expect(searchAssets).toHaveBeenCalledTimes(count);
 });
+
+it('draws the palette-style chips on the results page and removes one condition at a time (SD-12)', async () => {
+  const query = emptyDiscoveryQuery();
+  query.text = 'IMG';
+  query.filter = { city: { eq: 'Banff' }, isFavorite: { eq: true } };
+  state.url = new URL(discoveryUrl(query), 'http://localhost');
+  render(SearchPage);
+  await waitFor(() => expect(document.querySelector('#search-chips')).not.toBeNull());
+  const chips = document.querySelector('#search-chips')!;
+  expect(chips).toHaveClass('frameleaf');
+  expect(chips.querySelectorAll('.search-chip')).toHaveLength(3);
+  const remove = [...chips.querySelectorAll(':scope .search-chip button')];
+  expect(remove).toHaveLength(3);
+  // Filter chips come first, in field order (city, isFavorite), then the text
+  await fireEvent.click(remove[0]);
+  const url = new URL(navigation.goto.mock.calls.at(-1)![0] as string, 'http://localhost');
+  const next = JSON.parse(url.searchParams.get('dq')!);
+  expect(next.filter).toEqual({ isFavorite: { eq: true } });
+  expect(next.text).toBe('IMG');
+});
