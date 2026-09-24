@@ -310,7 +310,7 @@ test.describe('Timeline', () => {
       await expect(toolbar).toBeInViewport();
       const [after, scrollerBox] = await Promise.all([toolbar.boundingBox(), scroller.boundingBox()]);
       expect(after!.y).toBeLessThanOrEqual(before!.y);
-      expect(after!.y).toBeGreaterThanOrEqual(scrollerBox!.y - 1);
+      expect(Math.abs(after!.y - scrollerBox!.y)).toBeLessThanOrEqual(1);
       // The group headers stick below it, not under it.
       const offset = await page
         .getByTestId('frameleaf-library')
@@ -345,8 +345,9 @@ test.describe('Timeline', () => {
       const toolbar = page.getByTestId('frameleaf-results-toolbar');
       await expect(toolbar).toBeInViewport();
       // timeline-library.css: `.tl-toolbar` is not sticky; it has scrolled out above the toolbar.
-      const [groupingBox, toolbarBox] = await Promise.all([grouping.boundingBox(), toolbar.boundingBox()]);
-      expect(groupingBox!.y + groupingBox!.height).toBeLessThanOrEqual(toolbarBox!.y + toolbarBox!.height);
+      const scrollerBox = await page.locator('.fl-timeline-scroll').boundingBox();
+      const groupingBox = await grouping.boundingBox();
+      expect(groupingBox!.y + groupingBox!.height).toBeLessThanOrEqual(scrollerBox!.y);
     });
   });
 
