@@ -1,12 +1,19 @@
 import { getAuthStatus, lockAuthSession } from '@immich/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
+import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { revokeSessionView } from '$lib/utils/session-privacy';
 import { watchSessionPrivacy } from '$lib/utils/session-privacy-guard';
 
 // FL-34: ported from PR131 bebfed12ff and 25990c373c (d7cfe8b1a7), adapted to the current Locked flow
 
-vi.mock('@immich/sdk', () => ({ getAuthStatus: vi.fn(), lockAuthSession: vi.fn() }));
+vi.mock('@immich/sdk', async (original) => ({
+  ...(await original<object>()),
+  getAuthStatus: vi.fn(),
+  lockAuthSession: vi.fn(),
+}));
+vi.mock('$lib/frameleaf/session-lock', () => ({ requestSessionLock: vi.fn() }));
 vi.mock('$lib/utils/session-privacy', () => ({ revokeSessionView: vi.fn() }));
 const respond =
   (value: Awaited<ReturnType<typeof getAuthStatus>>) => async (opts?: Parameters<typeof getAuthStatus>[0]) => {
@@ -24,6 +31,7 @@ const status = (active: boolean) => ({
 describe('watchSessionPrivacy', () => {
   let guard: ReturnType<typeof watchSessionPrivacy> | undefined;
   beforeEach(() => {
+    setSessionLockPending(false);
     vi.useFakeTimers();
     vi.resetAllMocks();
     vi.setSystemTime(new Date('2026-09-21T12:00:00Z'));
@@ -281,6 +289,146 @@ describe('watchSessionPrivacy', () => {
     );
     await vi.advanceTimersByTimeAsync(9000);
     expect(revokeSessionView).toHaveBeenCalledWith('/albums?filter=mine');
+  });
+
+  // FL-80/FL-83 grafts from the reviewed browser privacy recovery (7bd8751ec2, ab2b56c315)
+  it('holds initial verification while a persisted local lock is pending, then revalidates', async () => {
+    const gate = vi.fn();
+    const revalidate = vi.fn().mockResolvedValue(undefined);
+    setSessionLockPending(true);
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getAuthStatus).not.toHaveBeenCalled();
+    expect(gate).not.toHaveBeenCalledWith('ready');
+    setSessionLockPending(false);
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    await guard.refresh();
+    expect(revalidate).toHaveBeenCalledOnce();
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('leaves a local lock behind its persisted shield instead of reloading before it settles', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    setSessionLockPending(true);
+    eventManager.emit('SessionLocked');
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    setSessionLockPending(false);
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    await guard.refresh();
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  it('routes a revocation through the single local lock while an unlock request is in flight', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    vi.mocked(requestSessionLock).mockImplementation(() => {
+      setSessionLockPending(true);
+      return Promise.resolve();
+    });
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    let finish!: () => void;
+    const unlock = trackSessionUnlock(new Promise<void>((resolve) => (finish = resolve)));
+    eventManager.emit('SessionLockedRemote');
+    expect(requestSessionLock).toHaveBeenCalledOnce();
+    // the persisted barrier, not a reload, owns the document until the unlock settles
+    expect(revokeSessionView).not.toHaveBeenCalled();
+    finish();
+    await unlock;
+  });
+
+  it('preserves a verified locked page on credential revocation and retires an older status response', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    let finish!: (value: ReturnType<typeof status>) => void;
+    vi.mocked(getAuthStatus)
+      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+      .mockImplementation(respond(status(false)));
+    const pending = guard.refresh();
+    eventManager.emit('UserPinCodeReset');
+    finish(status(true));
+    await pending;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  it('revokes newly requested elevation before its status check can settle', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    let finish!: (value: ReturnType<typeof status>) => void;
+    vi.mocked(getAuthStatus).mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    eventManager.emit('SessionLocked');
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+    finish(status(true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('does not silently accept a requested elevation the server reports as locked', async () => {
+    vi.mocked(getAuthStatus)
+      .mockImplementationOnce(respond(status(false)))
+      .mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed when a newly completed unlock cannot establish a verified deadline', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(getAuthStatus).mockRejectedValueOnce(new Error('offline'));
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledOnce();
+  });
+
+  it('retires the guard and pending PIN callbacks when the session is deleted', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(true)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    const revision = sessionAccess.revision;
+    eventManager.emit('SessionDelete');
+    expect(sessionAccess.revision).toBeGreaterThan(revision);
+    expect(sessionAccess.isElevated).toBe(false);
+    // the auth manager owns the sign-out navigation; the guard's deadline no longer fires
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(revokeSessionView).not.toHaveBeenCalled();
+  });
+
+  it.each(['focus', 'reconnect'])('signs out on an authoritative 401 status on %s while locked', async (signal) => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
+    vi.mocked(getAuthStatus).mockImplementationOnce(() =>
+      sdk.getAuthStatus({
+        fetch: async () => Response.json({ message: 'Invalid user token' }, { status: 401 }),
+      }),
+    );
+    if (signal === 'focus') {
+      dispatchEvent(new Event('focus'));
+    } else {
+      eventManager.emit('WebsocketConnect');
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revokeSessionView).toHaveBeenCalledExactlyOnceWith('/auth/logout');
+  });
+
+  it('keeps an ordinary offline status error distinct from deleted authentication while locked', async () => {
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true);
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(getAuthStatus).mockRejectedValueOnce(new TypeError('offline'));
+    await guard.refresh();
+    expect(revokeSessionView).not.toHaveBeenCalled();
   });
 
   it('cleans up the timer and listeners when the root is destroyed', async () => {

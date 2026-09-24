@@ -10,6 +10,7 @@
    */
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import { getAssetInfo, isHttpError } from '@immich/sdk';
   import { Button } from '@immich/ui';
   import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
@@ -82,6 +83,14 @@
     markRouterStarted();
     // joins the first check when it is still running, so a cold load asks the server once
     void guard?.revalidate();
+  });
+
+  $effect(() => {
+    // FL-83: a persisted local lock can finish before this gate verified any status; recheck once
+    // its barrier lifts (the guard skips checks while it is pending).
+    if (!sessionAccess.lockPending) {
+      void guard?.revalidate();
+    }
   });
 </script>
 
