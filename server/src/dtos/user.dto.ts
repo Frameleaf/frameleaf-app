@@ -177,6 +177,18 @@ const UserAdminHistoryResponseSchema = z
   })
   .meta({ id: 'UserAdminHistoryResponseDto' });
 
+/**
+ * FL-76 (CC-30): whether an account has a Locked PIN, for the administrator's Security tab
+ * (`AccountsLibraries.jsx` 1403-1435). Its own admin-only endpoint, never part of a user DTO, and
+ * never the PIN or its hash.
+ */
+const UserAdminPinCodeStateResponseSchema = z
+  .object({
+    pinCode: z.boolean().describe('Whether the account has a PIN set'),
+  })
+  .meta({ id: 'UserAdminPinCodeStateResponseDto' });
+
+export class UserAdminPinCodeStateResponseDto extends createZodDto(UserAdminPinCodeStateResponseSchema) {}
 export class UserAdminHistoryEventResponseDto extends createZodDto(UserAdminHistoryEventResponseSchema) {}
 export class UserAdminHistoryResponseDto extends createZodDto(UserAdminHistoryResponseSchema) {}
 

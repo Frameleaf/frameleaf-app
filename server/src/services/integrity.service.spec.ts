@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { ChecksumAlgorithm } from 'src/enum.js';
+import { ChecksumAlgorithm, IntegrityReport, SystemMetadataKey } from 'src/enum.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -154,6 +154,66 @@ describe(IntegrityService.name, () => {
       expect(mocks.integrityReport.streamIntegrityReportsByProperty).toHaveBeenCalledWith(undefined, undefined);
       expect(mocks.integrityReport.streamIntegrityReportsByProperty).toHaveBeenCalledWith('assetId', undefined);
       expect(mocks.integrityReport.streamIntegrityReportsByProperty).toHaveBeenCalledWith('fileAssetId', undefined);
+    });
+  });
+
+  describe('integrity check runs (FL-81 CC-21)', () => {
+    it('reports when each check last ran, null for one that never has', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        [IntegrityReport.MissingFile]: { lastRunAt: '2026-09-20T10:00:00.000Z' },
+      });
+
+      await expect(sut.getIntegrityCheckRuns()).resolves.toEqual({
+        [IntegrityReport.ChecksumFail]: null,
+        [IntegrityReport.MissingFile]: '2026-09-20T10:00:00.000Z',
+        [IntegrityReport.UntrackedFile]: null,
+      });
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns);
+    });
+
+    it('reports every check as never run before any run is recorded', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      await expect(sut.getIntegrityCheckRuns()).resolves.toEqual({
+        [IntegrityReport.ChecksumFail]: null,
+        [IntegrityReport.MissingFile]: null,
+        [IntegrityReport.UntrackedFile]: null,
+      });
+    });
+
+    it('records a full missing-file run, not a refresh', async () => {
+      mocks.integrityReport.streamIntegrityReportsWithAssetChecksum.mockReturnValue((async function* () {})() as never);
+      await sut.handleMissingFilesQueueAll({ refreshOnly: true });
+      expect(mocks.systemMetadata.merge).not.toHaveBeenCalled();
+
+      mocks.integrityReport.streamAssetPathsForMissingFiles.mockReturnValue((async function* () {})() as never);
+      await sut.handleMissingFilesQueueAll();
+      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
+        [IntegrityReport.MissingFile]: { lastRunAt: expect.any(String) },
+      });
+    });
+
+    it('records a full untracked-file run', async () => {
+      mocks.integrityReport.streamIntegrityReportsWithAssetChecksum.mockReturnValue((async function* () {})() as never);
+      mocks.storage.walk.mockReturnValue((async function* () {})() as never);
+
+      await sut.handleUntrackedFilesQueueAll();
+
+      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
+        [IntegrityReport.UntrackedFile]: { lastRunAt: expect.any(String) },
+      });
+    });
+
+    it('records a checksum run', async () => {
+      mocks.integrityReport.getAssetCount.mockResolvedValue({ count: 0 } as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+      mocks.integrityReport.streamAssetChecksums.mockReturnValue((function* () {})() as never);
+
+      await sut.handleChecksumFiles();
+
+      expect(mocks.systemMetadata.merge).toHaveBeenCalledWith(SystemMetadataKey.IntegrityCheckRuns, {
+        [IntegrityReport.ChecksumFail]: { lastRunAt: expect.any(String) },
+      });
     });
   });
 });

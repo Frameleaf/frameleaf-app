@@ -29,6 +29,13 @@ export interface UserStatsQueryResponse {
   quotaSizeInBytes: number | null;
 }
 
+/** FL-71: the account that owns a queue job's subject (an asset, person, library or the account itself). */
+export interface JobSubjectOwner {
+  subjectId: string;
+  ownerId: string;
+  ownerName: string;
+}
+
 export interface UserFindOptions {
   withDeleted?: boolean;
 }
@@ -99,6 +106,64 @@ export class UserRepository {
       .executeTakeFirst();
 
     return !!admin;
+  }
+
+  /**
+   * FL-76: whether an account has a Locked PIN, for the administrator's account detail. Only the
+   * presence is read, never the hash; deleted accounts are included so their detail still says it.
+   */
+  async hasPinCode(id: string): Promise<boolean | undefined> {
+    const row = await this.db
+      .selectFrom('user')
+      .select((eb) => eb('user.pinCode', 'is not', null).as('hasPinCode'))
+      .where('user.id', '=', id)
+      .executeTakeFirst();
+    return row === undefined ? undefined : Boolean(row.hasPinCode);
+  }
+
+  /**
+   * FL-71: the owning account of each id that names an asset, person (its group), library or account,
+   * for the Job manager's Account column. Ids naming nothing, or a person several accounts share, are
+   * left out.
+   */
+  async getJobSubjectOwners(ids: string[]): Promise<JobSubjectOwner[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom((eb) =>
+        eb
+          .selectFrom('asset')
+          .select(['asset.id as subjectId', 'asset.ownerId'])
+          .where('asset.id', 'in', ids)
+          .unionAll(
+            eb
+              .selectFrom('person')
+              .select(['person.personGroupId as subjectId', 'person.ownerId'])
+              .where('person.personGroupId', 'in', ids),
+          )
+          .unionAll(
+            eb
+              .selectFrom('library')
+              .select(['library.id as subjectId', 'library.ownerId'])
+              .where('library.id', 'in', ids),
+          )
+          .unionAll(
+            eb.selectFrom('user').select(['user.id as subjectId', 'user.id as ownerId']).where('user.id', 'in', ids),
+          )
+          .as('subject'),
+      )
+      .innerJoin('user', 'user.id', 'subject.ownerId')
+      .select(['subject.subjectId', 'subject.ownerId', 'user.name as ownerName'])
+      .execute()
+      .then((rows) => {
+        // A person shared through a cluster group belongs to each of its members: no one account.
+        const owners = new Map<string, Set<string>>();
+        for (const { subjectId, ownerId } of rows) {
+          owners.set(subjectId, (owners.get(subjectId) ?? new Set()).add(ownerId));
+        }
+        return rows.filter(({ subjectId }) => owners.get(subjectId)!.size === 1);
+      });
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

@@ -799,7 +799,11 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.RunPodOrphans]: { orphanTemplateIds: string[] };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
+  [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
 }
+
+/** FL-81: per integrity check, when its last full run finished (ISO date-time). */
+export type IntegrityCheckRuns = Partial<Record<IntegrityReport, { lastRunAt: string }>>;
 
 export type UserPreferences = {
   albums: {
