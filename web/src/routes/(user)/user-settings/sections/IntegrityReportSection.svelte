@@ -1,16 +1,34 @@
 <script lang="ts">
   /**
-   * One integrity report (FL-81) inside Maintenance → Integrity checks (FL-71); the old
+   * One integrity report (FL-81 CC-23) inside Maintenance → Integrity checks (FL-71): the prototype's
+   * `ReportViewer` (`design/frameleaf/template/src/Maintenance.jsx:756-893`) — a summary line,
+   * "Download CSV", "Delete report" behind a Frameleaf confirmation, a findings filter and table — in
+   * place of the upstream `Table` and context menus. The old
    * `/admin/maintenance/integrity-report/<type>` page only redirects here.
+   *
+   * Production findings are `{ id, path }` pages per check, with no severity or message, so the table
+   * has a path and its actions, and the filter matches the loaded paths
+   * (`filterMaintenanceReportItems`). "Recheck findings" runs the check's refresh job, which drops
+   * findings that no longer apply.
    */
-  import CommandCenterActions from '$lib/components/frameleaf/settings/CommandCenterActions.svelte';
-  import IntegrityReportTableItem from '$lib/components/maintenance/integrity/IntegrityReportTableItem.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { filterMaintenanceReportItems, summarizeMaintenanceReportFilter } from '$lib/frameleaf/maintenance-report';
-  import { getIntegrityReportActions } from '$lib/services/integrity.service';
+  import { Route } from '$lib/route';
+  import {
+    handleRemoveAllIntegrityReportItems,
+    handleRemoveIntegrityReportItem,
+  } from '$lib/services/integrity.service';
+  import { handleCreateJob } from '$lib/services/job.service';
   import { asyncTimeout } from '$lib/utils';
-  import { getIntegrityReport, getQueuesLegacy, IntegrityReport, type IntegrityReportResponseDto } from '@immich/sdk';
-  import { Button, Table, TableBody, TableHeader, TableHeading } from '@immich/ui';
+  import {
+    getIntegrityReport,
+    getQueuesLegacy,
+    IntegrityReport,
+    ManualJobName,
+    type IntegrityReportResponseDto,
+  } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
+  import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -20,13 +38,19 @@
 
   let { type }: Props = $props();
 
-  let integrityReport = $state<IntegrityReportResponseDto>({ items: [] });
+  const refreshJobs: Record<IntegrityReport, ManualJobName> = {
+    [IntegrityReport.UntrackedFile]: ManualJobName.IntegrityUntrackedFilesRefresh,
+    [IntegrityReport.MissingFile]: ManualJobName.IntegrityMissingFilesRefresh,
+    [IntegrityReport.ChecksumMismatch]: ManualJobName.IntegrityChecksumMismatchRefresh,
+  };
 
-  // Frameleaf redesign (FL-81): client-side filter over the currently loaded page of items.
-  // Production integrity findings are `{ id, path }` per type/cursor page, unlike the design
-  // template's simulated findings with severity/message/detail, so filterMaintenanceReportItems
-  // ports the template's bounded substring-match behaviour to that real shape instead of
-  // reintroducing a severity concept the server does not have.
+  // Only these checks point at a file on disk that can be downloaded.
+  const downloadable = $derived(type === IntegrityReport.UntrackedFile || type === IntegrityReport.ChecksumMismatch);
+
+  let integrityReport = $state<IntegrityReportResponseDto>({ items: [] });
+  let deleting = $state(new Set<string>());
+  let deletingAll = $state(false);
+
   let reportQuery = $state('');
   const filteredItems = $derived(filterMaintenanceReportItems(integrityReport.items, reportQuery));
   const filterSummary = $derived(summarizeMaintenanceReportFilter(filteredItems.length, integrityReport.items.length));
@@ -65,8 +89,6 @@
     running = false;
   });
 
-  const { Download, Delete } = $derived(getIntegrityReportActions($t, type));
-
   const onIntegrityReportDeleted = ({ id, type: deletedType }: { id?: string; type?: IntegrityReport }) => {
     if (deletedType === type) {
       integrityReport.items = [];
@@ -75,61 +97,250 @@
       integrityReport.items = integrityReport.items.filter((report) => report.id !== id);
     }
   };
+
+  const onIntegrityReportDeleteStatus = ({
+    id,
+    type: statusType,
+    isDeleting,
+  }: {
+    id?: string;
+    type?: IntegrityReport;
+    isDeleting: boolean;
+  }) => {
+    if (statusType === type) {
+      deletingAll = isDeleting;
+    } else if (id) {
+      const next = new Set(deleting);
+      if (isDeleting) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      deleting = next;
+    }
+  };
 </script>
 
-<OnEvents {onIntegrityReportDeleted} />
+<OnEvents {onIntegrityReportDeleted} {onIntegrityReportDeleteStatus} />
 
-<h2 class="report-title">{$t(`admin.maintenance_integrity_${type}`)}</h2>
-<CommandCenterActions actions={[Download, Delete]} />
-<div class="frameleaf-report-search">
-  <label for="frameleaf-maintenance-report-search" class="sr-only">
-    {$t('admin.frameleaf_maintenance_report_search_label')}
-  </label>
-  <input
-    id="frameleaf-maintenance-report-search"
-    type="search"
-    placeholder={$t('admin.frameleaf_maintenance_report_search_placeholder')}
-    bind:value={reportQuery}
-  />
-  <span aria-live="polite" class="frameleaf-report-search-summary">
-    {#if filterSummary.isFiltered}
-      {$t('admin.frameleaf_maintenance_report_search_count', {
-        values: { filtered: filterSummary.filtered, total: filterSummary.total },
-      })}
-    {/if}
-  </span>
-</div>
-
-<Table striped spacing="tiny">
-  <TableHeader>
-    <TableHeading class="w-7/8 text-left">{$t('filename')}</TableHeading>
-    <TableHeading class="w-1/8" />
-  </TableHeader>
-
-  <TableBody>
-    {#each filteredItems as { id, path } (id)}
-      <IntegrityReportTableItem {id} {path} reportType={type} />
-    {/each}
-  </TableBody>
-
-  {#if filterSummary.isFiltered && filteredItems.length === 0}
-    <tfoot>
-      <tr
-        ><td colspan="2" class="frameleaf-report-empty">{$t('admin.frameleaf_maintenance_report_search_empty')}</td></tr
+<section class="report" aria-labelledby="fl-integrity-report-title">
+  <a class="back" href={Route.systemMaintenance({ section: 'integrity' })}>
+    <Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />
+    {$t('admin.frameleaf_maintenance_integrity_title')}
+  </a>
+  <div class="report-head">
+    <div>
+      <h2 id="fl-integrity-report-title">
+        {$t('admin.frameleaf_maintenance_report_title', {
+          values: { title: $t(`admin.maintenance_integrity_${type}`) },
+        })}
+      </h2>
+      <p class="summary">
+        {$t('admin.frameleaf_maintenance_report_summary', {
+          values: { count: integrityReport.items.length, more: integrityReport.nextCursor ? 1 : 0 },
+        })}
+      </p>
+    </div>
+    <div class="actions">
+      <button type="button" class="button" onclick={() => void handleCreateJob({ name: refreshJobs[type] })}>
+        <Icon icon={mdiRefresh} size="16" aria-hidden={true} />
+        {$t('admin.frameleaf_maintenance_report_recheck')}
+      </button>
+      <a class="button" href={Route.integrityReportCsv(type)}>
+        <Icon icon={mdiDownload} size="16" aria-hidden={true} />
+        {$t('admin.download_csv')}
+      </a>
+      <button
+        type="button"
+        class="button danger"
+        disabled={deletingAll || integrityReport.items.length === 0}
+        onclick={() => void handleRemoveAllIntegrityReportItems(type)}
       >
-    </tfoot>
-  {:else if integrityReport.nextCursor}
-    <tfoot class="mt-4 flex justify-center">
-      <Button size="medium" color="secondary" onclick={() => loadMore()}>{$t('load_more')}</Button>
-    </tfoot>
+        <Icon icon={mdiDeleteOutline} size="16" aria-hidden={true} />
+        {$t('admin.frameleaf_maintenance_report_delete_action')}
+      </button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input
+      type="search"
+      aria-label={$t('admin.frameleaf_maintenance_report_search_label')}
+      placeholder={$t('admin.frameleaf_maintenance_report_search_placeholder')}
+      bind:value={reportQuery}
+    />
+    <span aria-live="polite" class="count">
+      {#if filterSummary.isFiltered}
+        {$t('admin.frameleaf_maintenance_report_search_count', {
+          values: { filtered: filterSummary.filtered, total: filterSummary.total },
+        })}
+      {/if}
+    </span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">{$t('admin.frameleaf_maintenance_report_path')}</th>
+          <th scope="col"><span class="sr-only">{$t('actions')}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each filteredItems as { id, path } (id)}
+          <tr>
+            <td><code>{path}</code></td>
+            <td class="row-actions">
+              {#if downloadable}
+                <a class="button" href={Route.integrityReportFile(id)} aria-label={$t('download') + ' ' + path}>
+                  {$t('download')}
+                </a>
+              {/if}
+              <button
+                type="button"
+                class="button danger"
+                disabled={deletingAll || deleting.has(id)}
+                aria-label={$t('delete') + ' ' + path}
+                onclick={() => void handleRemoveIntegrityReportItem(id, type)}
+              >
+                {$t('delete')}
+              </button>
+            </td>
+          </tr>
+        {/each}
+        {#if filteredItems.length === 0}
+          <tr>
+            <td colspan="2" class="empty">
+              {filterSummary.isFiltered
+                ? $t('admin.frameleaf_maintenance_report_search_empty')
+                : $t('admin.frameleaf_maintenance_report_empty')}
+            </td>
+          </tr>
+        {/if}
+      </tbody>
+    </table>
+  </div>
+  {#if integrityReport.nextCursor && !filterSummary.isFiltered}
+    <div class="pager">
+      <button type="button" class="button" onclick={() => void loadMore()}>{$t('load_more')}</button>
+    </div>
   {/if}
-</Table>
+</section>
 
 <style>
-  .report-title {
-    margin: 0 0 12px;
+  .report {
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    padding: 20px;
+    min-width: 0;
+  }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    text-decoration: none;
+  }
+  .back:hover {
+    color: var(--fl-text);
+  }
+  .report-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  h2 {
+    margin: 0 0 4px;
     font-size: 16px;
-    font-weight: 550;
+    font-weight: 600;
+  }
+  .summary {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .actions,
+  .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .row-actions {
+    justify-content: flex-end;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+  }
+  .row-actions .button {
+    padding: 5px 9px;
+    font-size: var(--fl-font-small);
+  }
+  .button.danger {
+    color: var(--fl-danger);
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .toolbar input {
+    flex: 1;
+    min-width: 160px;
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    padding: 6px 9px;
+    font: inherit;
+  }
+  .count {
+    flex-shrink: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fl-font-small);
+  }
+  th {
+    text-align: left;
+    color: var(--fl-muted);
+    font-weight: 500;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--fl-border);
+  }
+  td {
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--fl-border);
+    vertical-align: middle;
+  }
+  td code {
+    word-break: break-all;
+  }
+  .empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  .pager {
+    display: flex;
+    justify-content: center;
+    margin-top: 12px;
   }
   .sr-only {
     position: absolute;
@@ -141,32 +352,5 @@
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
-  }
-  .frameleaf-report-search {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-  .frameleaf-report-search input {
-    flex: 1;
-    min-width: 0;
-    padding: 0.4375rem 0.6875rem;
-    color: var(--fl-text);
-    background: var(--fl-canvas);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    font-family: inherit;
-    font-size: var(--fl-font-size);
-  }
-  .frameleaf-report-search-summary {
-    flex-shrink: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .frameleaf-report-empty {
-    padding: 1rem;
-    text-align: center;
-    color: var(--fl-muted);
   }
 </style>
