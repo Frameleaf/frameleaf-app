@@ -137,6 +137,33 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=storage', expect.any(Object));
   });
 
+  it('makes Library care the hub for fixes: its sections, then the repair tools', async () => {
+    open('/user-settings?area=care');
+    const { container } = render(SettingsHost, { sections });
+    const tools = container.querySelectorAll<HTMLElement>('.cc-directory')[1];
+    expect(screen.getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
+    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
+      'Duplicate review',
+      'Missing media',
+      'Damaged media',
+      'Live Photo pairing',
+    ]);
+    await userEvent.click(within(tools).getByRole('button', { name: /Duplicate review/ }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
+  });
+
+  it('lists only the repair tools an account without administration may run', () => {
+    open('/user-settings?area=care', false);
+    const { container } = render(SettingsHost, {
+      sections: [...sections.filter((section) => !section.admin), accountSection('repair', 'Repair queues')],
+    });
+    const tools = container.querySelectorAll<HTMLElement>('.cc-directory')[1];
+    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
+      'Duplicate review',
+      'Live Photo pairing',
+    ]);
+  });
+
   it("links Storage → Trash & retention to the account's own trash", async () => {
     open('/user-settings?area=storage&section=trash');
     render(SettingsHost, { sections });

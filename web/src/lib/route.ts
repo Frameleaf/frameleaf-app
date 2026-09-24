@@ -78,6 +78,12 @@ export const Route = {
 
   // albums
   albums: () => '/albums',
+  /**
+   * The Albums page with its create dialog open, as the rail's "+" does (LibraryRail.jsx `onSave`,
+   * `onNewSpace`). The page consumes the request and drops it from the address, so opening All
+   * albums later never replays it.
+   */
+  newAlbum: ({ kind }: { kind: 'album' | 'space' }) => `/albums?create=${kind}`,
   viewAlbum: ({ id }: { id: string }) => `/albums/${id}`,
   viewAlbumAsset: ({ albumId, assetId }: { albumId: string; assetId: string }) =>
     `/albums/${albumId}/photos/${assetId}`,
@@ -238,7 +244,8 @@ export const Route = {
 
   // utilities
   utilities: () => utilitiesUrl(),
-  libraryCare: () => '/user-settings?screen=care',
+  // The rail's Library Care opens the Library care area, the hub for fixes (September 24).
+  libraryCare: () => commandCenterUrl('care'),
   duplicatesUtility: (params?: { index?: number }) => utilitiesUrl('duplicates', params),
   largeFileUtility: () => utilitiesUrl('large-files'),
   livePhotosUtility: () => utilitiesUrl('live-photos'),

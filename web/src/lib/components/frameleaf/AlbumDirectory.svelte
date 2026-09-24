@@ -4,7 +4,8 @@
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
@@ -89,7 +90,7 @@
     mdiViewGridOutline,
     mdiViewListOutline,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -254,6 +255,22 @@
   const openCreate = (kind: AlbumKind, parentId: string | null = null, smart = false) => {
     createDialog = { open: true, kind, parentId, smart };
   };
+
+  /**
+   * The rail's "+" (LibraryRail.jsx `onSave`, `onNewSpace`) arrives as `?create=album|space`. The
+   * request is consumed once and dropped from the address, so opening All albums afterwards, going
+   * back or reloading never replays it (September 24 polish pass).
+   */
+  $effect(() => {
+    const request = page.url.searchParams.get('create');
+    if (request !== 'album' && request !== 'space') {
+      return;
+    }
+    untrack(() => openCreate(request === 'space' ? AlbumKind.Space : AlbumKind.Album));
+    const url = new URL(page.url);
+    url.searchParams.delete('create');
+    replaceState(url, page.state);
+  });
 
   /** A smart album and its rule are created together (FL-60); nothing is matched until it is applied. */
   const createSmart = async (dto: ClassificationRuleCreateDto) => {
