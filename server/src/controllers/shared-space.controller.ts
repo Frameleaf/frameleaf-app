@@ -21,6 +21,9 @@ import {
   SharedSpacePersonLinkDto,
   SharedSpacePersonParamDto,
   SharedSpacePreviewResponseDto,
+  RecipientGroupCreateDto,
+  RecipientGroupResponseDto,
+  RecipientGroupUpdateDto,
 } from 'src/dtos/shared-space.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -37,6 +40,58 @@ import { UUIDParamDto } from 'src/validation.js';
 @Controller('shared-spaces')
 export class SharedSpaceController {
   constructor(private service: SharedSpaceService) {}
+
+  @Get('recipient-groups')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'List recipient groups',
+    description:
+      'The authenticated user\'s own named groups of people to invite to a shared space together. A group is a shortcut only: it grants nothing, and its name is never shown to anyone but its owner.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getRecipientGroups(@Auth() auth: AuthDto): Promise<RecipientGroupResponseDto[]> {
+    return this.service.getRecipientGroups(auth);
+  }
+
+  @Post('recipient-groups')
+  @Authenticated({ permission: Permission.AlbumShare })
+  @Endpoint({
+    summary: 'Create a recipient group',
+    description:
+      'Save a named group of people to invite together. Nobody is invited or given access until the group is applied to a shared space and its invitations are sent.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  createRecipientGroup(@Auth() auth: AuthDto, @Body() dto: RecipientGroupCreateDto): Promise<RecipientGroupResponseDto> {
+    return this.service.createRecipientGroup(auth, dto);
+  }
+
+  @Put('recipient-groups/:id')
+  @Authenticated({ permission: Permission.AlbumShare })
+  @Endpoint({
+    summary: 'Update a recipient group',
+    description:
+      'Rename a group or change who is in it. Existing invitations and memberships are never changed; only the owner\'s own groups can be updated (anyone else\'s reads as not found).',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  updateRecipientGroup(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: RecipientGroupUpdateDto,
+  ): Promise<RecipientGroupResponseDto> {
+    return this.service.updateRecipientGroup(auth, id, dto);
+  }
+
+  @Delete('recipient-groups/:id')
+  @Authenticated({ permission: Permission.AlbumShare })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a recipient group',
+    description: 'Delete one of your recipient groups. Nobody loses access to anything.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deleteRecipientGroup(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.deleteRecipientGroup(auth, id);
+  }
 
   @Get('invitations')
   @Authenticated({ permission: Permission.AlbumRead })

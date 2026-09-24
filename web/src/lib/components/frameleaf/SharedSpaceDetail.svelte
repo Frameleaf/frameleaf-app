@@ -50,7 +50,7 @@
     type SharedSpaceNewResponseDto,
     type SharedSpacePeopleResponseDto,
   } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
+  import { Icon, toastManager } from '@immich/ui';
   import {
     mdiArrowLeft,
     mdiDeleteOutline,
@@ -209,6 +209,28 @@
 
         photos.remove(assetIds);
         void onRefresh();
+      },
+      // FL-55: a role changed elsewhere (the server's AlbumUserUpdateV1) re-reads the space, so a
+      // downgraded contributor loses "Add everything matching" and the other contributor controls
+      // at once. The server refuses the same actions again.
+      AlbumUserUpdate: ({ albumId }) => {
+        if (albumId === space.id) {
+          void onRefresh();
+        }
+      },
+      // Taken out of the space while it is open: nothing loaded for it stays on screen.
+      AlbumUserDelete: ({ albumId, userId }) => {
+        if (albumId !== space.id) {
+          return;
+        }
+        if (userId !== currentUserId) {
+          void onRefresh();
+          return;
+        }
+        assetViewerManager.showAssetViewer(false);
+        photos.remove(photos.assets.map(({ id }) => id));
+        toastManager.primary($t('frameleaf_album_access_removed', { values: { name: space.albumName } }));
+        void goto(Route.sharing());
       },
     }),
   );

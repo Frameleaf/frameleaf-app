@@ -66,6 +66,44 @@ const SharedSpaceInviteParamSchema = z.object({
 });
 
 /* -------------------------------------------------------------------------- */
+/* Named recipient shortcuts (FL-55)                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A named group of people the owner invites together. Applying it is only a shortcut for sending
+ * the same invitations one by one; editing or deleting it never changes anybody's existing access,
+ * and its name is visible to its owner only.
+ */
+const RecipientGroupResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Recipient group ID'),
+    name: z.string().describe('Name, visible to its owner only'),
+    users: z.array(UserResponseSchema).describe('People in the group who still have an account, by name'),
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the group was saved'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('When the group last changed'),
+  })
+  .meta({ id: 'RecipientGroupResponseDto' });
+
+const RecipientGroupNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .describe('Name, visible to its owner only');
+const RecipientGroupUserIdsSchema = z
+  .array(z.uuidv4())
+  .max(200)
+  .describe('People in the group. Yourself and repeats are dropped.');
+
+const RecipientGroupCreateSchema = z
+  .object({ name: RecipientGroupNameSchema, userIds: RecipientGroupUserIdsSchema })
+  .meta({ id: 'RecipientGroupCreateDto' });
+
+const RecipientGroupUpdateSchema = z
+  .object({ name: RecipientGroupNameSchema.optional(), userIds: RecipientGroupUserIdsSchema.optional() })
+  .meta({ id: 'RecipientGroupUpdateDto' });
+
+/* -------------------------------------------------------------------------- */
 /* Albums linked into a shared space (FL-55)                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -362,3 +400,6 @@ export class SharedSpacePeopleResponseDto extends createZodDto(SharedSpacePeople
 export class SharedSpacePersonLinkDto extends createZodDto(SharedSpacePersonLinkSchema) {}
 export class SharedSpacePersonParamDto extends createZodDto(SharedSpacePersonParamSchema) {}
 export class SharedSpaceNewResponseDto extends createZodDto(SharedSpaceNewResponseSchema) {}
+export class RecipientGroupResponseDto extends createZodDto(RecipientGroupResponseSchema) {}
+export class RecipientGroupCreateDto extends createZodDto(RecipientGroupCreateSchema) {}
+export class RecipientGroupUpdateDto extends createZodDto(RecipientGroupUpdateSchema) {}

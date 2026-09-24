@@ -1197,6 +1197,30 @@
       "identity": "immich_fork.physical_file.updatedAt"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.recipient_group.createdAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.recipient_group.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.recipient_group.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.recipient_group.ownerId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.recipient_group.updatedAt"
+    },
+    {
+      "definition": "uuid[]|not null|'{}'::uuid[]||",
+      "identity": "immich_fork.recipient_group.userIds"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.smart_album_exclusion.assetId"
     },
@@ -6887,6 +6911,18 @@
       "identity": "immich_fork.physical_file.physical_file_pkey"
     },
     {
+      "definition": "CHECK (char_length(name) >= 1 AND char_length(name) <= 100)",
+      "identity": "immich_fork.recipient_group.recipient_group_name_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.recipient_group.recipient_group_pkey"
+    },
+    {
+      "definition": "CHECK (cardinality(\"userIds\") <= 200)",
+      "identity": "immich_fork.recipient_group.recipient_group_size_check"
+    },
+    {
       "definition": "PRIMARY KEY (\"smartAlbumId\", \"assetId\")",
       "identity": "immich_fork.smart_album_exclusion.smart_album_exclusion_pkey"
     },
@@ -8621,7 +8657,8 @@
     "0000000000120-VideoEditVersions",
     "0000000000130-ArchiveOperations",
     "0000000000140-PersonMergeVerdicts",
-    "0000000000150-AlbumPositions"
+    "0000000000150-AlbumPositions",
+    "0000000000160-RecipientGroups"
   ],
   "functions": [
     {
@@ -10021,6 +10058,14 @@
     {
       "definition": "CREATE UNIQUE INDEX physical_file_pkey ON immich_fork.physical_file USING btree (id)",
       "identity": "immich_fork.physical_file.physical_file_pkey"
+    },
+    {
+      "definition": "CREATE INDEX recipient_group_owner_idx ON immich_fork.recipient_group USING btree (\"ownerId\")",
+      "identity": "immich_fork.recipient_group.recipient_group_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX recipient_group_pkey ON immich_fork.recipient_group USING btree (id)",
+      "identity": "immich_fork.recipient_group.recipient_group_pkey"
     },
     {
       "definition": "CREATE INDEX smart_album_exclusion_asset_idx ON immich_fork.smart_album_exclusion USING btree (\"assetId\")",
@@ -12440,6 +12485,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.physical_file"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.recipient_group"
     },
     {
       "definition": "table",
