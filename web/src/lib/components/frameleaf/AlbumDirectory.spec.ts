@@ -58,6 +58,12 @@ describe('AlbumDirectory', () => {
     await init({ fallbackLocale: 'en-US' });
     register('en-US', () => import('$i18n/en.json'));
     await waitLocale('en-US');
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
   });
 
   beforeEach(() => {
@@ -203,6 +209,45 @@ describe('AlbumDirectory', () => {
 
     await waitFor(() => expect(sdkMock.removeUserFromAlbum).toHaveBeenCalledWith({ id: 'trail', userId: 'me' }));
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('edits an album in the Frameleaf edit dialog, not the legacy modal (AL-2)', async () => {
+    sdkMock.getAlbumIconCatalogue.mockResolvedValue({ version: '7.4.47', names: [], suggested: [] });
+    sdkMock.updateAlbumInfo.mockResolvedValue({ ...rockies, albumName: 'Rockies' });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Edit' }));
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Edit album' }));
+    const name = dialog.getByRole('textbox', { name: 'Name' });
+    expect(name).toHaveValue('Summer in the Rockies');
+    await fireEvent.input(name, { target: { value: 'Rockies' } });
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateAlbumInfo).toHaveBeenCalledWith({
+        id: 'rockies',
+        updateAlbumDto: expect.objectContaining({ albumName: 'Rockies' }),
+      }),
+    );
+    // The collection did not change, so nothing is moved.
+    expect(sdkMock.moveAlbumToCollection).not.toHaveBeenCalled();
+  });
+
+  it('shares an album in the Frameleaf share dialog with a searchable invite list (AL-3, AL-15)', async () => {
+    sdkMock.searchUsers.mockResolvedValue([jamie]);
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    await fireEvent.click(menu.getByRole('menuitem', { name: 'Share' }));
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Share this album' }));
+    const people = await dialog.findByRole('listbox', { name: 'People to invite' });
+    expect(within(people).getByRole('option', { name: /Jamie/ })).toBeInTheDocument();
+    expect(dialog.queryByRole('combobox', { name: /search/i })).toBeNull();
   });
 
   it('never lets a viewer drag someone else’s album', () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -70,13 +71,13 @@
   const roleLabel = (role: AlbumUserRole) => {
     switch (role) {
       case AlbumUserRole.Owner: {
-        return $t('frameleaf_spaces_role_owner');
+        return $t('frameleaf_album_role_owner');
       }
       case AlbumUserRole.Viewer: {
-        return $t('frameleaf_spaces_role_viewer');
+        return $t('frameleaf_album_role_viewer');
       }
       default: {
-        return $t('frameleaf_spaces_role_editor');
+        return $t('frameleaf_album_role_editor');
       }
     }
   };
@@ -118,6 +119,18 @@
       () => updateAlbumUser({ id: space.id, userId: member.user.id, updateAlbumUserDto: { role } }).then(() => {}),
       $t('frameleaf_spaces_role_changed', { values: { name: member.user.name, role: roleLabel(role) } }),
     );
+
+  /**
+   * Removing a member or leaving asks first in the Frameleaf dialog (AL-43); withdrawing an
+   * unanswered invitation removes only an offer, so it happens at once.
+   */
+  let confirming = $state<{ open: boolean; member?: SharedSpaceMemberResponseDto }>({ open: false });
+  const requestRemove = (member: SharedSpaceMemberResponseDto) => {
+    if (member.pending) {
+      return remove(member);
+    }
+    confirming = { open: true, member };
+  };
 
   const remove = (member: SharedSpaceMemberResponseDto) => {
     const leaving = member.user.id === currentUserId;
@@ -187,7 +200,7 @@
             type="button"
             class="remove"
             disabled={busy}
-            onclick={() => remove(member)}
+            onclick={() => requestRemove(member)}
             aria-label={member.pending
               ? $t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })
               : member.user.id === currentUserId
@@ -236,6 +249,24 @@
     </div>
   {/if}
 </section>
+
+{#if confirming.member}
+  {@const member = confirming.member}
+  {@const self = member.user.id === currentUserId}
+  <AlbumConfirmDialog
+    title={self
+      ? $t('frameleaf_album_leave_title', { values: { name: space.albumName } })
+      : $t('frameleaf_spaces_remove_title', { values: { name: member.user.name } })}
+    body={self
+      ? $t('frameleaf_album_leave_body')
+      : $t('frameleaf_spaces_remove_body', { values: { space: space.albumName } })}
+    confirmLabel={self
+      ? $t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })
+      : $t('frameleaf_spaces_remove_confirm')}
+    bind:open={confirming.open}
+    onConfirm={() => remove(member)}
+  />
+{/if}
 
 <style>
   .members {

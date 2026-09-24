@@ -8,6 +8,7 @@
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
+  import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
@@ -29,18 +30,18 @@
     normalizeAlbumDirectoryView,
     type AlbumDirectoryFilter,
     type AlbumDirectorySort,
+    type AlbumDetailsDraft,
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
-  import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Route } from '$lib/route';
   import {
     handleCreateAlbumEntry,
     handleDeleteAlbum,
     handleDownloadAlbum,
+    handleEditAlbumDetails,
     handleLeaveAlbum,
     handleMoveAlbumToCollection,
   } from '$lib/services/album.service';
@@ -129,6 +130,8 @@
   let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let linkDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let editDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let shareDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let reevaluate = $state<{ open: boolean; rule?: ClassificationRuleResponseDto; sources: RuleSources }>({
     open: false,
     sources: { people: [], tags: [] },
@@ -312,7 +315,7 @@
     if (!album) {
       return;
     }
-    const ok = await handleDeleteAlbum(album, { prompt: false, notify: false });
+    const ok = await handleDeleteAlbum(album, { notify: false });
     if (ok) {
       status =
         album.kind === AlbumKind.Collection
@@ -355,13 +358,25 @@
       }
       return;
     }
-    await modalManager.show(AlbumEditModal, { album });
-    await refresh();
+    editDialog = { open: true, album };
   };
 
-  const share = async (album: AlbumResponseDto) => {
-    await modalManager.show(AlbumOptionsModal, { album, readOnly: !isOwner(album, currentUserId) });
-    await refresh();
+  /** The Frameleaf edit dialog (`CollectionFormDialog`); the tree refreshes on `AlbumUpdate`. */
+  const saveDetails = async (draft: AlbumDetailsDraft) => {
+    const album = editDialog.album;
+    if (!album) {
+      return false;
+    }
+    const saved = await handleEditAlbumDetails(album, draft);
+    if (saved) {
+      status = $t('frameleaf_albums_saved', { values: { name: nameOf(saved) } });
+    }
+    return !!saved;
+  };
+
+  /** Members and roles in the Frameleaf share dialog (`ShareDialog`), as the album header does. */
+  const share = (album: AlbumResponseDto) => {
+    shareDialog = { open: true, album };
   };
 
   /* ---- drag an album onto a collection shelf; touch uses Move to… ---- */
@@ -742,7 +757,9 @@
     title={$t('frameleaf_album_delete_title', { values: { name: nameOf(album) } })}
     body={album.kind === AlbumKind.Collection
       ? $t('frameleaf_album_delete_collection_body')
-      : $t('frameleaf_album_delete_body', { values: { kind: kindOf(album) } })}
+      : isSpace(album)
+        ? $t('frameleaf_album_delete_space_body')
+        : $t('frameleaf_album_delete_body', { values: { kind: kindOf(album) } })}
     keepNote={album.kind === AlbumKind.Collection
       ? $t('frameleaf_album_delete_collection_keep', { values: { count: albumCountOf(album) } })
       : $t('frameleaf_album_delete_keep', { values: { count: album.assetCount } })}
@@ -763,6 +780,26 @@
   />
 {/if}
 
+{#if editDialog.album}
+  <AlbumCreateDialog
+    bind:open={editDialog.open}
+    kind={editDialog.album.kind}
+    album={editDialog.album}
+    collections={editableCollections}
+    canMove={editDialog.album.kind === AlbumKind.Album && isOwner(editDialog.album, currentUserId)}
+    onCreate={create}
+    onSave={saveDetails}
+  />
+{/if}
+{#if shareDialog.album}
+  {@const album = find(shareDialog.album.id) ?? shareDialog.album}
+  <AlbumShareDialog
+    {album}
+    bind:open={shareDialog.open}
+    onChanged={refresh}
+    onLeave={() => (leaveDialog = { open: true, album })}
+  />
+{/if}
 {#if linkDialog.album}
   <SharedLinkForm
     bind:open={linkDialog.open}
