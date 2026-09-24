@@ -2741,7 +2741,7 @@ where
 
 -- SearchRepository.searchFacets
 with
-  matched as (
+  matched as materialized (
     (
       select
         "asset"."id",
@@ -2916,6 +2916,14 @@ with
       )
     group by
       t.id
+    union all
+    select
+      'total'::text as field,
+      null::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched
   ),
   ranked as (
     select
@@ -2945,7 +2953,7 @@ order by
 
 -- SearchRepository.searchFacetsV3
 with
-  matched as (
+  matched as materialized (
     (
       select
         "asset"."id",
@@ -3120,6 +3128,14 @@ with
       )
     group by
       t.id
+    union all
+    select
+      'total'::text as field,
+      null::text as value,
+      null::text as label,
+      count(*) as count
+    from
+      matched
   ),
   ranked as (
     select

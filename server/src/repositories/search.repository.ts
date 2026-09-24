@@ -313,6 +313,7 @@ export interface SearchFacetOptions {
 }
 
 export type SearchFacetRow = { field: SearchFacetField; value: string; label: string | null; count: number };
+export type SearchFacetResult = { total: number; rows: SearchFacetRow[] };
 export type SearchHistogramRow = { date: string; count: number };
 
 const facetExample: SearchFacetOptions = {
@@ -807,7 +808,7 @@ export class SearchRepository {
 
   /** FL-49: facet counts for a legacy (flat) search body */
   @GenerateSql({ params: [legacySearchExample, facetExample] })
-  searchFacets(options: AssetSearchOptions, facets: SearchFacetOptions): Promise<SearchFacetRow[]> {
+  searchFacets(options: AssetSearchOptions, facets: SearchFacetOptions): Promise<SearchFacetResult> {
     return this.facetsOf(searchAssetBuilderLegacy(this.db, options), facets);
   }
 
@@ -817,7 +818,7 @@ export class SearchRepository {
     options: AssetSearchBuilderV3Options,
     scope: AssetSearchScope,
     facets: SearchFacetOptions,
-  ): Promise<SearchFacetRow[]> {
+  ): Promise<SearchFacetResult> {
     return this.facetsOf(searchAssetBuilder(this.db, options, scope) as MatchedAssets, facets);
   }
 
@@ -882,7 +883,7 @@ export class SearchRepository {
     return rows.map((row): SearchHistogramRow => ({ date: row.date, count: Number(row.count) }));
   }
 
-  private async facetsOf(matched: MatchedAssets, options: SearchFacetOptions): Promise<SearchFacetRow[]> {
+  private async facetsOf(matched: MatchedAssets, options: SearchFacetOptions): Promise<SearchFacetResult> {
     const wanted = new Set(options.facets);
     const viewer = asUuidLiteral(options.viewerId);
     const exifFacet = (field: SearchFacetField, column: string, where: RawBuilder<unknown> = sql`true`) =>
@@ -950,20 +951,30 @@ export class SearchRepository {
     ];
 
     const selected = parts.filter(([field]) => wanted.has(field)).map(([, query]) => query);
-    if (selected.length === 0) {
-      return [];
-    }
+    // the total comes from the same matched set in the same statement, so it never needs its own scan
+    const total = sql`select 'total'::text as field, null::text as value, null::text as label, count(*) as count
+      from matched`;
 
-    const { rows } = await sql<{ field: SearchFacetField; value: string; label: string | null; count: string }>`
-      with matched as (${matched.select(['asset.id', 'asset.ownerId', 'asset.type', 'asset.isFavorite'])}),
-      facet_rows as (${sql.join(selected, sql` union all `)}),
+    const { rows } = await sql<{
+      field: SearchFacetField | 'total';
+      value: string;
+      label: string | null;
+      count: string;
+    }>`
+      with matched as materialized (${matched.select(['asset.id', 'asset.ownerId', 'asset.type', 'asset.isFavorite'])}),
+      facet_rows as (${sql.join([...selected, total], sql` union all `)}),
       ranked as (
         select *, row_number() over (partition by field order by count desc, value asc) as rank
         from facet_rows
       )
       select field, value, label, count from ranked where rank <= ${options.limit} order by field, rank
     `.execute(this.db);
-    return rows.map((row) => ({ ...row, count: Number(row.count) }));
+    return {
+      total: Number(rows.find((row) => row.field === 'total')?.count ?? 0),
+      rows: rows
+        .filter((row): row is typeof row & { field: SearchFacetField } => row.field !== 'total')
+        .map((row) => ({ ...row, count: Number(row.count) })),
+    };
   }
 
   private smartSearchOrder(options: { embedding: string; query?: string }) {

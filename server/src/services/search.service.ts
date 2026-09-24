@@ -2,7 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { LRUMap } from 'mnemonist';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { AssetSearchOptions, AssetSearchScope, SearchFacetOptions } from 'src/repositories/search.repository.js';
+import type {
+  AssetSearchOptions,
+  AssetSearchScope,
+  SearchFacetOptions,
+  SearchFacetResult,
+} from 'src/repositories/search.repository.js';
 import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { PersonResponseDto, mapPerson } from 'src/dtos/person.dto.js';
 import {
@@ -191,7 +196,8 @@ export class SearchService extends BaseService {
     const { facets: requested, facetLimit, ...body } = dto;
     const facetOptions: SearchFacetOptions = {
       viewerId: auth.user.id,
-      facets: requested ?? Object.values(SearchFacetField),
+      // each facet once, in the order asked
+      facets: [...new Set(requested ?? Object.values(SearchFacetField))],
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
       locationHiddenOwnerIds: [
         ...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository })),
@@ -200,26 +206,22 @@ export class SearchService extends BaseService {
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
     };
 
-    let total: number;
-    let rows: Awaited<ReturnType<typeof this.searchRepository.searchFacets>>;
+    // the total comes from the facet statement itself: one scan of the matched assets, not two
+    let result: SearchFacetResult;
     if (isNewShapeRequest(body)) {
       const { filter, scope } = await this.resolveSearchScopeV3(auth, body);
-      const options = {
-        filter,
-        ...getPrivacyQueryOptions(auth, body.suppressedOnly),
-        imageEnrichment: body.imageEnrichment,
-      };
-      [{ total }, rows] = await Promise.all([
-        this.searchRepository.searchStatisticsV3(options, scope),
-        this.searchRepository.searchFacetsV3(options, scope, facetOptions),
-      ]);
+      result = await this.searchRepository.searchFacetsV3(
+        { filter, ...getPrivacyQueryOptions(auth, body.suppressedOnly), imageEnrichment: body.imageEnrichment },
+        scope,
+        facetOptions,
+      );
     } else {
-      const options = await this.getLegacyStatisticsOptions(auth, body);
-      [{ total }, rows] = await Promise.all([
-        this.searchRepository.searchStatistics(options),
-        this.searchRepository.searchFacets(options, facetOptions),
-      ]);
+      result = await this.searchRepository.searchFacets(
+        await this.getLegacyStatisticsOptions(auth, body),
+        facetOptions,
+      );
     }
+    const { total, rows } = result;
 
     return {
       total,

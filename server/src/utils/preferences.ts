@@ -1,7 +1,7 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { get, isEqual, set } from 'lodash-es';
 import { createHash } from 'node:crypto';
-import type { UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import { SAVED_SEARCH_MAX_COUNT, type UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import { AssetOrder, UserMetadataKey } from 'src/enum.js';
 import { DeepPartial, SavedSearch, UserMetadataItem, UserPreferences } from 'src/types.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
@@ -260,6 +260,14 @@ export const mergePreferences = (
       ...update.savedSearches,
       ...preferences.savedSearches.filter((search) => !visible.has(search)),
     ];
+    // the kept searches count towards the same limits the request was checked against
+    if (update.savedSearches.length > SAVED_SEARCH_MAX_COUNT) {
+      throw new BadRequestException(`At most ${SAVED_SEARCH_MAX_COUNT} saved searches, including any kept Locked`);
+    }
+    const names = update.savedSearches.map(({ name }) => name.toLocaleLowerCase());
+    if (new Set(names).size !== names.length) {
+      throw new BadRequestException('Saved search names must be unique, including any kept Locked');
+    }
   }
   for (const key of getKeysDeep(update)) {
     set(preferences, key, get(update, key));

@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
@@ -291,6 +291,17 @@ describe('preferences (FL-77 admin casting permission)', () => {
       expect(merged.savedSearches).toEqual([added, searches[1]]);
       const unlocked = mergePreferences(withLockedRules(), { savedSearches: [added] }, 'user');
       expect(unlocked.savedSearches).toEqual([added]);
+    });
+
+    it('refuses a locked-session list that clashes with, or with the kept searches exceeds the limits', () => {
+      const clash = { name: 'WITH SOMEONE', query: {} };
+      expect(() =>
+        mergePreferences(withLockedRules(), { savedSearches: [clash] }, 'user', { lockedSession: true }),
+      ).toThrow(BadRequestException);
+      const full = Array.from({ length: 50 }, (_, index) => ({ name: `search ${index}`, query: {} }));
+      expect(() =>
+        mergePreferences(withLockedRules(), { savedSearches: full }, 'user', { lockedSession: true }),
+      ).toThrow(BadRequestException);
     });
 
     it('leaves out a search naming a Locked person while the session is locked', () => {
