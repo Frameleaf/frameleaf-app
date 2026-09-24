@@ -626,14 +626,35 @@ describe(ImageEnrichmentService.name, () => {
       mocks.asset.getById.mockResolvedValue({ id: assetId, ownerId, exifInfo: { description: '' }, tags: [] } as never);
     });
 
+    // the metadata transaction the review is written in; the lock must join it (FL-34, PR127)
+    const trx = { isTransaction: true } as never;
+    const inMetadataTransaction = () =>
+      mocks.database.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(trx));
+
     it('locks an asset its owner marks sensitive, as their own lock', async () => {
+      inMetadataTransaction();
       mocks.asset.lock.mockResolvedValue([assetId]);
 
       await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw });
 
-      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Marked, authStub.admin.user.id);
+      // in the same transaction as the review, so neither commits without the other
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Marked, authStub.admin.user.id, trx);
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(assetId, expect.any(Array), trx);
       // what a locked photo may no longer be is released and followed up
       expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
+    });
+
+    it('runs no lock follow-up when the lock fails inside the review transaction', async () => {
+      inMetadataTransaction();
+      mocks.asset.lock.mockRejectedValue(new Error('lock unavailable'));
+
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw }),
+      ).rejects.toThrow('lock unavailable');
+
+      // the transaction (review and projection with it) is rolled back; nothing ran after it
+      expect(mocks.tag.upsertValue).not.toHaveBeenCalled();
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
     });
 
     it('needs the unlocked session to mark a locked asset safe', async () => {
@@ -663,12 +684,13 @@ describe(ImageEnrichmentService.name, () => {
       } as never);
       // a copy: the service edits the metadata it reads
       mocks.asset.getMetadataByKey.mockResolvedValue(structuredClone(detectedMetadata));
+      inMetadataTransaction();
 
       await sut.updateAssetEnrichment(authStub.adminWithElevatedPermission, assetId, {
         action: AssetImageEnrichmentAction.MarkSafe,
       });
 
-      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId]);
+      expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId], trx);
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
@@ -680,10 +702,14 @@ describe(ImageEnrichmentService.name, () => {
         },
       });
       mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: true, score: 0.95, labels: { explicit: 0.95 } });
+      mocks.asset.lock.mockResolvedValue([assetId]);
+      inMetadataTransaction();
 
       await expect(sut.handleNsfwDetection({ id: assetId })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null);
+      // committed with the detection that caused it, then followed up once committed
+      expect(mocks.asset.lock).toHaveBeenCalledWith([assetId], AssetLockReason.Detected, null, trx);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([assetId]);
     });
 
     it('never locks a detection while hiding sensitive detections is off', async () => {
@@ -718,6 +744,8 @@ describe(ImageEnrichmentService.name, () => {
       await sut.handleNsfwDetection({ id: assetId });
 
       expect(mocks.asset.lock).not.toHaveBeenCalled();
+      // nor does the raw detection put sensitive tags back on what its owner reviewed as safe
+      expect(mocks.tag.upsertValue).not.toHaveBeenCalledWith(expect.objectContaining({ value: 'nsfw' }));
     });
 
     it('keeps a safe review through a failed detection and a positive retry', async () => {
