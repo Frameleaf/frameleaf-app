@@ -15,12 +15,15 @@ test.describe('Album', () => {
   test('sends Select from library to the Library and keeps the new album', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
-    // Albums page -> Create album opens the create dialog (Collections.jsx), then the new album.
+    // Albums page -> Create album opens the create dialog; creating stays on the directory with a
+    // status line (Collections.jsx onSubmit), and the new album opens from its card.
     await page.goto('/albums');
     await page.getByRole('button', { name: 'Create album' }).first().click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name').fill('Weekend trip');
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page).toHaveURL(/\/albums(?:\?|$)/);
+    await page.getByRole('link', { name: /Weekend trip/ }).first().click();
     await page.waitForURL(/\/albums\/[\da-f-]{36}/);
 
     // CollectionHeader.jsx: Add photos -> Select from library / Upload from computer.
