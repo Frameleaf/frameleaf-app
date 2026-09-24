@@ -33,6 +33,78 @@
       "identity": "immich_fork.album_metadata.updatedAt"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.archive_operation_item.assetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.archive_operation_item.operationId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.archive_operation_item.ordinal"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.archive_operation_item.previousVisibility"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.archive_operation_item.publishedUpdateId"
+    },
+    {
+      "definition": "text|not null|'pending'::text||",
+      "identity": "immich_fork.archive_operation_item.status"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.archive_operation.archiveJobId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.archive_operation.createdAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.archive_operation.descriptor"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.archive_operation.expiresAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.archive_operation.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.archive_operation.ownerId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.archive_operation.prepared"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.archive_operation.preparedElevated"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.archive_operation.requestKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.archive_operation.scope"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.archive_operation.sessionId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.archive_operation.undoJobId"
+    },
+    {
       "definition": "double precision|nullable|||",
       "identity": "immich_fork.asset_best_photo_score.aestheticScore"
     },
@@ -6331,6 +6403,30 @@
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"operationId\") REFERENCES immich_fork.archive_operation(id) ON DELETE CASCADE",
+      "identity": "immich_fork.archive_operation_item.archive_operation_item_operationId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"operationId\", \"assetId\")",
+      "identity": "immich_fork.archive_operation_item.archive_operation_item_pkey"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'archived'::text, 'skipped'::text, 'undone'::text, 'conflict'::text]))",
+      "identity": "immich_fork.archive_operation_item.archive_operation_item_status_check"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"requestKey\")",
+      "identity": "immich_fork.archive_operation.archive_operation_ownerId_requestKey_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.archive_operation.archive_operation_pkey"
+    },
+    {
+      "definition": "CHECK (scope = ANY (ARRAY['selected-owned-assets'::text, 'matching-owned-timeline'::text]))",
+      "identity": "immich_fork.archive_operation.archive_operation_scope_check"
+    },
+    {
       "definition": "PRIMARY KEY (\"assetId\")",
       "identity": "immich_fork.asset_best_photo_score.asset_best_photo_score_pkey"
     },
@@ -8357,7 +8453,8 @@
     "0000000000080-MediaHealthRunOwner",
     "0000000000090-ICloudSync",
     "0000000000100-AlbumKind",
-    "0000000000110-AssetDevelopRevision"
+    "0000000000110-AssetDevelopRevision",
+    "0000000000130-ArchiveOperations"
   ],
   "functions": [
     {
@@ -9457,6 +9554,22 @@
     {
       "definition": "CREATE UNIQUE INDEX album_metadata_pkey ON immich_fork.album_metadata USING btree (\"albumId\")",
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX archive_operation_item_pkey ON immich_fork.archive_operation_item USING btree (\"operationId\", \"assetId\")",
+      "identity": "immich_fork.archive_operation_item.archive_operation_item_pkey"
+    },
+    {
+      "definition": "CREATE INDEX archive_operation_owner_created_idx ON immich_fork.archive_operation USING btree (\"ownerId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.archive_operation.archive_operation_owner_created_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"archive_operation_ownerId_requestKey_key\" ON immich_fork.archive_operation USING btree (\"ownerId\", \"requestKey\")",
+      "identity": "immich_fork.archive_operation.archive_operation_ownerId_requestKey_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX archive_operation_pkey ON immich_fork.archive_operation USING btree (id)",
+      "identity": "immich_fork.archive_operation.archive_operation_pkey"
     },
     {
       "definition": "CREATE INDEX asset_best_photo_owner_score_idx ON immich_fork.asset_best_photo_score USING btree (\"ownerId\", score DESC)",
@@ -12012,6 +12125,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.album_metadata"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.archive_operation"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.archive_operation_item"
     },
     {
       "definition": "table",

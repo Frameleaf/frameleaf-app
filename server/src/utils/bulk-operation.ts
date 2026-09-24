@@ -66,6 +66,11 @@ export type BulkOperationPayload = {
   mediaHealth?: BulkMediaHealthEntry[];
   /** The classification rule an `apply-classification-rule` job applies (FL-60). */
   classificationRuleId?: string;
+  /**
+   * The transactional archive operation (FL-32) an `archive` or `unarchive` job publishes or undoes.
+   * Set only by the server (`ArchiveOperationService`), never accepted from a client payload.
+   */
+  archiveOperationId?: string;
 };
 
 /** One reviewed Library Care finding in a bulk job (FL-69). */
