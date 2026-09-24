@@ -85,6 +85,9 @@ export interface DecodeToBufferOptions extends DecodeImageOptions {
 export type GenerateThumbnailOptions = Pick<ImageOptions, 'format' | 'quality' | 'progressive'> & DecodeToBufferOptions;
 export type GenerateThumbhashOptions = DecodeImageOptions;
 
+/** A video signal range as ffmpeg names it: `tv` is limited (MPEG) range, `pc` full (JPEG) range. */
+export type VideoColorRange = 'tv' | 'pc';
+
 export interface VideoStreamInfo {
   index: number;
   height: number;
@@ -113,6 +116,12 @@ export interface VideoStreamInfo {
   colorPrimaries: ColorPrimaries;
   colorMatrix: ColorMatrix;
   colorTransfer: ColorTransfer;
+  /**
+   * FL-102: the signal range ffprobe reported (`color_range`): `tv` is limited range, `pc` full
+   * range. Null when the stream does not say. Optional and additive like the rationals above: a
+   * stream from persisted metadata or an older probe stub does not carry it.
+   */
+  colorRange?: VideoColorRange | null;
   dvProfile: DvProfile | null;
   dvLevel: number | null;
   dvBlSignalCompatibilityId: DvSignalCompatibility | null;
