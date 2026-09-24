@@ -96,23 +96,22 @@ describe(JobService.name, () => {
       },
     );
 
-    it('notifies history views when a video version render fails, without a playback update', async () => {
+    it('notifies only fork history views when a video version render fails', async () => {
       const asset = getForAsset(AssetFactory.create({ type: AssetType.Video }));
+      const versionId = newUuid();
       mocks.job.run.mockResolvedValue(JobStatus.Failed);
       mocks.asset.getById.mockResolvedValue(asset);
-      mocks.assetEdit.getWithSyncInfo.mockResolvedValue([]);
 
       await sut.onJobRun(QueueName.VideoConversion, {
         name: JobName.AssetVideoEditGeneration,
-        data: { id: asset.id, versionId: newUuid() },
+        data: { id: asset.id, versionId },
       });
 
-      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AssetEditReadyV2', asset.ownerId, expect.anything());
-      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith(
-        'on_asset_update',
-        expect.anything(),
-        expect.anything(),
-      );
+      // Official clients read AssetEditReadyV2 as a published edit, so a failure never sends it.
+      expect(mocks.websocket.clientSend).toHaveBeenCalledExactlyOnceWith('VideoEditVersionFailedV1', asset.ownerId, {
+        assetId: asset.id,
+        versionId,
+      });
       expect(mocks.asset.getByIdsWithAllRelationsButStacks).not.toHaveBeenCalled();
     });
 

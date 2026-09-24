@@ -21,7 +21,7 @@
     type VideoEditVersionResponseDto,
   } from '@immich/sdk';
   import { ConfirmModal, Icon, modalManager, toastManager } from '@immich/ui';
-  import { mdiDownload, mdiExport, mdiHistory, mdiImageOutline } from '@mdi/js';
+  import { mdiDownload, mdiExport, mdiHistory, mdiImageOutline, mdiRestore } from '@mdi/js';
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -71,6 +71,9 @@
   });
 
   const current = $derived(versions.find((version) => version.isCurrent));
+  // Before any retained version exists, an edit made without history is still not the original.
+  const originalIsCurrent = $derived(current ? current.edits.length === 0 : !asset.isEdited);
+  const menuId = $derived(`video-versions-${asset.id}`);
   // Saved versions a person can go back to; an empty recipe is the Original entry.
   const saved = $derived(
     versions.filter((version) => version.purpose !== VideoEditVersionPurpose.Export && version.edits.length > 0),
@@ -118,15 +121,21 @@
 
   onMount(() => {
     void refresh();
-    const unsubscribe = websocketEvents.on('AssetEditReadyV2', (event) => {
+    const unsubscribeReady = websocketEvents.on('AssetEditReadyV2', (event) => {
       if (event.asset.id === asset.id) {
+        void refresh();
+      }
+    });
+    const unsubscribeFailed = websocketEvents.on('VideoEditVersionFailedV1', (event) => {
+      if (event.assetId === asset.id) {
         void refresh();
       }
     });
     return () => {
       disposed = true;
       request++;
-      unsubscribe();
+      unsubscribeReady();
+      unsubscribeFailed();
     };
   });
 
@@ -242,6 +251,12 @@
 
 <svelte:window onpointerdown={onWindowPointerDown} />
 
+{#if draftRecipe !== '[]'}
+  <button type="button" class="ed-tool labelled" title={$t('editor_video_revert_original')} onclick={() => choose([])}>
+    <Icon icon={mdiRestore} size="20" />
+    <span>{$t('frameleaf_editor_revert')}</span>
+  </button>
+{/if}
 <div class="ed-menu">
   <button
     bind:this={trigger}
@@ -249,43 +264,47 @@
     class="ed-tool labelled"
     aria-haspopup="menu"
     aria-expanded={open}
+    aria-controls={menuId}
     title={$t('frameleaf_editor_tool_versions')}
     onclick={toggle}
   >
     <Icon icon={mdiHistory} size="20" />
     <span>{$t('frameleaf_editor_tool_versions')}</span>
   </button>
-  {#if open}
-    <div bind:this={menu} role="menu" tabindex="-1" aria-label={$t('editor_video_versions')} onkeydown={onMenuKeyDown}>
-      <h3>{$t('editor_video_versions')}</h3>
-      {#if error}
-        <p role="alert">{$t('editor_video_versions_error')}</p>
-      {:else if !loading && saved.length === 0}
-        <p>{$t('frameleaf_editor_no_versions')}</p>
-      {/if}
-      <button type="button" role="menuitemradio" aria-checked={draftRecipe === '[]'} onclick={() => choose([])}>
-        <Icon icon={mdiImageOutline} size="18" />
-        {$t('frameleaf_editor_version_original')}
-        {#if !current || current.edits.length === 0}
-          <small>{$t('editor_video_version_current')}</small>
-        {/if}
-      </button>
-      {#each saved as version (version.id)}
-        <button
-          type="button"
-          role="menuitemradio"
-          aria-checked={recipeKey(version.edits) === draftRecipe}
-          title={date(version)}
-          onclick={() => choose(version.edits)}
-        >
-          <Icon icon={mdiHistory} size="18" />
-          {$t('editor_video_saved_version')}
-          <small>{note(version)}</small>
+  <div bind:this={menu} class="ed-menu-popover" hidden={!open}>
+    <h3 id="{menuId}-title">{$t('editor_video_versions')}</h3>
+    {#if error}
+      <p role="alert">{$t('editor_video_versions_error')}</p>
+    {:else if !loading && saved.length === 0}
+      <p>{$t('frameleaf_editor_no_versions')}</p>
+    {/if}
+    {#if pending}
+      <p role="status">{$t('editor_video_version_pending_hint')}</p>
+    {/if}
+    <div id={menuId} role="menu" tabindex="-1" aria-labelledby="{menuId}-title" onkeydown={onMenuKeyDown}>
+      <div role="group" aria-label={$t('editor_video_versions')}>
+        <button type="button" role="menuitemradio" aria-checked={draftRecipe === '[]'} onclick={() => choose([])}>
+          <Icon icon={mdiImageOutline} size="18" />
+          {$t('frameleaf_editor_version_original')}
+          {#if originalIsCurrent}
+            <small>{$t('editor_video_version_current')}</small>
+          {/if}
         </button>
-      {/each}
-      {#if pending}
-        <p role="status">{$t('editor_video_version_pending_hint')}</p>
-      {/if}
+        {#each saved as version (version.id)}
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={recipeKey(version.edits) === draftRecipe}
+            title={date(version)}
+            onclick={() => choose(version.edits)}
+          >
+            <Icon icon={mdiHistory} size="18" />
+            {$t('editor_video_saved_version')}
+            <small>{note(version)}</small>
+          </button>
+        {/each}
+      </div>
+      <div role="separator"></div>
       <button
         type="button"
         role="menuitem"
@@ -304,5 +323,5 @@
         </a>
       {/each}
     </div>
-  {/if}
+  </div>
 </div>
