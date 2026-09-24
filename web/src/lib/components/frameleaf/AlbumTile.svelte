@@ -166,13 +166,10 @@
   .tile[draggable='true'] {
     cursor: grab;
   }
-  /* Where a dragged item will land in custom order: the accent edge of the prototype's drop targets (collections.css:657). */
+  /* The item a custom-order drag lands before (FL-52), marked like the prototype's drop target (collections.css:657-660). */
   .tile.drop-before {
-    box-shadow: -3px 0 0 0 var(--fl-accent);
+    box-shadow: 0 0 0 2px var(--fl-accent);
     background: color-mix(in srgb, var(--fl-accent), transparent 90%);
-  }
-  .tile.list.drop-before {
-    box-shadow: inset 0 3px 0 0 var(--fl-accent);
   }
   .cover {
     position: relative;
