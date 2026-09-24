@@ -16,7 +16,6 @@
     removeLabel,
     onRemove,
     exclude = false,
-    unresolved = false,
     title,
     person,
     children,
@@ -25,8 +24,6 @@
     removeLabel: string;
     onRemove: () => void;
     exclude?: boolean;
-    /** A chip whose value no longer resolves (after an access change): shown, not searched. */
-    unresolved?: boolean;
     title?: string;
     person?: PersonResponseDto;
     /** Replaces `label`, for a value that is still loading. */
@@ -34,7 +31,7 @@
   } = $props();
 </script>
 
-<span class="search-chip" class:exclude class:unresolved {title}>
+<span class="search-chip" class:exclude {title}>
   {#if person}
     <PersonAvatar {person} size={18} />
   {/if}
@@ -68,11 +65,6 @@
     background: color-mix(in srgb, #ff453a 22%, transparent);
     text-decoration: line-through;
     text-decoration-color: #ff453a99;
-  }
-  .unresolved {
-    background: transparent;
-    border: 1px dashed color-mix(in srgb, var(--fl-text) 30%, transparent);
-    color: var(--fl-muted);
   }
   button {
     display: inline-grid;

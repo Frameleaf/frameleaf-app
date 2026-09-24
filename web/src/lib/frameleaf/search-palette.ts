@@ -396,8 +396,14 @@ const resolveToken = (
     case 'camera': {
       // As the prototype: a make the library has, exactly; else a model containing it; else a make containing it
       const make = catalog.makes.find((item) => fold(item.value) === fold(value))?.value;
+      // An exclusion is always "does not contain", which keeps photos with no camera at all, as the
+      // prototype's -camera: does (search.mjs compares an absent make as empty text)
+      if (make && !exclude) {
+        filter.make = withStringValues(filter.make as StringListCondition, [make], false);
+        return { display: make, fields: ['make'] };
+      }
       if (make) {
-        filter.make = withStringValues(filter.make as StringListCondition, [make], exclude);
+        filter.make = withPattern(filter.make, make, true);
         return { display: make, fields: ['make'] };
       }
       const field = catalog.models.some((item) => fold(item.value).includes(fold(value))) ? 'model' : 'make';
@@ -1201,6 +1207,67 @@ export const removeSavedSearch = (list: SavedSearch[], name: string): SavedSearc
 
 export type SmartAlbumCriteria = Omit<ClassificationRuleCreateDto, 'albumName'>;
 
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/;
+const shiftDay = (day: string, days: number) =>
+  new Date(Date.parse(`${day}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
+
+/**
+ * The inclusive capture days a localDateTime condition covers, as a rule's takenAfter/takenBefore.
+ * Each operator becomes its own bound (a calendar day or a UTC midnight, as the palette and the filter
+ * panel write them); when both a strict and a non-strict bound are given, the narrower wins. A condition
+ * that is not whole days (an intraday instant, `eq`, `ne`) returns undefined.
+ */
+const smartAlbumDays = (condition: Record<string, unknown>): { after?: string; before?: string } | undefined => {
+  const lower: string[] = [];
+  const upper: string[] = [];
+  for (const [operator, operand] of Object.entries(condition)) {
+    if (typeof operand !== 'string') {
+      return undefined;
+    }
+    const isDay = CALENDAR_DAY.test(operand);
+    const isMidnight = MIDNIGHT.test(operand);
+    const day = operand.slice(0, 10);
+    switch (operator) {
+      case 'gte': {
+        if (!isDay && !isMidnight) {
+          return undefined;
+        }
+        lower.push(day);
+        break;
+      }
+      case 'gt': {
+        // After a whole day (the filter panel's day form); after an instant is not a whole day
+        if (!isDay) {
+          return undefined;
+        }
+        lower.push(shiftDay(day, 1));
+        break;
+      }
+      case 'lte': {
+        if (!isDay) {
+          return undefined;
+        }
+        upper.push(day);
+        break;
+      }
+      case 'lt': {
+        if (!isDay && !isMidnight) {
+          return undefined;
+        }
+        upper.push(shiftDay(day, -1));
+        break;
+      }
+      default: {
+        return undefined;
+      }
+    }
+  }
+  const after = lower.sort().at(-1);
+  const before = upper.sort().at(0);
+  return { ...(after && { after }), ...(before && { before }) };
+};
+
 /**
  * The FL-60 smart-album rule a palette search becomes (`SearchPalette.jsx` "Save search" → Smart album).
  * A rule matches any of its people, any of its tags, a media type, an inclusive capture-day range and
@@ -1243,18 +1310,20 @@ export const smartAlbumCriteria = (
         }
         break;
       }
-      case 'localDateTime':
-      case 'takenAt': {
-        const { gte, lt, ...rest } = condition as { gte?: string; lt?: string };
-        const day = (value: string) => /^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/.test(value);
-        if (Object.keys(rest).length > 0 || (gte && !day(gte)) || (lt && !day(lt)) || criteria.takenAfter) {
+      case 'localDateTime': {
+        // A rule compares the local capture day (classification.repository.ts), which is what
+        // localDateTime holds; a UTC takenAt condition is a different column and cannot become a rule
+        const bounds = smartAlbumDays(condition);
+        if (!bounds) {
           blocked.push(field);
           break;
         }
-        criteria.takenAfter = gte ? gte.slice(0, 10) : undefined;
-        criteria.takenBefore = lt
-          ? new Date(Date.parse(`${lt.slice(0, 10)}T00:00:00.000Z`) - DAY_MS).toISOString().slice(0, 10)
-          : undefined;
+        if (bounds.after) {
+          criteria.takenAfter = bounds.after;
+        }
+        if (bounds.before) {
+          criteria.takenBefore = bounds.before;
+        }
         break;
       }
       default: {

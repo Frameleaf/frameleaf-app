@@ -204,6 +204,11 @@
   );
   /** Whether the base's typeable conditions have been read back as typed chips (needs the vocabulary). */
   let decompiled = false;
+  /** Tokens naming a person or a tag, held back across an access change until they are checked again. */
+  const NAMED_TOKEN = /^-?(?:person|tag):/i;
+  let recheck: string[] = [];
+  /** How many held-back chips no longer resolve and were removed, for the notice. */
+  let droppedChips = $state(0);
   let scopeChoice = $state<'current' | 'library'>('current');
   let active = $state(-1);
   let modeMenu = $state(false);
@@ -254,8 +259,9 @@
   const catalog = $derived(buildPaletteCatalog(options, catalogFacets, catalogYears));
 
   /**
-   * One chip per typed token, each parsed on its own so a token that stops resolving (after an access
-   * change) is shown as unavailable and left out of the search instead of shifting the others.
+   * One chip per typed token, each parsed on its own and keyed by its position and text, so removing
+   * one never removes a neighbour. A token that does not resolve is left out of the search (a person or
+   * tag chip is held back across an access change and dropped if it no longer resolves).
    */
   const chips = $derived(tokens.map((raw, index) => ({ raw, index, token: parseSearchInput(raw, catalog).tokens[0] })));
   /** Only the first MAX_PALETTE_TEXT characters of free text are searched, and the palette says so. */
@@ -433,6 +439,7 @@
 
           options = result;
           optionsLoaded = true;
+          restoreRechecked();
           // A reopened search's conditions read back as typed chips once the vocabulary they name arrives,
           // and operators typed before it arrived become chips now
           readBackChips();
@@ -543,6 +550,11 @@
 
   /** Access changed (locked, unlocked, another account): drop every answer and ask again. */
   const stopAccess = onLibraryAccessChange(() => {
+    // Person and tag chips carry a name. They leave the field at once, so a Locked name is never on
+    // screen, and come back only if the vocabulary for the new access state still has them
+    const named = tokens.filter((raw) => NAMED_TOKEN.test(raw));
+    recheck = [...recheck, ...named];
+    tokens = tokens.filter((raw) => !NAMED_TOKEN.test(raw));
     optionsController?.abort();
     catalogController?.abort();
     remoteController?.abort();
@@ -608,6 +620,17 @@
     }
   };
 
+  /** After an access change, bring back the held-back chips the new vocabulary still resolves. */
+  const restoreRechecked = () => {
+    if (recheck.length === 0) {
+      return;
+    }
+    const kept = recheck.filter((raw) => parseSearchInput(raw, catalog).tokens.length > 0);
+    droppedChips += recheck.length - kept.length;
+    recheck = [];
+    tokens = [...tokens, ...kept.filter((raw) => !tokens.includes(raw))];
+  };
+
   /**
    * Moves every condition of the base an operator can say exactly into typed chips (FL-48: a search
    * reopened from the URL, from Back, from a recent or a saved search comes back as typed chips).
@@ -641,6 +664,7 @@
   const clearAll = () => {
     text = '';
     tokens = [];
+    droppedChips = 0;
     base = withPaletteScope({ ...emptyDiscoveryQuery(), mode: base.mode }, scope);
     input?.focus();
   };
@@ -888,14 +912,6 @@
               removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: label } })}
               onRemove={() => removeToken(chip.index, chip.raw)}
             />
-          {:else}
-            <SearchChip
-              label={chip.raw}
-              unresolved
-              title={$t('frameleaf_search_token_unavailable')}
-              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: chip.raw } })}
-              onRemove={() => removeToken(chip.index, chip.raw)}
-            />
           {/if}
         {/each}
         <input
@@ -1004,6 +1020,12 @@
       <span class="sp-status">{matchesLabel}</span>
       <span class="sr-only" aria-live="polite">{settledLabel}</span>
     </div>
+
+    {#if droppedChips > 0}
+      <p class="sp-note-row" role="status">
+        {$t('frameleaf_search_chips_removed', { values: { count: droppedChips } })}
+      </p>
+    {/if}
 
     {#if textCut}
       <p class="sp-note-row" role="status">
