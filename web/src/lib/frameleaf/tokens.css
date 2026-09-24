@@ -87,8 +87,6 @@
   --fl-radius-card: 12px;
   --fl-radius-dialog: 22px;
   --fl-radius-pill: 999px;
-  /* Every people photo is a squircle (September 24 apple-style.css, "people photos: squircle everywhere"). */
-  --fl-squircle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E");
   /*
    * Retained as an alias so components written against the first token pass, including
    * shell work in flight on other branches, keep a defined radius rather than falling
