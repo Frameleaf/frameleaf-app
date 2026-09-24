@@ -13,8 +13,10 @@ describe('SetMaintenanceModeDto', () => {
     expect(parse('  Disk\r\nswap\u{0}\u{202E} now\t ').data?.reason).toBe('Disk swap now');
   });
 
-  it('treats a blank reason as none', () => {
-    expect(parse(' \n ').data?.reason).toBeUndefined();
+  it('parses a blank or null reason as null, which clears it', () => {
+    expect(parse(' \n ').data?.reason).toBeNull();
+    expect(parse('').data?.reason).toBeNull();
+    expect(parse(null).data?.reason).toBeNull();
   });
 
   it('rejects a reason longer than 200 characters', () => {

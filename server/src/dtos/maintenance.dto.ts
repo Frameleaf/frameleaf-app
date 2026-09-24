@@ -5,7 +5,8 @@ import { MaintenanceAction, MaintenanceActionSchema, StorageFolderSchema } from 
 /**
  * FL-81: the reason is shown to everyone on the maintenance screen, signed in or not, so it is plain
  * public text: control and invisible formatting characters (line breaks, bidi overrides) become
- * spaces, runs of spaces collapse and the result is trimmed; an empty reason is no reason.
+ * spaces, runs of spaces collapse and the result is trimmed. Leaving the reason out keeps the current
+ * one; `null` or a blank string clears it (both parse to `null`).
  */
 const maintenanceReason = z
   .string()
@@ -15,10 +16,13 @@ const maintenanceReason = z
       value
         .replaceAll(/[\p{Cc}\p{Cf}\u{2028}\u{2029}]+/gu, ' ')
         .replaceAll(/ {2,}/g, ' ')
-        .trim() || undefined,
+        .trim() || null,
   )
+  .nullable()
   .optional()
-  .describe('Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters)');
+  .describe(
+    'Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it',
+  );
 
 const SetMaintenanceModeSchema = z
   .object({

@@ -727,8 +727,8 @@ export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
     keepSafetyBackup?: boolean;
-    /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters) */
-    reason?: string;
+    /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it */
+    reason?: string | null;
     /** Restore backup filename */
     restoreBackupFilename?: string;
 };

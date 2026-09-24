@@ -197,6 +197,24 @@ describe(MaintenanceWorkerService.name, () => {
       );
     });
 
+    it('clears the reason with null and stores the change', async () => {
+      await sut.setAction({ action: MaintenanceAction.Start, reason: 'Upgrading storage' });
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: 'Upgrading storage' },
+      });
+
+      await sut.setAction({ action: MaintenanceAction.Start, reason: null });
+
+      await expect(sut.status()).resolves.not.toHaveProperty('reason');
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: 'secret',
+        action: { action: MaintenanceAction.Start, reason: undefined },
+      });
+    });
+
     it('restores the stored reason on init', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         isMaintenanceMode: true,
