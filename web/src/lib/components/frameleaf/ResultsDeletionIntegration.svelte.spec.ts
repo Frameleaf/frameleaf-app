@@ -69,7 +69,10 @@ function setup(isTrashed = true) {
   const assets = assetFactory.buildList(3, { ownerId: user.id, isTrashed });
   vi.mocked(getAssetInfo).mockImplementation(({ id }) => Promise.resolve(assets.find((asset) => asset.id === id)!));
   deleteRequest.mockResolvedValue(undefined);
+  // The viewer confirms every permanent delete even when bulk-delete warnings are switched off;
+  // the user answers the dialog with "Delete permanently".
   showDeleteModal.set(false);
+  confirmRequest.mockResolvedValue(true);
   assetViewerManager.setAsset(assets[0]);
   vi.mocked(navigate).mockImplementation(async ({ assetId }) => {
     const asset = await getAssetInfoFromParam({ assetId: assetId ?? undefined });
@@ -115,6 +118,7 @@ it.each([true, false])(
     await waitFor(() => expect(deleted).toHaveBeenCalledWith([b.id]));
     expect(assetViewerManager.asset?.id).toBe(c.id);
     expect(assetViewerManager.isViewing).toBe(true);
+    expect(confirmRequest).toHaveBeenCalledTimes(force ? 2 : 0);
     stop();
   },
 );
@@ -125,7 +129,6 @@ it('uses the previous neighbor for the last asset and ignores stale confirmation
   assetViewerManager.setAsset(c);
   await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
   await waitFor(() => expect(assetViewerManager.asset?.id).toBe(b.id));
-  showDeleteModal.set(true);
   let confirm!: (value: boolean) => void;
   confirmRequest.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -133,7 +136,7 @@ it('uses the previous neighbor for the last asset and ignores stale confirmation
     }),
   );
   await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
-  await waitFor(() => expect(confirmRequest).toHaveBeenCalledOnce());
+  await waitFor(() => expect(confirmRequest).toHaveBeenCalledTimes(2));
   assetViewerManager.setAsset(a);
   vi.mocked(navigate).mockClear();
   confirm(true);
@@ -166,6 +169,10 @@ it('does not remove an unrelated final result when the deleted ID was already re
   );
   await fireEvent.click(await view.findByRole('button', { name: 'permanently_delete' }));
   await waitFor(() => expect(deleteRequest).toHaveBeenCalledOnce());
+  expect(confirmRequest).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ size: 1, suppressible: false }),
+  );
   assets.splice(
     assets.findIndex((asset) => asset.id === a.id),
     1,

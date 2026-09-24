@@ -19,19 +19,9 @@ test.describe('Maintenance', () => {
     await page.goto('/admin/maintenance');
     await page.getByRole('button', { name: 'Switch to maintenance mode' }).click();
 
-    // The Frameleaf redesign (FL-81) opens a confirmation dialog before starting maintenance
-    // mode instead of acting on the first click; the legacy shell still acts immediately. Only
-    // one of the two buttons below exists at a time, so this stays a no-op under the legacy shell.
-    const confirmButton = page.getByRole('button', { name: 'Start maintenance mode now' });
-    let needsConfirmation = false;
-    try {
-      needsConfirmation = await confirmButton.isVisible();
-    } catch {
-      // The legacy shell navigates immediately, removing the button.
-    }
-    if (needsConfirmation) {
-      await confirmButton.click();
-    }
+    // FL-81: MaintenanceModeCard always asks for confirmation before starting maintenance mode
+    // (it signs every other session out), so wait for and click the confirm action.
+    await page.getByRole('button', { name: 'Start maintenance mode now' }).click();
 
     await expect(page.getByText('Temporarily Unavailable')).toBeVisible({ timeout: 10_000 });
     await page.getByRole('button', { name: 'End maintenance mode' }).click();
