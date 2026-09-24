@@ -1037,6 +1037,20 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.unlock).not.toHaveBeenCalled();
     });
 
+    it('unlocks a large selection in bounded transactions', async () => {
+      const ids = Array.from(
+        { length: 450 },
+        (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      );
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
+      mocks.asset.unlock.mockResolvedValue([]);
+
+      await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids });
+
+      expect(mocks.asset.unlock).toHaveBeenCalledTimes(3);
+      expect(mocks.asset.unlock.mock.calls.map(([batch]) => batch.length)).toEqual([200, 200, 50]);
+    });
+
     it('records the owner review as safe when unlocking what the check counts as sensitive', async () => {
       mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Detected }]);
       // a copy: the service edits the metadata it reads
