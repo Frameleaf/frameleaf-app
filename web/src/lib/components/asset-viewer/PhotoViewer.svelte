@@ -215,10 +215,15 @@
 <svelte:document
   use:shortcuts={[
     { shortcut: { key: 'z' }, onShortcut: onZoom, preventDefault: true },
-    { shortcut: { key: '=' }, onShortcut: onZoomIn, preventDefault: true },
-    { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
-    { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
-    { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
+    // While tagging a face, + / = / - resize the face region instead (FaceEditor), so they are not bound here.
+    ...(assetViewerManager.isFaceEditMode
+      ? []
+      : [
+          { shortcut: { key: '=' }, onShortcut: onZoomIn, preventDefault: true },
+          { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
+          { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
+          { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
+        ]),
     { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
     { shortcut: { key: 'c', meta: true }, onShortcut: onCopyShortcut, preventDefault: false },
