@@ -3,6 +3,7 @@ import {
   AssetDevelopRevisionStatus,
   AssetTypeEnum,
   getAssetDevelop,
+  getVideoEditVersions,
   previewAssetDevelop,
   saveAssetDevelop,
   type AssetDevelopRevisionResponseDto,
@@ -28,6 +29,7 @@ vi.mock('@immich/sdk', async () => {
     cancelAssetDevelopRender: vi.fn(),
     getDevelopPresets: vi.fn().mockResolvedValue([]),
     getAssetDevelopExports: vi.fn().mockResolvedValue([]),
+    getVideoEditVersions: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -189,6 +191,23 @@ describe('QuickEditor', () => {
     expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_adjust' })).not.toBeInTheDocument();
     expect(getAssetDevelop).not.toHaveBeenCalled();
+  });
+
+  it('opens video versions beside the still-mounted video editor (FL-39)', async () => {
+    const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
+    render(QuickEditor, { asset: video, onClose: vi.fn() });
+
+    const versions = screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' });
+    await fireEvent.click(versions);
+
+    expect(versions).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('region', { name: 'frameleaf_editor_tool_versions' })).toBeInTheDocument();
+    // The open draft is not discarded by looking at history.
+    expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
+    await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledWith({ id: video.id }));
+
+    await fireEvent.click(versions);
+    expect(screen.queryByRole('region', { name: 'frameleaf_editor_tool_versions' })).not.toBeInTheDocument();
   });
 
   describe('selective photo tools (FL-64)', () => {
