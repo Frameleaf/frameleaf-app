@@ -8,7 +8,7 @@
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sha256": "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795"
+      "sha256": "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154"
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
@@ -7412,7 +7412,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7461,7 +7461,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7510,7 +7510,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7559,7 +7559,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7608,7 +7608,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7657,7 +7657,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7706,7 +7706,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7755,7 +7755,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7804,7 +7804,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7853,7 +7853,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7902,7 +7902,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -7951,7 +7951,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8000,7 +8000,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8049,7 +8049,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8098,7 +8098,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8147,7 +8147,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8196,7 +8196,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8245,7 +8245,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8294,7 +8294,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8343,7 +8343,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8392,7 +8392,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8441,7 +8441,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8490,7 +8490,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8539,7 +8539,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8588,7 +8588,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8637,7 +8637,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },
@@ -8686,7 +8686,7 @@
           "sha256": "b7da9860d8edc61f0f92dda200497c55c8071717cf38b04df11922a0522fa12b"
         },
         {
-          "path": "web/src/lib/components/frameleaf/SearchDialog.svelte",
+          "path": "web/src/lib/components/frameleaf/SearchPalette.svelte",
           "availability": "accepted-main",
           "sha256": "ec172dd6ac81355af30fed82b2089f5e214428e5b1c8a19b44e2a6cdf4ce03ee"
         },

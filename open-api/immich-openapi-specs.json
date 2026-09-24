@@ -62201,16 +62201,19 @@
             "$ref": "#/components/schemas/BoolFilter"
           },
           "lensModel": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "libraryId": {
             "$ref": "#/components/schemas/IdFilterNullable"
           },
+          "localDateTime": {
+            "$ref": "#/components/schemas/DateFilter"
+          },
           "make": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "model": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "ocr": {
             "$ref": "#/components/schemas/StringSimilarityFilter"
@@ -62313,16 +62316,19 @@
             "$ref": "#/components/schemas/BoolFilter"
           },
           "lensModel": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "libraryId": {
             "$ref": "#/components/schemas/IdFilterNullable"
           },
+          "localDateTime": {
+            "$ref": "#/components/schemas/DateFilter"
+          },
           "make": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "model": {
-            "$ref": "#/components/schemas/StringFilterNullable"
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "ocr": {
             "$ref": "#/components/schemas/StringSimilarityFilter"

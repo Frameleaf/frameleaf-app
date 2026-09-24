@@ -1,17 +1,27 @@
-import { eventManager } from '$lib/managers/event-manager.svelte';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+import type { PaletteSearch } from '$lib/frameleaf/search-palette';
 
 class SearchStore {
-  savedSearchTerms = $state<string[]>([]);
+  /**
+   * FL-49: the search palette's recent searches, with their chips, mode and filters (the prototype's
+   * `recentSearches`). Kept in memory only and dropped on every access change: a search typed while the
+   * session was unlocked can name a Locked person or tag, and must not be shown once it is locked.
+   */
+  recentSearches = $state<PaletteSearch[]>([]);
   isSearchEnabled = $state(false);
 
   constructor() {
-    eventManager.on({
-      AuthLogout: () => this.clearCache(),
+    onLibraryAccessChange((change) => {
+      if (change === 'revoked') {
+        this.clearCache();
+      } else if (change !== 'expanded') {
+        this.recentSearches = [];
+      }
     });
   }
 
   clearCache() {
-    this.savedSearchTerms = [];
+    this.recentSearches = [];
     this.isSearchEnabled = false;
   }
 }

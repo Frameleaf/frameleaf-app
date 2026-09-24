@@ -108,17 +108,17 @@
       "version": 2
     },
     {
-      "bytes": 8827,
+      "bytes": 8828,
       "category": "reference",
       "id": "61407369",
       "source": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sourceSha256": "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795",
+      "sourceSha256": "b6a4dd66d641441ed3bb3913c95f5a160b0c4fb8ec25b7626294cf02f9005154",
       "title": "Frameleaf library action parity audit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
-      "verification": "Version 5 records FL-37 commit 53c48cb90ef7d6ae8bb8bf9b34f798c784c76e30 on branch codex/FL-37-people-faces: the face-correction row now cites FaceTagger.svelte and PersonFaceActions.svelte, the status note names them, and the source hash marker is updated; all other content is unchanged; full page read back after update.",
+      "verification": "Version 6 records FL-49 commit 59363873f9 on branch codex/FL-49-search-palette: the Search and Explore row and the status note now cite SearchPalette.svelte (SearchDialog retired), and the source hash marker is updated; all other content is unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-24T14:11:08.406Z",
-      "version": 5
+      "verifiedAt": "2026-09-24T19:53:57.408Z",
+      "version": 6
     },
     {
       "bytes": 9805,

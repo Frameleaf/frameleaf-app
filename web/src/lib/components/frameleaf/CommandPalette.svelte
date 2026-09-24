@@ -13,6 +13,7 @@
     type CommandGroupResult,
     type CommandItem,
   } from '$lib/frameleaf/command-palette';
+  import { prefersReducedMotion } from '$lib/frameleaf/motion';
   import '$lib/frameleaf/tokens.css';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiChevronRight } from '@mdi/js';
@@ -29,6 +30,11 @@
    * Accessibility follows the prototype: one `combobox` input owning a `listbox`, the active
    * option named by `aria-activedescendant` (options are never focused, so typing continues to
    * reach the input), Escape closes, and the result count is announced politely.
+   *
+   * September 24, 2026 (second pass): the palette wears the search palette's glass
+   * (`apple-style.css:649-710`): a frosted panel with continuous corners, a spring entrance that is a
+   * crossfade under Reduce Motion (checked here as well as in CSS), and a solid panel under Increase
+   * Contrast or Reduce Transparency.
    */
 
   let {
@@ -59,6 +65,7 @@
   const listId = $props.id();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || '');
+  const reducedMotion = prefersReducedMotion();
 
   const searching = $derived(query.trim().length > 0);
 
@@ -147,6 +154,7 @@
 <dialog
   bind:this={dialog}
   class="command-palette frameleaf"
+  class:reduced-motion={reducedMotion}
   data-theme={appTheme}
   aria-label={$t('frameleaf_search_command_palette')}
   oncancel={(event) => {
@@ -232,44 +240,84 @@
 </dialog>
 
 <style>
+  /* The glass treatment the search palette uses (apple-style.css:649-710). */
   .command-palette {
     width: min(40rem, calc(100vw - 2rem));
-    max-height: min(32rem, calc(100dvh - 6rem));
+    max-height: min(36rem, calc(100dvh - 6rem));
     margin-block-start: 12vh;
     padding: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     color: var(--fl-text);
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-dialog);
-    box-shadow: var(--fl-shadow-2);
-    animation: fl-palette-in var(--fl-motion) var(--fl-ease);
+    background: color-mix(in srgb, var(--fl-panel) 74%, transparent);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
+    border-radius: 20px;
+    box-shadow:
+      0 30px 120px #000a,
+      inset 0 1px 0 #ffffff14;
+    animation: fl-command-palette-in 420ms var(--fl-spring) both;
   }
-  @keyframes fl-palette-in {
+  @supports (corner-shape: squircle) {
+    .command-palette {
+      corner-shape: squircle;
+      border-radius: 36px;
+    }
+  }
+  @keyframes fl-command-palette-in {
     from {
       opacity: 0;
-      transform: translateY(-0.5rem);
+      transform: scale(0.97);
     }
     to {
       opacity: 1;
       transform: none;
     }
   }
+  @keyframes fl-command-palette-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .command-palette.reduced-motion {
+    animation: fl-command-palette-fade 150ms ease both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .command-palette {
+      animation: fl-command-palette-fade 150ms ease both;
+    }
+  }
   .command-palette::backdrop {
-    background: rgb(0 0 0 / 55%);
+    background: #0005;
+    backdrop-filter: blur(10px);
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .command-palette {
+      background: var(--fl-panel);
+      backdrop-filter: none;
+    }
+    .command-palette::backdrop {
+      background: rgb(0 0 0 / 67%);
+      backdrop-filter: none;
+    }
   }
   .input-row {
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0.75rem 0.875rem;
-    border-bottom: 1px solid var(--fl-border);
+    padding: 14px 18px 12px;
+    color: var(--fl-muted);
+    border-bottom: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
   }
   .input-row input {
     flex: 1;
     min-width: 0;
-    font-size: 0.875rem;
+    font-size: 21px;
+    letter-spacing: -0.01em;
     color: var(--fl-text);
     background: transparent;
     border: 0;
@@ -278,32 +326,33 @@
   .list {
     min-height: 0;
     overflow-y: auto;
-    padding: 0.375rem;
+    padding: 0.375rem 0;
   }
   .group-title {
-    padding: 0.5rem 0.5rem 0.25rem;
-    font-size: var(--fl-font-micro);
+    padding: 0.625rem 1rem 0.25rem;
+    font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     color: var(--fl-muted);
   }
   .item {
     display: flex;
-    width: 100%;
+    width: calc(100% - 12px);
+    margin: 0 6px;
     align-items: center;
     gap: 0.625rem;
     min-height: 44px;
-    padding: 0.375rem 0.5rem;
+    padding: 0.375rem 0.625rem;
     text-align: start;
     color: var(--fl-text);
     background: transparent;
     border: 0;
-    border-radius: var(--fl-radius);
+    border-radius: 8px;
+  }
+  .item:hover {
+    background: color-mix(in srgb, var(--fl-text) 8%, transparent);
   }
   .item[aria-selected='true'] {
-    background: var(--fl-accent-soft);
-    box-shadow: inset 0 0 0 1px var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent) 22%, transparent);
   }
   .text {
     display: flex;
@@ -327,9 +376,9 @@
     padding: 0.0625rem 0.3125rem;
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    background: color-mix(in srgb, var(--fl-text) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
+    border-radius: 5px;
   }
   .empty {
     display: flex;
@@ -344,10 +393,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.875rem;
-    padding: 0.5rem 0.875rem;
+    padding: 0.625rem 1.125rem;
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
-    border-top: 1px solid var(--fl-border);
+    border-top: 1px solid color-mix(in srgb, var(--fl-text) 14%, transparent);
   }
   .foot span:last-child {
     margin-inline-start: auto;
