@@ -227,11 +227,21 @@ export class AssetFaceCreateDto extends createZodDto(AssetFaceCreateSchema) {}
 export class AssetFaceDeleteDto extends createZodDto(AssetFaceDeleteSchema) {}
 export class PersonStatisticsResponseDto extends createZodDto(PersonStatisticsResponseSchema) {}
 
+// FL-37: the People grid's per-card "N items" and its Photo count / Recently seen sorts.
+const PeopleListItemSchema = PersonResponseSchema.extend({
+  assetCount: z.int().min(0).describe('Number of timeline assets showing this person'),
+  lastSeenAt: z
+    .string()
+    .meta({ format: 'date-time' })
+    .nullable()
+    .describe('Capture date of the most recent timeline asset showing this person'),
+}).meta({ id: 'PeopleListItemDto' });
+
 const PeopleResponseSchema = z
   .object({
     total: z.int().min(0).describe('Total number of people'),
     hidden: z.int().min(0).describe('Number of hidden people'),
-    people: z.array(PersonResponseSchema),
+    people: z.array(PeopleListItemSchema),
     // TODO: make required after a few versions
     hasNextPage: z
       .boolean()

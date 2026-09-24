@@ -1793,7 +1793,7 @@ async function validateLedger(ledger) {
     acceptedRoutes:
       "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f",
     acceptedActionFamilies:
-      "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
+      "cc803301cae0785995865c10a957e9ae13e0c5cfb963b8466dab8e162a4aa795",
     acceptedNative:
       "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6",
     acceptedFreecut:

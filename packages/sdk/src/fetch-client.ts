@@ -5115,12 +5115,34 @@ export type PartnerUpdateDto = {
     /** Share asset locations with this partner; only the sharing user can change it */
     shareLocation?: boolean;
 };
+export type PeopleListItemDto = {
+    /** Number of timeline assets showing this person */
+    assetCount: number;
+    /** Person date of birth */
+    birthDate: string | null;
+    /** Person color (hex) */
+    color?: string;
+    /** Person ID */
+    id: string;
+    /** Is favorite */
+    isFavorite?: boolean;
+    /** Is hidden */
+    isHidden: boolean;
+    /** Capture date of the most recent timeline asset showing this person */
+    lastSeenAt: string | null;
+    /** Person name */
+    name: string;
+    /** Thumbnail path */
+    thumbnailPath: string;
+    /** Last update date */
+    updatedAt?: string;
+};
 export type PeopleResponseDto = {
     /** Whether there are more pages */
     hasNextPage?: boolean;
     /** Number of hidden people */
     hidden: number;
-    people: PersonResponseDto[];
+    people: PeopleListItemDto[];
     /** Total number of people */
     total: number;
 };

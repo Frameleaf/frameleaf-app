@@ -30,7 +30,6 @@ export type Events = {
   Zoom: [];
   ZoomChange: [ZoomImageWheelState];
   Copy: [];
-  FaceEditModeChange: [boolean];
 };
 
 class AssetViewerManager extends BaseEventManager<Events> {
@@ -58,7 +57,6 @@ class AssetViewerManager extends BaseEventManager<Events> {
    */
   #isPanoramaFlattened = $state(false);
   #isFaceEditMode = $state(false);
-  #isEditFacesPanelOpen = $state(false);
   #viewingAssetStoreState = $state<AssetResponseDto>();
   #viewState = $state<boolean>(false);
   #highlightedFaces = $state<Faces[]>([]);
@@ -87,10 +85,6 @@ class AssetViewerManager extends BaseEventManager<Events> {
 
   get isFaceEditMode() {
     return this.#isFaceEditMode;
-  }
-
-  get isEditFacesPanelOpen() {
-    return this.#isEditFacesPanelOpen;
   }
 
   get zoomState() {
@@ -201,30 +195,18 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.isShowEditor = false;
   }
 
+  /** FL-38: opens or closes the face tagger (`frameleaf/FaceTagger.svelte`), mounted by AssetViewer. */
   toggleFaceEditMode() {
     this.#isFaceEditMode = !this.#isFaceEditMode;
-    this.emit('FaceEditModeChange', this.#isFaceEditMode);
   }
 
   closeFaceEditMode() {
-    if (this.#isFaceEditMode) {
-      this.emit('FaceEditModeChange', false);
-    }
     this.#isFaceEditMode = false;
-  }
-
-  openEditFacesPanel() {
-    this.#isEditFacesPanelOpen = true;
-  }
-
-  closeEditFacesPanel() {
-    this.#isEditFacesPanelOpen = false;
   }
 
   resetPanelState() {
     this.closeEditor();
     this.closeFaceEditMode();
-    this.closeEditFacesPanel();
     this.resetPanoramaView();
   }
 
