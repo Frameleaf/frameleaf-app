@@ -209,6 +209,19 @@ describe(StorageRepository.name, () => {
     }
   });
 
+  it('adds up the bytes of every file under a folder without following symlinks (FL-79)', async () => {
+    mockfs({
+      '/data/thumbs/a/1.webp': 'x'.repeat(100),
+      '/data/thumbs/a/b/2.jpeg': 'x'.repeat(50),
+      '/data/thumbs/3.webp': 'x'.repeat(7),
+      '/elsewhere/big.bin': 'x'.repeat(10_000),
+      // eslint-disable-next-line import-x/no-named-as-default-member
+      '/data/thumbs/link': mockfs.symlink({ path: '/elsewhere' }),
+    });
+    await expect(sut.getFolderBytes('/data/thumbs')).resolves.toBe(157);
+    await expect(sut.getFolderBytes('/data/missing')).resolves.toBe(0);
+  });
+
   it('resumes bounded traversal across directories and roots without repeating files or following symlinks', async () => {
     mockfs({
       '/first/a/1.jpg': '',
