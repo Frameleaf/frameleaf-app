@@ -49,7 +49,8 @@ test.describe('Registration', () => {
       await page.getByRole('button', { name: 'Next', exact: true }).click();
       await expect(page.getByRole('heading', { name: title })).toBeVisible();
     }
-    await expect(page.getByText('Step 9 of 9')).toBeAttached();
+    // The rail's compact progress line is visual only (aria-hidden); the panel announces the step.
+    await expect(page.getByRole('paragraph').filter({ hasText: 'Step 9 of 9' })).toBeAttached();
     await page.getByRole('button', { name: 'Open Frameleaf' }).click();
 
     // success
