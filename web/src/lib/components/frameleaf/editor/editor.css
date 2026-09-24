@@ -1149,6 +1149,16 @@
 .ed-shell.video.restoring .ed-panel {
   grid-column: 2;
 }
+/* FL-39: the video's versions sit beside the still-open video editor. */
+.ed-shell.video.versioning {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.ed-shell.video.versioning .ed-video-host {
+  grid-column: 1;
+}
+.ed-shell.video.versioning .ed-panel {
+  grid-column: 2;
+}
 .ed-restore-stage {
   position: absolute;
   inset: 28px;
@@ -1199,6 +1209,12 @@
   }
   .ed-tool.primary span {
     display: inline;
+  }
+  .ed-shell.video.versioning {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ed-shell.video.versioning .ed-panel {
+    grid-column: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
