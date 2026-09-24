@@ -19,11 +19,19 @@
 <span class="person-photo" aria-hidden="true"><UserAvatar {user} {size} noTitle /></span>
 
 <style>
+  /*
+   * The squircle comes from the foundation token when it is present (--fl-squircle, ported from
+   * apple-style.css); until then the same shape is supplied here so the people photo is never a circle.
+   */
   .person-photo {
+    --person-squircle: var(
+      --fl-squircle,
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M100 50C100 88 88 100 50 100S0 88 0 50 12 0 50 0 100 12 100 50Z'/%3E%3C/svg%3E")
+    );
     display: inline-flex;
     flex-shrink: 0;
-    -webkit-mask: var(--fl-squircle, none) center / 100% 100% no-repeat;
-    mask: var(--fl-squircle, none) center / 100% 100% no-repeat;
+    -webkit-mask: var(--person-squircle) center / 100% 100% no-repeat;
+    mask: var(--person-squircle) center / 100% 100% no-repeat;
   }
   /* An owner decision for every people photo: the squircle beats the avatar's own circle. */
   .person-photo :global(*) {
