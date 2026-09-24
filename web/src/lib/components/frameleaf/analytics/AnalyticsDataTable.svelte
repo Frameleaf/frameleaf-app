@@ -7,8 +7,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { t } from 'svelte-i18n';
 
-  type Props = { table: AnalyticsTable; open?: boolean; caption?: string };
-  let { table, open = false, caption }: Props = $props();
+  type Props = { table: AnalyticsTable; open?: boolean; caption?: string; summary?: string };
+  let { table, open = false, caption, summary }: Props = $props();
 
   const format = (value: number, unit: string) =>
     new Intl.NumberFormat(
@@ -19,7 +19,7 @@
 
 <details class="data-table" {open} data-table-id={table.id}>
   <summary aria-label={$t('frameleaf_analytics_view_table_for', { values: { title: table.title } })}>
-    {$t('frameleaf_analytics_view_table')}
+    {summary ?? $t('frameleaf_analytics_view_table')}
   </summary>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
