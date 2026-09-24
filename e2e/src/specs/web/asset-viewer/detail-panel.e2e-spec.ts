@@ -177,7 +177,7 @@ test.describe('Detail Panel', () => {
       await page.getByRole('button', { name: 'Information (I)' }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
       await expect(page.locator('#datetime')).toBeVisible();
-      // The viewer covers the top bar, so its lock control is present but not exposed.
+      // The open date modal hides the rest of the page from the accessibility tree, top bar included.
       const lock = page.getByRole('button', { name: 'Hide Locked content', includeHidden: true }).first();
       await expect(lock).toBeAttached();
 

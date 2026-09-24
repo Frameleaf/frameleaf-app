@@ -318,7 +318,7 @@
   .secret {
     display: grid;
     gap: 0.875rem;
-    min-width: min(36rem, 90vw);
+    min-width: min(36rem, 100%);
   }
   label:not(.check) {
     display: grid;

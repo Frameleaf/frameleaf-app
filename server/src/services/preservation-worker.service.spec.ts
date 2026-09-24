@@ -269,6 +269,39 @@ describe(PreservationWorkerService.name, () => {
       );
     });
 
+    describe('publishing', () => {
+      const found = packageOf({ includeMetadata: false });
+      const publish = async (counts: { states: Record<string, number>; unavailable: number }) => {
+        repository.listedItems = vi.fn().mockResolvedValue([]);
+        repository.countItems = vi.fn().mockResolvedValue(new Map([[found.id, { locked: 0, bytes: 0, ...counts }]]));
+        repository.updatePackage = vi.fn();
+        files.writeLines = vi.fn(async (_path: string, lines: AsyncIterable<string[]>) => {
+          for await (const _page of lines) {
+            // drained
+          }
+          return { sha256, bytes: 0 };
+        });
+        files.openPackage = vi.fn().mockResolvedValue({ listEntries: vi.fn().mockResolvedValue([]), close: vi.fn() });
+        await worker().publishPackage(found);
+        const manifest = JSON.parse(String(vi.mocked(files.writeDocument).mock.calls.at(-1)![1]));
+        return { manifest, update: vi.mocked(repository.updatePackage).mock.calls[0][1] };
+      };
+
+      it('does not call a package complete when an original was skipped as unavailable (FL-74)', async () => {
+        const { manifest, update } = await publish({ states: { copied: 2, skipped: 1 }, unavailable: 1 });
+
+        expect(manifest).toMatchObject({ complete: false, counts: expect.objectContaining({ skipped: 1, failed: 0 }) });
+        expect(update).toMatchObject({ status: 'incomplete', manifest: expect.objectContaining({ complete: false }) });
+      });
+
+      it('still calls a package complete when the only skips are Locked items it was asked to leave out', async () => {
+        const { manifest, update } = await publish({ states: { copied: 2, skipped: 1 }, unavailable: 0 });
+
+        expect(manifest).toMatchObject({ complete: true });
+        expect(update).toMatchObject({ status: 'ready' });
+      });
+    });
+
     it('stops the whole job when the disk is full, after recording the item', async () => {
       const item = itemOf();
       repository.getExportAsset.mockResolvedValue({

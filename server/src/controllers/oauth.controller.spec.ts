@@ -19,6 +19,22 @@ describe(OAuthController.name, () => {
     ctx.reset();
   });
 
+  describe('GET /oauth/frameleaf-mobile-redirect (FL-131)', () => {
+    it('forwards the callback to the Frameleaf app without authentication', async () => {
+      service.getFrameleafMobileRedirect.mockReturnValue('frameleaf-auth:///oauth-callback?code=abc&state=xyz');
+
+      const { status, headers } = await request(ctx.getHttpServer()).get(
+        '/oauth/frameleaf-mobile-redirect?code=abc&state=xyz',
+      );
+
+      expect(status).toBe(307);
+      expect(headers.location).toBe('frameleaf-auth:///oauth-callback?code=abc&state=xyz');
+      expect(service.getFrameleafMobileRedirect).toHaveBeenCalledWith(
+        expect.stringContaining('/oauth/frameleaf-mobile-redirect?code=abc&state=xyz'),
+      );
+    });
+  });
+
   describe('POST /oauth/authorize', () => {
     it('should require a redirect uri', async () => {
       const { status, body } = await request(ctx.getHttpServer()).post('/oauth/authorize').send({});

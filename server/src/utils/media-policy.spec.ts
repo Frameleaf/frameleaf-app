@@ -26,12 +26,14 @@ import {
   computeRecipeRevision,
   getDeliveryAudioChannelArgs,
   getEditedMasterColorArgs,
+  getEditedMasterColorRange,
   getEditedMasterFfmpegConfig,
   getEditedMasterLineagePath,
   getEditedMasterTimingArgs,
   getFfmpegColorMatrixName,
   isHighBitDepth,
   isPlaybackProxyFileType,
+  parseFfprobeColorRange,
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
   validateVideoMaster,
@@ -330,6 +332,38 @@ describe('getEditedMasterColorArgs', () => {
       colorMatrix: ColorMatrix.Unknown,
     };
     expect(getEditedMasterColorArgs(unknown, preserve)).toEqual([]);
+  });
+
+  it('tags only a range the filter graph converted to, and never a tone-mapped result (FL-102)', () => {
+    const fullRange = { ...hdrStream, colorRange: 'pc' as const };
+    expect(getEditedMasterColorArgs(fullRange, preserve, 'pc')).toEqual(expect.arrayContaining(['-color_range', 'pc']));
+    // The source's own range is not enough: without a stated conversion the pixels' range is unknown.
+    expect(getEditedMasterColorArgs(fullRange, preserve)).not.toContain('-color_range');
+    expect(getEditedMasterColorArgs(fullRange, toneMap, 'pc')).not.toContain('-color_range');
+  });
+});
+
+describe('parseFfprobeColorRange (FL-102)', () => {
+  it('reads both spellings ffprobe uses and leaves anything else unstated', () => {
+    expect(parseFfprobeColorRange('tv')).toBe('tv');
+    expect(parseFfprobeColorRange('mpeg')).toBe('tv');
+    expect(parseFfprobeColorRange('pc')).toBe('pc');
+    expect(parseFfprobeColorRange('jpeg')).toBe('pc');
+    expect(parseFfprobeColorRange('unknown')).toBeNull();
+    expect(parseFfprobeColorRange(undefined)).toBeNull();
+  });
+});
+
+describe('getEditedMasterColorRange (FL-102)', () => {
+  it('keeps the range the source states when the colour volume is preserved', () => {
+    expect(getEditedMasterColorRange({ colorRange: 'pc' }, preserve)).toBe('pc');
+    expect(getEditedMasterColorRange({ colorRange: 'tv' }, preserve)).toBe('tv');
+  });
+
+  it('delivers limited range for a tone-mapped render or a source that does not say', () => {
+    expect(getEditedMasterColorRange({ colorRange: 'pc' }, toneMap)).toBe('tv');
+    expect(getEditedMasterColorRange({ colorRange: null }, preserve)).toBe('tv');
+    expect(getEditedMasterColorRange({}, preserve)).toBe('tv');
   });
 });
 

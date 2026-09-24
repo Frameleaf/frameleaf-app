@@ -1,0 +1,1 @@
+Inter Latin weights 400, 500 and 600, copied byte-for-byte from @fontsource/inter 5.3.0, the September 22 design template dependency. Original SIL Open Font License is included. These are the same files loaded by template/src/main.jsx; no remote font service is used.

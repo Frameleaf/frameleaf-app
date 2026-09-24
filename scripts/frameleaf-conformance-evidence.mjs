@@ -1064,8 +1064,8 @@ const routes = {
   ],
   "/activity": [
     "partial",
-    ["A-1", "A-2", "A-3", "A-4", "A-5", "A-6", "A-7"],
-    "Activity copy, empty state, Reconnect, status line, thumbnails (A-1…A-4 by fix-editor-albums)",
+    ["A-1", "A-6"],
+    'Indicator, filter count and running line still say "tasks" (A-1); status line with percent, ETA and "Paused at N%" (A-6). A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port',
     [`${P}/Activity.jsx`],
     [
       `${W}/routes/(user)/activity/+page.svelte`,

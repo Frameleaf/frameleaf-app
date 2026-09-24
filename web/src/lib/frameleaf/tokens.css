@@ -1,3 +1,5 @@
+@import './base.css';
+
 /*
  * Source: design/frameleaf/tokens.json and design/frameleaf/template/src/reference/tokens.css.
  * Scoped to .frameleaf; never import the prototype stylesheets into production.
@@ -19,6 +21,8 @@
   --fl-raised: #222a30;
   --fl-text: #e5e7eb;
   --fl-accent-text: #072211;
+  /* The prototype's primary hover (styles.css `.button.primary:hover`). */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), white 10%);
   --fl-teal: #0ea5a0;
   --fl-teal-text: #04201f;
   --fl-blue: #5794f7;
@@ -53,6 +57,11 @@
   --fl-raised: #eef1f3;
   --fl-text: #18252b;
   --fl-accent-text: #ffffff;
+  /*
+   * Lightening the accent as the prototype does leaves white text at 4.42:1 in this theme,
+   * so the light hover darkens toward the text colour instead.
+   */
+  --fl-accent-hover: color-mix(in srgb, var(--fl-accent), var(--fl-text) 12%);
   --fl-teal: #0a7673;
   --fl-teal-text: #ffffff;
   --fl-blue: #0b5fea;

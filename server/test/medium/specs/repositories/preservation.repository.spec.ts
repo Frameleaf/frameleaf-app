@@ -177,6 +177,28 @@ describe(PreservationRepository.name, () => {
   });
 
   describe('Locked items and an ordinary session', () => {
+    it('counts unavailable originals apart from Locked items left out on purpose (FL-74)', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const assets = await Promise.all([1, 2, 3].map(() => ctx.newAsset({ ownerId: owner.id })));
+      const created = await sut.createExport(
+        packageInput(owner.id),
+        (id) => `/exports/${id}`,
+        { assetIds: assets.map(({ asset }) => asset.id) },
+        false,
+        100,
+      );
+      const packageId = created!.package.id;
+      const { items } = await sut.listItems(packageId, { take: 10, skip: 0 });
+      await sut.finishItem(items[0].id, { state: 'skipped', reasonKey: 'asset_unavailable' });
+      await sut.finishItem(items[1].id, { state: 'skipped', reasonKey: 'locked_excluded', locked: true });
+
+      expect((await sut.countItems([packageId])).get(packageId)).toMatchObject({
+        states: { pending: 1, skipped: 2 },
+        unavailable: 1,
+      });
+    });
+
     it('leaves items written Locked, or locked since, out of every list and count', async () => {
       const { ctx, sut } = setup();
       const { user: owner } = await ctx.newUser();

@@ -89,7 +89,13 @@
     background: var(--fl-accent-soft);
     border-color: var(--fl-accent);
   }
+  /*
+   * The muted colours already read as disabled; the baseline's 0.45 opacity for text buttons
+   * (base.css) is cancelled so an icon button is not dimmed twice.
+   */
   button:disabled {
+    opacity: 1;
+    cursor: not-allowed;
     color: var(--fl-muted);
     background: var(--fl-canvas);
     border-color: var(--fl-border);

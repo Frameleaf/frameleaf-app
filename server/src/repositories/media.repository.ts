@@ -38,6 +38,7 @@ import {
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
@@ -444,6 +445,7 @@ export class MediaRepository {
             colorPrimaries: this.parseEnum(ColorPrimaries, stream.color_primaries) ?? ColorPrimaries.Unknown,
             colorMatrix: this.parseEnum(ColorMatrix, stream.color_space) ?? ColorMatrix.Unknown,
             colorTransfer: this.parseEnum(ColorTransfer, stream.color_transfer) ?? ColorTransfer.Unknown,
+            colorRange: parseFfprobeColorRange(stream.color_range),
             dvProfile: this.parseOptionalInt(stream.dv_profile) as DvProfile | null,
             dvLevel: this.parseOptionalInt(stream.dv_level),
             dvBlSignalCompatibilityId: this.parseOptionalInt(
