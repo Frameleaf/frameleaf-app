@@ -114,6 +114,7 @@ describe('selectEncoderPixelFormat', () => {
     });
 
     expect(plan.filters[1]).toBe('scale=out_color_matrix=bt709:out_range=pc:sws_dither=error_diffusion');
+    expect(plan.statedRange).toBe('pc');
   });
 
   it('records the chroma reduction for a 4:4:4 source instead of hiding it', () => {
@@ -150,6 +151,8 @@ describe('selectEncoderPixelFormat', () => {
     expect(plan.bitDepth).toBe(10);
     expect(plan.filters).toEqual([]);
     expect(plan.args).toEqual([]);
+    // The accelerator's own chain decides the range, so the plan claims none (FL-102).
+    expect(plan.statedRange).toBeNull();
   });
 
   it.each([

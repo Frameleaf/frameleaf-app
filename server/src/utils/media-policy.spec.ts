@@ -334,10 +334,12 @@ describe('getEditedMasterColorArgs', () => {
     expect(getEditedMasterColorArgs(unknown, preserve)).toEqual([]);
   });
 
-  it('tags the source signal range when it is preserved, and only then (FL-102)', () => {
+  it('tags only a range the filter graph converted to, and never a tone-mapped result (FL-102)', () => {
     const fullRange = { ...hdrStream, colorRange: 'pc' as const };
-    expect(getEditedMasterColorArgs(fullRange, preserve)).toEqual(expect.arrayContaining(['-color_range', 'pc']));
-    expect(getEditedMasterColorArgs(fullRange, toneMap)).not.toContain('-color_range');
+    expect(getEditedMasterColorArgs(fullRange, preserve, 'pc')).toEqual(expect.arrayContaining(['-color_range', 'pc']));
+    // The source's own range is not enough: without a stated conversion the pixels' range is unknown.
+    expect(getEditedMasterColorArgs(fullRange, preserve)).not.toContain('-color_range');
+    expect(getEditedMasterColorArgs(fullRange, toneMap, 'pc')).not.toContain('-color_range');
   });
 });
 
