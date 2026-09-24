@@ -17,7 +17,7 @@ import { DB } from 'src/schema/index.js';
 import { BULK_MAX_ITEMS } from 'src/utils/bulk-operation.js';
 import { withHiddenContentFilter } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { getLockedOwnerId, visibilityIs } from 'src/utils/locked.js';
+import { getLockedOwnerId, isLocked, visibilityIs } from 'src/utils/locked.js';
 
 /** How long a prepared, unconfirmed matching selection can still be confirmed. */
 export const ARCHIVE_PREPARED_TTL_MINUTES = 30;
@@ -283,6 +283,60 @@ export class ArchiveOperationRepository {
       SELECT "assetId" FROM immich_fork.archive_operation_item WHERE "operationId" = ${id}::uuid ORDER BY ordinal
     `.execute(runner);
     return rows.map(({ assetId }) => assetId);
+  }
+
+  /** The items not reached yet, in the order the job works through them. */
+  async pendingAssetIds(id: string): Promise<string[]> {
+    const { rows } = await sql<{ assetId: string }>`
+      SELECT "assetId" FROM immich_fork.archive_operation_item
+      WHERE "operationId" = ${id}::uuid AND status = 'pending'
+      ORDER BY ordinal
+    `.execute(this.db);
+    return rows.map(({ assetId }) => assetId);
+  }
+
+  /**
+   * Leave out, as skipped, every unreached item that is Locked now (FL-34). A session without the
+   * PIN never archives a Locked item, and the operation answers only with a count, so nothing about
+   * which items were Locked leaves the server. Returns how many were left out.
+   */
+  async skipLocked(ownerId: string, id: string): Promise<number> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockWrites(tx);
+      const { rows } = await sql`
+        UPDATE immich_fork.archive_operation_item item SET status = 'skipped'
+        FROM asset
+        WHERE item."operationId" = ${id}::uuid AND item.status = 'pending'
+          AND asset.id = item."assetId" AND asset."ownerId" = ${ownerId}::uuid
+          AND ${isLocked('asset')}
+        RETURNING item."assetId"
+      `.execute(tx);
+      return rows.length;
+    });
+  }
+
+  /**
+   * Forget operations nobody can act on any more (nightly): unconfirmed selections that expired,
+   * and operations older than `days` whose archive and undo jobs are no longer running.
+   */
+  async prune(days: number): Promise<number> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockWrites(tx);
+      const { rows } = await sql`
+        DELETE FROM immich_fork.archive_operation o
+        WHERE (o.prepared AND o."expiresAt" <= clock_timestamp())
+          OR (
+            o."createdAt" < clock_timestamp() - make_interval(days => ${days})
+            AND NOT EXISTS (
+              SELECT 1 FROM media_operation job
+              WHERE job.id IN (o."archiveJobId", o."undoJobId")
+                AND job.status IN ('queued', 'preparing', 'rendering', 'validating', 'cancelling', 'paused')
+            )
+          )
+        RETURNING o.id
+      `.execute(tx);
+      return rows.length;
+    });
   }
 
   /** Summaries, newest first. No asset identity leaves this method; counts share one snapshot. */

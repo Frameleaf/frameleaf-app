@@ -168,4 +168,37 @@ describe(ArchiveOperationRepository.name, () => {
       await sql`UPDATE immich_fork.state SET phase = 'dual-write' WHERE id = 1`.execute(db);
     }
   });
+  it('leaves out unreached items that are Locked now, and nothing else', async () => {
+    const [open, locked] = [await asset(), await asset()];
+    const key = randomUUID();
+    const id = await repo.prepareMatching(auth, key);
+    await context.newAsset({ ownerId: auth.user.id }); // not part of the frozen set
+    await db
+      .insertInto('asset_lock')
+      .values({ assetId: locked, reason: 'marked' } as never)
+      .execute();
+
+    expect(await repo.skipLocked(auth.user.id, id)).toBe(1);
+    expect(await repo.pendingAssetIds(id)).toEqual([open]);
+    expect(await repo.get(auth.user.id, id)).toMatchObject({ skipped: 1, pending: 1, count: 2 });
+  });
+
+  it('prunes expired selections and old operations whose jobs finished, keeping the rest', async () => {
+    await asset();
+    const expired = await repo.prepareMatching(auth, randomUUID());
+    await sql`UPDATE immich_fork.archive_operation SET "expiresAt" = now() - interval '1 minute' WHERE id = ${expired}::uuid`.execute(
+      db,
+    );
+    const old = await confirmSelected([await asset()]);
+    await sql`UPDATE immich_fork.archive_operation SET "createdAt" = now() - interval '40 days' WHERE id = ${old}::uuid`.execute(
+      db,
+    );
+    const recent = await confirmSelected([await asset()]);
+
+    expect(await repo.prune(30)).toBeGreaterThanOrEqual(2);
+
+    expect(await repo.get(auth.user.id, expired)).toBeUndefined();
+    expect(await repo.get(auth.user.id, old)).toBeUndefined();
+    expect(await repo.get(auth.user.id, recent)).toBeDefined();
+  });
 });
