@@ -64,6 +64,15 @@ const members: SharedSpaceMemberResponseDto[] = [
   { user: cy, role: AlbumUserRole.Viewer, pending: true, invitedAt: '2026-09-20T00:00:00.000Z' },
 ];
 
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   signedInId = 'ada';
@@ -127,21 +136,38 @@ describe('SharedSpaceMembers', () => {
     expect(removeUserFromAlbum).not.toHaveBeenCalled();
   });
 
-  it('removes a member who has joined through the album endpoint', async () => {
+  it('asks in the Frameleaf dialog before removing a member, then removes through the album endpoint', async () => {
     render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Remove Bo from this shared space' }));
+    expect(removeUserFromAlbum).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Remove Bo?' })).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_album_remove_member_confirm }));
 
     await waitFor(() => expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'space-1', userId: 'bo' }));
     expect(removeSharedSpaceInvitation).not.toHaveBeenCalled();
   });
 
-  it('never offers the owner role', async () => {
+  it('asks with the leave copy before an editor leaves', async () => {
+    signedInId = 'bo';
+    render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_leave }));
+    expect(removeUserFromAlbum).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Leave “Family Space”?' })).toBeInTheDocument();
+
+    // The roster's own Leave and the dialog's confirm share the design's label; the confirm is the last.
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Leave shared space' }).at(-1)!);
+    await waitFor(() => expect(removeUserFromAlbum).toHaveBeenCalledWith({ id: 'space-1', userId: 'bo' }));
+  });
+
+  it('never offers the owner role, and names roles as the design does', async () => {
     render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
 
     const options = [...screen.getByRole('combobox', { name: 'Role for Bo' }).querySelectorAll('option')].map(
       (option) => option.textContent,
     );
-    expect(options).toEqual([en.frameleaf_spaces_role_editor, en.frameleaf_spaces_role_viewer]);
+    expect(options).toEqual(['Editor', 'Viewer']);
   });
 });

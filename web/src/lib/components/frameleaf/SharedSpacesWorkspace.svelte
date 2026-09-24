@@ -2,22 +2,22 @@
   import { goto } from '$app/navigation';
   import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
+  import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import SharedSpaceInvitations from '$lib/components/frameleaf/SharedSpaceInvitations.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import { isOwner, canEdit } from '$lib/frameleaf/album-directory';
+  import { isOwner, canEdit, type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import AlbumEditModal from '$lib/modals/AlbumEditModal.svelte';
-  import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
   import { Route } from '$lib/route';
   import {
     handleCreateAlbumEntry,
     handleDeleteAlbum,
     handleDownloadAlbum,
+    handleEditAlbumDetails,
     handleLeaveAlbum,
   } from '$lib/services/album.service';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -28,7 +28,7 @@
     type PartnerResponseDto,
     type SharedSpacePreviewResponseDto,
   } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
@@ -72,6 +72,9 @@
   const currentUserId = $derived(authManager.user.id);
   let createOpen = $state(false);
   let leaveDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
+  let deleteDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
+  let editDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
+  let shareDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
   let busy = $state(false);
   let status = $state('');
 
@@ -107,8 +110,16 @@
     }
   };
 
-  const remove = async (space: AlbumResponseDto) => {
-    await handleDeleteAlbum(space);
+  /** Delete confirms in the Frameleaf dialog (`DeleteDialog`), as the Albums page does (AL-43). */
+  const confirmDelete = async () => {
+    const space = deleteDialog.space;
+    if (!space) {
+      return;
+    }
+    const deleted = await handleDeleteAlbum(space, { notify: false });
+    if (deleted) {
+      status = $t('frameleaf_albums_deleted', { values: { name: nameOf(space) } });
+    }
     await refresh();
   };
 
@@ -125,14 +136,17 @@
     await refresh();
   };
 
-  const edit = async (space: AlbumResponseDto) => {
-    await modalManager.show(AlbumEditModal, { album: space });
-    await refresh();
-  };
-
-  const share = async (space: AlbumResponseDto) => {
-    await modalManager.show(AlbumOptionsModal, { album: space, readOnly: !isOwner(space, currentUserId) });
-    await refresh();
+  /** The Frameleaf edit and share dialogs (`CollectionFormDialog`, `ShareDialog`); AL-45. */
+  const saveDetails = async (draft: AlbumDetailsDraft) => {
+    const space = editDialog.space;
+    if (!space) {
+      return false;
+    }
+    const saved = await handleEditAlbumDetails(space, draft);
+    if (saved) {
+      status = $t('frameleaf_albums_saved', { values: { name: nameOf(saved) } });
+    }
+    return !!saved;
   };
 </script>
 
@@ -157,7 +171,7 @@
       onClick={() => goto(Route.viewAlbum({ id: space.id }))}
     />
     {#if editor}
-      <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(space)} />
+      <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => (editDialog = { open: true, space })} />
     {/if}
     {#if editor}
       <MenuOption
@@ -169,13 +183,13 @@
     <MenuOption
       icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
       text={owner ? $t('share') : $t('frameleaf_albums_members')}
-      onClick={() => share(space)}
+      onClick={() => (shareDialog = { open: true, space })}
     />
     {#if space.assetCount > 0}
       <MenuOption icon={mdiDownloadOutline} text={$t('download')} onClick={() => handleDownloadAlbum(space)} />
     {/if}
     {#if owner}
-      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => remove(space)} />
+      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => (deleteDialog = { open: true, space })} />
     {:else}
       <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => (leaveDialog = { open: true, space })} />
     {/if}
@@ -240,6 +254,38 @@
 </section>
 
 <AlbumCreateDialog bind:open={createOpen} kind={AlbumKind.Space} collections={[]} onCreate={create} />
+
+{#if editDialog.space}
+  <AlbumCreateDialog
+    bind:open={editDialog.open}
+    kind={AlbumKind.Space}
+    album={editDialog.space}
+    collections={[]}
+    onCreate={create}
+    onSave={saveDetails}
+  />
+{/if}
+
+{#if shareDialog.space}
+  {@const space = spaces.find(({ id }) => id === shareDialog.space?.id) ?? shareDialog.space}
+  <AlbumShareDialog
+    album={space}
+    bind:open={shareDialog.open}
+    onChanged={refresh}
+    onLeave={() => (leaveDialog = { open: true, space })}
+  />
+{/if}
+
+{#if deleteDialog.space}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_delete_title', { values: { name: nameOf(deleteDialog.space) } })}
+    body={$t('frameleaf_album_delete_space_body')}
+    keepNote={$t('frameleaf_album_delete_keep', { values: { count: deleteDialog.space.assetCount } })}
+    confirmLabel={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    bind:open={deleteDialog.open}
+    onConfirm={confirmDelete}
+  />
+{/if}
 
 {#if leaveDialog.space}
   <AlbumConfirmDialog

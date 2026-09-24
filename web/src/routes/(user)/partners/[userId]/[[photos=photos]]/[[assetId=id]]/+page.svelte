@@ -2,17 +2,15 @@
   import { goto } from '$app/navigation';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import PartnerLibraryHeader from '$lib/components/frameleaf/PartnerLibraryHeader.svelte';
-  import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
+  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, type PartnerResponseDto } from '@immich/sdk';
-  import { mdiArrowLeft } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -41,11 +39,10 @@
     visibility: AssetVisibility.Timeline,
     withStacked: true,
   });
-
-  const selecting = $derived(librarySession.selection.length > 0);
 </script>
 
-<main class="relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6">
+<!-- The Frameleaf shell (top bar and rail) replaces the legacy ControlAppBar (AL-41), as in PartnerLibrary.jsx. -->
+<UserPageLayout scrollbar={false}>
   <LibraryView
     {options}
     bind:timelineManager
@@ -59,7 +56,7 @@
     <!-- FL-54: the partner library's own header (identity, show-in-timeline toggle, stop
          sharing) renders inside the timeline's own scrollable header section, so it scrolls
          with the grid instead of being clipped by `main`'s fixed height. -->
-    <section class="px-2 pt-8 md:px-0 md:pt-24">
+    <section class="px-2 pt-2 md:px-0">
       <PartnerLibraryHeader
         bind:partner
         count={timelineManager?.assetCount ?? 0}
@@ -75,14 +72,4 @@
       </Portal>
     {/snippet}
   </LibraryView>
-</main>
-
-{#if !selecting}
-  <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(Route.sharing())}>
-    {#snippet leading()}
-      <p class="whitespace-nowrap text-immich-fg dark:text-immich-dark-fg">
-        {$t('partner_list_user_photos', { values: { user: data.partner.name } })}
-      </p>
-    {/snippet}
-  </ControlAppBar>
-{/if}
+</UserPageLayout>

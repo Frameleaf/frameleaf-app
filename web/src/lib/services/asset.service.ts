@@ -47,6 +47,7 @@ import {
 import type { MessageFormatter } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
+import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama } from '$lib/frameleaf/viewer-media';
@@ -58,7 +59,6 @@ import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte'
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
-import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
@@ -82,7 +82,7 @@ export const getAssetActions = (
     title: $t('share'),
     icon: mdiShareVariantOutline,
     $if: () => !!(authUser && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked),
-    onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds: [asset.id] }),
+    onAction: () => modalManager.show(ShareSheetModal, { assetIds: [asset.id] }),
   };
 
   const Download: ActionItem = {
