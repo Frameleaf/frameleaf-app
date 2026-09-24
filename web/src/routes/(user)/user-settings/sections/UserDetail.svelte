@@ -121,7 +121,7 @@
     <div class="flex items-center gap-4">
       <UserAvatar {user} size="md" />
       <div>
-        <Heading tag="h1" size="large">{user.name}</Heading>
+        <Heading tag="h2" size="large">{user.name}</Heading>
         <Text color="secondary">{user.email}</Text>
       </div>
     </div>

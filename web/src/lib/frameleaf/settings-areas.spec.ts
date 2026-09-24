@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyticsAreaUrl,
   areaForPersonalSection,
+  areaSectionKeys,
   areaForSection,
   commandCenterUrl,
   defaultSettingsArea,
@@ -196,6 +197,21 @@ describe('Frameleaf settings areas', () => {
         { key: 'takeout', title: 'Imports' },
       ];
       expect(sectionsForArea(backup, 'backup').map((s) => s.key)).toEqual(['backup', 'takeout', 'preservation']);
+    });
+
+    it("interleaves server and account sections where the template does (Library care's health, repair, enrichment)", () => {
+      const care = [
+        { key: 'enrichment-care', title: 'Enrichment completeness', admin: true },
+        { key: 'repair', title: 'Repair queues' },
+        { key: 'integrity-checks', title: 'Media health & integrity', admin: true },
+      ];
+      expect(sectionsForArea(care, 'care').map((s) => s.key)).toEqual([
+        'integrity-checks',
+        'repair',
+        'enrichment-care',
+      ]);
+      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'enrichment-care']);
+      expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });
 
     it('keeps the server and account notifications apart', () => {

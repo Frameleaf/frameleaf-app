@@ -36,6 +36,8 @@
   let retry = $state(0);
   const scope = $derived(page.url.searchParams.get('scope') ?? 'all');
   const failures = $derived(queues?.reduce((sum, queue) => sum + queue.statistics.failed, 0));
+  /** The "Needs your attention" items, counted for the health line (the template's "n things need attention"). */
+  const attentionCount = $derived(failures === undefined ? undefined : failures > 0 ? 1 : 0);
   const snapshotQueues = $derived(
     queues
       ?.filter((queue) => queue.statistics.active + queue.statistics.waiting + queue.statistics.failed > 0)
@@ -102,9 +104,10 @@
 {:else if !report}<p role="status">{$t('loading')}</p>
 {:else}
   <div class="health">
-    <span class="dot"></span><strong>{$t('frameleaf_cc_library_available')}</strong><span class="time"
-      >{$t('frameleaf_cc_snapshot')} · {new Date(report.generatedAt).toLocaleString()}</span
-    >
+    <span class="dot"></span><strong>{$t('frameleaf_cc_library_available')}</strong
+    >{#if attentionCount !== undefined}<span
+        >{$t('frameleaf_cc_attention_count', { values: { count: attentionCount } })}</span
+      >{/if}<span class="time">{$t('frameleaf_cc_snapshot')} · {new Date(report.generatedAt).toLocaleString()}</span>
   </div>
   <div class="metrics">
     <a href={analyticsHref}
@@ -122,12 +125,13 @@
         /></small
       ></a
     >
-    <a href={Route.systemMaintenance()}
+    <!-- As in the template, the latest backup opens Import & protection → Database backups. -->
+    <a href={href('backup', 'backup')}
       ><span>{$t('frameleaf_cc_latest_backup')}</span><strong class="filename"
         >{backups
           ? (latestBackup ?? $t(backups.length > 0 ? 'frameleaf_cc_unmeasured' : 'frameleaf_cc_no_backup'))
           : $t('frameleaf_cc_unmeasured')}</strong
-      ><small>{$t('frameleaf_settings_area_maintenance')}<Icon icon={mdiChevronRight} size="16" /></small></a
+      ><small>{$t('frameleaf_cc_section_backups')}<Icon icon={mdiChevronRight} size="16" /></small></a
     >
     <a href={href('server', 'version-check')}
       ><span>{$t('frameleaf_cc_version')}</span><strong>{about?.version ?? $t('frameleaf_cc_unmeasured')}</strong><small
@@ -232,17 +236,15 @@
           size="18"
         /></a
       >
-      <a href={href('intelligence', 'machine-learning')}
+      <a href={href('processing')}
         ><span><strong>{$t('frameleaf_cc_ml')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span><Icon
           icon={mdiChevronRight}
           size="18"
         /></a
       >
       <a href={Route.renderWorkers()}
-        ><span><strong>{$t('admin.render_workers')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span><Icon
-          icon={mdiChevronRight}
-          size="18"
-        /></a
+        ><span><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span
+        ><Icon icon={mdiChevronRight} size="18" /></a
       >
       <a href={Route.systemProcessingDestinations()}
         ><span
