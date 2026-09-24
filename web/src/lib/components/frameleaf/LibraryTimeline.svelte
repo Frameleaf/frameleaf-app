@@ -250,6 +250,10 @@
       return;
     }
     const measure = () => {
+      // Hidden (e.g. under the viewer) reads 0; keep the last real height.
+      if (!end.offsetParent) {
+        return;
+      }
       measuredTop = end.offsetTop;
     };
     const resize = new ResizeObserver(measure);
@@ -1283,8 +1287,8 @@
   .fl-timeline-top > :global(*) {
     pointer-events: auto;
   }
-  /* Months and the bottom spacer are placed by their transform alone, from the body's top, even
-     when a host makes the header block sticky (in flow) above them. */
+  /* Months and the bottom spacer are placed by their transform alone, from the body's top; the
+     full-height header block is absolutely positioned and doesn't push them down. */
   .fl-timeline-bottom {
     top: 0;
   }
