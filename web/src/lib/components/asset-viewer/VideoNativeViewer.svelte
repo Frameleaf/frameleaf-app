@@ -9,7 +9,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
   import { getAssetActions } from '$lib/services/asset.service';
-  import { autoPlayVideo, lang, loopVideo as loopVideoPreference } from '$lib/stores/preferences.store';
+  import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
   import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
@@ -180,6 +180,33 @@
     },
   };
 
+  // hls-video-element exposes media-tracks' rendition list, but its types don't declare it.
+  type RenditionList = {
+    selectedIndex: number;
+    getRenditionById(id: string): { width: number; height: number } | null;
+  };
+  const getRenditions = (el: HlsVideoElement) => (el as unknown as { videoRenditions: RenditionList }).videoRenditions;
+
+  const shortSide = (level: { width: number; height: number }) => Math.min(level.width, level.height);
+
+  // The highest level at or under the pinned short side, else the lowest; undefined when on auto.
+  const pickPinnedLevel = (levels: { width: number; height: number }[], quality: 'auto' | number) => {
+    if (quality === 'auto' || levels.length === 0) {
+      return;
+    }
+    const index = levels.findLastIndex((level) => shortSide(level) <= quality);
+    return Math.max(index, 0);
+  };
+
+  // Remember only the viewer's own pick from the quality menu, not hls-video-element's
+  // error downgrades, which also move the selected rendition. The menu sends "auto" for Auto.
+  const onRenditionRequest = (event: Event) => {
+    const rendition = isHlsElement(videoPlayer)
+      ? getRenditions(videoPlayer).getRenditionById((event as CustomEvent<string>).detail)
+      : null;
+    videoQuality.set(rendition ? shortSide(rendition) : 'auto');
+  };
+
   const releaseSession = () => {
     const session = activeSession;
     if (!session) {
@@ -231,6 +258,18 @@
         if (!keep.has(i)) {
           api.removeLevel(i);
         }
+      }
+
+      const pinned = pickPinnedLevel(api.levels, $videoQuality);
+      if (pinned !== undefined) {
+        // Selecting the rendition keeps the quality menu in sync; its change event pins hls.js to
+        // the level. Let that event land while loading is still stopped so nothing gets flushed.
+        getRenditions(el).selectedIndex = pinned;
+        await Promise.resolve();
+        if (disposed) {
+          return;
+        }
+        api.startLevel = pinned;
       }
 
       api.startLoad(resumeTime);
@@ -469,6 +508,7 @@
         class="dark h-full max-w-full"
         style:aspect-ratio={aspectRatio}
         defaultduration={asset.duration! / 1000}
+        onmediarenditionrequest={onRenditionRequest}
       >
         {#if useHls}
           <hls-video

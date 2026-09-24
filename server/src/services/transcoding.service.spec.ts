@@ -5,6 +5,7 @@ import {
   HLS_CLEANUP_INTERVAL_MS,
   HLS_INACTIVITY_TIMEOUT_MS,
   HLS_LEASE_DURATION_MS,
+  HLS_RESTART_LOOKAHEAD_SEGMENTS,
 } from 'src/constants.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { VIDEO_STREAM_SESSION_PK_CONSTRAINT } from 'src/utils/database.js';
@@ -166,10 +167,26 @@ describe(TranscodingService.name, () => {
       mocks.process.spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
 
       await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
-      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 5 });
+      await sut.onSegmentRequest({
+        sessionId,
+        assetId,
+        variantIndex: 0,
+        segmentIndex: HLS_RESTART_LOOKAHEAD_SEGMENTS + 1,
+      });
 
       expect(first.kill).toHaveBeenCalled();
       expect(mocks.process.spawn).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the running transcode when the requested segment is within the lookahead', async () => {
+      const first = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValueOnce(first);
+
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: HLS_RESTART_LOOKAHEAD_SEGMENTS });
+
+      expect(first.kill).not.toHaveBeenCalled();
+      expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
     });
 
     it('does not spawn when the session is unknown', async () => {
