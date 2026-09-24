@@ -1108,6 +1108,7 @@ describe(AlbumService.name, () => {
         { albumId: loose.id, assetCount: 2, startDate: null, endDate: null, lastModifiedAssetTimestamp: null },
       ]);
       mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set([loose.id]));
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
 
       const tree = await sut.getTree(auth);
 
@@ -1120,6 +1121,24 @@ describe(AlbumService.name, () => {
       expect(tree.albums.find(({ id }) => id === loose.id)?.isSmart).toBe(true);
       expect(tree.albums.find(({ id }) => id === sharedWithMe.id)?.isSmart).toBe(false);
       expect(tree.spaces.map(({ id }) => id)).toEqual([space.id]);
+    });
+
+    it('never shows a member the owner’s private collection of an album shared with them (FL-52)', async () => {
+      const member = UserFactory.create();
+      const privateCollectionId = newUuid();
+      const shared = AlbumFactory.from({ parentId: privateCollectionId })
+        .albumUser({ userId: member.id, role: AlbumUserRole.Viewer })
+        .build();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(shared)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+      const tree = await sut.getTree(AuthFactory.create(member));
+
+      expect(tree.albums.map(({ id, parentId }) => ({ id, parentId }))).toEqual([{ id: shared.id, parentId: null }]);
+      expect(JSON.stringify(tree)).not.toContain(privateCollectionId);
     });
 
     it('masks hidden thumbnails in the tree exactly as in the list', async () => {
@@ -1148,6 +1167,7 @@ describe(AlbumService.name, () => {
       const loose = AlbumFactory.from().owner(owner).build();
       const sharedWithMe = AlbumFactory.from().albumUser({ userId: owner.id, role: AlbumUserRole.Viewer }).build();
       const visible = [collection, first, second, loose, sharedWithMe];
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
       mocks.album.getAll.mockResolvedValue(visible.map((item) => getForAlbum(item)));
       // The repository reads the directory inside its transaction and hands it to the check.
       mocks.album.setPositions.mockImplementation((_userId, _albumIds, validate) => {
