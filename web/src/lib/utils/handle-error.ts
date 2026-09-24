@@ -35,11 +35,27 @@ export function standardizeError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/**
+ * FL-56: a public share registers what to do when an action is refused because its link was revoked
+ * or expired while the page was open. The share page reloads into its unavailable state instead of
+ * leaving the viewer on stale content with a raw server toast.
+ */
+let unauthorizedHandler: (() => void) | undefined;
+
+export const setUnauthorizedHandler = (handler: (() => void) | undefined) => {
+  unauthorizedHandler = handler;
+};
+
 export function handleError(error: unknown, localizedMessage: string, options?: { notify?: boolean }) {
   const { notify = true } = options ?? {};
   const standardizedError = standardizeError(error);
   if (standardizedError.name === 'AbortError') {
     return;
+  }
+
+  if (unauthorizedHandler && isHttpError(error) && error.status === 401) {
+    unauthorizedHandler();
+    return localizedMessage;
   }
 
   console.error(`[handleError]: ${standardizedError}`, error, standardizedError.stack);
