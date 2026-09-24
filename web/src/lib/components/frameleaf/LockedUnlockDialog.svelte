@@ -10,11 +10,15 @@
    * The PIN never leaves this component except in that request.
    */
   import PinCells from '$lib/components/frameleaf/PinCells.svelte';
-  import { sessionAccess, setSessionLockPending, trackSessionUnlock } from '$lib/frameleaf/session-access.svelte';
-  import { requestSessionLock } from '$lib/frameleaf/session-lock';
-  import { onDestroy, untrack } from 'svelte';
+  import {
+    SESSION_UNLOCK_TIMEOUT_MS,
+    sessionAccess,
+    setSessionLockPending,
+    trackSessionUnlock,
+  } from '$lib/frameleaf/session-access.svelte';
+  import { isWrongPinError, requestSessionLock } from '$lib/frameleaf/session-lock';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { Route } from '$lib/route';
-  import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { getAuthStatus, isHttpError, unlockAuthSession } from '@immich/sdk';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiClose, mdiShieldLockOutline } from '@mdi/js';
@@ -29,7 +33,8 @@
     onUnlocked: () => void;
   } = $props();
 
-  type Access = 'loading' | 'ready' | 'no-pin' | 'unavailable';
+  // `unavailable` is only a revoked session (401); a network failure is `offline` and can retry.
+  type Access = 'loading' | 'ready' | 'no-pin' | 'unavailable' | 'offline';
 
   let access = $state<Access>('loading');
   let pin = $state('');
@@ -45,6 +50,7 @@
 
   const hintId = $props.id();
   const titleId = `${hintId}-title`;
+  const errorId = `${hintId}-error`;
   let dialog: HTMLDialogElement;
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   $effect(() => {
@@ -92,9 +98,9 @@
         return;
       }
       access = status.pinCode ? 'ready' : 'no-pin';
-    } catch {
+    } catch (error) {
       if (active && open && request === revision) {
-        access = 'unavailable';
+        access = isHttpError(error) && error.status === 401 ? 'unavailable' : 'offline';
       }
     }
   };
@@ -120,7 +126,13 @@
     const request = ++revision;
     const privacyRevision = sessionAccess.revision;
     try {
-      await trackSessionUnlock(unlockAuthSession({ sessionUnlockDto: { pinCode: code } }));
+      await trackSessionUnlock(
+        unlockAuthSession(
+          { sessionUnlockDto: { pinCode: code } },
+          // bounded, so a stalled request cannot hold a pending lock forever
+          { signal: AbortSignal.timeout(SESSION_UNLOCK_TIMEOUT_MS) },
+        ),
+      );
       setWorking(false);
       if (
         !active ||
@@ -136,9 +148,8 @@
       open = false;
       onUnlocked();
     } catch (error_) {
-      const message = getServerErrorMessage(error_);
       // This explicit rejection occurs before the server mutates the session.
-      const wrongPin = isHttpError(error_) && error_.status === 400 && message === 'Wrong PIN code';
+      const wrongPin = isWrongPinError(error_);
       // Retire this request before the shared lock closes its native dialog.
       setWorking(false);
       if (!wrongPin) {
@@ -148,9 +159,10 @@
       if (!active || !open || request !== revision) {
         return;
       }
-      // The rejected code never lingers; the cells reset for a fresh attempt.
+      // The rejected code never lingers; the cells reset for a fresh attempt with focus back on them.
       pin = '';
-      error = message ?? $t('frameleaf_locked_dialog_wrong_pin');
+      error = wrongPin ? $t('frameleaf_locked_dialog_wrong_pin') : $t('frameleaf_locked_dialog_unlock_failed');
+      void tick().then(() => dialog?.querySelector<HTMLInputElement>('.pin-input')?.focus());
     } finally {
       setWorking(false);
     }
@@ -185,6 +197,8 @@
       <p role="status">{$t('loading')}</p>
     {:else if access === 'unavailable'}
       <p>{$t('frameleaf_locked_dialog_unavailable')}</p>
+    {:else if access === 'offline'}
+      <p role="alert">{$t('frameleaf_locked_dialog_offline')}</p>
     {:else if access === 'no-pin'}
       <p>{$t('frameleaf_locked_dialog_no_pin')}</p>
     {:else}
@@ -195,19 +209,22 @@
         error={!!error}
         disabled={working}
         label={$t('frameleaf_locked_dialog_pin_label')}
-        describedBy={hintId}
+        describedBy={error ? `${hintId} ${errorId}` : hintId}
         context="locked"
         oncomplete={(code) => void unlock(code)}
       />
       <p class="locked-hint" id={hintId}>{$t('frameleaf_locked_dialog_hint_timeout')}</p>
     {/if}
-    {#if error}<p role="alert" class="locked-error">{error}</p>{/if}
+    {#if error}<p id={errorId} role="alert" class="locked-error">{error}</p>{/if}
     <footer>
       <a class="locked-settings" href={Route.userSettings()} onclick={abandon}
         >{$t('frameleaf_locked_dialog_pin_settings')}</a
       >
       <div>
         <button type="button" onclick={abandon}>{$t('cancel')}</button>
+        {#if access === 'offline'}
+          <button type="button" class="locked-primary" onclick={() => void load()}>{$t('retry')}</button>
+        {/if}
         {#if access === 'ready'}
           <button type="submit" class="locked-primary" disabled={working || pin.length !== 6}
             >{$t('frameleaf_locked_dialog_unlock')}</button

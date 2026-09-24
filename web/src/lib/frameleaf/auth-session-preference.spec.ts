@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearRememberMePreference,
-  getForcedPasswordContinue,
   getOAuthContinue,
   consumeLogoutPreference,
   preservePreferenceForPasswordChange,
-  preserveOAuthContinueForPasswordChange,
   rememberMePreference,
   setOAuthContinue,
   setRememberMePreference,
@@ -37,23 +35,11 @@ describe('auth session preference', () => {
     expect(rememberMePreference()).toBe(true);
   });
 
-  it('revalidates a provider continuation and keeps it through a forced-password relogin', () => {
+  it('revalidates a provider continuation and forgets it on a completed login', () => {
     setOAuthContinue('/locked?tab=albums');
     expect(String(getOAuthContinue('/photos'))).toBe(`${location.origin}/locked?tab=albums`);
-    preserveOAuthContinueForPasswordChange();
-    preservePreferenceForPasswordChange();
-    consumeLogoutPreference();
-    expect(String(getForcedPasswordContinue('/photos'))).toBe(`${location.origin}/locked?tab=albums`);
     clearRememberMePreference();
-    expect(getForcedPasswordContinue('/photos')).toBe('/photos');
-  });
-
-  it('preserves an OAuth continuation through forced-password logout with the default persistent choice', () => {
-    setOAuthContinue('/albums');
-    preserveOAuthContinueForPasswordChange();
-    preservePreferenceForPasswordChange();
-    consumeLogoutPreference();
-    expect(String(getForcedPasswordContinue('/photos'))).toBe(`${location.origin}/albums`);
+    expect(String(getOAuthContinue('/photos'))).toBe(`${location.origin}/photos`);
   });
 
   it('rejects an externally injected continuation on the provider callback', () => {

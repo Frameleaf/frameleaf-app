@@ -1,10 +1,12 @@
-/** Tab-scoped auth options across provider redirects and mandatory-password relogin. */
+/**
+ * Tab-scoped auth options across provider redirects and mandatory-password relogin. OAuth sign-in
+ * keeps upstream behaviour: it is never routed through the forced password change.
+ */
 import { Route } from '$lib/route';
 
 const preferenceKey = 'frameleaf.auth.rememberMe';
 const reloginKey = 'frameleaf.auth.passwordChangeRelogin';
 const continueKey = 'frameleaf.auth.oauthContinue';
-const forcedContinueKey = 'frameleaf.auth.forcedContinue';
 
 const storage = () => {
   try {
@@ -55,16 +57,9 @@ export const clearRememberMePreference = () => {
   remove(preferenceKey);
   remove(reloginKey);
   remove(continueKey);
-  remove(forcedContinueKey);
 };
 
-export const setOAuthContinue = (continueUrl: string | URL) => {
-  const stored = write(continueKey, String(continueUrl));
-  remove(forcedContinueKey);
-  return stored;
-};
-
-export const preserveOAuthContinueForPasswordChange = () => write(forcedContinueKey, '1');
+export const setOAuthContinue = (continueUrl: string | URL) => write(continueKey, String(continueUrl));
 
 export const getOAuthContinue = (fallback: string | URL): string | URL => {
   try {
@@ -74,16 +69,11 @@ export const getOAuthContinue = (fallback: string | URL): string | URL => {
   }
 };
 
-export const getForcedPasswordContinue = (fallback: string | URL): string | URL =>
-  read(forcedContinueKey) === '1' ? getOAuthContinue(fallback) : fallback;
-
 export const clearOAuthContinue = () => {
   remove(continueKey);
-  remove(forcedContinueKey);
 };
 
-export const preservePreferenceForPasswordChange = () =>
-  (rememberMePreference() && read(forcedContinueKey) !== '1') || write(reloginKey, '1');
+export const preservePreferenceForPasswordChange = () => rememberMePreference() || write(reloginKey, '1');
 
 /** Normal logout forgets the choice; forced password change keeps it for one relogin. */
 export const consumeLogoutPreference = () => {

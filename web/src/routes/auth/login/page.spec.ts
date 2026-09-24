@@ -1,18 +1,17 @@
 import { login } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
 import {
-  consumeLogoutPreference,
   getOAuthContinue,
-  preserveOAuthContinueForPasswordChange,
-  preservePreferenceForPasswordChange,
   rememberMePreference,
   setOAuthContinue,
   setRememberMePreference,
 } from '$lib/frameleaf/auth-session-preference';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { oauth } from '$lib/utils';
+import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -50,6 +49,7 @@ const forced = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  addMessages('dev', en);
   sessionStorage.clear();
   vi.mocked(oauth.isCallback).mockReturnValue(false);
   vi.mocked(oauth.isAutoLaunchEnabled).mockReturnValue(false);
@@ -74,29 +74,6 @@ describe('login mandatory-change routing', () => {
     expect(String(getOAuthContinue('/photos'))).toBe(new URL('/albums?from=share', location.origin).href);
   });
 
-  it('retains the original OAuth destination when auto-launch follows forced-password relogin', async () => {
-    setOAuthContinue('/locked?from=oauth');
-    preserveOAuthContinueForPasswordChange();
-    preservePreferenceForPasswordChange();
-    consumeLogoutPreference();
-    const pageData = data(true);
-    pageData.publicConfig.oauth.autoLaunch = true;
-    vi.mocked(goto).mockImplementation(async () => {
-      pageData.continueUrl = '/photos';
-    });
-    vi.mocked(oauth.authorize).mockResolvedValue(true);
-
-    render(Page, { data: pageData } as never);
-    await waitFor(() => expect(oauth.authorize).toHaveBeenCalledOnce());
-    expect(goto).toHaveBeenCalledWith(
-      `/auth/login?continue=${encodeURIComponent(new URL('/locked?from=oauth', location.origin).href)}&autoLaunch=0`,
-      {
-        replaceState: true,
-      },
-    );
-    expect(String(getOAuthContinue('/photos'))).toBe(new URL('/locked?from=oauth', location.origin).href);
-  });
-
   it('routes a password login to the forced password screen before continuing', async () => {
     vi.mocked(login).mockResolvedValue(forced as never);
     render(Page, { data: data(false) } as never);
@@ -112,15 +89,30 @@ describe('login mandatory-change routing', () => {
     expect(eventManager.emit).not.toHaveBeenCalled();
   });
 
-  it('applies the same mandatory change to an OAuth callback', async () => {
+  it('keeps upstream OAuth behaviour: a callback is never sent to the forced password change', async () => {
+    setOAuthContinue('/locked?from=oauth');
     setRememberMePreference(false);
     vi.mocked(oauth.isCallback).mockReturnValue(true);
     vi.mocked(oauth.login).mockResolvedValue(forced as never);
     render(Page, { data: data(true) } as never);
-    await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password'));
+    await waitFor(() =>
+      expect(goto).toHaveBeenCalledWith(new URL('/locked?from=oauth', location.origin), { invalidateAll: true }),
+    );
+    expect(goto).not.toHaveBeenCalledWith('/auth/change-password');
     expect(oauth.login).toHaveBeenCalledWith(expect.anything(), false);
-    expect(rememberMePreference()).toBe(false);
-    expect(eventManager.emit).not.toHaveBeenCalled();
+    expect(eventManager.emit).toHaveBeenCalledWith('AuthLogin', forced);
+  });
+
+  it.each(['admin@localhost', 'me@nas'])('lets the server validate a single-label address (%s)', async (email) => {
+    vi.mocked(login).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
+    render(Page, { data: data(false) } as never);
+    await fireEvent.input(screen.getByLabelText('Email'), { target: { value: ` ${email} ` } });
+    await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() =>
+      expect(login).toHaveBeenCalledWith({ loginCredentialDto: { email, password: 'secret', rememberMe: true } }),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('uses the same choice for OAuth-only sign-in and clears it after a completed callback', async () => {
@@ -141,33 +133,6 @@ describe('login mandatory-change routing', () => {
       expect(goto).toHaveBeenCalledWith(new URL('/photos', location.origin), { invalidateAll: true }),
     );
     expect(oauth.login).toHaveBeenCalledWith(expect.anything(), false);
-    expect(rememberMePreference()).toBe(true);
-  });
-
-  it('retains a safe OAuth continuation and session choice through forced-password relogin', async () => {
-    setOAuthContinue('/locked?from=login');
-    setRememberMePreference(false);
-    vi.mocked(oauth.isCallback).mockReturnValue(true);
-    vi.mocked(oauth.login).mockResolvedValue(forced as never);
-    render(Page, { data: data(true) } as never);
-    await waitFor(() => expect(goto).toHaveBeenCalledWith('/auth/change-password'));
-    preservePreferenceForPasswordChange();
-    consumeLogoutPreference();
-
-    vi.mocked(oauth.isCallback).mockReturnValue(false);
-    vi.mocked(login).mockResolvedValue({ ...forced, shouldChangePassword: false } as never);
-    render(Page, { data: data(false) } as never);
-    const fields = screen.getAllByLabelText<HTMLInputElement>('Email');
-    const passwords = screen.getAllByLabelText<HTMLInputElement>('Password');
-    await fireEvent.input(fields.at(-1)!, { target: { value: 'user@example.test' } });
-    await fireEvent.input(passwords.at(-1)!, { target: { value: 'updated-password' } });
-    await fireEvent.click(screen.getAllByRole('button', { name: 'Sign in' }).at(-1)!);
-    await waitFor(() =>
-      expect(goto).toHaveBeenCalledWith(new URL('/locked?from=login', location.origin), { invalidateAll: true }),
-    );
-    expect(login).toHaveBeenCalledWith({
-      loginCredentialDto: { email: 'user@example.test', password: 'updated-password', rememberMe: false },
-    });
     expect(rememberMePreference()).toBe(true);
   });
 });
