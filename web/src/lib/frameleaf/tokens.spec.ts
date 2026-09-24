@@ -172,6 +172,54 @@ describe('Frameleaf theme contract', () => {
     expect(withoutComments).not.toMatch(/min-height:\s*(?:[0-3]?\d|4[0-3])px/);
   });
 
+  it('layers the prototype baseline below Tailwind and @immich/ui utilities', () => {
+    const order = '@layer properties, theme, base, frameleaf-base, components, utilities;';
+    // Declared before Tailwind's own statement in app.css, and again in base.css, so the order
+    // holds whichever sheet loads first.
+    const app = readFileSync('src/app.css', 'utf8');
+    expect(app.indexOf(order)).toBeGreaterThan(-1);
+    expect(app.indexOf(order)).toBeLessThan(app.indexOf("@import 'tailwindcss';"));
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    expect(withoutComments.trimStart().startsWith(order)).toBe(true);
+    // Only the font faces and the order statement sit outside the layer; every rule is inside it,
+    // so an unlayered utility or component style is never beaten by the baseline.
+    const outside = withoutComments
+      .replace(order, '')
+      .replaceAll(/@font-face\s*{[^}]+}/g, '')
+      .trim();
+    expect(outside.startsWith('@layer frameleaf-base {')).toBe(true);
+    expect(outside.endsWith('}')).toBe(true);
+    expect(outside.match(/@layer/g)).toHaveLength(1);
+  });
+
+  it('stacks only prototype field labels, not every label', () => {
+    const withoutComments = baseline.replaceAll(/\/\*[\S\s]*?\*\//g, '');
+    for (const [, selector] of withoutComments.matchAll(/([^{}]+)\{/g)) {
+      if (/\blabel\b/.test(selector)) {
+        // A caption <span> then the control: search bars and text-plus-control rows keep their layout.
+        expect(selector).toContain('label:has(> span:first-child + :is(');
+      }
+    }
+  });
+
+  it('keeps the primary hover readable in both themes', () => {
+    const channels = (color: string) => [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
+    const toHex = (values: number[]) =>
+      `#${values.map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
+    const mix = (base: string, other: string, share: number) =>
+      toHex(channels(base).map((value, index) => value * (1 - share) + channels(other)[index] * share));
+    for (const theme of ['dark', 'light'] as const) {
+      const hover = themes[theme].get('--fl-accent-hover');
+      const [, other, share] =
+        /^color-mix\(in srgb, var\(--fl-accent\), (white|var\(--fl-text\)) (\d+)%\)$/.exec(hover ?? '') ?? [];
+      expect(other, `unexpected --fl-accent-hover in the ${theme} theme`).toBeDefined();
+      const fill = mix(hex(theme, 'accent'), other === 'white' ? '#ffffff' : hex(theme, 'text'), Number(share) / 100);
+      expect(contrast(hex(theme, 'accent-text'), fill), `accent-text on hover (${theme})`).toBeGreaterThanOrEqual(4.5);
+    }
+    // The prototype's own lightening mix stays in the dark theme.
+    expect(themes.dark.get('--fl-accent-hover')).toBe('color-mix(in srgb, var(--fl-accent), white 10%)');
+  });
+
   it('never leaks the prototype stylesheet into production', () => {
     // Every rule stays under the .frameleaf scope; no bare element, html/body or :root
     // rules, so mounting Theme.svelte cannot restyle the surrounding application.
