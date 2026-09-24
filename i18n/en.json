@@ -2624,6 +2624,7 @@
   "frameleaf_bulk_archive_expired": "This selection expired before it was confirmed. Select everything matching again.",
   "frameleaf_bulk_archive_matching_confirm": "Archive all {count, plural, one {# matching item} other {# matching items}} in your Timeline? The count was taken just now and nothing changes until you confirm. You can undo this.",
   "frameleaf_bulk_archive_nothing": "Nothing to archive: no matching items are in your Timeline.",
+  "frameleaf_bulk_archive_undo_available": "Your last archive changed {count, plural, one {# item} other {# items}}. You can still undo it.",
   "frameleaf_bulk_archive_undo_failed": "Unable to undo the archive",
   "frameleaf_bulk_archive_undo_queued": "Undo queued. Items changed since they were archived stay as they are.",
   "frameleaf_bulk_change_date": "Change date",

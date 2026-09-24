@@ -319,6 +319,8 @@ export class QueueService extends BaseService {
         { name: JobName.HlsSessionCleanup },
         { name: JobName.AuditTableCleanup },
       );
+      // FL-32: cleanups that are not queue jobs, so the public job names stay as they are
+      await this.eventRepository.emit('NightlyDatabaseCleanup');
     }
 
     if (config.nightlyTasks.generateMemories) {

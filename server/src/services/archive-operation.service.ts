@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { OnEvent } from 'src/decorators.js';
 import {
   ArchiveOperationCreateDto,
   ArchiveOperationPrepareDto,
@@ -11,6 +12,9 @@ import { ArchiveOperationRepository, ArchiveOperationSummary } from 'src/reposit
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
+
+/** How long a finished archive operation, and so its Undo, is kept. */
+export const ARCHIVE_OPERATION_RETENTION_DAYS = 30;
 
 const toIso = (value: Date | string | null) => (value === null ? null : new Date(value).toISOString());
 
@@ -64,6 +68,24 @@ export class ArchiveOperationService {
     private mediaOperations: MediaOperationService,
   ) {
     this.logger.setContext(ArchiveOperationService.name);
+  }
+
+  /**
+   * Part of the nightly database cleanup (`QueueService.handleNightlyJobs`, when database cleanup is
+   * on): operations older than `ARCHIVE_OPERATION_RETENTION_DAYS` whose jobs are no longer running,
+   * and unconfirmed selections that expired, are forgotten. Their jobs stay in Activity.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    try {
+      const pruned = await this.repository.prune(ARCHIVE_OPERATION_RETENTION_DAYS);
+      if (pruned > 0) {
+        this.logger.log(`Removed ${pruned} archive operations nobody can act on any more`);
+      }
+    } catch (error) {
+      // during a database handoff the rows wait for the next night
+      this.logger.warn(`Archive operation cleanup deferred: ${error}`);
+    }
   }
 
   private requireSession(auth: AuthDto) {
@@ -166,10 +188,15 @@ export class ArchiveOperationService {
     if (operation.archiveJobId) {
       return mapArchiveOperation(operation);
     }
-    const assetIds = await this.repository.orderedAssetIds(id);
+    // FL-34: an item Locked since the selection was frozen is left out (skipped) for a session
+    // without the PIN, rather than refusing the whole archive; it is never archived or named.
+    if (!auth.session?.hasElevatedPermission) {
+      await this.repository.skipLocked(auth.user.id, id);
+    }
+    const assetIds = await this.repository.pendingAssetIds(id);
     if (assetIds.length === 0) {
-      // nothing matched: the operation stays as the record of an empty selection
-      return mapArchiveOperation(operation);
+      // nothing matched, or nothing is left: the operation stays as the record of the selection
+      return mapArchiveOperation(await this.summary(auth, id));
     }
     const job = await this.mediaOperations.createBulk(
       auth,
