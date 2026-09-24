@@ -1901,7 +1901,7 @@ export type AnalyticsPeopleAndPlacesDto = {
     faces: number;
     geotagged: number;
     itemsWithFaces: number;
-    /** itemsWithFaces plus itemsWithoutFaces is summary.items */
+    /** itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems */
     itemsWithoutFaces: number;
     /** Named, visible people of the owner seen on the items */
     namedPeople: number;
@@ -1959,6 +1959,8 @@ export type AnalyticsInsightsDto = {
     focalLengths: AnalyticsFocalLengthDto[];
     /** Null when no video stream has been read, so HDR cannot be told */
     hdr: (AnalyticsHdrDto) | null;
+    /** Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise) */
+    hiddenItems: number;
     /** Items per lens model, then every other lens, then no lens */
     lenses: AnalyticsNamedCountDto[];
     /** Photos with a Live Photo motion part */
@@ -6418,7 +6420,7 @@ export type SearchFacetsDto = {
     description?: string;
     /** Most frequent values per facet (default 10) */
     facetLimit?: number;
-    /** Facets to count; every facet when omitted */
+    /** Facets to count, each once (repeats are ignored); every facet when omitted */
     facets?: SearchFacetField[];
     filter?: SearchFilter;
     imageEnrichment?: ImageEnrichmentFilter;

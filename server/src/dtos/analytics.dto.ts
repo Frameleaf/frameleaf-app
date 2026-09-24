@@ -240,7 +240,7 @@ const AnalyticsPeopleAndPlacesSchema = z
   .object({
     faces: count().describe('Visible faces on the items'),
     itemsWithFaces: count(),
-    itemsWithoutFaces: count().describe('itemsWithFaces plus itemsWithoutFaces is summary.items'),
+    itemsWithoutFaces: count().describe('itemsWithFaces plus itemsWithoutFaces is summary.items minus hiddenItems'),
     namedPeople: count().describe('Named, visible people of the owner seen on the items'),
     pets: count().describe("The owner's visible pets confirmed on the items"),
     topPeople: z
@@ -282,6 +282,9 @@ const AnalyticsRecordsSchema = z
 
 const AnalyticsInsightsSchema = z
   .object({
+    hiddenItems: count().describe(
+      'Items this session keeps hidden (Locked people and tags, sensitive content). They are left out of every breakdown here, which adds up to summary.items minus hiddenItems (summary.photos and summary.videos likewise)',
+    ),
     capturesByYear: z.array(AnalyticsYearCountSchema).describe('Items per local capture year, all time'),
     punchcard: z
       .array(AnalyticsPunchcardCellSchema)

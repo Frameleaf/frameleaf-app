@@ -61,6 +61,7 @@ import {
   sumIntoBuckets,
   windowDays,
 } from 'src/utils/analytics.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsightsDto => {
   const punch = new Map(rows.punchcard.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count]));
@@ -73,6 +74,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
   const people = rows.people;
 
   return {
+    hiddenItems: Math.max(0, items - rows.items),
     capturesByYear: rows.years,
     punchcard: Array.from({ length: 7 * 24 }, (_, index) => {
       const weekday = Math.floor(index / 24) + 1;
@@ -91,7 +93,7 @@ const mapInsights = (rows: AnalyticsInsightRows, items: number): AnalyticsInsigh
       ? {
           faces: people.faces,
           itemsWithFaces: people.itemsWithFaces,
-          itemsWithoutFaces: Math.max(0, items - people.itemsWithFaces),
+          itemsWithoutFaces: Math.max(0, rows.items - people.itemsWithFaces),
           namedPeople: people.namedPeople,
           pets: people.pets,
           topPeople: people.topPeople,
@@ -215,6 +217,7 @@ export class AnalyticsService {
         ownerId: readsOwnScope ? ownerId : null,
         suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
         suppressedPetIds: auth.hiddenContent?.petIds ?? [],
+        privacy: getHiddenContentQueryOptions(auth),
       }),
     ]);
 

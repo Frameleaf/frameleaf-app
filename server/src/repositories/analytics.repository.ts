@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, RawBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   AlbumKind,
   AlbumUserRole,
@@ -20,7 +21,7 @@ import {
   AnalyticsScope,
   assertApprovedSample,
 } from 'src/utils/analytics.js';
-import { anyUuid } from 'src/utils/database.js';
+import { anyUuid, getHiddenContentFilter, hiddenContentAssetIdExists } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -121,9 +122,13 @@ export type AnalyticsInsightOptions = {
   /** people and pets the owner keeps Locked; never named while the session is locked */
   suppressedPersonIds: string[];
   suppressedPetIds: string[];
+  /** the reading session's hidden-content rules */
+  privacy?: HiddenContentQueryOptions;
 };
 
 export type AnalyticsInsightRows = {
+  /** the items every breakdown partitions: the summary's items minus those the session keeps hidden */
+  items: number;
   years: Array<{ year: number; count: number }>;
   punchcard: Array<{ weekday: number; hour: number; count: number }>;
   lenses: Array<{ name: string | null; count: number }>;
@@ -383,6 +388,10 @@ export class AnalyticsRepository {
    * (file names, people, places) are read only for the scope's owner reading their own scope.
    */
   async getInsights(scope: AnalyticsScope, options: AnalyticsInsightOptions): Promise<AnalyticsInsightRows> {
+    // what the reading session keeps hidden (Locked people and tags, sensitive content) is left out of
+    // every breakdown, so no record, place or lens can point at it
+    const hiddenContent = getHiddenContentFilter(options.privacy);
+    const visible = hiddenContent ? sql`not ${hiddenContentAssetIdExists(sql.ref('a.id'), hiddenContent)}` : sql`true`;
     const items = sql`
       select
         a.id, a.type, a."localDateTime", a."originalFileName", a.duration, a."livePhotoVideoId",
@@ -393,9 +402,22 @@ export class AnalyticsRepository {
       from asset a
       left join asset_exif e on e."assetId" = a.id
       where a.type in (${IMAGE}, ${VIDEO}) and a.visibility <> ${HIDDEN} and ${isNotLocked('a')} and ${scopeCondition(scope)}
+        and ${visible}
     `;
-    const run = async <T>(query: RawBuilder<unknown>) =>
-      (await sql<T>`with items as (${items}) ${query}`.execute(this.db)).rows;
+
+    // the item set is read once per report into a temporary table that ends with the transaction
+    return this.db.transaction().execute(async (trx) => {
+      await sql`create temporary table analytics_insight_items on commit drop as ${items}`.execute(trx);
+      const run = async <T>(query: RawBuilder<unknown>) =>
+        (await sql<T>`with items as (select * from analytics_insight_items) ${query}`.execute(trx)).rows;
+      return this.readInsights(run, options);
+    });
+  }
+
+  private async readInsights(
+    run: <T>(query: RawBuilder<unknown>) => Promise<T[]>,
+    options: AnalyticsInsightOptions,
+  ): Promise<AnalyticsInsightRows> {
     const local = sql`(items."localDateTime" at time zone 'UTC')`;
     const fileName = sql`lower(items."originalFileName")`;
     const withNames = !!options.ownerId;
@@ -458,6 +480,7 @@ export class AnalyticsRepository {
             count(*) as count
           from items group by 1`),
         run<{
+          items: string;
           livePhotos: string;
           probedVideos: string;
           hdrVideos: string;
@@ -465,6 +488,7 @@ export class AnalyticsRepository {
           videoDurationMs: string;
         }>(sql`
           select
+            count(*) as items,
             count(*) filter (where items.type = ${IMAGE} and items."livePhotoVideoId" is not null) as "livePhotos",
             count(v."assetId") filter (where items.type = ${VIDEO}) as "probedVideos",
             count(v."assetId") filter (
@@ -495,6 +519,7 @@ export class AnalyticsRepository {
       rows.map((row) => ({ ...row, count: num(row.count) }));
 
     return {
+      items: num(counts[0]?.items),
       years: count(years),
       punchcard: count(punchcard),
       lenses: count(lenses),
