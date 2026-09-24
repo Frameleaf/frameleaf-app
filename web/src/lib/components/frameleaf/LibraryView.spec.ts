@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import { librarySession } from '$lib/frameleaf/library-session.svelte';
 import LibraryView from './LibraryView.svelte';
@@ -169,6 +170,26 @@ describe('LibraryView', () => {
 
       await fireEvent.click(screen.getByTestId('selection-leading-studio'));
       expect(navigation.goto).toHaveBeenCalledWith('/studio?assets=a%2Cb');
+    });
+
+    it('counts what an active filter leaves, once per result set', async () => {
+      sdkMock.searchAssetStatistics.mockResolvedValue({ total: 7 } as never);
+      render(LibraryView, {
+        options: {},
+        destination: { kind: 'library' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.patchView({
+        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } as never,
+      });
+
+      await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce());
+      await waitFor(() => expect(librarySession.total).toBe(7));
+      // One count per result set: re-rendering does not ask again.
+      await tick();
+      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce();
+      librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
     it('never hands Locked items to Studio', async () => {
