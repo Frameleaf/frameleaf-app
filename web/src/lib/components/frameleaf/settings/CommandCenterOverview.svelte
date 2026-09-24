@@ -10,7 +10,7 @@
   import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { Route } from '$lib/route';
-  import { asQueueItem } from '$lib/services/queue.service';
+  import { jobQueue } from '$lib/frameleaf/job-queues';
   import {
     AnalyticsRange,
     getAboutInfo,
@@ -20,13 +20,14 @@
     listDatabaseBackups,
     type AnalyticsReportResponseDto,
     type DatabaseBackupDto,
+    type QueueName,
     type QueueResponseDto,
     type ServerAboutResponseDto,
     type ServerStorageResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiChevronRight } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
   let report = $state<AnalyticsReportResponseDto>();
   let about = $state<ServerAboutResponseDto>();
   let storage = $state<ServerStorageResponseDto>();
@@ -50,6 +51,11 @@
       .at(-1)?.filename,
   );
   const href = (area: SettingsAreaId, section?: string) => commandCenterUrl(area, section);
+  /** A queue's title as the Job manager shows it. */
+  const queueTitle = (name: QueueName) => {
+    const definition = jobQueue(name);
+    return definition ? $t(`frameleaf_jobs_queue_${definition.key}` as Translations) : name;
+  };
   const analyticsHref = $derived(
     commandCenterUrl('analytics', undefined, { scope: scope === 'all' ? undefined : scope }),
   );
@@ -171,7 +177,7 @@
     <section class="panel">
       <header>
         <h2>{$t('frameleaf_cc_attention')}</h2>
-        {#if failures !== undefined}<span>{failures}</span>{/if}
+        {#if attentionCount !== undefined}<span>{attentionCount}</span>{/if}
       </header>
       {#if failures}<a class="action" href={Route.queues()}
           ><strong>{$t('frameleaf_cc_failed_jobs')}</strong><small>{failures} · {$t('frameleaf_cc_server')}</small><Icon
@@ -217,8 +223,8 @@
         </div>
         <a href={Route.queues()}>{$t('frameleaf_cc_queues')} ›</a>
       </header>
-      {#if queues}{#each snapshotQueues as queue (queue.name)}<a class="service" href={Route.queues()}
-            ><span>{asQueueItem($t, queue).title}</span><small
+      {#if queues}{#each snapshotQueues as queue (queue.name)}<a class="service" href={Route.viewQueue(queue)}
+            ><span>{queueTitle(queue.name)}</span><small
               >{queue.statistics.active} {$t('active')} · {queue.statistics.waiting} {$t('waiting')}</small
             ></a
           >{:else}<p class="subtle">{$t('frameleaf_cc_no_attention')}</p>{/each}{:else}<p class="subtle">
@@ -242,14 +248,13 @@
           size="18"
         /></a
       >
-      <a href={Route.renderWorkers()}
+      <a href={href('processing')}
         ><span><strong>{$t('frameleaf_cc_gpu_studio')}</strong><small>{$t('frameleaf_cc_unmeasured')}</small></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
-      <a href={Route.systemProcessingDestinations()}
+      <a href={href('processing')}
         ><span
-          ><strong>{$t('admin.frameleaf_ml_destinations_title')}</strong><small
-            >{$t('frameleaf_cc_review_destinations')}</small
+          ><strong>{$t('frameleaf_cc_cloud_destination')}</strong><small>{$t('frameleaf_cc_review_destinations')}</small
           ></span
         ><Icon icon={mdiChevronRight} size="18" /></a
       >
