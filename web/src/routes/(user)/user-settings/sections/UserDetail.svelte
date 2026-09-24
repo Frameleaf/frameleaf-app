@@ -109,7 +109,15 @@
   <p role="status">{$t('loading')}</p>
 {/if}
 
-{#snippet detail({ user, userPreferences, userStatistics, userSessions, libraries, libraryStatistics }: UserDetailData)}
+{#snippet detail({
+  user,
+  userPreferences,
+  userStatistics,
+  userSessions,
+  libraries,
+  libraryStatistics,
+  physicalBytes,
+}: UserDetailData)}
   {@const { ResetPassword, ResetPinCode, Update, Delete, Restore } = getUserAdminActions($t, user)}
   <CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
 
@@ -147,6 +155,7 @@
         sessions={userSessions}
         {libraries}
         {libraryStatistics}
+        {physicalBytes}
         preferencesEditable={accountLifecycle(user) === 'active'}
         savePreferences={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
         loadPreferences={() => getUserPreferencesAdmin({ id: user.id })}

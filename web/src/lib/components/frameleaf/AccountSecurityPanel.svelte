@@ -101,6 +101,17 @@
     </Button>
   </div>
 
+  <!-- CC-31 (AccountsLibraries.jsx:1437-1445): whether a sign-in provider is connected; only the owner manages it. -->
+  <div class="row">
+    <div>
+      <strong>{$t('frameleaf_users_provider_title')}</strong>
+      <small>
+        {user.oauthId ? $t('frameleaf_users_provider_connected') : $t('frameleaf_users_provider_not_connected')} ·
+        {$t('frameleaf_users_provider_owner_managed')}
+      </small>
+    </div>
+  </div>
+
   <h3>{$t('frameleaf_users_devices_title')}</h3>
   <ul>
     {#each visibleSessions as session (session.id)}
