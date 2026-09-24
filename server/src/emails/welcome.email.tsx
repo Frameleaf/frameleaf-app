@@ -37,7 +37,8 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
 
   return (
     <ImmichLayout
-      preview={customTemplate ? emailContent.toString() : 'You have been invited to a new Immich instance.'}
+      baseUrl={baseUrl}
+      preview={customTemplate ? emailContent.toString() : 'You have been invited to a Frameleaf server.'}
     >
       {customTemplate && (
         <Text className="m-0">
