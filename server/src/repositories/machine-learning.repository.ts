@@ -312,6 +312,10 @@ export class RestorationWorkerError extends Error {
   }
 }
 
+/** The same URL and credentials; endpoints are compared by value, never by object identity. */
+export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
+  !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
+
 @Injectable()
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
@@ -390,14 +394,16 @@ export class MachineLearningRepository implements RestorationInference {
       return cached.probe;
     }
 
-    const config = this.config;
-    const runPodEndpoint = this.runPodEndpoint;
+    // Only a probe of the RunPod endpoint can go stale mid-flight: its URL and token are published
+    // by the RunPod manager, while every other destination's come from its own row. Compared by
+    // value, because an unchanged endpoint is republished (a new object) on every readiness tick.
+    const probedRunPod = sameEndpoint(this.runPodEndpoint, endpoint);
     const timeout = Math.min(5000, Math.max(250, this.timeout()));
     const started = Date.now();
     const probedAt = new Date(started);
     const finish = (probe: Omit<MlEndpointProbe, 'latencyMs' | 'probedAt'>): MlEndpointProbe => {
       const result = { ...probe, latencyMs: Date.now() - started, probedAt };
-      if (this._config !== config || this.runPodEndpoint !== runPodEndpoint) {
+      if (probedRunPod && !sameEndpoint(this.runPodEndpoint, endpoint)) {
         return { ...result, reachable: false, workloads: [], hardware: null, error: 'Endpoint configuration changed' };
       }
       this.probeCache.set(endpoint.url, { authToken: endpoint.authToken, probe: result });
