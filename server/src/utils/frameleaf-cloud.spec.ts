@@ -31,6 +31,24 @@ describe(discoveryProblem.name, () => {
     }
   });
 
+  it('pins every address to the configured effective port', () => {
+    expect(
+      discoveryProblem('https://frameleaf.cloud', document({ api: 'https://frameleaf.cloud:443/api' })),
+    ).toBeNull();
+    expect(
+      discoveryProblem('https://frameleaf.cloud', document({ issuer: 'https://id.frameleaf.cloud:8443' })),
+    ).toMatch(/is not on port 443/);
+    expect(discoveryProblem('https://frameleaf.cloud:8443', document())).toMatch(/is not on port 8443/);
+    expect(
+      discoveryProblem('https://frameleaf.cloud:8443', {
+        ...document(),
+        issuer: 'https://id.frameleaf.cloud:8443',
+        api: 'https://frameleaf.cloud:8443/api',
+        ml: { eu: 'https://ml.eu.frameleaf.cloud:8443' },
+      }),
+    ).toBeNull();
+  });
+
   it('refuses http unless the configured cloud is itself http, and credentials in a URL', () => {
     expect(discoveryProblem('https://frameleaf.cloud', document({ issuer: 'http://id.frameleaf.cloud' }))).toMatch(
       /not https/,
@@ -40,7 +58,7 @@ describe(discoveryProblem.name, () => {
         ...document(),
         issuer: 'http://cloud.test:8080/id',
         api: 'http://cloud.test:8080/api',
-        ml: { eu: 'https://ml.eu.cloud.test' },
+        ml: { eu: 'http://ml.eu.cloud.test:8080' },
       }),
     ).toBeNull();
     expect(
