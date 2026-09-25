@@ -794,10 +794,7 @@ export const MlDestinationKindSchema = z
   .meta({ id: 'MlDestinationKind' });
 
 /** Destination kinds whose selection sends media off the operator's network. */
-export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([
-  MlDestinationKind.FrameleafCloud,
-]);
-
+export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([MlDestinationKind.FrameleafCloud]);
 
 /**
  * A kind of work a destination can serve. Capabilities (what a destination can run) and

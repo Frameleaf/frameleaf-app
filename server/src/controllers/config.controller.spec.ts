@@ -125,7 +125,9 @@ describe('config controllers', () => {
     it('should clear a credential', async () => {
       service.clearCredential.mockResolvedValue({ name: ConfigCredential.OAuthClientSecret, configured: false });
 
-      const { status, body } = await request(ctx.getHttpServer()).delete('/admin/config/credentials/oauth-client-secret');
+      const { status, body } = await request(ctx.getHttpServer()).delete(
+        '/admin/config/credentials/oauth-client-secret',
+      );
 
       expect(status).toBe(200);
       expect(body).toEqual({ name: 'oauth-client-secret', configured: false });

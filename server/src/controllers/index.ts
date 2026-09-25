@@ -1,4 +1,3 @@
-import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
@@ -14,6 +13,7 @@ import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
+import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';

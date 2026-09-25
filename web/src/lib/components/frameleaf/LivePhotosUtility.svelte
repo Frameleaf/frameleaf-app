@@ -250,7 +250,7 @@
       </article>
     {/each}
   </div>
-  {#if data.candidates.suggestionsEnabled === false}
+  {#if !data.candidates.suggestionsEnabled}
     <!-- Library care → "Suggest Live Photo relinking" is off (FL-69): nothing was looked for. -->
     <p class="empty" role="status">{$t('library_care_live_photos_off')}</p>
   {:else if rows.length === 0}<p class="empty">{$t('live_photos_no_candidates')}</p>{/if}

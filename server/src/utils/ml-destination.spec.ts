@@ -1,9 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  FRAMELEAF_CLOUD_ENDPOINT,
-  type MachineLearningRepository,
-  type MlEndpointProbe,
-} from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlAdmissionRefusal,
@@ -14,6 +9,11 @@ import {
   MlWorkerRole,
   MlWorkload,
 } from 'src/enum.js';
+import {
+  FRAMELEAF_CLOUD_ENDPOINT,
+  type MachineLearningRepository,
+  type MlEndpointProbe,
+} from 'src/repositories/machine-learning.repository.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -234,9 +234,9 @@ describe('resolveEndpoint', () => {
 
   it('resolves Frameleaf Cloud to its sentinel, never to a URL or token of its own (FL-159)', () => {
     expect(resolveEndpoint(mlDestinationStub.frameleafCloudConsented)).toBe(FRAMELEAF_CLOUD_ENDPOINT);
-    expect(resolveEndpoint({ ...mlDestinationStub.frameleafCloudConsented, url: 'https://elsewhere', authToken: 't' })).toBe(
-      FRAMELEAF_CLOUD_ENDPOINT,
-    );
+    expect(
+      resolveEndpoint({ ...mlDestinationStub.frameleafCloudConsented, url: 'https://elsewhere', authToken: 't' }),
+    ).toBe(FRAMELEAF_CLOUD_ENDPOINT);
   });
 
   it('resolves a local destination without a URL to nothing', () => {
@@ -276,7 +276,7 @@ describe('selectMlDestination', () => {
     );
   });
 
-  it("refuses the routed model when the catalogue dropped it, and never picks another (FL-159)", async () => {
+  it('refuses the routed model when the catalogue dropped it, and never picks another (FL-159)', async () => {
     const d = deps({
       destination: mlDestinationStub.frameleafCloudConsented,
       probe: mlProbeStub.frameleafCloud,
@@ -410,7 +410,9 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
     expect(
       workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Enrichment, MlWorkload.RestorationCreative]),
     ).toBeNull();
-    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Face])).toMatch(/face stays on this network/);
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Face])).toMatch(
+      /face stays on this network/,
+    );
     expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip, MlWorkload.Ocr])).toMatch(
       /clip, ocr stays/,
     );

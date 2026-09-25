@@ -54,10 +54,7 @@ export type ConfigHistoryEntry = {
 export type ConfigHistory = { entries: ConfigHistoryEntry[] };
 
 /** Where each write-only credential lives, and the flag an administrator reads for it. */
-export const CREDENTIAL_CONFIG_PATHS = [
-  'notifications.smtp.transport.password',
-  'oauth.clientSecret',
-] as const;
+export const CREDENTIAL_CONFIG_PATHS = ['notifications.smtp.transport.password', 'oauth.clientSecret'] as const;
 
 const CREDENTIAL_FLAG_PATHS = new Set([
   'notifications.smtp.transport.passwordConfigured',
