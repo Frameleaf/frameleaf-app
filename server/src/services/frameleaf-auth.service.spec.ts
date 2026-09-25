@@ -307,7 +307,8 @@ describe(FrameleafAuthService.name, () => {
     it('hands a tagged session to another address once', async () => {
       const user = UserFactory.create();
       const auth = AuthFactory.from(user).session({ id: 'session-1' }).build();
-      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1' } as never);
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'fl-sub' } as never);
       mocks.crypto.randomBytesAsText.mockReturnValue('handoff-code');
 
       const { code } = await sut.createHandoff(auth);
@@ -345,6 +346,32 @@ describe(FrameleafAuthService.name, () => {
     });
   });
 
+  describe('accounts being removed and unlinked sessions', () => {
+    it('refuses a sign-in whose linked account is in the trash, without creating another', async () => {
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: 'deleted-user', sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(void 0);
+      await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('being removed from this server');
+      expect(mocks.user.create).not.toHaveBeenCalled();
+      expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+    });
+
+    it('refuses to link a Frameleaf account held by an account in the trash', async () => {
+      const auth = AuthFactory.create();
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: 'deleted-user', sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(void 0);
+      await expect(sut.link(auth, callbackDto, {})).rejects.toThrow('being removed from this server');
+      expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+    });
+
+    it('does not hand over a session whose account is no longer linked', async () => {
+      const auth = AuthFactory.from().session({ id: 'session-1' }).build();
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'session-1', sub: 'fl-sub' } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(void 0);
+      await expect(sut.createHandoff(auth)).rejects.toThrow('Only a Sign in with Frameleaf session');
+      expect(mocks.frameleafAccount.setHandoff).not.toHaveBeenCalled();
+    });
+  });
+
   describe('link and unlink', () => {
     it('links the Frameleaf account to the signed-in account', async () => {
       const user = UserFactory.create();
@@ -374,6 +401,8 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.session.delete).toHaveBeenCalledTimes(1);
       expect(mocks.session.delete).toHaveBeenCalledWith('session-2');
       expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-2']);
+      // this session stays signed in but is no longer tagged, so it cannot hand itself over
+      expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2']);
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
         expect.objectContaining({ action: AdminAuditAction.FrameleafAccountUnlinked }),
       ]);
