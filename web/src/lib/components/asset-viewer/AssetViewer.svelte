@@ -236,9 +236,17 @@
     onClose?.(asset.id);
   };
 
+  // FL-115: choosing a restored version (or the original again) for playback changes the file the
+  // playback URL serves without changing the asset's thumbhash, so the video URL gets a fresh cache key.
+  let playbackRevision = $state(0);
+  const videoCacheKey = $derived(
+    playbackRevision > 0 ? `${asset.thumbhash ?? ''}-${playbackRevision}` : (asset.thumbhash ?? null),
+  );
+
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
     if (refreshAsset) {
+      playbackRevision += 1;
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);
@@ -833,7 +841,7 @@
     {:else if viewerKind === 'VideoViewer'}
       <VideoViewer
         {asset}
-        cacheKey={asset.thumbhash}
+        cacheKey={videoCacheKey}
         projectionType={asset.exifInfo?.projectionType}
         loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
         extendedControls
