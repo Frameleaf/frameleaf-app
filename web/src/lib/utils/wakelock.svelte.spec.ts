@@ -37,4 +37,32 @@ describe('wake lock holders (FL-36)', () => {
     await releaseWakeLock();
     expect(release).toHaveBeenCalledOnce();
   });
+
+  it('releases a lock that arrives after everyone let go', async () => {
+    let resolveRequest: (lock: { released: boolean; release: typeof release }) => void = () => {};
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const { acquireWakeLock, releaseWakeLock } = await import('./wakelock.svelte');
+
+    const pending = acquireWakeLock('slideshow');
+    await releaseWakeLock('slideshow');
+    resolveRequest({ released: false, release });
+    await pending;
+
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('never rejects when the browser refuses to release', async () => {
+    release.mockImplementationOnce(() => Promise.reject(new Error('already released')));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { acquireWakeLock, releaseWakeLock } = await import('./wakelock.svelte');
+
+    await acquireWakeLock('slideshow');
+    await expect(releaseWakeLock('slideshow')).resolves.toBeUndefined();
+    warn.mockRestore();
+  });
 });
