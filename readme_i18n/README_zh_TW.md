@@ -14,7 +14,7 @@
 <h3 align="center">高效能的自架照片和影片管理解決方案</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="主要螢幕截圖">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="主要螢幕截圖">
 </a>
 <br/>
 
