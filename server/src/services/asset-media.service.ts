@@ -420,7 +420,7 @@ export class AssetMediaService extends BaseService {
     });
   }
 
-  async playbackVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -429,7 +429,10 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.editedVideoPath || asset.encodedVideoPath || asset.originalPath;
+    // The unedited source is the owner's working copy in the quick editor (FL-113). Anyone else,
+    // including a shared link or a partner, is always given what the owner published.
+    const unedited = !edited && auth.user?.id === asset.ownerId && !auth.sharedLink;
+    const filepath = (unedited ? null : asset.editedVideoPath) || asset.encodedVideoPath || asset.originalPath;
 
     return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
       path: filepath,

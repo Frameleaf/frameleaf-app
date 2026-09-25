@@ -9097,6 +9097,15 @@
         "operationId": "playAssetVideo",
         "parameters": [
           {
+            "name": "edited",
+            "required": false,
+            "in": "query",
+            "description": "Play the edited version when one exists (default). false plays the unedited source for the asset's owner, as the quick editor needs; everyone else is always given the edited version",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
