@@ -34,7 +34,32 @@ Beyond quality, a rendered master preserves:
 
 An edit that only turns the picture by a quarter or a half turn does not re-encode at all where the source allows it: the rotation is written into the file's display metadata and every video and audio packet is preserved exactly.
 
-If a source cannot be preserved — currently, Dolby Vision profile 5, which has no usable base layer — the edit is refused before anything is written. The original and any previously rendered master are left intact.
+If a source cannot be preserved, the edit is refused before anything is written. The original and any previously rendered master are left intact.
+
+### Video sources the editor accepts
+
+The editor reads the source's actual pixel format, transfer and Dolby Vision configuration, never just the codec name. These sources are in the tested matrix:
+
+| Source           | Details                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| SDR, 8-bit       | 4:2:0, H.264, HEVC, AV1, VP9 or VP8; untagged or Rec. 709 / Rec. 601                         |
+| SDR, 10-bit      | 4:2:0, H.264 High 10, HEVC Main 10, AV1 or VP9                                               |
+| HDR10            | 10-bit 4:2:0 HEVC, AV1 or VP9 with the PQ (SMPTE ST 2084) transfer and Rec. 2020 primaries   |
+| HLG              | 10-bit 4:2:0 HEVC, AV1 or VP9 with the HLG (ARIB STD-B67) transfer                           |
+| Apple ProRes     | 422 and 4444, 10-bit and 12-bit, in SDR, PQ or HLG                                           |
+| Dolby Vision 8.1 | HEVC with an HDR10 base layer; the edit keeps the HDR10 picture and drops the Dolby metadata |
+| Dolby Vision 8.4 | HEVC with an HLG base layer; the edit keeps the HLG picture and drops the Dolby metadata     |
+
+Portrait and anamorphic videos are covered by every row: rotation and pixel aspect are handled separately from decoding.
+
+These sources are refused before editing starts:
+
+- **Dolby Vision profile 5.** It has no usable base layer and needs Dolby reshaping, so it is not treated as ordinary HDR10.
+- **Dolby Vision profile 7**, whose enhancement layer is not supported, and profiles 3, 4, 9 and 10.
+- **Dolby Vision profile 8 without a stated base layer.**
+- **More than 12 bits per component**, and a pixel format the server cannot describe.
+
+A source that decodes but is not in the table, for example 4:2:2 H.264, is still edited, and its lineage record notes that it is outside the tested matrix.
 
 ## Download
 

@@ -98,7 +98,7 @@
   } from '$lib/frameleaf/photo-tools';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
   import { Route } from '$lib/route';
-  import { getAssetMediaUrl } from '$lib/utils';
+  import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetDevelopFileKind,
@@ -324,6 +324,9 @@
   let videoDraftKey = $state('[]');
   // The before-and-after the restoration panel asked the stage to show. Cleared with the tool.
   let restorationCompare = $state<RestorationCompareRequest | null>(null);
+  // Prototype RestorePanel "Loupe" (Studio.jsx:1634) and the video playhead "Use current frame" reads.
+  let restorationLoupe = $state(false);
+  let restorationSourceVideo = $state<HTMLVideoElement>();
   const restoring = $derived(isVideo ? videoTool === 'restore' : tool === 'restore');
   $effect(() => {
     if (!restoring) {
@@ -979,10 +982,23 @@
         <div class="ed-stage" aria-label={$t('frameleaf_restoration_compare_stage')}>
           {#if restorationCompare}
             <div class="ed-restore-stage">
-              <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+              <RestorationCompare {...restorationCompare} alt={asset.originalFileName} loupe={restorationLoupe} />
             </div>
           {:else}
-            <div class="ed-unavailable"><strong>{$t('frameleaf_restoration_compare_empty')}</strong></div>
+            <!-- The video itself, so "Use current frame" has a playhead to read (Studio.jsx:2565). -->
+            <div class="ed-restore-stage">
+              <!-- svelte-ignore a11y_media_has_caption (the owner's own video; no caption track exists) -->
+              <video
+                class="ed-restore-source"
+                bind:this={restorationSourceVideo}
+                src={getAssetPlaybackUrl({ id: asset.id, cacheKey: asset.thumbhash })}
+                controls
+                playsinline
+                preload="metadata"
+                aria-label={asset.originalFileName}
+              ></video>
+            </div>
+            <p class="ed-restore-hint">{$t('frameleaf_restoration_compare_empty')}</p>
           {/if}
         </div>
       </div>
@@ -991,6 +1007,9 @@
           {asset}
           onCompare={(compare) => (restorationCompare = compare)}
           onCurrentChanged={() => (saveChangedCurrent = true)}
+          loupe={restorationLoupe}
+          onLoupeChange={(value) => (restorationLoupe = value)}
+          currentFrameSeconds={() => (restorationCompare ? null : (restorationSourceVideo?.currentTime ?? null))}
         />
       </section>
     {:else}
@@ -1002,7 +1021,7 @@
           <div class="ed-canvas" bind:this={canvasEl}>
             {#if restoring && restorationCompare}
               <div class="ed-restore-stage">
-                <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+                <RestorationCompare {...restorationCompare} alt={asset.originalFileName} loupe={restorationLoupe} />
               </div>
             {:else if tool === 'versions' && versionCompare}
               <div class="ed-restore-stage" aria-label={$t('frameleaf_editor_version_compare_stage')}>
@@ -1233,6 +1252,8 @@
             crop={recipe.crop}
             onCompare={(compare) => (restorationCompare = compare)}
             onCurrentChanged={() => (saveChangedCurrent = true)}
+            loupe={restorationLoupe}
+            onLoupeChange={(value) => (restorationLoupe = value)}
           />
         {:else if tool === 'presets'}
           <div class="ed-panel-body">

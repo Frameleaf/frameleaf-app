@@ -21,6 +21,7 @@
     FILTER_PANEL_CLOSE_EVENT,
     FILTER_PANEL_EVENT,
     SEARCH_SHORTCUT_EVENT,
+    searchShortcutHintKey,
     type FilterPanelRequest,
   } from '$lib/frameleaf/search-shortcuts';
   import '$lib/frameleaf/tokens.css';
@@ -246,7 +247,8 @@
 <button type="button" class="search-entry" data-testid="search-entry" onclick={openEntry}>
   <Icon icon={mdiMagnify} size="1.25em" aria-hidden={true} />
   <span class="label">{isSettings ? $t('search_settings') : currentQuery.text || $t('frameleaf_search_title')}</span>
-  <kbd aria-hidden="true">{$t('frameleaf_search_shortcut_hint')}</kbd>
+  <!-- S-25 / CC-7 (App.jsx:2374 "⌘ K"): the hint names the platform's own modifier. -->
+  <kbd aria-hidden="true">{$t(searchShortcutHintKey())}</kbd>
 </button>
 
 {#if showSearch}

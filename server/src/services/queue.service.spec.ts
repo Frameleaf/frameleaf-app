@@ -61,6 +61,14 @@ describe(QueueService.name, () => {
         { name: JobName.AnalyticsCollect },
       ]);
     });
+
+    it('leaves the analytics collector out when local metrics are off (FL-71)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ analytics: { enabled: false, historyDays: 730 } });
+
+      await sut.handleNightlyJobs();
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith(expect.not.arrayContaining([{ name: JobName.AnalyticsCollect }]));
+    });
   });
 
   describe('getAllJobStatus', () => {

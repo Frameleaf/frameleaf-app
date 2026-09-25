@@ -865,6 +865,15 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigPhysicalDeduplicationDto' })
       .default({ enabled: false, masterUserId: null }),
+    // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
+    // reads counts and sizes into this server's database; external telemetry stays off regardless.
+    analytics: z
+      .object({
+        enabled: configBool.describe('Collect local analytics history every night'),
+        historyDays: z.int().min(30).max(800).describe('Days of local analytics history to keep'),
+      })
+      .meta({ id: 'AdminConfigAnalyticsDto' })
+      .default({ enabled: true, historyDays: 730 }),
     localFeatures: z
       .object({
         askSearch: z
@@ -1313,6 +1322,10 @@ export const defaults = Object.freeze<SystemConfig>({
   physicalDeduplication: {
     enabled: false,
     masterUserId: null,
+  },
+  analytics: {
+    enabled: true,
+    historyDays: 730,
   },
   localFeatures: {
     askSearch: {

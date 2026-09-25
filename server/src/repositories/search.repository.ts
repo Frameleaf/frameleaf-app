@@ -326,6 +326,7 @@ export type SearchFacetRow = {
   coverAssetId: string | null;
 };
 export type SearchFacetResult = { total: number; rows: SearchFacetRow[] };
+export type TagStatisticsRow = { tagId: string; count: number; total: number };
 export type SearchHistogramRow = { date: string; count: number };
 
 const facetExample: SearchFacetOptions = {
@@ -833,6 +834,33 @@ export class SearchRepository {
     facets: SearchFacetOptions,
   ): Promise<SearchFacetResult> {
     return this.facetsOf(searchAssetBuilder(this.db, options, scope) as MatchedAssets, facets);
+  }
+
+  /**
+   * FL-46: every tag of the viewer's that the matched assets carry, with how many carry exactly that
+   * tag (`count`) and how many carry it or any tag under it (`total`, the tag filter's own closure
+   * semantics). Unlike the tags facet there is no limit, since the Tags browser counts every row of
+   * its tree. A suppressed tag, and every tag under one, is left out.
+   */
+  async searchTagStatistics(
+    options: AssetSearchOptions,
+    { viewerId, suppressedTagIds }: { viewerId: string; suppressedTagIds: string[] },
+  ): Promise<TagStatisticsRow[]> {
+    const matched = searchAssetBuilderLegacy(this.db, options);
+    const { rows } = await sql<{ tagId: string; count: string; total: string }>`
+      with matched as materialized (${matched.select('asset.id')})
+      select t.id::text as "tagId",
+        count(distinct m.id) filter (where ta."tagId" = t.id) as count,
+        count(distinct m.id) as total
+      from matched m
+      inner join tag_asset ta on ta."assetId" = m.id
+      inner join tag_closure tc on tc.id_descendant = ta."tagId"
+      inner join tag t on t.id = tc.id_ancestor and t."userId" = ${asUuidLiteral(viewerId)}
+      where ${suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), suppressedTagIds)}` : sql`true`}
+      group by t.id
+      order by t.id
+    `.execute(this.db);
+    return rows.map((row) => ({ tagId: row.tagId, count: Number(row.count), total: Number(row.total) }));
   }
 
   /** FL-49: matches per local capture day, month or year for a legacy (flat) search body */

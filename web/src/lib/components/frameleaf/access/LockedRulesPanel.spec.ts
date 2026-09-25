@@ -73,6 +73,7 @@ describe('LockedRulesPanel (FL-67)', () => {
     sdkMock.getAuthStatus.mockResolvedValue(authStatus());
     sdkMock.getAllTags.mockResolvedValue([family, medical, receipts]);
     sdkMock.getAllPets.mockResolvedValue([]);
+    sdkMock.getAllPeople.mockResolvedValue({ people: [], total: 0, hidden: 0, hasNextPage: false });
     sdkMock.getMyPreferences.mockResolvedValue(stored({ tagIds: [family.id] }));
     sdkMock.isHttpError.mockImplementation(
       ((error: unknown) => typeof (error as { status?: unknown } | undefined)?.status === 'number') as never,
@@ -213,5 +214,48 @@ describe('LockedRulesPanel (FL-67)', () => {
         }),
       }),
     );
+  });
+
+  it("lists the account's people before any search, filtered by the query (UT-26)", async () => {
+    const alice = personFactory.build({ id: 'person-alice', name: 'Alice' });
+    const bob = personFactory.build({ id: 'person-bob', name: 'Bob' });
+    sdkMock.getAllPeople.mockResolvedValue({ people: [alice, bob], total: 2, hidden: 0, hasNextPage: false } as never);
+
+    await renderPanel();
+    expect(await screen.findByRole('checkbox', { name: 'Alice' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Bob' })).toBeInTheDocument();
+
+    await fireEvent.input(screen.getByLabelText('frameleaf_locked_rules_find_person'), { target: { value: 'bo' } });
+    expect(screen.queryByRole('checkbox', { name: 'Alice' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Bob' })).toBeInTheDocument();
+  });
+
+  it('never shows rules the server blanked, even when the status checks passed (load race)', async () => {
+    sdkMock.getMyPreferences.mockResolvedValue({
+      ...stored({ tagIds: [] }),
+      lockedRulesRevealed: false,
+    });
+
+    await renderPanel();
+
+    expect(await screen.findByText('frameleaf_locked_rules_unlock_again')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'frameleaf_locked_rules_save' })).toBeNull();
+  });
+
+  it('drops the draft when the session locks while the save is in flight', async () => {
+    sdkMock.updateMyPreferences.mockRejectedValueOnce(httpError(403));
+
+    await renderPanel();
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'Receipts' }));
+    await fireEvent.click(saveButton());
+
+    expect(await screen.findByText('frameleaf_locked_rules_unlock_again')).toBeInTheDocument();
+    expect(screen.queryByText('Receipts')).toBeNull();
+  });
+
+  it('only a conflict disables Save, as in the template', async () => {
+    await renderPanel();
+    await screen.findByRole('checkbox', { name: 'Receipts' });
+    expect(saveButton().hasAttribute('disabled')).toBe(false);
   });
 });

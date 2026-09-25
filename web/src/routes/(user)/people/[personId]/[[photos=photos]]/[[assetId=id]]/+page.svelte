@@ -120,7 +120,6 @@
   {#key `${person.id}:${refresh}`}
     <LibraryView
       enableRouting
-      syncUrl={false}
       selectAll="loaded"
       bind:timelineManager
       {options}

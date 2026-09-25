@@ -245,10 +245,14 @@ export class MetadataService extends BaseService {
     const dates = this.getDates(asset, exifTags, stats);
 
     const { width, height } = this.getImageDimensions(exifTags);
+    // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
+    // instead of being read from the file's own coordinates
+    const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    const locationLocked = lockedProperties.includes('latitude');
     let geo: ReverseGeocodeResult = { country: null, state: null, city: null },
       latitude: number | null = null,
       longitude: number | null = null;
-    if (this.hasGeo(exifTags)) {
+    if (this.hasGeo(exifTags) && !locationLocked) {
       latitude = Number(exifTags.GPSLatitude);
       longitude = Number(exifTags.GPSLongitude);
       if (reverseGeocoding.enabled) {
@@ -269,9 +273,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
-      country: geo.country,
-      state: geo.state,
-      city: geo.city,
+      ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
       fileSizeInByte: stats.size,
@@ -526,7 +528,16 @@ export class MetadataService extends BaseService {
       await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
     }
 
-    await this.assetRepository.unlockProperties(asset.id, lockedProperties);
+    // FL-51: a removed location stays locked, so the next metadata read does not bring the original
+    // file's coordinates back
+    const locationRemoved =
+      lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
+    await this.assetRepository.unlockProperties(
+      asset.id,
+      locationRemoved
+        ? lockedProperties.filter((property) => property !== 'latitude' && property !== 'longitude')
+        : lockedProperties,
+    );
 
     return JobStatus.Success;
   }

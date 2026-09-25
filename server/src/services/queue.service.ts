@@ -505,8 +505,11 @@ export class QueueService extends BaseService {
     }
 
     // FL-79: the local analytics collector runs every night. It only reads counts and sizes and
-    // writes them to this server's database; it has no setting because it never leaves the host.
-    jobs.push({ name: JobName.AnalyticsCollect });
+    // writes them to this server's database, never elsewhere. FL-71: an administrator can turn it
+    // off ("Collect local metrics"); the collector also checks the setting when it runs.
+    if (config.analytics.enabled) {
+      jobs.push({ name: JobName.AnalyticsCollect });
+    }
 
     await this.jobRepository.queueAll(jobs);
   }

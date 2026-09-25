@@ -46,4 +46,13 @@ describe('SettingToggle component', () => {
     expect(field.lastElementChild).toHaveClass('control');
     expect(field.lastElementChild!.querySelector('[role="switch"]')).not.toBeNull();
   });
+
+  it('names the policy that locks a row (FL-71)', () => {
+    render(SettingToggle, {
+      props: { title: 'External telemetry', checked: false, disabled: true, policy: 'External telemetry prohibited' },
+    });
+
+    expect(screen.getByRole('switch', { name: 'External telemetry' })).toBeDisabled();
+    expect(screen.getByText('External telemetry prohibited')).toBeInTheDocument();
+  });
 });

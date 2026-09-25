@@ -3049,6 +3049,12 @@ describe(MediaService.name, () => {
         );
         expect(lineage.recipeRevision).toEqual(expect.any(String));
         expect(lineage.rendererVersion).toEqual(expect.any(String));
+        // FL-101: the decode qualification of the source travels with the master.
+        expect(lineage.decode).toEqual({
+          matrixEntry: expect.toBeOneOf([expect.any(String), null]),
+          support: expect.any(String),
+          reason: expect.any(String),
+        });
       });
 
       it('writes the lineage before the edited master is published as an asset file', async () => {
