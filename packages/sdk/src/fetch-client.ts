@@ -2489,6 +2489,8 @@ export type PersonResponseDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
+    featuredAssetId?: string | null;
     /** Person ID */
     id: string;
     /** Is favorite */
@@ -5509,6 +5511,8 @@ export type PeopleListItemDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
+    featuredAssetId?: string | null;
     /** Person ID */
     id: string;
     /** Is favorite */
