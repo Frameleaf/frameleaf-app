@@ -31045,6 +31045,104 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/workspace": {
+      "get": {
+        "description": "The editor layout you last saved, or nulls when you have none. Only ever your own.",
+        "operationId": "getStudioWorkspace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioWorkspaceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your Studio workspace layout",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Replaces your stored editor layout. The layout is stored and returned byte for byte, up to 256 KiB.",
+        "operationId": "saveStudioWorkspace",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioWorkspaceSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioWorkspaceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save your Studio workspace layout",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/sync/ack": {
       "delete": {
         "description": "Delete specific synchronization acknowledgments.",
@@ -60681,6 +60779,15 @@
             "minLength": 16,
             "type": "string"
           },
+          "formats": {
+            "description": "Containers the check verified writing, such as `mp4`, `webm` or `mov`",
+            "items": {
+              "maxLength": 30,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
           "gpuMemoryBytes": {
             "description": "GPU memory measured by the conformance check",
             "nullable": true,
@@ -60776,7 +60883,8 @@
           "claim_refused",
           "limit_exceeded",
           "revoked",
-          "updated"
+          "updated",
+          "device_lost"
         ],
         "type": "string"
       },
@@ -61542,7 +61650,8 @@
           "wall_clock_exceeded",
           "output_bytes_exceeded",
           "destination_unavailable",
-          "manifest_incomplete"
+          "manifest_incomplete",
+          "codec_unsupported"
         ],
         "type": "string"
       },
@@ -69408,6 +69517,52 @@
         "required": [
           "den",
           "num"
+        ],
+        "type": "object"
+      },
+      "StudioWorkspaceDto": {
+        "properties": {
+          "engineRevision": {
+            "description": "The engine revision that wrote the layout",
+            "nullable": true,
+            "type": "string"
+          },
+          "layout": {
+            "additionalProperties": {},
+            "description": "The engine layout, byte for byte; null when none is stored",
+            "nullable": true,
+            "type": "object"
+          },
+          "savedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "engineRevision",
+          "layout",
+          "savedAt"
+        ],
+        "type": "object"
+      },
+      "StudioWorkspaceSaveDto": {
+        "properties": {
+          "engineRevision": {
+            "description": "The pinned engine revision writing it",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "layout": {
+            "additionalProperties": {},
+            "description": "The engine layout; stored and returned byte for byte",
+            "type": "object"
+          }
+        },
+        "required": [
+          "engineRevision",
+          "layout"
         ],
         "type": "object"
       },

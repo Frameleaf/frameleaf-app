@@ -154,6 +154,11 @@ const RenderWorkerAdmissionSchema = z
     softwareRenderer: z.boolean().describe('True when the renderer is a software or fallback device'),
     gpuMemoryBytes: BigIntString.nullable().describe('GPU memory measured by the conformance check'),
     codecs: z.array(z.string().max(60)).max(64).optional().describe('Encoder and decoder names the check verified'),
+    formats: z
+      .array(z.string().max(30))
+      .max(32)
+      .optional()
+      .describe('Containers the check verified writing, such as `mp4`, `webm` or `mov`'),
   })
   .meta({ id: 'RenderWorkerAdmissionDto' });
 
