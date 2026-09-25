@@ -60,7 +60,11 @@ export type StudioHostToFrameMessage =
 
 /* Editor frame → host */
 export type StudioFrameToHostMessage =
-  | { type: 'mounted' }
+  | {
+      type: 'mounted';
+      /** What this browser can preview locally; without WebCodecs the server preview opens by itself. */
+      support?: { webCodecs: boolean; webGpu: boolean };
+    }
   | { type: 'mount-failed'; error: string }
   | { type: 'disposed' }
   | { type: 'service'; callId: number; name: StudioFrameServiceName; args: unknown[] }

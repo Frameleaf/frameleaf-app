@@ -14,6 +14,10 @@
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { cpSync, readFileSync, writeFileSync } from 'node:fs'
+// The engine's own chunking rules: they exist to keep production builds free of circular-chunk
+// initialisation errors, so the adapter build must split the engine exactly the same way.
+import engineConfig from '../../engine/vite.config.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const studio = path.resolve(here, '../..')
@@ -21,6 +25,34 @@ const repository = path.resolve(studio, '..')
 const engine = path.join(studio, 'engine')
 const engineRequire = createRequire(path.join(engine, 'package.json'))
 const outDir = path.join(repository, 'web/static/studio-engine')
+const build = JSON.parse(readFileSync(path.join(studio, 'engine-build.json'), 'utf8'))
+
+/** Feature rows this build implements and tests (FL-92's command rows); FL-85 owns the rest. */
+const claimedFeatures = JSON.parse(
+  readFileSync(path.join(studio, 'freecut-feature-manifest.json'), 'utf8'),
+)
+  .features.map((feature) => feature.id)
+  .filter((id) => id.startsWith('command.'))
+  .sort()
+
+/** `manifest.json` next to the documents: what the host loader checks before it mounts anything. */
+const frameManifest = () => ({
+  name: 'frameleaf-frame-manifest',
+  apply: 'build',
+  closeBundle() {
+    const manifest = {
+      protocolVersion: 1,
+      engineRevision: build.upstreamCommit,
+      sourceSha256: build.sourceSha256,
+      features: claimedFeatures,
+      editor: 'editor.html',
+      commands: 'commands.html',
+    }
+    writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+    // The licence texts travel with the code they cover: Freecut's MIT notice first among them.
+    cpSync(path.join(studio, 'notices'), path.join(outDir, 'notices'), { recursive: true })
+  },
+})
 
 /**
  * Adapter sources live outside the engine workspace, so Node resolution would never reach its
@@ -30,7 +62,8 @@ const resolveFromEngine = () => ({
   name: 'frameleaf-resolve-from-engine',
   enforce: 'pre',
   async resolveId(source, importer, options) {
-    if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0')) return null
+    if (!importer || source.startsWith('.') || source.startsWith('/') || source.startsWith('\0'))
+      return null
     if (source.startsWith('@/') || source.startsWith('@frameleaf/')) return null
     if (!importer.startsWith(here) || importer.startsWith(engine)) return null
     return this.resolve(source, path.join(engine, 'src/main.tsx'), { ...options, skipSelf: true })
@@ -40,7 +73,12 @@ const resolveFromEngine = () => ({
 const plugins = async () => {
   const react = engineRequire('@vitejs/plugin-react')
   const tailwind = await import(engineRequire.resolve('@tailwindcss/vite'))
-  return [resolveFromEngine(), (react.default ?? react)(), (tailwind.default ?? tailwind)()]
+  return [
+    resolveFromEngine(),
+    (react.default ?? react)(),
+    (tailwind.default ?? tailwind)(),
+    frameManifest(),
+  ]
 }
 
 export default async () => ({
@@ -57,21 +95,24 @@ export default async () => ({
     },
     dedupe: ['react', 'react-dom'],
   },
+  optimizeDeps: engineConfig.optimizeDeps,
   define: {
-    // The engine reads this to decide whether its landing page and PWA bits exist; Studio has none.
-    'import.meta.env.VITE_FRAMELEAF_STUDIO': JSON.stringify('1'),
+    __FRAMELEAF_ENGINE_REVISION__: JSON.stringify(build.upstreamCommit),
+    __FRAMELEAF_ENGINE_SOURCE_SHA256__: JSON.stringify(build.sourceSha256),
   },
-  worker: { format: 'es' },
+  worker: engineConfig.worker,
   build: {
     outDir,
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
+    chunkSizeWarningLimit: engineConfig.build.chunkSizeWarningLimit,
     rollupOptions: {
       input: {
         editor: path.join(here, 'editor.html'),
         commands: path.join(here, 'commands.html'),
       },
+      output: engineConfig.build.rollupOptions.output,
     },
   },
   test: {

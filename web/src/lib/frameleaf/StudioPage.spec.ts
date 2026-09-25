@@ -260,10 +260,13 @@ describe('Studio route, engine present', () => {
       // FL-96: the preview reaches the engine as data. There is still no transport here.
       'preview',
       'project',
+      // FL-96: the adapter's own chrome speaks the host's language; words only.
+      'strings',
       'theme',
       // FL-91: the stored workspace layout, as data; saving it goes through services only.
       'workspace',
     ]);
+    expect(Object.values(context.strings ?? {}).every((value) => typeof value === 'string')).toBe(true);
     expect(Object.keys(passedServices).sort()).toEqual([
       'navigate',
       'notify',

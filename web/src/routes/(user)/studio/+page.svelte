@@ -22,14 +22,18 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
+  import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
   import { createStudioCommandEnvelope, type StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
-  import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
+  import { loadStudioEngine, pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
     type StudioCapabilities,
+    type StudioCommandEngine,
+    type StudioDraftResult,
     type StudioHostServices,
     type StudioProjectHandle,
     type StudioWorkspaceMode,
@@ -57,6 +61,10 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // The built Freecut editor (studio/adapters/web), when this deployment has it (FL-88). Without the
+  // build the loader answers `not-built` and the unavailable state says so.
+  registerFrameStudioEngine();
 
   let capabilities = $state<StudioCapabilities>(emptyStudioCapabilities());
   let online = $state(true);
@@ -244,6 +252,58 @@
     onRefused: (messageKey) => toastManager.danger($t(messageKey)),
   });
 
+  /**
+   * Canonical commands (FL-92). The engine's command runtime applies them to the session's graph in
+   * its own document, apart from the editor; the result is staged like any other draft. Every graph
+   * this session replaced is kept for `history.undo` / `history.redo`.
+   */
+  const history = createStudioGraphHistory();
+  let commandEngine: Promise<StudioCommandEngine | null> | null = null;
+  const engineForCommands = () => {
+    commandEngine ??= loadStudioEngine()
+      .then((resolution) =>
+        resolution.status === 'available' && resolution.module.createCommandEngine
+          ? resolution.module.createCommandEngine()
+          : null,
+      )
+      .catch(() => null)
+      .then((engine) => {
+        // A runtime that could not start is tried again on the next command, not remembered.
+        if (!engine) {
+          commandEngine = null;
+        }
+        return engine;
+      });
+    return commandEngine;
+  };
+  const releaseCommandEngine = () => {
+    const pending = commandEngine;
+    commandEngine = null;
+    void pending?.then((engine) => engine?.dispose());
+  };
+
+  const engineHandlers = createStudioEngineCommandHandlers({
+    graph: () => project.graph,
+    revision: () => project.revision,
+    assets: () => assets,
+    stage: (graph, commandIds) => session.stage(graph, commandIds),
+    restore: (revision) => session.restore(revision),
+    engine: engineForCommands,
+    history,
+  });
+
+  // A different project, or a reload that discarded the draft, starts a fresh history.
+  let historyProjectId: string | null = null;
+  $effect(() => {
+    const id = project.id;
+    untrack(() => {
+      if (historyProjectId !== null && historyProjectId !== STUDIO_DRAFT_PROJECT_ID && historyProjectId !== id) {
+        history.clear();
+      }
+      historyProjectId = id;
+    });
+  });
+
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -252,10 +312,11 @@
       online,
       capabilities,
     }),
-    // Implemented here: the preview pair (FL-96) and the bundle pair (FL-91). Every editing
-    // command stays a typed extension point owned by a later story and is rejected as
-    // `not-implemented` rather than silently no-oped.
+    // Implemented here: the engine's graph commands and history (FL-92), the preview pair (FL-96)
+    // and the bundle pair (FL-91). Every other row stays a typed extension point owned by a later
+    // story and is rejected as `not-implemented` rather than silently no-oped.
     handlers: {
+      ...engineHandlers,
       'preview.request': async (envelope) => {
         const payload = envelope.payload as StudioCommandPayloads['preview.request'];
 
@@ -300,8 +361,34 @@
     },
   });
 
+  /**
+   * The editor's own saves (FL-89 autosave; FL-92's "replace graph" draft primitive). The same rules
+   * as a command decide it: access, connectivity, then the lease. The server checks the envelope
+   * again before it stores anything.
+   */
+  const stageDraft = (graph: unknown, commandIds: readonly string[]): Promise<StudioDraftResult> => {
+    if (accessLost || forbidden || !authManager.authenticated) {
+      return Promise.resolve({ status: 'rejected', reason: 'forbidden' });
+    }
+    if (!online) {
+      return Promise.resolve({ status: 'rejected', reason: 'offline' });
+    }
+    if (!writable) {
+      return Promise.resolve({ status: 'rejected', reason: 'lease-lost' });
+    }
+    if (!graph || typeof graph !== 'object' || Array.isArray(graph)) {
+      return Promise.resolve({ status: 'rejected', reason: 'invalid' });
+    }
+    if (project.graph) {
+      history.record(project.graph, graph);
+    }
+    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save']);
+    return Promise.resolve({ status: 'staged' });
+  };
+
   const services: StudioHostServices = {
     submitCommands: (envelopes) => bridge.submit(envelopes),
+    stageDraft,
     reloadProject: () => session.reload(),
     resolveAsset: (assetId) => assets.find((asset) => asset.id === assetId),
     notify: (message, tone) => {
@@ -460,7 +547,10 @@
     }
   };
 
-  const onReload = () => void session.reload();
+  const onReload = () => {
+    history.clear();
+    void session.reload();
+  };
   const onReacquire = () => void session.reacquire();
   const onTakeOver = () => void session.takeOver();
   const onSaveCopy = async () => {
@@ -513,6 +603,8 @@
       settleExportChoice(null);
       void previewClient.dispose();
       preview = idleStudioPreviewView();
+      history.clear();
+      releaseCommandEngine();
       void session.dispose();
     };
     const unsubscribe = eventManager.on({
@@ -526,6 +618,7 @@
 
   onDestroy(() => {
     settleExportChoice(null);
+    releaseCommandEngine();
     void previewClient.dispose();
     void session.dispose();
   });
