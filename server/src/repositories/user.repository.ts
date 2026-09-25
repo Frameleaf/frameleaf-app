@@ -36,6 +36,18 @@ export interface JobSubjectOwner {
   ownerName: string;
 }
 
+/** FL-71 (CC-10): one saved change of an account's own preferences. */
+export interface UserPreferenceHistoryRow {
+  id: string;
+  createdAt: Date;
+  deviceLabel: string | null;
+  changes: Array<{ path: string; before: string | null; after: string | null; protected?: boolean }>;
+  omittedChanges: number;
+}
+
+/** How many preference history entries an account keeps. */
+export const USER_PREFERENCE_HISTORY_LIMIT = 50;
+
 export interface UserFindOptions {
   withDeleted?: boolean;
 }
@@ -152,6 +164,46 @@ export class UserRepository {
     return rows
       .filter(({ owners }) => Number(owners) === 1)
       .map(({ subjectId, ownerId, ownerName }) => ({ subjectId, ownerId, ownerName }));
+  }
+
+  /**
+   * FL-71 (CC-10): adds one preferences change to the account's own history and keeps only its
+   * newest USER_PREFERENCE_HISTORY_LIMIT entries.
+   */
+  async addPreferenceHistory(entry: {
+    userId: string;
+    deviceLabel: string | null;
+    changes: UserPreferenceHistoryRow['changes'];
+    omittedChanges: number;
+  }): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await sql`
+        INSERT INTO immich_fork.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
+        VALUES (${entry.userId}::uuid, ${entry.deviceLabel}, ${JSON.stringify(entry.changes)}::text::jsonb, ${entry.omittedChanges})
+      `.execute(trx);
+      await sql`
+        DELETE FROM immich_fork.user_preference_history
+        WHERE "userId" = ${entry.userId}::uuid
+          AND id NOT IN (
+            SELECT id FROM immich_fork.user_preference_history
+            WHERE "userId" = ${entry.userId}::uuid
+            ORDER BY "createdAt" DESC, id DESC
+            LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
+          )
+      `.execute(trx);
+    });
+  }
+
+  /** FL-71 (CC-10): the account's own preference history, newest first. */
+  async getPreferenceHistory(userId: string): Promise<UserPreferenceHistoryRow[]> {
+    const { rows } = await sql<UserPreferenceHistoryRow>`
+      SELECT id, "createdAt", "deviceLabel", changes, "omittedChanges"
+      FROM immich_fork.user_preference_history
+      WHERE "userId" = ${userId}::uuid
+      ORDER BY "createdAt" DESC, id DESC
+      LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
+    `.execute(this.db);
+    return rows;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

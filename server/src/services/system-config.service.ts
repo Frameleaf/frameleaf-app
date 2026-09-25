@@ -38,7 +38,13 @@ import {
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { appendConfigHistory, describeConfigChanges, readConfigHistory } from 'src/utils/config-history.js';
+import {
+  ConfigHistoryKind,
+  appendConfigHistory,
+  credentialHistoryTitle,
+  describeConfigChanges,
+  readConfigHistory,
+} from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
@@ -337,7 +343,7 @@ export class SystemConfigService extends BaseService {
         }
 
         const saved = await this.updateConfig(prepared.config);
-        await this.recordConfigHistory(current, saved, auth);
+        await this.recordConfigHistory(current, saved, auth, { kind: 'settings' });
         return { oldConfig: current, newConfig: saved };
       },
     );
@@ -455,7 +461,11 @@ export class SystemConfigService extends BaseService {
       const newConfig = cloneDeep(current);
       set(newConfig, CREDENTIAL_PATHS[name], value);
       const saved = await this.updateConfig(newConfig);
-      await this.recordConfigHistory(current, saved, auth);
+      // FL-71 (CC-10): the credential's own entry, "Updated RunPod API key" (CommandCenter.jsx:1447).
+      await this.recordConfigHistory(current, saved, auth, {
+        kind: 'credential',
+        title: credentialHistoryTitle(name, value ? 'replaced' : 'cleared'),
+      });
       return { oldConfig: current, newConfig: saved };
     });
 
@@ -518,7 +528,12 @@ export class SystemConfigService extends BaseService {
    * Recording never fails or undoes the save it records: if it fails, the save stands and the
    * failure is logged.
    */
-  private async recordConfigHistory(oldConfig: SystemConfig, newConfig: SystemConfig, auth?: AuthDto) {
+  private async recordConfigHistory(
+    oldConfig: SystemConfig,
+    newConfig: SystemConfig,
+    auth: AuthDto | undefined,
+    { kind, title }: { kind: ConfigHistoryKind; title?: string },
+  ) {
     const changes = describeConfigChanges(oldConfig, newConfig);
     if (changes.length === 0) {
       return;
@@ -531,6 +546,8 @@ export class SystemConfigService extends BaseService {
         createdAt: new Date().toISOString(),
         actorId: auth?.user.id ?? null,
         actorName: auth?.user.name ?? null,
+        kind,
+        ...(title && { title }),
       };
       await this.systemMetadataRepository.set(
         SystemMetadataKey.SystemConfigHistory,

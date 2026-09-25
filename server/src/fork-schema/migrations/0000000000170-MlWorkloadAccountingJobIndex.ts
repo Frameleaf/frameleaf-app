@@ -8,10 +8,18 @@ import { Kysely, sql } from 'kysely';
  * job list. Rows without a job (probes, previews) are left out of it.
  */
 export async function up(db: Kysely<any>): Promise<void> {
+  // A database adopted from an official install (official-origin) has no machine-learning
+  // accounting table, so there is nothing to index there.
   await sql`
-    CREATE INDEX IF NOT EXISTS "ml_workload_accounting_jobId_jobName_startedAt_idx"
-      ON public.ml_workload_accounting ("jobId", "jobName", "startedAt" DESC)
-      WHERE ("jobId" IS NOT NULL)
+    DO $$
+    BEGIN
+      IF to_regclass('public.ml_workload_accounting') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS "ml_workload_accounting_jobId_jobName_startedAt_idx"
+          ON public.ml_workload_accounting ("jobId", "jobName", "startedAt" DESC)
+          WHERE ("jobId" IS NOT NULL);
+      END IF;
+    END
+    $$
   `.execute(db);
 }
 
