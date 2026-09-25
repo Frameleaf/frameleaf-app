@@ -72806,6 +72806,13 @@
             },
             "type": "array"
           },
+          "isOffline": {
+            "description": "Array indicating whether each asset is offline (its file is missing from an external library)",
+            "items": {
+              "type": "boolean"
+            },
+            "type": "array"
+          },
           "isTrashed": {
             "description": "Array indicating whether each asset is in the trash",
             "items": {

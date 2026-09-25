@@ -93,6 +93,36 @@ it.each([AssetVisibility.Timeline, AssetVisibility.Archive, AssetVisibility.Lock
   },
 );
 
+// FL-34: "hiding policy remains independent of detector enablement". An owner's mark hides and a safe
+// review shows again with machine learning, or only the detector, switched off.
+it.each([
+  ['machine learning off', { machineLearning: { enabled: false, nsfwDetection: { enabled: true } } }],
+  ['the detector off', { machineLearning: { enabled: true, nsfwDetection: { enabled: false } } }],
+])('marks and reviews as safe with %s', async (_label, config) => {
+  const { ctx, asset, mark, visible, lockRow } = await setup();
+  ctx.getMock(SystemMetadataRepository).get.mockResolvedValue(config);
+  await mark(AssetImageEnrichmentAction.MarkNsfw);
+  await expect(visible()).resolves.toEqual([]);
+  await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id, reason: AssetLockReason.Marked });
+  await mark(AssetImageEnrichmentAction.MarkSafe);
+  await expect(visible()).resolves.toEqual([{ id: asset.id }]);
+  await expect(lockRow()).resolves.toBeUndefined();
+});
+
+// FL-34: "retain legacy visibility-locked compatibility separately". Mark Safe answers a sensitive
+// verdict; an item its owner kept in the upstream Locked folder stays Locked until they unlock it.
+it('keeps an item from the upstream Locked folder Locked when it is marked safe', async () => {
+  const { asset, mark, lockRow } = await setup();
+  await database
+    .insertInto('asset_lock')
+    .values({ assetId: asset.id, reason: AssetLockReason.ImmichLockedFolder, lockedBy: null })
+    .execute();
+  await expect(mark(AssetImageEnrichmentAction.MarkSafe)).resolves.toMatchObject({
+    nsfwDetection: { effectiveIsNsfw: false },
+  });
+  await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id, reason: AssetLockReason.ImmichLockedFolder });
+});
+
 // FL-34: after the cutover a missing privacy row is "no classification yet" (not sensitive, no review);
 // reading it returns the defaults and every enrichment write creates it
 describe('an asset without a privacy row after the cutover', () => {

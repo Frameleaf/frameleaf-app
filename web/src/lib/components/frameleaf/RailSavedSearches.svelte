@@ -58,6 +58,7 @@
           href={entry.href}
           class="fl-link"
           class:fl-nested={!iconOnly}
+          class:fl-icon-only={iconOnly}
           class:fl-current={current}
           aria-current={current ? 'page' : undefined}
           title={iconOnly ? entry.name : undefined}
@@ -93,9 +94,9 @@
     flex: 1;
     min-width: 0;
     align-items: center;
-    gap: 0.625rem;
-    min-height: 40px;
-    padding: 0.375rem 0.5rem;
+    gap: 11px;
+    min-height: 34px;
+    padding: 7px 22px;
     border-radius: var(--fl-radius);
     color: var(--fl-text);
     text-decoration: none;
@@ -103,13 +104,18 @@
   .fl-link:hover {
     background: var(--fl-raised);
   }
-  .fl-current {
-    background: var(--fl-raised);
-    color: var(--fl-accent);
-    font-weight: 600;
+  .fl-current,
+  .fl-current:hover {
+    background: color-mix(in srgb, var(--fl-accent), var(--fl-panel) 86%);
+    box-shadow: inset 3px 0 var(--fl-accent);
   }
   .fl-nested {
-    padding-inline-start: 1.75rem;
+    padding-inline-start: 42px;
+  }
+  .fl-icon-only {
+    justify-content: center;
+    min-height: 36px;
+    padding: 8px 0;
   }
   .fl-label {
     min-width: 0;
