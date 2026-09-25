@@ -4,7 +4,9 @@
    * lower third with the place over the day for each item (MediaViewer.jsx:834-851, 1569-1580;
    * apple-style.css:422-470). The content comes from the shared Memories engine, so the viewer
    * reads like the Memories player. The blurred backdrop is PhotoViewer's slideshow backdrop.
-   * Under Reduce Motion the transition is a fade, and none of this shows.
+   * It shows only while the slideshow plays (MediaViewer.jsx:836-839); pausing hides it and the
+   * next run opens with the title card again. Under Reduce Motion the transition is a fade, and
+   * none of this shows.
    */
   import { memoryLowerThird, memoryTitleCard } from '$lib/frameleaf/memory-engine';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
@@ -31,7 +33,7 @@
   const { slideshowState, slideshowTransition } = slideshowStore;
 
   const memoriesOn = $derived(
-    $slideshowState !== SlideshowState.None &&
+    $slideshowState === SlideshowState.PlaySlideshow &&
       effectiveTransition($slideshowTransition, prefersReducedMotion()) === SlideshowTransition.Memories,
   );
   const collectionTitle = $derived(album?.albumName || person?.name || $t('memories'));
