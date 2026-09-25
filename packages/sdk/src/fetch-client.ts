@@ -5467,6 +5467,10 @@ export type AssetFaceUpdateDto = {
 export type PersonStatisticsResponseDto = {
     /** Number of assets */
     assets: number;
+    /** Number of photos among the assets */
+    photos: number;
+    /** Number of videos among the assets */
+    videos: number;
 };
 export type PetResponseDto = {
     /** Number of assets with a confirmed observation of this pet */

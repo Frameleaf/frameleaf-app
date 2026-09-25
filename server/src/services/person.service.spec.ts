@@ -1571,9 +1571,9 @@ describe(PersonService.name, () => {
       const person = PersonFactory.create();
 
       mocks.person.getByGroupId.mockResolvedValue(person);
-      mocks.person.getStatistics.mockResolvedValue({ assets: 3 });
+      mocks.person.getStatistics.mockResolvedValue({ assets: 3, photos: 2, videos: 1 });
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
-      await expect(sut.getStatistics(auth, person.personGroupId)).resolves.toEqual({ assets: 3 });
+      await expect(sut.getStatistics(auth, person.personGroupId)).resolves.toEqual({ assets: 3, photos: 2, videos: 1 });
       expect(mocks.person.getStatistics).toHaveBeenCalledWith(person.personGroupId, auth.user.id, {});
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
     });
