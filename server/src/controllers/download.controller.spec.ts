@@ -1,3 +1,5 @@
+import { request as httpRequest } from 'node:http';
+import { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
 import request from 'supertest';
 import { DownloadController } from 'src/controllers/download.controller.js';
@@ -31,6 +33,34 @@ describe(DownloadController.name, () => {
         .send({ assetIds: ids.join(',') });
       expect(status).toBe(200);
       expect(downloadArchiveSpy).toHaveBeenCalledWith(undefined, { assetIds: ids });
+    });
+
+    it('destroys the archive stream when the client goes away (FL-54 review B2)', async () => {
+      const stream = new Readable({ read() {} });
+      stream.push(Buffer.alloc(64 * 1024, 1)); // the archive has started, then stalls
+      service.downloadArchive.mockResolvedValue({ stream });
+
+      const server = ctx.getHttpServer();
+      if (!server.listening) {
+        await new Promise<void>((resolve) => server.listen(0, resolve));
+      }
+      const { port } = server.address() as AddressInfo;
+
+      await new Promise<void>((resolve, reject) => {
+        const req = httpRequest(
+          { port, method: 'POST', path: '/download/archive', headers: { 'content-type': 'application/json' } },
+          (res) => {
+            res.once('data', () => {
+              req.destroy();
+              resolve();
+            });
+          },
+        );
+        req.on('error', (error) => (req.destroyed ? resolve() : reject(error)));
+        req.end(JSON.stringify({ assetIds: [factory.uuid()] }));
+      });
+
+      await vi.waitFor(() => expect(stream.destroyed).toBe(true));
     });
 
     it('should accept assetIds array', async () => {

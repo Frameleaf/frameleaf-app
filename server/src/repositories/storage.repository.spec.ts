@@ -1,6 +1,8 @@
 import mockfs from 'mock-fs';
 import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -314,5 +316,47 @@ describe(StorageRepository.name, () => {
     } finally {
       read.mockRestore();
     }
+  });
+});
+
+describe('StorageRepository.createPacedZipStream (FL-54)', () => {
+  const newSut = () =>
+    // eslint-disable-next-line no-sparse-arrays
+    new StorageRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+
+  it('resolves whenIdle only once the reader has taken the entries added so far', async () => {
+    const directory = await fs.mkdtemp(join(tmpdir(), 'paced-zip-'));
+    const file = join(directory, 'large.bin');
+    await fs.writeFile(file, Buffer.alloc(8 * 1024 * 1024, 1));
+    const zip = newSut().createPacedZipStream();
+    zip.addFile(file, 'large.bin');
+
+    let idle = false;
+    const whenIdle = zip.whenIdle().then(() => (idle = true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // nobody reads the stream, so the entry cannot be written past the stream's buffer
+    expect(idle).toBe(false);
+
+    zip.stream.resume();
+    await whenIdle;
+    expect(idle).toBe(true);
+    expect(zip.isClosed()).toBe(false);
+
+    zip.addBuffer(Buffer.from('b'), 'b.txt');
+    await zip.whenIdle();
+    await zip.finalize();
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('wakes a waiting producer and reports closed once the reader goes away', async () => {
+    const zip = newSut().createPacedZipStream();
+    zip.addBuffer(Buffer.alloc(256 * 1024, 1), 'a.bin');
+    const whenIdle = zip.whenIdle();
+
+    zip.stream.destroy();
+
+    await whenIdle;
+    expect(zip.isClosed()).toBe(true);
+    await expect(zip.whenIdle()).resolves.toBeUndefined();
   });
 });
