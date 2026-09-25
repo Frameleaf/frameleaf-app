@@ -251,6 +251,33 @@ export const physicalDeduplicationPlanItems = (
   return { items, retained: used.values().toArray() };
 };
 
+/**
+ * How a plan's bytes add up (FL-73), over every retained original it records, listed or not:
+ *
+ * - `logicalBytes`: what the assets that reference a shared original add up to once the plan is
+ *   applied, each asset counted at its own size (what the library looks like it holds);
+ * - `sharedOriginalBytes`: the retained originals those assets share, each file counted once (what
+ *   the disk holds for them).
+ *
+ * A retained original nothing else would reference is not shared and counts in neither. The
+ * estimate of what applying frees (`reclaimableBytes`) and what it measurably freed (`deletedBytes`
+ * and each apply's `reclaimedBytes`) are separate figures.
+ */
+export const physicalDeduplicationByteAccounting = (
+  retained: ReadonlyArray<{ sizeInBytes: number; referencesAfter: number }>,
+) => {
+  let logicalBytes = 0;
+  let sharedOriginalBytes = 0;
+  for (const item of retained) {
+    if (item.referencesAfter <= 1) {
+      continue;
+    }
+    logicalBytes += item.sizeInBytes * item.referencesAfter;
+    sharedOriginalBytes += item.sizeInBytes;
+  }
+  return { logicalBytes, sharedOriginalBytes };
+};
+
 /** An asset row as the evidence check reads it. */
 export type PhysicalDeduplicationEvidenceRow = {
   id: string;
@@ -264,6 +291,9 @@ export type PhysicalDeduplicationEvidenceRow = {
   isOffline: boolean;
   libraryId: string | null;
   physicalOriginalFileId: string | null;
+  /** Read for the post-apply verification's rows (FL-73); not evidence. */
+  originalFileName?: string;
+  type?: string;
 };
 
 const isLibraryManaged = (row: PhysicalDeduplicationEvidenceRow) =>
