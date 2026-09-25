@@ -336,8 +336,10 @@ describe('LibraryView', () => {
     it('shows the Frameleaf empty state, not the legacy upload card (T-10)', async () => {
       await setupLibrary();
       const empty = await screen.findByTestId('frameleaf-library-empty');
-      expect(empty).toHaveTextContent('frameleaf_library_empty');
-      expect(screen.queryByText('no_assets_message')).not.toBeInTheDocument();
+      // the Frameleaf copy (TimelineLibrary.jsx `.tl-empty`): a status message, no upload card or button
+      expect(empty).toHaveAttribute('role', 'status');
+      expect(empty.querySelector(':scope p')).toHaveTextContent('frameleaf_library_empty');
+      expect(empty.querySelector(':scope button')).toBeNull();
     });
 
     it('says a filter left nothing, never how much it hides, and offers to clear it', async () => {
