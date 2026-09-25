@@ -2872,6 +2872,8 @@ export type PersonResponseDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
+    featuredAssetId?: string | null;
     /** Person ID */
     id: string;
     /** Is favorite */
@@ -5995,6 +5997,8 @@ export type PeopleListItemDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
+    featuredAssetId?: string | null;
     /** Person ID */
     id: string;
     /** Is favorite */
@@ -7848,6 +7852,8 @@ export type ServerConfigDto = {
     userDeleteDelay: number;
 };
 export type ServerFeaturesDto = {
+    /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
+    askSearch: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
     cloudBackup: boolean;
     /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
@@ -7967,12 +7973,24 @@ export type ServerVersionResponseDto = {
     patch: number;
     /** Pre-release version number */
     prerelease: number | null;
+    /** Full pre-release identifier (for example rc.1 or beta.2), present only for a pre-release (FL-80) */
+    prereleaseName?: string;
 };
 export type VersionCheckStateResponseDto = {
     /** Last check timestamp */
     checkedAt: string | null;
     /** Release version */
     releaseVersion: string | null;
+};
+export type ReleaseEventV1 = {
+    /** When the server last checked for a latest version. As an ISO timestamp */
+    checkedAt: string;
+    /** Whether a new version is available */
+    isAvailable: boolean;
+    releaseVersion: ServerVersionResponseDto;
+    serverVersion: ServerVersionResponseDto;
+    /** Release type */
+    "type": ReleaseType;
 };
 export type ServerVersionHistoryResponseDto = {
     /** When this version was first seen */
@@ -9232,10 +9250,38 @@ export type TimelineHighlightResponseDto = {
     /** First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets */
     timeBucket: string;
 };
+export type UtilityActivityItemDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Size of the original when it was moved, in bytes */
+    bytes: number;
+    /** Original file name */
+    fileName: string;
+};
+export type UtilityActivityEntryDto = {
+    action: UtilityActivityAction;
+    /** Combined size of the items listed below, in bytes */
+    bytes: number;
+    /** When the change was made */
+    createdAt: string;
+    /** Entry ID */
+    id: string;
+    /** Items listed below */
+    itemCount: number;
+    items: UtilityActivityItemDto[];
+    /** Items of this change no longer shown: permanently deleted, or not visible to this session */
+    unavailableCount: number;
+};
+export type UtilityActivityResponseDto = {
+    /** Newest first */
+    entries: UtilityActivityEntryDto[];
+};
 export type TrashApplyDto = {
     action: TrashReviewAction;
     /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
     ids?: string[];
+    /** The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history. */
+    source?: UtilityActivityTool;
     /** The token returned by the review */
     token: string;
 };
@@ -9521,16 +9567,6 @@ export type WorkflowShareResponseDto = {
     trigger: string;
 };
 export type LicenseResponseDto = UserLicense;
-export type ReleaseEventV1 = {
-    /** When the server last checked for a latest version. As an ISO timestamp */
-    checkedAt: string;
-    /** Whether a new version is available */
-    isAvailable: boolean;
-    releaseVersion: ServerVersionResponseDto;
-    serverVersion: ServerVersionResponseDto;
-    /** Release type */
-    "type": ReleaseType;
-};
 export type SyncAckV1 = {};
 export type SyncAlbumDeleteV1 = {
     /** Album ID */
@@ -16649,6 +16685,18 @@ export function getVersionCheck(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check for updates now
+ */
+export function checkVersionNow(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ReleaseEventV1;
+    }>("/server/version-check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get version history
  */
 export function getVersionHistory(opts?: Oazapfts.RequestOpts) {
@@ -18624,6 +18672,21 @@ export function getTimelineOrdered({ albumId, bbox, dateType, isFavorite, isTras
         withCoordinates,
         withPartners,
         withStacked
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get utility activity
+ */
+export function getUtilityActivity({ tool }: {
+    tool: UtilityActivityTool;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UtilityActivityResponseDto;
+    }>(`/trash/activity${QS.query(QS.explode({
+        tool
     }))}`, {
         ...opts
     }));
@@ -20781,6 +20844,15 @@ export enum SearchSuggestionType {
     CameraModel = "camera-model",
     CameraLensModel = "camera-lens-model"
 }
+export enum ReleaseType {
+    Major = "major",
+    Premajor = "premajor",
+    Minor = "minor",
+    Preminor = "preminor",
+    Patch = "patch",
+    Prepatch = "prepatch",
+    Prerelease = "prerelease"
+}
 export enum SharedLinkType {
     Album = "ALBUM",
     Individual = "INDIVIDUAL"
@@ -21051,6 +21123,13 @@ export enum TimelineOrderedSort {
     Filename = "filename",
     Rating = "rating"
 }
+export enum UtilityActivityTool {
+    LargeFiles = "large-files"
+}
+export enum UtilityActivityAction {
+    Trash = "trash",
+    Restore = "restore"
+}
 export enum TrashReviewAction {
     Trash = "trash",
     Restore = "restore",
@@ -21077,15 +21156,6 @@ export enum WorkflowResult {
 export enum WorkflowRunErrorCode {
     Unsupported = "unsupported",
     StepFailed = "step_failed"
-}
-export enum ReleaseType {
-    Major = "major",
-    Premajor = "premajor",
-    Minor = "minor",
-    Preminor = "preminor",
-    Patch = "patch",
-    Prepatch = "prepatch",
-    Prerelease = "prerelease"
 }
 export enum UserMetadataKey {
     Preferences = "preferences",

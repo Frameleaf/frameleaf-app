@@ -13,6 +13,12 @@ describe('VersionAnnouncementModal component', () => {
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
     vi.stubGlobal('visualViewport', getVisualViewportMock());
     Element.prototype.animate = getAnimateMock();
+    HTMLDialogElement.prototype.showModal ??= vi.fn(function (this: HTMLDialogElement) {
+      this.open = true;
+    });
+    HTMLDialogElement.prototype.close ??= vi.fn(function (this: HTMLDialogElement) {
+      this.open = false;
+    });
   });
 
   afterAll(async () => {
@@ -31,5 +37,14 @@ describe('VersionAnnouncementModal component', () => {
     );
     expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('href')).not.toContain('immich-app');
+  });
+
+  test('closes with Acknowledge', async () => {
+    const onClose = vi.fn();
+    render(VersionAnnouncementModal, { serverVersion: 'v2.0.0', releaseVersion: 'v2.1.0', onClose });
+
+    expect(screen.getByRole('heading', { name: 'New Frameleaf version' })).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Acknowledge' }).click();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });

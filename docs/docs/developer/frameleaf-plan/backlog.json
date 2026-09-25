@@ -5053,7 +5053,8 @@
       "acceptance": [
         "The device flow completes from the admin UI with a user code and QR code and honours interval, slow_down, expired_token and access_denied.",
         "A one-time link token links headlessly once; unlinking from either side leaves no secret behind and turns remote access, cloud processing and backup off.",
-        "The heartbeat runs every five minutes with jitter under a database lock and sends exactly the fields shown in the panel; every link, unlink and revoke is an admin audit row and admins receive deduplicated notices."
+        "The heartbeat runs every five minutes with jitter under a database lock and sends exactly the fields shown in the panel; every link, unlink and revoke is an admin audit row and admins receive deduplicated notices.",
+        "The account and link page states the benefit \"Access your library from the Frameleaf mobile apps from anywhere\"."
       ],
       "dependencies": ["CLD-001"],
       "epicId": "CLD-E01",
@@ -5082,7 +5083,8 @@
       "acceptance": [
         "GET admin/license returns the license status with entitlements; activate, certificate install, delete and refresh routes exist with the documented permissions.",
         "Certificates verify against pinned keys including the spare; unknown kid, wrong subject and tampered payloads are refused; grace keeps entitlements and expiry only turns feature flags off.",
-        "Inherited product-key code, embedded third-party keys, the payment-host CSP entry and the server/license routes are removed; per-user supporter keys live in the fork schema."
+        "Inherited product-key code, embedded third-party keys, the payment-host CSP entry and the server/license routes are removed; per-user supporter keys live in the fork schema.",
+        "Licence is its own page, separate from Plan; a licensed server (server or individual supporter key) gets 20 % off Frameleaf Cloud plans only and AI credit is never discounted, so every run keeps at least 100 % over loaded cost."
       ],
       "dependencies": ["CLD-001"],
       "epicId": "CLD-E01",
@@ -5115,7 +5117,7 @@
     },
     {
       "acceptance": [
-        "The prototype states are ported: heading, subscription plan cards, one-time supporter cards, key entry with validation, activated card, badge switch with the correct sense and in-place removal.",
+        "The prototype states are ported: heading, subscription plan cards, one-time supporter cards, key entry with validation, activated card, badge switch with the correct sense and in-place removal; Plan and Licence are separate pages and plan prices show the 20 % licensed-server discount while AI credit top-ups never do.",
         "Keys travel only in the URL fragment, session storage or a POST body; the products endpoint returns bundled prices and the deployment-configured store address without an outbound call.",
         "The onboarding license step exists; inherited purchase strings and components are removed."
       ],
@@ -5181,7 +5183,8 @@
       "acceptance": [
         "The Frameleaf Cloud glance tile shows link, remote and license state; every cloud section is reachable from search and deep links.",
         "Documentation lists every environment variable and credential; customer copy never says fork, DTO or the previous provider and never names Immich as the product.",
-        "Confluence mirrors are updated in the same pass."
+        "Confluence mirrors are updated in the same pass.",
+        "The Public server URL setting moves from Server identity to Remote access with \"Use the Frameleaf address\" and \"Use my domain\"; every settings section row has an icon and settings copy is plain language, outcome first, with no internal terms, as prototyped."
       ],
       "dependencies": ["CLD-004", "CLD-005", "CLD-104", "CLD-203", "CLD-302"],
       "epicId": "CLD-E01",
@@ -5195,7 +5198,8 @@
         "docs/docs/guides/remote-access.md",
         "docs/docs/FAQ.mdx",
         "docs/docs/install/environment-variables.md",
-        "docs/docs/developer/frameleaf-plan/confluence-mirror.json"
+        "docs/docs/developer/frameleaf-plan/confluence-mirror.json",
+        "web/src/lib/frameleaf/settings-areas.ts"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -5241,7 +5245,8 @@
       "acceptance": [
         "The edge worker is forked like the API worker and stays idle until the server is linked, entitled and remote access is enabled.",
         "A wildcard certificate is issued through the cloud TXT record API with keys that never leave the host and renews with jitter; the HTTPS listener proxies to the API with forwarded headers and the via contract.",
-        "Disable or unlink removes the certificate and listener; shutdown closes sockets within five seconds; the public address is published through server config, the well-known document and the connections endpoint."
+        "Disable or unlink removes the certificate and listener; shutdown closes sockets within five seconds; the public address is published through server config, the well-known document and the connections endpoint.",
+        "A custom public hostname on the owner's domain works through a CNAME to the relay name plus an _acme-challenge CNAME to the server's Frameleaf challenge name; a DNS check moves it from pending to verified and the server issues and renews its certificate."
       ],
       "dependencies": ["CLD-101"],
       "epicId": "CLD-E02",
@@ -5252,7 +5257,8 @@
         "server/src/enum.ts",
         "server/src/dtos/config.dto.ts",
         "server/src/controllers/server.controller.ts",
-        "server/package.json"
+        "server/package.json",
+        "docs/docs/guides/remote-access.md"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -5299,7 +5305,7 @@
       "acceptance": [
         "UPnP, NAT-PMP or PCP mappings refresh their leases and are removed on disable; a manual public-port mode exists.",
         "A mismatch between the mapped address and the cloud-observed address marks carrier-grade NAT and the wide-area candidate is verified only after the cloud probe succeeds; bridge networking yields documented guidance.",
-        "A local user signing in with Frameleaf returns to the local origin with a tagged child session."
+        "A local user signing in with Frameleaf returns to the local origin with a tagged child session; a verified custom hostname is published as a candidate and used like the Frameleaf address."
       ],
       "dependencies": ["CLD-103"],
       "epicId": "CLD-E02",
@@ -5322,9 +5328,9 @@
       "acceptance": [
         "The Frameleaf Cloud destination row is created only by an explicit administrator action and authenticates with a short-lived instance token; the probe reads ping, capabilities and hardware from the regional gateway.",
         "Admission refuses on missing or outdated consent, an empty wallet, missing entitlement or an unreachable cloud and never falls back; faces are refused by policy and stay local on InsightFace buffalo_l under the purchased commercial licence; per-feature consent is versioned with names and medical signals off by default.",
-        "A hardware check under Compute & jobs \u2192 Hardware & GPU reports per container whether a GPU is present, visible and usable (NVIDIA Container Toolkit versus /dev/dri and the render group), shows a fix with a copy-ready compose snippet for each detected misconfiguration and runs a short benchmark per workload.",
-        "Each workload is routed Local only, Both or Cloud only; with Both each job picks local or Frameleaf Cloud at confirmation, and a job is never moved to the cloud silently.",
-        "A colour-banded model slider (white = CPU, green = fits your GPU, blue = Frameleaf Cloud) appears in Where each job runs, Cloud processing, the per-job confirmation, the editor Enhance panel and Studio; models whose licence forbids commercial hosted use never get a blue band; prices show as GPU time \u00d7 rate + start fee with per-unit estimates.",
+        "A hardware check under Compute & jobs → Hardware & GPU reports per container whether a GPU is present, visible and usable (NVIDIA Container Toolkit versus /dev/dri and the render group), shows a fix with a copy-ready compose snippet for each detected misconfiguration and runs a short benchmark per workload.",
+        "Each workload is routed Local only, Both or Cloud only; with Both each job picks local or Frameleaf Cloud at confirmation, and a job is never moved to the cloud silently; Studio exports render locally only (this server or a LAN worker) and are not a cloud workload.",
+        "A colour-banded model slider (white = CPU, green = fits your GPU, blue = Frameleaf Cloud) appears in Where each job runs, Cloud processing, the per-job confirmation, the editor Enhance panel and Studio; models whose licence forbids commercial hosted use never get a blue band; prices show as GPU time × rate + start fee with per-unit estimates.",
         "The previous provider's code, configuration, credentials, metadata keys, documents and strings are gone and a test proves no customer-facing string names it; accounting cost is filled from settlements."
       ],
       "dependencies": ["CLD-002", "CLD-003", "FN-302", "AI-101"],
@@ -5358,10 +5364,10 @@
     },
     {
       "acceptance": [
-        "A job is a durable media operation with lease, cursor, pause, resume and cancel; the estimate (GPU time \u00d7 rate + start fee, with per-photo or per-minute estimates as a p50\u2013p90 range), wallet balance, model slider choice and per-job consent are shown before confirmation.",
-        "Restoration runs on serverless workers only: long video is cut into 20\u201330 second chunks across at most five workers with a checkpoint per chunk; inputs upload to presigned addresses, progress is polled, results are checksum-verified, cancel releases the hold, provider failures refund and an insufficient balance refuses without downgrading.",
-        "A Smooth motion frame-interpolation job (RIFE locally, FILM on Frameleaf Cloud) is offered in the editor video Enhance panel and Studio for slow motion and export frame-rate conversion; it previews a short clip first and saves the result as a new version.",
-        "No metadata leaves the server in clips or stills; Activity shows estimated, so-far and settled cost."
+        "A job is a durable media operation with lease, cursor, pause, resume and cancel; the estimate (GPU time × rate + start fee, with per-photo or per-minute estimates as a p50–p90 range), wallet balance, model slider choice and per-job consent are shown before confirmation.",
+        "Restoration runs on serverless workers only: long video is cut into 20–30 second chunks across at most five workers with a checkpoint per chunk; inputs upload to presigned addresses, progress is polled, results are checksum-verified, cancel releases the hold, provider failures refund and an insufficient balance refuses without downgrading.",
+        "A Smooth motion frame-interpolation job (RIFE locally, FILM on Frameleaf Cloud) is offered in the editor video Enhance panel and Studio for slow motion and export frame-rate conversion; it previews a short clip first and saves the result as a new version; Studio exports themselves render locally only and Smooth motion at export runs on Frameleaf Cloud only as its own job.",
+        "No metadata leaves the server in clips or stills; Activity shows every job with stages Queued, Starting, Running and Done, Failed, Cancelled or Paused in an In progress section, with estimated, so-far and settled cost."
       ],
       "dependencies": ["CLD-201"],
       "epicId": "CLD-E03",
@@ -5421,7 +5427,7 @@
     {
       "acceptance": [
         "Setup claims an empty bucket with a root marker holding the instance id, refuses buckets claimed by another server or holding foreign objects, and probes customer-key encryption support.",
-        "Key modes server, own-stored and own-memory behave as specified; every object request carries the customer-key headers and a request without them fails the test suite.",
+        "Setup first asks \"Generate a key for me\" (server mode with a recovery kit) or \"I'll maintain my own key\" (created in the browser, download required before continuing, \"Keep a copy on this server\" on for own-stored or off for own-memory after a typed acknowledgement); key modes server, own-stored and own-memory behave as specified; every object request carries the customer-key headers and a request without them fails the test suite.",
         "A run writes the database dump, uploads only content hashes absent from the index as hash-named objects, then a manifest; a second unchanged run uploads nothing and identical files on the same server produce one object; runs survive restart and failures notify all administrators."
       ],
       "dependencies": ["CLD-002", "CLD-003"],
@@ -5447,7 +5453,8 @@
       "acceptance": [
         "A single scheduler runs under a database lock; retention keeps daily, weekly and monthly manifests and deletes only objects no kept manifest references.",
         "Weekly verification reads a sample and monthly checks every referenced hash; managed bucket credentials are fetched at run start and never persisted; over-quota switches to read-only without touching data.",
-        "Escrow is offered only in server-key mode; restore by manifest verifies every object and feeds Library Care or the maintenance database restore; the command-line restore is documented."
+        "Escrow is offered only in server-key mode; restore by manifest verifies every object and feeds Library Care or the maintenance database restore; the command-line restore is documented.",
+        "Each backup run and restore shows its stage and progress in Activity (Queued, Starting, Running, Done, Failed, Cancelled or Paused) and under Settings → Background work."
       ],
       "dependencies": ["CLD-301"],
       "epicId": "CLD-E04",
@@ -5457,7 +5464,9 @@
       "paths": [
         "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
         "server/src/services/database-backup.service.ts",
-        "server/src/services/media-health-operation.service.ts"
+        "server/src/services/media-health-operation.service.ts",
+        "web/src/lib/frameleaf/activity.ts",
+        "web/src/lib/components/frameleaf/ActivityView.svelte"
       ],
       "phase": 4,
       "priority": "High",

@@ -37,7 +37,9 @@ describe(FrameleafAuthController.name, () => {
       .send({ redirectUri: 'https://photos.example.test/auth/login' });
     expect(status).toBe(201);
     expect(body).toEqual({ url: 'https://id.test/auth' });
-    expect(headers['set-cookie']).toContain('immich_oauth_state=state-1');
+    expect(headers['set-cookie']).toEqual(
+      expect.arrayContaining([expect.stringContaining('immich_oauth_state=state-1')]),
+    );
   });
 
   it('signs in with a password-type auth cookie, so signing out never reaches the other provider', async () => {
@@ -55,7 +57,9 @@ describe(FrameleafAuthController.name, () => {
       .post('/oauth/frameleaf/callback')
       .send({ url: 'https://photos.example.test/auth/login?code=1&state=s' });
     expect(status).toBe(201);
-    expect(headers['set-cookie']).toContain('immich_auth_type=password');
+    expect(headers['set-cookie']).toEqual(
+      expect.arrayContaining([expect.stringContaining('immich_auth_type=password')]),
+    );
   });
 
   it('requires a handoff code', async () => {

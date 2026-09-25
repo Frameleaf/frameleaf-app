@@ -1,4 +1,9 @@
-import type { AssetResponseDto } from '@immich/sdk';
+import {
+  UtilityActivityAction,
+  UtilityActivityTool,
+  type AssetResponseDto,
+  type UtilityActivityEntryDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { addMessages } from 'svelte-i18n';
@@ -63,6 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   socket.clear();
   sdkMock.getPartners.mockResolvedValue([]);
+  sdkMock.getUtilityActivity.mockResolvedValue({ entries: [] });
   addMessages('dev', en);
 });
 
@@ -175,25 +181,70 @@ describe('LargeFilesReview (FL-47): row detail and recent activity', () => {
     expect(within(row).queryByText('/library/big.mov')).toBeNull();
   });
 
-  it('lists the moves and undos of this visit under Recent utility activity (UT-11)', async () => {
+  const entry = (id: string, action: UtilityActivityAction, overrides: Partial<UtilityActivityEntryDto> = {}) => ({
+    id,
+    action,
+    createdAt: '2026-09-25T12:00:00.000Z',
+    itemCount: 1,
+    bytes: 9_000_000,
+    items: [{ assetId: 'big', fileName: 'big.mov', bytes: 9_000_000 }],
+    unavailableCount: 0,
+    ...overrides,
+  });
+
+  it('shows the persistent history from the server, with each change and its items (UT-11, FL-146)', async () => {
+    sdkMock.getUtilityActivity.mockResolvedValue({
+      entries: [
+        entry('2', UtilityActivityAction.Restore),
+        entry('1', UtilityActivityAction.Trash, {
+          itemCount: 0,
+          bytes: 0,
+          items: [],
+          unavailableCount: 2,
+        }),
+      ],
+    });
     setup();
+
+    const history = (await screen.findByText(en.library_care_recent_activity)).closest('details')!;
+    expect(sdkMock.getUtilityActivity).toHaveBeenCalledWith({ tool: UtilityActivityTool.LargeFiles });
+    const titles = [...history.querySelectorAll(':scope article > div > strong')].map((node) =>
+      node.textContent?.replaceAll(/\s+/g, ' ').trim(),
+    );
+    expect(titles[0]).toMatch(new RegExp(`^${en.frameleaf_large_files_activity_restore} · 1 item · `));
+    expect(titles[1]).toBe(`${en.frameleaf_large_files_activity_trash} · 0 items`);
+    expect(within(history).getByText('big.mov')).toBeInTheDocument();
+    expect(within(history).getByText(/2 items are no longer shown/)).toBeInTheDocument();
+  });
+
+  it('records moves and undos made here with the server, and reloads the history', async () => {
+    setup();
+    await waitFor(() => expect(sdkMock.getUtilityActivity).toHaveBeenCalledTimes(1));
     expect(screen.queryByText(en.library_care_recent_activity)).toBeNull();
 
+    sdkMock.getUtilityActivity.mockResolvedValue({ entries: [entry('1', UtilityActivityAction.Trash)] });
     await fireEvent.click(screen.getByLabelText('Select big.mov'));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_large_files_move_selected }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Confirm 1 item' }));
 
-    const history = (await screen.findByText(en.library_care_recent_activity)).closest('details')!;
-    expect(within(history).getByText(`${en.frameleaf_large_files_activity_trash} · 1 item`)).toBeInTheDocument();
+    expect(sdkMock.applyTrashReview).toHaveBeenCalledWith({
+      trashApplyDto: expect.objectContaining({ action: 'trash', ids: ['big'], source: UtilityActivityTool.LargeFiles }),
+    });
+    await screen.findByText(en.library_care_recent_activity);
+    expect(sdkMock.getUtilityActivity).toHaveBeenCalledTimes(2);
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_large_files_undo }));
     await waitFor(() =>
-      expect(within(history).getByText(`${en.frameleaf_large_files_activity_restore} · 1 item`)).toBeInTheDocument(),
+      expect(sdkMock.applyTrashReview).toHaveBeenLastCalledWith({
+        trashApplyDto: expect.objectContaining({ action: 'restore', source: UtilityActivityTool.LargeFiles }),
+      }),
     );
-    const entries = within(history).getAllByText(/ · 1 item$/);
-    expect(entries.map((entry) => entry.textContent?.trim())).toEqual([
-      `${en.frameleaf_large_files_activity_restore} · 1 item`,
-      `${en.frameleaf_large_files_activity_trash} · 1 item`,
-    ]);
+    await waitFor(() => expect(sdkMock.getUtilityActivity).toHaveBeenCalledTimes(3));
+  });
+
+  it('says so when the history cannot be loaded', async () => {
+    sdkMock.getUtilityActivity.mockRejectedValue(new Error('offline'));
+    setup();
+    expect(await screen.findByText(en.frameleaf_large_files_activity_unavailable)).toBeInTheDocument();
   });
 });

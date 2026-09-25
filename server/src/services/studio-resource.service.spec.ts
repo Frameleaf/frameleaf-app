@@ -16,6 +16,7 @@ import {
   StudioRefusalReason,
   StudioResourceKind,
 } from 'src/utils/studio-resources.js';
+import { studioProducerModels } from 'src/utils/studio-rights.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -23,8 +24,8 @@ import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /**
- * FL-86: the reviewed rights table the resolver consults. It starts as the real, all-blocked
- * mirror; a test admits a row by writing it here.
+ * FL-86: the reviewed rights table the resolver consults. It starts empty, so every resource is
+ * blocked as unknown; a test admits a row by writing it here.
  */
 const rightsTable = vi.hoisted(() => ({}) as Record<string, StudioResourceRights>);
 vi.mock('src/utils/studio-rights.generated.js', async (importOriginal) => {
@@ -38,7 +39,20 @@ const admit = (id: string, uses: Partial<Pick<StudioResourceRights, 'localRuntim
     redistribution: 'blocked',
     localRuntime: 'allowed',
     hostedUse: 'blocked',
+    approvedOn: null,
     ...uses,
+  };
+};
+
+/** A reviewed row the owner has not approved: every use blocked. */
+const block = (id: string) => {
+  rightsTable[id] = {
+    kind: id.split(':', 1)[0],
+    license: null,
+    redistribution: 'blocked',
+    localRuntime: 'blocked',
+    hostedUse: 'blocked',
+    approvedOn: null,
   };
 };
 
@@ -684,7 +698,16 @@ describe(StudioResourceService.name, () => {
         luts: {},
         audio: {},
       };
-      // The reviewed rows for Inter stay blocked (FL-146 default), and kokoro-v1 has no row at all.
+      // With the owner's approval (FL-146, 2026-09-25) the reviewed Inter row is allowed; kokoro-v1
+      // has no reviewed row, so it stays blocked as an unknown resource.
+      const approvedMirror = await sut.resolveProjectResources(auth, context(graph, { catalog }));
+      expect(approvedMirror.refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
+        [StudioResourceKind.Preset, 'Wiggle', StudioRefusalReason.UnknownPreset],
+        [StudioResourceKind.Model, 'kokoro-v1', StudioRefusalReason.RightsBlocked],
+      ]);
+
+      // A reviewed row that is not approved is refused by name.
+      block('font:Inter');
       const blocked = await sut.resolveProjectResources(auth, context(graph, { catalog }));
       expect(blocked.refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
         [StudioResourceKind.Font, 'Inter', StudioRefusalReason.RightsBlocked],
@@ -818,6 +841,13 @@ describe(StudioResourceService.name, () => {
         { id: 'voice-1', producer: 'tts', checksum: 'v1', path: '/cache/voice-1.wav', derivedFrom: [] },
         { id: 'wave-1', producer: 'waveform', checksum: 'w1', path: '/cache/wave-1.bin', derivedFrom: [] },
       ];
+
+      // With the owner's approval every family resolves; a family with no approved model does not.
+      const allApproved = await sut.resolveProjectResources(auth, context(graph, { generated }));
+      expect(allApproved.refused).toEqual([]);
+      for (const id of [...studioProducerModels.musicgen, ...studioProducerModels.tts]) {
+        block(id);
+      }
 
       const blocked = await sut.resolveProjectResources(auth, context(graph, { generated }));
       expect(blocked.refused.map((item) => [item.id, item.reason])).toEqual([

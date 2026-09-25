@@ -1020,6 +1020,19 @@
 .frameleaf .cc-section > .cc-field:first-child {
   border-top: 0;
 }
+/* Custom panels inside a settings card (devices, computers, maintenance,
+   Spaces, checklists, action rows…) get the same inner spacing as field rows,
+   so nothing sits on the card edge. Pages that drop the card are excluded. */
+.frameleaf
+  .cc-section:not(:has(.frameleaf-cloud, .trash-manager, .jobs-manager, .utilities-manager, .accounts-libraries))
+  > :first-child:not(.cc-field, .cc-section-heading) {
+  margin-top: 18px;
+}
+.frameleaf
+  .cc-section:not(:has(.frameleaf-cloud, .trash-manager, .jobs-manager, .utilities-manager, .accounts-libraries))
+  > :last-child:not(.cc-field, .cc-page-tools, .cc-section-action) {
+  margin-bottom: 18px;
+}
 .frameleaf .cc-field {
   grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
   gap: 24px;

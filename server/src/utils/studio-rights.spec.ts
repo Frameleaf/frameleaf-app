@@ -1,5 +1,9 @@
 import { StudioDestination } from 'src/utils/studio-resources.js';
-import { STUDIO_DISTRIBUTION_APPROVAL, studioResourceRights } from 'src/utils/studio-rights.generated.js';
+import {
+  STUDIO_DISTRIBUTION_APPROVAL,
+  STUDIO_RIGHTS_APPROVAL,
+  studioResourceRights,
+} from 'src/utils/studio-rights.generated.js';
 import {
   STUDIO_DOLBY_TOOLS_ID,
   StudioRightsUse,
@@ -16,18 +20,25 @@ const row = (uses: Partial<Record<StudioRightsUse, 'allowed' | 'blocked'>> = {})
   redistribution: 'blocked' as const,
   localRuntime: 'blocked' as const,
   hostedUse: 'blocked' as const,
+  approvedOn: null,
   ...uses,
 });
 
 describe('studio rights (FL-86)', () => {
-  it('keeps every reviewed resource blocked for every use until the owner approves it', () => {
+  it('admits every one of the 210 resources the owner approved, and records the approval (FL-146)', () => {
     const rows = Object.entries(studioResourceRights);
-    expect(rows.length).toBeGreaterThan(200);
-    expect(STUDIO_DISTRIBUTION_APPROVAL).toBe(false);
-    for (const [id] of rows) {
-      for (const use of Object.values(StudioRightsUse)) {
-        expect(checkStudioRights(id, use)).toMatchObject({ allowed: false, id });
-      }
+    expect(rows).toHaveLength(210);
+    expect(STUDIO_RIGHTS_APPROVAL).toMatchObject({
+      approvedOn: '2026-09-25',
+      source: expect.stringContaining('FL-146'),
+    });
+    for (const [id, rights] of rows) {
+      expect(rights.approvedOn, id).toBe('2026-09-25');
+      expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
+      expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
+      // The rows allow redistribution; the engine distribution itself is still unapproved.
+      expect(rights.redistribution).toBe('allowed');
+      expect(checkStudioRights(id, StudioRightsUse.Redistribution).allowed).toBe(STUDIO_DISTRIBUTION_APPROVAL);
     }
   });
 
@@ -83,7 +94,9 @@ describe('studio rights (FL-86)', () => {
     // A producer the server does not know is refused, not admitted by default.
     expect(checkStudioProducerRights('mystery-model', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
     expect(checkStudioProducerRights('constructor', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
-    expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
+    // Every TTS model is approved, so the producer resolves; with an empty table it does not.
+    expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: true });
+    expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime, {})).toMatchObject({ allowed: false });
     const table = { 'model:supertonic-3': row({ localRuntime: 'allowed' }) };
     expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime, table)).toEqual({
       allowed: true,

@@ -74,6 +74,17 @@ export class StudioRevocationService {
 
   @OnEvent({ name: 'AlbumUserRemove' })
   async onAlbumUserRemove({ albumId, userId }: ArgOf<'AlbumUserRemove'>): Promise<void> {
+    // Owner decision (FL-146, 2026-09-25): the departing member's own projects are kept, as their
+    // private projects. Space sharing ends, so every other member's frames and resolutions go.
+    const detached = await this.projectRepository.detachOwnerFromSpace(albumId, userId);
+    if (detached.length > 0) {
+      this.projects.forgetResolutions(detached);
+      const frames = await this.previews.revokeForProjects(detached);
+      this.logger.log(
+        `A member left space ${albumId}: kept ${detached.length} of their Studio project(s) as private; stopped ${frames} shared preview frame(s)`,
+      );
+    }
+
     const projectIds = await this.projectRepository.getIdsInSpace(albumId);
     if (projectIds.length === 0) {
       return;
