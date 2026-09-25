@@ -25,7 +25,44 @@ describe(ViewService.name, () => {
       const result = await sut.getUniqueOriginalPaths(authStub.admin);
 
       expect(result).toEqual(mockPaths);
-      expect(mocks.view.getUniqueOriginalPaths).toHaveBeenCalledWith(authStub.admin.user.id);
+      expect(mocks.view.getUniqueOriginalPaths).toHaveBeenCalledWith(authStub.admin.user.id, {});
+    });
+
+    it('should leave out content hidden from a locked session (FL-46)', async () => {
+      mocks.view.getUniqueOriginalPaths.mockResolvedValue([]);
+      const hiddenContent = {
+        userId: authStub.admin.user.id,
+        includeNsfw: true,
+        tagIds: [],
+        personIds: [],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+
+      await sut.getUniqueOriginalPaths({ ...authStub.admin, hiddenContent });
+
+      expect(mocks.view.getUniqueOriginalPaths).toHaveBeenCalledWith(authStub.admin.user.id, { hiddenContent });
+    });
+  });
+
+  describe('getFolderSummary', () => {
+    it("should return each folder's direct count and size (FL-46)", async () => {
+      const rows = [
+        { path: '/photos', count: 2, size: 2048 },
+        { path: '/photos/2026', count: 1, size: 512 },
+      ];
+      mocks.view.getFolderSummary.mockResolvedValue(rows);
+
+      await expect(sut.getFolderSummary(authStub.admin)).resolves.toEqual(rows);
+      expect(mocks.view.getFolderSummary).toHaveBeenCalledWith(authStub.admin.user.id, {});
+    });
+
+    it('should hide NSFW items from the summary when the account hides them', async () => {
+      mocks.view.getFolderSummary.mockResolvedValue([]);
+
+      await sut.getFolderSummary({ ...authStub.admin, hideNsfwAssets: true });
+
+      expect(mocks.view.getFolderSummary).toHaveBeenCalledWith(authStub.admin.user.id, { excludeNsfw: true });
     });
   });
 
@@ -44,6 +81,7 @@ describe(ViewService.name, () => {
 
       const result = await sut.getAssetsByOriginalPath(authStub.admin, path);
       expect(result).toEqual(mockAssetReponseDto);
+      expect(mocks.view.getAssetsByOriginalPath).toHaveBeenCalledWith(authStub.admin.user.id, path, {});
       await expect(mocks.view.getAssetsByOriginalPath(authStub.admin.user.id, path)).resolves.toEqual(mockAssets);
     });
   });
