@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { TrashItemSort } from 'src/dtos/trash.dto.js';
+import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetStatus, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { TrashService } from 'src/services/trash.service.js';
 import {
@@ -364,6 +364,121 @@ describe(TrashService.name, () => {
       expect(mocks.trash.getReviewRows).toHaveBeenCalledWith('user-id', TrashReviewAction.Empty, undefined, {
         privacy: {},
       });
+    });
+  });
+
+  describe('utility activity (FL-47)', () => {
+    const moved = [scopeRow('asset-1', { status: AssetStatus.Active, deletedAt: null })];
+    const items = [{ assetId: 'asset-1', fileName: 'Lake.mov', bytes: 4_000_000_000 }];
+
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.trash.getActivityItems.mockResolvedValue(items);
+      mocks.trash.addUtilityActivity.mockResolvedValue(true);
+    });
+
+    it('records a move to the trash made from Large files', async () => {
+      applyAgainst(moved);
+      const token = trashReviewToken('user-id', TrashReviewAction.Trash, moved);
+
+      await sut.apply(authStub.user1, {
+        action: TrashReviewAction.Trash,
+        ids: ['asset-1'],
+        token,
+        source: UtilityActivityTool.LargeFiles,
+      });
+
+      expect(mocks.trash.getActivityItems).toHaveBeenCalledWith('user-id', ['asset-1']);
+      expect(mocks.trash.addUtilityActivity).toHaveBeenCalledWith({
+        userId: 'user-id',
+        tool: UtilityActivityTool.LargeFiles,
+        action: UtilityActivityAction.Trash,
+        items,
+      });
+    });
+
+    it('records an undo as a restore', async () => {
+      const trashed = [scopeRow('asset-1')];
+      applyAgainst(trashed);
+      const token = trashReviewToken('user-id', TrashReviewAction.Restore, trashed);
+
+      await sut.apply(authStub.user1, {
+        action: TrashReviewAction.Restore,
+        ids: ['asset-1'],
+        token,
+        source: UtilityActivityTool.LargeFiles,
+      });
+
+      expect(mocks.trash.addUtilityActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ action: UtilityActivityAction.Restore }),
+      );
+    });
+
+    it('records nothing for a change made elsewhere, or for a permanent delete', async () => {
+      applyAgainst(moved);
+      const token = trashReviewToken('user-id', TrashReviewAction.Trash, moved);
+      await sut.apply(authStub.user1, { action: TrashReviewAction.Trash, ids: ['asset-1'], token });
+
+      const trashed = [scopeRow('asset-1')];
+      applyAgainst(trashed);
+      await sut.apply(authStub.user1, {
+        action: TrashReviewAction.Delete,
+        ids: ['asset-1'],
+        token: trashReviewToken('user-id', TrashReviewAction.Delete, trashed),
+        source: UtilityActivityTool.LargeFiles,
+      });
+
+      expect(mocks.trash.addUtilityActivity).not.toHaveBeenCalled();
+    });
+
+    it('never fails the change when the history cannot be written', async () => {
+      applyAgainst(moved);
+      mocks.trash.addUtilityActivity.mockRejectedValue(new Error('down'));
+      const token = trashReviewToken('user-id', TrashReviewAction.Trash, moved);
+
+      await expect(
+        sut.apply(authStub.user1, {
+          action: TrashReviewAction.Trash,
+          ids: ['asset-1'],
+          token,
+          source: UtilityActivityTool.LargeFiles,
+        }),
+      ).resolves.toEqual({ count: 1 });
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Utility activity not recorded'));
+    });
+
+    it('names only the items this session may still see', async () => {
+      mocks.trash.getUtilityActivity.mockResolvedValue([
+        {
+          id: 'entry-1',
+          action: UtilityActivityAction.Trash,
+          createdAt: new Date('2026-09-25T12:00:00.000Z'),
+          items: [
+            { assetId: 'asset-1', fileName: 'Lake.mov', bytes: 4000 },
+            { assetId: 'asset-locked', fileName: 'Private.mov', bytes: 9000 },
+          ],
+        },
+      ]);
+      mocks.trash.getVisibleIds.mockResolvedValue(new Set(['asset-1']));
+
+      await expect(sut.getUtilityActivity(authStub.user1, { tool: UtilityActivityTool.LargeFiles })).resolves.toEqual({
+        entries: [
+          {
+            id: 'entry-1',
+            action: UtilityActivityAction.Trash,
+            createdAt: '2026-09-25T12:00:00.000Z',
+            itemCount: 1,
+            bytes: 4000,
+            items: [{ assetId: 'asset-1', fileName: 'Lake.mov', bytes: 4000 }],
+            unavailableCount: 1,
+          },
+        ],
+      });
+      expect(mocks.trash.getVisibleIds).toHaveBeenCalledWith(
+        'user-id',
+        ['asset-1', 'asset-locked'],
+        expect.not.objectContaining({ lockedOwnerId: 'user-id' }),
+      );
     });
   });
 

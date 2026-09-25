@@ -1,13 +1,15 @@
 import { Mode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
+import { addMessages } from 'svelte-i18n';
+import en from '$i18n/en.json';
 import { discoveryUrl, emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { Route } from '$lib/route';
 import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import SearchPage from './+page.svelte';
 
-const flags = $state({ search: true, smartSearch: false });
+const flags = $state({ search: true, smartSearch: false, askSearch: true });
 const navigation = vi.hoisted(() => ({ goto: vi.fn(), afterNavigate: vi.fn() }));
 const state = $state({
   url: new URL('http://localhost/search'),
@@ -68,6 +70,7 @@ const setQuery = (terms: Parameters<typeof Route.search>[0]) => {
 beforeEach(() => {
   vi.clearAllMocks();
   flags.smartSearch = false;
+  flags.askSearch = true;
   state.url = new URL('http://localhost/search');
   vi.mocked(searchAssets).mockResolvedValue(result([]));
 });
@@ -193,4 +196,74 @@ it('draws the palette-style chips on the results page and removes one condition 
   const next = JSON.parse(url.searchParams.get('dq')!);
   expect(next.filter).toEqual({ isFavorite: { eq: true } });
   expect(next.text).toBe('IMG');
+});
+
+// FL-31: the Ask panel on the empty search page.
+describe('Ask about your photos', () => {
+  beforeAll(() => {
+    addMessages('dev', en);
+  });
+
+  const answer = (ids: string[]) => ({
+    query: 'favorite videos since 2020',
+    plan: { filters: {}, mode: Mode2.Smart, normalizedQuery: 'favorite videos since 2020' },
+    explanation: 'Favorite videos taken since 2020.',
+    warnings: [],
+    results: result(ids),
+  });
+
+  it('asks the real natural-language search from the field', async () => {
+    flags.smartSearch = true;
+    vi.mocked(askSearch).mockResolvedValue(answer(['asked']));
+    render(SearchPage);
+
+    const field = screen.getByRole('combobox', { name: 'Ask about your photos' });
+    await fireEvent.input(field, { target: { value: 'favorite videos since 2020' } });
+    await fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect(navigation.goto).toHaveBeenCalledWith(
+      expect.objectContaining({ href: expect.stringContaining('ask=favorite+videos+since+2020') }),
+      expect.anything(),
+    );
+    flushSync(() => {
+      state.url = new URL('http://localhost/search?ask=favorite+videos+since+2020');
+    });
+    await screen.findByText('asked');
+    expect(askSearch).toHaveBeenCalledWith(
+      { askSearchDto: expect.objectContaining({ query: 'favorite videos since 2020', page: 1 }) },
+      expect.anything(),
+    );
+    expect(screen.getByText('Favorite videos taken since 2020.')).toBeInTheDocument();
+  });
+
+  it('shows its own error with Try again instead of a toast', async () => {
+    flags.smartSearch = true;
+    vi.mocked(askSearch)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(answer(['second']));
+    state.url = new URL('http://localhost/search?ask=beach');
+    render(SearchPage);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Frameleaf couldn't answer that just now.");
+    expect(handleError).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByText('second');
+    expect(askSearch).toHaveBeenCalledTimes(2);
+  });
+
+  it('says Ask is turned off when the server setting is off', () => {
+    flags.smartSearch = true;
+    flags.askSearch = false;
+    state.url = new URL('http://localhost/search?ask=beach');
+    render(SearchPage);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Ask about your photos is turned off on this server.');
+    expect(askSearch).not.toHaveBeenCalled();
+  });
+
+  it('is not offered without smart search', () => {
+    render(SearchPage);
+    expect(screen.queryByRole('combobox', { name: 'Ask about your photos' })).not.toBeInTheDocument();
+  });
 });

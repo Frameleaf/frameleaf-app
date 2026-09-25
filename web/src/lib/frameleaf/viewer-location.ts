@@ -30,11 +30,18 @@ export const locationDraft = (exif: ExifResponseDto | undefined | null): Locatio
 export const parseCoordinate = (value: string, limit: number) =>
   value.trim() === '' ? null : validCoordinate(Number(value.trim().replace(',', '.')), limit);
 
+/** The change that removes an item's location (FL-51): the server clears its place names with it. */
+export type LocationRemoval = { latitude: null; longitude: null };
+
+export const isLocationRemoval = (patch: ReturnType<typeof locationPatch>): patch is LocationRemoval =>
+  !!patch && patch !== 'invalid' && patch.latitude === null && patch.longitude === null;
+
 /**
  * The change a save sends: the coordinates when they moved, and each place name the owner changed (an
- * emptied one clears it). `null` when nothing changed. `'invalid'` while a coordinate is not a decimal
- * degree, only one is given, or both are emptied on an item that has a location, which the server
- * cannot remove.
+ * emptied one clears it). Emptying both coordinates of an item that has a location removes it, as the
+ * template's dialog allows (MediaViewer.jsx:3602-3605); the server then clears its place names and the
+ * Live Photo video's location too, so nothing else is sent. `null` when nothing changed. `'invalid'`
+ * while a coordinate is not a decimal degree or only one is given.
  */
 export function locationPatch(
   initial: LocationDraft,
@@ -47,7 +54,7 @@ export function locationPatch(
 
   if (latEmpty && lonEmpty) {
     if (initial.latitude !== '') {
-      return 'invalid';
+      return { latitude: null, longitude: null };
     }
   } else if (lat === null || lon === null) {
     return 'invalid';

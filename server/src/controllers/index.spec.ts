@@ -46,6 +46,7 @@ const ADMIN_ROUTES = new Set([
   'GET system-config/image-description/requeue-estimate',
   'GET system-config/machine-learning/hardware',
   'GET system-config/smart-albums/reevaluate-estimate',
+  'POST server/version-check',
   'POST system-config/image-description/defer-requeue',
   'POST system-config/image-description/requeue',
   'POST system-config/smart-albums/reevaluate',

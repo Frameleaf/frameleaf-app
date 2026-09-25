@@ -3,22 +3,18 @@
 // Simulation only. Every amount is USD, rounded to 1/100 of a cent.
 
 import {
-  cloudModelView,
   cloudModels,
   estimateCloudJob,
   formatUsd,
   walletAvailable,
 } from "./frameleaf-cloud-data.mjs";
-import { cloudPositions, formatDuration, formatRate } from "./gpu-model-catalog.mjs";
+import { formatDuration, formatRate } from "./gpu-model-catalog.mjs";
 
 export const DISCLOSURE_VERSION = "2026-09";
 export const DISCLOSURE_TEXT =
   "Previews leave this server; metadata is removed; nothing is kept after the job.";
 
-/** Studio renders, billed like AI work: GPU time per second plus a start fee. */
-export const renderModels = Object.freeze(cloudPositions("render").map((item) => cloudModelView(item)));
-
-const allModels = () => [...cloudModels, ...renderModels];
+const allModels = () => cloudModels;
 const cents = (value) => Math.round(value * 10000) / 10000;
 const isoDay = (date) => new Date(date).toISOString().slice(0, 10);
 

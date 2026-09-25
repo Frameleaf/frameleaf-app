@@ -23,6 +23,7 @@ import {
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
+import { FRAMELEAF_RELEASES_API } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -189,7 +190,6 @@ const getEnv = (): EnvData => {
   }
 
   const environment = dto.IMMICH_ENV || ImmichEnvironment.Production;
-  const isProd = environment === ImmichEnvironment.Production;
   const buildFolder = dto.IMMICH_BUILD_DATA || '/build';
   const folders = {
     geodata: join(buildFolder, 'geodata'),
@@ -305,7 +305,8 @@ const getEnv = (): EnvData => {
     },
 
     versionCheck: {
-      url: isProd ? 'https://version.immich.cloud/version' : 'https://version.dev.immich.cloud/version',
+      // FL-80: Frameleaf's own release feed only; no Immich version service, in any environment.
+      url: FRAMELEAF_RELEASES_API,
     },
 
     network: {

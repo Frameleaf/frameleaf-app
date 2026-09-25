@@ -12,6 +12,10 @@ import {
   TrashReviewDto,
   TrashReviewResponseDto,
   TrashSummaryResponseDto,
+  UtilityActivityAction,
+  UtilityActivityQueryDto,
+  UtilityActivityResponseDto,
+  UtilityActivityTool,
 } from 'src/dtos/trash.dto.js';
 import { AssetStatus, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -158,7 +162,64 @@ export class TrashService extends BaseService {
     }
 
     await this.afterChange(auth, dto.action, changed);
+    await this.recordUtilityActivity(auth, dto, changed);
     return { count: changed.length };
+  }
+
+  /**
+   * FL-47 (owner decision on FL-146): a move to the trash, or its undo, made from Large files is kept
+   * in its persistent activity history. The change is already made, so a history that cannot be
+   * written (a database handoff) is logged and never turns the change into a failure.
+   */
+  private async recordUtilityActivity(auth: AuthDto, dto: TrashApplyDto, changed: string[]) {
+    const action =
+      dto.action === TrashReviewAction.Trash
+        ? UtilityActivityAction.Trash
+        : dto.action === TrashReviewAction.Restore
+          ? UtilityActivityAction.Restore
+          : undefined;
+    if (dto.source !== UtilityActivityTool.LargeFiles || !action || changed.length === 0) {
+      return;
+    }
+    try {
+      const items = await this.trashRepository.getActivityItems(auth.user.id, changed);
+      const recorded = await this.trashRepository.addUtilityActivity({
+        userId: auth.user.id,
+        tool: dto.source,
+        action,
+        items,
+      });
+      if (!recorded) {
+        this.logger.warn('Utility activity not recorded: the fork schema is not writable (database handoff)');
+      }
+    } catch (error) {
+      this.logger.warn(`Utility activity not recorded: ${error}`);
+    }
+  }
+
+  /**
+   * The owner's activity history for a utility (FL-47), newest first. An item is listed with its name
+   * and size only while this session may still see it (Locked media only in an unlocked session,
+   * nothing the privacy filters hide, nothing permanently deleted); the others are only counted.
+   */
+  async getUtilityActivity(auth: AuthDto, dto: UtilityActivityQueryDto): Promise<UtilityActivityResponseDto> {
+    const rows = await this.trashRepository.getUtilityActivity(auth.user.id, dto.tool);
+    const ids = [...new Set(rows.flatMap((row) => row.items.map((item) => item.assetId)))];
+    const visible = await this.trashRepository.getVisibleIds(auth.user.id, ids, this.scopeOf(auth));
+    return {
+      entries: rows.map((row) => {
+        const items = row.items.filter((item) => visible.has(item.assetId));
+        return {
+          id: row.id,
+          action: row.action,
+          createdAt: new Date(row.createdAt).toISOString(),
+          itemCount: items.length,
+          bytes: items.reduce((sum, item) => sum + toByteCount(item.bytes), 0),
+          items: items.map((item) => ({ ...item, bytes: toByteCount(item.bytes) })),
+          unavailableCount: row.items.length - items.length,
+        };
+      }),
+    };
   }
 
   /** Tell every open tab, and queue the removal of files for permanent deletions. */

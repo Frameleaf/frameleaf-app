@@ -11,6 +11,7 @@
    * administrator) and the account onboarded, then opens the library. "Finish later" leaves without
    * marking anything, so the next sign-in comes back here.
    */
+  import { SvelteSet } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
@@ -74,6 +75,16 @@
   const StepBody = $derived(components[step.id]);
 
   let reached = $state(saved?.reached ?? 0);
+  // Steps this account has already been shown (FL-80 O-8): a step's own defaults apply only on its
+  // first visit, so a choice made there is shown as saved when the admin comes back to it.
+  const visited = new SvelteSet<string>(saved ? steps.slice(0, (saved.reached ?? 0) + 1).map(({ id }) => id) : []);
+  let shownStep: string | undefined;
+  $effect(() => {
+    if (shownStep && shownStep !== step.id) {
+      visited.add(shownStep);
+    }
+    shownStep = step.id;
+  });
   $effect(() => {
     if (index > reached) {
       reached = index;
@@ -187,7 +198,11 @@
       {#key step.id}
         <div class="ob-body">
           {#if configReady}
-            <StepBody />
+            {#if step.id === 'server_privacy'}
+              <OnboardingServerPrivacy firstVisit={!visited.has(step.id)} />
+            {:else}
+              <StepBody />
+            {/if}
           {/if}
         </div>
       {/key}

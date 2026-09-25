@@ -84,6 +84,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000187-MemoryCuration' },
       { name: '0000000000188-MemoryShowLess' },
       { name: '0000000000190-FrameleafUserLicenses' },
+      { name: '0000000000191-UtilityActivity' },
       { name: '0000000000200-FrameleafConsents' },
       { name: '0000000000201-FrameleafAccountLinks' },
       { name: '0000000000202-FrameleafSessions' },
