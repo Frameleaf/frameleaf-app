@@ -1,5 +1,6 @@
 import { CronExpression } from '@nestjs/schedule';
 import { validateCronExpression } from 'cron';
+import { cloneDeep, defaultsDeep } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
@@ -173,11 +174,22 @@ const nsfwDetectionDefaults = {
  * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
  * destination; faces are refused by policy and cannot be turned on in this version.
  */
+const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
 const frameleafCloudDefaults = {
   cloudMl: {
     enabled: false,
-    descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
-    restoration: { enabled: false, defaultModel: '' },
+    // Where each kind of work may run (§3.2): this server only until an administrator chooses.
+    routing: {
+      descriptions: 'local' as 'local' | 'both' | 'cloud',
+      upscale: 'local' as 'local' | 'both' | 'cloud',
+      restoration: 'local' as 'local' | 'both' | 'cloud',
+      studio: 'local' as 'local' | 'both' | 'cloud',
+      interpolation: 'local' as 'local' | 'both' | 'cloud',
+    },
+    startWith: 'local' as 'local' | 'cloud',
+    // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
+    models: { descriptions: '', upscale: '', restoration: '', studio: '', interpolation: '' },
+    autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
     faces: { enabled: false as const },
   },
 };
@@ -448,37 +460,65 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
     .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
 }).meta({ id: 'AdminConfigNsfwDetectionDto' });
 
+const CloudRouteModeSchema = z
+  .enum(['local', 'both', 'cloud'])
+  .describe(
+    'local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only',
+  )
+  .meta({ id: 'CloudRouteMode' });
+
+const routedRecord = <T extends z.ZodType>(schema: T) =>
+  z.object(
+    Object.fromEntries(CLOUD_ROUTED_WORKLOADS.map((workload) => [workload, schema])) as Record<
+      (typeof CLOUD_ROUTED_WORKLOADS)[number],
+      T
+    >,
+  );
+
 const AdminConfigFrameleafCloudSchema = z
   .object({
     cloudMl: z
       .object({
-        enabled: configBool.describe('Allow Frameleaf Cloud processing at all (the destination still needs consent)'),
-        descriptions: z
+        enabled: configBool.describe(
+          'Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)',
+        ),
+        routing: routedRecord(CloudRouteModeSchema)
+          .describe('Where each kind of work may run')
+          .meta({ id: 'AdminConfigFrameleafCloudRoutingDto' }),
+        startWith: z
+          .enum(['local', 'cloud'])
+          .describe('The destination a job preselects when its kind of work may run in both places'),
+        models: routedRecord(z.string().max(200))
+          .describe('The model slider position per kind of work; empty = the heaviest that runs well here')
+          .meta({ id: 'AdminConfigFrameleafCloudModelsDto' }),
+        autoDescribe: z
           .object({
-            enabled: configBool.describe('Allow image descriptions on Frameleaf Cloud'),
-            defaultModel: z.string().max(200).describe('Catalogue model id used for descriptions; empty = none chosen'),
-            autoBatch: configBool.describe('Run background description batches automatically (needs a daily budget)'),
+            enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
             dailyBudgetUsd: z
               .number()
-              .min(0)
-              .max(100_000)
+              .min(0.5)
+              .max(100)
               .meta({ format: 'double' })
-              .describe('Daily spending limit for background batches, USD'),
+              .describe('Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap'),
           })
-          .meta({ id: 'AdminConfigFrameleafCloudDescriptionsDto' }),
-        restoration: z
-          .object({
-            enabled: configBool.describe('Allow restoration and upscaling on Frameleaf Cloud'),
-            defaultModel: z.string().max(200).describe('Catalogue model id preselected for restoration'),
-          })
-          .meta({ id: 'AdminConfigFrameleafCloudRestorationDto' }),
+          .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
         faces: z
-          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud in this version') })
+          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
           .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
       })
       .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })
   .meta({ id: 'AdminConfigFrameleafCloudDto' });
+
+/**
+ * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped.
+ */
+export const readFrameleafCloudConfig = (value: unknown): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults);
+  const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
+  return parsed.success ? parsed.data : cloneDeep(frameleafCloudDefaults);
+};
 
 // Admin-controlled but unbounded strings flow into background-job log lines
 // and the smart-album evaluator. Cap to 256 chars and reject control characters

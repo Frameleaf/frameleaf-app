@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { CloudMlGateway } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import type { MachineLearningHardwareResponse, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import type { SystemConfig } from 'src/config.js';
 import type { FrameleafMlWallet } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -11,6 +12,7 @@ import {
   CloudMlSettlementsResponseDto,
   CloudMlStatusResponseDto,
   CloudMlWalletDto,
+  CloudMlWalletUpdateDto,
 } from 'src/dtos/cloud-ml.dto.js';
 import { MlDestinationResponseDto } from 'src/dtos/ml-destination.dto.js';
 import {
@@ -19,6 +21,7 @@ import {
   MachineLearningHardwareAcceleration,
   MlAdmissionRefusal,
   MlDestinationKind,
+  MlWorkload,
   NotificationLevel,
   NotificationType,
   SystemMetadataKey,
@@ -32,12 +35,34 @@ import {
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   CloudProbeFacts,
+  CloudUsage,
   FrameleafCloudError,
   cloudFactsFromCapabilities,
   knownWorkloads,
 } from 'src/utils/frameleaf-cloud.js';
 import { mapMlDestination } from 'src/utils/ml-destination-dto.js';
 import { ML_BUDGET_WINDOW_DAYS, workloadPolicyProblem } from 'src/utils/ml-destination.js';
+
+/** The routed kind of work (Where each job runs) each cloud workload belongs to. */
+const ROUTED_KIND: Partial<
+  Record<MlWorkload, 'descriptions' | 'upscale' | 'restoration' | 'studio' | 'interpolation'>
+> = {
+  [MlWorkload.Enrichment]: 'descriptions',
+  [MlWorkload.Upscale]: 'upscale',
+  [MlWorkload.RestorationFaithful]: 'restoration',
+  [MlWorkload.RestorationCreative]: 'restoration',
+  [MlWorkload.StudioAi]: 'studio',
+  [MlWorkload.Interpolation]: 'interpolation',
+};
+
+/** Whether the administrator allowed this workload on Frameleaf Cloud ("Both" or "Cloud only"). */
+export const cloudRouteAllows = (
+  cloudMl: Pick<SystemConfig['frameleafCloud']['cloudMl'], 'routing'>,
+  workload: MlWorkload,
+): boolean => {
+  const kind = ROUTED_KIND[workload];
+  return !!kind && cloudMl.routing[kind] !== 'local';
+};
 
 /** How many settled charges the processing section lists. */
 const CLOUD_ML_SETTLEMENT_LIMIT = 50;
@@ -185,6 +210,23 @@ export class CloudMlService extends BaseService {
     return this.toWalletDto(await this.refreshWallet(gateway));
   }
 
+  /**
+   * Change the account's daily cap or automatic top-up (`PATCH /v2/wallet`). Card details never
+   * pass through this server: automatic top-up uses the payment method saved on frameleaf.cloud.
+   */
+  async updateWallet(dto: CloudMlWalletUpdateDto): Promise<CloudMlWalletDto> {
+    const gateway = await this.requireGateway();
+    const settings = {
+      ...(dto.dailyCapUsd !== undefined && { dailyCapUsd: dto.dailyCapUsd }),
+      ...(dto.autoTopUp !== undefined && { autoTopUp: dto.autoTopUp }),
+    };
+    if (Object.keys(settings).length === 0) {
+      throw new BadRequestException('Nothing to change');
+    }
+    const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.updateWallet(gateway, settings));
+    return this.toWalletDto(await this.cacheWallet({ ...wallet }, wallet.topUpUrl));
+  }
+
   /** The models Frameleaf Cloud offers now, for the model picker. Retired models are left out. */
   async getCatalog(): Promise<CloudMlCatalogResponseDto> {
     const gateway = await this.requireGateway();
@@ -229,16 +271,34 @@ export class CloudMlService extends BaseService {
       return { items: [] };
     }
     const rows = await this.mlDestinationRepository.getSettlements(destination.id, CLOUD_ML_SETTLEMENT_LIMIT);
+    // What each charge is made of (model, GPU time, workers, the estimate shown) comes from the cloud's
+    // usage record when it answers; the local rows stand on their own when it does not.
+    const details = new Map<string, CloudUsage['items'][number]>();
+    const resolution = await resolveCloudGateway(this.gatewayDeps());
+    if (resolution.state === CloudConnectionState.Ready && rows.length > 0) {
+      const since = new Date(Date.now() - CLOUD_ML_USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+      const usage = await this.frameleafCloudMlRepository.getUsage(resolution.gateway, since).catch(() => null);
+      for (const item of usage?.items ?? []) {
+        details.set(item.jobId, item);
+      }
+    }
     return {
-      items: rows.map((row) => ({
-        cloudJobId: row.cloudJobId!,
-        workload: row.workload,
-        jobName: row.jobName,
-        succeeded: row.outcome === 'success',
-        costUsd: Number(row.costUsd),
-        credits: row.credits === null ? null : Number(row.credits),
-        finishedAt: new Date(row.finishedAt).toISOString(),
-      })),
+      items: rows.map((row) => {
+        const detail = details.get(row.cloudJobId!);
+        return {
+          cloudJobId: row.cloudJobId!,
+          workload: row.workload,
+          jobName: row.jobName,
+          succeeded: row.outcome === 'success',
+          costUsd: Number(row.costUsd),
+          credits: row.credits === null ? null : Number(row.credits),
+          finishedAt: new Date(row.finishedAt).toISOString(),
+          modelId: detail?.modelId ?? null,
+          gpuSeconds: detail?.gpuSeconds ?? null,
+          workers: detail?.workers ?? null,
+          estimateUsd: detail?.estimateUsd ?? null,
+        };
+      }),
     };
   }
 
@@ -321,8 +381,12 @@ export class CloudMlService extends BaseService {
       });
       return {
         reachable: true,
-        workloads: knownWorkloads(capabilities.workloads).filter((workload) =>
-          FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload),
+        // Only what the gateway offers, and only work the administrator allowed on the cloud (§3.2):
+        // a kind of work set to "Local only" is not served here, so admission refuses it.
+        workloads: knownWorkloads(capabilities.workloads).filter(
+          (workload) =>
+            FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload) &&
+            cloudRouteAllows(config.frameleafCloud.cloudMl, workload),
         ),
         hardware: this.toHardware(hardware),
         latencyMs: Date.now() - started,
@@ -362,16 +426,21 @@ export class CloudMlService extends BaseService {
 
   private async refreshWallet(gateway: CloudMlGateway): Promise<FrameleafMlWallet> {
     const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
-    return this.cacheWallet(wallet, wallet.topUpUrl);
+    return this.cacheWallet({ ...wallet }, wallet.topUpUrl);
   }
 
   private async cacheWallet(
-    wallet: Pick<FrameleafMlWallet, 'balanceUsd' | 'heldUsd' | 'dailyCapUsd' | 'spentTodayUsd'>,
+    wallet: Pick<FrameleafMlWallet, 'balanceUsd' | 'heldUsd' | 'dailyCapUsd' | 'spentTodayUsd'> &
+      Partial<Pick<FrameleafMlWallet, 'autoTopUp'>>,
     topUpUrl?: string | null,
   ): Promise<FrameleafMlWallet> {
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafMlWallet);
     const value: FrameleafMlWallet = {
-      ...wallet,
+      balanceUsd: wallet.balanceUsd,
+      heldUsd: wallet.heldUsd,
+      dailyCapUsd: wallet.dailyCapUsd,
+      spentTodayUsd: wallet.spentTodayUsd,
+      autoTopUp: wallet.autoTopUp ?? previous?.autoTopUp ?? false,
       topUpUrl: topUpUrl === undefined ? (previous?.topUpUrl ?? null) : topUpUrl,
       updatedAt: new Date().toISOString(),
     };
@@ -387,6 +456,7 @@ export class CloudMlService extends BaseService {
       dailyCapUsd: wallet.dailyCapUsd,
       spentTodayUsd: wallet.spentTodayUsd,
       topUpUrl: wallet.topUpUrl,
+      autoTopUp: wallet.autoTopUp ?? false,
       updatedAt: wallet.updatedAt,
     };
   }

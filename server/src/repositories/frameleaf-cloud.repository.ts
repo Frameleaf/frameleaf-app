@@ -17,7 +17,7 @@ import {
 } from 'src/utils/frameleaf-cloud.js';
 
 export type FrameleafCloudRequest = {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   /** Absolute URL; always built from the configured cloud address or from discovery. */
   url: string;
   bearer?: string;
