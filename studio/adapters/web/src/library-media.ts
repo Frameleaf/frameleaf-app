@@ -139,13 +139,16 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 export interface LibraryMediaSeeder {
   /** Make these assets available to the project; already-seeded ids are left alone. */
   seed(assets: readonly StudioAssetRef[]): Promise<void>
+  /** Link every seeded asset to another project (a remounted editor has its own project id). */
+  associate(projectId: string): Promise<void>
   /** Stop probing and release every registered URL. */
   dispose(): void
 }
 
 export function createLibraryMediaSeeder(options: {
   workspace: VirtualWorkspace
-  projectId: string
+  /** The project new assets are linked to: the current editor mount's. */
+  projectId: () => string
   /** Called after a record changes, so the bin can re-read it. */
   onChange: () => void
 }): LibraryMediaSeeder {
@@ -206,7 +209,7 @@ export function createLibraryMediaSeeder(options: {
           record.mimeType,
         )
         blobUrlManager.registerUrl(asset.id, sourceUrlOf(asset))
-        await associateMediaWithProject(projectId, asset.id)
+        await associateMediaWithProject(projectId(), asset.id)
       }
       if (fresh.length > 0) onChange()
       // Probe one at a time in the background, handoff order first: it is the starting cut.
@@ -214,6 +217,10 @@ export function createLibraryMediaSeeder(options: {
         for (const asset of fresh) await enrich(asset)
       })
       await probing
+    },
+    async associate(target) {
+      for (const id of seeded) await associateMediaWithProject(target, id)
+      onChange()
     },
     dispose() {
       controller.abort()
