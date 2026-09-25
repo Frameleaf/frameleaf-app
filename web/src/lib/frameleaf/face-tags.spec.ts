@@ -1,9 +1,10 @@
-import type { AssetFaceResponseDto } from '@immich/sdk';
+import { SourceType, type AssetFaceResponseDto } from '@immich/sdk';
 import {
   adjustFaceBox,
   boxFromPoints,
   checkPersonName,
   draftFromFace,
+  faceProvenance,
   hasFaceTagChanges,
   imageContentRect,
   imagePoint,
@@ -20,8 +21,15 @@ import {
 } from './face-tags';
 
 const box = { x: 0.2, y: 0.2, width: 0.2, height: 0.2 };
-const detected = (id: string, personId = ''): DraftFace => ({ id, personId, box, detected: true });
-const added = (id: string, personId = ''): DraftFace => ({ id, personId, box, detected: false });
+const detected = (id: string, personId = '', revision = `r-${id}`): DraftFace => ({
+  id,
+  personId,
+  box,
+  stored: true,
+  provenance: 'detected',
+  revision,
+});
+const added = (id: string, personId = ''): DraftFace => ({ id, personId, box, stored: false, provenance: 'manual' });
 
 describe('face tag geometry', () => {
   it('letterboxes the image inside the stage', () => {
@@ -78,13 +86,19 @@ describe('face tag geometry', () => {
       boundingBoxY1: 50,
       boundingBoxX2: 300,
       boundingBoxY2: 250,
+      revision: 'rev-1',
+      correctedAt: null,
+      hiddenAt: null,
+      sourceType: SourceType.MachineLearning,
       person: { id: 'person-1' },
     } as AssetFaceResponseDto;
     const draft = draftFromFace(face);
     expect(draft).toEqual({
       id: 'face-1',
       personId: 'person-1',
-      detected: true,
+      stored: true,
+      provenance: 'detected',
+      revision: 'rev-1',
       box: { x: 0.1, y: 0.1, width: 0.2, height: 0.4 },
     });
     expect(draftFromFace({ ...face, person: null }).personId).toBe('');
@@ -117,17 +131,79 @@ describe('face tag geometry', () => {
   });
 });
 
+describe('face provenance', () => {
+  it('tells detected, manual and corrected faces apart', () => {
+    expect(faceProvenance({ sourceType: SourceType.MachineLearning, correctedAt: null })).toBe('detected');
+    expect(faceProvenance({ sourceType: SourceType.Manual, correctedAt: null })).toBe('manual');
+    expect(faceProvenance({ sourceType: SourceType.MachineLearning, correctedAt: '2026-09-25T00:00:00Z' })).toBe(
+      'corrected',
+    );
+    expect(faceProvenance({ sourceType: undefined, correctedAt: null })).toBe('detected');
+  });
+});
+
+describe('face tag geometry across orientation and edits', () => {
+  // The server answers in the displayed (upright, edited) image; a 1500x2000 view of a rotated,
+  // cropped original, drawn on a 750x1000 preview, keeps its place as fractions of either size.
+  const face = {
+    id: 'f',
+    imageWidth: 1500,
+    imageHeight: 2000,
+    boundingBoxX1: 200,
+    boundingBoxY1: 400,
+    boundingBoxX2: 300,
+    boundingBoxY2: 600,
+    revision: 'r',
+    correctedAt: null,
+    hiddenAt: null,
+    person: null,
+  } as AssetFaceResponseDto;
+
+  it('round-trips a server box through fractions and the preview size the tagger loaded', () => {
+    const draft = draftFromFace(face);
+    expect(draft.box).toEqual({ x: 0.133333, y: 0.2, width: 0.066667, height: 0.1 });
+    expect(toPixelBox(draft.box, { width: 750, height: 1000 })).toEqual({ x: 100, y: 200, width: 50, height: 100 });
+    expect(toPixelBox(draft.box, { width: 1500, height: 2000 })).toEqual({ x: 200, y: 400, width: 100, height: 200 });
+  });
+
+  it('keeps a landscape face on a portrait (rotated) display inside the image', () => {
+    const edge = draftFromFace({ ...face, boundingBoxX1: 1400, boundingBoxX2: 1600 });
+    expect(edge.box.x + edge.box.width).toBeLessThanOrEqual(1);
+    expect(
+      toPixelBox(edge.box, { width: 750, height: 1000 }).x + toPixelBox(edge.box, { width: 750, height: 1000 }).width,
+    ).toBeLessThanOrEqual(750);
+  });
+});
+
 describe('face tag save planning', () => {
-  it('turns the draft into deletes, reassigns and creates', () => {
-    const baseline = [detected('a', 'p1'), detected('b', 'p2'), detected('c')];
-    const draft = [detected('a', 'p3'), detected('c'), added('n1', 'new-1'), added('n2', 'p1')];
+  it('turns the draft into revision-checked deletes, updates and creates', () => {
+    const moved = { x: 0.3, y: 0.3, width: 0.2, height: 0.2 };
+    const baseline = [
+      detected('a', 'p1'),
+      detected('b', 'p2'),
+      detected('c'),
+      detected('d', 'p4'),
+      detected('e', 'p5'),
+    ];
+    const draft = [
+      detected('a', 'p3'),
+      detected('c'),
+      { ...detected('d', ''), box: moved },
+      { ...detected('e', 'p5'), box: moved },
+      added('n1', 'new-1'),
+      added('n2', 'p1'),
+    ];
     const plan = planFaceTagSave(baseline, draft, [
       { id: 'new-1', name: 'Nova' },
       { id: 'new-2', name: 'Unused' },
     ]);
     expect(plan).toEqual({
-      deletes: ['b'],
-      reassigns: [{ faceId: 'a', personId: 'p3' }],
+      deletes: [{ faceId: 'b', revision: 'r-b' }],
+      updates: [
+        { faceId: 'a', revision: 'r-a', personId: 'p3' },
+        { faceId: 'd', revision: 'r-d', personId: null, box: moved },
+        { faceId: 'e', revision: 'r-e', box: moved },
+      ],
       creates: [
         { faceId: 'n1', personId: 'new-1', box },
         { faceId: 'n2', personId: 'p1', box },
@@ -138,7 +214,7 @@ describe('face tag save planning', () => {
     expect(hasFaceTagChanges(planFaceTagSave(baseline, baseline, []))).toBe(false);
   });
 
-  it('lets a detected face stay unassigned but needs a known person on every new region', () => {
+  it('lets a stored face stay or become unassigned but needs a known person on every new region', () => {
     const known = new Set(['p1']);
     expect(isDraftSavable([detected('a'), added('n', 'p1')], known)).toBe(true);
     expect(isDraftSavable([added('n')], known)).toBe(false);
@@ -146,22 +222,27 @@ describe('face tag save planning', () => {
   });
 
   it('re-applies only the failed changes on top of what the server now holds', () => {
-    const draft = [detected('a', 'new-1'), added('n1', 'new-1'), added('n2', 'p1')];
-    const server = [detected('a', 'p1'), detected('b', 'p2'), detected('saved', 'p1')];
+    const moved = { x: 0.5, y: 0.5, width: 0.1, height: 0.1 };
+    const draft = [{ ...detected('a', 'new-1'), box: moved }, added('n1', 'new-1'), added('n2', 'p1')];
+    const server = [detected('a', 'p1', 'r2'), detected('b', 'p2'), detected('saved', 'p1')];
     const rebased = rebaseAfterPartialSave(
       server,
       draft,
-      { deletes: new Set(['b']), reassigns: new Set(['a']), creates: new Set(['n1']) },
+      { deletes: new Set(['b']), updates: new Set(['a']), creates: new Set(['n1']) },
       new Map([['new-1', 'real-1']]),
     );
-    expect(rebased).toEqual([detected('a', 'real-1'), detected('saved', 'p1'), added('n1', 'real-1')]);
+    expect(rebased).toEqual([
+      { ...detected('a', 'real-1', 'r2'), box: moved },
+      detected('saved', 'p1'),
+      added('n1', 'real-1'),
+    ]);
   });
 
   it('projects the saved state from the baseline when the server cannot be re-read', () => {
     const baseline = [detected('a', 'p1'), detected('b', 'p2'), detected('c', 'p2')];
     const plan = planFaceTagSave(baseline, [detected('a', 'new-1'), detected('c', 'p1')], [{ id: 'new-1', name: 'N' }]);
     expect(
-      projectSavedFaces(baseline, plan, { deletes: new Set(), reassigns: new Set(['c']) }, new Map([['new-1', 'r1']])),
-    ).toEqual([detected('a', 'r1'), detected('c', 'p2')]);
+      projectSavedFaces(baseline, plan, { deletes: new Set(), updates: new Set(['c']) }, new Map([['new-1', 'r1']])),
+    ).toEqual([{ ...detected('a', 'r1', 'r-a'), provenance: 'corrected' }, detected('c', 'p2')]);
   });
 });
