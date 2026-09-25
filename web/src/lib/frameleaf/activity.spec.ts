@@ -7,6 +7,7 @@ import {
 } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
+  activityCompletion,
   activityCounts,
   activityEtaSeconds,
   activityIndicatorState,
@@ -666,5 +667,63 @@ describe('the status line (FL-30, prototype `statusText`)', () => {
     expect(formatActivityDuration(20, 'en')).toBe('20 seconds');
     expect(formatActivityDuration(125, 'en')).toBe('3 minutes');
     expect(formatActivityDuration(5400, 'en')).toBe('1.5 hours');
+  });
+});
+
+describe('Studio renders, server estimates and completion (FL-104)', () => {
+  const translate = (key: string, options?: { values?: Record<string, unknown> }) =>
+    options?.values ? `${key}(${JSON.stringify(options.values)})` : key;
+  const formatDuration = (seconds: number) => `${seconds}s`;
+
+  it('carries the project of a Studio export or preview so the row can open it in Studio', () => {
+    expect(
+      fromMediaOperation(operation({ kind: MediaOperationKind.StudioExport, projectId: 'project-1' })).projectId,
+    ).toBe('project-1');
+    expect(
+      fromMediaOperation(operation({ kind: MediaOperationKind.StudioPreview, projectId: 'project-1' })).projectId,
+    ).toBe('project-1');
+    expect(
+      fromMediaOperation(operation({ kind: MediaOperationKind.StudioBundleExport, projectId: 'p' })).projectId,
+    ).toBe(undefined);
+    expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioExport, projectId: null })).projectId).toBe(
+      undefined,
+    );
+  });
+
+  it("prefers the server's measured estimate and says the finished size", () => {
+    const running = fromMediaOperation(
+      operation({ progress: 10, estimate: { seconds: 125.2, sizeBytes: '12000000', cloudCost: null } }),
+    );
+    expect(activityEtaSeconds(running, Date.now())).toBe(126);
+    expect(running.sizeBytes).toBe(12_000_000);
+
+    const done = fromMediaOperation(
+      operation({
+        status: MediaOperationStatus.Completed,
+        estimate: { seconds: 0, sizeBytes: '12000000', cloudCost: null },
+      }),
+    );
+    expect(activityStatusText(done, { translate, formatDuration, formatSize: (bytes) => `${bytes}B` })).toBe(
+      'frameleaf_activity_status_done_size({"status":"frameleaf_activity_status_completed","size":"12000000B"})',
+    );
+    // No estimate: nothing is invented.
+    expect(fromMediaOperation(operation()).estimateSeconds).toBeUndefined();
+  });
+
+  it('announces a job that finishes or fails after it was seen, never on first sight', () => {
+    const running = fromMediaOperation(operation());
+    const done = fromMediaOperation(operation({ status: MediaOperationStatus.Completed }));
+    const failed = fromMediaOperation(operation({ status: MediaOperationStatus.Failed }));
+
+    expect(activityCompletion(new Map(), [done])).toBeNull();
+    expect(activityCompletion(new Map([[running.id, running.statusKey]]), [done])).toEqual({
+      id: done.id,
+      outcome: 'finished',
+    });
+    expect(activityCompletion(new Map([[running.id, running.statusKey]]), [failed])).toEqual({
+      id: failed.id,
+      outcome: 'failed',
+    });
+    expect(activityCompletion(new Map([[done.id, done.statusKey]]), [done])).toBeNull();
   });
 });
