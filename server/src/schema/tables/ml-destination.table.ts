@@ -158,6 +158,14 @@ export class MlWorkloadRouteTable {
   // Created by the fork migration, not the schema generator (as media-operation.table.ts does).
   synchronize: false,
 })
+// FL-159: settled Frameleaf Cloud charges are matched by cloud job id
+// (fork migration 0000000000201-MlWorkloadAccountingCloudJobIndex).
+@Index({
+  name: 'ml_workload_accounting_cloudJobId_idx',
+  columns: ['cloudJobId'],
+  where: '("cloudJobId" IS NOT NULL)',
+  synchronize: false,
+})
 @Table('ml_workload_accounting')
 export class MlWorkloadAccountingTable {
   @PrimaryGeneratedColumn()

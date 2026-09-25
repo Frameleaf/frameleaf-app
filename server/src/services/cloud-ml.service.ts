@@ -155,12 +155,7 @@ export class CloudMlService extends BaseService {
         outdated: accepted !== null && accepted !== consent.requiredVersion,
       };
       status.wallet = this.toWalletDto(await this.refreshWallet(resolution.gateway));
-      if (destination) {
-        // Settled costs land on the accounting rows so spend and budgets reflect what was charged.
-        await this.reconcileUsage().catch((error) =>
-          this.logger.warn(`Frameleaf Cloud usage reconcile failed: ${error}`),
-        );
-      }
+      // Settled costs are applied by `POST admin/cloud/ml/usage` (update permission), never by this read.
     } catch (error) {
       if (!(error instanceof FrameleafCloudError)) {
         throw error;
