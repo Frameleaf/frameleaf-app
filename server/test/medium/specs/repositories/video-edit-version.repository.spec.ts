@@ -245,6 +245,8 @@ it('permanently deletes version state and queues all derived paths while protect
     ownerId: user.id,
     type: AssetType.Video,
     originalPath: '/source/delete-versioned.mp4',
+    // Permanent deletion only removes an asset that is still in the trash (FL-71).
+    deletedAt: new Date(),
   });
   const versions = ctx.get(AssetEditRepository);
   await versions.replaceAll(asset.id, recipe);
