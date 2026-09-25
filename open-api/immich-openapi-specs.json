@@ -7902,6 +7902,63 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/edits/keyframes": {
+      "get": {
+        "description": "The keyframe times of the original video, so an editor can show where a fast (keyframe) trim actually cuts. Owner's edit permission only; never the edited version.",
+        "operationId": "getAssetEditKeyframes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEditKeyframesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the original video's keyframes",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/{id}/image-enrichment": {
       "get": {
         "description": "Retrieve private image description, tag, and NSFW detection metadata for a specific asset.",
@@ -43835,6 +43892,23 @@
           "action",
           "id",
           "parameters"
+        ],
+        "type": "object"
+      },
+      "AssetEditKeyframesResponseDto": {
+        "properties": {
+          "keyframesMs": {
+            "description": "Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point.",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keyframesMs"
         ],
         "type": "object"
       },
