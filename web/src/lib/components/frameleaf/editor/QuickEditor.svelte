@@ -27,6 +27,7 @@
   import VideoEditorPanel, { type VideoEditorDraft } from '$lib/components/asset-viewer/editor/VideoEditorPanel.svelte';
   import CropOverlay from '$lib/components/frameleaf/editor/CropOverlay.svelte';
   import DevelopGroup from '$lib/components/frameleaf/editor/DevelopGroup.svelte';
+  import EditorMenu, { type EditorMenuItem } from '$lib/components/frameleaf/editor/EditorMenu.svelte';
   import EditorSlider from '$lib/components/frameleaf/editor/EditorSlider.svelte';
   import Histogram from '$lib/components/frameleaf/editor/Histogram.svelte';
   import MaskOverlay from '$lib/components/frameleaf/editor/MaskOverlay.svelte';
@@ -52,6 +53,7 @@
     cssFilterFor,
     developDefaults,
     fitCropRect,
+    isCompareKey,
     presetFor,
     rotateAspect,
     rotateRect,
@@ -124,8 +126,9 @@
     mdiCompare,
     mdiCompareHorizontal,
     mdiContentCopy,
-    mdiContentPaste,
+    mdiContentDuplicate,
     mdiCropRotate,
+    mdiDotsVertical,
     mdiFlipHorizontal,
     mdiFlipVertical,
     mdiHistory,
@@ -176,8 +179,10 @@
     { id: 'masks', label: 'frameleaf_editor_tool_masks', icon: mdiVectorEllipse },
     { id: 'presets', label: 'frameleaf_editor_tool_presets', icon: mdiImageFilterVintage },
     { id: 'restore', label: 'frameleaf_editor_tool_restore', icon: mdiAutoFix },
-    { id: 'versions', label: 'frameleaf_editor_tool_versions', icon: mdiHistory },
   ];
+  // Versions is the top-bar popover (Editor.jsx:1924-1943); its full list opens in the panel.
+  const panelLabel = (id: Tool): Translations =>
+    id === 'versions' ? 'frameleaf_editor_tool_versions' : tools.find((item) => item.id === id)!.label;
 
   /* Draft --------------------------------------------------------------- */
   let draft = $state<EditorDraft>(createDraft());
@@ -333,6 +338,23 @@
 
   let before = $state(false);
   let split = $state(false);
+  // Holding compare on a photo shows the untouched original, geometry included, like Apple
+  // Photos (Editor.jsx:658-660). Split view keeps the edited framing.
+  const showingOriginal = $derived(before && !split);
+  // A held compare key or pointer can lose its release when the window loses focus
+  // (Editor.jsx:627-637).
+  $effect(() => {
+    if (!before) {
+      return;
+    }
+    const release = () => (before = false);
+    addEventListener('blur', release);
+    document.addEventListener('visibilitychange', release);
+    return () => {
+      removeEventListener('blur', release);
+      document.removeEventListener('visibilitychange', release);
+    };
+  });
   let splitAt = $state(0.5);
   let dragRect = $state<CropRect | null>(null);
   let dragging = $state(false);
@@ -372,10 +394,10 @@
     if (!stage.w || !stage.h) {
       return null;
     }
-    const rotated = recipe.rotation % 180 !== 0;
+    const rotated = !showingOriginal && recipe.rotation % 180 !== 0;
     const ow = rotated ? source.h : source.w;
     const oh = rotated ? source.w : source.h;
-    const view = cropping ? FULL_RECT : rect;
+    const view = cropping || showingOriginal ? FULL_RECT : rect;
     const scale = Math.min(stage.w / (ow * view.w), stage.h / (oh * view.h));
     const fw = ow * scale;
     const fh = oh * scale;
@@ -391,7 +413,7 @@
     let right = 0;
     let bottom = 0;
     let left = 0;
-    if (!cropping) {
+    if (!cropping && !showingOriginal) {
       top = rect.y * fh;
       left = rect.x * fw;
       right = (1 - rect.x - rect.w) * fw;
@@ -416,13 +438,19 @@
     const width = frame.rotated ? frame.fh : frame.fw;
     const height = frame.rotated ? frame.fw : frame.fh;
     const filter = plain || previewMatches ? 'none' : filterInfo.filter;
-    return `width:${width}px;height:${height}px;transform:translate(-50%, -50%) scale(${recipe.flipHorizontal ? -1 : 1}, ${recipe.flipVertical ? -1 : 1}) rotate(${recipe.rotation}deg);filter:${filter}`;
+    const transform = showingOriginal
+      ? 'translate(-50%, -50%) scale(1, 1) rotate(0deg)'
+      : `translate(-50%, -50%) scale(${recipe.flipHorizontal ? -1 : 1}, ${recipe.flipVertical ? -1 : 1}) rotate(${recipe.rotation}deg)`;
+    return `width:${width}px;height:${height}px;transform:${transform};filter:${filter}`;
   };
-  const straightenStyle = $derived(
-    frame
-      ? `transform:rotate(${recipe.straighten}deg) scale(${straightenScale(frame.fw, frame.fh, recipe.straighten)})`
-      : '',
-  );
+  const straightenStyle = $derived.by(() => {
+    if (!frame) {
+      return '';
+    }
+    return showingOriginal
+      ? 'transform:rotate(0deg) scale(1)'
+      : `transform:rotate(${recipe.straighten}deg) scale(${straightenScale(frame.fw, frame.fh, recipe.straighten)})`;
+  });
   const windowStyle = $derived(
     frame
       ? `left:${rect.x * frame.fw}px;top:${rect.y * frame.fh}px;width:${rect.w * frame.fw}px;height:${rect.h * frame.fh}px`
@@ -507,7 +535,7 @@
     develop = {
       assetId: asset.id,
       currentRevisionId: develop?.currentRevisionId ?? null,
-      revisions: [revision, ...(develop?.revisions ?? [])],
+      revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
     };
     follow();
   };
@@ -583,7 +611,7 @@
       develop = {
         assetId: asset.id,
         currentRevisionId: develop?.currentRevisionId ?? null,
-        revisions: [revision, ...(develop?.revisions ?? [])],
+        revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
       };
       opened = normalizeRecipe(recipe);
       announce = $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
@@ -659,7 +687,9 @@
   };
   const loadRevision = (revision: AssetDevelopRevisionResponseDto | null) => {
     change(revision ? normalizeRecipe(revision.recipe) : initialRecipe());
-    tool = 'adjust';
+    if (tool === 'versions') {
+      tool = 'adjust';
+    }
   };
   const replaceRevision = (updated: AssetDevelopRevisionResponseDto) => {
     if (!develop) {
@@ -684,17 +714,22 @@
       void cancel();
       return;
     }
+    // Compare also works while an adjustment slider has focus, so you can nudge and check
+    // (Editor.jsx:1082-1088).
+    const typing = isEditable(event.target) && (event.target as HTMLInputElement).type !== 'range';
+    if (!typing && isCompareKey(event)) {
+      event.preventDefault();
+      if (!event.repeat) {
+        before = true;
+      }
+      return;
+    }
     if (isEditable(event.target)) {
       return;
     }
     const key = event.key.toLowerCase();
     const mod = event.metaKey || event.ctrlKey;
-    if (key === 'y' && !mod) {
-      event.preventDefault();
-      if (!event.repeat) {
-        before = true;
-      }
-    } else if (key === 'z' && mod && event.shiftKey) {
+    if (key === 'z' && mod && event.shiftKey) {
       event.preventDefault();
       draft = redoDraft(draft);
     } else if (key === 'z' && mod) {
@@ -703,7 +738,7 @@
     }
   };
   const onKeyUp = (event: KeyboardEvent) => {
-    if (event.key.toLowerCase() === 'y') {
+    if (isCompareKey(event, { release: true })) {
       before = false;
     }
   };
@@ -740,6 +775,51 @@
   };
 
   const dimensions = $derived(asset.width && asset.height ? `${asset.width} × ${asset.height}` : '');
+  // "with Anna, Ben" in the title (Editor.jsx:1173-1175, 1861-1863); only named people.
+  const peopleNames = $derived(
+    (asset.people ?? []).map((person) => person.name).filter((name): name is string => !!name),
+  );
+
+  /* Top-bar popovers (Editor.jsx:1047-1077) -------------------------------- */
+  const versionItems = $derived.by((): EditorMenuItem[] => [
+    {
+      id: 'original',
+      label: $t('frameleaf_editor_version_original'),
+      icon: mdiImageOutline,
+      checked: sameRecipe(recipe, initialRecipe()),
+      note: develop && !develop.currentRevisionId ? $t('frameleaf_editor_current') : undefined,
+      onSelect: () => loadRevision(null),
+    },
+    ...revisions
+      .filter((revision) => revision.kind !== AssetDevelopRevisionKind.External)
+      .map((revision) => ({
+        id: revision.id,
+        label: revision.label ?? $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
+        icon: mdiHistory,
+        checked: sameRecipe(recipe, normalizeRecipe(revision.recipe)),
+        note: revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision),
+        onSelect: () => loadRevision(revision),
+      })),
+    {
+      id: 'manage',
+      label: $t('frameleaf_editor_manage_versions'),
+      icon: mdiHistory,
+      separated: true,
+      onSelect: () => (tool = 'versions'),
+    },
+  ]);
+  const moreItems = $derived.by((): EditorMenuItem[] => [
+    { id: 'copy', label: $t('frameleaf_editor_copy_settings'), icon: mdiContentCopy, onSelect: copySettings },
+    {
+      id: 'paste',
+      label: $t('frameleaf_editor_paste_settings'),
+      icon: mdiContentDuplicate,
+      disabled: !settingsClipboard,
+      onSelect: pasteSettings,
+    },
+    { id: 'revert', label: $t('frameleaf_editor_revert_draft'), icon: mdiRestore, onSelect: revertDraft },
+    { id: 'studio', label: $t('frameleaf_editor_open_in_studio'), icon: mdiOpenInApp, onSelect: openStudio },
+  ]);
   const statusLabel = (revision: AssetDevelopRevisionResponseDto) => {
     switch (revision.status) {
       case AssetDevelopRevisionStatus.Rendered: {
@@ -812,7 +892,12 @@
           {/key}
         {/if}
       {:else}
-        <button type="button" class="ed-tool labelled" onclick={cancel} title={$t('frameleaf_editor_cancel_title')}>
+        <button
+          type="button"
+          class="ed-tool labelled compact"
+          onclick={cancel}
+          title={$t('frameleaf_editor_cancel_title')}
+        >
           <Icon icon={mdiClose} size="20" />
           <span>{$t('cancel')}</span>
         </button>
@@ -824,6 +909,11 @@
               : ''}{currentRevision
               ? ` · ${$t('frameleaf_editor_showing_version', { values: { revision: currentRevision.revision } })}`
               : ''}
+            {#if peopleNames.length > 0}
+              <span class="people">
+                · {$t('frameleaf_editor_with_people', { values: { names: peopleNames.join(', ') } })}
+              </span>
+            {/if}
           </span>
         </div>
         <button
@@ -867,6 +957,7 @@
             }
 
             event.preventDefault();
+            event.stopPropagation();
             before = true;
           }}
           onkeyup={(event) => {
@@ -888,10 +979,10 @@
         >
           <Icon icon={mdiCompareHorizontal} size="20" />
         </button>
-        <span class="ed-sep" aria-hidden="true"></span>
+        <span class="ed-sep ed-wide" aria-hidden="true"></span>
         <button
           type="button"
-          class="ed-tool labelled"
+          class="ed-tool labelled ed-wide"
           title={$t('frameleaf_editor_copy_settings')}
           onclick={copySettings}
         >
@@ -900,37 +991,45 @@
         </button>
         <button
           type="button"
-          class="ed-tool labelled"
+          class="ed-tool labelled ed-wide"
           title={$t('frameleaf_editor_paste_settings')}
           disabled={!settingsClipboard}
           onclick={pasteSettings}
         >
-          <Icon icon={mdiContentPaste} size="20" />
+          <Icon icon={mdiContentDuplicate} size="20" />
           <span>{$t('frameleaf_editor_paste')}</span>
         </button>
         <button
           type="button"
-          class="ed-tool labelled"
+          class="ed-tool labelled ed-wide"
           title={$t('frameleaf_editor_revert_draft')}
-          disabled={sameRecipe(recipe, initialRecipe())}
           onclick={revertDraft}
         >
           <Icon icon={mdiRestore} size="20" />
           <span>{$t('frameleaf_editor_revert')}</span>
         </button>
-        <button
-          type="button"
-          class="ed-tool labelled"
-          aria-pressed={tool === 'versions'}
-          title={$t('frameleaf_editor_tool_versions')}
-          onclick={() => (tool = tool === 'versions' ? 'adjust' : 'versions')}
+        <EditorMenu
+          label={$t('frameleaf_editor_tool_versions')}
+          text={$t('frameleaf_editor_tool_versions')}
+          heading={$t('frameleaf_editor_tool_versions')}
+          icon={mdiHistory}
+          items={versionItems}
         >
-          <Icon icon={mdiHistory} size="20" />
-          <span>{$t('frameleaf_editor_tool_versions')}</span>
-        </button>
+          {#if developError}
+            <p role="alert">{developError}</p>
+          {:else if develop && revisions.length === 0}
+            <p>{$t('frameleaf_editor_no_versions')}</p>
+          {/if}
+        </EditorMenu>
+        <EditorMenu
+          label={$t('frameleaf_editor_more_actions')}
+          icon={mdiDotsVertical}
+          class="ed-narrow"
+          items={moreItems}
+        />
         <button
           type="button"
-          class="ed-tool labelled"
+          class="ed-tool labelled ed-wide"
           onclick={openStudio}
           title={$t('frameleaf_editor_open_in_studio')}
         >
@@ -996,7 +1095,7 @@
     {:else}
       <div class="ed-stage-wrap">
         <div
-          class={['ed-stage', cropping && 'cropping', dragging && 'dragging']}
+          class={['ed-stage', cropping && 'cropping', dragging && 'dragging', showingOriginal && 'comparing']}
           aria-label={$t('frameleaf_editor_preview')}
         >
           <div class="ed-canvas" bind:this={canvasEl}>
@@ -1038,7 +1137,7 @@
                   </div>
                 {/if}
               </div>
-              {#if cropping && cropFrame}
+              {#if cropping && cropFrame && !showingOriginal}
                 <CropOverlay
                   {rect}
                   frame={cropFrame}
@@ -1079,7 +1178,7 @@
             <span class="ed-badge">{$t('frameleaf_editor_before')}</span>
             <span class="ed-badge right">{$t('frameleaf_editor_after')}</span>
           {:else if before}
-            <span class="ed-badge">{$t('frameleaf_editor_before')}</span>
+            <span class="ed-badge ed-original">{$t('frameleaf_editor_version_original')}</span>
           {/if}
           {#if !before && !identityTone && previewPending}
             <span class="ed-badge centre busy" role="status">{$t('frameleaf_editor_preview_rendering')}</span>
@@ -1089,316 +1188,313 @@
         </div>
       </div>
 
-      <div
-        class="ed-rail"
-        role="tablist"
-        tabindex="-1"
-        aria-label={$t('frameleaf_editor_tools_label')}
-        aria-orientation="vertical"
-        onkeydown={railKey}
-      >
-        {#each tools as item (item.id)}
-          <button
-            type="button"
-            role="tab"
-            data-tool={item.id}
-            class="ed-rail-tool"
-            aria-selected={tool === item.id}
-            aria-controls="fl-editor-panel"
-            tabindex={tool === item.id ? 0 : -1}
-            title={$t(item.label)}
-            onclick={() => (tool = item.id)}
-          >
-            <Icon icon={item.icon} size="22" />
-            <span>{$t(item.label)}</span>
-          </button>
-        {/each}
-      </div>
+      <div class="ed-side">
+        <div
+          class="ed-rail"
+          role="tablist"
+          tabindex="-1"
+          aria-label={$t('frameleaf_editor_tools_label')}
+          aria-orientation="vertical"
+          onkeydown={railKey}
+        >
+          {#each tools as item (item.id)}
+            <button
+              type="button"
+              role="tab"
+              data-tool={item.id}
+              class="ed-rail-tool"
+              aria-selected={tool === item.id}
+              aria-controls="fl-editor-panel"
+              tabindex={tool === item.id || (tool === 'versions' && item.id === 'adjust') ? 0 : -1}
+              title={$t(item.label)}
+              onclick={() => (tool = item.id)}
+            >
+              <Icon icon={item.icon} size="22" />
+              <span>{$t(item.label)}</span>
+            </button>
+          {/each}
+        </div>
 
-      <div
-        class="ed-panel"
-        id="fl-editor-panel"
-        role="tabpanel"
-        aria-label={$t(tools.find((item) => item.id === tool)!.label)}
-      >
-        {#if tool === 'adjust'}
-          <div class="ed-panel-body">
-            <div class="ed-panel-head">
-              <h2>{$t('frameleaf_editor_tool_adjust')}</h2>
-              <button
-                type="button"
-                class="ed-icon"
-                aria-label={$t('frameleaf_editor_reset_adjustments')}
-                title={$t('frameleaf_editor_reset_adjustments')}
-                disabled={allAdjustDefault}
-                onclick={() => change(developDefaults())}
-              >
-                <Icon icon={mdiRestore} size="18" />
-              </button>
-            </div>
-            <Histogram source={afterImage} approximation={filterInfo} fromServer={previewMatches} tick={imageTick} />
-            <div class="ed-row spread">
-              <button
-                type="button"
-                class="ed-button"
-                aria-pressed={autoToneApplied(values)}
-                onclick={() => change(autoToneApplied(values) ? autoToneCleared() : AUTO_TONE)}
-              >
-                <Icon icon={mdiAutoFix} size="18" />
-                {$t('frameleaf_editor_auto')}
-              </button>
-              <span class="muted" style="font-size: 11px">{$t('frameleaf_editor_double_click_reset')}</span>
-            </div>
-            {#each DEVELOP_GROUPS as group (group.id)}
-              <DevelopGroup
-                group={group.id}
-                label={$t(group.label)}
-                {values}
-                bind:open={openGroups[group.id]}
-                onChange={(patch) => change(patch)}
-              />
-            {/each}
-          </div>
-        {:else if tool === 'crop'}
-          <div class="ed-panel-body">
-            <div class="ed-panel-head">
-              <h2>{$t('frameleaf_editor_crop_heading')}</h2>
-              <button
-                type="button"
-                class="ed-icon"
-                aria-label={$t('frameleaf_editor_reset_crop')}
-                title={$t('frameleaf_editor_reset_crop')}
-                disabled={geometryIsDefault(recipe)}
-                onclick={() => change(resetGeometry())}
-              >
-                <Icon icon={mdiRestore} size="18" />
-              </button>
-            </div>
-            <h3>{$t('frameleaf_editor_aspect')}</h3>
-            <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_editor_aspect')}>
-              {#each ASPECTS as aspect (aspect.id)}
+        <div class="ed-panel" id="fl-editor-panel" role="tabpanel" aria-label={$t(panelLabel(tool))}>
+          {#if tool === 'adjust'}
+            <div class="ed-panel-body">
+              <div class="ed-panel-head">
+                <h2>{$t('frameleaf_editor_tool_adjust')}</h2>
                 <button
                   type="button"
-                  role="radio"
-                  class="ed-chip"
-                  aria-checked={recipe.aspect === aspect.id}
-                  onclick={() => chooseAspect(aspect.id)}
+                  class="ed-icon"
+                  aria-label={$t('frameleaf_editor_reset_adjustments')}
+                  title={$t('frameleaf_editor_reset_adjustments')}
+                  disabled={allAdjustDefault}
+                  onclick={() => change(developDefaults())}
                 >
-                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
+                  <Icon icon={mdiRestore} size="18" />
                 </button>
-              {/each}
-            </div>
-            <h3>{$t('frameleaf_editor_straighten')}</h3>
-            <div class="ed-dial" style="--dial-x: {recipe.straighten * 8}px">
-              <output aria-hidden="true">{recipe.straighten > 0 ? '+' : ''}{recipe.straighten.toFixed(1)}°</output>
-              <input
-                type="range"
-                aria-label={$t('frameleaf_editor_straighten')}
-                title={$t('frameleaf_editor_double_click_reset')}
-                min="-45"
-                max="45"
-                step="0.5"
-                value={recipe.straighten}
-                aria-valuetext={$t('frameleaf_editor_degrees', { values: { degrees: recipe.straighten.toFixed(1) } })}
-                oninput={(event) => change({ straighten: Number(event.currentTarget.value) })}
-                ondblclick={() => change({ straighten: 0 })}
-              />
-            </div>
-            <h3>{$t('editor_orientation')}</h3>
-            <div class="ed-grid-2">
-              <button type="button" class="ed-button" onclick={() => rotate(false)}>
-                <Icon icon={mdiRotateLeft} size="18" />
-                {$t('frameleaf_editor_rotate_left')}
-              </button>
-              <button type="button" class="ed-button" onclick={() => rotate(true)}>
-                <Icon icon={mdiRotateRight} size="18" />
-                {$t('frameleaf_editor_rotate_right')}
-              </button>
-              <button type="button" class="ed-button" aria-pressed={recipe.flipHorizontal} onclick={() => flip('h')}>
-                <Icon icon={mdiFlipHorizontal} size="18" />
-                {$t('editor_flip_horizontal')}
-              </button>
-              <button type="button" class="ed-button" aria-pressed={recipe.flipVertical} onclick={() => flip('v')}>
-                <Icon icon={mdiFlipVertical} size="18" />
-                {$t('editor_flip_vertical')}
-              </button>
-            </div>
-            <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
-          </div>
-        {:else if tool === 'masks'}
-          <MaskPanel masks={recipe.masks} bind:selectedId={selectedMaskId} onChange={(masks) => change({ masks })} />
-        {:else if tool === 'restore'}
-          <RestorationPanel
-            {asset}
-            crop={recipe.crop}
-            onCompare={(compare) => (restorationCompare = compare)}
-            onCurrentChanged={() => (saveChangedCurrent = true)}
-          />
-        {:else if tool === 'presets'}
-          <div class="ed-panel-body">
-            <div class="ed-panel-head">
-              <h2>{$t('frameleaf_editor_tool_presets')}</h2>
-            </div>
-            <PresetStrip
-              {thumbnailUrl}
-              {values}
-              preset={recipe.preset}
-              onSelect={(preset) =>
-                change({ preset, presetStrength: recipe.preset === preset ? recipe.presetStrength : 100 })}
-            />
-            <EditorSlider
-              id="presetStrength"
-              label={$t('frameleaf_editor_preset_strength', { values: { preset: $t(currentPreset.label) } })}
-              value={recipe.presetStrength}
-              min={0}
-              max={100}
-              step={1}
-              defaultValue={100}
-              disabled={recipe.preset === AssetDevelopPreset.Original}
-              format={(value) => `${value}%`}
-              onChange={(value) => change({ presetStrength: value })}
-            />
-            <h3>{$t('frameleaf_editor_social_formats')}</h3>
-            <div class="ed-row">
-              {#each SOCIAL_PRESETS as item (item.id)}
-                <button
-                  type="button"
-                  class="ed-chip"
-                  aria-pressed={recipe.aspect === item.aspect}
-                  onclick={() => chooseAspect(item.aspect)}
-                >
-                  {$t(item.label)}
-                  <small>{$t(item.note)}</small>
-                </button>
-              {/each}
-            </div>
-            <p>{$t('frameleaf_editor_social_help')}</p>
-            <UserPresets current={currentSettings} onApply={(settings) => change(settings)} />
-          </div>
-        {:else}
-          <div class="ed-panel-body">
-            <div class="ed-panel-head">
-              <h2>{$t('frameleaf_editor_tool_versions')}</h2>
-            </div>
-            <p>{$t('frameleaf_editor_versions_help')}</p>
-            {#if developError}
-              <p class="ed-empty">{developError}</p>
-            {:else}
-              <div class={['ed-version', !develop?.currentRevisionId && 'current']}>
-                <strong><Icon icon={mdiImageOutline} size="16" /> {$t('frameleaf_editor_version_original')}</strong>
-                {#if !develop?.currentRevisionId}
-                  <span class="ed-status">{$t('frameleaf_editor_current')}</span>
-                {/if}
-                <small>{$t('frameleaf_editor_version_original_help')}</small>
-                <div class="ed-row">
-                  <button type="button" class="ed-chip" onclick={() => loadRevision(null)}>
-                    {$t('frameleaf_editor_load_settings')}
-                  </button>
-                  {#if develop?.currentRevisionId}
-                    <button type="button" class="ed-chip" onclick={() => makeCurrent(null)}>
-                      <Icon icon={mdiCheck} size="16" />
-                      {$t('frameleaf_editor_make_current')}
-                    </button>
-                  {/if}
-                </div>
               </div>
-              {#each revisions as revision (revision.id)}
-                <div class={['ed-version', revision.isCurrent && 'current']}>
-                  <strong>
-                    {revision.label ??
-                      $t('frameleaf_editor_version_number', { values: { revision: revision.revision } })}
-                  </strong>
-                  <span
-                    class={[
-                      'ed-status',
-                      isRevisionBusy(revision.status) && 'busy',
-                      revision.status === AssetDevelopRevisionStatus.Failed && 'failed',
-                    ]}
+              <Histogram source={afterImage} approximation={filterInfo} fromServer={previewMatches} tick={imageTick} />
+              <div class="ed-row spread">
+                <button
+                  type="button"
+                  class="ed-button"
+                  aria-pressed={autoToneApplied(values)}
+                  onclick={() => change(autoToneApplied(values) ? autoToneCleared() : AUTO_TONE)}
+                >
+                  <Icon icon={mdiAutoFix} size="18" />
+                  {$t('frameleaf_editor_auto')}
+                </button>
+                <span class="muted" style="font-size: 11px">{$t('frameleaf_editor_double_click_reset')}</span>
+              </div>
+              {#each DEVELOP_GROUPS as group (group.id)}
+                <DevelopGroup
+                  group={group.id}
+                  label={$t(group.label)}
+                  {values}
+                  bind:open={openGroups[group.id]}
+                  onChange={(patch) => change(patch)}
+                />
+              {/each}
+            </div>
+          {:else if tool === 'crop'}
+            <div class="ed-panel-body">
+              <div class="ed-panel-head">
+                <h2>{$t('frameleaf_editor_crop_heading')}</h2>
+                <button
+                  type="button"
+                  class="ed-icon"
+                  aria-label={$t('frameleaf_editor_reset_crop')}
+                  title={$t('frameleaf_editor_reset_crop')}
+                  disabled={geometryIsDefault(recipe)}
+                  onclick={() => change(resetGeometry())}
+                >
+                  <Icon icon={mdiRestore} size="18" />
+                </button>
+              </div>
+              <h3>{$t('frameleaf_editor_aspect')}</h3>
+              <div class="ed-row" role="radiogroup" aria-label={$t('frameleaf_editor_aspect')}>
+                {#each ASPECTS as aspect (aspect.id)}
+                  <button
+                    type="button"
+                    role="radio"
+                    class="ed-chip"
+                    aria-checked={recipe.aspect === aspect.id}
+                    onclick={() => chooseAspect(aspect.id)}
                   >
-                    {revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision)}
-                  </span>
-                  <small>
-                    {new Date(revision.createdAt).toLocaleString()}{revision.rendererVersion
-                      ? ` · ${revision.rendererVersion}`
-                      : ''}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
-                  </small>
-                  {#if revision.kind === AssetDevelopRevisionKind.External}
-                    <small>
-                      {$t('frameleaf_editor_version_external', {
-                        values: { file: revision.fileName ?? '' },
-                      })}{revision.software ? ` · ${revision.software}` : ''}
-                    </small>
+                    {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
+                  </button>
+                {/each}
+              </div>
+              <h3>{$t('frameleaf_editor_straighten')}</h3>
+              <div class="ed-dial" style="--dial-x: {recipe.straighten * 8}px">
+                <output aria-hidden="true">{recipe.straighten > 0 ? '+' : ''}{recipe.straighten.toFixed(1)}°</output>
+                <input
+                  type="range"
+                  aria-label={$t('frameleaf_editor_straighten')}
+                  title={$t('frameleaf_editor_double_click_reset')}
+                  min="-45"
+                  max="45"
+                  step="0.5"
+                  value={recipe.straighten}
+                  aria-valuetext={$t('frameleaf_editor_degrees', { values: { degrees: recipe.straighten.toFixed(1) } })}
+                  oninput={(event) => change({ straighten: Number(event.currentTarget.value) })}
+                  ondblclick={() => change({ straighten: 0 })}
+                />
+              </div>
+              <h3>{$t('editor_orientation')}</h3>
+              <div class="ed-grid-2">
+                <button type="button" class="ed-button" onclick={() => rotate(false)}>
+                  <Icon icon={mdiRotateLeft} size="18" />
+                  {$t('frameleaf_editor_rotate_left')}
+                </button>
+                <button type="button" class="ed-button" onclick={() => rotate(true)}>
+                  <Icon icon={mdiRotateRight} size="18" />
+                  {$t('frameleaf_editor_rotate_right')}
+                </button>
+                <button type="button" class="ed-button" aria-pressed={recipe.flipHorizontal} onclick={() => flip('h')}>
+                  <Icon icon={mdiFlipHorizontal} size="18" />
+                  {$t('editor_flip_horizontal')}
+                </button>
+                <button type="button" class="ed-button" aria-pressed={recipe.flipVertical} onclick={() => flip('v')}>
+                  <Icon icon={mdiFlipVertical} size="18" />
+                  {$t('editor_flip_vertical')}
+                </button>
+              </div>
+              <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
+            </div>
+          {:else if tool === 'masks'}
+            <MaskPanel masks={recipe.masks} bind:selectedId={selectedMaskId} onChange={(masks) => change({ masks })} />
+          {:else if tool === 'restore'}
+            <RestorationPanel
+              {asset}
+              crop={recipe.crop}
+              onCompare={(compare) => (restorationCompare = compare)}
+              onCurrentChanged={() => (saveChangedCurrent = true)}
+            />
+          {:else if tool === 'presets'}
+            <div class="ed-panel-body">
+              <div class="ed-panel-head">
+                <h2>{$t('frameleaf_editor_tool_presets')}</h2>
+              </div>
+              <PresetStrip
+                {thumbnailUrl}
+                {values}
+                preset={recipe.preset}
+                onSelect={(preset) =>
+                  change({ preset, presetStrength: recipe.preset === preset ? recipe.presetStrength : 100 })}
+              />
+              <EditorSlider
+                id="presetStrength"
+                label={$t('frameleaf_editor_preset_strength', { values: { preset: $t(currentPreset.label) } })}
+                value={recipe.presetStrength}
+                min={0}
+                max={100}
+                step={1}
+                defaultValue={100}
+                disabled={recipe.preset === AssetDevelopPreset.Original}
+                format={(value) => `${value}%`}
+                onChange={(value) => change({ presetStrength: value })}
+              />
+              <h3>{$t('frameleaf_editor_social_formats')}</h3>
+              <div class="ed-row">
+                {#each SOCIAL_PRESETS as item (item.id)}
+                  <button
+                    type="button"
+                    class="ed-chip"
+                    aria-pressed={recipe.aspect === item.aspect}
+                    onclick={() => chooseAspect(item.aspect)}
+                  >
+                    {$t(item.label)}
+                    <small>{$t(item.note)}</small>
+                  </button>
+                {/each}
+              </div>
+              <p>{$t('frameleaf_editor_social_help')}</p>
+              <UserPresets current={currentSettings} onApply={(settings) => change(settings)} />
+            </div>
+          {:else}
+            <div class="ed-panel-body">
+              <div class="ed-panel-head">
+                <h2>{$t('frameleaf_editor_tool_versions')}</h2>
+              </div>
+              <p>{$t('frameleaf_editor_versions_help')}</p>
+              {#if developError}
+                <p class="ed-empty">{developError}</p>
+              {:else}
+                <div class={['ed-version', !develop?.currentRevisionId && 'current']}>
+                  <strong><Icon icon={mdiImageOutline} size="16" /> {$t('frameleaf_editor_version_original')}</strong>
+                  {#if !develop?.currentRevisionId}
+                    <span class="ed-status">{$t('frameleaf_editor_current')}</span>
                   {/if}
-                  {#if revision.sourceChecksum}
-                    <small>
-                      {$t('frameleaf_editor_version_lineage', {
-                        values: {
-                          original: shortChecksum(revision.sourceChecksum),
-                          master: shortChecksum(revision.renditionChecksum),
-                        },
-                      })}
-                    </small>
-                  {/if}
-                  {#if revision.error}
-                    <small>
-                      {revision.status === AssetDevelopRevisionStatus.Queued && revision.attempts > 0
-                        ? $t('frameleaf_editor_version_retrying', { values: { error: revision.error } })
-                        : revision.error}
-                    </small>
-                  {/if}
+                  <small>{$t('frameleaf_editor_version_original_help')}</small>
                   <div class="ed-row">
-                    {#if revision.kind !== AssetDevelopRevisionKind.External}
-                      <button type="button" class="ed-chip" onclick={() => loadRevision(revision)}>
-                        {$t('frameleaf_editor_load_settings')}
-                      </button>
-                    {/if}
-                    {#if revision.hasPreview}
-                      <button
-                        type="button"
-                        class="ed-chip"
-                        aria-pressed={!!versionCompare?.after.includes(revision.id)}
-                        onclick={() => compareVersion(revision)}
-                      >
-                        <Icon icon={mdiCompareHorizontal} size="16" />
-                        {$t('frameleaf_editor_compare_with_original')}
-                      </button>
-                    {/if}
-                    {#if revision.status === AssetDevelopRevisionStatus.Rendered && !revision.isCurrent}
-                      <button type="button" class="ed-chip" onclick={() => makeCurrent(revision)}>
+                    <button type="button" class="ed-chip" onclick={() => loadRevision(null)}>
+                      {$t('frameleaf_editor_load_settings')}
+                    </button>
+                    {#if develop?.currentRevisionId}
+                      <button type="button" class="ed-chip" onclick={() => makeCurrent(null)}>
                         <Icon icon={mdiCheck} size="16" />
                         {$t('frameleaf_editor_make_current')}
                       </button>
                     {/if}
-                    {#if revision.hasMaster}
-                      <a
-                        class="ed-chip"
-                        href={developFileUrl(asset.id, revision.id, AssetDevelopFileKind.Master, revision.renderedAt)}
-                        download
-                      >
-                        {$t('frameleaf_editor_download_master')}
-                      </a>
-                    {/if}
-                    {#if isRevisionBusy(revision.status)}
-                      <button type="button" class="ed-chip" onclick={() => cancelRender(revision)}>
-                        <Icon icon={mdiCloseCircleOutline} size="16" />
-                        {$t('frameleaf_editor_cancel_render')}
-                      </button>
-                    {:else if revision.status !== AssetDevelopRevisionStatus.Rendered}
-                      <button type="button" class="ed-chip" onclick={() => renderRevision(revision)}>
-                        <Icon icon={mdiPlay} size="16" />
-                        {$t('frameleaf_editor_render')}
-                      </button>
-                    {/if}
                   </div>
                 </div>
-              {/each}
-              {#if revisions.length === 0}
-                <p class="ed-empty">{$t('frameleaf_editor_no_versions')}</p>
+                {#each revisions as revision (revision.id)}
+                  <div class={['ed-version', revision.isCurrent && 'current']}>
+                    <strong>
+                      {revision.label ??
+                        $t('frameleaf_editor_version_number', { values: { revision: revision.revision } })}
+                    </strong>
+                    <span
+                      class={[
+                        'ed-status',
+                        isRevisionBusy(revision.status) && 'busy',
+                        revision.status === AssetDevelopRevisionStatus.Failed && 'failed',
+                      ]}
+                    >
+                      {revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision)}
+                    </span>
+                    <small>
+                      {new Date(revision.createdAt).toLocaleString()}{revision.rendererVersion
+                        ? ` · ${revision.rendererVersion}`
+                        : ''}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
+                    </small>
+                    {#if revision.kind === AssetDevelopRevisionKind.External}
+                      <small>
+                        {$t('frameleaf_editor_version_external', {
+                          values: { file: revision.fileName ?? '' },
+                        })}{revision.software ? ` · ${revision.software}` : ''}
+                      </small>
+                    {/if}
+                    {#if revision.sourceChecksum}
+                      <small>
+                        {$t('frameleaf_editor_version_lineage', {
+                          values: {
+                            original: shortChecksum(revision.sourceChecksum),
+                            master: shortChecksum(revision.renditionChecksum),
+                          },
+                        })}
+                      </small>
+                    {/if}
+                    {#if revision.error}
+                      <small>
+                        {revision.status === AssetDevelopRevisionStatus.Queued && revision.attempts > 0
+                          ? $t('frameleaf_editor_version_retrying', { values: { error: revision.error } })
+                          : revision.error}
+                      </small>
+                    {/if}
+                    <div class="ed-row">
+                      {#if revision.kind !== AssetDevelopRevisionKind.External}
+                        <button type="button" class="ed-chip" onclick={() => loadRevision(revision)}>
+                          {$t('frameleaf_editor_load_settings')}
+                        </button>
+                      {/if}
+                      {#if revision.hasPreview}
+                        <button
+                          type="button"
+                          class="ed-chip"
+                          aria-pressed={!!versionCompare?.after.includes(revision.id)}
+                          onclick={() => compareVersion(revision)}
+                        >
+                          <Icon icon={mdiCompareHorizontal} size="16" />
+                          {$t('frameleaf_editor_compare_with_original')}
+                        </button>
+                      {/if}
+                      {#if revision.status === AssetDevelopRevisionStatus.Rendered && !revision.isCurrent}
+                        <button type="button" class="ed-chip" onclick={() => makeCurrent(revision)}>
+                          <Icon icon={mdiCheck} size="16" />
+                          {$t('frameleaf_editor_make_current')}
+                        </button>
+                      {/if}
+                      {#if revision.hasMaster}
+                        <a
+                          class="ed-chip"
+                          href={developFileUrl(asset.id, revision.id, AssetDevelopFileKind.Master, revision.renderedAt)}
+                          download
+                        >
+                          {$t('frameleaf_editor_download_master')}
+                        </a>
+                      {/if}
+                      {#if isRevisionBusy(revision.status)}
+                        <button type="button" class="ed-chip" onclick={() => cancelRender(revision)}>
+                          <Icon icon={mdiCloseCircleOutline} size="16" />
+                          {$t('frameleaf_editor_cancel_render')}
+                        </button>
+                      {:else if revision.status !== AssetDevelopRevisionStatus.Rendered}
+                        <button type="button" class="ed-chip" onclick={() => renderRevision(revision)}>
+                          <Icon icon={mdiPlay} size="16" />
+                          {$t('frameleaf_editor_render')}
+                        </button>
+                      {/if}
+                    </div>
+                  </div>
+                {/each}
+                {#if revisions.length === 0}
+                  <p class="ed-empty">{$t('frameleaf_editor_no_versions')}</p>
+                {/if}
+                <RoundTripPanel {asset} {onImported} />
               {/if}
-              <RoundTripPanel {asset} {onImported} />
-            {/if}
-          </div>
-        {/if}
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
