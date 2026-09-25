@@ -22,21 +22,23 @@ describe('Studio export dialog', () => {
     });
   });
 
-  it('warns that media leaves the network and needs consent before a cloud export', async () => {
+  it('renders only at home: this server or the home network, never Frameleaf Cloud (effd05ffb7)', async () => {
     const onExport = vi.fn();
     render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', onExport });
 
+    const options = [...(screen.getByLabelText('frameleaf_studio_export_destination') as HTMLSelectElement).options];
+    expect(options.map((option) => option.value)).toEqual([
+      MediaOperationDestination.Local,
+      MediaOperationDestination.Lan,
+    ]);
     await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_destination'), {
-      target: { value: MediaOperationDestination.Runpod },
+      target: { value: MediaOperationDestination.Lan },
     });
-    expect(screen.getByText('frameleaf_studio_export_leaves')).toBeInTheDocument();
-    expect(exportButton()).toBeDisabled();
-
-    await fireEvent.click(screen.getByRole('checkbox', { name: 'frameleaf_studio_export_cloud_consent' }));
     await fireEvent.click(exportButton());
     expect(onExport).toHaveBeenCalledWith(
-      expect.objectContaining({ destination: MediaOperationDestination.Runpod, cloudConsent: true }),
+      expect.objectContaining({ destination: MediaOperationDestination.Lan, cloudConsent: false }),
     );
+    expect(screen.queryByText('frameleaf_studio_export_leaves')).not.toBeInTheDocument();
   });
 
   it('explains what Dolby Vision needs', async () => {

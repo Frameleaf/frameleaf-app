@@ -1327,6 +1327,23 @@
   font-size: var(--fl-font-micro);
 }
 
+/* FL-113: what an edited version does with an HDR or Dolby Vision clip, said before saving.
+   Same placement as the restoration hint, on the frosted chip the stage badges use. */
+.ed-color-note {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(520px, calc(100% - 24px));
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--fl-viewer-raised);
+  color: var(--fl-viewer-text);
+  font-size: var(--fl-font-micro);
+  text-align: center;
+}
+
 /* Responsive --------------------------------------------------------- */
 @media (max-width: 1000px) {
   .ed-shell {

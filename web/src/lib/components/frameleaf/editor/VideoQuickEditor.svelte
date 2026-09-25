@@ -880,8 +880,16 @@
     );
   };
 
+  /**
+   * FL-113: what an edited version does with this clip's colour, said before anything is saved. An
+   * HDR clip is rendered to SDR and its HDR original stays the reference; a Dolby Vision profile 5
+   * clip has no honest render path here, so Save version is off and the original is untouched.
+   */
+  const colorPolicy = $derived(source?.colorPolicy ?? 'preserve');
+  const cannotSave = $derived(colorPolicy === 'unsupported');
+
   const saveVersion = async () => {
-    if (saving || !source) {
+    if (saving || !source || cannotSave) {
       return;
     }
     const edits = toVideoEdits(edit, source);
@@ -1143,9 +1151,9 @@
     <button
       type="button"
       class="ed-tool primary labelled"
-      disabled={saving || !source}
+      disabled={saving || !source || cannotSave}
       onclick={saveVersion}
-      title={$t('frameleaf_video_editor_save_title')}
+      title={cannotSave ? $t('frameleaf_video_editor_color_unsupported') : $t('frameleaf_video_editor_save_title')}
     >
       <span>{saving ? $t('frameleaf_editor_saving') : $t('frameleaf_editor_save_version')}</span>
     </button>
@@ -1272,6 +1280,13 @@
       {/if}
       {#if videoError && !loadFailed}
         <span class="ed-badge centre">{$t('frameleaf_video_editor_preview_still')}</span>
+      {/if}
+      {#if colorPolicy !== 'preserve'}
+        <p class="ed-color-note" role="status" data-testid="video-color-policy" data-policy={colorPolicy}>
+          {colorPolicy === 'tone-map'
+            ? $t('frameleaf_video_editor_color_tone_map')
+            : $t('frameleaf_video_editor_color_unsupported')}
+        </p>
       {/if}
       {#if tool === 'restore' && !restorationCompare}
         <!-- The clip stays on the stage so "Use current frame" reads its playhead (Studio.jsx:2565). -->

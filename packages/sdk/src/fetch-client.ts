@@ -2960,6 +2960,10 @@ export type AssetEditActionItemResponseDto = {
     parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
+    /** FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged */
+    colorPolicy?: ColorPolicy;
+    /** Why, in plain words, for the person editing */
+    colorReason?: string;
     /** Duration of the original in milliseconds */
     durationMs: number;
     /** Displayed height of the original, after its rotation */
@@ -19333,6 +19337,11 @@ export enum VideoEditVersionStatus {
 }
 export enum VideoEditExportProfile {
     Master = "master"
+}
+export enum ColorPolicy {
+    Preserve = "preserve",
+    ToneMap = "tone-map",
+    Unsupported = "unsupported"
 }
 export enum EnrichmentStaleReason {
     SourceChanged = "source-changed",
