@@ -730,10 +730,14 @@
   bind:this={assetViewerHtmlElement}
   onfocusin={revealChrome}
 >
-  <!-- Top navigation bar. It stacks above the footer (z-2) so its More menu, which can reach the bottom of
-       the window, is never covered by the frosted footer (MediaViewer.jsx:1269 menu over the .mv-footer). -->
+  <!--
+    Top navigation bar. The header and the footer stack at the same level, z-2, as in the template
+    (apple-style.css:383-385), so where they overlap the later footer paints on top. The More menu is kept
+    clear of the footer by its height cap (`.mv-menu` max-height: calc(100dvh - 150px), media-viewer.css:145;
+    see AssetViewerNavBar), not by raising the header above the footer.
+  -->
   {#if $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
-    <div class="relative z-3 col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
+    <div class="relative z-2 col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
       <AssetViewerNavBar
         {asset}
         {album}
