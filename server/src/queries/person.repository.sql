@@ -816,6 +816,9 @@ from
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
 where
   "asset_face"."id" = $1
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" = $2
+  and "asset"."ownerId" = $3
 
 -- PersonRepository.getForMergePerson
 select
