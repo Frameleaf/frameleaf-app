@@ -18,6 +18,8 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 // The engine's own chunking rules: they exist to keep production builds free of circular-chunk
 // initialisation errors, so the adapter build must split the engine exactly the same way.
 import engineConfig from '../../engine/vite.config.ts'
+// The manifest speaks the host's protocol version, so a stale build is refused rather than downgraded.
+import { STUDIO_FRAME_PROTOCOL_VERSION } from '../../../web/src/lib/frameleaf/studio/frame-protocol.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const studio = path.resolve(here, '../..')
@@ -48,7 +50,7 @@ const frameManifest = () => ({
   apply: 'build',
   closeBundle() {
     const manifest = {
-      protocolVersion: 1,
+      protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
       engineRevision: build.upstreamCommit,
       sourceSha256: build.sourceSha256,
       features: claimedFeatures,

@@ -48,7 +48,7 @@ import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
 import { call, connectToHost, post } from './host-port'
 import { VirtualWorkspace } from './virtual-workspace'
-import { shouldReloadFromHost, shouldResendDraft } from './draft-sync'
+import { sendEditorDraft, shouldReloadFromHost, shouldResendDraft } from './draft-sync'
 import { createLibraryMediaSeeder, type LibraryMediaSeeder } from './library-media'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
@@ -284,30 +284,12 @@ function watchDrafts(state: Session) {
 
 async function sendDraft(state: Session) {
   state.draftTimer = null
-  if (state.disposed) return
-  const text = await state.workspace.readText(projectJsonPath(state.engineProjectId))
-  if (!text) return
-  let graph: unknown
-  try {
-    graph = JSON.parse(text)
-  } catch {
-    return
-  }
-  const content = contentOf(graph)
-  if (content === state.hostContent) return
-  const result = await call('stageDraft', graph, ['editor.save'], state.hostRevision).catch(
-    () => ({ status: 'rejected', reason: 'offline' }) as const,
-  )
-  if (result.status === 'staged') {
-    state.hostContent = content
-    state.pendingSend = false
-    post({ type: 'dirty', dirty: false })
-  } else {
-    // Kept in the editor and sent again when the host can take it (see `update`); the host's
-    // banner already says why (lease, access, network).
-    state.pendingSend = true
-    post({ type: 'dirty', dirty: true })
-  }
+  await sendEditorDraft(state, {
+    read: () => state.workspace.readText(projectJsonPath(state.engineProjectId)),
+    contentOf,
+    stage: (graph, baseRevision) => call('stageDraft', graph, ['editor.save'], baseRevision),
+    dirty: (dirty) => post({ type: 'dirty', dirty }),
+  })
 }
 
 /**
@@ -434,10 +416,7 @@ async function update(context: StudioHostContext): Promise<void> {
   const previous = state.context
   state.context = context
   applyTheme(context)
-  if (context.auth.locale !== previous.auth.locale)
-    await changeAppLanguage(context.auth.locale).catch(() => undefined)
-  await state.media.seed(context.assets)
-
+  // The graph is settled first, so the echo of a save is not held up behind video probing.
   const incoming = contentOf(context.project.graph)
   if (
     context.project.graph &&
@@ -458,10 +437,15 @@ async function update(context: StudioHostContext): Promise<void> {
     )
     usePlaybackStore.getState().pause()
     state.generation += 1
+    // The edits a refused draft carried were just replaced; there is nothing left to resend.
+    state.pendingSend = false
   } else if (context.project.graph && context.draftHeld !== true) {
     state.hostContent = incoming
     state.hostRevision = context.project.revision
   }
+  if (context.auth.locale !== previous.auth.locale)
+    await changeAppLanguage(context.auth.locale).catch(() => undefined)
+  await state.media.seed(context.assets)
   if (
     shouldResendDraft({
       pending: state.pendingSend,
