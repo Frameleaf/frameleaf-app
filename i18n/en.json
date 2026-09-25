@@ -7163,7 +7163,7 @@
   "frameleaf_studio_export_color_hdr10": "HDR10",
   "frameleaf_studio_export_color_preserve": "Preserve source",
   "frameleaf_studio_export_destination": "Render on",
-  "frameleaf_studio_export_dolby_note": "Dolby Vision needs a qualified worker and approved Dolby tools. Until both are in place this server can't export it.",
+  "frameleaf_studio_export_dolby_note": "Dolby Vision needs a render worker qualified with the Dolby tools. Until one is, this server can't export it.",
   "frameleaf_studio_export_failed": "The export could not be started.",
   "frameleaf_studio_export_format": "Format",
   "frameleaf_studio_export_format_av1": "WebM · AV1",

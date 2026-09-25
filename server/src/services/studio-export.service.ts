@@ -72,7 +72,12 @@ import {
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
-import { STUDIO_DOLBY_TOOLS_ID, checkStudioRights, studioRightsUseFor } from 'src/utils/studio-rights.js';
+import {
+  STUDIO_DOLBY_TOOLS_ID,
+  STUDIO_DOLBY_TOOLS_QUALIFIED,
+  checkStudioRights,
+  studioRightsUseFor,
+} from 'src/utils/studio-rights.js';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 
@@ -213,14 +218,22 @@ export class StudioExportService {
     }
 
     const destination = dto.destination as unknown as StudioDestination;
-    // FL-86: Dolby Vision needs the administrator-installed Dolby tools, whose automation,
-    // redistribution and hosted-use rights stay blocked until the owner approves them (FL-146).
+    // FL-86: Dolby Vision needs the administrator-installed Dolby tools: their rights (approved by
+    // the owner, FL-146) and a render worker qualified with them (FL-145), which none is yet.
     if (dto.color === 'dolby-vision') {
       const rights = checkStudioRights(STUDIO_DOLBY_TOOLS_ID, studioRightsUseFor(destination));
       if (!rights.allowed) {
         throw new ConflictException({
           message: `Dolby Vision output is not available on this server. ${rights.detail}`,
           code: 'studio_export_rights_blocked',
+          resource: rights.id,
+        });
+      }
+      if (!STUDIO_DOLBY_TOOLS_QUALIFIED) {
+        throw new ConflictException({
+          message:
+            'Dolby Vision output is not available on this server. No render worker is qualified with the Dolby tools yet.',
+          code: 'studio_export_dolby_unqualified',
           resource: rights.id,
         });
       }
