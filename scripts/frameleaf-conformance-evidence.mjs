@@ -1079,9 +1079,9 @@ const routes = {
     ],
   ],
   "/admin": [
-    "partial",
+    "fixed",
     ["CC-9", "C-2"],
-    "Overview homepage lands on /admin (FL-71; copy aligned in the Sept 24 re-audit); the backup-restore and worker rows of Needs attention and the ML endpoint / GPU Studio probes of System at a glance need server data",
+    "Overview homepage on /admin with the template copy, the restore-test and worker-compatibility rows, and the ML endpoint, GPU Studio and cloud destination from the server (FL-71)",
     [`${P}/CommandCenter.jsx`],
     [`${W}/routes/admin/+page.ts`],
   ],
@@ -1174,8 +1174,8 @@ const routes = {
   ],
   "/admin/queues": [
     "partial",
-    ["CC-42", "CC-43", "CC-44", "J-1"],
-    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns); open: the enrichment dialog shell (CC-42, FL-59), the RunPod manager and provider history (CC-43, CC-44, FL-43) and the account filter with per-account counts (J-1, needs server counts)",
+    ["CC-42", "CC-43", "CC-44"],
+    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts); open: the enrichment dialog shell (CC-42, FL-59) and the RunPod manager and provider history (CC-43, CC-44, FL-43)",
     [`${P}/JobsManager.jsx`, `${P}/jobs-data.mjs`],
     [
       `${W}/routes/admin/queues/+page.ts`,
@@ -1223,7 +1223,7 @@ const routes = {
       "CC-11",
       "CC-12",
     ],
-    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); open: the server name in the rail footer and context bar (CC-4, needs a server name setting) and the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)",
+    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); open: the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)",
     [
       `${P}/CommandCenter.jsx`,
       `${P}/settings-catalog.mjs`,
