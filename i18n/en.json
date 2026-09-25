@@ -7410,6 +7410,7 @@
   "frameleaf_setup_choice_frameleaf_license": "Carries your supporter license",
   "frameleaf_setup_choice_frameleaf_note": "Your photos still live on this server.",
   "frameleaf_setup_choice_frameleaf_remote": "Reach your library away from home without port-forwarding",
+  "frameleaf_setup_choice_frameleaf_unavailable": "Unavailable on this server for now: Frameleaf Cloud isn't reachable yet. Link a Frameleaf account later from Settings.",
   "frameleaf_setup_choice_local": "Local account only",
   "frameleaf_setup_choice_local_later": "Link a Frameleaf account later if you change your mind",
   "frameleaf_setup_choice_local_network": "Nothing leaves your network",
