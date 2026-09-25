@@ -71,6 +71,24 @@ export function markLoaded(state: DraftSendState, mount: EditorMount): void {
 }
 
 /**
+ * Freecut's `loadTimeline` for `projectId` ended. Only a load that succeeded, for the current mount,
+ * makes it loaded: that load read the mount's own file, which holds the seeded head (no save may
+ * write it before then). A failed load leaves the stores on the replaced timeline, so the mount stays
+ * unloaded: it may not save and nothing it writes is sent.
+ */
+export function loadFinished(
+  state: DraftSendState,
+  projectId: string,
+  ok: boolean,
+): 'loaded' | 'failed' | 'ignored' {
+  const { mount } = state
+  if (state.disposed || mount.projectId !== projectId || mount.loaded) return 'ignored'
+  if (!ok) return 'failed'
+  markLoaded(state, mount)
+  return 'loaded'
+}
+
+/**
  * Whether a Freecut save of `projectId` may start now. A save snapshots the global timeline stores
  * when it starts and writes later, so it is judged here, at the start: only the current mount, once
  * loaded, may save. A save started while that mount loads would snapshot the replaced timeline.

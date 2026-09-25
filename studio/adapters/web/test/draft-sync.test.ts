@@ -3,6 +3,7 @@ import {
   acceptsWrite,
   beginMount,
   confirmEcho,
+  loadFinished,
   markLoaded,
   saveMayStart,
   sendEditorDraft,
@@ -148,11 +149,17 @@ class Frame {
     this.live = newest
   }
 
-  /** The rendered instance's `loadTimeline` finishes: the store holds the (migrated) head it read. */
+  /** The rendered instance's `loadTimeline` succeeds: the store holds the (migrated) head it read. */
   hydrate() {
     if (this.live !== this.state.mount || this.live.loaded) return
     this.store = this.seeded.get(this.live) ?? this.store
-    markLoaded(this.state, this.live)
+    loadFinished(this.state, this.live.projectId, true)
+  }
+
+  /** The rendered instance's `loadTimeline` fails: the store keeps the replaced timeline. */
+  failLoad() {
+    if (this.live !== this.state.mount || this.live.loaded) return
+    loadFinished(this.state, this.live.projectId, false)
   }
 
   /** The host's context arrives with its head (update()'s echo branch). */
@@ -312,7 +319,7 @@ describe('editor frame draft sync (FL-88)', () => {
     for (let run = 0; run < 400; run += 1) {
       const frame = new Frame()
       for (let step = 0; step < 50; step += 1) {
-        const pick = Math.floor(random() * 9)
+        const pick = Math.floor(random() * 10)
         if (pick === 0) frame.edit()
         else if (pick === 1) frame.startSave()
         else if (pick === 2) frame.landSave(Math.floor(random() * frame.pendingSaves.length))
@@ -321,6 +328,7 @@ describe('editor frame draft sync (FL-88)', () => {
         else if (pick === 5) frame.hydrate()
         else if (pick === 6) frame.echo()
         else if (pick === 8) frame.migrate()
+        else if (pick === 9 && random() < 0.3) frame.failLoad()
         else if (pick === 7) await frame.flushSends()
       }
       while (frame.pendingSaves.length > 0) frame.landSave()
@@ -341,5 +349,20 @@ describe('editor frame draft sync (FL-88)', () => {
     frame.landSave()
     await frame.flushSends()
     expect(frame.staged).toEqual([])
+  })
+
+  it('keeps a mount whose load failed from ever saving or sending', async () => {
+    const frame = new Frame()
+    frame.edit() // the old instance's timeline, still in the stores after the failed load
+    frame.reload()
+    frame.render()
+    frame.failLoad()
+    expect(frame.state.mount.loaded).toBe(false)
+    frame.startSave() // Freecut's autosave with the stale dirty flag
+    frame.landSave()
+    await frame.flushSends()
+    expect(frame.pendingSaves).toEqual([])
+    expect(frame.staged).toEqual([])
+    expect(loadFinished(frame.state, 'elsewhere', true)).toBe('ignored')
   })
 })
