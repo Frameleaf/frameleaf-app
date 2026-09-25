@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { isEqual } from 'lodash-es';
 import { createHash, randomUUID } from 'node:crypto';
 import { arch, platform } from 'node:os';
 import z from 'zod';
@@ -8,7 +9,11 @@ import type { FrameleafCloudLink, FrameleafCloudPermissions, FrameleafInstanceId
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { CloudPermissionsUpdateDto, CloudStatusResponseDto } from 'src/dtos/frameleaf-cloud.dto.js';
+import {
+  CloudPermissionsUpdateDto,
+  CloudSignInUpdateDto,
+  CloudStatusResponseDto,
+} from 'src/dtos/frameleaf-cloud.dto.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -84,14 +89,19 @@ export class FrameleafCloudService extends BaseService {
     const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink);
     // a link made against another FRAMELEAF_CLOUD_URL does not count here
     const link = cloudUrl && stored?.cloudUrl === cloudUrl ? stored : null;
-    return this.mapStatus(cloudUrl, identity, link);
+    const config = await this.getConfig({ withCache: false });
+    return {
+      ...this.mapStatus(cloudUrl, identity, link),
+      signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
+      signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
+    };
   }
 
   private mapStatus(
     cloudUrl: string | null,
     identity: FrameleafInstanceIdentity | null,
     link: FrameleafCloudLink | null,
-  ): CloudStatusResponseDto {
+  ): Omit<CloudStatusResponseDto, 'signInLinkedAccounts' | 'signInShowOnLocalLogin'> {
     const linked = link?.status === 'linked';
     return {
       state: cloudUrl ? (link?.status ?? 'unlinked') : 'not-configured',
@@ -171,7 +181,7 @@ export class FrameleafCloudService extends BaseService {
       },
     };
     await this.saveLink(link, 'link');
-    return this.mapStatus(cloudUrl, identity, link);
+    return this.getStatus();
   }
 
   /**
@@ -440,6 +450,24 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
+   * `PUT admin/cloud/sign-in` (FL-158): whether Sign in with Frameleaf is also offered at home. Remote
+   * access always requires it; this only adds the button to the local login page, once linked.
+   */
+  async updateSignIn(auth: AuthDto, dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
+    const cloudUrl = this.requireCloudUrl();
+    const link = await this.readLink(cloudUrl);
+    if (link?.status !== 'linked') {
+      throw new BadRequestException('Link this server first.');
+    }
+    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      config.frameleafCloud.signIn = { ...config.frameleafCloud.signIn, showOnLocalLogin: dto.showOnLocalLogin };
+    });
+    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    this.logger.log(`Sign in with Frameleaf at home turned ${dto.showOnLocalLogin ? 'on' : 'off'} by ${auth.user.id}`);
+    return this.getStatus();
+  }
+
+  /**
    * Cloud-side revoke or local unlink: clear the credential and cached tokens, mark the link, and
    * switch remote access, cloud processing and cloud backup off. Nothing local is deleted.
    */
@@ -463,9 +491,29 @@ export class FrameleafCloudService extends BaseService {
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
       config.frameleafCloud.cloudMl.enabled = false;
+      // FL-158: the sign-in client is gone with the link, and no secret of it remains here
+      config.frameleafCloud.signIn = { ...config.frameleafCloud.signIn, clientSecret: '' };
     });
-    if (oldConfig.frameleafCloud.cloudMl.enabled) {
+    if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    }
+    await this.endFrameleafSignIns();
+  }
+
+  /**
+   * FL-158: with the link gone Frameleaf Cloud can no longer vouch for anyone, so every Sign in with
+   * Frameleaf session ends and the account links are removed. Local sign-in is unchanged.
+   */
+  private async endFrameleafSignIns() {
+    try {
+      const sessionIds = await this.frameleafAccountRepository.deleteAllSessions();
+      for (const sessionId of sessionIds) {
+        await this.sessionRepository.delete(sessionId);
+        await this.eventRepository.emit('SessionDelete', { sessionId });
+      }
+      await this.frameleafAccountRepository.deleteAllLinks();
+    } catch (error) {
+      this.logger.error(`Could not end the Sign in with Frameleaf sessions: ${error}`);
     }
   }
 

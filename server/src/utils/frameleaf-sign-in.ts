@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 import { type ClientAuth, ClientSecretPost } from 'openid-client';
+import type { IncomingHttpHeaders } from 'node:http';
 import type { SystemConfig } from 'src/config.js';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
@@ -129,8 +131,54 @@ export const logoutTokenAudiences = (token: string): string[] => {
       aud?: unknown;
     };
     const aud = payload.aud;
-    return Array.isArray(aud) ? aud.filter((value): value is string => typeof value === 'string') : typeof aud === 'string' ? [aud] : [];
+    return Array.isArray(aud)
+      ? aud.filter((value): value is string => typeof value === 'string')
+      : typeof aud === 'string'
+        ? [aud]
+        : [];
   } catch {
     return [];
   }
+};
+
+export type FrameleafVia = 'lan' | 'wan' | 'relay';
+
+const VIAS = new Set<FrameleafVia>(['lan', 'wan', 'relay']);
+/** RFC 1918, loopback and IPv6 unique-local addresses are always home (FRAMELEAF_TRUSTED_LAN_CIDRS adds more). */
+const HOME_NETWORKS = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fc00::/7', '::1/128'];
+
+const header = (headers: IncomingHttpHeaders, name: string) => {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+/**
+ * How a request arrived (instance contract "Via-header contract"): `X-Frameleaf-Via` counts only
+ * when `X-Frameleaf-Via-Auth` carries the edge worker's per-boot secret; anything else, including a
+ * client-supplied header, is an arrival the server cannot vouch for (`null`).
+ */
+export const frameleafVia = (headers: IncomingHttpHeaders, edgeSecret: string | null): FrameleafVia | null => {
+  const via = header(headers, 'x-frameleaf-via');
+  const auth = header(headers, 'x-frameleaf-via-auth');
+  if (!edgeSecret || !via || !auth || !VIAS.has(via as FrameleafVia)) {
+    return null;
+  }
+  const expected = Buffer.from(edgeSecret);
+  const given = Buffer.from(auth);
+  return expected.length === given.length && timingSafeEqual(expected, given) ? (via as FrameleafVia) : null;
+};
+
+/** Whether an address is on the home network: private ranges plus FRAMELEAF_TRUSTED_LAN_CIDRS. */
+export const isHomeAddress = (address: string | undefined, trustedLanCidrs: string[]): boolean => {
+  const ip = address?.replace(/^::ffff:/, '');
+  const family = isIP(ip ?? '');
+  if (!ip || !family) {
+    return false;
+  }
+  const list = new BlockList();
+  for (const cidr of [...HOME_NETWORKS, ...trustedLanCidrs]) {
+    const [network, prefix] = cidr.split('/', 2);
+    list.addSubnet(network, Number(prefix), isIP(network) === 6 ? 'ipv6' : 'ipv4');
+  }
+  return list.check(ip, family === 6 ? 'ipv6' : 'ipv4');
 };

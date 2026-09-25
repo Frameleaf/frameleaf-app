@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
+import type { IncomingHttpHeaders } from 'node:http';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -46,6 +47,8 @@ import {
   readConfigHistory,
 } from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { frameleafVia, isHomeAddress, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -147,9 +150,36 @@ export class SystemConfigService extends BaseService {
     return mapUserConfig(defaults);
   }
 
-  async getPublicConfig(): Promise<PublicConfigDto> {
+  /**
+   * FL-158: the public configuration, with how Sign in with Frameleaf applies to this visitor. A
+   * visitor arriving through remote access (`relay` or `wan`, vouched for by the edge worker) is
+   * offered only Sign in with Frameleaf; one who is also on the home network is offered the local
+   * address.
+   */
+  async getPublicConfig(arrival?: { headers: IncomingHttpHeaders; clientIp: string }) {
     const config = await this.getConfig({ withCache: false });
-    return mapPublicConfig(config);
+    const env = this.configRepository.getEnv().frameleafCloud;
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    const via = frameleafVia(arrival?.headers ?? {}, env.edge.secret);
+    const signInRequired = via === 'relay' || via === 'wan';
+    const relayOrigin = link?.services?.relayOrigin;
+    let relayHost: string | null;
+    try {
+      relayHost = typeof relayOrigin === 'string' ? new URL(relayOrigin).host : null;
+    } catch {
+      relayHost = null;
+    }
+    return mapPublicConfig(config, {
+      signInAvailable: !!signInClient(link, linked),
+      signInRequired,
+      via,
+      relayHost,
+      localUrl: env.localUrl,
+      sameNetwork: signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs),
+    });
   }
 
   getPublicConfigDefaults(): PublicConfigDto {

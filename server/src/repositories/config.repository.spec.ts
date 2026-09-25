@@ -45,6 +45,8 @@ const resetEnv = () => {
     'FRAMELEAF_EDGE_PORT',
     'FRAMELEAF_EDGE_BIND',
     'FRAMELEAF_TRUSTED_LAN_CIDRS',
+    'FRAMELEAF_EDGE_SECRET',
+    'FRAMELEAF_LOCAL_URL',
   ]) {
     delete process.env[env];
   }
@@ -328,7 +330,8 @@ describe('getEnv', () => {
         url: null,
         identityDir: null,
         linkToken: null,
-        edge: { port: 2443, bind: '0.0.0.0' },
+        edge: { port: 2443, bind: '0.0.0.0', secret: null },
+        localUrl: null,
         trustedLanCidrs: [],
       });
     });
@@ -340,11 +343,14 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_EDGE_PORT = '8443';
       process.env.FRAMELEAF_EDGE_BIND = '192.168.1.10';
       process.env.FRAMELEAF_TRUSTED_LAN_CIDRS = '100.64.0.0/10, fd00:1234::/32';
+      process.env.FRAMELEAF_EDGE_SECRET = 'edge-secret-0123456789';
+      process.env.FRAMELEAF_LOCAL_URL = 'http://192.168.1.10:2283/photos';
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://frameleaf.cloud.test',
         identityDir: '/data/identity',
         linkToken: 'fll_abcdefgh12345678',
-        edge: { port: 8443, bind: '192.168.1.10' },
+        edge: { port: 8443, bind: '192.168.1.10', secret: 'edge-secret-0123456789' },
+        localUrl: 'http://192.168.1.10:2283',
         trustedLanCidrs: ['100.64.0.0/10', 'fd00:1234::/32'],
       });
     });

@@ -2,7 +2,11 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Put } from '
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { CloudPermissionsUpdateDto, CloudStatusResponseDto } from 'src/dtos/frameleaf-cloud.dto.js';
+import {
+  CloudPermissionsUpdateDto,
+  CloudSignInUpdateDto,
+  CloudStatusResponseDto,
+} from 'src/dtos/frameleaf-cloud.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
@@ -74,7 +78,7 @@ export class CloudAdminController {
     operationId: 'unlinkCloud',
     summary: 'Unlink this server from Frameleaf Cloud',
     description:
-      'Clears the link and switches remote access, cloud processing and cloud backup off. Local photos, accounts and sign-in are unchanged.',
+      'Clears the link and switches remote access, cloud processing and cloud backup off. Sign in with Frameleaf sessions end; local photos, accounts and password sign-in are unchanged.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   unlink(@Auth() auth: AuthDto): Promise<CloudStatusResponseDto> {
@@ -92,6 +96,19 @@ export class CloudAdminController {
   })
   updatePermissions(@Auth() auth: AuthDto, @Body() dto: CloudPermissionsUpdateDto): Promise<CloudStatusResponseDto> {
     return this.service.updatePermissions(auth, dto);
+  }
+
+  @Put('sign-in')
+  @Authenticated({ permission: Permission.AdminCloudUpdate, admin: true })
+  @Endpoint({
+    operationId: 'updateCloudSignIn',
+    summary: 'Choose where Sign in with Frameleaf is offered',
+    description:
+      'Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  updateSignIn(@Auth() auth: AuthDto, @Body() dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
+    return this.service.updateSignIn(auth, dto);
   }
 
   @Post('heartbeat')
