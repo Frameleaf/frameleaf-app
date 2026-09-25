@@ -47,7 +47,7 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
   });
 
-  it('applies the Play slideshow gates: never Locked, and downloads on a shared link', () => {
+  it('applies the Play slideshow gate: never Locked, whatever a shared link allows (AL-37)', () => {
     const locked = render(ViewerFooter, {
       asset: assetFactory.build({ visibility: AssetVisibility.Locked }),
       ...base,
@@ -56,8 +56,11 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
     locked.unmount();
 
     setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
-    const noDownload = render(ViewerFooter, { asset: assetFactory.build(), ...base });
-    expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
+    const noDownload = render(ViewerFooter, {
+      asset: assetFactory.build({ visibility: AssetVisibility.Timeline }),
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeEnabled();
     noDownload.unmount();
 
     setSharedLink(sharedLinkFactory.build({ allowDownload: true }));

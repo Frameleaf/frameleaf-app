@@ -15122,6 +15122,108 @@
         "x-immich-state": "Stable"
       }
     },
+    "/map/statistics": {
+      "get": {
+        "description": "Count what the map settings would add: the viewer's own located archived items and the located items of partners who share their locations, under the same date and favorite filters, and the viewer's own items without a location.",
+        "operationId": "getMapStatistics",
+        "parameters": [
+          {
+            "name": "fileCreatedAfter",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created after this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileCreatedBefore",
+            "required": false,
+            "in": "query",
+            "description": "Filter assets created before this date",
+            "schema": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "isArchived",
+            "required": false,
+            "in": "query",
+            "description": "Filter by archived status",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isFavorite",
+            "required": false,
+            "in": "query",
+            "description": "Filter by favorite status",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withPartners",
+            "required": false,
+            "in": "query",
+            "description": "Include partner assets",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withSharedAlbums",
+            "required": false,
+            "in": "query",
+            "description": "Include shared album assets",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapStatisticsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve map statistics",
+        "tags": [
+          "Map"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "map.read"
+      }
+    },
     "/media-health": {
       "get": {
         "description": "List missing and corrupt media health findings in timeline buckets.",
@@ -16310,6 +16412,21 @@
             }
           },
           {
+            "name": "isHidden",
+            "required": false,
+            "in": "query",
+            "description": "Only the memories the owner hid (true); hidden memories are left out otherwise",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "isSaved",
             "required": false,
             "in": "query",
@@ -16737,6 +16854,154 @@
         "x-immich-permission": "memory.read"
       }
     },
+    "/memories/show-less": {
+      "delete": {
+        "description": "Remove one of the caller's show-less rules, so its memories are generated and shown again, and return every rule.",
+        "operationId": "removeMemoryShowLess",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryShowLessDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryShowLessResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a memories show-less rule",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "memory.update"
+      },
+      "get": {
+        "description": "Retrieve the caller's own rules: people, pets, dates and kinds of memory they asked to see less of. Memories of them are neither generated nor shown.",
+        "operationId": "getMemoryShowLess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryShowLessResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve memories show-less rules",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "memory.read"
+      },
+      "post": {
+        "description": "Add a show-less rule for one of the caller's own people or pets, a date written as 'MM-dd', or a memory type, and return every rule.",
+        "operationId": "addMemoryShowLess",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryShowLessDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryShowLessResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Show less of a person, pet, date or kind of memory",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "memory.update"
+      }
+    },
     "/memories/statistics": {
       "get": {
         "description": "Retrieve statistics about memories, such as total count and other relevant metrics.",
@@ -16763,6 +17028,21 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "isHidden",
+            "required": false,
+            "in": "query",
+            "description": "Only the memories the owner hid (true); hidden memories are left out otherwise",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -42709,17 +42989,19 @@
             "type": "boolean"
           },
           "latitude": {
-            "description": "Latitude coordinate",
+            "description": "Latitude coordinate; null together with a null longitude removes the location",
             "format": "double",
             "maximum": 90,
             "minimum": -90,
+            "nullable": true,
             "type": "number"
           },
           "longitude": {
-            "description": "Longitude coordinate",
+            "description": "Longitude coordinate; null together with a null latitude removes the location",
             "format": "double",
             "maximum": 180,
             "minimum": -180,
+            "nullable": true,
             "type": "number"
           },
           "rating": {
@@ -45981,6 +46263,62 @@
           "items",
           "nextPage",
           "total"
+        ],
+        "type": "object"
+      },
+      "BirthdayMemoryDto": {
+        "properties": {
+          "age": {
+            "description": "Age reached on this birthday",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "date": {
+            "description": "The birthday this year, 'yyyy-MM-dd'",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Discriminator for a birthday",
+            "enum": [
+              "birthday"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "Their name when the memory was made",
+            "type": "string"
+          },
+          "subject": {
+            "description": "Whether the birthday is a person's or a pet's",
+            "enum": [
+              "person",
+              "pet"
+            ],
+            "type": "string"
+          },
+          "subjectId": {
+            "description": "The owner's person or pet whose birthday it is",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "year": {
+            "description": "Year of this birthday",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "age",
+          "date",
+          "kind",
+          "name",
+          "subject",
+          "subjectId",
+          "year"
         ],
         "type": "object"
       },
@@ -51688,6 +52026,34 @@
         ],
         "type": "object"
       },
+      "MapStatisticsResponseDto": {
+        "properties": {
+          "archived": {
+            "description": "The viewer's own located archived items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "partner": {
+            "description": "Located timeline items of partners who share their locations with the viewer",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unlocated": {
+            "description": "The viewer's own timeline items without a location",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "archived",
+          "partner",
+          "unlocated"
+        ],
+        "type": "object"
+      },
       "MediaHealthActivityAction": {
         "description": "What the job did",
         "enum": [
@@ -53662,6 +54028,12 @@
             "$ref": "#/components/schemas/YearInReviewDto"
           },
           {
+            "$ref": "#/components/schemas/BirthdayMemoryDto"
+          },
+          {
+            "$ref": "#/components/schemas/PersonRecapDto"
+          },
+          {
             "$ref": "#/components/schemas/OnThisDayDto"
           }
         ],
@@ -53850,6 +54222,16 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "isHidden": {
+            "description": "Hidden by the owner; shown only in the hidden memories list",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "isSaved": {
             "description": "Is memory saved",
             "type": "boolean"
@@ -53881,6 +54263,17 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
+          "title": {
+            "description": "The owner's own title, when they set one",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "type": {
             "$ref": "#/components/schemas/MemoryType"
           },
@@ -53897,9 +54290,11 @@
           "createdAt",
           "data",
           "id",
+          "isHidden",
           "isSaved",
           "memoryAt",
           "ownerId",
+          "title",
           "type",
           "updatedAt"
         ],
@@ -53913,6 +54308,64 @@
           "random"
         ],
         "type": "string"
+      },
+      "MemoryShowLessDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/MemoryShowLessKind"
+          },
+          "value": {
+            "description": "A person or pet id, a date as 'MM-dd', or a memory type",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "type": "object"
+      },
+      "MemoryShowLessKind": {
+        "description": "What a memories show-less rule names",
+        "enum": [
+          "person",
+          "pet",
+          "date",
+          "type"
+        ],
+        "type": "string"
+      },
+      "MemoryShowLessResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the rule was added",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MemoryShowLessKind"
+          },
+          "name": {
+            "description": "The person's or pet's name, for person and pet rules",
+            "nullable": true,
+            "type": "string"
+          },
+          "value": {
+            "description": "A person or pet id, a date as 'MM-dd', or a memory type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "kind",
+          "name",
+          "value"
+        ],
+        "type": "object"
       },
       "MemoryStatisticsResponseDto": {
         "properties": {
@@ -53958,12 +54411,40 @@
         "enum": [
           "on_this_day",
           "event_story",
-          "year_in_review"
+          "year_in_review",
+          "birthday",
+          "person_recap"
         ],
         "type": "string"
       },
       "MemoryUpdateDto": {
         "properties": {
+          "assetOrder": {
+            "description": "The memory's items in the order the owner chose; items not listed follow in capture order",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
+          "isHidden": {
+            "description": "Hide the memory from the memories list; false restores it",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "isSaved": {
             "description": "Is memory saved",
             "type": "boolean"
@@ -53981,6 +54462,19 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "title": {
+            "description": "The owner's own title for the memory; null returns to the generated one",
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -56724,6 +57218,56 @@
           "personId",
           "suggestionId",
           "verdict"
+        ],
+        "type": "object"
+      },
+      "PersonRecapDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of their photos and videos that year",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "Discriminator for a person or pet recap",
+            "enum": [
+              "person_recap"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "Their name when the memory was made",
+            "type": "string"
+          },
+          "subject": {
+            "description": "Whether the recap is about a person or a pet",
+            "enum": [
+              "person",
+              "pet"
+            ],
+            "type": "string"
+          },
+          "subjectId": {
+            "description": "The owner's person or pet",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "year": {
+            "description": "Calendar year being recapped",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "kind",
+          "name",
+          "subject",
+          "subjectId",
+          "year"
         ],
         "type": "object"
       },
@@ -73623,10 +74167,11 @@
             "type": "boolean"
           },
           "latitude": {
-            "description": "Latitude coordinate",
+            "description": "Latitude coordinate; null together with a null longitude removes the location",
             "format": "double",
             "maximum": 90,
             "minimum": -90,
+            "nullable": true,
             "type": "number"
           },
           "livePhotoVideoId": {
@@ -73637,10 +74182,11 @@
             "type": "string"
           },
           "longitude": {
-            "description": "Longitude coordinate",
+            "description": "Longitude coordinate; null together with a null latitude removes the location",
             "format": "double",
             "maximum": 180,
             "minimum": -180,
+            "nullable": true,
             "type": "number"
           },
           "rating": {

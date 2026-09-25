@@ -25,7 +25,15 @@ import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
-import { eventStoryPlace, formatLocalDateRange, isEventStory, isYearInReview } from '$lib/frameleaf/memory-stories';
+import {
+  eventStoryPlace,
+  formatLocalDateRange,
+  memoryHeadline as headlineOf,
+  isBirthday,
+  isEventStory,
+  isPersonRecap,
+  isYearInReview,
+} from '$lib/frameleaf/memory-stories';
 import { playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
@@ -396,8 +404,22 @@ export const handlePromiseError = <T>(promise: Promise<T>): void => {
   promise.catch((error) => console.error(`[utils.ts]:handlePromiseError ${error}`, error));
 };
 
+/**
+ * FL-62: a memory's title and the line under it as the Memories index and player show them
+ * (Memories.jsx), with the owner's own title first. See `memoryHeadline` in memory-stories.
+ */
+export const memoryHeadline = derived([t, locale], ([$t, $locale]) => {
+  return (memory: MemoryResponseDto) =>
+    headlineOf(memory, { t: $t as Parameters<typeof headlineOf>[1]['t'], locale: $locale ?? undefined });
+});
+
 export const memoryLaneTitle = derived(t, ($t) => {
   return (memory: MemoryResponseDto) => {
+    // FL-62: the owner's own title wins everywhere a memory is named.
+    if (memory.title) {
+      return memory.title;
+    }
+
     if (memory.type === MemoryType.OnThisDay) {
       const now = DateTime.now();
       const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
@@ -416,6 +438,10 @@ export const memoryLaneTitle = derived(t, ($t) => {
 
     if (isYearInReview(memory)) {
       return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
+    }
+
+    if (isBirthday(memory) || isPersonRecap(memory)) {
+      return get(memoryHeadline)(memory).title;
     }
 
     return $t('unknown');

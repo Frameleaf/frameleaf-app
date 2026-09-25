@@ -95,4 +95,25 @@ describe('location utility', () => {
     expect(screen.getByRole('checkbox', { name: 'two.jpg' })).toBeChecked();
     expect(state.info).toHaveBeenCalledTimes(1);
   });
+  it('removes the location of the selected located items after a review (FL-51)', async () => {
+    state.search.mockResolvedValue({
+      assets: {
+        items: [{ ...asset('one'), exifInfo: { latitude: 10, longitude: 20 } }, asset('two')],
+        nextPage: null,
+      },
+    });
+    state.run.mockResolvedValue({ succeeded: ['one'], failed: [] });
+    render(GeolocationUtility);
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'one.jpg' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'two.jpg' }));
+
+    // only the selected item that has a location can lose it
+    await userEvent.click(screen.getByRole('button', { name: 'Remove location from 1 selected' }));
+    const dialog = screen.getByRole('dialog', { name: 'Remove location' });
+    await userEvent.click(within(dialog).getByRole('button', { name: /Apply/ }));
+
+    await waitFor(() =>
+      expect(state.run).toHaveBeenCalledExactlyOnceWith('change-location', ['one'], { clearLocation: true }),
+    );
+  });
 });

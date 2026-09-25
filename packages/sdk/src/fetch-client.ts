@@ -2344,10 +2344,10 @@ export type AssetBulkUpdateDto = {
     ids: string[];
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     /** Time zone (IANA timezone) */
@@ -2589,12 +2589,12 @@ export type UpdateAssetDto = {
     description?: string;
     /** Mark as favorite */
     isFavorite?: boolean;
-    /** Latitude coordinate */
-    latitude?: number;
+    /** Latitude coordinate; null together with a null longitude removes the location */
+    latitude?: number | null;
     /** Live photo video ID */
     livePhotoVideoId?: string | null;
-    /** Longitude coordinate */
-    longitude?: number;
+    /** Longitude coordinate; null together with a null latitude removes the location */
+    longitude?: number | null;
     /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     visibility?: AssetVisibility;
@@ -4617,6 +4617,14 @@ export type MapReverseGeocodeResponseDto = {
     /** State/Province name */
     state: string | null;
 };
+export type MapStatisticsResponseDto = {
+    /** The viewer's own located archived items */
+    archived: number;
+    /** Located timeline items of partners who share their locations with the viewer */
+    partner: number;
+    /** The viewer's own timeline items without a location */
+    unlocated: number;
+};
 export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
@@ -5006,11 +5014,41 @@ export type YearInReviewDto = {
     /** Calendar year being recapped */
     year: number;
 };
+export type BirthdayMemoryDto = {
+    /** Age reached on this birthday */
+    age: number | null;
+    /** The birthday this year, 'yyyy-MM-dd' */
+    date: string;
+    /** Discriminator for a birthday */
+    kind: Kind3;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the birthday is a person's or a pet's */
+    subject: Subject;
+    /** The owner's person or pet whose birthday it is */
+    subjectId: string;
+    /** Year of this birthday */
+    year: number;
+};
+export type PersonRecapDto = {
+    /** Number of their photos and videos that year */
+    assetCount: number;
+    /** Discriminator for a person or pet recap */
+    kind: Kind4;
+    /** Their name when the memory was made */
+    name: string;
+    /** Whether the recap is about a person or a pet */
+    subject: Subject;
+    /** The owner's person or pet */
+    subjectId: string;
+    /** Calendar year being recapped */
+    year: number;
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
 };
-export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
+export type MemoryData = EventStoryDto | YearInReviewDto | BirthdayMemoryDto | PersonRecapDto | OnThisDayDto;
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -5022,6 +5060,8 @@ export type MemoryResponseDto = {
     hideAt?: string;
     /** Memory ID */
     id: string;
+    /** Hidden by the owner; shown only in the hidden memories list */
+    isHidden: boolean;
     /** Is memory saved */
     isSaved: boolean;
     /** Memory date */
@@ -5032,6 +5072,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The owner's own title, when they set one */
+    title: string | null;
     "type": MemoryType;
     /** Last update date */
     updatedAt: string;
@@ -5052,17 +5094,37 @@ export type MemoryCreateDto = {
     showAt?: string;
     "type": MemoryType;
 };
+export type MemoryShowLessDto = {
+    kind: MemoryShowLessKind;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
+export type MemoryShowLessResponseDto = {
+    /** When the rule was added */
+    createdAt: string;
+    kind: MemoryShowLessKind;
+    /** The person's or pet's name, for person and pet rules */
+    name: string | null;
+    /** A person or pet id, a date as 'MM-dd', or a memory type */
+    value: string;
+};
 export type MemoryStatisticsResponseDto = {
     /** Total number of memories */
     total: number;
 };
 export type MemoryUpdateDto = {
+    /** The memory's items in the order the owner chose; items not listed follow in capture order */
+    assetOrder?: string[];
+    /** Hide the memory from the memories list; false restores it */
+    isHidden?: boolean;
     /** Is memory saved */
     isSaved?: boolean;
     /** Memory date */
     memoryAt?: string;
     /** Date when memory was seen */
     seenAt?: string;
+    /** The owner's own title for the memory; null returns to the generated one */
+    title?: string | null;
 };
 export type MemoryExportCreateDto = {
     /** Export format, defaults to an archive of the originals */
@@ -12826,6 +12888,31 @@ export function reverseGeocode({ lat, lon }: {
     }));
 }
 /**
+ * Retrieve map statistics
+ */
+export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+    fileCreatedAfter?: string;
+    fileCreatedBefore?: string;
+    isArchived?: boolean;
+    isFavorite?: boolean;
+    withPartners?: boolean;
+    withSharedAlbums?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MapStatisticsResponseDto;
+    }>(`/map/statistics${QS.query(QS.explode({
+        fileCreatedAfter,
+        fileCreatedBefore,
+        isArchived,
+        isFavorite,
+        withPartners,
+        withSharedAlbums
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List media health findings
  */
 export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
@@ -13123,9 +13210,10 @@ export function retryMediaOperation({ id }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13140,6 +13228,7 @@ export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order
     }>(`/memories${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -13233,11 +13322,53 @@ export function downloadMemoryExport({ id }: {
     }));
 }
 /**
+ * Remove a memories show-less rule
+ */
+export function removeMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: memoryShowLessDto
+    })));
+}
+/**
+ * Retrieve memories show-less rules
+ */
+export function getMemoryShowLess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", {
+        ...opts
+    }));
+}
+/**
+ * Show less of a person, pet, date or kind of memory
+ */
+export function addMemoryShowLess({ memoryShowLessDto }: {
+    memoryShowLessDto: MemoryShowLessDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryShowLessResponseDto[];
+    }>("/memories/show-less", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryShowLessDto
+    })));
+}
+/**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
     $for?: string;
     id?: string;
+    isHidden?: boolean;
     isSaved?: boolean;
     isTrashed?: boolean;
     isUpcoming?: boolean;
@@ -13252,6 +13383,7 @@ export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, o
     }>(`/memories/statistics${QS.query(QS.explode({
         "for": $for,
         id,
+        isHidden,
         isSaved,
         isTrashed,
         isUpcoming,
@@ -19049,13 +19181,31 @@ export enum MemorySearchOrder {
 export enum MemoryType {
     OnThisDay = "on_this_day",
     EventStory = "event_story",
-    YearInReview = "year_in_review"
+    YearInReview = "year_in_review",
+    Birthday = "birthday",
+    PersonRecap = "person_recap"
 }
 export enum Kind {
     EventStory = "event_story"
 }
 export enum Kind2 {
     YearInReview = "year_in_review"
+}
+export enum Kind3 {
+    Birthday = "birthday"
+}
+export enum Subject {
+    Person = "person",
+    Pet = "pet"
+}
+export enum Kind4 {
+    PersonRecap = "person_recap"
+}
+export enum MemoryShowLessKind {
+    Person = "person",
+    Pet = "pet",
+    Date = "date",
+    Type = "type"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",
