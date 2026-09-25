@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import en from '../../../../i18n/en.json';
 import {
   BANDS,
+  CLOUD_DEFAULT_MODELS,
   LADDER_WORKLOADS,
   PRICE_MULTIPLIER,
   bandFor,
@@ -141,7 +142,11 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     const resolved = resolvePosition('descriptions', 'qwen3.5-122b-a10b@1', { gpu, route: 'local' });
     expect(resolved?.runsOn).toBe('local');
     expect(resolved?.fallback).toBe(true);
-    expect(resolvePosition('descriptions', null, { gpu: null, route: 'cloud' })?.item.id).toBe('florence2-large@1');
+    // The prototype fell back to the lightest cloud model; the FL-146 owner decision sets a licensed default.
+    expect(resolvePosition('descriptions', null, { gpu: null, route: 'cloud' })?.item.id).toBe('qwen3.5-9b@1');
+    expect(resolvePosition('upscale', null, { gpu: null, route: 'cloud' })?.item.id).toBe(
+      ladderStates('upscale', { gpu: null, route: 'cloud' }).find((entry) => !entry.disabled)?.item.id,
+    );
   });
 
   it('every stop carries text and an icon, never colour alone', () => {
@@ -228,6 +233,35 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     }
     expect(cloudPositions().filter((item) => isLocalOnlyModel(item.id))).toEqual([]);
     expect(isLocalOnlyModel('qwen3.5-9b@1')).toBe(false);
+  });
+
+  it('keeps Qwen2.5-VL-3B local only: never selectable for the cloud tier (FL-146)', () => {
+    const qwen = positionById('qwen3.5-9b@1')!;
+    for (const id of ['Qwen/Qwen2.5-VL-3B-Instruct', 'qwen2.5-vl-3b@1', 'llmware/qwen2.5-vl-3b-ov']) {
+      expect(isLocalOnlyModel(id), id).toBe(true);
+      const item = { ...qwen, id };
+      expect(isCloudOffered(item), id).toBe(false);
+      for (const route of ['cloud', 'both'] as const) {
+        const state = positionState(item, { gpu: null, route });
+        expect(state.runsOn, `${id} ${route}`).not.toBe('cloud');
+      }
+    }
+    // Its Apache-2.0 sibling stays selectable.
+    expect(isLocalOnlyModel('Qwen/Qwen2.5-VL-7B-Instruct')).toBe(false);
+    for (const workload of LADDER_WORKLOADS) {
+      const stops = ladderStates(workload, { gpu: null, route: 'cloud' });
+      expect(stops.filter((entry) => !entry.disabled && /qwen2\.5-vl-3b/i.test(entry.item.id))).toEqual([]);
+    }
+  });
+
+  it('defaults cloud descriptions to a commercially licensed catalogue pick (FL-146)', () => {
+    const id = CLOUD_DEFAULT_MODELS.descriptions!;
+    const item = positionById(id)!;
+    expect(item.workload).toBe('descriptions');
+    expect(isCloudOffered(item)).toBe(true);
+    expect(item.licence).toMatch(/^(Apache-2\.0|MIT)$/);
+    // Nothing chosen and nothing runs here: the cloud default, not the lightest cloud model.
+    expect(resolvePosition('descriptions', '', { gpu: null, route: 'cloud' })?.item.id).toBe(id);
   });
 
   it('every problem points at a real fix, and the fixes are the right ones per vendor', () => {

@@ -110,6 +110,16 @@ describe(CloudMlService.name, () => {
         },
         {
           // Local only by owner decision (FL-146): never offered even when a catalogue lists it.
+          id: 'Qwen/Qwen2.5-VL-3B-Instruct',
+          workload: 'enrichment',
+          name: 'Qwen2.5-VL 3B',
+          fingerprint: 'f3',
+          description: '',
+          pricing: { unit: 'image', usd: 0.001 },
+          retired: false,
+        },
+        {
+          // Local only by owner decision (FL-146): never offered even when a catalogue lists it.
           id: 'nllb-clip-large-siglip__v1',
           workload: 'enrichment',
           name: 'NLLB CLIP',
