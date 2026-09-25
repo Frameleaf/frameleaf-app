@@ -230,6 +230,26 @@ describe(StorageRepository.name, () => {
     await expect(sut.getFolderBytes('/data/encoded-video', 1)).resolves.toBe(80);
   });
 
+  it('lists every file below one exact folder, hidden files and links included, without following links (FL-44)', async () => {
+    mockfs({
+      '/data/library/admin/2024/a.jpg': '',
+      '/data/library/admin/.hidden.xmp': '',
+      '/data/library/Admin/other-account.jpg': '',
+      '/data/library/admin-2/other-account.jpg': '',
+      '/elsewhere/outside.jpg': '',
+      // eslint-disable-next-line import-x/no-named-as-default-member
+      '/data/library/admin/link': mockfs.symlink({ path: '/elsewhere' }),
+    });
+    const found = await Array.fromAsync(sut.walkFiles('/data/library/admin'));
+    expect(found.toSorted()).toEqual([
+      '/data/library/admin/.hidden.xmp',
+      '/data/library/admin/2024/a.jpg',
+      '/data/library/admin/link',
+    ]);
+
+    await expect(Array.fromAsync(sut.walkFiles('/data/library/missing'))).resolves.toEqual([]);
+  });
+
   it('reads the device of a path, or null when it cannot be read', async () => {
     mockfs({ '/data/thumbs/a.webp': 'x' });
     await expect(sut.getDevice('/data/thumbs')).resolves.toEqual(expect.any(Number));

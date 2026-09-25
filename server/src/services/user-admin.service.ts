@@ -187,6 +187,7 @@ export class UserAdminService extends BaseService {
     if (auth.user.id === id) {
       throw new ForbiddenException('Cannot delete your own account');
     }
+    await this.assertNotDeduplicationRetainedAccount(id);
 
     await this.albumRepository.softDeleteAll(id);
 
@@ -213,6 +214,20 @@ export class UserAdminService extends BaseService {
     }
 
     return mapUserAdmin(user);
+  }
+
+  /**
+   * FL-44 (FN-304): the account physical deduplication retains originals in holds files other
+   * accounts' photos point at. Deleting it would take those files with it, so it cannot be deleted
+   * until another account is chosen to retain originals (Settings, Storage template, Physical deduplication).
+   */
+  private async assertNotDeduplicationRetainedAccount(id: string) {
+    const { physicalDeduplication } = await this.getConfig({ withCache: false });
+    if (physicalDeduplication.masterUserId === id) {
+      throw new BadRequestException(
+        'This account keeps the original files shared by physical deduplication. Choose another account to keep originals in the storage template settings before deleting it.',
+      );
+    }
   }
 
   async restore(auth: AuthDto, id: string): Promise<UserAdminResponseDto> {
