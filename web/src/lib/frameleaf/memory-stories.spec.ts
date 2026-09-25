@@ -5,6 +5,7 @@ import {
   formatLocalDateRange,
   isEventStory,
   isExportActive,
+  isPetStory,
   isYearInReview,
   latestExport,
   memoryStoryKind,
@@ -156,5 +157,27 @@ describe('memory stories', () => {
       expect(latestExport([older, other, newer], 'memory')?.id).toBe('newer');
       expect(latestExport([other], 'memory')).toBeUndefined();
     });
+  });
+});
+
+describe('pet stories (FL-58)', () => {
+  const petStory = {
+    id: 'm1',
+    type: MemoryType.PetStory,
+    data: {
+      kind: 'pet_story',
+      year: 2026,
+      month: '2026-08',
+      petId: 'p1',
+      name: 'Biscuit',
+      species: 'cat',
+      assetCount: 6,
+    },
+  } as unknown as MemoryResponseDto;
+
+  it('recognises a pet story by its type and kind', () => {
+    expect(isPetStory(petStory)).toBe(true);
+    expect(memoryStoryKind(petStory)).toBe('pet_story');
+    expect(isPetStory({ ...petStory, type: MemoryType.OnThisDay } as MemoryResponseDto)).toBe(false);
   });
 });

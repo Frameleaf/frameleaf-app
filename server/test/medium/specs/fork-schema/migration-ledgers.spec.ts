@@ -77,6 +77,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000170-MlWorkloadAccountingJobIndex' },
       { name: '0000000000171-UserPreferenceHistory' },
       { name: '0000000000175-FaceCorrectionHistory' },
+      { name: '0000000000176-PetObservationSourceAndRecognitionRuns' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

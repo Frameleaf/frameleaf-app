@@ -24,7 +24,13 @@ import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
-import { eventStoryPlace, formatLocalDateRange, isEventStory, isYearInReview } from '$lib/frameleaf/memory-stories';
+import {
+  eventStoryPlace,
+  formatLocalDateRange,
+  isEventStory,
+  isPetStory,
+  isYearInReview,
+} from '$lib/frameleaf/memory-stories';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -411,6 +417,11 @@ export const memoryLaneTitle = derived(t, ($t) => {
 
     if (isYearInReview(memory)) {
       return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
+    }
+
+    // FL-58: a month with one of the owner's pets, under the pet's current name.
+    if (isPetStory(memory)) {
+      return $t('frameleaf_memories_pet_story_title', { values: { name: memory.data.name } });
     }
 
     return $t('unknown');

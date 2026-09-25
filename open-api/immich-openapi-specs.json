@@ -20452,6 +20452,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetCandidateRejectDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -20492,11 +20502,82 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/pets/observations": {
+      "get": {
+        "description": "Retrieve the signed-in account’s decisions about which of its pets appear in one asset.",
+        "operationId": "getAssetPetObservations",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "query",
+            "description": "Asset whose pet observations to list",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PetObservationResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the pet observations of an asset",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/pets/observations/{id}": {
       "delete": {
-        "description": "Undo a durable observation, whether it was drawn by hand or made in review.",
+        "description": "Undo a durable observation, whether it was drawn by hand or made in review. With `expectedChecksum`, refused with 409 when the original changed.",
         "operationId": "deletePetObservation",
         "parameters": [
+          {
+            "name": "expectedChecksum",
+            "required": false,
+            "in": "query",
+            "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -20535,6 +20616,137 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/pets/recognition": {
+      "delete": {
+        "description": "Cancel the running pet recognition run over this library. Proposals already made stay for review.",
+        "operationId": "cancelPetRecognition",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetRecognitionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel pet recognition",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Whether pet recognition can run on the destination it is routed to, why not when it cannot, and the latest run over this library.",
+        "operationId": "getPetRecognition",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetRecognitionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve pet recognition status",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Look through this library for the pets confirmed so far, on the routed destination only. Refused with the reason when recognition is unavailable.",
+        "operationId": "startPetRecognition",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetRecognitionStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start pet recognition",
+        "tags": [
+          "Pets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
@@ -38286,6 +38498,12 @@
           "ocr": {
             "$ref": "#/components/schemas/AdminConfigJobSettingsDto"
           },
+          "petRecognition": {
+            "$ref": "#/components/schemas/AdminConfigForkJobSettingsDto",
+            "default": {
+              "concurrency": 1
+            }
+          },
           "search": {
             "$ref": "#/components/schemas/AdminConfigJobSettingsDto"
           },
@@ -50954,6 +51172,9 @@
           "ImageDescription",
           "NsfwDetectionQueueAll",
           "NsfwDetection",
+          "PetRecognitionQueueAll",
+          "PetRecognition",
+          "PetRecognitionNearest",
           "SmartAlbumReevaluateAll",
           "WorkflowAssetTrigger",
           "IntegrityUntrackedFilesQueueAll",
@@ -53958,6 +54179,9 @@
             "$ref": "#/components/schemas/YearInReviewDto"
           },
           {
+            "$ref": "#/components/schemas/PetStoryDto"
+          },
+          {
             "$ref": "#/components/schemas/OnThisDayDto"
           }
         ],
@@ -54254,7 +54478,8 @@
         "enum": [
           "on_this_day",
           "event_story",
-          "year_in_review"
+          "year_in_review",
+          "pet_story"
         ],
         "type": "string"
       },
@@ -55248,7 +55473,8 @@
           "budget-exceeded",
           "endpoint-unresolved",
           "destination-unhealthy",
-          "role-conflict"
+          "role-conflict",
+          "insufficient-memory"
         ],
         "type": "string"
       },
@@ -55804,7 +56030,8 @@
           "enrichment",
           "restoration-faithful",
           "restoration-creative",
-          "studio-ai"
+          "studio-ai",
+          "pet-recognition"
         ],
         "type": "string"
       },
@@ -57284,6 +57511,9 @@
             },
             "type": "array"
           },
+          "recognition": {
+            "$ref": "#/components/schemas/PetRecognitionStatusResponseDto"
+          },
           "recognitionAvailable": {
             "description": "Whether a pet recognition model is configured and available",
             "type": "boolean"
@@ -57296,13 +57526,29 @@
         },
         "required": [
           "candidates",
+          "recognition",
           "recognitionAvailable",
           "recognitionUnavailableReason"
         ],
         "type": "object"
       },
+      "PetCandidateRejectDto": {
+        "properties": {
+          "expectedChecksum": {
+            "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PetCandidateResponseDto": {
         "properties": {
+          "assetChecksum": {
+            "description": "Checksum (base64) of the asset now; send it back as expectedChecksum",
+            "type": "string"
+          },
           "assetId": {
             "description": "Asset the proposal is about",
             "format": "uuid",
@@ -57377,6 +57623,7 @@
           }
         },
         "required": [
+          "assetChecksum",
           "assetId",
           "boundingBoxX1",
           "boundingBoxX2",
@@ -57395,6 +57642,12 @@
       },
       "PetCandidateReviewDto": {
         "properties": {
+          "expectedChecksum": {
+            "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
           "petId": {
             "description": "Pet to assign instead of the proposed one",
             "format": "uuid",
@@ -57489,6 +57742,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "expectedChecksum": {
+            "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
           "imageHeight": {
             "description": "Height of the image the region was drawn on",
             "maximum": 9007199254740991,
@@ -57577,6 +57836,17 @@
           "source": {
             "$ref": "#/components/schemas/PetObservationSource"
           },
+          "sourceChecksum": {
+            "description": "Checksum (base64) of the original when the decision was made; null for older decisions",
+            "nullable": true,
+            "type": "string"
+          },
+          "staleAt": {
+            "description": "When the original was replaced under a drawn region, which then needs review; null when current",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "state": {
             "$ref": "#/components/schemas/PetObservationState"
           },
@@ -57598,6 +57868,8 @@
           "imageWidth",
           "petId",
           "source",
+          "sourceChecksum",
+          "staleAt",
           "state",
           "updatedAt"
         ],
@@ -57616,6 +57888,166 @@
         "enum": [
           "confirmed",
           "rejected"
+        ],
+        "type": "string"
+      },
+      "PetRecognitionRunResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Photos the run looks at",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the run was started",
+            "format": "date-time",
+            "type": "string"
+          },
+          "destinationKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlDestinationKind"
+              }
+            ],
+            "description": "Kind of destination the run was started on",
+            "nullable": true
+          },
+          "error": {
+            "description": "Why the run stopped, when it failed",
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "description": "When the run finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Run ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "processedCount": {
+            "description": "Photos looked at so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "proposalCount": {
+            "description": "Proposals made so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PetRecognitionRunStatus"
+          }
+        },
+        "required": [
+          "assetCount",
+          "createdAt",
+          "destinationKind",
+          "error",
+          "finishedAt",
+          "id",
+          "processedCount",
+          "proposalCount",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PetRecognitionRunStatus": {
+        "description": "State of a pet recognition run",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "cancelled",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PetRecognitionStatusResponseDto": {
+        "properties": {
+          "available": {
+            "description": "Whether recognition can run on the routed destination now",
+            "type": "boolean"
+          },
+          "destination": {
+            "description": "The destination pet recognition is routed to, if any",
+            "nullable": true,
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/MlDestinationKind"
+              },
+              "name": {
+                "description": "Destination name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ],
+            "type": "object"
+          },
+          "detail": {
+            "description": "The refusal in words, for display",
+            "nullable": true,
+            "type": "string"
+          },
+          "hasConfirmedPhotos": {
+            "description": "Whether any pet is confirmed in a photo, which recognition learns from",
+            "type": "boolean"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PetRecognitionUnavailableReason"
+              }
+            ],
+            "description": "Why it cannot; null when it can",
+            "nullable": true
+          },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PetRecognitionRunResponseDto"
+              }
+            ],
+            "description": "The latest run over this library",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "destination",
+          "detail",
+          "hasConfirmedPhotos",
+          "reason",
+          "run"
+        ],
+        "type": "object"
+      },
+      "PetRecognitionUnavailableReason": {
+        "description": "Why pet recognition is unavailable",
+        "enum": [
+          "machine-learning-disabled",
+          "smart-search-disabled",
+          "destination-missing",
+          "destination-disabled",
+          "workload-not-routed",
+          "workload-not-allowed",
+          "workload-not-served",
+          "consent-missing",
+          "budget-exceeded",
+          "endpoint-unresolved",
+          "destination-unhealthy",
+          "role-conflict",
+          "insufficient-memory"
         ],
         "type": "string"
       },
@@ -57700,6 +58132,57 @@
           "other"
         ],
         "type": "string"
+      },
+      "PetStoryDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Confirmed photos of the pet that month, before the diversity pass",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "Discriminator for a pet story",
+            "enum": [
+              "pet_story"
+            ],
+            "type": "string"
+          },
+          "month": {
+            "description": "The owner's local month, 'yyyy-MM'",
+            "type": "string"
+          },
+          "name": {
+            "description": "The pet name",
+            "type": "string"
+          },
+          "petId": {
+            "description": "The pet the story is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "species": {
+            "description": "The pet species",
+            "type": "string"
+          },
+          "year": {
+            "description": "Year of the month",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "kind",
+          "month",
+          "name",
+          "petId",
+          "species",
+          "year"
+        ],
+        "type": "object"
       },
       "PetUpdateDto": {
         "properties": {
@@ -60003,7 +60486,8 @@
           "mediaHealth",
           "workflow",
           "integrityCheck",
-          "editor"
+          "editor",
+          "petRecognition"
         ],
         "type": "string"
       },
@@ -60291,6 +60775,9 @@
           "ocr": {
             "$ref": "#/components/schemas/QueueResponseLegacyDto"
           },
+          "petRecognition": {
+            "$ref": "#/components/schemas/QueueResponseLegacyDto"
+          },
           "search": {
             "$ref": "#/components/schemas/QueueResponseLegacyDto"
           },
@@ -60333,6 +60820,7 @@
           "notifications",
           "nsfwDetection",
           "ocr",
+          "petRecognition",
           "search",
           "sidecar",
           "smartSearch",

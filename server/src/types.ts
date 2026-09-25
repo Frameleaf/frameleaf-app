@@ -568,6 +568,13 @@ export type JobItem =
   | { name: JobName.NsfwDetectionQueueAll; data: IBaseJob }
   | { name: JobName.NsfwDetection; data: IEntityJob }
 
+  // Pet recognition (FL-58). A queue-all without `userId` is the administrator's run over every
+  // library; with one it is that owner's run, and `runId` ties its per-asset jobs to the owner's
+  // `pet_recognition_run` so a cancel stops them.
+  | { name: JobName.PetRecognitionQueueAll; data: IBaseJob & { userId?: string } }
+  | { name: JobName.PetRecognition; data: IEntityJob & { runId?: string } }
+  | { name: JobName.PetRecognitionNearest; data: { petId: string; assetId: string } }
+
   // Smart albums. Optional `kind` scopes the re-evaluate to a single built-in
   // kind (one of the SystemConfig['smartAlbums']['builtIn'] keys); omit/undefined
   // means "all kinds".

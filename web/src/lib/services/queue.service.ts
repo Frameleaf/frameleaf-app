@@ -21,6 +21,7 @@ import {
   mdiImageBrokenVariant,
   mdiLibraryShelves,
   mdiOcr,
+  mdiPaw,
   mdiPencil,
   mdiStateMachine,
   mdiShieldSearch,
@@ -194,6 +195,11 @@ export const asQueueItem = ($t: MessageFormatter, queue: { name: QueueName }): Q
     [QueueName.Editor]: {
       icon: mdiPencil,
       title: $t('editor'),
+    },
+    [QueueName.PetRecognition]: {
+      icon: mdiPaw,
+      title: $t('frameleaf_jobs_queue_pet_recognition'),
+      subtitle: $t('frameleaf_jobs_queue_pet_recognition_description'),
     },
   };
 
