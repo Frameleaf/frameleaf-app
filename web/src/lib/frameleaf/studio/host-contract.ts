@@ -158,7 +158,15 @@ export interface StudioHostContext {
    * engine uses its defaults and must not assume anything it lays out is kept.
    */
   workspace?: StudioWorkspaceView;
+  /**
+   * Basic or Advanced (`Studio.jsx:2626-2633`, `setSettings({ mode })`). The host owns the
+   * header's switch and hands the choice to the engine, which shows the fuller workspace in
+   * Advanced. Absent means Basic.
+   */
+  mode?: StudioWorkspaceMode;
 }
+
+export type StudioWorkspaceMode = 'basic' | 'advanced';
 
 /* ------------------------------------------------------------------ */
 /* Workspace layout (FL-91)                                             */
@@ -235,6 +243,12 @@ export interface StudioHostServices {
    * answers `unavailable`, and the engine then keeps its layout for the session only.
    */
   saveWorkspace?(layout: unknown): Promise<StudioWorkspaceSaveResult>;
+  /**
+   * Report where the playhead is, as an exact rational instant (FL-93), so review comments the
+   * person adds from the host's Review panel are pinned there (`Studio.jsx:1759`) rather than at
+   * the start of the sequence. Optional; fire and forget.
+   */
+  reportPlayhead?(time: { num: number; den: number }): void;
 }
 
 /* ------------------------------------------------------------------ */
