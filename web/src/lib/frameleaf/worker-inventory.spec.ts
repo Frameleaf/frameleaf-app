@@ -155,7 +155,12 @@ describe('inventory sections (FL-72)', () => {
         role: MlWorkerRole.Restoration,
         url: 'https://gpu.lan:3004',
       }),
-      entry({ id: 'video', kind: MlDestinationKind.Lan, role: MlWorkerRole.Restoration, url: 'https://video.lan:3004' }),
+      entry({
+        id: 'video',
+        kind: MlDestinationKind.Lan,
+        role: MlWorkerRole.Restoration,
+        url: 'https://video.lan:3004',
+      }),
       entry({ id: 'both', kind: MlDestinationKind.Lan, role: MlWorkerRole.Mixed }),
       entry({ id: 'render', source: WorkerInventorySource.RenderWorker, kind: 'lan', role: null, url: null }),
     ],

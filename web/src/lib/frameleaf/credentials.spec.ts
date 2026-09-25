@@ -82,7 +82,12 @@ describe('write-only credentials (FL-67)', () => {
     const current = config();
     expect(isCredentialConfigured(current, ConfigCredential.SmtpPassword)).toBe(true);
     expect(isCredentialConfigured(current, ConfigCredential.OauthClientSecret)).toBe(true);
-    expect(isCredentialConfigured(withCredentialState(current, ConfigCredential.OauthClientSecret, false), ConfigCredential.OauthClientSecret)).toBe(false);
+    expect(
+      isCredentialConfigured(
+        withCredentialState(current, ConfigCredential.OauthClientSecret, false),
+        ConfigCredential.OauthClientSecret,
+      ),
+    ).toBe(false);
     expect(isCredentialConfigured({}, ConfigCredential.SmtpPassword)).toBe(false);
   });
 
