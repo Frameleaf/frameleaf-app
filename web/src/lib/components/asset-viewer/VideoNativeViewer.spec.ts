@@ -424,6 +424,24 @@ describe('VideoNativeViewer component', () => {
       await waitFor(() => expect(play).toHaveBeenCalled());
       play.mockRestore();
     });
+
+    // MediaViewer.jsx:422-460: the open settings hold the video without pausing the slideshow.
+    it('holds the video while the slideshow settings are open', async () => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+      const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      renderViewer(videoProps());
+      await waitFor(() => expect(viewerVideo()).toBeTruthy());
+      pause.mockClear();
+
+      slideshowStore.openSettings();
+      await waitFor(() => expect(pause).toHaveBeenCalled());
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+
+      await slideshowStore.closeSettings({ restoreFocus: false });
+      await waitFor(() => expect(play).toHaveBeenCalled());
+      play.mockRestore();
+    });
   });
 });
 

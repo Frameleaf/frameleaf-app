@@ -7,6 +7,12 @@
    * line runs along the top edge (media-viewer.css:425-450). The viewer footer (V-13, Packet 4A)
    * drives the same state: `slideshowStore.slideshowState` and `slideshowStore.toggleSettings`.
    *
+   * The controls and the pointer hide after 2.5 s without movement (source behaviour); moving the
+   * pointer, swiping down, or keyboard focus inside the controls shows them again, and a tap on the
+   * photo toggles them (MediaViewer.jsx:559-572, `.chrome-hidden`, apple-style.css:393-404). While
+   * the settings panel is open the slideshow holds: the progress stops and a video pauses, without
+   * changing play or pause (MediaViewer.jsx:422-460).
+   *
    * Escape follows MediaViewer.jsx:733-747: it closes the settings panel first, then leaves full
    * screen (the browser does that itself), then ends the slideshow. S and Space play and pause.
    */
@@ -111,17 +117,99 @@
   const play = () => ($slideshowState = SlideshowState.PlaySlideshow);
   const pause = () => ($slideshowState = SlideshowState.PauseSlideshow);
   const togglePause = () => (playing ? pause() : play());
+  // MediaViewer.jsx:422-460: the open settings panel holds the advance without pausing the slideshow.
+  const advancing = $derived(playing && !$settingsOpen);
   $effect(() => {
     const bar = progressBar;
     if (!bar) {
       return;
     }
-    if (playing && progressBarStatus === ProgressBarStatus.Paused) {
+    if (advancing && progressBarStatus === ProgressBarStatus.Paused) {
       void bar.play();
-    } else if (!playing && progressBarStatus !== ProgressBarStatus.Paused) {
+    } else if (!advancing && progressBarStatus !== ProgressBarStatus.Paused) {
       void bar.pause();
     }
   });
+
+  // Idle auto-hide (source behaviour, 2.5 s), swipe down on the photo to reveal, tap to toggle
+  // (MediaViewer.jsx:559-572).
+  const IDLE_HIDE_MS = 2500;
+  let controlsVisible = $state(true);
+  let controlsElement = $state<HTMLElement>();
+  let pointerOverControls = false;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const focusInsideControls = () => !!controlsElement?.contains(document.activeElement);
+  const setCursor = (value: string) => (document.body.style.cursor = value);
+  const scheduleHide = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if ($settingsOpen || pointerOverControls || focusInsideControls()) {
+        return;
+      }
+      controlsVisible = false;
+      setCursor('none');
+    }, IDLE_HIDE_MS);
+  };
+  const showControls = () => {
+    controlsVisible = true;
+    setCursor('');
+    scheduleHide();
+  };
+  const hideControls = () => {
+    clearTimeout(idleTimer);
+    if ($settingsOpen || focusInsideControls()) {
+      return;
+    }
+    controlsVisible = false;
+  };
+  onMount(() => {
+    scheduleHide();
+    return () => {
+      clearTimeout(idleTimer);
+      setCursor('');
+    };
+  });
+  // the settings panel keeps the controls on screen; closing it starts the idle timer again
+  $effect(() => {
+    if ($settingsOpen) {
+      showControls();
+    }
+  });
+
+  // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
+  let tap: { x: number; y: number; time: number; visible: boolean } | undefined;
+  const onPointerDown = (event: PointerEvent) => {
+    const target = event.target as Element | null;
+    tap =
+      target?.closest?.('[data-viewer-content]') && !target.closest('[data-testid="slideshow-controls"]')
+        ? { x: event.clientX, y: event.clientY, time: performance.now(), visible: controlsVisible }
+        : undefined;
+  };
+  const onPointerUp = (event: PointerEvent) => {
+    const start = tap;
+    tap = undefined;
+    if (!start) {
+      return;
+    }
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    // a swipe down reveals the controls (source behaviour)
+    if (dy > 50 && Math.abs(dx) < dy) {
+      showControls();
+      return;
+    }
+    if (!(Math.hypot(dx, dy) < 6)) {
+      return;
+    }
+    if (performance.now() - start.time >= 280) {
+      return;
+    }
+    if (start.visible) {
+      hideControls();
+    } else {
+      showControls();
+    }
+  };
 
   // The settings panel is the viewer's (SlideshowSettingsPanel); ending the slideshow closes it.
   onDestroy(() => {
@@ -184,7 +272,12 @@
   });
 </script>
 
-<svelte:document use:shortcuts={shortcutBindings} />
+<svelte:document
+  use:shortcuts={shortcutBindings}
+  onmousemove={showControls}
+  onpointerdown={onPointerDown}
+  onpointerup={onPointerUp}
+/>
 
 <!-- media-viewer.css:425-450: the thin accent line along the top of the canvas -->
 {#if !isVideoSlide}
@@ -202,10 +295,20 @@
 
 <div
   class="frameleaf slideshow-controls"
+  class:chrome-hidden={!controlsVisible}
   data-theme="dark"
   role="toolbar"
+  tabindex="-1"
   aria-label={$t('slideshow')}
   data-testid="slideshow-controls"
+  bind:this={controlsElement}
+  onfocusin={showControls}
+  onfocusout={scheduleHide}
+  onpointerenter={() => (pointerOverControls = true)}
+  onpointerleave={() => {
+    pointerOverControls = false;
+    scheduleHide();
+  }}
 >
   <IconButton label={$t('exit_slideshow')} onclick={onClose}>
     <Icon icon={mdiClose} size="1.25rem" />
@@ -273,6 +376,22 @@
     border: 1px solid var(--fl-viewer-border);
     border-radius: var(--fl-radius-pill);
     box-shadow: var(--fl-shadow-2);
+  }
+  /* apple-style.css:393-404 (.chrome-hidden): fades up out of the way; focus brings it back */
+  .slideshow-controls {
+    transition:
+      opacity var(--fl-motion) var(--fl-ease),
+      translate var(--fl-motion) var(--fl-ease);
+  }
+  .slideshow-controls.chrome-hidden {
+    opacity: 0;
+    translate: -50% -12px;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .slideshow-controls.chrome-hidden {
+      translate: -50% 0;
+    }
   }
   .slideshow-controls :global(button) {
     color: var(--fl-viewer-text);
