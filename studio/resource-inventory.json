@@ -3,12 +3,7 @@
   "story": "FL-90",
   "planId": "STU-203",
   "generatedBy": "server/src/utils/studio-resources.ts",
-  "limits": {
-    "maxGraphBytes": 8388608,
-    "maxGraphDepth": 64,
-    "maxReferences": 10000,
-    "maxSequenceDepth": 16
-  },
+  "limits": { "maxGraphBytes": 8388608, "maxGraphDepth": 64, "maxReferences": 10000, "maxSequenceDepth": 16 },
   "destinations": ["local", "lan", "runpod"],
   "presets": {
     "transition": ["Cross dissolve", "Dip to black", "Wipe", "Slide", "Zoom"],
@@ -101,7 +96,7 @@
       "fileBacked": true,
       "carriesPersonalData": false,
       "graphKeys": ["fontFamily", "fontId"],
-      "refusals": ["invalid-id", "not-bundled", "external-locator"]
+      "refusals": ["invalid-id", "not-bundled", "rights-blocked", "external-locator"]
     },
     {
       "kind": "lut",
@@ -114,7 +109,14 @@
       "fileBacked": true,
       "carriesPersonalData": false,
       "graphKeys": ["lutId"],
-      "refusals": ["invalid-id", "not-bundled", "undeclared-import", "checksum-mismatch", "external-locator"]
+      "refusals": [
+        "invalid-id",
+        "not-bundled",
+        "rights-blocked",
+        "undeclared-import",
+        "checksum-mismatch",
+        "external-locator"
+      ]
     },
     {
       "kind": "model",
@@ -127,7 +129,7 @@
       "fileBacked": false,
       "carriesPersonalData": false,
       "graphKeys": ["modelId"],
-      "refusals": ["invalid-id", "not-bundled", "external-locator"]
+      "refusals": ["invalid-id", "not-bundled", "rights-blocked", "external-locator"]
     },
     {
       "kind": "preset",
@@ -194,7 +196,8 @@
         "undeclared-import",
         "checksum-mismatch",
         "external-locator",
-        "not-bundled"
+        "not-bundled",
+        "rights-blocked"
       ]
     },
     {
@@ -235,7 +238,8 @@
         "checksum-mismatch",
         "derived-input-refused",
         "shared-link-session",
-        "destination-not-permitted"
+        "destination-not-permitted",
+        "rights-blocked"
       ]
     },
     {
@@ -265,5 +269,5 @@
       "refusals": ["no-access", "shared-link-session"]
     }
   ],
-  "digest": "3f2aa4e4f7c010316aa85c24e4b14dc350e446886ed4d112235b983ad6a7664e"
+  "digest": "6bc47807740ce842f1dda67a071b4e2b64960dc8e39d80c49f5e2c968b07ca58"
 }
