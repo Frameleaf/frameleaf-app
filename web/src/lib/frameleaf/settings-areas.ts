@@ -30,6 +30,7 @@ export type SettingsAreaId =
   | 'editing'
   | 'care'
   | 'processing'
+  | 'cloud'
   | 'security'
   | 'notifications'
   | 'server'
@@ -104,6 +105,9 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'server',
     sections: ['workers', 'routing', 'queues', 'cloud-ml', 'render-workers', 'nightly-tasks'],
   },
+  // FL-154: the template's Frameleaf Cloud area (settings-catalog.mjs:125-131, 1711-1799), after
+  // Compute & jobs in "Your server". Optional: the server works fully without it.
+  { id: 'cloud', group: 'server', sections: ['cloud-account', 'cloud-plan', 'cloud-license'], adminOnly: true },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
   {
@@ -162,6 +166,8 @@ export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object
   utilities: '#636366',
   trash: '#8e8e93',
   processing: '#636366',
+  // The template gives Frameleaf Cloud no tile colour of its own, so it takes the default grey.
+  cloud: '#8e8e93',
   security: '#0a84ff',
   notifications: '#ff453a',
   server: '#8e8e93',
@@ -394,6 +400,10 @@ export type DirectoryGroupId =
   | 'account'
   | 'library'
   | 'downloads'
+  | 'account_link'
+  | 'licensing'
+  | 'remote'
+  | 'cloud_services'
   | 'more';
 
 const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryGroupId>>> = {
@@ -417,6 +427,11 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     // FL-159: Frameleaf Cloud sits where the template's provider manager sat.
     'cloud-ml': 'workers',
     'nightly-tasks': 'schedules',
+  },
+  cloud: {
+    'cloud-account': 'account_link',
+    'cloud-plan': 'licensing',
+    'cloud-license': 'licensing',
   },
   security: {
     authentication: 'sign_in',

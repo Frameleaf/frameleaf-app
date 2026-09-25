@@ -108,6 +108,7 @@ describe('Frameleaf settings areas', () => {
       'sharing',
       'care',
       'processing',
+      'cloud',
       'security',
       'notifications',
       'server',
@@ -119,6 +120,20 @@ describe('Frameleaf settings areas', () => {
       'trash',
       'history',
     ]);
+  });
+
+  it('places Frameleaf Cloud after Compute & jobs with its account, plan and licence pages (FL-154)', () => {
+    expect(SETTINGS_AREAS.find((item) => item.id === 'cloud')).toEqual({
+      id: 'cloud',
+      group: 'server',
+      sections: ['cloud-account', 'cloud-plan', 'cloud-license'],
+      adminOnly: true,
+    });
+    expect(AREA_TILE_COLORS.cloud).toBeDefined();
+    expect(directoryGroup('cloud', 'cloud-account')).toBe('account_link');
+    expect(directoryGroup('cloud', 'cloud-plan')).toBe('licensing');
+    expect(directoryGroup('cloud', 'cloud-license')).toBe('licensing');
+    expect(areaForSection('cloud-license')).toBe('cloud');
   });
 
   describe(isAreaAvailable.name, () => {
