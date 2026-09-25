@@ -5,6 +5,7 @@ import { access, chmod, copyFile, link, mkdir, open, readFile, rename, rm, stat,
 import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { base64url, ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 /** File name of the private key inside the identity directory. */
@@ -56,6 +57,7 @@ const publicJwkOf = (privateKey: KeyObject): Ed25519PublicJwk => {
 @Injectable()
 export class InstanceIdentityRepository {
   private cached?: { keyFile: string; privateKey: KeyObject };
+  private logger = LoggingRepository.create('InstanceIdentityRepository');
 
   /**
    * Load the key in `dir`, or create it when there is none. Creation is exclusive (O_EXCL), so two
@@ -146,12 +148,24 @@ export class InstanceIdentityRepository {
     await link(keyFile, retiringFile).catch(async (error: NodeJS.ErrnoException) => {
       if (NO_HARD_LINK.has(error.code ?? '')) {
         await copyFile(keyFile, retiringFile);
-        await chmod(retiringFile, 0o600);
+        await this.restrict(retiringFile);
         return;
       }
       ignore(['EEXIST', 'ENOENT'])(error);
     });
     await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
+  }
+
+  /** Make a key file owner-only; a mount that refuses chmod (SMB/CIFS, FUSE) only gets a warning. */
+  private async restrict(file: string) {
+    await chmod(file, 0o600).catch((error: NodeJS.ErrnoException) => {
+      if (!NO_HARD_LINK.has(error.code ?? '')) {
+        throw error;
+      }
+      this.logger.warn(
+        `Could not make ${file} readable by this server only (${error.code}); check the mount's permissions`,
+      );
+    });
   }
 
   /**

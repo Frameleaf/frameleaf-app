@@ -15,7 +15,7 @@ import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 const decode = (part: string) => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
 
 /** A `link()` that can fail like it does on SMB/CIFS or FUSE media mounts. */
-const fsControl = vi.hoisted(() => ({ linkError: null as string | null }));
+const fsControl = vi.hoisted(() => ({ linkError: null as string | null, chmodError: null as string | null }));
 vi.mock('node:fs/promises', async (original) => {
   const actual = await original<typeof import('node:fs/promises')>();
   return {
@@ -24,6 +24,10 @@ vi.mock('node:fs/promises', async (original) => {
       fsControl.linkError
         ? Promise.reject(Object.assign(new Error('link not supported'), { code: fsControl.linkError }))
         : actual.link(from, to),
+    chmod: (path: string, mode: number) =>
+      fsControl.chmodError
+        ? Promise.reject(Object.assign(new Error('chmod not supported'), { code: fsControl.chmodError }))
+        : actual.chmod(path, mode),
   };
 });
 
@@ -158,6 +162,21 @@ describe(InstanceIdentityRepository.name, () => {
       }
       expect(await readFile(join(dir, RETIRING_KEY_FILE), 'utf8')).toBe(before);
       expect((await stat(join(dir, RETIRING_KEY_FILE))).mode & 0o777).toBe(0o600);
+    });
+
+    it('still rotates when the mount refuses both link and chmod (EPERM)', async () => {
+      const repository = new InstanceIdentityRepository();
+      const identity = await repository.loadOrCreate(dir, null);
+      fsControl.linkError = 'EPERM';
+      fsControl.chmodError = 'EPERM';
+      try {
+        const rotated = await repository.rotate(identity, () => Promise.resolve(), 24);
+        expect(rotated.kid).not.toBe(identity.kid);
+      } finally {
+        fsControl.linkError = null;
+        fsControl.chmodError = null;
+      }
+      await expect(access(join(dir, RETIRING_KEY_FILE))).resolves.toBeUndefined();
     });
 
     it('keeps the new key as the candidate when the answer to its registration is lost', async () => {
