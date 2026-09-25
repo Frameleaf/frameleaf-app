@@ -11,6 +11,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
   import { mapDateWindow, MAP_DATE_PRESETS, type MapArea } from '$lib/frameleaf/map-settings';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings } from '$lib/stores/preferences.store';
@@ -305,7 +306,6 @@
     }
   };
 
-  const clusterSize = (count: number) => (count >= 10 ? 'large' : 'medium');
   const coordinatesOf = (feature: Feature) => {
     const [lng, lat] = (feature.geometry as Point).coordinates;
     return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
@@ -329,6 +329,14 @@
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
       onload={(instance: Map) => {
+        // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
+        const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
+        instance.on('styledata', layoutLabels);
+        instance.on('sourcedata', (event: { sourceId?: string }) => {
+          if (event.sourceId === 'geojson') {
+            layoutLabels();
+          }
+        });
         instance.on('moveend', (event: { originalEvent?: unknown }) => {
           if (event.originalEvent) {
             changed = true;
@@ -339,7 +347,7 @@
       bind:map
     >
       <AttributionControl compact position="bottom-right" />
-      <GeoJSON data={features} id="geojson" cluster={{ radius: 46, maxZoom: 17 }}>
+      <GeoJSON data={features} id="geojson" cluster={{ radius: MAP_CLUSTER_DISTANCE, maxZoom: 17 }}>
         <MarkerLayer
           applyToClusters
           asButton
@@ -349,7 +357,8 @@
           {#snippet children({ feature })}
             {@const count = (feature.properties?.point_count as number) ?? 0}
             <span
-              class="cluster {clusterSize(count)}"
+              class="cluster"
+              style:--fl-cluster-size="{clusterRadius(count) * 2}px"
               role="img"
               aria-label={$t('frameleaf_map_cluster_label', { values: { count } })}
             >
@@ -693,17 +702,14 @@
     color: var(--fl-text);
     transition: border-color var(--fl-motion) var(--fl-ease);
   }
+  /* MapView.jsx:104-105: the bubble grows with its count up to 40 items (clusterRadius). */
   .cluster {
-    width: 38px;
-    height: 38px;
+    width: var(--fl-cluster-size, 38px);
+    height: var(--fl-cluster-size, 38px);
     background: var(--fl-raised);
     font-size: 12px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-  }
-  .cluster.large {
-    width: 52px;
-    height: 52px;
   }
   .single {
     width: 42px;
