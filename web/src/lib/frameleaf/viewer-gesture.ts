@@ -7,6 +7,9 @@
  * - A downward drag follows the finger (the photo shrinks and the black fades as it goes) and closes
  *   the viewer once it has travelled far enough; a shorter drag springs back.
  *
+ * It follows one pointer. A second finger going down (a pinch) cancels it at once, and moves or
+ * releases of any other pointer are ignored, so pinching at normal zoom never closes the viewer.
+ *
  * The gesture only starts at normal zoom; the caller decides that, and which targets are exempt
  * (buttons, links, fields, video controls). It follows the vertical movement only once the drag is
  * mostly downward, so a sideways swipe to the next item never starts closing the viewer.
@@ -39,7 +42,7 @@ export type ViewerGestureHandlers = {
   onTap: () => void;
 };
 
-type Start = { x: number; y: number; time: number; dragging: boolean };
+type Start = { pointerId: number; x: number; y: number; time: number; dragging: boolean };
 
 export class ViewerGesture {
   #start: Start | null = null;
@@ -55,18 +58,28 @@ export class ViewerGesture {
     return this.#start !== null;
   }
 
+  /** The pointer being followed, if any. */
+  get pointerId(): number | undefined {
+    return this.#start?.pointerId;
+  }
+
   get dragging() {
     return !!this.#start?.dragging;
   }
 
-  start(x: number, y: number) {
-    this.#start = { x, y, time: this.#now(), dragging: false };
+  /** A pointer went down. A second pointer while one is followed is a pinch: the gesture ends. */
+  start(pointerId: number, x: number, y: number) {
+    if (this.#start) {
+      this.cancel();
+      return;
+    }
+    this.#start = { pointerId, x, y, time: this.#now(), dragging: false };
   }
 
   /** Returns true while the gesture owns the pointer. */
-  move(x: number, y: number): boolean {
+  move(pointerId: number, x: number, y: number): boolean {
     const start = this.#start;
-    if (!start) {
+    if (!start || start.pointerId !== pointerId) {
       return false;
     }
     const dx = x - start.x;
@@ -81,12 +94,12 @@ export class ViewerGesture {
     return true;
   }
 
-  end(x: number, y: number) {
+  end(pointerId: number, x: number, y: number) {
     const start = this.#start;
-    this.#start = null;
-    if (!start) {
+    if (!start || start.pointerId !== pointerId) {
       return;
     }
+    this.#start = null;
     const dy = y - start.y;
     if (start.dragging) {
       if (dy > DISMISS_DISTANCE) {
