@@ -252,6 +252,9 @@
           {#if !expired}
             <p class="fc-waiting"><Icon icon={mdiProgressClock} size="18" /> {$t('frameleaf_cloud_waiting')}</p>
           {/if}
+          {#if cloudManager.pollError}
+            <p class="fc-notice is-error" role="alert">{$t('frameleaf_cloud_poll_failed')}</p>
+          {/if}
           {#if status.lastError}
             <p class="fc-muted" role="status">{status.lastError}</p>
           {/if}
