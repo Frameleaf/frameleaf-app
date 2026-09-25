@@ -1,15 +1,17 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import { downloadManager } from '$lib/managers/download-manager.svelte';
+import { downloadManager, EmptyDownloadError } from '$lib/managers/download-manager.svelte';
 import * as utils from '$lib/utils';
 import en from '../../../../../i18n/en.json';
 import DownloadPanel from './DownloadPanel.svelte';
 
 /**
- * DownloadPanel (FL-45) renders directly off `downloadManager`, the same manager
- * `downloadArchive()` feeds when a download splits into multiple archives — the only
- * production path that keeps an entry around instead of downloading immediately.
+ * DownloadPanel (FL-45 D-1…D-5) renders off `downloadManager`, which `downloadArchive()` and
+ * `downloadAssetFile()` feed for every download. The tasks here stand in for the real requests.
  */
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const never = () => new Promise<Blob>(() => {});
 
 beforeEach(() => {
   addMessages('dev', en);
@@ -17,38 +19,98 @@ beforeEach(() => {
 });
 
 describe('DownloadPanel', () => {
-  it('renders nothing while no archive is prepared', () => {
+  it('renders nothing while there is no download', () => {
     const { container } = render(DownloadPanel);
     expect(container.querySelector('.fl-panel')).toBeNull();
   });
 
-  it('lists a prepared archive with its size', () => {
-    downloadManager.add('my-trip (1/2)', 'https://example.test/download/archive', ['a1', 'a2'], 'my-trip', 2048);
+  it('shows a preparing download with progress, Cancel and the prototype title (D-1, D-4)', () => {
+    downloadManager.start({ name: 'Frameleaf-3-items.zip', assetIds: ['a', 'b', 'c'], total: 3 * 1024 * 1024 }, never);
 
     render(DownloadPanel);
 
-    expect(screen.getByText('my-trip (1/2)')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Downloads' })).toBeInTheDocument();
+    expect(screen.getByText('Preparing 1 download')).toBeInTheDocument();
+    expect(screen.getByText('Frameleaf-3-items.zip')).toBeInTheDocument();
+    expect(screen.getByText(/^3 items · 3 MiB · 0%$/)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Frameleaf-3-items.zip progress' })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
+    );
+    expect(screen.getByRole('button', { name: en.cancel })).toBeInTheDocument();
+    expect(screen.queryByText('Prepared Archives')).toBeNull();
   });
 
-  it('saves through downloadUrlPost and marks the archive downloaded', async () => {
-    const downloadUrlPostSpy = vi.spyOn(utils, 'downloadUrlPost').mockImplementation(() => {});
-    downloadManager.add('my-trip (1/2)', 'https://example.test/download/archive', ['a1', 'a2'], 'my-trip', 2048);
+  it('hides Close while a download is being prepared (D-5)', () => {
+    downloadManager.start({ name: 'a.zip' }, never);
 
     render(DownloadPanel);
-    await fireEvent.click(screen.getByRole('button', { name: en.download }));
 
-    expect(downloadUrlPostSpy).toHaveBeenCalledWith('https://example.test/download/archive', ['a1', 'a2'], 'my-trip');
-    expect(downloadManager.assets.get('my-trip (1/2)')?.downloaded).toBe(true);
+    expect(screen.queryByRole('button', { name: en.frameleaf_transfer_close_downloads })).toBeNull();
   });
 
-  it('removes one archive without clearing the others still waiting', async () => {
-    downloadManager.add('first', 'https://example.test/1', ['a1'], 'first', 1024);
-    downloadManager.add('second', 'https://example.test/2', ['a2'], 'second', 1024);
+  it('cancels a preparing download by aborting its request (D-1)', async () => {
+    let signal!: AbortSignal;
+    downloadManager.start({ name: 'a.zip' }, (context) => {
+      signal = context.signal;
+      return never();
+    });
 
     render(DownloadPanel);
-    await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_transfer_remove_download })[0]);
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
 
-    expect(downloadManager.assets.has('first')).toBe(false);
-    expect(downloadManager.assets.has('second')).toBe(true);
+    expect(signal.aborted).toBe(true);
+    expect(screen.queryByText('a.zip')).toBeNull();
+  });
+
+  it('offers Save once ready and saves the file through the browser', async () => {
+    const downloadBlob = vi.spyOn(utils, 'downloadBlob').mockImplementation(() => {});
+    downloadManager.start({ name: 'photo.jpg', assetIds: ['a'], total: 2048 }, () => Promise.resolve(new Blob(['x'])));
+    await flush();
+
+    render(DownloadPanel);
+    expect(screen.getByText('1 download ready')).toBeInTheDocument();
+    expect(screen.getByText(/^1 item · 2 KiB · Ready$/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'photo.jpg');
+    expect(downloadManager.assets.size).toBe(0);
+  });
+
+  it('keeps a failed download as a row with Retry and Dismiss (D-2)', async () => {
+    let attempts = 0;
+    downloadManager.start({ name: 'a.zip' }, () => {
+      attempts++;
+      return attempts === 1 ? Promise.reject(new Error('offline')) : never();
+    });
+    await flush();
+
+    render(DownloadPanel);
+    expect(screen.getByText(en.frameleaf_transfer_download_error_failed)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.retry }));
+
+    expect(attempts).toBe(2);
+    expect(screen.getByText('Preparing 1 download')).toBeInTheDocument();
+  });
+
+  it('dismisses a failed download', async () => {
+    downloadManager.start({ name: 'empty.zip' }, () => Promise.reject(new EmptyDownloadError()));
+    await flush();
+
+    render(DownloadPanel);
+    expect(screen.getByText(en.frameleaf_transfer_download_error_empty)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.dismiss }));
+
+    expect(downloadManager.assets.size).toBe(0);
+  });
+
+  it('closes when nothing is being prepared', async () => {
+    downloadManager.start({ name: 'a.jpg' }, () => Promise.resolve(new Blob(['x'])));
+    await flush();
+
+    render(DownloadPanel);
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_transfer_close_downloads }));
+
+    expect(downloadManager.assets.size).toBe(0);
   });
 });
