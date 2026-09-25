@@ -127,6 +127,13 @@
     mdiVolumeHigh,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
+  import {
+    clearEditorContinuity,
+    continuityBase,
+    resumeEditorContinuity,
+    saveEditorContinuity,
+    secondsToRational,
+  } from '$lib/frameleaf/editor-continuity';
   import { t, type Translations } from 'svelte-i18n';
 
   type Tool = 'trim' | 'speed' | 'adjust' | 'crop' | 'audio' | 'text' | 'enhance' | 'presets' | 'restore';
@@ -214,6 +221,19 @@
       const start = fromVideoEdits(edits, originalVideo);
       draft = createVideoDraft(start);
       opened = start;
+      // FL-113: the draft, tool and playhead carried to Studio come back with the person (App.jsx
+      // shares `edit`, its history and `session.playbackPosition` across the editor and Studio).
+      const resumed = resumeEditorContinuity<VideoDraft>(asset.id, continuityBase(start));
+      if (resumed.status === 'resumed') {
+        draft = resumed.draft;
+        if (tools.some((item) => item.id === resumed.tool)) {
+          tool = resumed.tool as Tool;
+        }
+        pendingSeek = resumed.playhead;
+        toastManager.primary($t('frameleaf_editor_continuity_resumed'));
+      } else if (resumed.status === 'stale') {
+        toastManager.primary($t('frameleaf_editor_continuity_stale'));
+      }
     } catch (error) {
       loadFailed = true;
       handleError(error, $t('frameleaf_video_editor_load_error'));
@@ -222,6 +242,8 @@
 
   /* Stage ------------------------------------------------------------------ */
   let tool = $state<Tool>('trim');
+  /** A playhead to restore once the clip can seek (FL-113), in seconds on the source. */
+  let pendingSeek = $state<number | null>(null);
   let playing = $state(false);
   let before = $state(false);
   let split = $state(false);
@@ -346,6 +368,17 @@
     };
     draw();
     return () => cancelAnimationFrame(frame);
+  });
+
+  $effect(() => {
+    const at = pendingSeek;
+    if (at === null || duration <= 0 || !videoEl) {
+      return;
+    }
+    untrack(() => {
+      pendingSeek = null;
+      seek(at);
+    });
   });
 
   const seek = (next: number) => {
@@ -757,11 +790,27 @@
     if (dirty) {
       toastManager.primary($t('frameleaf_editor_edits_discarded'));
     }
+    clearEditorContinuity(asset.id);
     onClose(saveChangedCurrent);
   };
+  /**
+   * Open in Studio keeps the draft and the playhead (FL-113; App.jsx `openStudio` only switches
+   * screens): Studio starts at the same instant, and the draft is offered back when the person returns.
+   */
   const openStudio = () => {
-    cancel();
-    void goto(Route.studio({ assetIds: [asset.id] }));
+    const playhead = secondsToRational(time);
+    if (dirty || draft.undo.length > 0 || time > 0) {
+      saveEditorContinuity({
+        assetId: asset.id,
+        kind: 'video',
+        draft: $state.snapshot(draft),
+        base: continuityBase(opened),
+        tool,
+        playhead,
+      });
+    }
+    onClose(saveChangedCurrent);
+    void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id, at: playhead }));
   };
   const revert = () => change({ ...initialVideoEdit(duration), legacy: [] });
   const copySettings = () => {
@@ -848,6 +897,7 @@
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
       eventManager.emit('AssetEditsApplied', asset.id);
       opened = edit;
+      clearEditorContinuity(asset.id);
       toastManager.primary($t('frameleaf_video_editor_saved'));
       onClose(true);
     } catch (error) {

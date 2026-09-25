@@ -327,6 +327,26 @@ function watchDirty(state: Session) {
   )
 }
 
+/**
+ * Start where the quick editor was (FL-113): once, after the timeline has loaded, the playhead goes
+ * to the frame nearest the handed-over instant. Later context updates never move it.
+ */
+function startAtHandoffPlayhead(state: Session, at: { num: number; den: number } | null) {
+  if (!at || !(at.den > 0) || at.num <= 0) return
+  const apply = () => {
+    const settings = useTimelineSettingsStore.getState()
+    if (settings.isTimelineLoading) return false
+    const fps = settings.fps || 30
+    usePlaybackStore.getState().setCurrentFrame(Math.round((at.num / at.den) * fps))
+    return true
+  }
+  if (apply()) return
+  const stop = useTimelineSettingsStore.subscribe(() => {
+    if (apply()) stop()
+  })
+  state.unsubscribe.push(stop)
+}
+
 /** The playhead, as an exact rational instant, for review comments pinned in the host (FL-93). */
 function watchPlayhead(state: Session) {
   let last = -1
@@ -387,6 +407,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchDrafts(state)
   watchDirty(state)
   watchPlayhead(state)
+  startAtHandoffPlayhead(state, context.handoffPlayhead ?? null)
 
   // A brand-new project is stored as its first draft right away, so "make a movie" is kept.
   if (!context.project.graph) void sendDraft(state)
