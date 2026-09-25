@@ -14,7 +14,7 @@
 <h3 align="center">Frameleaf - Hoch performante, selbst gehostete Backup-Lösung für Fotos und Videos</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Haupt-Screenshot">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Haupt-Screenshot">
 </a>
 <br/>
 <p align="center">

@@ -14,7 +14,7 @@
 <h3 align="center">Frameleaf: Una solución Self-Hosted de alto rendimiento para la copia de seguridad de fotos y videos</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="Captura de pantalla principal">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="Captura de pantalla principal">
 </a>
 <br/>
 <p align="center">
