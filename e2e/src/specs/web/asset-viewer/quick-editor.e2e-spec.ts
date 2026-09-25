@@ -69,6 +69,44 @@ test.describe('Quick editor', () => {
 });
 
 /**
+ * FL-113 (VID-105): quick editor ↔ Studio continuity. "Open in Studio" carries the unsaved draft
+ * (and, for a clip, the playhead) to Studio; "Back to quick edit" returns to the same item with the
+ * same draft. Not run locally (the lead runs the e2e stack).
+ */
+test.describe('Quick editor and Studio continuity', () => {
+  let admin: LoginResponseDto;
+  let asset: AssetMediaResponseDto;
+
+  test.beforeAll(async () => {
+    utils.initSdk();
+    await utils.resetDatabase();
+    admin = await utils.adminSetup();
+    asset = await utils.createAsset(admin.accessToken);
+  });
+
+  test('keeps the draft across Studio and back', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/photos/${asset.id}`);
+    await page.keyboard.press('e');
+    const editor = page.getByRole('dialog', { name: /Edit/ });
+    await editor.getByRole('slider', { name: 'Exposure' }).fill('0.5');
+
+    await editor.getByRole('button', { name: 'Open in Studio' }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/studio\\?assets=${asset.id}&from=${asset.id}`));
+
+    await page.getByRole('button', { name: 'Back to quick edit' }).click();
+    await expect(page).toHaveURL(new RegExp(`/photos/${asset.id}$`));
+    const back = page.getByRole('dialog', { name: /Edit/ });
+    await expect(back.getByRole('slider', { name: 'Exposure' })).toHaveValue('0.5');
+    await expect(page.getByText('Your unsaved edits are back where you left them.')).toBeVisible();
+
+    // Nothing was saved on the way: the original is untouched until Save version.
+    const develop = await getAssetDevelop({ id: asset.id }, { headers: asBearerAuth(admin.accessToken) });
+    expect(develop.revisions).toHaveLength(0);
+  });
+});
+
+/**
  * FL-113 VE-1 … VE-12: the video half of the same editor. The clip's original metadata and the
  * saved recipe are answered by the test so the spec does not depend on a decodable fixture; the
  * page, the editor and the request it sends are real.

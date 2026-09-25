@@ -42,13 +42,32 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
 
+# Studio's editor (FL-88): the pinned Freecut revision is recovered from its archive, verified file by
+# file against studio/freecut-provenance.json, patched outside the snapshot, installed from the engine
+# lockfile without lifecycle scripts, and built with Frameleaf's adapter into web/static/studio-engine,
+# together with every licence notice it needs (attribution/, notices/).
+FROM node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4 AS studio-engine
+
+WORKDIR /usr/src/app
+COPY ./scripts/frameleaf-studio-contracts.mjs ./scripts/frameleaf-studio-contracts.mjs
+COPY ./docs/docs/developer/frameleaf-plan ./docs/docs/developer/frameleaf-plan/
+COPY ./studio ./studio/
+COPY ./web/src/lib/frameleaf/studio ./web/src/lib/frameleaf/studio/
+RUN node studio/tools/engine.mjs prepare && \
+  npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund && \
+  node studio/tools/adapter.mjs build
+
 FROM sdk AS web
 
 COPY ./web/package.json ./web/package.json
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web install --frozen-lockfile
 
 COPY ./i18n ./i18n/
+# Acknowledgements and licence texts the About screen reads (FL-86).
+COPY ./licenses ./licenses/
+COPY ./studio/notices ./studio/notices/
 COPY ./web ./web/
+COPY --from=studio-engine /usr/src/app/web/static/studio-engine ./web/static/studio-engine/
 
 ARG BUILD_ID
 ENV IMMICH_BUILD=${BUILD_ID}
@@ -125,6 +144,10 @@ COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json /build/plugi
 RUN ln -s ../../cli/bin/immich server/bin/immich
 COPY LICENSE /licenses/LICENSE.txt
 COPY LICENSE /LICENSE
+# Third-party notices (FL-86): every acknowledgement with its licence text, and the Studio engine's
+# notices, Freecut's MIT licence among them.
+COPY ./licenses /licenses/third-party/
+COPY ./studio/notices /licenses/studio/
 
 ENV PATH="${PATH}:/usr/src/app/server/bin"
 

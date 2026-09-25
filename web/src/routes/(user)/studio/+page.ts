@@ -32,6 +32,9 @@ export const load = (async ({ url }) => {
   return {
     projectId: handoff.projectId,
     assets,
+    /** FL-113: the quick editor that opened Studio, and where its playhead was. */
+    returnTo: handoff.returnTo,
+    at: handoff.at,
     /** Ids the handoff asked for that this session could not read, for the honest count. */
     unavailableAssetCount: handoff.assetIds.length - assets.length,
     meta: {
