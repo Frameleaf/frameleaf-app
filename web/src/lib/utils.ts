@@ -242,7 +242,11 @@ export const getAssetMediaUrl = (options: AssetUrlOptions) => {
 export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
   const { id, cacheKey: c, edited } = options;
   // `edited: false` asks for the unedited clip; the server honours it for the owner only (FL-113).
-  return createUrl(getAssetPlaybackPath(id), { ...authManager.params, c, edited: edited === false ? false : undefined });
+  return createUrl(getAssetPlaybackPath(id), {
+    ...authManager.params,
+    c,
+    edited: edited === false ? false : undefined,
+  });
 };
 
 export const getAssetHlsUrl = (id: string) => {
