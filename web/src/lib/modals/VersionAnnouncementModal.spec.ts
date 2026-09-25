@@ -25,7 +25,10 @@ describe('VersionAnnouncementModal component', () => {
     render(VersionAnnouncementModal, { serverVersion: 'v2.0.0', releaseVersion: 'v2.1.0', onClose: vi.fn() });
 
     const link = await screen.findByRole('link');
-    expect(link).toHaveAttribute('href', 'https://github.com/Frameleaf/frameleaf-app/releases/tag/v2.1.0');
+    expect(link).toHaveAttribute(
+      'href',
+      'https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-v2.1.0&expanded=true',
+    );
     expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('href')).not.toContain('immich-app');
   });
