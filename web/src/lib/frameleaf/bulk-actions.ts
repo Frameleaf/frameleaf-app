@@ -43,6 +43,11 @@ export type BulkActionId =
   | 'unfavorite'
   | 'add-to-album'
   | 'create-shared-link'
+  /**
+   * FL-35 / FL-54: "Send a copy…" through the browser's share sheet. It changes nothing on the server,
+   * so the selection bar runs it itself (`$lib/frameleaf/send-copy`) instead of the bulk runner.
+   */
+  | 'send-copy'
   | 'download'
   | 'delete'
   | 'restore'
@@ -146,6 +151,8 @@ export type BulkActionContext = {
    * those items are already visible, and the per-item check still decides, as it always has.
    */
   spaceViewerMatching?: boolean;
+  /** The browser's share sheet takes files, so "Send a copy…" can be offered (`canSendCopies`). */
+  canSendCopy?: boolean;
 };
 
 /** The only actions a shared space's "select everything matching" offers a viewer (FL-48). */
@@ -255,6 +262,15 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       // to hand the form, so the action waits until the selection is explicit.
       dialog: true,
       available: live && has && !snapshot,
+    },
+    {
+      id: 'send-copy',
+      labelKey: 'frameleaf_bulk_send_copy',
+      icon: 'mdiExportVariant',
+      group: 'primary',
+      // A copy of each original through the native share sheet, separate from Frameleaf sharing. It
+      // needs the explicit items (a snapshot has none), and Locked and trashed items are never sent.
+      available: !trash && !locked && has && !snapshot && !!context.canSendCopy,
     },
     {
       id: 'download',
@@ -469,6 +485,7 @@ export const PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
   'favorite',
   'add-to-album',
   'create-shared-link',
+  'send-copy',
   'download',
   'delete',
 ];

@@ -21,7 +21,7 @@
     type StackResponseDto,
   } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
+  import { mdiArrowLeft, mdiArrowRight, mdiDotsHorizontal, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -94,9 +94,15 @@
   actions={withoutIcons([Close, Cast, PlayOriginalVideo, ...Object.values(Actions)])}
 />
 
-<div
-  class="flex h-16 place-items-center justify-between gap-3 bg-linear-to-b from-black/40 px-3 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)] transition-transform duration-200"
->
+<!--
+  FL-35: the frosted viewer header (apple-style.css:383-403, 504-507). The actions follow the template's
+  top row (MediaViewer.jsx:1023-1200): Share, Cast, Copy image (wide screens only), Information,
+  Favorite, Rating, Edit, Trash and More. The legacy Offline button is gone (audit V-6): the offline
+  banner explains a missing original. Zoom lives in the footer, as in the template (ViewerFooter,
+  MediaViewer.jsx:1765-1790). On phones the actions leave the header for a frosted bottom toolbar
+  above the footer, like iPhone Photos (apple-style.css:756-790).
+-->
+<div class="fl-viewer-header">
   <div class="flex min-w-0 flex-1 items-center gap-2">
     <div class="dark shrink-0">
       <ActionButton action={Close} />
@@ -106,70 +112,193 @@
     <ViewerTitle {asset} />
   </div>
 
-  <div
-    class="dark -m-1 flex items-center gap-2 overflow-x-auto p-1 *:shrink-0"
-    data-testid="asset-viewer-navbar-actions"
-  >
-    {#if assetViewerManager.isImageLoading}
-      <Tooltip text={$t('loading')}>
-        {#snippet child({ props })}
-          <div {...props} role="status" aria-label={$t('loading')}>
-            <LoadingDots class="me-1" />
-          </div>
-        {/snippet}
-      </Tooltip>
-    {/if}
-    <ActionButton action={Cast} />
-    <ActionButton action={Actions.Share} />
-    <ActionButton action={Actions.Offline} />
-    <ActionButton action={Actions.ZoomIn} />
-    <ActionButton action={Actions.ZoomOut} />
-    <ActionButton action={Actions.PlayMotionPhoto} />
-    <ActionButton action={Actions.StopMotionPhoto} />
-    <ActionButton action={Actions.Copy} />
-    <ActionButton action={Actions.SharedLinkDownload} />
-    {#if sharedLink}
-      <ActionButton action={SharedLinkSlideshow} />
-    {/if}
-    <ActionButton action={Actions.Info} />
-    <ActionButton action={Actions.Favorite} />
-    <ActionButton action={Actions.Unfavorite} />
+  <div class="fl-viewer-toolbar">
+    <div
+      class="fl-viewer-actions dark"
+      role="toolbar"
+      aria-label={$t('frameleaf_viewer_actions')}
+      data-testid="asset-viewer-navbar-actions"
+    >
+      {#if assetViewerManager.isImageLoading}
+        <Tooltip text={$t('loading')}>
+          {#snippet child({ props })}
+            <div {...props} role="status" aria-label={$t('loading')}>
+              <LoadingDots class="me-1" />
+            </div>
+          {/snippet}
+        </Tooltip>
+      {/if}
+      <ActionButton action={Actions.Share} />
+      <ActionButton action={Cast} />
+      <span class="fl-wide-only">
+        <ActionButton action={Actions.Copy} />
+      </span>
+      <ActionButton action={Actions.PlayMotionPhoto} />
+      <ActionButton action={Actions.StopMotionPhoto} />
+      {#if sharedLink}
+        <!-- A shared link has no More menu, so its download and its copy through the share sheet sit here. -->
+        <ActionButton action={Actions.SharedLinkDownload} />
+        <ActionButton action={Actions.SendCopy} />
+        <ActionButton action={SharedLinkSlideshow} />
+      {/if}
+      <ActionButton action={Actions.Info} />
+      <ActionButton action={Actions.Favorite} />
+      <ActionButton action={Actions.Unfavorite} />
 
-    {#if isOwner}
-      <RatingAction {asset} {onAction} />
-    {/if}
+      {#if isOwner}
+        <RatingAction {asset} {onAction} />
+      {/if}
 
-    <ActionButton action={Actions.Edit} />
+      <ActionButton action={Actions.Edit} />
 
-    {#if isOwner}
-      <DeleteAction {asset} {onAction} {preAction} {onUndoDelete} />
-    {/if}
+      {#if isOwner}
+        <DeleteAction {asset} {onAction} {preAction} {onUndoDelete} />
+      {/if}
 
-    {#if !sharedLink}
-      <ButtonContextMenu
-        direction="left"
-        align="top-right"
-        color="secondary"
-        title={$t('frameleaf_viewer_more_actions')}
-        icon={mdiDotsVertical}
-      >
-        <!--
-          FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
-          Viewer). Every entry maps to an existing asset action and a group that has no
-          supported entry in this context is not rendered at all.
-        -->
-        <ViewerMoreMenu
-          {asset}
-          {album}
-          {person}
-          {stack}
-          {preAction}
-          {onAction}
-          {canNavigateCollection}
-          {canShowFilmstrip}
-          playOriginalVideo={PlayOriginalVideo}
-        />
-      </ButtonContextMenu>
-    {/if}
+      {#if !sharedLink}
+        <ButtonContextMenu
+          direction="left"
+          align="top-right"
+          color="secondary"
+          title={$t('frameleaf_viewer_more_actions')}
+          icon={mdiDotsHorizontal}
+        >
+          <!--
+            FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
+            Viewer). Every entry maps to an existing asset action and a group that has no
+            supported entry in this context is not rendered at all.
+          -->
+          <ViewerMoreMenu
+            {asset}
+            {album}
+            {person}
+            {stack}
+            {preAction}
+            {onAction}
+            {canNavigateCollection}
+            {canShowFilmstrip}
+            playOriginalVideo={PlayOriginalVideo}
+          />
+        </ButtonContextMenu>
+      {/if}
+    </div>
   </div>
 </div>
+
+<style>
+  .fl-viewer-header {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 64px;
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px
+      max(12px, env(safe-area-inset-left));
+    border-bottom: 1px solid #ffffff14;
+    color: #fff;
+  }
+
+  /*
+   * The frosted material lives on a pseudo-element: backdrop-filter on the header itself would make it
+   * the containing block of the fixed phone toolbar and of the More menu (apple-style.css:785-789).
+   */
+  .fl-viewer-header::before,
+  .fl-viewer-toolbar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: #1c1c1e99;
+    backdrop-filter: var(--fl-material-blur);
+  }
+
+  .fl-viewer-toolbar {
+    display: contents;
+  }
+
+  .fl-viewer-toolbar::before {
+    content: none;
+  }
+
+  .fl-viewer-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: -4px;
+    padding: 4px;
+    overflow-x: auto;
+  }
+
+  .fl-viewer-actions > :global(*) {
+    flex-shrink: 0;
+  }
+
+  .fl-wide-only {
+    display: contents;
+  }
+
+  @media (max-width: 760px) {
+    .fl-viewer-header {
+      gap: 8px;
+      padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+    }
+
+    .fl-wide-only {
+      display: none;
+    }
+  }
+
+  /* Phones: the actions become a bottom toolbar, like iPhone Photos (apple-style.css:756-790). */
+  @media (max-width: 700px) {
+    .fl-viewer-toolbar {
+      position: fixed;
+      inset-inline: 0;
+      /* Above the 60px footer (apple-style.css:760-763). */
+      bottom: calc(60px + env(safe-area-inset-bottom));
+      z-index: 3;
+      isolation: isolate;
+      display: block;
+      padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+      border-top: 1px solid #ffffff14;
+      transition:
+        opacity 260ms ease,
+        translate 420ms var(--fl-spring);
+    }
+
+    .fl-viewer-toolbar::before {
+      content: '';
+    }
+
+    .fl-viewer-actions {
+      justify-content: space-around;
+      margin: 0;
+      padding: 0;
+    }
+
+    :global(.chrome-hidden) .fl-viewer-toolbar {
+      opacity: 0;
+      translate: 0 12px;
+      pointer-events: none;
+    }
+  }
+
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .fl-viewer-header::before,
+    .fl-viewer-toolbar::before {
+      background: #1c1c1e;
+      backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fl-viewer-toolbar {
+      transition: opacity 150ms ease;
+    }
+
+    :global(.chrome-hidden) .fl-viewer-toolbar {
+      translate: none;
+    }
+  }
+</style>

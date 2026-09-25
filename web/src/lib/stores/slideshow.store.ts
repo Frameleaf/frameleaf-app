@@ -1,5 +1,5 @@
 import { persisted } from 'svelte-persisted-store';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 
 export enum SlideshowState {
   PlaySlideshow = 'play-slideshow',
@@ -42,6 +42,28 @@ function createSlideshowStore() {
   const slideshowAutoplay = persisted<boolean>('slideshow-autoplay', true, {});
   const slideshowRepeat = persisted<boolean>('slideshow-repeat', false);
   const slideshowShowMetadataOverlay = persisted<boolean>('slideshow-show-metadata-overlay', false);
+  /**
+   * V-13: whether the slideshow settings are open. The viewer footer's cog toggles it and whatever
+   * presents the settings reads it; focus goes back to the button that opened them when they close.
+   * (Same names as the inline slideshow's store, FL-62, so the two branches merge mechanically.)
+   */
+  const settingsOpenState = writable<boolean>(false);
+  let settingsReturnFocus: HTMLElement | undefined;
+  const openSettings = (buttonEl?: HTMLElement) => {
+    settingsReturnFocus = buttonEl;
+    settingsOpenState.set(true);
+  };
+  const closeSettings = () => {
+    if (!get(settingsOpenState)) {
+      return;
+    }
+    settingsOpenState.set(false);
+    settingsReturnFocus?.focus();
+    settingsReturnFocus = undefined;
+  };
+  const toggleSettings = (buttonEl?: HTMLElement) =>
+    get(settingsOpenState) ? closeSettings() : openSettings(buttonEl);
+
   const slideshowMetadataOverlayMode = persisted<SlideshowMetadataOverlayMode>(
     'slideshow-metadata-overlay-mode',
     SlideshowMetadataOverlayMode.Full,
@@ -84,6 +106,10 @@ function createSlideshowStore() {
     slideshowRepeat,
     slideshowShowMetadataOverlay,
     slideshowMetadataOverlayMode,
+    settingsOpen: { subscribe: settingsOpenState.subscribe },
+    openSettings,
+    closeSettings,
+    toggleSettings,
   };
 }
 

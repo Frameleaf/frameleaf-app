@@ -76,6 +76,11 @@ export interface DescriptionReview {
   /** The enrichment run's own state: missing, success, failed or skipped. */
   status: string;
   modelName: string | null;
+  /**
+   * The model's confidence in its description as a whole percentage, only when the processing
+   * destination reported one (`ImageDescriptionEnrichment.confidence` is nullable); never guessed.
+   */
+  confidencePercent: number | null;
   /** The generated text, when a run produced one and it is not already the stored value. */
   suggestion: string | null;
   /** A generated description exists and differs from what is stored, so it can be accepted. */
@@ -102,12 +107,17 @@ export function descriptionReview(
 
   const stored = text(asset.exifInfo?.description);
   const generated = text(review.description);
+  const confidence = review.confidence;
   const appliedGenerated = review.appliedDescription && stored.length > 0 && (!generated || stored === generated);
 
   return {
     source: stored.length === 0 ? 'none' : appliedGenerated ? 'generated' : 'manual',
     status: review.status,
     modelName: review.modelName ?? null,
+    confidencePercent:
+      typeof confidence === 'number' && Number.isFinite(confidence)
+        ? Math.round(Math.min(1, Math.max(0, confidence)) * 100)
+        : null,
     suggestion: generated && generated !== stored ? generated : null,
     canAccept: generated.length > 0 && generated !== stored,
     canClear: review.appliedDescription,
