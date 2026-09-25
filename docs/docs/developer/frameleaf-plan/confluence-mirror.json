@@ -1001,18 +1001,18 @@
       "readbackAt": "2026-09-25T08:41:17.294Z"
     },
     {
-      "bytes": 64094,
+      "bytes": 64087,
       "category": "plan",
       "id": "63864877",
       "source": "docs/docs/developer/frameleaf-plan/15-frameleaf-cloud-integration.md",
-      "sourceSha256": "1c86979c753fd814b38e09a07bee4e908c2e2c21ea2260c7459a6d6427130267",
+      "sourceSha256": "ef2605355f2b6b5afa654c7ee8815217f2d891163fe8432e3ad557c7613ee0ba",
       "title": "Frameleaf Cloud: self-hosted integration (workstream cloud)",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63864877",
-      "version": 2,
-      "sourceBranch": "codex/CLD-000-frameleaf-cloud-workstream",
-      "sourceState": "uncommitted-candidate-cld-000",
-      "readbackResult": "Markdown read-back begins with the header carrying SHA-256 1c86979c, 64094 bytes and the FL-153 (CLD-000) registration and ends with the source's closing rule; body matches the posted source except one normalized space at a nested-backtick boundary.",
-      "readbackAt": "2026-09-25T08:41:17.294Z"
+      "version": 3,
+      "sourceBranch": "codex/FL-93-complete-media",
+      "sourceState": "committed-fl-153-5521f13375",
+      "readbackResult": "Version 3 published as markdown after the FL-153 docs fix (design-record link replaced by its repository path; CLD-201 \"the the\" typo). Markdown read-back header carries SHA-256 ef260535 and 64087 bytes; compared with the version 2 read-back, the only differences are the header and those two source lines.",
+      "readbackAt": "2026-09-25T13:42:30.000Z"
     }
   ],
   "spaceId": "61374475",
