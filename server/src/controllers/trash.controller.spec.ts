@@ -58,6 +58,34 @@ describe(TrashController.name, () => {
     });
   });
 
+  describe('GET /trash/activity', () => {
+    it('should require a known utility', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/trash/activity').query({ tool: 'duplicates' });
+
+      expect(status).toBe(400);
+      expect(service.getUtilityActivity).not.toHaveBeenCalled();
+    });
+
+    it('should read the Large files history', async () => {
+      service.getUtilityActivity.mockResolvedValue({ entries: [] });
+      const { status } = await request(ctx.getHttpServer()).get('/trash/activity').query({ tool: 'large-files' });
+
+      expect(status).toBe(200);
+      expect(service.getUtilityActivity).toHaveBeenCalledWith(undefined, { tool: 'large-files' });
+    });
+  });
+
+  describe('POST /trash/apply source', () => {
+    it('should refuse an unknown source', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/trash/apply')
+        .send({ action: 'trash', ids: [factory.uuid()], token: 'token', source: 'somewhere' });
+
+      expect(status).toBe(400);
+      expect(service.apply).not.toHaveBeenCalled();
+    });
+  });
+
   describe('POST /trash/review', () => {
     it('should require a known action', async () => {
       const { status } = await request(ctx.getHttpServer()).post('/trash/review').send({ action: 'shred' });
