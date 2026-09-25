@@ -83,7 +83,7 @@ describe(MlDestinationService.name, () => {
       }
     });
 
-    it('never creates a RunPod destination or routes restoration and Studio work on its own', async () => {
+    it('never creates a cloud destination or routes restoration and Studio work on its own', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
       mocks.mlDestination.getRoute.mockResolvedValue(undefined);
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
