@@ -324,8 +324,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-3',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-3',
       });
       await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
       await sut.requestCancel(operation.id, user.id);
@@ -549,8 +549,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-1',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-1',
       });
       const claim = await sut.claimNext({
         kinds: [MediaOperationKind.StudioExport],
@@ -576,8 +576,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-2',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-2',
       });
       const claim = await sut.claimNext({
         kinds: [MediaOperationKind.StudioExport],
@@ -953,8 +953,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-9',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-9',
       });
       const first = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
       await lapse(ctx, operation.id);

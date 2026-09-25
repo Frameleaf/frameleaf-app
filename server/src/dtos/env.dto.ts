@@ -92,6 +92,13 @@ export const EnvSchema = z
     FRAMELEAF_ANDROID_APP_ID: z.string().optional(),
     FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
     FRAMELEAF_IOS_APP_URL: z.string().optional(),
+    /**
+     * FL-159: the Frameleaf Cloud base address (deployment configuration, never a setting and never
+     * hard-coded). Unset means Frameleaf Cloud is not configured and nothing is ever contacted.
+     */
+    FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
+    /** FL-159: where this server's Ed25519 identity key lives (default `<media>/frameleaf/identity`). */
+    FRAMELEAF_IDENTITY_DIR: z.string().optional(),
     DB_DATABASE_NAME: z.string().optional(),
     DB_HOSTNAME: z.string().optional(),
     DB_PASSWORD: z.string().optional(),

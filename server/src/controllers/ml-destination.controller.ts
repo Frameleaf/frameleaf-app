@@ -94,7 +94,7 @@ export class MlDestinationController {
     operationId: 'createMlDestination',
     summary: 'Create a machine-learning destination',
     description:
-      'Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.',
+      'Add a LAN worker. Frameleaf Cloud is added from its own endpoint (POST admin/cloud/ml/destination).',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   create(@Body() dto: MlDestinationCreateDto): Promise<MlDestinationResponseDto> {

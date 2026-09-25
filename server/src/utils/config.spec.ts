@@ -14,20 +14,20 @@ describe('getConfigRevision (FL-66 settings revision)', () => {
     trash.trash.days = defaults.trash.days + 1;
     const smtp = cloneDeep(defaults);
     smtp.notifications.smtp.transport.password = 'another-password';
-    const runpod = cloneDeep(defaults);
-    runpod.machineLearning.runpod.apiKey = 'rp_rotated';
+    const oauth = cloneDeep(defaults);
+    oauth.oauth.clientSecret = 'rotated-secret';
 
-    const revisions = new Set([defaults, trash, smtp, runpod].map((config) => getConfigRevision(config)));
+    const revisions = new Set([defaults, trash, smtp, oauth].map((config) => getConfigRevision(config)));
     expect(revisions.size).toBe(4);
   });
 
   it('never digests write-only secrets, only whether they are set', () => {
     const first = cloneDeep(defaults);
-    first.machineLearning.runpod.apiKey = 'rp_first';
-    first.machineLearning.runpod.hfToken = 'hf_first';
+    first.oauth.clientSecret = 'secret_first';
+    first.notifications.smtp.transport.password = 'smtp_first';
     const second = cloneDeep(defaults);
-    second.machineLearning.runpod.apiKey = 'rp_second';
-    second.machineLearning.runpod.hfToken = 'hf_second';
+    second.oauth.clientSecret = 'secret_second';
+    second.notifications.smtp.transport.password = 'smtp_second';
 
     expect(getConfigRevision(first)).toBe(getConfigRevision(second));
     expect(getConfigRevision(first)).not.toBe(getConfigRevision(defaults));

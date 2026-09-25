@@ -148,7 +148,7 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     if (this.options.mock.includes(MlDestinationRepository)) {
       const mlDestination = this.getMock(MlDestinationRepository);
       mlDestination.getRoute.mockImplementation((workload) =>
-        Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
+        Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() }),
       );
       mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
       mlDestination.getRoutes.mockResolvedValue([]);
@@ -163,7 +163,6 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     if (this.options.mock.includes(MachineLearningRepository)) {
       const machineLearning = this.getMock(MachineLearningRepository);
       machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
-      machineLearning.getRunPodEndpoint.mockReturnValue(null);
     }
   }
 

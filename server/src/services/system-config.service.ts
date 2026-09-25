@@ -53,22 +53,10 @@ import { toPlainObject } from 'src/utils/object.js';
 /** Default per-asset estimate when no telemetry data is available. */
 const DEFAULT_SECONDS_PER_ASSET = 1.5;
 
-/**
- * Back-compat-aware mode resolver. Mirrors `RunPodService.effectiveMode`:
- * legacy configs may have `enabled: true` while `mode` is still 'disabled'
- * (the field didn't exist before this PR). Such configs are treated as Pod
- * mode — otherwise the "terminate the pod first" guard would be bypassed and
- * a billable resource orphaned.
- */
-const effectiveRunPodMode = (rp: { mode?: string; enabled: boolean }): 'disabled' | 'pod' | 'serverless' =>
-  rp.mode && rp.mode !== 'disabled' ? (rp.mode as 'pod' | 'serverless') : rp.enabled ? 'pod' : 'disabled';
-
 /** FL-67: where each write-only credential lives in the system configuration. */
 const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
   [ConfigCredential.SmtpPassword]: 'notifications.smtp.transport.password',
   [ConfigCredential.OAuthClientSecret]: 'oauth.clientSecret',
-  [ConfigCredential.RunPodApiKey]: 'machineLearning.runpod.apiKey',
-  [ConfigCredential.HuggingFaceToken]: 'machineLearning.runpod.hfToken',
 };
 
 const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
@@ -82,8 +70,6 @@ const readCredential = (config: SystemConfig, name: ConfigCredential): string =>
 const stripCredentialFlags = (config: AdminConfigDto) => {
   delete config.notifications?.smtp?.transport?.passwordConfigured;
   delete config.oauth?.clientSecretConfigured;
-  delete config.machineLearning?.runpod?.apiKeyConfigured;
-  delete config.machineLearning?.runpod?.hfTokenConfigured;
 };
 
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
@@ -116,17 +102,6 @@ const resolveCredentials = (dto: AdminConfigDto, stored: SystemConfig) => {
   }
   if (dto.oauth?.clientSecret === '') {
     dto.oauth.clientSecret = dto.oauth.issuerUrl === stored.oauth.issuerUrl ? stored.oauth.clientSecret : '';
-  }
-
-  // The RunPod API key and the HuggingFace token forwarded to the ML worker keep their stored
-  // value on empty. They are cleared through the credentials endpoint (the key only while RunPod
-  // is off, so a running pod or endpoint can still be torn down).
-  const runpod = dto.machineLearning?.runpod;
-  if (runpod?.apiKey === '') {
-    runpod.apiKey = stored.machineLearning.runpod.apiKey;
-  }
-  if (runpod?.hfToken === '') {
-    runpod.hfToken = stored.machineLearning.runpod.hfToken;
   }
 };
 
@@ -192,7 +167,7 @@ export class SystemConfigService extends BaseService {
       }
       return defaultMachineLearningHardware;
     }
-    const endpoint = resolveEndpoint(destination, this.machineLearningRepository.getRunPodEndpoint());
+    const endpoint = resolveEndpoint(destination);
     if (!endpoint) {
       return defaultMachineLearningHardware;
     }
@@ -234,37 +209,6 @@ export class SystemConfigService extends BaseService {
         throw new Error('Physical deduplication master user must exist and be active.');
       }
     }
-
-    const oldRunpod = oldConfig.machineLearning.runpod;
-    const newRunpod = newConfig.machineLearning.runpod;
-    const oldEffective = effectiveRunPodMode(oldRunpod);
-    const newEffective = effectiveRunPodMode(newRunpod);
-    const sensitiveChange =
-      oldRunpod.apiKey !== newRunpod.apiKey ||
-      oldRunpod.imageName !== newRunpod.imageName ||
-      oldEffective !== newEffective;
-    if (sensitiveChange) {
-      const runpodState = await this.systemMetadataRepository.get(SystemMetadataKey.RunPodState);
-      const inFlight =
-        runpodState && ['provisioning', 'starting', 'stopping', 'serverless-provisioning'].includes(runpodState.status);
-      if (inFlight) {
-        throw new Error(
-          `Cannot change RunPod API key, image, or mode while a transition is in flight (status=${runpodState!.status}). Wait for it to settle, then retry.`,
-        );
-      }
-      // Block switching FROM Pod mode WHILE a pod is running. The admin must
-      // terminate the pod first — otherwise we'd orphan a billable resource.
-      if (
-        oldEffective === 'pod' &&
-        newEffective !== 'pod' &&
-        runpodState &&
-        ['running', 'stopped'].includes(runpodState.status)
-      ) {
-        throw new Error(
-          `Terminate the running pod before switching modes (current pod status: ${runpodState.status}).`,
-        );
-      }
-    }
   }
 
   /** FL-66: the saved settings with the revision the settings editor sends back on save. */
@@ -301,7 +245,7 @@ export class SystemConfigService extends BaseService {
    *    validated again against them. The write itself is one database transaction
    *    (ForkSchemaRepository.persistConfig). Two saves can never both pass the check.
    * 3. Resources that follow from settings (local machine learning destinations, smart album
-   *    backfill, the RunPod serverless endpoint, queue concurrency) are reconciled afterwards by
+   *    backfill, queue concurrency) are reconciled afterwards by
    *    the ConfigUpdate listeners through their own services; a failure there never rolls the
    *    saved settings back.
    */
@@ -428,8 +372,8 @@ export class SystemConfigService extends BaseService {
 
   /**
    * Changes exactly one credential through the same validation and update events as a whole
-   * configuration save (so SMTP is verified with the new password and a RunPod transition in
-   * flight still blocks a key change), without the value ever passing through a client draft.
+   * configuration save (so SMTP is verified with the new password), without the value ever passing
+   * through a client draft.
    */
   private async writeCredential(
     auth: AuthDto,
@@ -461,7 +405,7 @@ export class SystemConfigService extends BaseService {
       const newConfig = cloneDeep(current);
       set(newConfig, CREDENTIAL_PATHS[name], value);
       const saved = await this.updateConfig(newConfig);
-      // FL-71 (CC-10): the credential's own entry, "Updated RunPod API key" (CommandCenter.jsx:1447).
+      // FL-71 (CC-10): the credential's own entry, such as "Updated SMTP password" (CommandCenter.jsx:1447).
       await this.recordConfigHistory(current, saved, auth, {
         kind: 'credential',
         title: credentialHistoryTitle(name, value ? 'replaced' : 'cleared'),
@@ -491,16 +435,6 @@ export class SystemConfigService extends BaseService {
   ): Promise<{ revision: string } | undefined> {
     if (readCredential(oldConfig, name) === value) {
       return;
-    }
-
-    // Without its key a running pod or serverless endpoint could no longer be stopped or torn
-    // down, and it would keep costing money. RunPod is turned off first.
-    if (
-      name === ConfigCredential.RunPodApiKey &&
-      value === '' &&
-      effectiveRunPodMode(oldConfig.machineLearning.runpod) !== 'disabled'
-    ) {
-      throw new BadRequestException('Turn RunPod off before clearing its API key.');
     }
 
     const newConfig = cloneDeep(oldConfig);

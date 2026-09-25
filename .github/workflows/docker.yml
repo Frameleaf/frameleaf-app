@@ -111,10 +111,6 @@ jobs:
             suffix: '-cuda'
             platforms: linux/amd64
             target: prod
-          - device: cuda
-            suffix: '-cuda-runpod'
-            platforms: linux/amd64
-            target: prod-runpod
           - device: openvino
             suffix: '-openvino'
             platforms: linux/amd64
@@ -159,7 +155,7 @@ jobs:
       fail-fast: false
       matrix:
         suffix:
-          ['', '-cuda', '-cuda-runpod', '-openvino', '-armnn', '-rknn', '-rocm']
+          ['', '-cuda', '-openvino', '-armnn', '-rknn', '-rocm']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
