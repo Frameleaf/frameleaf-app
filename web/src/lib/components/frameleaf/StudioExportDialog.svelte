@@ -3,8 +3,9 @@
     format: StudioExportFormat;
     color: StudioExportColor;
     resolution: StudioExportResolution;
+    /** This server or a worker on the home network: Studio exports never leave home (effd05ffb7). */
     destination: MediaOperationDestination;
-    /** Only ever true for a destination that leaves the network, and only when ticked. */
+    /** Always false: kept for the API, which refuses a cloud Studio export. */
     cloudConsent: boolean;
   };
 </script>
@@ -16,10 +17,10 @@
    * with the prototype's notes. The render runs as a durable job on the server and is followed in
    * Activity; nothing renders in the browser.
    *
-   * Two deliberate differences, both about not saying something untrue: a destination that leaves
-   * the network needs an explicit consent tick (the server refuses a cloud export without one), and
-   * the time, size and cost rows are not shown, because nothing on the server measures them for a
-   * Studio export yet and the prototype's figures are simulated.
+   * Exports render at home, on this server or another computer on the home network (owner prototype
+   * effd05ffb7: "Studio exports always render at home"); Frameleaf Cloud is not offered, and the
+   * server refuses it. One deliberate difference: the time and size rows are not shown, because
+   * nothing on the server measures them for a Studio export yet and the prototype's are simulated.
    */
   import { t } from 'svelte-i18n';
   import {
@@ -64,17 +65,15 @@
     { value: StudioExportResolution.$1080P, label: 'frameleaf_studio_export_resolution_1080' },
     { value: StudioExportResolution.$720P, label: 'frameleaf_studio_export_resolution_720' },
   ];
-  const destinations: { value: MediaOperationDestination; label: Translations; leaves: boolean }[] = [
-    { value: MediaOperationDestination.Local, label: 'frameleaf_activity_destination_local', leaves: false },
-    { value: MediaOperationDestination.Lan, label: 'frameleaf_activity_destination_lan', leaves: false },
-    { value: MediaOperationDestination.Runpod, label: 'frameleaf_activity_destination_runpod', leaves: true },
+  const destinations: { value: MediaOperationDestination; label: Translations }[] = [
+    { value: MediaOperationDestination.Local, label: 'frameleaf_activity_destination_local' },
+    { value: MediaOperationDestination.Lan, label: 'frameleaf_activity_destination_lan' },
   ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
   let color = $state(StudioExportColor.Preserve);
   let resolution = $state(StudioExportResolution.$2160P);
   let destination = $state(MediaOperationDestination.Local);
-  let cloudConsent = $state(false);
   const fieldId = $props.id();
 
   // Every opening starts from the prototype's defaults and without consent.
@@ -87,15 +86,13 @@
     color = StudioExportColor.Preserve;
     resolution = StudioExportResolution.$2160P;
     destination = MediaOperationDestination.Local;
-    cloudConsent = false;
   });
 
-  const leaves = $derived(destinations.find((item) => item.value === destination)?.leaves ?? false);
-  const canExport = $derived(!busy && (!leaves || cloudConsent));
+  const canExport = $derived(!busy);
 
   const submit = () => {
     if (canExport) {
-      onExport({ format, color, resolution, destination, cloudConsent: leaves && cloudConsent });
+      onExport({ format, color, resolution, destination, cloudConsent: false });
     }
   };
 </script>
@@ -148,15 +145,7 @@
       </p>
     {/if}
 
-    {#if leaves}
-      <p class="note warning">{$t('frameleaf_studio_export_leaves')}</p>
-      <label class="check">
-        <input type="checkbox" bind:checked={cloudConsent} />
-        <span>{$t('frameleaf_studio_export_cloud_consent')}</span>
-      </label>
-    {:else}
-      <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
-    {/if}
+    <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
 
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
@@ -206,11 +195,6 @@
   }
   .note.warning {
     color: var(--fl-warning);
-  }
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
   footer {
     display: flex;

@@ -44872,6 +44872,19 @@
       },
       "AssetEditsOriginalVideoDto": {
         "properties": {
+          "colorPolicy": {
+            "description": "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged",
+            "enum": [
+              "preserve",
+              "tone-map",
+              "unsupported"
+            ],
+            "type": "string"
+          },
+          "colorReason": {
+            "description": "Why, in plain words, for the person editing",
+            "type": "string"
+          },
           "durationMs": {
             "description": "Duration of the original in milliseconds",
             "exclusiveMinimum": true,

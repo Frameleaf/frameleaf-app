@@ -1532,6 +1532,51 @@ describe(AssetService.name, () => {
       expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
     });
 
+    it('says what an edited version does with HDR and Dolby Vision originals (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: null }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'tone-map', colorReason: expect.stringContaining('HDR original is preserved') },
+      });
+
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 1, dvProfile: null }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'preserve' },
+      });
+    });
+
+    it('refuses to queue an edit of a Dolby Vision profile 5 original, and still allows reverting (FL-113)', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0, colorTransfer: 16, dvProfile: 5 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { colorPolicy: 'unsupported', colorReason: expect.stringContaining('Dolby Vision profile 5') },
+      });
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 30_000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 1920,
+        exifImageHeight: 1080,
+        orientation: null,
+        projectionType: null,
+      });
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 10_000 } }],
+        }),
+      ).rejects.toThrow('Dolby Vision profile 5');
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+
     it('swaps the raster for any quarter-turn display rotation', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { duration: 30 },
