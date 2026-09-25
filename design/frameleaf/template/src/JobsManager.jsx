@@ -23,21 +23,18 @@ import {
 } from "./jobs-data.mjs";
 import "./jobs-manager.css";
 import {
-  RUNPOD_STORAGE_KEY,
-  RUNPOD_GPUS,
   SMART_ALBUM_KINDS,
-  createRunPodState,
-  parseRunPodState,
-  runPodActionReview,
-  applyRunPodAction,
   descriptionHardwarePreset,
 } from "./jobs-data.mjs";
+import { CLOUD_DESTINATION } from "./frameleaf-cloud-data.mjs";
 
 const number = (value) => new Intl.NumberFormat("en-CA").format(value);
 const ownerName = (id) =>
   JOB_OWNERS.find((owner) => owner.id === id)?.name || "Selected account";
 const destinationName = (id) =>
-  ({ local: "Local / LAN", runpod: "RunPod", server: "Server" })[id];
+  ({ local: "Local / LAN", cloud: CLOUD_DESTINATION.name, server: "Server" })[
+    id
+  ];
 const timestamp = (value) =>
   new Intl.DateTimeFormat("en-CA", {
     month: "short",
@@ -169,8 +166,18 @@ export function JobsManager({
       setPage(1);
       setNotice("Activity was updated in another tab.");
     };
+    // The shared simulation tick moves running jobs in this tab without
+    // changing the revision; take its jobs but keep the open view.
+    const tick = (event) => {
+      if (Array.isArray(event.detail?.jobs))
+        setState((previous) => ({ ...previous, jobs: event.detail.jobs }));
+    };
     addEventListener("storage", sync);
-    return () => removeEventListener("storage", sync);
+    addEventListener("frameleaf-jobs-tick", tick);
+    return () => {
+      removeEventListener("storage", sync);
+      removeEventListener("frameleaf-jobs-tick", tick);
+    };
   }, []);
   useEffect(() => {
     setDetail(null);
@@ -242,7 +249,7 @@ export function JobsManager({
       <header className="jm-header">
         <div>
           <p className="jm-eyebrow">Compute &amp; jobs</p>
-          <h2>{queue ? queue.title : "Queues & jobs"}</h2>
+          <h2>{queue ? queue.title : "Background work"}</h2>
           <p>
             {queue
               ? queue.description
@@ -325,13 +332,13 @@ export function JobsManager({
         <label className="jm-search">
           <Icon name="mdiMagnify" />
           <span className="jm-sr">
-            {queue ? "Search jobs" : "Search queues"}
+            {queue ? "Search jobs" : "Search kinds of work"}
           </span>
           <input
             type="search"
             maxLength={200}
             placeholder={
-              queue ? "Search filenames, job IDs, errors…" : "Find a queue…"
+              queue ? "Search file names or errors…" : "Find a kind of work…"
             }
             value={view.query}
             onChange={(event) => updateView({ query: event.target.value })}
@@ -412,17 +419,17 @@ export function JobsManager({
             className="jm-table-wrap"
             tabIndex={0}
             role="region"
-            aria-label="Processing queues"
+            aria-label="Kinds of background work"
           >
             <table className="jm-queues">
               <thead>
                 <tr>
-                  <th scope="col">Queue</th>
+                  <th scope="col">Work</th>
                   <th scope="col">Status</th>
                   <th scope="col">Active</th>
                   <th scope="col">Waiting</th>
                   <th scope="col">Failed</th>
-                  <th scope="col">Workers</th>
+                  <th scope="col">At once</th>
                   <th scope="col">
                     <span className="jm-sr">Actions</span>
                   </th>
@@ -502,8 +509,8 @@ export function JobsManager({
                             !item.canPause
                               ? "Essential background work must stay available"
                               : state.queues[item.id].paused
-                                ? "Resume queue"
-                                : "Pause queue"
+                                ? "Resume"
+                                : "Pause"
                           }
                           aria-label={`${state.queues[item.id].paused ? "Resume" : "Pause"} ${item.title}`}
                           onClick={() =>
@@ -529,7 +536,7 @@ export function JobsManager({
             {!visibleQueues.length && (
               <div className="jm-empty">
                 <Icon name="mdiMagnify" />
-                <h3>No matching queues</h3>
+                <h3>Nothing matches</h3>
                 <p>
                   Try another name or clear the category and status filters.
                 </p>
@@ -562,11 +569,8 @@ export function JobsManager({
             <div>
               <Status value={queueStatus(state, queue.id)} />
               <span>
-                {number(allCounts.active)} active across all accounts ·{" "}
-                {concurrencyValue(queue, settings)}{" "}
-                {Number(concurrencyValue(queue, settings)) === 1
-                  ? "worker"
-                  : "workers"}
+                {number(allCounts.active)} running for everyone ·{" "}
+                {concurrencyValue(queue, settings)} at once
                 {queue.fixed ? " · fixed" : ""}
               </span>
             </div>
@@ -707,9 +711,9 @@ export function JobsManager({
           <div className="jm-tab-actions">
             <p>
               {view.tab === "active"
-                ? "Active jobs finish even when their queue is paused."
+                ? "Running jobs finish even when this work is paused."
                 : view.tab === "waiting"
-                  ? "Scheduled jobs remain separate when waiting work is cleared."
+                  ? "Clearing waiting work doesn't remove scheduled jobs."
                   : view.tab === "failed"
                     ? "Read the error and resolve its cause before retrying."
                     : "Completed work retained in this activity view."}
@@ -758,7 +762,7 @@ export function JobsManager({
                 <tr>
                   <th scope="col">Job</th>
                   <th scope="col">Account</th>
-                  <th scope="col">Worker</th>
+                  <th scope="col">Computer</th>
                   <th scope="col">Status</th>
                   <th scope="col">Created</th>
                   <th scope="col">
@@ -786,7 +790,7 @@ export function JobsManager({
                       <span className="jm-destination">
                         <Icon
                           name={
-                            job.destination === "runpod"
+                            job.destination === "cloud"
                               ? "mdiCloudOutline"
                               : "mdiDesktopTowerMonitor"
                           }
@@ -862,7 +866,7 @@ export function JobsManager({
           commands, not completed processing.
         </p>
         {!scopedHistory.length ? (
-          <p className="jm-muted">No queue changes recorded yet.</p>
+          <p className="jm-muted">No changes recorded yet.</p>
         ) : (
           <ol>
             {scopedHistory.slice(0, 40).map((item) => (
@@ -943,7 +947,7 @@ export function JobsManager({
                 <dd>{ownerName(selectedJob.ownerId)}</dd>
               </div>
               <div>
-                <dt>Worker</dt>
+                <dt>Computer</dt>
                 <dd>{destinationName(selectedJob.destination)}</dd>
               </div>
               <div>
@@ -1129,7 +1133,7 @@ function ConcurrencyDialog({ settings, draft, onChange, close, onReview }) {
   return (
     <Dialog
       wide
-      title="Queue concurrency"
+      title="How much runs at once"
       close={close}
       actions={
         <>
@@ -1157,8 +1161,8 @@ function ConcurrencyDialog({ settings, draft, onChange, close, onReview }) {
           <input
             type="search"
             maxLength={200}
-            aria-label="Find queue concurrency"
-            placeholder="Find a queue…"
+            aria-label="Find a kind of work"
+            placeholder="Find a kind of work…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -1283,7 +1287,7 @@ function EnrichmentJobDialog({ close, onAction, onSettingChange, onNavigate }) {
                 value={timing}
                 onChange={(event) => setTiming(event.target.value)}
               >
-                <option value="now">Queue now</option>
+                <option value="now">Start now</option>
                 <option value="later">Remind me later</option>
               </select>
             </label>
@@ -1361,439 +1365,6 @@ function EnrichmentJobDialog({ close, onAction, onSettingChange, onNavigate }) {
               </div>
             )}
           </>
-        )}
-      </div>
-    </Dialog>
-  );
-}
-
-const readProvider = () => {
-  try {
-    return parseRunPodState(localStorage.getItem(RUNPOD_STORAGE_KEY));
-  } catch {
-    return createRunPodState();
-  }
-};
-const providerStatus = {
-  idle: "Not launched",
-  provisioning: "Provisioning",
-  starting: "Starting",
-  running: "GPU running",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  error: "Needs attention",
-  "serverless-provisioning": "Creating endpoint",
-  "serverless-ready": "Endpoint provisioned",
-};
-export function RunPodManager({ settings = {}, onNavigate }) {
-  const [state, setState] = useState(readProvider);
-  const [review, setReview] = useState(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [gpuId, setGpuId] = useState(
-    RUNPOD_GPUS.some((gpu) => gpu.id === settings.advancedRunPodGpu)
-      ? settings.advancedRunPodGpu
-      : state.gpuId,
-  );
-  const [gpuCount, setGpuCount] = useState(state.gpuCount);
-  const [hours, setHours] = useState(
-    settings.advancedRunPodRuntime ?? state.runtimeHours,
-  );
-  const mode = settings.advancedRunPodMode || "disabled";
-  const resourceMode = state.podId
-    ? "pod"
-    : state.endpointId
-      ? "serverless"
-      : mode;
-  const enabled = mode !== "disabled" && settings.runpodEnabled !== false;
-  const gpu = RUNPOD_GPUS.find((item) => item.id === gpuId);
-  const cost =
-    gpu && Number.isFinite(Number(hours)) && Number.isFinite(Number(gpuCount))
-      ? gpu.rate * Number(hours) * Number(gpuCount)
-      : null;
-  const launchValid =
-    /^[1-8]$/.test(String(gpuCount)) &&
-    /^\d+$/.test(String(hours)) &&
-    Number(hours) >= 1 &&
-    Number(hours) <= 168;
-  useEffect(() => {
-    const sync = (event) => {
-      if (event.key === RUNPOD_STORAGE_KEY || event.key === null) {
-        setState(parseRunPodState(event.newValue));
-        setReview(null);
-        setNotice("Worker activity was updated in another tab.");
-      }
-    };
-    addEventListener("storage", sync);
-    return () => removeEventListener("storage", sync);
-  }, []);
-  function request(type) {
-    const action = { type, gpuId, gpuCount, runtimeHours: hours };
-    const result = runPodActionReview(state, action);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setReview({ action, result, savedMode: mode });
-  }
-  function confirm(accepted) {
-    try {
-      if (review.result.cloud && (!enabled || mode !== review.savedMode)) {
-        setReview(null);
-        throw new Error(
-          "Cloud settings changed. Review the saved mode and choose the operation again.",
-        );
-      }
-      const latest = parseRunPodState(localStorage.getItem(RUNPOD_STORAGE_KEY));
-      if (latest.revision !== state.revision) {
-        setState(latest);
-        setReview(null);
-        throw new Error(
-          "Worker activity changed in another tab. Review its latest state before continuing.",
-        );
-      }
-      const next = applyRunPodAction(state, review.action, {
-        id: crypto.randomUUID(),
-        at: new Date().toISOString(),
-        expectedRevision: review.result.revision,
-        confirmed: accepted,
-        cloudAcknowledged: accepted,
-      });
-      localStorage.setItem(RUNPOD_STORAGE_KEY, JSON.stringify(next));
-      setState(next);
-      setReview(null);
-      setError("");
-      setNotice(
-        review.action.type === "backfill"
-          ? "Backfill request prepared for review; no media has been transferred."
-          : "Worker activity updated on this device.",
-      );
-    } catch (cause) {
-      setError(cause.message || "The change could not be saved.");
-    }
-  }
-  const can = (type) => !runPodActionReview(state, { type }).error;
-  return (
-    <section
-      className="jobs-manager jm-provider"
-      aria-label="RunPod operations"
-    >
-      <header className="jm-header">
-        <div>
-          <p className="jm-eyebrow">Compute &amp; jobs</p>
-          <h2>RunPod workers</h2>
-          <p>
-            Manage ordinary ML workers, their lifecycle, and their processing
-            scope.
-          </p>
-        </div>
-        <div className="jm-header-actions">
-          <Button
-            icon="mdiCogOutline"
-            onClick={() =>
-              onNavigate?.("processing", "advanced-runpod-ordinary")
-            }
-          >
-            Provider settings
-          </Button>
-          <Button icon="mdiRedo" onClick={() => request("refresh")}>
-            Refresh status
-          </Button>
-        </div>
-      </header>
-      <div className="jm-provider-state">
-        <span className="jm-queue-icon">
-          <Icon name="mdiCloudOutline" />
-        </span>
-        <div>
-          <strong>{providerStatus[state.status]}</strong>
-          <span>
-            {mode === "disabled"
-              ? "Cloud processing is disabled"
-              : mode === "serverless"
-                ? "Serverless ML endpoint"
-                : "Managed ML Pod"}{" "}
-            · all accounts
-          </span>
-        </div>
-        <span className="jm-status">
-          {state.workerReady
-            ? "Worker responding"
-            : "Model worker not verified"}
-        </span>
-      </div>
-      {!enabled && (
-        <div className="jm-message">
-          <Icon name="mdiShieldCheckOutline" />
-          Choose an ordinary ML mode and enable RunPod in the saved settings
-          before launching resources.
-        </div>
-      )}
-      {error && (
-        <div className="jm-message jm-error" role="alert">
-          {error}
-          <Button
-            icon="mdiClose"
-            aria-label="Dismiss RunPod error"
-            onClick={() => setError("")}
-          />
-        </div>
-      )}
-      {notice && (
-        <div className="jm-message" role="status">
-          {notice}
-        </div>
-      )}
-      <div className="jm-provider-grid">
-        <article>
-          <h3>Resource controls</h3>
-          {resourceMode !== "serverless" ? (
-            <>
-              <div className="jm-launch-fields">
-                <label>
-                  GPU
-                  <select
-                    value={gpuId}
-                    onChange={(event) => setGpuId(event.target.value)}
-                  >
-                    {RUNPOD_GPUS.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · {item.memory} GB
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  GPUs
-                  <input
-                    type="number"
-                    min={1}
-                    max={8}
-                    step={1}
-                    value={gpuCount}
-                    onChange={(event) => setGpuCount(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Maximum runtime
-                  <input
-                    type="number"
-                    min={1}
-                    max={168}
-                    step={1}
-                    value={hours}
-                    onChange={(event) => setHours(event.target.value)}
-                  />
-                  <small>hours</small>
-                </label>
-              </div>
-              <div className="jm-cost">
-                <span>Illustrative compute estimate</span>
-                <strong>
-                  {cost === null || !launchValid
-                    ? "—"
-                    : new Intl.NumberFormat("en-US", {
-                        style: "currency",
-                        currency: "USD",
-                      }).format(cost)}
-                </strong>
-                <small>
-                  {gpu?.rate.toFixed(2)} USD / GPU-hour × {gpuCount || "—"} ×{" "}
-                  {hours || "—"} hours. Excludes storage and other provider
-                  charges; this is not a spending cap.
-                </small>
-              </div>
-              <div className="jm-provider-buttons">
-                <Button
-                  primary
-                  icon="mdiPlay"
-                  disabled={
-                    !enabled || mode !== "pod" || !can("launch") || !launchValid
-                  }
-                  onClick={() => request("launch")}
-                >
-                  Launch GPU
-                </Button>
-                <Button
-                  disabled={!enabled || !can("resume")}
-                  onClick={() => request("resume")}
-                >
-                  Resume
-                </Button>
-                <Button disabled={!can("stop")} onClick={() => request("stop")}>
-                  Stop
-                </Button>
-                <Button
-                  disabled={!can("terminate")}
-                  onClick={() => request("terminate")}
-                >
-                  Terminate
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p>
-                Endpoint setup reuses resources owned by this server. A
-                provisioned endpoint can still be waiting for its first model
-                worker.
-              </p>
-              <div className="jm-provider-buttons">
-                <Button
-                  primary
-                  disabled={!enabled || !can("setup")}
-                  onClick={() =>
-                    request(state.endpointId ? "recreate" : "setup")
-                  }
-                >
-                  {state.endpointId ? "Verify endpoint" : "Set up endpoint"}
-                </Button>
-                <Button
-                  disabled={!can("teardown")}
-                  onClick={() => request("teardown")}
-                >
-                  Remove endpoint
-                </Button>
-              </div>
-              <p className="jm-muted">
-                Serverless pool, worker limits, and idle settings stay in the
-                settings review.
-              </p>
-            </>
-          )}
-          <div className="jm-provider-buttons">
-            <Button
-              icon="mdiCheckCircleOutline"
-              onClick={() => request("connect")}
-            >
-              Check connection
-            </Button>
-            <Button
-              icon="mdiImageSearchOutline"
-              disabled={!enabled || !can("backfill")}
-              onClick={() => request("backfill")}
-            >
-              Backfill ML results
-            </Button>
-            {state.status === "error" && (
-              <Button
-                disabled={!state.podId && !state.endpointId}
-                onClick={() =>
-                  request(state.endpointId ? "teardown" : "terminate")
-                }
-              >
-                Clear failed resource
-              </Button>
-            )}
-          </div>
-        </article>
-        <article>
-          <h3>Capabilities & boundaries</h3>
-          <dl className="jm-capabilities">
-            <div>
-              <dt>ML worker</dt>
-              <dd>Not verified</dd>
-            </div>
-            <div>
-              <dt>GPU selected for launch</dt>
-              <dd>
-                {gpu?.name} · {gpu?.memory} GB
-              </dd>
-            </div>
-            <div>
-              <dt>Ordinary ML destination</dt>
-              <dd>
-                {enabled
-                  ? "RunPod may take priority when available"
-                  : "Local configured endpoints"}
-              </dd>
-            </div>
-            <div>
-              <dt>Video restoration</dt>
-              <dd>Separate worker and explicit job destination</dd>
-            </div>
-            <div>
-              <dt>Full Studio / HDR / Dolby Vision</dt>
-              <dd>Unavailable · compatibility checks required</dd>
-            </div>
-          </dl>
-          <p>
-            Launching a worker does not approve it for every model or video
-            workload. Local GPUs remain available through configured ML
-            endpoints.
-          </p>
-          <Button onClick={() => onNavigate?.("processing", "workers")}>
-            View local workers
-          </Button>
-        </article>
-      </div>
-      <details className="jm-history">
-        <summary>
-          <Icon name="mdiHistory" />
-          Provider action history <span>{state.history.length}</span>
-        </summary>
-        {state.history.length ? (
-          <ol>
-            {state.history.map((item) => (
-              <li key={item.id}>
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <time dateTime={item.at}>{timestamp(item.at)}</time>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p>No provider actions recorded.</p>
-        )}
-      </details>
-      {review && (
-        <ProviderReview
-          review={review.result}
-          close={() => setReview(null)}
-          confirm={confirm}
-        />
-      )}
-    </section>
-  );
-}
-function ProviderReview({ review, close, confirm }) {
-  const [accepted, setAccepted] = useState(false);
-  return (
-    <Dialog
-      title={review.title}
-      close={close}
-      actions={
-        <>
-          <Button onClick={close}>Cancel</Button>
-          <Button
-            primary
-            disabled={(review.cloud || review.dangerous) && !accepted}
-            onClick={() => confirm(accepted)}
-          >
-            {review.title}
-          </Button>
-        </>
-      }
-    >
-      <div className="jm-review">
-        <p>{review.detail}</p>
-        <p className="jm-muted">
-          Applies to this server’s ordinary ML resources. Review active jobs
-          before changing worker availability.
-        </p>
-        {(review.cloud || review.dangerous) && (
-          <label className="jm-confirm">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(event) => setAccepted(event.target.checked)}
-            />
-            {review.cloud
-              ? "I choose RunPod and acknowledge that eligible media previews may leave my network and incur charges."
-              : "I have reviewed the resource, active requests, and data or cache that will be removed."}
-          </label>
         )}
       </div>
     </Dialog>

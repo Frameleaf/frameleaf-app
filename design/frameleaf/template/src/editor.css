@@ -1577,3 +1577,76 @@
     transition: none;
   }
 }
+
+/* Frameleaf Cloud entry in Enhance */
+.ed-cloud .button {
+  align-self: start;
+}
+.ed-cloud-credit {
+  grid-column: 1 / -1;
+}
+.ed-toggle.ed-cloud {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.ed-cloud > .fc-job-destination {
+  margin: 0;
+}
+.ed-cloud .ed-routing-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fl-accent);
+  text-decoration: underline;
+  font: inherit;
+  font-size: var(--fl-font-small, 12px);
+  cursor: pointer;
+}
+.ed-smooth .ed-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-self: start;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--fl-radius-control, 8px);
+  background: var(--fl-raised);
+  border: 1px solid var(--fl-border);
+}
+.ed-smooth .ed-segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--fl-muted);
+  padding: 6px 10px;
+  border-radius: calc(var(--fl-radius-control, 8px) - 2px);
+  font: inherit;
+  font-size: var(--fl-font-small, 12px);
+  cursor: pointer;
+}
+.ed-smooth .ed-segmented button.is-on {
+  background: var(--fl-accent);
+  color: var(--fl-accent-text);
+  font-weight: 600;
+}
+.ed-smooth .ed-segmented button:focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 2px;
+}
+.ed-smooth .ed-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fl-font-small, 12px);
+}
+.ed-smooth .ed-facts dt {
+  color: var(--fl-muted);
+}
+.ed-smooth .ed-facts dd {
+  margin: 0;
+}
+.ed-smooth .ed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
