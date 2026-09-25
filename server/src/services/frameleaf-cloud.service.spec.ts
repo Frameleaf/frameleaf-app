@@ -275,6 +275,21 @@ describe(FrameleafCloudService.name, () => {
       });
     });
 
+    it('refuses a link response whose sign-in issuer is not on the configured cloud', async () => {
+      serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
+      const original = cloud.routes.get('POST /api/v1/instances')!;
+      cloud.on('POST /api/v1/instances', async (request) => {
+        const answer = await original(request);
+        const body = answer.body as { oidc: Record<string, unknown> };
+        return { ...answer, body: { ...body, oidc: { ...body.oidc, issuer: 'https://id.elsewhere.test' } } };
+      });
+      await sut.startLink(authStub.admin);
+      makeDue();
+      await sut.getLink();
+      expect(storedLink()?.status).not.toBe('linked');
+      expect(pathsCalled()).not.toContain('POST /id/reg');
+    });
+
     it('sends the link token to POST /v1/instances and the initial access token to /reg', async () => {
       serveLinking(() => ({ status: 200, body: { access_token: 'link-token', expires_in: 600 } }));
       await sut.startLink(authStub.admin);
