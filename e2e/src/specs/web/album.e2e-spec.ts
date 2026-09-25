@@ -248,4 +248,29 @@ test.describe('Album', () => {
     await crumbs.getByRole('link', { name: 'Albums' }).click();
     await page.waitForURL(/\/albums(?:\?|$)/);
   });
+
+  test('on a phone keeps Add photos and Share and moves the other actions into More actions', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const asset = await utils.createAsset(admin.accessToken);
+    const album = await utils.createAlbum(admin.accessToken, { albumName: 'Phone album', assetIds: [asset.id] });
+
+    await page.goto(`/albums/${album.id}`);
+    // INTERACTION-REQUIREMENTS.md (Sept 24 second pass): album actions beyond Add photos and Share move into "…".
+    const toolbar = page.getByRole('toolbar', { name: /actions/ });
+    await expect(toolbar.getByRole('button', { name: 'Add photos' })).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'Share' })).toBeVisible();
+    await expect(toolbar.getByRole('button', { name: 'Slideshow' })).toHaveCount(0);
+    await expect(toolbar.getByRole('button', { name: 'Download' })).toHaveCount(0);
+
+    await toolbar.getByRole('button', { name: 'More actions' }).click();
+    const menu = page.getByRole('menu', { name: 'More actions' });
+    for (const name of ['Shared links', 'Slideshow', 'Download']) {
+      await expect(menu.getByRole('menuitem', { name })).toBeVisible();
+    }
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Activity' })).toBeVisible();
+  });
 });
