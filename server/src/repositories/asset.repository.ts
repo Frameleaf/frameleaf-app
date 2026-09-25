@@ -1000,16 +1000,29 @@ export class AssetRepository {
    * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
    * been locked. With `kysely` (a caller's transaction) the unlock commits with the caller's writes.
    */
-  async unlock(ids: string[], kysely?: Kysely<DB>): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  /**
+   * Unlocks `ids` with their whole stacks and live photos. `reasons` limits the release to locks of
+   * those reasons (FL-34: Mark Safe answers a sensitive verdict, so it releases marked and detected
+   * locks and leaves an item the owner kept in the upstream Locked folder where it is).
+   */
+  async unlock(
+    ids: string[],
+    kysely?: Kysely<DB>,
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    return kysely ? this.unlockIn(kysely, ids) : this.inTransaction((tx) => this.unlockIn(tx, ids));
+    return kysely ? this.unlockIn(kysely, ids, reasons) : this.inTransaction((tx) => this.unlockIn(tx, ids, reasons));
   }
 
   /** `unlock` inside the caller's transaction `tx`. */
-  private async unlockIn(tx: Kysely<DB>, ids: string[]): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  private async unlockIn(
+    tx: Kysely<DB>,
+    ids: string[],
+    reasons?: AssetLockReason[],
+  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
     const targetIds = await this.getLockGroupIds(tx, ids);
     if (targetIds.length === 0) {
       return [];
@@ -1020,6 +1033,7 @@ export class AssetRepository {
     const unlocked = await tx
       .deleteFrom('asset_lock')
       .where('asset_lock.assetId', '=', anyUuid(targetIds))
+      .$if(!!reasons, (qb) => qb.where('asset_lock.reason', 'in', reasons!))
       .returning(['asset_lock.assetId', 'asset_lock.reason'])
       .execute();
     if (unlocked.length > 0) {
