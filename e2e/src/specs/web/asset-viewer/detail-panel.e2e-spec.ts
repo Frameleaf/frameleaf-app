@@ -46,15 +46,24 @@ test.describe('Detail Panel', () => {
     await page.keyboard.press('i');
     const panel = page.locator('#detail-panel');
     await expect(panel).toBeVisible();
-    await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(340);
+    const width = async () => {
+      const box = await panel.boundingBox();
+      return Math.round(box?.width ?? 0);
+    };
+    await expect.poll(width).toBe(340);
     const card = (await panel.boundingBox())!;
     expect(card.x + card.width).toBeLessThan(1280);
     expect(card.y).toBeGreaterThan(60);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(390);
-    const sheet = (await panel.boundingBox())!;
-    expect(Math.round(sheet.y + sheet.height)).toBe(844);
+    await expect.poll(width).toBe(390);
+    // The sheet slides up 24px as it appears (fl-sheet-in), so wait for it to settle on the bottom edge.
+    await expect
+      .poll(async () => {
+        const sheet = await panel.boundingBox();
+        return sheet ? Math.round(sheet.y + sheet.height) : 0;
+      })
+      .toBe(844);
   });
 
   test('cannot be opened for shared links with hidden metadata', async ({ page }) => {
