@@ -159,6 +159,12 @@
      * photo, the geolocation utility) confirms in its own chrome, so the bulk bar has no place.
      */
     noSelectionBar?: boolean;
+    /**
+     * The page header already offers Slideshow (an album's or a shared space's `AlbumHeader`,
+     * CollectionHeader.jsx:1430-1436 and its phone "…" menu), so the results toolbar leaves it out
+     * and a collection page has exactly one.
+     */
+    headerHasSlideshow?: boolean;
     /** Picking mode: a plain click selects instead of opening the viewer. */
     selectionMode?: boolean;
     /** With `selectionMode`, a pick replaces the selection instead of adding to it. */
@@ -218,6 +224,7 @@
     toolbar,
     selectionBar,
     noSelectionBar = false,
+    headerHasSlideshow = false,
     selectionMode = false,
     singleSelect = false,
     onSelect,
@@ -1123,7 +1130,7 @@
     slideshowState.set(SlideshowState.PlaySlideshow);
   };
 
-  const canSlideshow = $derived(libraryChrome && !!viewer);
+  const canSlideshow = $derived(libraryChrome && !!viewer && !headerHasSlideshow);
   const canSelectAllMatching = $derived(!selectionBar && !noSelectionBar);
 
   /** The tile that holds keyboard focus, if any. The scroll anchor is not a focus. */
