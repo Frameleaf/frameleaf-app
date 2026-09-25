@@ -21,6 +21,9 @@ import {
 } from '@immich/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
+/** The longest wait between checks of a pending code after failures. */
+export const MAX_POLL_BACKOFF_SECONDS = 60;
+
 /**
  * The Frameleaf Cloud link as administrators see it (FL-155). Admin-only: pages that are not an
  * administrator's never call `listen`. The status reloads when the server says the link changed
@@ -35,6 +38,8 @@ export class CloudManager {
   #loading = $state(false);
   #listeners = 0;
   #poll?: ReturnType<typeof setTimeout>;
+  #pollFailures = 0;
+  #pollError = $state<unknown>(null);
 
   get status() {
     return this.#status;
@@ -52,6 +57,11 @@ export class CloudManager {
 
   get error() {
     return this.#error;
+  }
+
+  /** The last failed check for an approved code; polling keeps retrying with backoff meanwhile. */
+  get pollError() {
+    return this.#pollError;
   }
 
   get loading() {
@@ -136,18 +146,37 @@ export class CloudManager {
   #apply(status: CloudStatusResponseDto) {
     this.#status = status;
     this.#error = null;
+    this.#pollError = null;
+    this.#pollFailures = 0;
     this.#stopPolling();
-    if (status.state === 'pending' && status.pending && this.#listeners > 0) {
-      const seconds = Math.max(1, status.pending.intervalSeconds);
+    if (status.state === 'pending' && status.pending) {
+      this.#schedulePoll(Math.max(1, status.pending.intervalSeconds));
+    }
+  }
+
+  #schedulePoll(seconds: number) {
+    this.#stopPolling();
+    if (this.#listeners > 0) {
       this.#poll = setTimeout(() => void this.#pollOnce(), seconds * 1000);
     }
   }
 
+  /**
+   * One check of a pending code. A failure never stops polling while the code is pending: it is
+   * shown, and the next check waits twice as long each time (at most a minute), so an approval
+   * made meanwhile is still picked up.
+   */
   async #pollOnce() {
     try {
       this.#apply(await getCloudLink());
     } catch (error) {
-      this.#error = error;
+      this.#pollError = error;
+      const pending = this.#status?.state === 'pending' ? this.#status.pending : null;
+      if (pending) {
+        this.#pollFailures++;
+        const base = Math.max(1, pending.intervalSeconds);
+        this.#schedulePoll(Math.min(base * 2 ** this.#pollFailures, MAX_POLL_BACKOFF_SECONDS));
+      }
     }
   }
 
