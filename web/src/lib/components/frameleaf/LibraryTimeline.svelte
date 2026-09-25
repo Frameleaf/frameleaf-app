@@ -148,6 +148,12 @@
   // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
+  /**
+   * Timeline captions sit under each justified row (template timeline-library.css: the photo keeps
+   * `--tl-h` and `.at-caption` follows it), so the manager adds the caption to the row pitch.
+   */
+  const rowCaptionHeight = $derived(tileLayout === 'timeline' && timelineCaptions ? WORK_CAPTION_HEIGHT : 0);
+
   /** Browse and Work lay each month out as a cell grid; `null` keeps Timeline's justified rows. */
   const cells = $derived(
     tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone),
@@ -170,12 +176,14 @@
             headerHeight: showDayHeaders ? 32 : 8,
             gap: 8,
             fillRowWidth: true,
+            captionHeight: rowCaptionHeight,
           }
         : {
             rowHeight: timelineRowHeight(235, thumbnailSize),
             headerHeight: showDayHeaders ? 48 : 12,
             gap: 12,
             fillRowWidth: true,
+            captionHeight: rowCaptionHeight,
           },
     );
   });
@@ -224,7 +232,7 @@
   // Browse and Work zoom with pinch, Ctrl-scroll and + / −; the Timeline keeps them for grouping.
   $effect(() => {
     const element = root;
-    if (!element || tileLayout === 'timeline' || !onThumbnailSizeChange) {
+    if (!element || tileLayout === 'timeline' || tileLayout === 'list' || !onThumbnailSizeChange) {
       return;
     }
     return bindGridZoom(element, {
@@ -1094,7 +1102,7 @@
 <div
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
-  class:is-zoomable={tileLayout !== 'timeline' && !!onThumbnailSizeChange}
+  class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
   bind:this={root}
 >
@@ -1117,7 +1125,8 @@
       />
     </div>
     <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
-    {#if timelineManager.months.length > 0}
+    <!-- A flat order (filename, rating) has no dates to scrub through. -->
+    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
       <YearScrubber
         {timelineManager}
         height={measuredHeight}
@@ -1214,7 +1223,8 @@
                   {selecting}
                   {ratingFor}
                   layout={tileLayout}
-                  captionHeight={cells ? cells.captionHeight : timelineCaptions ? WORK_CAPTION_HEIGHT : 0}
+                  captionHeight={cells ? cells.captionHeight : rowCaptionHeight}
+                  captionBelow={!cells}
                   {showFileNames}
                   showHeader={showDayHeaders}
                   grouped={effectiveGrouping !== 'days' || !!cells}
@@ -1239,7 +1249,8 @@
       </div>
     </section>
 
-    {#if timelineManager.months.length > 0}
+    <!-- A flat order (filename, rating) has no dates to scrub through. -->
+    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
       <YearScrubber
         {timelineManager}
         height={timelineManager.viewportHeight}

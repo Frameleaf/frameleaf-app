@@ -59,6 +59,8 @@ export class TimelineMonth {
     loaded: boolean,
     order: AssetOrder = AssetOrder.Desc,
     dateType: TimeBucketDateType = TimeBucketDateType.Taken,
+    /** A page of a flat order (S-15) is not a calendar month and has no title. */
+    title?: string,
   ) {
     this.timelineManager = timelineManager;
     this.#initialCount = initialCount;
@@ -66,7 +68,7 @@ export class TimelineMonth {
     this.#dateType = dateType;
 
     this.yearMonth = { year: yearMonth.year, month: yearMonth.month };
-    this.title = formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
+    this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
 
     this.loader = new CancellableTask(
       () => {
@@ -173,48 +175,7 @@ export class TimelineMonth {
 
   addAssets(bucketAssets: TimeBucketAssetResponseDto, preSorted: boolean) {
     const addContext = new GroupInsertionCache();
-    for (let i = 0; i < bucketAssets.id.length; i++) {
-      const { localDateTime, fileCreatedAt } = getTimes(
-        bucketAssets.fileCreatedAt[i],
-        bucketAssets.localOffsetHours[i],
-      );
-
-      const timelineAsset: TimelineAsset = {
-        city: bucketAssets.city?.[i] ?? null,
-        country: bucketAssets.country?.[i] ?? null,
-        duration: bucketAssets.duration[i],
-        id: bucketAssets.id[i],
-        visibility: bucketAssets.visibility[i],
-        lockReason: bucketAssets.lockReason?.[i] ?? null,
-        isFavorite: bucketAssets.isFavorite[i],
-        isImage: bucketAssets.isImage[i],
-        isTrashed: bucketAssets.isTrashed[i],
-        isVideo: !bucketAssets.isImage[i],
-        livePhotoVideoId: bucketAssets.livePhotoVideoId[i],
-        localDateTime,
-        createdAt: fileCreatedAt,
-        fileCreatedAt,
-        ownerId: bucketAssets.ownerId[i],
-        projectionType: bucketAssets.projectionType[i],
-        ratio: bucketAssets.ratio[i],
-        stack: bucketAssets.stack?.at(i)
-          ? {
-              id: bucketAssets.stack[i]![0],
-              primaryAssetId: bucketAssets.id[i],
-              assetCount: Number.parseInt(bucketAssets.stack[i]![1]),
-            }
-          : null,
-        thumbhash: bucketAssets.thumbhash[i],
-        people: null, // People are not included in the bucket assets
-        rating: bucketAssets.rating?.[i] ?? null,
-        originalFileName: bucketAssets.originalFileName?.[i] ?? null,
-      };
-
-      if (bucketAssets.latitude?.at(i) && bucketAssets.longitude?.at(i)) {
-        timelineAsset.latitude = bucketAssets.latitude?.[i];
-        timelineAsset.longitude = bucketAssets.longitude?.[i];
-      }
-
+    for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
       if (this.timelineManager.isExcluded(timelineAsset)) {
         continue;
       }
@@ -236,6 +197,23 @@ export class TimelineMonth {
     addContext.sort(this, this.#sortOrder);
 
     return addContext.unprocessedAssets;
+  }
+
+  /**
+   * One page of a flat order (S-15): every asset in one group, in exactly the order the server sent
+   * them. Nothing is regrouped by date or re-sorted.
+   */
+  addOrderedAssets(bucketAssets: TimeBucketAssetResponseDto) {
+    let timelineDay = this.timelineDays[0];
+    if (!timelineDay) {
+      timelineDay = new TimelineDay(this, 0, 1, '', this.#dateType);
+      this.timelineDays.push(timelineDay);
+    }
+    for (const timelineAsset of bucketTimelineAssets(bucketAssets)) {
+      if (!this.timelineManager.isExcluded(timelineAsset)) {
+        timelineDay.viewerAssets.push(new ViewerAsset(timelineAsset));
+      }
+    }
   }
 
   addTimelineAsset(timelineAsset: TimelineAsset, addContext: GroupInsertionCache) {
@@ -420,5 +398,55 @@ export class TimelineMonth {
 
   cancel() {
     this.loader?.cancel();
+  }
+}
+
+/** The time bucket's columnar response as timeline assets, in the order the server sent them. */
+export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto): Generator<TimelineAsset> {
+  for (let i = 0; i < bucketAssets.id.length; i++) {
+    const { localDateTime, fileCreatedAt } = getTimes(bucketAssets.fileCreatedAt[i], bucketAssets.localOffsetHours[i]);
+
+    const timelineAsset: TimelineAsset = {
+      city: bucketAssets.city?.[i] ?? null,
+      country: bucketAssets.country?.[i] ?? null,
+      duration: bucketAssets.duration[i],
+      id: bucketAssets.id[i],
+      visibility: bucketAssets.visibility[i],
+      lockReason: bucketAssets.lockReason?.[i] ?? null,
+      isFavorite: bucketAssets.isFavorite[i],
+      isImage: bucketAssets.isImage[i],
+      isTrashed: bucketAssets.isTrashed[i],
+      isVideo: !bucketAssets.isImage[i],
+      livePhotoVideoId: bucketAssets.livePhotoVideoId[i],
+      localDateTime,
+      createdAt: fileCreatedAt,
+      fileCreatedAt,
+      ownerId: bucketAssets.ownerId[i],
+      projectionType: bucketAssets.projectionType[i],
+      ratio: bucketAssets.ratio[i],
+      stack: bucketAssets.stack?.at(i)
+        ? {
+            id: bucketAssets.stack[i]![0],
+            primaryAssetId: bucketAssets.id[i],
+            assetCount: Number.parseInt(bucketAssets.stack[i]![1]),
+          }
+        : null,
+      thumbhash: bucketAssets.thumbhash[i],
+      people: null, // People are not included in the bucket assets
+      rating: bucketAssets.rating?.[i] ?? null,
+      originalFileName: bucketAssets.originalFileName?.[i] ?? null,
+    };
+
+    if (bucketAssets.latitude?.at(i) && bucketAssets.longitude?.at(i)) {
+      timelineAsset.latitude = bucketAssets.latitude?.[i];
+      timelineAsset.longitude = bucketAssets.longitude?.[i];
+    }
+    // The list view's columns (S-15), where the source sends them.
+    if (bucketAssets.width) {
+      timelineAsset.width = bucketAssets.width[i] ?? null;
+      timelineAsset.height = bucketAssets.height?.[i] ?? null;
+      timelineAsset.fileSizeInByte = bucketAssets.fileSizeInByte?.[i] ?? null;
+    }
+    yield timelineAsset;
   }
 }

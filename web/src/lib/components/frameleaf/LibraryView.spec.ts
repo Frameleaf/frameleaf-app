@@ -180,8 +180,9 @@ describe('LibraryView', () => {
         syncUrl: false,
       });
       await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      // A city is a condition the time buckets cannot apply: the server counts it for "Select all".
       librarySession.patchView({
-        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } as never,
+        query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Halifax' } } } as never,
       });
 
       await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce());
@@ -189,6 +190,31 @@ describe('LibraryView', () => {
       // One count per result set: re-rendering does not ask again.
       await tick();
       expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce();
+      librarySession.patchView({ query: emptyDiscoveryQuery() });
+    });
+
+    it('applies a filter the time buckets can express to the grid itself (M3)', async () => {
+      sdkMock.searchAssetStatistics.mockResolvedValue({ total: 40 } as never);
+      sdkMock.getTimeBuckets.mockClear();
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Timeline, withPartners: true },
+        destination: { kind: 'library' },
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.patchView({
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] }, isFavorite: { eq: true } } } as never,
+      });
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ tagId: 't1', isFavorite: true }),
+        ),
+      );
+      // Favourites are the caller's own: the server refuses partners with them.
+      expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.not.objectContaining({ withPartners: true }));
+      // The grid is empty under the applied filter, so the page says so and offers to clear it.
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 
@@ -281,7 +307,7 @@ describe('LibraryView', () => {
       sdkMock.searchAssetStatistics.mockResolvedValue({ total: 0 } as never);
       await setupLibrary();
       librarySession.patchView({
-        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } as never,
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] } } } as never,
       });
       const empty = await screen.findByTestId('frameleaf-library-empty');
       await waitFor(() => expect(empty).toHaveTextContent('frameleaf_library_empty_filtered_title'));
@@ -302,6 +328,40 @@ describe('LibraryView', () => {
           expect.objectContaining({ order: 'desc', dateType: 'added' }),
         ),
       );
+    });
+
+    it('keeps the Timeline dated, and pages Browse by file name or rating (S-15)', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2026-09-01', count: 3 }] as never);
+      await setupLibrary();
+      const sort = () => screen.getByRole('combobox', { name: 'frameleaf_library_sort' }) as HTMLSelectElement;
+      await fireEvent.change(sort(), { target: { value: 'filename' } });
+      // The manager pages GET /timeline/ordered in that order (timeline-manager ordered mode).
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.objectContaining({ orderedBy: 'filename' })),
+      );
+
+      librarySession.setLayout('timeline');
+      await tick();
+      // The Timeline only turns newest-first or oldest-first; a flat sort leaves it dated.
+      expect([...sort().options].filter((option) => !option.disabled).map((option) => option.value)).toEqual([
+        'captured-desc',
+        'captured-asc',
+      ]);
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(expect.not.objectContaining({ orderedBy: 'filename' })),
+      );
+      librarySession.setLayout('browse');
+    });
+
+    it('offers List outside the Timeline and draws rows (S-15)', async () => {
+      await setupLibrary();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
+      expect(librarySession.state.view).toBe('list');
+      librarySession.setLayout('timeline');
+      await tick();
+      expect(screen.queryByRole('button', { name: 'frameleaf_library_list_view' })).not.toBeInTheDocument();
+      librarySession.setLayout('browse');
+      librarySession.patchView({ view: 'grid' });
     });
 
     it('draws no Sort where the page fixes its own order', async () => {

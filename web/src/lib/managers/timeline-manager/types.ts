@@ -1,4 +1,4 @@
-import type { AssetLockReason, AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
+import type { AssetLockReason, AssetStackResponseDto, AssetVisibility, TimelineOrderedSort } from '@immich/sdk';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 
 export type ViewportTopMonth = TimelineYearMonth | undefined | 'lead-in' | 'lead-out';
@@ -7,6 +7,12 @@ export type AssetApiGetTimeBucketsRequest = Parameters<typeof import('@immich/sd
 
 export type TimelineManagerOptions = Omit<AssetApiGetTimeBucketsRequest, 'size'> & {
   timelineAlbumId?: string;
+  /**
+   * FL-30 (S-15): lay the same assets out in one flat order — by file name or by rating — instead of
+   * by date. The manager then pages `GET /timeline/ordered` into synthetic "months" in that order;
+   * every other option means what it means for the time buckets.
+   */
+  orderedBy?: TimelineOrderedSort;
   deferInit?: boolean;
   assetFilter?: Set<string>;
 };
@@ -44,6 +50,10 @@ export type TimelineAsset = {
   rating?: number | null;
   /** The original file name, which Work shows on request (FL-33); absent where metadata is withheld. */
   originalFileName?: string | null;
+  /** Pixel dimensions and file size for the list view (S-15); absent where metadata is withheld. */
+  width?: number | null;
+  height?: number | null;
+  fileSizeInByte?: number | null;
 };
 
 export type MoveAsset = { asset: TimelineAsset; date: TimelineDate };

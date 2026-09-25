@@ -33,6 +33,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
+  import LibraryLayoutSwitch from '$lib/components/frameleaf/LibraryLayoutSwitch.svelte';
   import LibraryCompare from '$lib/components/frameleaf/LibraryCompare.svelte';
   import LibraryStatusBar from '$lib/components/frameleaf/LibraryStatusBar.svelte';
   import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
@@ -43,7 +44,11 @@
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
-  import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import {
+    activeFilterFields,
+    type DiscoveryDestination,
+    type DiscoveryFilterSection,
+  } from '$lib/components/discovery/query';
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
@@ -51,7 +56,9 @@
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import type { TileLayout } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import { timelineQueryOptions } from '$lib/frameleaf/library-query-options';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction, LibrarySort } from '$lib/frameleaf/library-session';
   import {
@@ -59,7 +66,8 @@
     filterFieldEntityIds,
     type FilterChipDescription,
   } from '$lib/frameleaf/library-filters';
-  import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
+  import { barOffers, libraryKeysActive, planKeyAction, type KeyItem } from '$lib/frameleaf/library-key-actions';
+  import { isTypingTarget, matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import type { SelectionBarLeadingAction } from '$lib/frameleaf/selection-bar';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
   import { tileActionAvailability, type TileQuickActions } from '$lib/frameleaf/tile-actions';
@@ -77,6 +85,7 @@
     AssetOrder,
     AssetVisibility,
     TimeBucketDateType,
+    TimelineOrderedSort,
     updateAsset,
     type ArchiveOperationResponseDto,
   } from '@immich/sdk';
@@ -255,28 +264,57 @@
   const comparing = $derived(session.state.view === 'compare');
 
   /**
-   * The sorts the timeline source can apply (FL-30, prototype "Sort assets"). Time buckets order by
-   * capture or upload date, newest or oldest first; a page that fixes its own order (Recently added,
-   * an album) keeps it and draws no Sort control. Filename and rating need a server-side order the
-   * buckets do not have, so the toolbar lists them without offering them.
+   * The part of the session's query the time buckets can apply (review M3): a "View in library" link
+   * from Tags or Folders, or a session restored on this device, can carry one. Those conditions
+   * narrow the grid itself, so the count, the empty state and Slideshow describe what is shown; the
+   * rest (`unapplied`) stays for the search results page, where the whole query applies.
    */
-  const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc'];
-  const sorts = $derived(
-    options && !publicView && !selectionMode && !options.order && !options.dateType ? TIMELINE_SORTS : undefined,
+  const queryApplied = $derived.by(() =>
+    options && !publicView && !selectionMode
+      ? timelineQueryOptions(session.query, options)
+      : { options, unapplied: [] as string[] },
   );
+  /** Filters the grid itself applies. */
+  const appliedFilterCount = $derived(
+    activeFilterFields(session.query).filter((field) => !queryApplied.unapplied.includes(field)).length,
+  );
+
+  /** The List view (S-15): Browse's and Work's rows; the Timeline always keeps its dated rows. */
+  const listView = $derived(!publicView && gridLayout !== 'timeline' && session.state.view === 'list');
+  const tileLayout = $derived<TileLayout>(listView ? 'list' : gridLayout);
+
+  /**
+   * Sort, as the prototype applies it (`App.jsx` `visible.sort(...)`, `TimelineLibrary order`): the
+   * Timeline keeps its date groups and only turns newest-first or oldest-first; Browse, Work and the
+   * list re-sort the flat results — by upload date through the buckets, and by file name or rating
+   * through the flat ordered source (`GET /timeline/ordered`). A page that fixes its own order
+   * (Recently added, an album) keeps it and draws no Sort control.
+   */
+  const sortable = $derived(!!options && !publicView && !selectionMode && !options.order && !options.dateType);
+  const TIMELINE_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc'];
+  const FLAT_SORTS: readonly LibrarySort[] = ['captured-desc', 'captured-asc', 'imported-desc', 'filename', 'rating'];
+  const sorts = $derived(sortable ? (gridLayout === 'timeline' ? TIMELINE_SORTS : FLAT_SORTS) : undefined);
   const sortedOptions = $derived.by(() => {
-    if (!options || !sorts) {
-      return options;
+    const base = queryApplied.options;
+    if (!base || !sortable) {
+      return base;
     }
+    const flat = gridLayout !== 'timeline';
     switch (session.state.sort) {
       case 'captured-asc': {
-        return { ...options, order: AssetOrder.Asc };
+        return { ...base, order: AssetOrder.Asc };
       }
       case 'imported-desc': {
-        return { ...options, dateType: TimeBucketDateType.Added, order: AssetOrder.Desc };
+        return flat ? { ...base, dateType: TimeBucketDateType.Added, order: AssetOrder.Desc } : base;
+      }
+      case 'filename': {
+        return flat ? { ...base, orderedBy: TimelineOrderedSort.Filename } : base;
+      }
+      case 'rating': {
+        return flat ? { ...base, orderedBy: TimelineOrderedSort.Rating } : base;
       }
       default: {
-        return options;
+        return base;
       }
     }
   });
@@ -424,7 +462,16 @@
     isLocked: asset.visibility === AssetVisibility.Locked,
     stackId: asset.stack?.id ?? null,
     localDateTime: plainDateTime(asset),
+    utcOffsetMinutes: utcOffsetMinutes(asset),
   });
+
+  /** Minutes east of UTC: the bucket's local wall time less its UTC instant. */
+  const utcOffsetMinutes = ({ localDateTime: local, fileCreatedAt: utc }: TimelineAsset) =>
+    Math.round(
+      (Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) -
+        Date.UTC(utc.year, utc.month - 1, utc.day, utc.hour, utc.minute, utc.second)) /
+        60_000,
+    );
 
   /** `yyyy-MM-ddTHH:mm` on the item's own clock, read straight from the bucket's fields. */
   const plainDateTime = ({ localDateTime: at }: TimelineAsset) => {
@@ -807,7 +854,29 @@
     const state = session.state;
     void untrack(() => bulk.count(state)).then((total) => session.applyTotal(total, revision));
   });
-  const resultCount = $derived(session.filterActive ? session.total : scopeTotal);
+  /** What the grid shows: the toolbar's count, the empty state and Slideshow all read it. */
+  const resultCount = $derived(scopeTotal);
+  /**
+   * The status bar's Y while the grid applies a filter: the scope without it, counted by the server
+   * once per result set. Without an applied filter the grid's own count is the scope.
+   */
+  let unfilteredTotal = $state<number | null>(null);
+  let unfilteredRevision = -1;
+  $effect(() => {
+    const revision = session.revision;
+    if (!showStatusBar || appliedFilterCount === 0 || unfilteredRevision === revision) {
+      return;
+    }
+    unfilteredRevision = revision;
+    unfilteredTotal = null;
+    const state = { ...session.state, query: { ...session.query, text: '', filter: {} } };
+    void untrack(() => bulk.count(state)).then((total) => {
+      if (unfilteredRevision === revision) {
+        unfilteredTotal = total;
+      }
+    });
+  });
+  const statusTotal = $derived(appliedFilterCount > 0 ? unfilteredTotal : scopeTotal);
   /** Selected items this view does not show (chosen elsewhere with the same session), App.jsx's "outside". */
   const selectedOutside = $derived(snapshot ? 0 : session.selection.filter((id) => !findAsset(id)).length);
 
@@ -882,6 +951,21 @@
   /** A library page with its own chrome: not public, not a picking step. */
   const libraryChrome = $derived(!publicView && !selectionMode);
 
+  /**
+   * The page's bulk context as the bar sees it. The Locked view is Locked whether or not the page
+   * said so, so the bar's Locked rules (no favorite, stack, archive; permanent delete) always apply.
+   */
+  const keyContext = $derived({
+    ...bulkContext,
+    currentUserId,
+    locked: !!bulkContext?.locked || options?.visibility === AssetVisibility.Locked,
+  });
+
+  const toKeyItem = (asset: TimelineAsset): KeyItem => ({ ...toBulk(asset), isImage: asset.isImage });
+
+  /** Items a bar action selected on its own; put back to nothing if that action is cancelled. */
+  let barSelectedIds: string[] | null = null;
+
   /** Run an action through the bar, on the selection or, with none, on these items selected first. */
   const performOnBar = async (id: BulkActionId, ids: string[]) => {
     if (!selectionBarRef || selectionBar || noSelectionBar || ids.length === 0) {
@@ -889,14 +973,31 @@
     }
     if (session.selection.length === 0) {
       session.dispatch({ type: 'selection', ids });
+      barSelectedIds = ids;
       await tick();
     }
     selectionBarRef.performAction(id);
   };
 
-  /** Run an action on items without selecting them (a tile's heart, the F key on a focused tile). */
+  /** The bar's dialog closed: a cancelled action started from a key or a tile leaves nothing selected. */
+  const onBarDialogSettled = (submitted: boolean) => {
+    const selected = barSelectedIds;
+    barSelectedIds = null;
+    if (!submitted && selected && session.selection.every((id) => selected.includes(id))) {
+      session.clearSelection();
+    }
+  };
+
+  /**
+   * Run an action on items without selecting them (a tile's heart, the F key on a focused tile), and
+   * only where the bar itself would offer it for them (`bulkActions`).
+   */
   const runOn = (id: BulkActionId, ids: string[], payload?: BulkPayload) => {
-    if (ids.length === 0) {
+    const items = ids
+      .map((assetId) => findAsset(assetId))
+      .filter((asset): asset is TimelineAsset => !!asset)
+      .map((asset) => toKeyItem(asset));
+    if (!barOffers(id, items, keyContext)) {
       return;
     }
     actionTargets = ids;
@@ -905,18 +1006,6 @@
       return;
     }
     void bulk.run(id, ids, payload);
-  };
-
-  /** Prototype `bulkAction(favorite ? "unfavorite" : "favorite")`: one press toggles every target. */
-  const toggleFavorite = (ids: string[]) => {
-    const assets = ids.map((id) => findAsset(id)).filter((asset): asset is TimelineAsset => !!asset);
-    if (assets.length === 0) {
-      return;
-    }
-    runOn(
-      assets.every((asset) => asset.isFavorite) ? 'unfavorite' : 'favorite',
-      assets.map(({ id }) => id),
-    );
   };
 
   /** A tile's hover quick actions (prototype `AssetTile.jsx` `.at-actions`). */
@@ -930,9 +1019,12 @@
       canShare: !selectionBar && !noSelectionBar,
       canOpen: !!viewer,
       trash: !!bulkContext?.trash,
+      locked: keyContext.locked,
     });
     return {
-      onFavorite: available.favorite ? () => toggleFavorite([asset.id]) : undefined,
+      onFavorite: available.favorite
+        ? () => runOn(asset.isFavorite ? 'unfavorite' : 'favorite', [asset.id])
+        : undefined,
       onEdit: available.edit ? () => editAsset(asset) : undefined,
       onShare: available.share ? () => void performOnBar('create-shared-link', [asset.id]) : undefined,
       // Prototype `onMore={(id) => openViewer(id)}`: the viewer holds every other action.
@@ -975,31 +1067,16 @@
   const canSlideshow = $derived(libraryChrome && !!viewer);
   const canSelectAllMatching = $derived(!selectionBar && !noSelectionBar);
 
-  /** The item the keys act on when nothing is selected: the focused tile, or the scroll anchor. */
-  const currentAsset = () => {
+  /** The tile that holds keyboard focus, if any. The scroll anchor is not a focus. */
+  const focusedTileAsset = () => {
     const active = document.activeElement;
     const tile = active instanceof HTMLElement ? active.closest<HTMLElement>('[data-asset-id]') : null;
-    const id = (tile && root?.contains(tile) ? tile.dataset.assetId : null) ?? session.session.scrollAnchor;
+    const id = tile && root?.contains(tile) ? tile.dataset.assetId : null;
     return id ? findAsset(id) : null;
-  };
-
-  /** Prototype `targets`: the selection when there is one, else the item in focus. */
-  const keyTargets = () => {
-    if (snapshot) {
-      return [];
-    }
-    if (session.selection.length > 0) {
-      return [...session.selection];
-    }
-    const current = currentAsset();
-    return current ? [current.id] : [];
   };
 
   /** Prototype `setRating(current, value)`: the owner rates one item; 0 clears the rating. */
   const rateAsset = async (asset: TimelineAsset, value: number) => {
-    if (!authManager.authenticated || !authManager.preferences.ratings.enabled || asset.ownerId !== currentUserId) {
-      return;
-    }
     const rating = value === 0 ? null : value;
     try {
       await updateAsset({ id: asset.id, updateAssetDto: { rating } });
@@ -1011,9 +1088,6 @@
 
   /** Prototype `beginFaceTagging`: the viewer opens with the face tagger on. */
   const tagPeople = (asset: TimelineAsset) => {
-    if (!viewer || asset.ownerId !== currentUserId || asset.isTrashed || asset.isVideo) {
-      return;
-    }
     if (!assetViewerManager.isFaceEditMode) {
       assetViewerManager.toggleFaceEditMode();
     }
@@ -1022,85 +1096,69 @@
 
   /**
    * The action half of the library key map (prototype `App.jsx` library keydown, `shortcuts.mjs`
-   * "actions"). Returns true when the key was used.
+   * "actions"), planned by `planKeyAction` so a key only does what the bar would offer. Returns
+   * true when the key was used.
    */
   const runActionShortcut = (shortcut: LibraryShortcut): boolean => {
     if (!libraryChrome) {
       return false;
     }
-    const current = currentAsset();
-    switch (shortcut.id) {
-      case 'rate-1':
-      case 'rate-2':
-      case 'rate-3':
-      case 'rate-4':
-      case 'rate-5':
-      case 'rate-clear': {
-        if (current && shortcut.value !== undefined) {
-          void rateAsset(current, shortcut.value);
-        }
-        return !!current;
+    const focused = focusedTileAsset();
+    const plan = planKeyAction(shortcut, {
+      selection: session.selection
+        .map((id) => findAsset(id))
+        .filter((asset): asset is TimelineAsset => !!asset)
+        .map((asset) => toKeyItem(asset)),
+      snapshot: !!snapshot,
+      focused: focused ? toKeyItem(focused) : null,
+      context: keyContext,
+      ratingsEnabled: authManager.authenticated && authManager.preferences.ratings.enabled,
+      hasViewer: !!viewer,
+    });
+    const assetOf = (id: string) => findAsset(id);
+    switch (plan.kind) {
+      case 'none': {
+        return false;
       }
-      case 'favorite': {
-        toggleFavorite(keyTargets());
+      case 'run': {
+        runOn(plan.action, plan.ids, plan.payload);
+        return true;
+      }
+      case 'bar': {
+        void performOnBar(plan.action, plan.ids);
+        return true;
+      }
+      case 'rate': {
+        const asset = assetOf(plan.id);
+        if (asset) {
+          void rateAsset(asset, plan.value);
+        }
         return true;
       }
       case 'edit': {
-        if (current) {
-          editAsset(current);
+        const asset = assetOf(plan.id);
+        if (asset) {
+          editAsset(asset);
         }
-        return !!current;
-      }
-      case 'stack': {
-        const ids = keyTargets();
-        if (ids.length > 1) {
-          runOn('stack', ids, { primaryId: ids[0] });
-        } else {
-          toastManager.primary($t('frameleaf_library_shortcut_stack_needs_two'));
-        }
-        return true;
-      }
-      case 'add-to-album': {
-        void performOnBar('add-to-album', keyTargets());
-        return true;
-      }
-      case 'tag': {
-        // Prototype: the item joins the selection and the bar's Tag does the rest.
-        if (current && !session.selection.includes(current.id) && !snapshot) {
-          session.select(current.id);
-        }
-        toastManager.primary($t('frameleaf_library_shortcut_tag_hint'));
         return true;
       }
       case 'tag-people': {
-        if (current) {
-          tagPeople(current);
+        const asset = assetOf(plan.id);
+        if (asset) {
+          tagPeople(asset);
         }
-        return !!current;
-      }
-      case 'archive': {
-        const ids = keyTargets();
-        const assets = ids.map((id) => findAsset(id)).filter((asset): asset is TimelineAsset => !!asset);
-        const archived = assets.length > 0 && assets.every((asset) => asset.visibility === AssetVisibility.Archive);
-        runOn(archived ? 'unarchive' : 'archive', ids);
         return true;
       }
-      case 'download': {
-        runOn('download', keyTargets());
-        return true;
-      }
-      case 'delete': {
-        // With a selection the bar's own Delete key acts; alone, the focused item goes through the bar
-        // too, so trash, Locked and permanent deletion keep their confirmations.
-        if (session.selection.length > 0 || !current) {
-          return false;
+      case 'select-hint': {
+        if (plan.id && !session.selection.includes(plan.id)) {
+          session.select(plan.id);
         }
-        const locked = options?.visibility === AssetVisibility.Locked;
-        void performOnBar(bulkContext?.trash || locked ? 'delete-permanently' : 'delete', [current.id]);
+        toastManager.primary($t(plan.hint));
         return true;
       }
-      default: {
-        return false;
+      case 'toast': {
+        toastManager.primary($t(plan.message));
+        return true;
       }
     }
   };
@@ -1208,9 +1266,11 @@
         // Actions belong to the viewer while it is open, and a dialog keeps its keys.
         if (
           surface === 'timeline' &&
-          !assetViewerManager.isViewing &&
-          !event.defaultPrevented &&
-          !document.querySelector('dialog[open]') &&
+          libraryKeysActive({
+            viewing: assetViewerManager.isViewing,
+            defaultPrevented: event.defaultPrevented,
+            typing: isTypingTarget(event.target),
+          }) &&
           runActionShortcut(shortcut)
         ) {
           event.preventDefault();
@@ -1240,7 +1300,7 @@
         timelineManager={manager}
         {session}
         {ratingFor}
-        tileLayout={gridLayout}
+        {tileLayout}
         thumbnailSize={libraryGridPreferences.thumbnailSize}
         showFileNames={libraryGridPreferences.showFileNames}
         onThumbnailSizeChange={publicView ? undefined : (size) => (libraryGridPreferences.thumbnailSize = size)}
@@ -1259,7 +1319,13 @@
         empty={emptyState}
       >
         {#snippet header()}
-          <div class="fl-library-header">{@render children?.()}</div>
+          <!-- Prototype `.collection-header`: the page's own header and the layout switch beside it. -->
+          <div class="fl-library-header">
+            <div class="fl-library-header-content">{@render children?.()}</div>
+            {#if !publicView}
+              <LibraryLayoutSwitch {session} />
+            {/if}
+          </div>
           {#if !publicView}
             <div class="fl-library-toolbar" bind:this={toolbarStrip}>
               <ResultsToolbar
@@ -1270,11 +1336,13 @@
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
                 {sorts}
+                view={gridLayout === 'timeline' || publicView ? undefined : listView ? 'list' : 'grid'}
+                onViewChange={(view) => session.patchView({ view })}
                 onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
               >
                 {@render toolbar?.()}
                 <!-- FL-33: Work's file-name toggle lives in the sticky toolbar, in Work only. -->
-                {#if gridLayout === 'work'}
+                {#if gridLayout === 'work' && !listView}
                   <WorkFileNamesToggle />
                 {/if}
                 <!-- Compare, Quick edit and Open in Studio live on the selection bar (September 24). -->
@@ -1325,6 +1393,7 @@
       <!-- FL-32's bar, bound to this session: one selection, one place an action is run. -->
       <SelectionBar
         bind:this={selectionBarRef}
+        onDialogSettled={(_id, submitted) => onBarDialogSettled(submitted)}
         count={session.selection.length}
         total={selectAll === 'loaded' ? (manager.assetCount ?? null) : session.total}
         assets={selectedAssets}
@@ -1347,7 +1416,7 @@
   {#if showStatusBar}
     <LibraryStatusBar
       count={resultCount}
-      total={scopeTotal}
+      total={statusTotal}
       outside={selectedOutside}
       selected={session.selection.length}
       saved={savedOnDevice}
@@ -1378,7 +1447,7 @@
 
 {#snippet emptyState()}
   <!-- FL-33 (T-10): the Frameleaf empty state. A filter that leaves nothing says so and offers to clear it. -->
-  {#if session.filterActive || session.query.text.trim()}
+  {#if appliedFilterCount > 0}
     <LibraryEmptyState
       icon={mdiFilterOffOutline}
       title={$t('frameleaf_library_empty_filtered_title')}
@@ -1465,6 +1534,20 @@
    * Months cards draw it in their own scroller, so the toolbar can stick by itself in either while
    * the header above it and the grouping row below it scroll away as in the template.
    */
+  .fl-library-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .fl-library-header-content {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .fl-library-header > :global(.fl-layouts) {
+    margin-block: 8px 0;
+  }
   .fl-library-toolbar {
     position: relative;
   }
