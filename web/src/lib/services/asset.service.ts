@@ -228,7 +228,13 @@ export const getAssetActions = (
     title: $t('add_tag'),
     icon: mdiTagPlusOutline,
     $if: () => isOwner && !asset.isTrashed && authManager.preferences.tags.enabled,
-    onAction: () => assetViewerManager.focusDetailField('tags'),
+    onAction: () => {
+      // T pauses a running slideshow first, as the template's `play(false)` does (MediaViewer.jsx:803-807).
+      if (get(slideshowStore.slideshowState) === SlideshowState.PlaySlideshow) {
+        slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+      }
+      assetViewerManager.focusDetailField('tags');
+    },
     shortcuts: { key: 't' },
   };
 

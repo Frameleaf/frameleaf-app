@@ -207,7 +207,9 @@
    * made here has already moved on before this arrives, so it is not the open item any more.
    */
   const onAssetsDelete = async (ids: string[]) => {
-    if (!ids.includes(asset.id)) {
+    // The page already moved on from an item it removed here: the viewer still shows it until the
+    // next item loads, and acting now would close the viewer and cancel that load.
+    if (!ids.includes(asset.id) || movedPast.has(asset.id)) {
       return;
     }
     const next = cursor.nextAsset && !ids.includes(cursor.nextAsset.id) ? cursor.nextAsset : undefined;
@@ -408,8 +410,27 @@
     }
   };
 
-  const handlePreAction = (action: Action) => {
-    return preAction?.(action);
+  /**
+   * Items this viewer moved to the trash or deleted while a page's `preAction` took it to a neighbour
+   * (every page that passes `preAction` moves on from the open item it removes). Showing an item
+   * again, after an undo, takes it off the list.
+   */
+  const movedPast = new Set<string>();
+  $effect(() => {
+    movedPast.delete(asset.id);
+  });
+
+  const handlePreAction = async (action: Action) => {
+    if (!preAction) {
+      return;
+    }
+    const removedId =
+      action.type === AssetAction.DELETE || action.type === AssetAction.TRASH ? action.asset.id : undefined;
+    const shown = asset.id;
+    await preAction(action);
+    if (removedId === shown) {
+      movedPast.add(shown);
+    }
   };
 
   const handleAction = async (action: Action) => {

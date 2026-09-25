@@ -1,4 +1,4 @@
-import { isControlTarget, isTypingTarget } from '$lib/frameleaf/viewer-keys';
+import { isControlTarget, isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
 
 describe('viewer keys', () => {
   const make = (html: string) => {
@@ -32,5 +32,16 @@ describe('viewer keys', () => {
     expect(isControlTarget(make('<input />'))).toBe(true);
     expect(isControlTarget(make('<div tabindex="0"></div>'))).toBe(false);
     expect(isControlTarget(document.body)).toBe(false);
+  });
+
+  it('knows when a modal dialog is open over the viewer', () => {
+    expect(isDialogOpen()).toBe(false);
+    const closed = make('<dialog></dialog>');
+    expect(isDialogOpen()).toBe(false);
+    closed.setAttribute('open', '');
+    expect(isDialogOpen()).toBe(true);
+    closed.remove();
+    make('<div role="dialog" aria-modal="true"></div>');
+    expect(isDialogOpen()).toBe(true);
   });
 });
