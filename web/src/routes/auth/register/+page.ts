@@ -15,7 +15,7 @@ export const load = (async ({ parent }) => {
 
   return {
     meta: {
-      title: $t('admin.registration'),
+      title: $t('frameleaf_setup_title'),
     },
   };
 }) satisfies PageLoad;
