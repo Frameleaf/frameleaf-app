@@ -6,6 +6,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { OAuthConfig, OAuthProfile } from 'src/repositories/oauth.repository.js';
 import type { FrameleafCloudLink } from 'src/types.js';
 import { OAuthTokenEndpointAuthMethod } from 'src/enum.js';
+import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
 import { CloudGatewayDeps, loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 
 /**
@@ -78,7 +79,8 @@ export const frameleafOAuthConfig = async (
 ): Promise<OAuthConfig | null> => {
   const { cloudUrl, link, linked } = await readCloudLink(deps);
   const client = signInClient(link, linked);
-  if (!cloudUrl || !client) {
+  // the issuer must be the configured cloud's, like every address the cloud hands over
+  if (!cloudUrl || !client || cloudAddressProblem(cloudUrl, 'sign-in issuer', client.issuer)) {
     return null;
   }
   const clientSecret = config.frameleafCloud.signIn?.clientSecret ?? '';

@@ -51,7 +51,7 @@ import {
   permissionsOf,
   redirectUris,
 } from 'src/utils/frameleaf-cloud-link.js';
-import { FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
+import { cloudAddressProblem, FrameleafCloudError, FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** One process start: the cloud's clone rule compares these between check-ins. */
@@ -349,6 +349,17 @@ export class FrameleafCloudService extends BaseService {
     });
 
     const { oidc } = registration;
+    for (const [name, value] of [
+      ['sign-in issuer', oidc.issuer],
+      ['client registration endpoint', oidc.registrationEndpoint],
+    ] as const) {
+      const problem = value ? cloudAddressProblem(cloudUrl, name, value) : null;
+      if (problem) {
+        throw new ServiceUnavailableException(
+          `Frameleaf Cloud answered with an address this server will not use: ${problem}`,
+        );
+      }
+    }
     if (oidc.initialAccessToken) {
       const origins = await this.publicOrigins(registration.services);
       await this.frameleafCloudRepository.requestJson(clientRegistrationSchema, {
