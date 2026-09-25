@@ -43,8 +43,9 @@ test("ladders run light to heavy, with at most two models per size class, and ev
   const order = ["cpu", "tiny", "small", "medium", "large", "xl"];
   for (const workload of LADDER_WORKLOADS) {
     const ladder = ladderFor(workload);
-    assert.ok(ladder.length >= (workload === "interpolation" ? 2 : 3), workload);
-    assert.ok(cloudPositions(workload).length >= 1, workload);
+    assert.ok(ladder.length >= (["interpolation", "render"].includes(workload) ? 2 : 3), workload);
+    if (workload === "render") assert.equal(cloudPositions(workload).length, 0, "Studio exports are local only");
+    else assert.ok(cloudPositions(workload).length >= 1, workload);
     const sizes = ladder.map((item) => order.indexOf(item.sizeClass));
     assert.deepEqual(sizes, [...sizes].sort((a, b) => a - b), `${workload} runs light to heavy`);
     for (const size of order)

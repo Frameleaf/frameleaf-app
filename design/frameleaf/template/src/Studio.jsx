@@ -1826,8 +1826,9 @@ function ExportDialog({ sequence, length, destination, setDestination, choice, s
   const [format, setFormat] = useState(exportFormats[0]);
   const [color, setColor] = useState(exportColors[0]);
   const [resolution, setResolution] = useState("2160p");
-  const estimate = estimateRender({ durationSeconds: length, resolution, destination, kind: "export" });
-  const chosen = destinations.find((item) => item.id === destination) || destinations[0];
+  // Studio exports always render at home: this server or the LAN worker.
+  const exportDestination = destination === "lan" ? "lan" : "local";
+  const estimate = estimateRender({ durationSeconds: length, resolution, destination: exportDestination, kind: "export" });
   return (
     <Dialog
       title={`Export ${sequence.name}`}
@@ -1841,6 +1842,7 @@ function ExportDialog({ sequence, length, destination, setDestination, choice, s
                 color,
                 resolution,
                 estimate,
+                destination: exportDestination,
                 frameRate,
                 conversion: converting ? conversion : null,
                 interpolation: converting && conversion === "ai" ? interpolation : null,
@@ -1921,14 +1923,8 @@ function ExportDialog({ sequence, length, destination, setDestination, choice, s
         <dd>about {formatSeconds(estimate.seconds)}</dd>
         <dt>Size</dt>
         <dd>{formatBytes(estimate.sizeBytes)}</dd>
-        <dt>Cloud cost</dt>
-        <dd>{cloudCostText(estimate, destination, "render", length, choice?.model)}</dd>
       </dl>
-      <p className={`fls-note ${chosen.leaves ? "fls-warning" : "muted"}`}>
-        {chosen.leaves
-          ? "The sequence leaves this server for Frameleaf Cloud. Next you choose the model and confirm the cost."
-          : "Rendered on your network. Progress appears in Activity."}
-      </p>
+      <p className="fls-note muted">Exports render on this server or another computer on your home network. Progress appears in Activity.</p>
     </Dialog>
   );
 }
@@ -3140,22 +3136,20 @@ export function Studio({
           title={
             cloudRequest.workload === "interpolation"
               ? "Smooth motion on Frameleaf Cloud"
-              : cloudRequest.kind === "Export"
-                ? "Render on Frameleaf Cloud"
-                : "Restore on Frameleaf Cloud"
+              : "Restore on Frameleaf Cloud"
           }
-          workload={cloudRequest.workload ?? (cloudRequest.kind === "Export" ? "render" : "restoration")}
+          workload={cloudRequest.workload ?? "restoration"}
           {...(() => {
             if (cloudRequest.quantity) return { quantity: cloudRequest.quantity, quantityLabel: cloudRequest.quantityLabel };
-            const seconds = cloudRequest.payload.preview ? 5 : cloudRequest.kind === "Export" ? length : restoreDuration;
+            const seconds = cloudRequest.payload.preview ? 5 : restoreDuration;
             const { quantity, label } = jobQuantity("restoration", { durationSeconds: seconds });
             return { quantity, quantityLabel: label };
           })()}
           preview={cloudRequest.payload.preview}
           summary={project.name}
-          modelId={cloudRequest.modelId ?? jobChoice[cloudRequest.kind === "Export" ? "render" : "restoration"]?.model}
+          modelId={cloudRequest.modelId ?? jobChoice.restoration?.model}
           worker={
-            !cloudRequest.workload && jobChoice[cloudRequest.kind === "Export" ? "render" : "restoration"]?.worker === "lan"
+            !cloudRequest.workload && jobChoice.restoration?.worker === "lan"
               ? lanWorker
               : undefined
           }
@@ -3200,12 +3194,12 @@ export function Studio({
           choice={jobChoice.render}
           setChoice={(value) => setJobChoice((current) => ({ ...current, render: value }))}
           close={() => setDialog(null)}
-          onExport={({ format, color, resolution, estimate, frameRate, conversion, interpolation }) => {
+          onExport={({ format, color, resolution, estimate, destination: exportDestination, frameRate, conversion, interpolation }) => {
             const settings = {
               format,
               color,
               resolution,
-              destination,
+              destination: exportDestination,
               frameRate,
               ...(conversion ? { frameConversion: conversion } : {}),
               ...(interpolation ? { interpolationModel: interpolation.item.id } : {}),
