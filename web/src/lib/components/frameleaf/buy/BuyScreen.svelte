@@ -27,6 +27,7 @@
     formatUsd,
     productKeyMessageKey,
     validateProductKey,
+    licensedDiscount,
   } from '$lib/frameleaf/cloud';
   import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -88,7 +89,8 @@
     void load();
   });
 
-  const discounted = $derived(serverSupporter || !!personal);
+  const discount = $derived(licensedDiscount({ serverLicensed: serverSupporter, personalKey: !!personal }));
+  const discounted = $derived(discount !== null);
 
   const load = async () => {
     products = await getLicenseProducts();
@@ -259,8 +261,10 @@
         {$t('frameleaf_plan_backup_separate', {
           values: { price: formatUsd(CLOUD_BACKUP_PRICING.usdPerTbMonth), minimum: CLOUD_BACKUP_PRICING.minimumTb },
         })}
-        {#if discounted}
+        {#if discount === 'server'}
           {$t('frameleaf_buy_licensed_discount')}
+        {:else if discount === 'personal'}
+          {$t('frameleaf_buy_personal_discount')}
         {/if}
       </p>
     </section>

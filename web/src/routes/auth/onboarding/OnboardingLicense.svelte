@@ -7,7 +7,8 @@
    * through a link. Owner decision on FL-146: prices are US dollars, and cloud backup is not part of
    * a plan.
    */
-  import { cloudPlanPrice, formatUsd } from '$lib/frameleaf/cloud';
+  import { cloudPlanPrice, formatUsd, licensedDiscount } from '$lib/frameleaf/cloud';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { Route } from '$lib/route';
   import { onMount } from 'svelte';
@@ -20,7 +21,12 @@
 
   const products = $derived(cloudManager.products);
   const linked = $derived(cloudManager.status?.state === 'linked');
-  const licensed = $derived(!!cloudManager.license?.entitlements.supporter);
+  const licensed = $derived(
+    licensedDiscount({
+      serverLicensed: !!cloudManager.license?.entitlements.supporter,
+      personalKey: !!authManager.user.license,
+    }) !== null,
+  );
   const plans = $derived(products?.products.filter((product) => product.kind === 'plan') ?? []);
   const chosenPlan = $derived(plans.find((plan) => plan.id === choice) ?? null);
 
