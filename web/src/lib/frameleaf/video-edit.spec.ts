@@ -8,6 +8,7 @@ import {
 } from '@immich/sdk';
 import {
   changeVideoDraft,
+  fastTrimBounds,
   createVideoDraft,
   filmstripTimes,
   flattenSpeedRanges,
@@ -220,6 +221,13 @@ describe('video quick editor edit (FL-113)', () => {
     const adjusted = changeVideoDraft(trimmed, { contrast: 10 }, 24);
     expect(adjusted.edit.legacy).toEqual([]);
     expect(toVideoEdits(adjusted.edit, source)).not.toContainEqual(legacy[0]);
+  });
+
+  it('shows where a fast trim really cuts: from the keyframe at or before the in point', () => {
+    const clip = edit({ start: 5.5, end: 12 });
+    expect(fastTrimBounds([0, 2000, 4000, 6000], clip, 24)).toEqual({ start: 4, end: 10.5 });
+    expect(fastTrimBounds(null, clip, 24)).toBeNull();
+    expect(fastTrimBounds([0], edit({ start: 20, end: 24 }), 24)).toEqual({ start: 0, end: 4 });
   });
 
   it('undoes and redoes, and ignores a change that changes nothing', () => {

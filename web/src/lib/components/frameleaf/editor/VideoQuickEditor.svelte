@@ -62,6 +62,7 @@
     TEXT_SWATCHES,
     changeVideoDraft,
     createVideoDraft,
+    fastTrimBounds,
     filmstripTimes,
     fromVideoEdits,
     initialVideoEdit,
@@ -89,6 +90,7 @@
     TextOverlayPosition,
     VideoDevelopPreset,
     editAsset,
+    getAssetEditKeyframes,
     getAssetEdits,
     removeAssetEdits,
     type AssetResponseDto,
@@ -684,6 +686,19 @@
   const outputLength = $derived(renderedDuration(edit));
   const trimmedLength = $derived(round(edit.end - edit.start, 3));
   const otherEdits = $derived(!!source && toVideoEdits({ ...edit, start: 0, end: duration }, source).length > 0);
+  // The original's keyframes, read once the fast trim is chosen, so the panel shows where it cuts.
+  let keyframesMs = $state<number[] | null>(null);
+  let keyframesRequested = false;
+  $effect(() => {
+    if (edit.trim !== 'fast' || keyframesRequested || !source) {
+      return;
+    }
+    keyframesRequested = true;
+    getAssetEditKeyframes({ id: asset.id })
+      .then((result) => (keyframesMs = result.keyframesMs))
+      .catch(() => (keyframesMs = null));
+  });
+  const fastBounds = $derived(fastTrimBounds(keyframesMs, edit, duration));
 
   const beginSplit = (event: PointerEvent) => {
     event.preventDefault();
@@ -1508,12 +1523,25 @@
           </div>
           <p>
             {#if edit.trim === 'fast'}
-              {$t('frameleaf_video_editor_trim_fast_help', {
-                values: {
-                  from: Math.floor(edit.start / 2) * 2,
-                  to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
-                },
-              })}
+              {#if otherEdits}
+                {$t('frameleaf_video_editor_trim_fast_help', {
+                  values: {
+                    from: Math.floor(edit.start / 2) * 2,
+                    to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
+                  },
+                })}
+              {:else if fastBounds}
+                {$t('frameleaf_video_editor_trim_fast_actual', {
+                  values: { from: preciseTime(fastBounds.start), to: preciseTime(fastBounds.end) },
+                })}
+              {:else}
+                {$t('frameleaf_video_editor_trim_fast_help', {
+                  values: {
+                    from: Math.floor(edit.start / 2) * 2,
+                    to: Math.min(Math.ceil(duration), Math.ceil(edit.end / 2) * 2),
+                  },
+                })}
+              {/if}
               {#if otherEdits}
                 {$t('frameleaf_video_editor_trim_fast_reencode')}
               {/if}

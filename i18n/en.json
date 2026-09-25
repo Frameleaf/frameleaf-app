@@ -7433,6 +7433,7 @@
   "frameleaf_video_editor_tool_trim": "Trim",
   "frameleaf_video_editor_trim_after_speed": " · {length} after speed changes",
   "frameleaf_video_editor_trim_fast": "Fast · keyframes",
+  "frameleaf_video_editor_trim_fast_actual": "Cuts at the keyframes from {from} to {to}, and finishes in seconds without re-encoding.",
   "frameleaf_video_editor_trim_fast_help": "Cuts snap to keyframes, roughly {from}s to {to}s, and finish in seconds without re-encoding.",
   "frameleaf_video_editor_trim_fast_reencode": "Your other edits re-encode the clip, so this cut is frame accurate.",
   "frameleaf_video_editor_trim_in": "Trim in",
