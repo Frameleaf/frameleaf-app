@@ -11,6 +11,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { websocketEvents } from '$lib/stores/websocket';
   import { handlePromiseError } from '$lib/utils';
@@ -22,7 +23,6 @@
     getAllPeople,
     getAssetStatistics,
     getMergeSuggestions,
-    mergePeople,
     PersonMergeVerdict,
     searchPerson,
     setMergeVerdict,
@@ -195,19 +195,27 @@
     }
   };
 
+  // FL-57: "Yes, merge" answers `same`: the server merges (the named person survives) and keeps
+  // the merge in the survivor's correction history.
   const handleAcceptSuggestion = async (suggestion: PersonMergeSuggestionDto) => {
     mergeSuggestionBusy = true;
     try {
-      // The named person's identity survives; between two named/two unnamed people the
-      // order is otherwise arbitrary, matching `POST /people/merge`'s own "first defined
-      // value wins" rule.
-      const [survivor, merged] = suggestion.person.name
-        ? [suggestion.person, suggestion.suggestion]
-        : [suggestion.suggestion, suggestion.person];
-      await mergePeople({ mergePersonDto: { ids: [survivor.id, merged.id] } });
+      const { personId: survivorId, suggestionId: mergedId } = await setMergeVerdict({
+        personMergeVerdictCreateDto: {
+          personId: suggestion.person.id,
+          suggestionId: suggestion.suggestion.id,
+          verdict: PersonMergeVerdict.Same,
+        },
+      });
+      const [survivor, merged] =
+        survivorId === suggestion.person.id
+          ? [suggestion.person, suggestion.suggestion]
+          : [suggestion.suggestion, suggestion.person];
       mergeSuggestions = mergeSuggestions.filter(
-        (entry) => entry.person.id !== merged.id && entry.suggestion.id !== merged.id,
+        (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
       );
+      // as the merge dialog does: open viewers, search chips and person pages follow the merge
+      eventManager.emit('PersonFacesChange', { personIds: [survivorId, mergedId], removedPersonIds: [mergedId] });
       status = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
       await reloadPeople();
     } catch (error) {
@@ -218,7 +226,11 @@
   };
 
   const recordVerdict = async (suggestion: PersonMergeSuggestionDto, verdict: PersonMergeVerdict) => {
-    const pair = { personId: suggestion.person.id, suggestionId: suggestion.suggestion.id };
+    // "ignore" is about the reviewed person alone: the server keeps it as that person paired with itself
+    const pair =
+      verdict === PersonMergeVerdict.Ignore
+        ? { personId: suggestion.person.id, suggestionId: suggestion.person.id }
+        : { personId: suggestion.person.id, suggestionId: suggestion.suggestion.id };
     mergeSuggestionBusy = true;
     try {
       await setMergeVerdict({ personMergeVerdictCreateDto: { ...pair, verdict } });
@@ -230,17 +242,26 @@
     }
 
     const key = suggestionKey(suggestion);
-    mergeSuggestions = mergeSuggestions.filter((entry) => suggestionKey(entry) !== key);
+    const removed =
+      verdict === PersonMergeVerdict.Ignore
+        ? mergeSuggestions.filter(
+            (entry) => entry.person.id === suggestion.person.id || entry.suggestion.id === suggestion.person.id,
+          )
+        : [suggestion];
+    const removedKeys = new Set(removed.map((entry) => suggestionKey(entry)));
+    mergeSuggestions = mergeSuggestions.filter((entry) => !removedKeys.has(suggestionKey(entry)));
     const message =
       verdict === PersonMergeVerdict.Different
         ? $t('frameleaf_people_merge_suggestion_rejected_toast')
-        : $t('frameleaf_people_merge_suggestion_later_toast');
+        : verdict === PersonMergeVerdict.Ignore
+          ? $t('frameleaf_people_merge_suggestion_ignored_toast', { values: { name: nameOf(suggestion.person) } })
+          : $t('frameleaf_people_merge_suggestion_later_toast');
     status = message;
 
     const undo = async () => {
       try {
         await deleteMergeVerdict({ personMergeVerdictDeleteDto: pair });
-        mergeSuggestions = [suggestion, ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key)];
+        mergeSuggestions = [...removed, ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key)];
         status = $t('frameleaf_people_verdict_undone');
       } catch (error) {
         handleError(error, $t('frameleaf_people_verdict_error'));
@@ -304,7 +325,14 @@
       const sameName = await findPeopleWithSameName(name, person.id);
       if (sameName) {
         const renamed = { ...person, name };
-        const entry = { person: renamed, suggestion: sameName, distance: 0 };
+        // a name match, not a face match: there is no reference face to show
+        const entry = {
+          person: renamed,
+          suggestion: sameName,
+          distance: 0,
+          personEvidence: null,
+          suggestionEvidence: null,
+        };
         const key = suggestionKey(entry);
         mergeSuggestions = [entry, ...mergeSuggestions.filter((other) => suggestionKey(other) !== key)];
       }
@@ -356,6 +384,7 @@
         onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
         onReject={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Different)}
         onSkip={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Later)}
+        onIgnore={() => recordVerdict(mergeSuggestions[0], PersonMergeVerdict.Ignore)}
       />
     {/if}
     <p class="pl-status" role="status" aria-live="polite">{status}</p>

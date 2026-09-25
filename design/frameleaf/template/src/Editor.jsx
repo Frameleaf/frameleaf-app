@@ -10,6 +10,17 @@ import { Button, Dialog } from "./App";
 import { Icon } from "./Icon";
 import { media, timecode } from "./media";
 import { durationFor, hasTimeline, normalizeEdit } from "./state.mjs";
+import { CloudJobDialog, useCloudState } from "./CloudJobDialog";
+import { ModelSlider, resolveModelChoice, sliderContext } from "./ModelSlider";
+import { cloudAdmission } from "./frameleaf-cloud-data.mjs";
+import { creditLabel, estimateRange, jobQuantity } from "./cloud-jobs.mjs";
+import {
+  INTERPOLATION_PREVIEW_SECONDS,
+  INTERPOLATION_TRADEOFF,
+  formatDuration,
+  interpolationEstimate,
+  interpolationWork,
+} from "./gpu-model-catalog.mjs";
 import {
   ASPECTS,
   AUTO_TONE,
@@ -50,7 +61,7 @@ const TOOLS = [
   { id: "crop", label: "Crop", icon: "mdiCropRotate" },
   { id: "audio", label: "Audio", icon: "mdiVolumeHigh", video: true },
   { id: "text", label: "Text", icon: "mdiFormatText", video: true },
-  { id: "enhance", label: "Enhance", icon: "mdiAutoFix", video: true },
+  { id: "enhance", label: "Enhance", icon: "mdiAutoFix" },
   { id: "presets", label: "Presets", icon: "mdiImageFilterVintage" },
 ];
 const SWATCHES = ["#ffffff", "#f5d76e", "#7fd1ae", "#ff6b6b", "#101112"];
@@ -485,9 +496,56 @@ function QuickEditor(props) {
     pasteSettings,
     versions = [],
     onApplyVersion,
+    enqueue,
+    finishJob,
+    onOpenCloudSettings,
+    onAddCredit,
   } = props;
   const duration = durationFor(selected);
   const isVideo = hasTimeline(selected);
+  const [cloudJob, setCloudJob] = useState(null);
+  const cloud = useCloudState();
+  const enhanceWorkload = isVideo ? "restoration" : "upscale";
+  // The model slider decides where Enhance runs: white/green stay on this
+  // server, blue goes to Frameleaf Cloud and always asks to confirm the cost.
+  const [enhancePick, setEnhancePick] = useState({});
+  const enhanceChoice = resolveModelChoice(
+    cloud,
+    enhanceWorkload,
+    enhancePick[enhanceWorkload] ?? cloud.processing.defaultModels?.[enhanceWorkload],
+  );
+  const enhanceDestination = enhanceChoice?.runsOn ?? null;
+  const [cloudModel, setCloudModel] = useState(null);
+  // Smooth motion (frame interpolation): preview 5 s first, then the whole
+  // video is saved as a new version; the original stays untouched.
+  const [smoothFps, setSmoothFps] = useState(60);
+  const [smoothPick, setSmoothPick] = useState(null);
+  const [smoothPreviewed, setSmoothPreviewed] = useState(false);
+  const [smoothJob, setSmoothJob] = useState(null);
+  const sourceFps = Number(selected.fps) || 30;
+  const smoothChoice = resolveModelChoice(
+    cloud,
+    "interpolation",
+    smoothPick ?? cloud.processing.defaultModels?.interpolation,
+  );
+  const smoothWork = (preview) =>
+    interpolationWork({
+      durationSeconds: preview ? Math.min(INTERPOLATION_PREVIEW_SECONDS, duration || 5) : duration,
+      sourceFps,
+      targetFps: smoothFps,
+    });
+  const smoothEstimate = smoothChoice
+    ? interpolationEstimate(smoothChoice.item, smoothWork(false), {
+        ...sliderContext(cloud, "interpolation"),
+        band: smoothChoice.runsOn === "cloud" ? "cloud" : undefined,
+      })
+    : null;
+  const smoothSettings = (preview, model) => ({
+    targetFps: smoothFps,
+    sourceFps,
+    model,
+    ...(preview ? { preview: true, seconds: INTERPOLATION_PREVIEW_SECONDS } : { output: "new version" }),
+  });
   const playhead = clamp(session?.playbackPosition || 0, 0, duration);
   const tools = TOOLS.filter((tool) => isVideo || !tool.video);
 
@@ -1785,7 +1843,9 @@ function QuickEditor(props) {
           text: "Balances exposure, white balance and colour scene by scene, so mixed light looks the way you remember it.",
           busy: "Analyzing scenes…",
         },
-      ].map((item) => (
+      ]
+        .filter(() => isVideo)
+        .map((item) => (
         <div className="ed-toggle" key={item.key}>
           <strong>
             <Icon name={item.icon} size={16} /> {item.label}
@@ -1809,6 +1869,161 @@ function QuickEditor(props) {
           )}
         </div>
       ))}
+      <div className="ed-toggle ed-cloud">
+        <strong>
+          <Icon name={isVideo ? "mdiMovieFilterOutline" : "mdiImageSizeSelectLarge"} size={16} />{" "}
+          {isVideo ? "Restore video" : "Enhance & upscale"}
+        </strong>
+        <p>
+          {isVideo
+            ? "Removes noise and compression, then upscales up to 4K."
+            : "Up to 4× larger with face refinement."}{" "}
+          Slide to a heavier model for more detail. Blue models run on Frameleaf Cloud and show
+          the cost before anything is sent.
+        </p>
+        <ModelSlider
+          state={cloud}
+          workload={enhanceWorkload}
+          value={enhanceChoice?.item.id}
+          label={isVideo ? "Restoration model" : "Enhance model"}
+          onChange={(id) => setEnhancePick((current) => ({ ...current, [enhanceWorkload]: id }))}
+        />
+        <Button
+          primary
+          icon={enhanceDestination === "cloud" ? "mdiCloudOutline" : "mdiServerOutline"}
+          disabled={!enhanceDestination}
+          onClick={() => {
+            if (enhanceDestination === "cloud") {
+              setCloudModel(enhanceChoice.item.id);
+              setCloudJob(enhanceWorkload);
+            } else
+              enqueue?.(isVideo ? "AI restoration" : "Upscale", {
+                keepOpen: true,
+                destination: "local",
+                settings: {
+                  ...(isVideo ? { mode: edit.restorationMode } : { upscale: 4 }),
+                  model: enhanceChoice.item.id,
+                },
+              });
+          }}
+        >
+          {enhanceDestination === "cloud"
+            ? `${isVideo ? "Restore" : "Upscale"} on Frameleaf Cloud…`
+            : `${isVideo ? "Restore" : "Upscale"} on this server`}
+        </Button>
+        {enhanceDestination === "cloud" && (
+          <span className="ed-status ed-cloud-credit">
+            {cloudAdmission(cloud, null) ?? `AI credit ${creditLabel(cloud)} · you confirm the cost next`}
+          </span>
+        )}
+        {onOpenCloudSettings && (
+          <button type="button" className="fc-link ed-routing-link" onClick={() => onOpenCloudSettings("cloud-processing")}>
+            Change where this work runs
+          </button>
+        )}
+      </div>
+      {isVideo && (
+        <div className="ed-toggle ed-cloud ed-smooth">
+          <strong>
+            <Icon name="mdiMotionPlayOutline" size={16} /> Smooth motion
+          </strong>
+          <p>
+            Adds in-between frames for a higher frame rate. {INTERPOLATION_TRADEOFF} The result is saved
+            as a new version; the original stays untouched.
+          </p>
+          <div className="ed-segmented" role="radiogroup" aria-label="Target frame rate">
+            {[
+              [60, "60 fps"],
+              [50, "50 fps · PAL-era video"],
+            ].map(([fps, label]) => (
+              <button
+                key={fps}
+                type="button"
+                role="radio"
+                aria-checked={smoothFps === fps}
+                className={smoothFps === fps ? "is-on" : ""}
+                onClick={() => {
+                  setSmoothFps(fps);
+                  setSmoothPreviewed(false);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {sourceFps >= smoothFps ? (
+            <span className="ed-status">This video is already {sourceFps} fps; nothing to add.</span>
+          ) : (
+            <>
+              <ModelSlider
+                state={cloud}
+                workload="interpolation"
+                value={smoothChoice?.item.id}
+                label="Smooth motion model"
+                hideLegend
+                onChange={(id) => {
+                  setSmoothPick(id);
+                  setSmoothPreviewed(false);
+                }}
+              />
+              {smoothEstimate && (
+                <dl className="ed-facts">
+                  <dt>{smoothEstimate.runsOn === "cloud" ? "Estimated cost" : "Estimated time"}</dt>
+                  <dd>
+                    {smoothEstimate.runsOn === "cloud"
+                      ? `about ${estimateRange(smoothEstimate.cost)}`
+                      : `about ${formatDuration(smoothEstimate.seconds)} on ${
+                          smoothEstimate.runsOn === "gpu" ? "your GPU" : "the processor"
+                        }`}
+                  </dd>
+                  <dt>File size</dt>
+                  <dd>
+                    about {smoothEstimate.sizeFactor}× larger ({sourceFps} → {smoothFps} fps)
+                  </dd>
+                </dl>
+              )}
+              <div className="ed-actions">
+                <Button
+                  icon="mdiPlayCircleOutline"
+                  disabled={!smoothChoice}
+                  onClick={() => {
+                    if (smoothChoice.runsOn === "cloud") setSmoothJob({ preview: true });
+                    else {
+                      enqueue?.("Smooth motion preview", {
+                        keepOpen: true,
+                        destination: "local",
+                        settings: smoothSettings(true, smoothChoice.item.id),
+                      });
+                      setSmoothPreviewed(true);
+                    }
+                  }}
+                >
+                  Preview {INTERPOLATION_PREVIEW_SECONDS} seconds{smoothChoice?.runsOn === "cloud" ? "…" : ""}
+                </Button>
+                <Button
+                  primary
+                  icon={smoothChoice?.runsOn === "cloud" ? "mdiCloudOutline" : "mdiServerOutline"}
+                  disabled={!smoothChoice || !smoothPreviewed}
+                  onClick={() => {
+                    if (smoothChoice.runsOn === "cloud") setSmoothJob({ preview: false });
+                    else
+                      enqueue?.("Smooth motion", {
+                        keepOpen: true,
+                        destination: "local",
+                        settings: smoothSettings(false, smoothChoice.item.id),
+                      });
+                  }}
+                >
+                  Smooth whole video{smoothChoice?.runsOn === "cloud" ? "…" : ""}
+                </Button>
+              </div>
+              {!smoothPreviewed && smoothChoice && (
+                <span className="ed-status">Check the {INTERPOLATION_PREVIEW_SECONDS}-second preview first.</span>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <p className="ed-note">Preview · sample data</p>
     </div>
   );
@@ -2152,6 +2367,97 @@ function QuickEditor(props) {
       <div className="ed-live" role="status" aria-live="polite">
         {announce}
       </div>
+      {cloudJob && (
+        <CloudJobDialog
+          title={cloudJob === "restoration" ? "Restore on Frameleaf Cloud" : "Upscale on Frameleaf Cloud"}
+          workload={cloudJob}
+          {...(() => {
+            const { quantity, label } = jobQuantity(cloudJob, {
+              durationSeconds: duration,
+              count: 1,
+            });
+            return { quantity, quantityLabel: cloudJob === "upscale" ? "1 image" : label };
+          })()}
+          summary={selected.name}
+          modelId={cloudModel}
+          onRunLocal={(model) =>
+            enqueue?.(cloudJob === "restoration" ? "AI restoration" : "Upscale", {
+              keepOpen: true,
+              destination: "local",
+              settings: {
+                ...(cloudJob === "restoration" ? { mode: edit.restorationMode } : { upscale: 4 }),
+                model,
+              },
+            })
+          }
+          onSubmit={(meta) =>
+            enqueue?.(cloudJob === "restoration" ? "AI restoration" : "Upscale", {
+              cloud: meta,
+              keepOpen: true,
+              settings: cloudJob === "restoration" ? { mode: edit.restorationMode } : { upscale: 4 },
+            })
+          }
+          onFinish={finishJob}
+          onOpenSettings={(section) => {
+            setCloudJob(null);
+            onOpenCloudSettings?.(section);
+          }}
+          onAddCredit={
+            onAddCredit &&
+            (() => {
+              setCloudJob(null);
+              onAddCredit();
+            })
+          }
+          close={() => setCloudJob(null)}
+        />
+      )}
+      {smoothJob && smoothChoice && (
+        <CloudJobDialog
+          title={smoothJob.preview ? "Preview smooth motion on Frameleaf Cloud" : "Smooth motion on Frameleaf Cloud"}
+          workload="interpolation"
+          {...(() => {
+            const work = smoothWork(smoothJob.preview);
+            const seconds = smoothJob.preview ? Math.min(INTERPOLATION_PREVIEW_SECONDS, duration || 5) : duration;
+            return {
+              quantity: work.units,
+              quantityLabel: `${smoothJob.preview ? `${Math.round(seconds)} s preview` : formatDuration(seconds)} · ${sourceFps} → ${smoothFps} fps`,
+            };
+          })()}
+          preview={smoothJob.preview}
+          summary={selected.name}
+          modelId={smoothChoice.item.id}
+          onRunLocal={(model) => {
+            enqueue?.(smoothJob.preview ? "Smooth motion preview" : "Smooth motion", {
+              keepOpen: true,
+              destination: "local",
+              settings: smoothSettings(smoothJob.preview, model),
+            });
+            if (smoothJob.preview) setSmoothPreviewed(true);
+          }}
+          onSubmit={(meta) => {
+            if (smoothJob.preview) setSmoothPreviewed(true);
+            return enqueue?.(smoothJob.preview ? "Smooth motion preview" : "Smooth motion", {
+              cloud: meta,
+              keepOpen: true,
+              settings: smoothSettings(smoothJob.preview, meta.modelId),
+            });
+          }}
+          onFinish={finishJob}
+          onOpenSettings={(section) => {
+            setSmoothJob(null);
+            onOpenCloudSettings?.(section);
+          }}
+          onAddCredit={
+            onAddCredit &&
+            (() => {
+              setSmoothJob(null);
+              onAddCredit();
+            })
+          }
+          close={() => setSmoothJob(null)}
+        />
+      )}
     </dialog>
   );
 }
@@ -2175,7 +2481,16 @@ function StudioEditor(props) {
     back,
     openAsset,
     notify,
+    finishJob,
+    onOpenCloudSettings,
+    onAddCredit,
   } = props;
+  const [cloudKind, setCloudKind] = useState(null);
+  /** Local jobs queue straight away; Frameleaf Cloud jobs confirm model, cost and consent first. */
+  const submitJob = (kind) => {
+    if (destination === "cloud") setCloudKind(kind);
+    else enqueue(kind);
+  };
   const duration = durationFor(selected);
   const [tab, setTab] = useState("Trim");
   const [workspace, setWorkspace] = useState("Edit");
@@ -2457,13 +2772,13 @@ function StudioEditor(props) {
               onChange={(e) => setDestination(e.target.value)}
             >
               <option value="local">Home workstation · Local GPU</option>
-              <option value="runpod">RunPod · Cloud GPU</option>
+              <option value="cloud">Frameleaf Cloud</option>
             </select>
           </label>
           <p className="muted">
             {destination === "local"
               ? "Media stays on your network."
-              : "Cloud media transfer requires your explicit destination choice."}
+              : "Frameleaf Cloud asks you to confirm the model, cost and what leaves this server for every job."}
           </p>
           <Button primary onClick={() => setModal("restore")}>
             Preview 5 seconds
@@ -2730,7 +3045,7 @@ function StudioEditor(props) {
               onChange={(e) => setDestination(e.target.value)}
             >
               <option value="local">Home workstation · Local GPU</option>
-              <option value="runpod">RunPod · Cloud GPU</option>
+              <option value="cloud">Frameleaf Cloud</option>
             </select>
           </label>
           <p>3840 × 2160 · Original channels · Revision snapshot</p>
@@ -2739,7 +3054,7 @@ function StudioEditor(props) {
             <Button
               primary
               onClick={() => {
-                enqueue("Export");
+                submitJob("Export");
                 setModal(null);
               }}
             >
@@ -2764,14 +3079,14 @@ function StudioEditor(props) {
           </div>
           <p>
             5-second sample · 2× upscale · 4K cap ·{" "}
-            {destination === "local" ? "Home workstation" : "RunPod"}
+            {destination === "local" ? "Home workstation" : "Frameleaf Cloud"}
           </p>
           <div className="dialog-actions">
             <Button onClick={() => setModal(null)}>Adjust settings</Button>
             <Button
               primary
               onClick={() => {
-                enqueue("AI restoration");
+                submitJob("AI restoration");
                 setModal(null);
               }}
             >
@@ -2779,6 +3094,33 @@ function StudioEditor(props) {
             </Button>
           </div>
         </Dialog>
+      )}
+      {cloudKind && (
+        <CloudJobDialog
+          title={cloudKind === "Export" ? "Render on Frameleaf Cloud" : "Restore on Frameleaf Cloud"}
+          workload={cloudKind === "Export" ? "render" : "restoration"}
+          {...(() => {
+            const { quantity, label } = jobQuantity("restoration", {
+              durationSeconds: Math.max(0, (edit.end ?? duration) - (edit.start ?? 0)),
+            });
+            return { quantity, quantityLabel: label };
+          })()}
+          summary={selected.name}
+          onSubmit={(meta) => enqueue(cloudKind, { cloud: meta, keepOpen: true })}
+          onFinish={finishJob}
+          onOpenSettings={(section) => {
+            setCloudKind(null);
+            onOpenCloudSettings?.(section);
+          }}
+          onAddCredit={
+            onAddCredit &&
+            (() => {
+              setCloudKind(null);
+              onAddCredit();
+            })
+          }
+          close={() => setCloudKind(null)}
+        />
       )}
       {modal === "review" && (
         <Dialog title="Project review" close={() => setModal(null)}>
@@ -2885,7 +3227,7 @@ export function Processing({ jobs, setJobs, openStudio }) {
             <h3>{job.name}</h3>
             <p>
               {job.kind} ·{" "}
-              {job.destination === "local" ? "Home workstation" : "RunPod"} ·
+              {job.destination === "local" ? "Home workstation" : "Frameleaf Cloud"} ·
               Simulated
             </p>
             {job.snapshot && (
@@ -3006,16 +3348,17 @@ export function Workers({ destination, setDestination, notify, openActivity }) {
       <article className="worker">
         <Icon name="mdiCloudOutline" size={34} />
         <div>
-          <h2>RunPod</h2>
-          <p>Stopped</p>
+          <h2>Frameleaf Cloud</h2>
+          <p>Optional · needs a Frameleaf account and AI credit</p>
           <p className="muted">
-            Cloud processing is used only when selected for a job.
+            Used only when you choose it for a job. Each job shows its model,
+            cost and what leaves this server before anything is sent.
           </p>
           <Button
             onClick={() => {
-              setDestination("runpod");
+              setDestination("cloud");
               notify(
-                "RunPod is now the saved default destination for simulated jobs.",
+                "Frameleaf Cloud is now the default destination. Every job still asks before it runs.",
               );
             }}
           >
@@ -3030,7 +3373,7 @@ export function Workers({ destination, setDestination, notify, openActivity }) {
           onChange={(e) => setDestination(e.target.value)}
         >
           <option value="local">Compatible local worker</option>
-          <option value="runpod">RunPod</option>
+          <option value="cloud">Frameleaf Cloud</option>
         </select>
       </label>
       <Button primary icon="mdiPlus" onClick={() => setForm(true)}>

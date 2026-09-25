@@ -13,7 +13,9 @@ import {
   infoDetailRows,
   locationLabel,
   osmLink,
+  ownerLine,
   sensitivityReview,
+  tagSuggestions,
   validCoordinate,
 } from '$lib/frameleaf/info-panel';
 
@@ -336,5 +338,45 @@ describe('infoDetailRows', () => {
     expect(ids).not.toContain('exposure');
     expect(rows.find((row) => row.id === 'video')?.value).toBe('1:35');
     expect(rows.find((row) => row.id === 'image')?.value).not.toContain('MP');
+  });
+});
+
+describe('tagSuggestions (V-25)', () => {
+  const tags = [
+    { id: 't1', value: 'Trips' },
+    { id: 't2', value: 'Trips/Rockies' },
+    { id: 't3', value: 'Family' },
+  ];
+
+  it('offers the tags the item does not have, filtered by the typed text', () => {
+    expect(tagSuggestions(tags, ['t1'], '').map((option) => option.id)).toEqual(['t2', 't3']);
+    expect(tagSuggestions(tags, [], 'rock')).toEqual([
+      { id: 't2', label: 'Trips/Rockies', create: false },
+      { id: 'rock', label: 'rock', create: true },
+    ]);
+  });
+
+  it('offers to create a tag the text does not name', () => {
+    expect(tagSuggestions(tags, [], ' Hiking ').at(-1)).toEqual({ id: 'Hiking', label: 'Hiking', create: true });
+    expect(tagSuggestions(tags, [], 'family').some((option) => option.create)).toBe(false);
+  });
+
+  it('caps the list at eight', () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({ id: `id${index}`, value: `Tag ${index}` }));
+    expect(tagSuggestions(many, [], 'tag').filter((option) => !option.create)).toHaveLength(8);
+  });
+});
+
+describe('ownerLine (V-27)', () => {
+  const item = { ownerId: 'someone', owner: { name: 'Avery' } } as Parameters<typeof ownerLine>[0];
+
+  it("names the owner of someone else's item, and nobody for one's own", () => {
+    expect(ownerLine(item, 'me')).toEqual({ kind: 'owned', name: 'Avery' });
+    expect(ownerLine(item, 'someone')).toBeNull();
+    expect(ownerLine({ ownerId: 'someone' } as never, 'me')).toBeNull();
+  });
+
+  it('says who shared an item seen through a shared album', () => {
+    expect(ownerLine(item, 'me', { sharedAlbum: true })).toEqual({ kind: 'shared', name: 'Avery' });
   });
 });

@@ -20,6 +20,7 @@ import {
   EnrichmentItemState,
   EnrichmentStaleReason,
   ImmichWorker,
+  JobName,
   MlWorkload,
   Permission,
   StorageFolder,
@@ -29,6 +30,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -143,6 +145,7 @@ export class VideoMomentIndexService {
     private people: PersonRepository,
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
+    private jobs: JobRepository,
   ) {
     this.logger.setContext(VideoMomentIndexService.name);
   }
@@ -300,11 +303,18 @@ export class VideoMomentIndexService {
               captionIdentityHash: names,
               captionDestinationId: selection.destinationId,
             },
+            // FL-57: a face correction or rename while captioning means these may name the wrong people
+            async () =>
+              identityHash((await this.knownPersons(assetId, frames.ownerId)).map(({ name }) => name)) === names,
           )
         : 0;
 
     if (claimLost) {
       return CLAIM_LOST;
+    }
+    if (written === 'identity-changed') {
+      // nothing was published; the plan's retry captions the frames again with the current names
+      return { state: EnrichmentItemState.Failed, reasonKey: 'identity-changed' };
     }
     if (captions.length > 0 && written === 0) {
       // The original was replaced while the frames were being captioned; a retry cuts them again.
@@ -335,6 +345,8 @@ export class VideoMomentIndexService {
       throw new BadRequestException('This video has no frames to choose a cover from yet');
     }
     await this.moments.setCover(assetId, dto.timestampMs, auth.user.id);
+    // The video's own thumbnail follows the chosen cover (or the automatic pick again when reset).
+    await this.jobs.queue({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
     return this.present(assetId);
   }
 

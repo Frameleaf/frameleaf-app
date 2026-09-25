@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetFileType } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, SourceType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -253,61 +253,287 @@ describe(PersonRepository.name, () => {
       const { person: to } = await ctx.newPerson({ ownerId: user.id });
       const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: from.personGroupId });
 
-      await expect(sut.getCorrections(from.personGroupId)).resolves.toEqual([]);
+      await expect(sut.reassignFace(assetFace.id, to.personGroupId)).resolves.toBe(1);
 
-      const changed = await sut.reassignFace(assetFace.id, to.personGroupId);
-      expect(changed).toBe(1);
-
-      const [row] = await sut.getCorrections(to.personGroupId);
-      expect(row).toEqual(
-        expect.objectContaining({ id: assetFace.id, assetId: asset.id, correctedAt: expect.any(Date) }),
-      );
+      const row = await ctx.database
+        .selectFrom('asset_face')
+        .select(['personGroupId', 'correctedAt'])
+        .where('id', '=', assetFace.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ personGroupId: to.personGroupId, correctedAt: expect.any(Date) });
     });
   });
 
-  describe('getCorrections', () => {
-    it('should only return faces that were manually corrected onto this person', async () => {
+  describe('face correction history (FL-57)', () => {
+    it("anchors a decision to the face's photo, checksum and normalized box, and pages the owner's history", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
-      const { person } = await ctx.newPerson({ ownerId: user.id });
-      // Untouched, machine-learning-only assignment: not a correction.
-      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const { person: from } = await ctx.newPerson({ ownerId: user.id, name: 'Before' });
+      const { person: to } = await ctx.newPerson({ ownerId: user.id, name: 'After' });
+      const faces = [];
+      for (let index = 0; index < 3; index++) {
+        const { assetFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: to.personGroupId,
+          imageWidth: 200,
+          imageHeight: 100,
+          boundingBoxX1: 20 * index,
+          boundingBoxY1: 10,
+          boundingBoxX2: 20 * index + 40,
+          boundingBoxY2: 50,
+        });
+        faces.push(assetFace);
+      }
 
-      await expect(sut.getCorrections(person.personGroupId)).resolves.toEqual([]);
+      for (const face of faces) {
+        await sut.recordFaceCorrections([
+          {
+            ownerId: user.id,
+            actorId: user.id,
+            action: 'reassign',
+            faceId: face.id,
+            fromPersonId: from.personGroupId,
+            toPersonId: to.personGroupId,
+            fromPersonName: 'Before',
+            toPersonName: 'After',
+          },
+        ]);
+      }
+      const [merge] = await sut.recordFaceCorrections([
+        {
+          ownerId: user.id,
+          actorId: user.id,
+          action: 'merge',
+          fromPersonId: from.personGroupId,
+          toPersonId: to.personGroupId,
+        },
+      ]);
+      expect(merge).toEqual(expect.objectContaining({ faceId: null, assetId: null, boxX1: null }));
+
+      const first = await sut.getFaceCorrections(user.id, to.personGroupId, { take: 2, skip: 0 });
+      expect(first.hasNextPage).toBe(true);
+      expect(first.items.map(({ action }) => action)).toEqual(['merge', 'reassign']);
+      const second = await sut.getFaceCorrections(user.id, to.personGroupId, { take: 2, skip: 2 });
+      expect(second.hasNextPage).toBe(false);
+      const oldest = second.items.at(-1)!;
+      expect(oldest).toEqual(
+        expect.objectContaining({
+          faceId: faces[0].id,
+          assetId: asset.id,
+          assetChecksum: asset.checksum,
+          boxX1: 0,
+          boxY1: 0.1,
+          boxX2: 0.2,
+          boxY2: 0.5,
+          undoneAt: null,
+        }),
+      );
+
+      // the history of the person the faces left includes them too; another owner sees none of it
+      await expect(sut.getFaceCorrections(user.id, from.personGroupId, { take: 10 })).resolves.toEqual(
+        expect.objectContaining({ items: expect.arrayContaining([expect.objectContaining({ id: oldest.id })]) }),
+      );
+      await expect(sut.getFaceCorrections(other.id, to.personGroupId, { take: 10 })).resolves.toEqual({
+        items: [],
+        hasNextPage: false,
+      });
+      await expect(sut.getFaceCorrection(other.id, oldest.id)).resolves.toBeUndefined();
+
+      // undo writes the face at the revision it was checked at, together with the history entry
+      const revisionOf = async (id: string) =>
+        (await ctx.database.selectFrom('asset_face').select('updateId').where('id', '=', id).executeTakeFirstOrThrow())
+          .updateId;
+      const checked = await revisionOf(faces[0].id);
+      // another view corrects the face first: the undo leaves it alone and nothing is marked undone
+      await ctx.database.updateTable('asset_face').set({ boundingBoxX1: 1 }).where('id', '=', faces[0].id).execute();
+      await expect(
+        sut.undoFaceCorrection(oldest.id, { id: faces[0].id, expectedRevision: checked }, { personGroupId: null }),
+      ).resolves.toBe('face-changed');
+      await expect(sut.getFaceCorrection(user.id, oldest.id)).resolves.toEqual(
+        expect.objectContaining({ undoneAt: null }),
+      );
+      await expect(
+        ctx.database.selectFrom('asset_face').select('personGroupId').where('id', '=', faces[0].id).executeTakeFirst(),
+      ).resolves.toEqual({ personGroupId: to.personGroupId });
+
+      const current = await revisionOf(faces[0].id);
+      await expect(
+        sut.undoFaceCorrection(
+          oldest.id,
+          { id: faces[0].id, expectedRevision: current },
+          { personGroupId: from.personGroupId },
+        ),
+      ).resolves.toBe('undone');
+      await expect(
+        ctx.database.selectFrom('asset_face').select('personGroupId').where('id', '=', faces[0].id).executeTakeFirst(),
+      ).resolves.toEqual({ personGroupId: from.personGroupId });
+      await expect(
+        sut.undoFaceCorrection(
+          oldest.id,
+          { id: faces[0].id, expectedRevision: await revisionOf(faces[0].id) },
+          { personGroupId: from.personGroupId },
+        ),
+      ).resolves.toBe('already-undone');
     });
 
-    it('should order corrections most recent first and stop at deleted faces', async () => {
+    it('offers the decisions about a face that no longer exists, newest first, to the face that replaces it', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
       const { person } = await ctx.newPerson({ ownerId: user.id });
-      const { person: elsewhere } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: person.personGroupId,
+        imageWidth: 100,
+        imageHeight: 100,
+        boundingBoxX1: 10,
+        boundingBoxY1: 10,
+        boundingBoxX2: 30,
+        boundingBoxY2: 30,
+      });
+      await sut.recordFaceCorrections([
+        {
+          ownerId: user.id,
+          actorId: user.id,
+          action: 'unassign',
+          faceId: assetFace.id,
+          fromPersonId: person.personGroupId,
+        },
+      ]);
+      await sut.recordFaceCorrections([
+        {
+          ownerId: user.id,
+          actorId: user.id,
+          action: 'reassign',
+          faceId: assetFace.id,
+          toPersonId: person.personGroupId,
+        },
+      ]);
+      await expect(sut.getOrphanedFaceCorrections(asset.id)).resolves.toEqual([]);
 
-      const { assetFace: older } = await ctx.newAssetFace({
-        assetId: asset.id,
-        personGroupId: elsewhere.personGroupId,
-      });
-      const { assetFace: newer } = await ctx.newAssetFace({
-        assetId: asset.id,
-        personGroupId: elsewhere.personGroupId,
-      });
-      const { assetFace: deleted } = await ctx.newAssetFace({
-        assetId: asset.id,
-        personGroupId: elsewhere.personGroupId,
-      });
+      await sut.deleteAssetFace(assetFace.id);
+      const [latest] = await sut.getOrphanedFaceCorrections(asset.id);
+      expect(latest).toEqual(expect.objectContaining({ action: 'reassign', faceId: assetFace.id }));
 
-      await sut.reassignFace(older.id, person.personGroupId);
-      await sut.reassignFace(newer.id, person.personGroupId);
-      await sut.reassignFace(deleted.id, person.personGroupId);
+      const { assetFace: replacement } = await ctx.newAssetFace({ assetId: asset.id });
+      await sut.reanchorFaceCorrections(assetFace.id, replacement.id);
+      await expect(sut.getOrphanedFaceCorrections(asset.id)).resolves.toEqual([]);
+      const { items } = await sut.getFaceCorrections(user.id, person.personGroupId, { take: 10 });
+      expect(items.every(({ faceId }) => faceId === replacement.id)).toBe(true);
+    });
+
+    it('keeps faces with an explicit decision through a forced detection rebuild, unless the original changed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: replaced } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace: plain } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const { assetFace: corrected } = await ctx.newAssetFace({ assetId: asset.id });
+      const { assetFace: removed } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const { assetFace: stale } = await ctx.newAssetFace({ assetId: replaced.id });
+      await sut.reassignFace(corrected.id, person.personGroupId);
+      await sut.reassignFace(stale.id, person.personGroupId);
+      await sut.softDeleteAssetFaces(removed.id);
+      for (const faceId of [corrected.id, removed.id, stale.id]) {
+        await sut.recordFaceCorrections([{ ownerId: user.id, actorId: user.id, action: 'reassign', faceId }]);
+      }
       await ctx.database
-        .updateTable('asset_face')
-        .set({ deletedAt: new Date() })
-        .where('id', '=', deleted.id)
+        .updateTable('asset')
+        .set({ checksum: Buffer.from('a replaced original') })
+        .where('id', '=', replaced.id)
         .execute();
 
-      const corrections = await sut.getCorrections(person.personGroupId);
-      expect(corrections.map((face) => face.id)).toEqual([newer.id, older.id]);
+      await sut.deleteFaces({ sourceType: SourceType.MachineLearning });
+
+      const left = await ctx.database
+        .selectFrom('asset_face')
+        .select('id')
+        .where('assetId', 'in', [asset.id, replaced.id])
+        .execute();
+      expect(left.map(({ id }) => id).toSorted()).toEqual([corrected.id, removed.id].toSorted());
+      expect(left.some(({ id }) => id === plain.id)).toBe(false);
+    });
+
+    it('keeps corrected and merged faces with their person through a forced recognition rebuild', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { person: merged } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace: plain } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const { assetFace: corrected } = await ctx.newAssetFace({ assetId: asset.id });
+      const { assetFace: fromMerge } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: merged.personGroupId,
+      });
+      await sut.reassignFace(corrected.id, person.personGroupId);
+      await sut.reassignFaces({
+        oldPersonGroupId: merged.personGroupId,
+        newPersonGroupId: person.personGroupId,
+        ownerId: user.id,
+        corrected: true,
+      });
+
+      await sut.unassignFaces({ sourceType: SourceType.MachineLearning });
+
+      const rows = await ctx.database
+        .selectFrom('asset_face')
+        .select(['id', 'personGroupId'])
+        .where('assetId', '=', asset.id)
+        .execute();
+      const byId = new Map(rows.map(({ id, personGroupId }) => [id, personGroupId]));
+      expect(byId.get(plain.id)).toBeNull();
+      expect(byId.get(corrected.id)).toBe(person.personGroupId);
+      expect(byId.get(fromMerge.id)).toBe(person.personGroupId);
+
+      // recognition only takes a face that is still undecided
+      await expect(
+        sut.reassignFaces({ faceIds: [corrected.id], newPersonGroupId: merged.personGroupId, onlyUndecided: true }),
+      ).resolves.toBe(0);
+      await expect(
+        sut.reassignFaces({ faceIds: [plain.id], newPersonGroupId: merged.personGroupId, onlyUndecided: true }),
+      ).resolves.toBe(1);
+    });
+
+    it("shows only the viewer's own, visible, unlocked, untrashed media as evidence", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: own } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      const { asset: foreign } = await ctx.newAsset({ ownerId: other.id });
+
+      const visible = await sut.getVisibleEvidenceAssetIds(user.id, [
+        own.id,
+        archived.id,
+        locked.id,
+        trashed.id,
+        foreign.id,
+      ]);
+      expect([...visible].toSorted()).toEqual([own.id, archived.id].toSorted());
+    });
+
+    it('picks the featured face as the reference face only when it may be shown', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: own } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace: lockedFace } = await ctx.newAssetFace({
+        assetId: locked.id,
+        personGroupId: person.personGroupId,
+      });
+      const { assetFace: ownFace } = await ctx.newAssetFace({ assetId: own.id, personGroupId: person.personGroupId });
+      await sut.update({ ownerId: user.id, personGroupId: person.personGroupId, faceAssetId: lockedFace.id });
+
+      await expect(sut.getReferenceFaces(user.id, [person.personGroupId])).resolves.toEqual([
+        expect.objectContaining({ personGroupId: person.personGroupId, faceId: ownFace.id, assetId: own.id }),
+      ]);
     });
   });
 
@@ -363,7 +589,7 @@ describe(PersonRepository.name, () => {
       await expect(pairsOf()).resolves.toEqual([`${a}:${b}`, `${a}:${c}`, `${b}:${c}`]);
     });
 
-    it('should drop verdicts naming a person the owner no longer has (FL-57)', async () => {
+    it('should drop verdicts naming a person the owner no longer has and no anchor face (FL-57)', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const { user: other } = await ctx.newUser();
@@ -382,15 +608,97 @@ describe(PersonRepository.name, () => {
       await sut.setMergeVerdict(other.id, x, y, 'different');
       await sut.delete([a], user.id);
 
-      await expect(sut.deleteOrphanedMergeVerdicts(user.id)).resolves.toBe(1);
+      await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(1);
       const remaining = await sql<{ personId: string }>`
         SELECT "personId" FROM immich_fork.person_merge_verdict WHERE "ownerId" IN (${user.id}::uuid, ${other.id}::uuid)
         ORDER BY "personId"
       `.execute(ctx.database);
       expect(remaining.rows.map(({ personId }) => personId).toSorted()).toEqual([b, x].toSorted());
 
-      await ctx.database.deleteFrom('user').where('id', '=', other.id).execute();
-      await expect(sut.deleteOrphanedMergeVerdicts(other.id)).resolves.toBe(1);
+      await sut.deleteForkPeopleData(other.id);
+      await expect(sut.reanchorMergeVerdicts(other.id)).resolves.toBe(0);
+    });
+
+    it('should keep an answer with its people when recognition rebuilds them, and drop it once they are merged (FL-57)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const newPersonWithFace = async () => {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id });
+        await sut.reassignFaces({ faceIds: [assetFace.id], newPersonGroupId: person.personGroupId! });
+        return { personGroupId: person.personGroupId!, faceId: assetFace.id };
+      };
+      const [first, second] = [await newPersonWithFace(), await newPersonWithFace()].toSorted((l, r) =>
+        l.personGroupId.localeCompare(r.personGroupId),
+      );
+      await sut.setMergeVerdict(user.id, first.personGroupId, second.personGroupId, 'different');
+      await sut.setMergeVerdict(user.id, first.personGroupId, first.personGroupId, 'ignore');
+
+      // a forced recognition run takes the faces off, deletes the empty people ...
+      await sut.unassignFaces({ sourceType: SourceType.MachineLearning });
+      await sut.delete([first.personGroupId, second.personGroupId], user.id);
+      await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(0);
+      const count = async () =>
+        (
+          await sql<{ count: number }>`
+            SELECT count(*)::int AS count FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
+          `.execute(ctx.database)
+        ).rows[0].count;
+      await expect(count()).resolves.toBe(2);
+
+      // ... and clusters them into new people: the answers follow their anchor faces
+      const rebuilt = async ({ faceId }: { faceId: string }) => {
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: faceId });
+        await sut.reassignFaces({ faceIds: [faceId], newPersonGroupId: person.personGroupId! });
+        return person.personGroupId!;
+      };
+      const [p, q] = [await rebuilt(first), await rebuilt(second)];
+      await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(0);
+      const rows = await sql<{ personId: string; suggestionId: string; verdict: string }>`
+        SELECT "personId", "suggestionId", verdict FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
+        ORDER BY verdict
+      `.execute(ctx.database);
+      expect(rows.rows).toEqual([
+        { personId: [p, q].toSorted()[0], suggestionId: [p, q].toSorted()[1], verdict: 'different' },
+        { personId: p, suggestionId: p, verdict: 'ignore' },
+      ]);
+
+      // once both anchors belong to one person the pair answer goes; "ignore" stays with the person
+      await sut.reassignFaces({ oldPersonGroupId: q, newPersonGroupId: p, corrected: true });
+      await sut.delete([q], user.id);
+      await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(1);
+      await expect(count()).resolves.toBe(1);
+    });
+
+    it('should never let "later" replace "different", and suggest nobody with an ignored person (FL-57)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const embedding = newEmbedding();
+      const ids: string[] = [];
+      for (let index = 0; index < 3; index++) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id });
+        ids.push(person.personGroupId!);
+      }
+      const [a, b, c] = ids.toSorted();
+
+      await sut.setMergeVerdict(user.id, a, b, 'different');
+      await expect(sut.setMergeVerdict(user.id, a, b, 'later')).resolves.toEqual(
+        expect.objectContaining({ verdict: 'different' }),
+      );
+
+      await sut.setMergeVerdict(user.id, c, c, 'ignore');
+      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toEqual([]);
+      await expect(sut.deleteMergeVerdict(user.id, c, c)).resolves.toBe(true);
+      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(2);
+
+      await expect(
+        sql`INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
+            VALUES (${user.id}::uuid, ${a}::uuid, ${b}::uuid, 'ignore')`.execute(ctx.database),
+      ).rejects.toThrow();
     });
 
     it("should not apply one owner's verdict to another owner's suggestions (FL-57)", async () => {

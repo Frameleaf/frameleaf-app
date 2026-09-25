@@ -1,4 +1,4 @@
-import { resolveTrashNeighbours } from './trash-neighbours';
+import { resolveTrashNeighbours, survivingTrashNeighbours } from './trash-neighbours';
 
 const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
@@ -38,5 +38,31 @@ describe('resolveTrashNeighbours', () => {
       previousAsset: undefined,
     });
     expect(loadAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe('survivingTrashNeighbours', () => {
+  const trash = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }];
+
+  it('prefers the neighbours the viewer already looked up', () => {
+    expect(survivingTrashNeighbours(trash, 'c', { nextAsset: { id: 'd' }, previousAsset: { id: 'b' } }, ['c'])).toEqual(
+      ['d', 'b'],
+    );
+  });
+
+  it('skips neighbours that left the trash in the same change', () => {
+    expect(
+      survivingTrashNeighbours(trash, 'c', { nextAsset: { id: 'd' }, previousAsset: { id: 'b' } }, ['c', 'd', 'b']),
+    ).toEqual(['e', 'a']);
+  });
+
+  it('uses the trash order when the neighbour lookup has not finished', () => {
+    expect(survivingTrashNeighbours(trash, 'e', {}, ['e'])).toEqual(['d']);
+    expect(survivingTrashNeighbours(trash, 'a', {}, ['a', 'b'])).toEqual(['c']);
+  });
+
+  it('has nothing to show when everything left, or the item is no longer listed and nothing is known', () => {
+    expect(survivingTrashNeighbours([{ id: 'a' }], 'a', {}, ['a'])).toEqual([]);
+    expect(survivingTrashNeighbours(trash, 'z', {}, ['z'])).toEqual([]);
   });
 });

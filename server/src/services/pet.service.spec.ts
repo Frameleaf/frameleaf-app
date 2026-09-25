@@ -1,9 +1,17 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { Mock } from 'vitest';
 import { AuthSession } from 'src/database.js';
-import { PetObservationSource, PetObservationState, PetSpecies } from 'src/enum.js';
+import {
+  JobName,
+  MlDestinationKind,
+  PetObservationSource,
+  PetObservationState,
+  PetRecognitionUnavailableReason,
+  PetSpecies,
+} from 'src/enum.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
-import { PET_RECOGNITION_UNAVAILABLE_REASON, PetService } from 'src/services/pet.service.js';
+import { PetRecognitionService, PetRecognitionStatus } from 'src/services/pet-recognition.service.js';
+import { PetService } from 'src/services/pet.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -45,16 +53,29 @@ const observation = (overrides: Record<string, unknown> = {}) => ({
   boundingBoxY2: null,
   imageWidth: null,
   imageHeight: null,
+  sourceChecksum: null,
+  staleAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   ...overrides,
 });
+
+const checksum = Buffer.from('current original');
+const unavailable: PetRecognitionStatus = {
+  available: false,
+  reason: PetRecognitionUnavailableReason.WorkloadNotRouted,
+  detail: 'no destination is routed for pet-recognition',
+  destination: null,
+  hasConfirmedPhotos: true,
+  run: null,
+};
 
 const reviewCandidate = (overrides: Record<string, unknown> = {}) => ({
   id: candidateId,
   score: 0.61,
   petId,
   assetId,
+  assetChecksum: Buffer.from('current original'),
   detectionId,
   detectedSpecies: 'cat',
   modelName: 'pet-v1',
@@ -92,6 +113,7 @@ describe(PetService.name, () => {
   let sut: PetService;
   let mocks: ServiceMocks;
   let petRepository: PetRepository;
+  let petRecognition: PetRecognitionService;
 
   beforeEach(() => {
     mocks = getMocks();
@@ -112,13 +134,26 @@ describe(PetService.name, () => {
       mergeInto: vi.fn(),
       getCandidates: vi.fn().mockResolvedValue([]),
       getCandidateById: vi.fn().mockResolvedValue(reviewCandidate()),
-      deleteCandidatesForDetection: vi.fn(),
+      deleteCandidates: vi.fn(),
       getDetectionsForAsset: vi.fn().mockResolvedValue([]),
       replaceDetections: vi.fn(),
       upsertCandidates: vi.fn(),
+      getOwnedAssetChecksum: vi.fn().mockResolvedValue(checksum),
+      getObservationsForAsset: vi.fn().mockResolvedValue([]),
     } as unknown as PetRepository;
+    petRecognition = {
+      getStatus: vi.fn().mockResolvedValue(unavailable),
+      startRun: vi.fn(),
+      cancelRun: vi.fn(),
+    } as unknown as PetRecognitionService;
 
-    sut = new PetService(mocks.access as never, petRepository, mocks.logger as never);
+    sut = new PetService(
+      mocks.access as never,
+      petRepository,
+      mocks.logger as never,
+      mocks.job as never,
+      petRecognition,
+    );
 
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
   });
@@ -323,6 +358,29 @@ describe(PetService.name, () => {
       expect(petRepository.upsertObservation).not.toHaveBeenCalled();
     });
 
+    it('refuses a drawn region with 409 when the original changed since the photo was opened', async () => {
+      await expect(
+        sut.addObservation(authStub.user1, petId, {
+          assetId,
+          expectedChecksum: Buffer.from('old').toString('base64'),
+          boundingBoxX1: 1,
+          boundingBoxY1: 1,
+          boundingBoxX2: 10,
+          boundingBoxY2: 10,
+          imageWidth: 100,
+          imageHeight: 100,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(petRepository.upsertObservation).not.toHaveBeenCalled();
+    });
+
+    it('confirms and then looks for the pet in the owner’s most similar photos', async () => {
+      await sut.addObservation(authStub.user1, petId, { assetId, expectedChecksum: checksum.toString('base64') });
+
+      expect(petRepository.upsertObservation).toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PetRecognitionNearest, data: { petId, assetId } });
+    });
+
     it('records a whole-photo observation when no region is drawn', async () => {
       await sut.addObservation(authStub.user1, petId, { assetId });
 
@@ -389,12 +447,28 @@ describe(PetService.name, () => {
       expect(unlocked.candidates).toHaveLength(2);
     });
 
-    it('reports honestly that no recognition model is available', async () => {
+    it('reports the routed destination’s refusal instead of claiming the queue is reviewed', async () => {
       const result = await sut.getCandidates(authStub.user1, { size: 100 });
 
       expect(result.recognitionAvailable).toBe(false);
-      expect(result.recognitionUnavailableReason).toBe(PET_RECOGNITION_UNAVAILABLE_REASON);
+      expect(result.recognitionUnavailableReason).toBe(PetRecognitionUnavailableReason.WorkloadNotRouted);
+      expect(result.recognition).toMatchObject({ available: false, destination: null, run: null });
       expect(result.candidates).toEqual([]);
+    });
+
+    it('names the destination recognition runs on when it is available', async () => {
+      (petRecognition.getStatus as AnyMock).mockResolvedValue({
+        ...unavailable,
+        available: true,
+        reason: null,
+        detail: null,
+        destination: { kind: MlDestinationKind.Lan, name: 'Garage PC' },
+      });
+
+      const result = await sut.getCandidates(authStub.user1, { size: 100 });
+
+      expect(result.recognitionAvailable).toBe(true);
+      expect(result.recognition.destination).toEqual({ kind: MlDestinationKind.Lan, name: 'Garage PC' });
     });
 
     it('hides a proposal the owner already rejected, so a model rerun cannot resurrect it', async () => {
@@ -439,7 +513,32 @@ describe(PetService.name, () => {
         imageWidth: 800,
         imageHeight: 600,
       });
-      expect(petRepository.deleteCandidatesForDetection).toHaveBeenCalledWith(detectionId);
+      expect(petRepository.deleteCandidates).toHaveBeenCalledWith(detectionId, [petId]);
+    });
+
+    it('never answers for other pets proposed for the same photo', async () => {
+      await sut.acceptCandidate(authStub.user1, candidateId, { petId: otherPetId });
+
+      expect(petRepository.deleteCandidates).toHaveBeenCalledWith(detectionId, [petId, otherPetId]);
+    });
+
+    it('looks for the pet again in the owner’s most similar photos', async () => {
+      await sut.acceptCandidate(authStub.user1, candidateId, {});
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PetRecognitionNearest, data: { petId, assetId } });
+    });
+
+    it('refuses with 409 when the original changed since the photo was opened', async () => {
+      await expect(
+        sut.acceptCandidate(authStub.user1, candidateId, { expectedChecksum: Buffer.from('old').toString('base64') }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(petRepository.upsertObservation).not.toHaveBeenCalled();
+    });
+
+    it('accepts when the named checksum is the current one', async () => {
+      await sut.acceptCandidate(authStub.user1, candidateId, { expectedChecksum: checksum.toString('base64') });
+
+      expect(petRepository.upsertObservation).toHaveBeenCalled();
     });
 
     it('checks the reassignment target is the caller’s own pet', async () => {
@@ -478,7 +577,85 @@ describe(PetService.name, () => {
           source: PetObservationSource.Review,
         }),
       );
-      expect(petRepository.deleteCandidatesForDetection).toHaveBeenCalledWith(detectionId);
+      expect(petRepository.deleteCandidates).toHaveBeenCalledWith(detectionId, [petId]);
+    });
+
+    it('refuses with 409 when the original changed since the photo was opened', async () => {
+      await expect(
+        sut.rejectCandidate(authStub.user1, candidateId, { expectedChecksum: Buffer.from('old').toString('base64') }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(petRepository.upsertObservation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recognition runs', () => {
+    it('refuses to start with the destination’s reason, queueing nothing', async () => {
+      await expect(sut.startRecognition(authStub.user1)).rejects.toThrow(/workload-not-routed/);
+      expect(petRecognition.startRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses to start before any pet is confirmed in a photo', async () => {
+      (petRecognition.getStatus as AnyMock).mockResolvedValue({
+        ...unavailable,
+        available: true,
+        reason: null,
+        hasConfirmedPhotos: false,
+      });
+
+      await expect(sut.startRecognition(authStub.user1)).rejects.toBeInstanceOf(BadRequestException);
+      expect(petRecognition.startRun).not.toHaveBeenCalled();
+    });
+
+    it('starts a run on the routed destination', async () => {
+      (petRecognition.getStatus as AnyMock).mockResolvedValue({
+        ...unavailable,
+        available: true,
+        reason: null,
+        detail: null,
+        destination: { kind: MlDestinationKind.Local, name: 'This server' },
+      });
+
+      await sut.startRecognition(authStub.user1);
+
+      expect(petRecognition.startRun).toHaveBeenCalledWith(ownerId, MlDestinationKind.Local);
+    });
+
+    it('cancels the owner’s own run', async () => {
+      await sut.cancelRecognition(authStub.user1);
+
+      expect(petRecognition.cancelRun).toHaveBeenCalledWith(ownerId);
+    });
+  });
+
+  describe('getAssetObservations', () => {
+    it('checks the caller may read the asset first', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getAssetObservations(authStub.user1, { assetId })).rejects.toBeInstanceOf(BadRequestException);
+      expect(petRepository.getObservationsForAsset).not.toHaveBeenCalled();
+    });
+
+    it('lists the owner’s decisions with their source checksum and stale flag', async () => {
+      (petRepository.getObservationsForAsset as AnyMock).mockResolvedValue([
+        observation({
+          boundingBoxX1: 1,
+          sourceChecksum: Buffer.from('old'),
+          staleAt: new Date('2026-02-01T00:00:00.000Z'),
+        }),
+      ]);
+
+      const [result] = await sut.getAssetObservations(authStub.user1, { assetId });
+
+      expect(result).toMatchObject({
+        sourceChecksum: Buffer.from('old').toString('base64'),
+        staleAt: '2026-02-01T00:00:00.000Z',
+      });
+    });
+
+    it('leaves out a pet suppressed while the session is locked', async () => {
+      (petRepository.getObservationsForAsset as AnyMock).mockResolvedValue([observation()]);
+
+      await expect(sut.getAssetObservations(lockedAuth(), { assetId })).resolves.toEqual([]);
     });
   });
 
@@ -524,10 +701,20 @@ describe(PetService.name, () => {
       expect(petRepository.deleteObservation).not.toHaveBeenCalled();
     });
 
-    it('removes the caller’s own observation', async () => {
+    it('removes the caller’s own observation and sends the photo back through recognition', async () => {
       await sut.removeObservation(authStub.user1, observationId);
 
       expect(petRepository.deleteObservation).toHaveBeenCalledWith(ownerId, observationId);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PetRecognition, data: { id: assetId } });
+    });
+
+    it('refuses an undo with 409 when the original changed since the photo was opened', async () => {
+      await expect(
+        sut.removeObservation(authStub.user1, observationId, {
+          expectedChecksum: Buffer.from('old').toString('base64'),
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(petRepository.deleteObservation).not.toHaveBeenCalled();
     });
   });
 });

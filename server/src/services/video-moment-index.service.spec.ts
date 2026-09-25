@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { defaults } from 'src/config.js';
-import { AssetStatus, AssetType, AssetVisibility, EnrichmentItemState, VideoMomentSource } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, EnrichmentItemState, JobName, VideoMomentSource } from 'src/enum.js';
 import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
@@ -95,6 +95,7 @@ describe(VideoMomentIndexService.name, () => {
       mocks.person as never,
       mocks.config as never,
       mocks.systemMetadata as never,
+      mocks.job as never,
     );
   });
 
@@ -236,6 +237,7 @@ describe(VideoMomentIndexService.name, () => {
         ],
         expect.objectContaining({ identityHash: identityHash([]), configHash: captionHash }),
         expect.objectContaining({ captionIdentityHash: identityHash([]) }),
+        expect.any(Function),
       );
     });
 
@@ -256,7 +258,53 @@ describe(VideoMomentIndexService.name, () => {
         ],
         expect.anything(),
         expect.anything(),
+        expect.any(Function),
       );
+    });
+
+    it('publishes nothing when the names change while the frames are captioned (FL-57)', async () => {
+      const namedFace = (name: string) => ({
+        personGroupId: '00000000-0000-4000-8000-00000000000a',
+        person: { name, isHidden: false },
+        imageWidth: 100,
+        imageHeight: 100,
+        boundingBoxX1: 10,
+        boundingBoxY1: 10,
+        boundingBoxX2: 40,
+        boundingBoxY2: 40,
+      });
+      mocks.machineLearning.describeImage.mockResolvedValue({ description: 'Ada at the beach.' } as never);
+      mocks.person.getFaces
+        .mockResolvedValueOnce([namedFace('Ada')] as never)
+        .mockResolvedValueOnce([namedFace('Grace')] as never);
+      moments.publishCaptions = vi.fn(async (...args: unknown[]) => {
+        const namesStillCurrent = args[4] as () => Promise<boolean>;
+        return (await namesStillCurrent()) ? 3 : ('identity-changed' as const);
+      });
+
+      await expect(sut.runCaptionStage(assetId, { imageDescription })).resolves.toEqual({
+        state: EnrichmentItemState.Failed,
+        reasonKey: 'identity-changed',
+      });
+    });
+  });
+
+  describe('no automatic speech recognition (FL-59)', () => {
+    it('indexes and captions a video without transcribing it or writing a transcript', async () => {
+      const imageDescription = defaults.machineLearning.imageDescription;
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.1,0.2]');
+      mocks.machineLearning.describeImage.mockResolvedValue({ description: 'Waves at dusk.' } as never);
+
+      await sut.runIndexStage(assetId, { destinationId: mlDestinationStub.local.id });
+      await sut.runCaptionStage(assetId, { imageDescription });
+
+      const called = Object.entries(mocks.machineLearning)
+        .filter(([, fn]) => vi.isMockFunction(fn) && fn.mock.calls.length > 0)
+        .map(([name]) => name);
+      expect(called).toEqual(expect.arrayContaining(['describeImage', 'encodeImage']));
+      expect(called.filter((name) => /transcri|speech|audio|asr/i.test(name))).toEqual([]);
+      const published = [...moments.publishIndex.mock.calls, ...moments.publishCaptions.mock.calls];
+      expect(JSON.stringify(published)).not.toMatch(/transcript/i);
     });
   });
 
@@ -285,6 +333,25 @@ describe(VideoMomentIndexService.name, () => {
       expect(response.staleReason).toBe('source-changed');
       expect(response.coverFrameId).toBe(frames[1].id);
       expect(response.frames.find(({ isCover }) => isCover)?.rank).toBe(1);
+    });
+  });
+
+  describe('setCover', () => {
+    it("records the owner's cover and regenerates the video's thumbnail from it", async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+
+      await sut.setCover(authStub.user1, assetId, { timestampMs: 2000 });
+
+      expect(moments.setCover).toHaveBeenCalledWith(assetId, 2000, authStub.user1.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
+    });
+
+    it('refuses a video without frames and queues nothing', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      moments.getIndex.mockResolvedValue(undefined);
+
+      await expect(sut.setCover(authStub.user1, assetId, { timestampMs: 2000 })).rejects.toThrow(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

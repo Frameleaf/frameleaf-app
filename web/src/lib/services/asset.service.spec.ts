@@ -1,9 +1,12 @@
 import { AssetTypeEnum, getAssetInfo } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { mdiTune } from '@mdi/js';
+import { get } from 'svelte/store';
 import { vitest } from 'vitest';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
+import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import * as utils from '$lib/utils';
 import { setSharedLink } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
@@ -95,6 +98,19 @@ describe('AssetService', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
+    });
+
+    it('should pause a running slideshow when T opens the tag box (MediaViewer.jsx:803-807)', () => {
+      setOwnerUser();
+      const asset = assetFactory.build({ ownerId, isTrashed: false });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      getAssetActions(() => '', asset).Tag.onAction?.({} as never);
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow);
+      expect(assetViewerManager.focusRequest).toBe('tags');
+      slideshowStore.slideshowState.set(SlideshowState.None);
+      getAssetActions(() => '', asset).Tag.onAction?.({} as never);
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None);
+      assetViewerManager.focusRequest = null;
     });
 
     it('should allow editing owned videos with dimensions and duration', () => {

@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { PetObservationState, PetSpecies } from 'src/enum.js';
 import {
+  PET_MATCHER_REVISION,
+  PET_RECOGNITION_THRESHOLDS,
   asKnownSpecies,
   detectionsToReplace,
   filterReviewedCandidates,
   isNamedPet,
+  isSpeciesCompatible,
   isStaleDetection,
+  isStaleRegion,
+  matchPets,
+  neighbourSimilarity,
   normalizePetName,
+  petRecognitionRun,
   planObservationMerge,
+  readSpecies,
   sortCandidatesForReview,
 } from 'src/utils/pets.js';
 
@@ -147,5 +155,73 @@ describe('detectionsToReplace', () => {
 
   it('returns nothing to replace for an asset with no detections', () => {
     expect(detectionsToReplace([], run)).toEqual({ staleIds: [], currentIds: [], allIds: [] });
+  });
+});
+
+describe('pet recognition with CLIP (FL-58)', () => {
+  const unit = (...values: number[]) => {
+    const norm = Math.hypot(...values);
+    return new Float32Array(values.map((value) => value / norm));
+  };
+  const species = [
+    { species: PetSpecies.Cat, embedding: unit(1, 0, 0, 0) },
+    { species: PetSpecies.Dog, embedding: unit(0, 1, 0, 0) },
+  ];
+  const negatives = [unit(0, 0, 1, 0)];
+
+  it('pins the matcher revision to the CLIP model, so a model change replaces every detection', () => {
+    expect(petRecognitionRun('ViT-B-32__openai')).toEqual({
+      modelName: 'ViT-B-32__openai',
+      modelRevision: `${PET_MATCHER_REVISION}:ViT-B-32__openai`,
+    });
+    expect(isStaleDetection(petRecognitionRun('a'), petRecognitionRun('b'))).toBe(true);
+  });
+
+  it('reads the species of an animal photo and nothing for a landscape', () => {
+    expect(readSpecies(unit(1, 0, 0, 1), species, negatives)).toMatchObject({ species: PetSpecies.Cat });
+    expect(readSpecies(unit(0, 0, 1, 1), species, negatives)).toMatchObject({ species: null });
+  });
+
+  it('only proposes pets of the species the photo reads as, or pets of any kind', () => {
+    expect(isSpeciesCompatible(PetSpecies.Cat, PetSpecies.Cat)).toBe(true);
+    expect(isSpeciesCompatible(PetSpecies.Dog, PetSpecies.Cat)).toBe(false);
+    expect(isSpeciesCompatible(PetSpecies.Other, PetSpecies.Cat)).toBe(true);
+    expect(isSpeciesCompatible(PetSpecies.Other, null)).toBe(false);
+  });
+
+  it('averages the closest confirmed photos, so one look-alike does not carry a proposal', () => {
+    const photo = unit(1, 0, 0, 0);
+    expect(neighbourSimilarity(photo, [unit(1, 0, 0, 0), unit(0, 1, 0, 0), unit(0, 0, 1, 0)], 3)).toBeCloseTo(1 / 3);
+    expect(neighbourSimilarity(photo, [unit(1, 0, 0, 0)], 3)).toBeCloseTo(1);
+    expect(neighbourSimilarity(photo, [], 3)).toBe(0);
+  });
+
+  it('proposes uncertain and confident matches alike, never an answered pair', () => {
+    const photo = unit(1, 0, 0, 1);
+    const reading = readSpecies(photo, species, negatives);
+    const references = [
+      { petId: 'confident', species: PetSpecies.Cat, embeddings: [unit(1, 0, 0, 1)] },
+      { petId: 'uncertain', species: PetSpecies.Cat, embeddings: [unit(1, 0.9, 0, 1)] },
+      { petId: 'unlike', species: PetSpecies.Cat, embeddings: [unit(0, 1, 1, 0)] },
+      { petId: 'rejected', species: PetSpecies.Cat, embeddings: [unit(1, 0, 0, 1)] },
+      { petId: 'dog', species: PetSpecies.Dog, embeddings: [unit(1, 0, 0, 1)] },
+    ];
+
+    const matches = matchPets(photo, reading, references, new Set(['rejected']));
+
+    expect(matches.map(({ petId, confident }) => [petId, confident])).toEqual([
+      ['confident', true],
+      ['uncertain', false],
+    ]);
+    expect(matches[1].score).toBeGreaterThanOrEqual(PET_RECOGNITION_THRESHOLDS.candidateSimilarity);
+    expect(matches[1].score).toBeLessThan(PET_RECOGNITION_THRESHOLDS.confidentSimilarity);
+  });
+
+  it('flags only drawn regions whose original was replaced', () => {
+    const current = Buffer.from('new');
+    expect(isStaleRegion({ boundingBoxX1: 1, sourceChecksum: Buffer.from('old') }, current)).toBe(true);
+    expect(isStaleRegion({ boundingBoxX1: 1, sourceChecksum: Buffer.from('new') }, current)).toBe(false);
+    expect(isStaleRegion({ boundingBoxX1: null, sourceChecksum: Buffer.from('old') }, current)).toBe(false);
+    expect(isStaleRegion({ boundingBoxX1: 1, sourceChecksum: null }, current)).toBe(false);
   });
 });

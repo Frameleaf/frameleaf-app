@@ -14,7 +14,7 @@
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { normalizeSearchString } from '$lib/utils/string-utils';
-  import { searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
+  import { searchPerson, updatePerson, type PersonResponseDto, type PersonStatisticsResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiAccountGroupOutline,
@@ -42,12 +42,17 @@
    * with age or "Add date of birth", "Hidden from People"), the seven-button toolbar and a
    * status line. The dialogs and the "Fix incorrect match" panel are the Frameleaf ports.
    *
+   * The count reads "N photos · N videos" (PersonDetail.jsx:257-264) from the person statistics.
+   * Every change here is announced: `PersonUpdate` for an edit, `PersonFacesChange` when faces
+   * moved (Fix incorrect match) or a merge folded this person into someone else, so the People
+   * grid, open viewer face chips and search chips re-read what they show.
+   *
    * "Correction history" is not in the prototype (PD-9, product decision); it stays as the
    * last toolbar action until the owner decides.
    */
   interface Props {
     person: PersonResponseDto;
-    assetCount: number;
+    statistics: PersonStatisticsResponseDto;
     onBack: () => void;
     onPersonChange: (person: PersonResponseDto) => void;
     /** A merge moved this person into `target`; the page follows them. */
@@ -60,7 +65,7 @@
 
   let {
     person,
-    assetCount,
+    statistics,
     onBack,
     onPersonChange,
     onMergedAway,
@@ -78,6 +83,15 @@
   let fixOpen = $state(false);
   let historyOpen = $state(false);
 
+  const assetCount = $derived(statistics.assets);
+  const countLabel = $derived(
+    [
+      statistics.photos ? $t('frameleaf_people_photos_count', { values: { count: statistics.photos } }) : '',
+      statistics.videos ? $t('frameleaf_people_videos_count', { values: { count: statistics.videos } }) : '',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  );
   const unnamed = $derived(isUnnamedPerson(person));
   const name = $derived(unnamed ? $t('unnamed_person') : person.name);
   const age = $derived(ageInYears(person.birthDate));
@@ -101,6 +115,15 @@
     } catch (error) {
       handleError(error, errorMessage);
     }
+  };
+
+  /**
+   * Faces changed from the fix-match or history panel: announced once, from here only (the panels
+   * report the people involved and do not emit themselves), then this page re-reads its photos.
+   */
+  const announceFaceChanges = (personIds: string[]) => {
+    eventManager.emit('PersonFacesChange', { personIds: [...new Set([person.id, ...personIds])] });
+    onFacesChanged();
   };
 
   const toggleHidden = () =>
@@ -204,9 +227,10 @@
       <div class="pd-facts">
         <span class="pd-fact">
           <Icon icon={mdiImageMultipleOutline} size="15" aria-hidden="true" />
-          {assetCount > 0
-            ? $t('frameleaf_people_items_count', { values: { count: assetCount } })
-            : $t('frameleaf_people_no_photos_yet')}
+          {countLabel ||
+            (assetCount > 0
+              ? $t('frameleaf_people_items_count', { values: { count: assetCount } })
+              : $t('frameleaf_people_no_photos_yet'))}
         </span>
         <button type="button" class="pd-fact pd-fact-link" onclick={() => (birthdayOpen = true)}>
           <Icon icon={mdiCakeVariantOutline} size="15" aria-hidden="true" />
@@ -269,7 +293,7 @@
   bind:open={featuredOpen}
   onSelected={(updated) => {
     onPersonChange(updated);
-    status = $t('feature_photo_updated');
+    status = $t('frameleaf_people_featured_updated');
   }}
 />
 <MergePeopleDialog
@@ -283,14 +307,14 @@
   bind:open={birthdayOpen}
   onSaved={(updated, birthDate) => {
     onPersonChange(updated);
-    status = birthDate ? $t('date_of_birth_saved') : $t('frameleaf_people_birthday_removed');
+    status = birthDate ? $t('frameleaf_people_birthday_saved') : $t('frameleaf_people_birthday_removed');
   }}
 />
 {#if fixOpen}
-  <FixMatchPanel {person} {onOpenAsset} onChanged={onFacesChanged} close={() => (fixOpen = false)} />
+  <FixMatchPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (fixOpen = false)} />
 {/if}
 {#if historyOpen}
-  <CorrectionHistoryPanel {person} close={() => (historyOpen = false)} />
+  <CorrectionHistoryPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (historyOpen = false)} />
 {/if}
 
 <style>

@@ -301,7 +301,9 @@ def ping() -> PlainTextResponse:
 #
 # Public contract — KEEP IN SYNC WITH ``server/src/enum.ts`` (``MlWorkload``,
 # ``LIBRARY_ML_WORKLOADS``) and ``MachineLearningRepository.probe``.
-SERVED_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment")
+# "pet-recognition" (FL-58) is CLIP text encoding against the configured CLIP model, which this
+# container serves whenever it serves "clip"; it is listed separately so it can be routed alone.
+SERVED_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment", "pet-recognition")
 PREDICT_PROTOCOL = "predict-v1"
 
 

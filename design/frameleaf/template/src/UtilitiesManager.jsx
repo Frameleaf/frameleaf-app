@@ -211,7 +211,7 @@ export function UtilitiesManager({
           ...state.runs,
         ].slice(0, 20),
       },
-      "Scan queued. Existing findings remain available.",
+      "Scan started. Earlier findings stay available.",
     );
   }
   function rowTable(items = rows) {
@@ -523,7 +523,7 @@ export function UtilitiesManager({
               <strong>{rows.length} findings</strong>
               <small>
                 {running
-                  ? "Queued · waiting for a worker"
+                  ? "Waiting to start"
                   : "Last scan · 19 Sep 2026, 11:40 UTC"}
               </small>
             </span>

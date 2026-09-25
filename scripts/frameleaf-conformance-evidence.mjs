@@ -187,9 +187,9 @@ const actions = {
   ],
   // info-people
   "accept-detection-result-mark-safe-sensitive-from-evidence-panel": [
-    "partial",
+    "fixed",
     ["V-2", "V-10"],
-    "Enrichment card for owners (fix-viewer); extra enrichment controls are a product decision",
+    "Enrichment card for owners (fix-viewer); its Accept and Clear tags stay as preserved source actions, recorded deviations (codex/FL-35-complete-viewer)",
     {
       production: [
         `${W}/lib/components/asset-viewer/DetailPanelImageEnrichment.svelte`,
@@ -197,28 +197,29 @@ const actions = {
     },
   ],
   "add-a-person-draw-bounding-box-search-existing-person-confirm": [
-    "partial",
+    "fixed",
     ["V-28"],
-    "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face and batch Save face tags ported (FL-38); the stale-revision banner is deferred by the owner and detected face boxes stay read-only until the server can update a face box",
+    "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face, batch Save face tags and the stale-revision banner (FL-38); detected faces move and resize through the revision-checked PATCH /faces/:id, and every correction is kept in the person's correction history (FL-57)",
     {
       prototype: [`${P}/FaceTagger.jsx`, `${P}/face-tags.mjs`],
       production: [`${W}/lib/components/frameleaf/FaceTagger.svelte`],
     },
   ],
   "add-edit-location": [
-    "partial",
+    "fixed",
     ["V-24"],
-    "City / State or region / Country fields; Frameleaf dialog",
+    "Edit location dialog with City / State or region / Country, coordinates and a MapLibre pin; typed place names are kept over geocoding (codex/FL-35-complete-viewer)",
     {
       production: [
         `${W}/lib/components/asset-viewer/DetailPanelLocation.svelte`,
+        `${W}/lib/components/frameleaf/ViewerLocationDialog.svelte`,
       ],
     },
   ],
   "add-remove-tags": [
-    "partial",
+    "fixed",
     ["V-25"],
-    "Inline tag combobox with create and empty state",
+    "Inline Add a tag combobox with Create and No tags yet.; T opens it (codex/FL-35-complete-viewer)",
     { production: [`${W}/lib/components/asset-viewer/DetailPanelTags.svelte`] },
   ],
   "camera-lens-location-search-shortcuts": [
@@ -273,10 +274,15 @@ const actions = {
     },
   ],
   "edit-capture-date-time-timezone": [
-    "partial",
+    "fixed",
     ["V-23"],
-    "Frameleaf date/time dialog",
-    { production: [`${W}/lib/components/asset-viewer/DetailPanelDate.svelte`] },
+    "Edit date and time dialog: date, time, Keep the current time zone, preview (codex/FL-35-complete-viewer)",
+    {
+      production: [
+        `${W}/lib/components/asset-viewer/DetailPanelDate.svelte`,
+        `${W}/lib/components/frameleaf/ViewerDateDialog.svelte`,
+      ],
+    },
   ],
   "edit-reassign-existing-detected-face": [
     "match",
@@ -357,9 +363,9 @@ const actions = {
     },
   ],
   "set-clear-rating": [
-    "partial",
+    "fixed",
     ["V-3", "V-20"],
-    "Rating popover in the top row; explicit Clear",
+    "Rating popover in the top row; explicit Clear in the panel (codex/FL-35-complete-viewer)",
     {
       production: [
         `${W}/lib/components/asset-viewer/DetailPanelStarRating.svelte`,
@@ -393,17 +399,17 @@ const actions = {
     },
   ],
   "show-offline-file-availability-and-ownership-context": [
-    "partial",
+    "fixed",
     ["V-27"],
-    "Owner line for every non-owned asset (the legacy offline block is gone, V-6 fixed in FL-35)",
+    "Owner line for every non-owned asset; the offline banner (codex/FL-35-complete-viewer)",
     {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
   ],
   "show-shared-by-owner-metadata": [
-    "partial",
+    "fixed",
     ["V-27"],
-    "Owner line whenever the asset is not the viewer's",
+    "Owned by / Shared by line whenever the asset is not the viewer's (codex/FL-35-complete-viewer)",
   ],
   // quick-edit
   "ai-preview-full-job-faithful-creative-local-lan-versus-runpod": [
@@ -843,7 +849,7 @@ const actions = {
   ],
   // viewer
   "add-to-album": ["match", []],
-  "add-to-stack": ["partial", ["V-11"], 'Label "Add to stack"'],
+  "add-to-stack": ["fixed", ["V-11"], 'Label "Add to stack" (codex/FL-35-complete-viewer)'],
   "album-activity-comments-likes-activity-panel": [
     "fixed",
     ["AL-18"],
@@ -857,7 +863,7 @@ const actions = {
     undefined,
     { production: [`${W}/lib/services/app.service.ts`] },
   ],
-  "copy-image-to-clipboard": ["partial", ["V-5"], 'Label "Copy image"'],
+  "copy-image-to-clipboard": ["fixed", ["V-5"], 'Label "Copy image" (codex/FL-35-complete-viewer)'],
   "download-current-edited-media": [
     "fixed",
     ["D-1", "D-2", "D-3"],
@@ -885,9 +891,9 @@ const actions = {
     },
   ],
   "favorite-unfavorite": [
-    "partial",
+    "fixed",
     ["V-5"],
-    'Labels "Add to favorites" / "Remove from favorites"',
+    'Labels "Add to favorites" / "Remove from favorites" (codex/FL-35-complete-viewer)',
   ],
   "image-video-panorama-and-photo-sphere-viewers": [
     "match",
@@ -900,24 +906,25 @@ const actions = {
     },
   ],
   "keep-this-stack-asset-and-delete-the-others": [
-    "partial",
+    "fixed",
     ["V-11"],
     'Label "Keep this, remove the rest"',
     { production: [`${W}/lib/components/frameleaf/ViewerStackStrip.svelte`] },
   ],
   "keyboard-navigation-and-focus-restoration": [
-    "partial",
+    "fixed",
     ["V-14", "V-15"],
-    "Zoom keys (fix-viewer), Space/S/T/Backspace",
+    "Zoom keys (fix-viewer); Space, S, T, Backspace and no a/d (codex/FL-35-complete-viewer)",
     { production: [`${W}/lib/components/asset-viewer/PhotoViewer.svelte`] },
   ],
   "live-motion-photo-play-and-stop": [
-    "partial",
+    "fixed",
     ["V-16"],
-    "On-image Live badge with hover-to-play",
+    "On-image Live badge with hover-to-play (codex/FL-35-complete-viewer)",
+    { production: [`${W}/lib/components/frameleaf/ViewerLiveBadge.svelte`] },
   ],
   "make-stack-primary": [
-    "partial",
+    "fixed",
     ["V-11"],
     'Label "Set as stack primary"',
     { production: [`${W}/lib/components/frameleaf/ViewerStackStrip.svelte`] },
@@ -934,7 +941,7 @@ const actions = {
     },
   ],
   "move-to-trash": [
-    "partial",
+    "fixed",
     ["V-5", "V-15"],
     'Label "Move to trash (Delete)"; Backspace',
     {
@@ -951,11 +958,11 @@ const actions = {
       production: [`${W}/lib/components/frameleaf/ViewerOfflineBanner.svelte`],
     },
   ],
-  "open-editor": ["partial", ["V-5"], 'Label "Edit (E)"'],
+  "open-editor": ["fixed", ["V-5"], 'Label "Edit" (codex/FL-35-complete-viewer)'],
   "open-full-viewer-close-back-escape-previous-next": [
-    "partial",
+    "fixed",
     ["V-5"],
-    'Close label ("n of N" is in the footer, V-12 fixed in FL-35)',
+    '"Close viewer" titled "Close viewer (Escape)"; "n of N" is in the footer (V-12) (codex/FL-35-complete-viewer)',
     {
       production: [
         `${W}/lib/components/frameleaf/ViewerTitle.svelte`,
@@ -965,7 +972,7 @@ const actions = {
   ],
   "open-info": ["fixed", ["V-5"], 'Label "Information (I)" (fix-viewer)'],
   "permanently-delete-in-the-appropriate-viewer-context": [
-    "partial",
+    "fixed",
     ["V-1", "V-4"],
     "Non-suppressible confirm with prototype copy (fix-viewer); Delete permanently in the Trash group",
     {
@@ -990,24 +997,26 @@ const actions = {
   "regenerate-thumbnails-for-this-asset": ["match", []],
   "remove-from-current-album": ["match", []],
   "restore-a-trashed-asset-from-viewer": [
-    "partial",
+    "fixed",
     ["V-4"],
-    "Restore in the trash toolbar",
+    "Restore in the trash toolbar and the Trash group (codex/FL-35-complete-viewer)",
   ],
   "set-account-profile-picture": [
-    "partial",
+    "fixed",
     ["V-11"],
     'Label "Profile picture"',
   ],
   "set-album-cover": [
-    "partial",
+    "fixed",
     ["V-9", "V-11"],
-    "Album chooser without page context; label",
+    "Album cover, with the album chooser outside the album (codex/FL-35-complete-viewer)",
+    { production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`] },
   ],
   "set-persons-featured-photo": [
-    "partial",
+    "fixed",
     ["V-9", "V-11"],
-    "Person chooser without page context; label",
+    "Featured photo for person, with the person chooser (codex/FL-35-complete-viewer)",
+    { production: [`${W}/lib/components/frameleaf/ViewerChooserDialog.svelte`] },
   ],
   "share-with-recipients-create-or-manage-a-public-link": [
     "partial",
@@ -1063,13 +1072,13 @@ const actions = {
     },
   ],
   "slideshow-play-pause-previous-next-repeat-shuffle": [
-    "partial",
+    "fixed",
     ["V-7", "V-15", "V-18"],
-    "Pause item in the menu, Space/S toggle, inline playback",
+    "Play/Pause slideshow and Slideshow settings in the menu, Space/S, inline playback (codex/FL-35-complete-viewer)",
     { production: [`${W}/lib/components/asset-viewer/SlideshowBar.svelte`] },
   ],
   "star-rating-clear-rating": [
-    "partial",
+    "fixed",
     ["V-3"],
     "Rating popover in the top row",
     {
@@ -1079,24 +1088,24 @@ const actions = {
     },
   ],
   "toggle-original-video-versus-encoded-playback": [
-    "partial",
+    "fixed",
     ["V-11"],
-    'Menu label drift (the footer segment "Play original / Play encoded" is in, V-13 fixed in FL-35)',
+    'The footer segment "Play original / Play encoded" (V-13); the menu entry is gone, as in the template (codex/FL-35-complete-viewer)',
     { production: [`${W}/lib/components/frameleaf/ViewerFooter.svelte`] },
   ],
   "transcode-this-video": [
-    "partial",
+    "fixed",
     ["V-7"],
-    "Transcode entry in the Jobs group",
+    "Transcode video and Refresh encoded video in the Jobs group (codex/FL-35-complete-viewer)",
   ],
   "unstack-remove-one-item-from-a-stack": [
-    "partial",
+    "fixed",
     ["V-10", "V-11"],
-    'Drop stack-remove-this; label "Unstack"',
+    'Label "Unstack"; "Remove from stack" stays as the FL-36 remove-member action (recorded deviation, codex/FL-35-complete-viewer)',
     { production: [`${W}/lib/components/frameleaf/ViewerStackStrip.svelte`] },
   ],
   "view-in-timeline": ["match", []],
-  "view-similar-photos": ["partial", ["V-11"], 'Label "Find similar"'],
+  "view-similar-photos": ["fixed", ["V-11"], 'Label "Find similar" (codex/FL-35-complete-viewer)'],
   "zoom-in-out-fit-image-pan": [
     "fixed",
     ["V-6", "V-13", "V-14"],
@@ -1232,7 +1241,7 @@ const routes = {
   "/admin/queues": [
     "partial",
     ["CC-42", "CC-43", "CC-44"],
-    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts); open: the enrichment dialog shell (CC-42, FL-59) and the RunPod manager and provider history (CC-43, CC-44, FL-43)",
+    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); open: the RunPod manager and provider history (CC-43, CC-44, FL-43)",
     [`${P}/JobsManager.jsx`, `${P}/jobs-data.mjs`],
     [
       `${W}/routes/admin/queues/+page.ts`,
@@ -1583,13 +1592,14 @@ const routes = {
   ],
   "/people/[personId]/[[photos=photos]]/[[assetId=id]]": [
     "fixed",
-    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8"],
-    "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); PD-9 Correction history stays as an extra action pending an owner decision",
+    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
+    "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); Fix incorrect match splits selected faces into an existing or new person with revision-checked corrections, and PD-9 Correction history is FL-57's paginated history with Undo (the story requires it; FL-146 defaults accepted 2026-09-25)",
     [`${P}/PersonDetail.jsx`, `${P}/People.jsx`],
     [
       `${W}/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
       `${W}/lib/components/frameleaf/people/PersonHero.svelte`,
       `${W}/lib/components/frameleaf/people/FixMatchPanel.svelte`,
+      `${W}/lib/components/frameleaf/people/CorrectionHistoryPanel.svelte`,
     ],
   ],
   "/people/manage": [
@@ -1600,16 +1610,16 @@ const routes = {
     [`${W}/routes/(user)/people/manage/+page.svelte`],
   ],
   "/pets": [
-    "in-flight",
+    "intentional-product-change",
     [],
-    "FL-58 pets (beyond the prototype)",
+    "FL-58 pets beyond the prototype's tag query: durable named cat/dog profiles, checksum-guarded review with Undo, CLIP-based recognition on the routed destination (this server, a computer on the network or Frameleaf Cloud) with actionable refusals; composed from the People grid and grouped-list patterns",
     [`${P}/App.jsx`],
     [`${W}/routes/(user)/pets/+page.svelte`],
   ],
   "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]": [
-    "in-flight",
+    "intentional-product-change",
     [],
-    "FL-58 pets (beyond the prototype)",
+    "FL-58 pet page (beyond the prototype): the pet's confirmed photos through the petIds search filter, and its decisions with stale regions to check",
     [`${P}/App.jsx`],
     [
       `${W}/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1913,9 +1923,9 @@ const routes = {
     ],
   ],
   "/utilities/large-files/[[photos=photos]]/[[assetId=id]]": [
-    "match",
+    "fixed",
     ["UT-11", "UT-15", "UT-16"],
-    "Recent utility activity; nits",
+    "Recent utility activity, row type and resolution, title (fixed on codex/FL-35-complete-viewer, FL-47)",
     [`${P}/UtilitiesManager.jsx`],
     [
       `${W}/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts`,

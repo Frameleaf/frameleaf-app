@@ -31,6 +31,7 @@ import {
   memoryHeadline as headlineOf,
   isBirthday,
   isEventStory,
+  isPetStory,
   isPersonRecap,
   isYearInReview,
 } from '$lib/frameleaf/memory-stories';
@@ -445,7 +446,7 @@ export const memoryLaneTitle = derived(t, ($t) => {
       return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
     }
 
-    if (isBirthday(memory) || isPersonRecap(memory)) {
+    if (isPetStory(memory) || isBirthday(memory) || isPersonRecap(memory)) {
       return get(memoryHeadline)(memory).title;
     }
 
