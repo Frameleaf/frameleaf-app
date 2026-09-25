@@ -60,6 +60,7 @@
     getCloudMlSettlements,
     getCloudMlStatus,
     getHardwareCheck,
+    reconcileCloudMlUsage,
     type CloudMlSettlementDto,
     type CloudMlStatusResponseDto,
     type HardwareCheckResponseDto,
@@ -92,7 +93,12 @@
 
   const load = async () => {
     try {
-      const [nextStatus, nextSettlements] = await Promise.all([getCloudMlStatus(), getCloudMlSettlements()]);
+      const nextStatus = await getCloudMlStatus();
+      // Apply what Frameleaf Cloud has settled before listing it; the list still shows when this fails.
+      if (nextStatus.connection === CloudMlConnection.Ready && nextStatus.destination) {
+        await reconcileCloudMlUsage().catch(() => {});
+      }
+      const nextSettlements = await getCloudMlSettlements();
       status = nextStatus;
       settlements = nextSettlements.items;
       loadError = false;
