@@ -417,6 +417,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     },
   },
   frameleafCloud: {
+    signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, clientSecret: '' },
     cloudMl: {
       enabled: false,
       descriptions: { enabled: false, defaultModel: '', autoBatch: false, dailyBudgetUsd: 0 },
@@ -949,6 +950,7 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getCredentials()).resolves.toEqual([
         { name: ConfigCredential.SmtpPassword, configured: true },
         { name: ConfigCredential.OAuthClientSecret, configured: true },
+        { name: ConfigCredential.FrameleafOidcClientSecret, configured: false },
       ]);
     });
 

@@ -861,6 +861,70 @@
       "identity": "immich_fork.frameleaf_consent.version"
     },
     {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.frameleaf_account_link.autoRegistered"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_account_link.email"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.frameleaf_account_link.emailVerified"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_account_link.lastSignInAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_account_link.linkedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_account_link.role"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_account_link.sub"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_account_link.userId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_session.authTime"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_session.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_session.handoffCodeHash"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_session.handoffExpiresAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_session.sessionId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_session.sid"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_session.sub"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_session.userId"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "immich_fork.frameleaf_user_license.activatedAt"
     },
@@ -7107,6 +7171,26 @@
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
     },
     {
+      "definition": "PRIMARY KEY (\"userId\")",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_pkey"
+    },
+    {
+      "definition": "CHECK (role IS NULL OR (role = ANY (ARRAY['admin'::text, 'user'::text])))",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_role_check"
+    },
+    {
+      "definition": "UNIQUE (sub)",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_sub_unique"
+    },
+    {
+      "definition": "UNIQUE (\"handoffCodeHash\")",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_handoff_unique"
+    },
+    {
+      "definition": "PRIMARY KEY (\"sessionId\")",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_pkey"
+    },
+    {
       "definition": "CHECK (length(\"keyHint\") = 4)",
       "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_hint_check"
     },
@@ -9085,7 +9169,9 @@
     "0000000000187-MemoryCuration",
     "0000000000188-MemoryShowLess",
     "0000000000190-FrameleafUserLicenses",
-    "0000000000200-FrameleafConsents"
+    "0000000000200-FrameleafConsents",
+    "0000000000201-FrameleafAccountLinks",
+    "0000000000202-FrameleafSessions"
   ],
   "functions": [
     {
@@ -10389,6 +10475,30 @@
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_consent_pkey ON immich_fork.frameleaf_consent USING btree (id)",
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_pkey ON immich_fork.frameleaf_account_link USING btree (\"userId\")",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_sub_unique ON immich_fork.frameleaf_account_link USING btree (sub)",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_sub_unique"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_session_handoff_unique ON immich_fork.frameleaf_session USING btree (\"handoffCodeHash\")",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_handoff_unique"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_session_pkey ON immich_fork.frameleaf_session USING btree (\"sessionId\")",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_pkey"
+    },
+    {
+      "definition": "CREATE INDEX frameleaf_session_sid_idx ON immich_fork.frameleaf_session USING btree (sid)",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_sid_idx"
+    },
+    {
+      "definition": "CREATE INDEX frameleaf_session_sub_idx ON immich_fork.frameleaf_session USING btree (sub)",
+      "identity": "immich_fork.frameleaf_session.frameleaf_session_sub_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_user_license_key_unique ON immich_fork.frameleaf_user_license USING btree (\"keySha256\")",
@@ -12940,6 +13050,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.frameleaf_consent"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_account_link"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_session"
     },
     {
       "definition": "table",

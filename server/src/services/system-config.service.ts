@@ -57,6 +57,7 @@ const DEFAULT_SECONDS_PER_ASSET = 1.5;
 const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
   [ConfigCredential.SmtpPassword]: 'notifications.smtp.transport.password',
   [ConfigCredential.OAuthClientSecret]: 'oauth.clientSecret',
+  [ConfigCredential.FrameleafOidcClientSecret]: 'frameleafCloud.signIn.clientSecret',
 };
 
 const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
@@ -70,6 +71,7 @@ const readCredential = (config: SystemConfig, name: ConfigCredential): string =>
 const stripCredentialFlags = (config: AdminConfigDto) => {
   delete config.notifications?.smtp?.transport?.passwordConfigured;
   delete config.oauth?.clientSecretConfigured;
+  delete config.frameleafCloud?.signIn?.clientSecretConfigured;
 };
 
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
@@ -102,6 +104,10 @@ const resolveCredentials = (dto: AdminConfigDto, stored: SystemConfig) => {
   }
   if (dto.oauth?.clientSecret === '') {
     dto.oauth.clientSecret = dto.oauth.issuerUrl === stored.oauth.issuerUrl ? stored.oauth.clientSecret : '';
+  }
+  // FL-158: the Frameleaf client secret belongs to this server's link, so an empty value keeps it
+  if (dto.frameleafCloud?.signIn?.clientSecret === '') {
+    dto.frameleafCloud.signIn.clientSecret = stored.frameleafCloud.signIn?.clientSecret ?? '';
   }
 };
 

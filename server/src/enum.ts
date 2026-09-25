@@ -366,6 +366,10 @@ export enum Permission {
   AdminCloudUpdate = 'adminCloud.update',
   /** FL-155: link this server to a Frameleaf account, or unlink it. */
   AdminCloudLink = 'adminCloud.link',
+  /** FL-158: read your own Frameleaf account link. */
+  FrameleafAccountRead = 'frameleafAccount.read',
+  /** FL-158: link or unlink your own Frameleaf account. */
+  FrameleafAccountUpdate = 'frameleafAccount.update',
 
   AdminCloudMlRead = 'adminCloudMl.read',
   AdminCloudMlUpdate = 'adminCloudMl.update',
@@ -2908,6 +2912,8 @@ export enum ConfigCredential {
   SmtpPassword = 'smtp-password',
   /** `oauth.clientSecret` */
   OAuthClientSecret = 'oauth-client-secret',
+  /** FL-158: `frameleafCloud.signIn.clientSecret` */
+  FrameleafOidcClientSecret = 'frameleaf-oidc-client-secret',
 }
 
 export const ConfigCredentialSchema = z
