@@ -4143,6 +4143,10 @@ export type AssetFaceResponseDto = {
     boundingBoxY1: number;
     /** Bounding box Y2 coordinate */
     boundingBoxY2: number;
+    /** When a person last corrected this face (moved, resized, reassigned or unassigned it), or null */
+    correctedAt: string | null;
+    /** When the owner hid this face, or null. Hidden faces are only listed with withHidden */
+    hiddenAt: string | null;
     /** Face ID */
     id: string;
     /** Image height in pixels */
@@ -4150,11 +4154,15 @@ export type AssetFaceResponseDto = {
     /** Image width in pixels */
     imageWidth: number;
     person: (PersonResponseDto) | null;
+    /** Changes whenever this face changes; send it back as expectedRevision so a correction made against an older face is refused with 409 */
+    revision: string;
     sourceType?: SourceType;
 };
 export type AssetFaceCreateDto = {
     /** Asset ID */
     assetId: string;
+    /** The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409 */
+    expectedSourceRevision?: string;
     /** Face bounding box height */
     height: number;
     /** Image height in pixels */
@@ -4170,9 +4178,45 @@ export type AssetFaceCreateDto = {
     /** Face bounding box Y coordinate */
     y: number;
 };
+export type AssetFaceSourceResponseDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Changes when the image, its orientation or its edits change; send it back as expectedSourceRevision */
+    revision: string;
+};
 export type AssetFaceDeleteDto = {
+    /** The face revision the deletion was decided on; a different current revision is refused with 409 */
+    expectedRevision?: string;
     /** Force delete even if person has other faces */
     force: boolean;
+};
+export type AssetFaceBoxDto = {
+    /** Face bounding box height */
+    height: number;
+    /** Height in pixels of the image the box was drawn on */
+    imageHeight: number;
+    /** Width in pixels of the image the box was drawn on */
+    imageWidth: number;
+    /** Face bounding box width */
+    width: number;
+    /** Face bounding box X coordinate */
+    x: number;
+    /** Face bounding box Y coordinate */
+    y: number;
+};
+export type AssetFaceCorrectionDto = {
+    /** Move or resize the face, in the displayed (edited) image */
+    box?: AssetFaceBoxDto;
+    /** The person the face was assigned to when the correction was made (null when unassigned) */
+    expectedPersonId?: string | null;
+    /** The face revision this correction was made against; a different current revision is refused with 409 */
+    expectedRevision: string;
+    /** The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409 */
+    expectedSourceRevision?: string;
+    /** Hide the face, or show a hidden face again */
+    hidden?: boolean;
+    /** Assign the face to this person, or null to unassign it */
+    personId?: string | null;
 };
 export type FaceDto = {
     /** Face ID */
@@ -12384,14 +12428,16 @@ export function updateVideoMoment({ id, momentId, videoMomentUpdateDto }: {
 /**
  * Retrieve faces for asset
  */
-export function getFaces({ id }: {
+export function getFaces({ id, withHidden }: {
     id: string;
+    withHidden?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetFaceResponseDto[];
     }>(`/faces${QS.query(QS.explode({
-        id
+        id,
+        withHidden
     }))}`, {
         ...opts
     }));
@@ -12402,11 +12448,29 @@ export function getFaces({ id }: {
 export function createFace({ assetFaceCreateDto }: {
     assetFaceCreateDto: AssetFaceCreateDto;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/faces", oazapfts.json({
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetFaceResponseDto;
+    }>("/faces", oazapfts.json({
         ...opts,
         method: "POST",
         body: assetFaceCreateDto
     })));
+}
+/**
+ * Retrieve the face source revision for an asset
+ */
+export function getFaceSource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFaceSourceResponseDto;
+    }>(`/faces/source${QS.query(QS.explode({
+        id
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Delete a face
@@ -12419,6 +12483,22 @@ export function deleteFace({ id, assetFaceDeleteDto }: {
         ...opts,
         method: "DELETE",
         body: assetFaceDeleteDto
+    })));
+}
+/**
+ * Correct a face
+ */
+export function correctFace({ id, assetFaceCorrectionDto }: {
+    id: string;
+    assetFaceCorrectionDto: AssetFaceCorrectionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetFaceResponseDto;
+    }>(`/faces/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: assetFaceCorrectionDto
     })));
 }
 /**

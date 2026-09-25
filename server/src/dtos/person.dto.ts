@@ -174,6 +174,25 @@ export const AssetFaceResponseSchema = z
     boundingBoxY1: z.int().describe('Bounding box Y1 coordinate'),
     boundingBoxY2: z.int().describe('Bounding box Y2 coordinate'),
     sourceType: SourceTypeSchema.optional(),
+    // FL-38: the face's revision and correction provenance, for revision-checked corrections.
+    revision: z
+      .string()
+      .describe(
+        'Changes whenever this face changes; send it back as expectedRevision so a correction made against an older face is refused with 409',
+      )
+      .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
+    correctedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When a person last corrected this face (moved, resized, reassigned or unassigned it), or null')
+      .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
+    hiddenAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the owner hid this face, or null. Hidden faces are only listed with withHidden')
+      .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
     person: PersonResponseSchema.nullable(),
   })
   .describe('Asset face with person')
@@ -200,6 +219,66 @@ const FaceSchema = z
   })
   .meta({ id: 'FaceDto' });
 
+// FL-38: GET /faces keeps `id` (the asset) and may also list the faces its owner hid.
+const FaceSearchSchema = FaceSchema.extend({
+  withHidden: stringToBool
+    .optional()
+    .describe("Also list faces the asset's owner hid (owner only)")
+    .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
+}).meta({ id: 'FaceSearchDto' });
+
+const expectedSourceRevision = z
+  .string()
+  .optional()
+  .describe(
+    'The face source revision (GET /faces/source) the coordinates were drawn on. When the image, its orientation or its edits changed since, the request is refused with 409',
+  )
+  .meta(new HistoryBuilder().added('v3.2.1').getExtensions());
+
+const AssetFaceBoxSchema = z
+  .object({
+    imageWidth: z.int().min(1).describe('Width in pixels of the image the box was drawn on'),
+    imageHeight: z.int().min(1).describe('Height in pixels of the image the box was drawn on'),
+    x: z.int().min(0).describe('Face bounding box X coordinate'),
+    y: z.int().min(0).describe('Face bounding box Y coordinate'),
+    width: z.int().min(1).describe('Face bounding box width'),
+    height: z.int().min(1).describe('Face bounding box height'),
+  })
+  .refine((box) => box.x + box.width <= box.imageWidth && box.y + box.height <= box.imageHeight, {
+    error: 'The face box must lie inside the image',
+  })
+  .meta({ id: 'AssetFaceBoxDto' });
+
+// FL-38: one revision-checked correction of an existing face (detected or manual).
+const AssetFaceCorrectionSchema = z
+  .object({
+    expectedRevision: z
+      .string()
+      .describe('The face revision this correction was made against; a different current revision is refused with 409'),
+    expectedPersonId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe('The person the face was assigned to when the correction was made (null when unassigned)'),
+    expectedSourceRevision,
+    personId: z.uuidv4().nullable().optional().describe('Assign the face to this person, or null to unassign it'),
+    box: AssetFaceBoxSchema.optional().describe('Move or resize the face, in the displayed (edited) image'),
+    hidden: z.boolean().optional().describe('Hide the face, or show a hidden face again'),
+  })
+  .refine((dto) => dto.personId !== undefined || dto.box !== undefined || dto.hidden !== undefined, {
+    error: 'Nothing to change',
+  })
+  .meta({ id: 'AssetFaceCorrectionDto' });
+
+const AssetFaceSourceResponseSchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    revision: z
+      .string()
+      .describe('Changes when the image, its orientation or its edits change; send it back as expectedSourceRevision'),
+  })
+  .meta({ id: 'AssetFaceSourceResponseDto' });
+
 const AssetFaceCreateSchema = AssetFaceUpdateItemSchema.extend({
   imageWidth: z.int().describe('Image width in pixels'),
   imageHeight: z.int().describe('Image height in pixels'),
@@ -207,11 +286,17 @@ const AssetFaceCreateSchema = AssetFaceUpdateItemSchema.extend({
   y: z.int().describe('Face bounding box Y coordinate'),
   width: z.int().describe('Face bounding box width'),
   height: z.int().describe('Face bounding box height'),
+  expectedSourceRevision,
 }).meta({ id: 'AssetFaceCreateDto' });
 
 const AssetFaceDeleteSchema = z
   .object({
     force: z.boolean().describe('Force delete even if person has other faces'),
+    expectedRevision: z
+      .string()
+      .optional()
+      .describe('The face revision the deletion was decided on; a different current revision is refused with 409')
+      .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
   })
   .meta({ id: 'AssetFaceDeleteDto' });
 
@@ -225,6 +310,10 @@ const PersonStatisticsResponseSchema = z
 
 export class AssetFaceUpdateDto extends createZodDto(AssetFaceUpdateSchema) {}
 export class FaceDto extends createZodDto(FaceSchema) {}
+export class FaceSearchDto extends createZodDto(FaceSearchSchema) {}
+export class AssetFaceBoxDto extends createZodDto(AssetFaceBoxSchema) {}
+export class AssetFaceCorrectionDto extends createZodDto(AssetFaceCorrectionSchema) {}
+export class AssetFaceSourceResponseDto extends createZodDto(AssetFaceSourceResponseSchema) {}
 export class AssetFaceCreateDto extends createZodDto(AssetFaceCreateSchema) {}
 export class AssetFaceDeleteDto extends createZodDto(AssetFaceDeleteSchema) {}
 export class PersonStatisticsResponseDto extends createZodDto(PersonStatisticsResponseSchema) {}
@@ -283,6 +372,9 @@ function mapFacesWithoutPerson(face: AssetFace, edits?: AssetEditActionItem[], a
       assetDimensions ?? { width: face.imageWidth, height: face.imageHeight },
     ),
     sourceType: face.sourceType,
+    revision: face.updateId,
+    correctedAt: asDateTimeString(face.correctedAt ?? null) ?? null,
+    hiddenAt: asDateTimeString(face.deletedAt) ?? null,
   };
 }
 
