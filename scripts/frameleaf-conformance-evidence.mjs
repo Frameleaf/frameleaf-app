@@ -1000,7 +1000,7 @@ const actions = {
     {
       production: [
         `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
-        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsPanel.svelte`,
       ],
     },
   ],
@@ -1011,7 +1011,7 @@ const actions = {
     {
       production: [
         `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
-        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsPanel.svelte`,
       ],
     },
   ],
@@ -1022,7 +1022,7 @@ const actions = {
     {
       production: [
         `${W}/lib/components/asset-viewer/SlideshowBar.svelte`,
-        `${W}/lib/components/frameleaf/SlideshowSettingsDialog.svelte`,
+        `${W}/lib/components/frameleaf/SlideshowSettingsPanel.svelte`,
       ],
     },
   ],
