@@ -165,7 +165,7 @@ describe(evaluateClaimAdmission.name, () => {
     });
   });
 
-  it('never lets a LAN worker take a job the person sent to RunPod, or the reverse', () => {
+  it('never lets a LAN worker take a job the person sent to Frameleaf Cloud, or the reverse', () => {
     expect(
       evaluateClaimAdmission(claimInput({ operation: { destination: MediaOperationDestination.FrameleafCloud } })),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.DestinationMismatch });
