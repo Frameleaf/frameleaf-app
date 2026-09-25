@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { debounce } from 'lodash-es';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -35,6 +36,7 @@ import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { appendConfigHistory, readConfigHistory, reviewHistoryTitle } from 'src/utils/config-history.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   UnsupportedPostgresError,
@@ -354,7 +356,40 @@ export class DatabaseBackupService {
       originalsVerifiedAt: dto.originals ? now : (record.originalsVerifiedAt ?? null),
       verifiedBy: auth.user.id,
     });
+    await this.recordReview(auth, 'Recovery readiness', now);
     return this.getRestoreVerification();
+  }
+
+  /**
+   * FL-71 (CC-10): a review lands in the settings change history as "Reviewed: {title}"
+   * (`CommandCenter.jsx:2495`), with no values. Appended under the settings lock like a save; a
+   * failure is logged and never undoes the review.
+   */
+  private async recordReview(auth: AuthDto, title: string, at: string) {
+    try {
+      await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const history = readConfigHistory(
+          await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory),
+        );
+        await this.systemMetadataRepository.set(
+          SystemMetadataKey.SystemConfigHistory,
+          appendConfigHistory(
+            history,
+            {
+              id: randomUUID(),
+              createdAt: at,
+              actorId: auth.user.id,
+              actorName: auth.user.name,
+              kind: 'review',
+              title: reviewHistoryTitle(title),
+            },
+            [],
+          ),
+        );
+      });
+    } catch (error) {
+      this.logger.error(`Unable to record the review in the change history: ${error}`);
+    }
   }
 
   async listBackups(): Promise<DatabaseBackupListResponseDto> {

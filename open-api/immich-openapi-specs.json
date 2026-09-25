@@ -35401,6 +35401,52 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/users/me/preferences/history": {
+      "get": {
+        "description": "The newest changes to the current user’s own preferences, with the device that saved each. Locked-content rules appear only as changed.",
+        "operationId": "getMyPreferenceHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferenceHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get my preference history",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/profile-image": {
       "delete": {
         "description": "Delete the profile image of the current user.",
@@ -71125,11 +71171,19 @@
             "description": "Entry ID",
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/SystemConfigHistoryKind"
+          },
           "omittedChanges": {
             "description": "Changed settings left out because the entry reached its limit",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "title": {
+            "description": "The entry title, such as \"Updated RunPod API key\"; absent for a settings save",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -71141,6 +71195,15 @@
           "omittedChanges"
         ],
         "type": "object"
+      },
+      "SystemConfigHistoryKind": {
+        "description": "What the entry records; absent for entries saved before it was recorded",
+        "enum": [
+          "settings",
+          "credential",
+          "review"
+        ],
+        "type": "string"
       },
       "SystemConfigHistoryResponseDto": {
         "properties": {
@@ -73948,6 +74011,88 @@
           "onboarding"
         ],
         "type": "string"
+      },
+      "UserPreferenceHistoryChangeDto": {
+        "properties": {
+          "after": {
+            "description": "The value after, JSON encoded; null when protected",
+            "nullable": true,
+            "type": "string"
+          },
+          "before": {
+            "description": "The value before, JSON encoded; null when protected",
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "description": "The changed preference, as a dotted path such as memories.enabled",
+            "type": "string"
+          },
+          "protected": {
+            "description": "Changed, but its values are not recorded (Locked content)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "after",
+          "before",
+          "path"
+        ],
+        "type": "object"
+      },
+      "UserPreferenceHistoryEntryDto": {
+        "properties": {
+          "changes": {
+            "description": "Every changed preference",
+            "items": {
+              "$ref": "#/components/schemas/UserPreferenceHistoryChangeDto"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "description": "When the change was saved",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deviceLabel": {
+            "description": "The device that saved it, such as \"macOS · Web\"",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Entry ID",
+            "type": "string"
+          },
+          "omittedChanges": {
+            "description": "Changed preferences left out because the entry reached its limit",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changes",
+          "createdAt",
+          "deviceLabel",
+          "id",
+          "omittedChanges"
+        ],
+        "type": "object"
+      },
+      "UserPreferenceHistoryResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "The newest preference changes first",
+            "items": {
+              "$ref": "#/components/schemas/UserPreferenceHistoryEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
       },
       "UserPreferencesResponseDto": {
         "properties": {
