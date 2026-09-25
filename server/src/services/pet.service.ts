@@ -1,24 +1,31 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  PetAssetObservationSearchDto,
   PetCandidateListResponseDto,
+  PetCandidateRejectDto,
   PetCandidateReviewDto,
   PetCandidateSearchDto,
   PetCreateDto,
   PetMergeDto,
   PetObservationCreateDto,
+  PetObservationDeleteDto,
   PetObservationResponseDto,
+  PetRecognitionStatusResponseDto,
   PetResponseDto,
   PetSearchDto,
   PetUpdateDto,
   mapPet,
   mapPetCandidate,
   mapPetObservation,
+  mapPetRecognitionStatus,
 } from 'src/dtos/pet.dto.js';
-import { Permission, PetObservationSource, PetObservationState } from 'src/enum.js';
+import { JobName, Permission, PetObservationSource, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -29,23 +36,14 @@ import {
   sortCandidatesForReview,
 } from 'src/utils/pets.js';
 
-/**
- * Why the queue is empty while no pet model exists.
- *
- * `machine-learning/immich_ml` implements no `pet-recognition` task, so the review page
- * must not claim that an empty queue means everything has been reviewed. This reason is
- * returned with every candidate listing and shown to the user verbatim through an i18n
- * key, so the page is honest about the difference between "nothing to review" and
- * "nothing can propose anything yet".
- */
-export const PET_RECOGNITION_UNAVAILABLE_REASON = 'no_model';
-
 @Injectable()
 export class PetService {
   constructor(
     private accessRepository: AccessRepository,
     private petRepository: PetRepository,
     private logger: LoggingRepository,
+    private jobRepository: JobRepository,
+    private petRecognition: PetRecognitionService,
   ) {
     this.logger.setContext(PetService.name);
   }
@@ -173,6 +171,7 @@ export class PetService {
     });
 
     const box = this.validateRegion(dto);
+    await this.requireCurrentSource(auth, dto.assetId, dto.expectedChecksum);
 
     const observation = await this.petRepository.upsertObservation({
       petId: pet.id,
@@ -182,11 +181,32 @@ export class PetService {
       ...box,
     });
 
+    await this.lookForPetAgain(pet.id, dto.assetId);
     return mapPetObservation(observation);
   }
 
-  /** Undo a durable decision. Nothing else removes one. */
-  async removeObservation(auth: AuthDto, observationId: string): Promise<void> {
+  /**
+   * The viewer's "Pets in this photo" (FL-58): the owner's own decisions about one asset. An asset
+   * the caller cannot read is refused; on anyone else's asset the list is empty, since pets are
+   * owner-only and never shared.
+   */
+  async getAssetObservations(auth: AuthDto, dto: PetAssetObservationSearchDto): Promise<PetObservationResponseDto[]> {
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetRead, ids: [dto.assetId] });
+    const observations = await this.petRepository.getObservationsForAsset(
+      auth.user.id,
+      dto.assetId,
+      getLockedVisibilityOptions(auth),
+    );
+    return observations
+      .filter((observation) => !isSuppressedWhileLocked(auth, 'pet', observation.petId))
+      .map((observation) => mapPetObservation(observation));
+  }
+
+  /**
+   * Undo a durable decision. Nothing else removes one. The photo goes back through recognition, so
+   * a proposal the owner answered by mistake comes back for review.
+   */
+  async removeObservation(auth: AuthDto, observationId: string, dto: PetObservationDeleteDto = {}): Promise<void> {
     const observation = await this.petRepository.getObservationById(
       auth.user.id,
       observationId,
@@ -195,16 +215,46 @@ export class PetService {
     if (!observation || isSuppressedWhileLocked(auth, 'pet', observation.petId)) {
       throw new NotFoundException('Pet observation not found');
     }
+    await this.requireCurrentSource(auth, observation.assetId, dto.expectedChecksum);
 
     await this.petRepository.deleteObservation(auth.user.id, observationId);
+    await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: observation.assetId } });
+  }
+
+  // ------------------------------------------------------------------ recognition runs
+
+  async getRecognition(auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    return mapPetRecognitionStatus(await this.petRecognition.getStatus(auth.user.id));
+  }
+
+  /**
+   * Look through the owner's library again. Refused with the destination's own reason when
+   * recognition cannot run, so nothing is queued that would only fail; nothing falls back.
+   */
+  async startRecognition(auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    const status = await this.petRecognition.getStatus(auth.user.id);
+    if (!status.available) {
+      throw new BadRequestException(`Pet recognition is unavailable (${status.reason}): ${status.detail}`);
+    }
+    if (!status.hasConfirmedPhotos) {
+      throw new BadRequestException('Confirm a pet in at least one photo first; recognition learns from those photos');
+    }
+    await this.petRecognition.startRun(auth.user.id, status.destination?.kind ?? null);
+    return this.getRecognition(auth);
+  }
+
+  async cancelRecognition(auth: AuthDto): Promise<PetRecognitionStatusResponseDto> {
+    await this.petRecognition.cancelRun(auth.user.id);
+    return this.getRecognition(auth);
   }
 
   // ------------------------------------------------------------------------ review flow
 
   async getCandidates(auth: AuthDto, dto: PetCandidateSearchDto): Promise<PetCandidateListResponseDto> {
-    const [candidates, decisions] = await Promise.all([
+    const [candidates, decisions, recognition] = await Promise.all([
       this.petRepository.getCandidates(auth.user.id, dto.size, getLockedVisibilityOptions(auth)),
       this.petRepository.getDecisions(auth.user.id),
+      this.petRecognition.getStatus(auth.user.id),
     ]);
 
     // A pairing the owner has already answered never comes back, whatever model revision
@@ -219,8 +269,9 @@ export class PetService {
 
     return {
       candidates: unreviewed.map((candidate) => mapPetCandidate(candidate)),
-      recognitionAvailable: false,
-      recognitionUnavailableReason: PET_RECOGNITION_UNAVAILABLE_REASON,
+      recognitionAvailable: recognition.available,
+      recognitionUnavailableReason: recognition.reason,
+      recognition: mapPetRecognitionStatus(recognition),
     };
   }
 
@@ -228,8 +279,9 @@ export class PetService {
    * Accept a proposal, or reassign it to a different pet.
    *
    * Either way the result is one durable `confirmed` observation carrying the detected
-   * region, and every proposal about that detection is dropped: the model has had its
-   * say and the owner has answered.
+   * region. The answered proposals are dropped (the proposed pet's and, on a reassign, the
+   * chosen pet's); proposals for other pets in the same photo stay for review. A reassign does
+   * not record the proposed pet as absent: the owner said who this is, not who is missing.
    */
   async acceptCandidate(
     auth: AuthDto,
@@ -241,6 +293,7 @@ export class PetService {
 
     // Reassignment targets a pet the caller names, so it gets its own owner check.
     await this.findOrFail(auth, petId);
+    await this.requireCurrentSource(auth, candidate.assetId, dto.expectedChecksum);
 
     const observation = await this.petRepository.upsertObservation({
       petId,
@@ -255,7 +308,8 @@ export class PetService {
       imageHeight: candidate.imageHeight,
     });
 
-    await this.petRepository.deleteCandidatesForDetection(candidate.detectionId);
+    await this.petRepository.deleteCandidates(candidate.detectionId, [...new Set([candidate.petId, petId])]);
+    await this.lookForPetAgain(petId, candidate.assetId);
 
     return mapPetObservation(observation);
   }
@@ -267,8 +321,13 @@ export class PetService {
    * the candidate alone. Deleting alone would be forgotten the moment the model ran
    * again; the durable row is what keeps the pairing out of the queue across revisions.
    */
-  async rejectCandidate(auth: AuthDto, candidateId: string): Promise<PetObservationResponseDto> {
+  async rejectCandidate(
+    auth: AuthDto,
+    candidateId: string,
+    dto: PetCandidateRejectDto = {},
+  ): Promise<PetObservationResponseDto> {
     const candidate = await this.findCandidateOrFail(auth, candidateId);
+    await this.requireCurrentSource(auth, candidate.assetId, dto.expectedChecksum);
 
     const observation = await this.petRepository.upsertObservation({
       petId: candidate.petId,
@@ -283,12 +342,33 @@ export class PetService {
       imageHeight: null,
     });
 
-    await this.petRepository.deleteCandidatesForDetection(candidate.detectionId);
+    await this.petRepository.deleteCandidates(candidate.detectionId, [candidate.petId]);
 
     return mapPetObservation(observation);
   }
 
   // ---------------------------------------------------------------------------- helpers
+
+  /**
+   * FL-58 source checksums: a decision made while looking at one original must not land on a
+   * replacement. When the client names the checksum it saw and the asset's is different now, the
+   * write is refused with 409 and the client reloads the photo. No checksum named, no check (API
+   * clients that do not track the original keep working).
+   */
+  private async requireCurrentSource(auth: AuthDto, assetId: string, expected: string | undefined) {
+    if (expected === undefined) {
+      return;
+    }
+    const current = await this.petRepository.getOwnedAssetChecksum(auth.user.id, assetId);
+    if (!current || !Buffer.from(expected, 'base64').equals(Buffer.from(current))) {
+      throw new ConflictException('This photo changed since it was opened. Reload it and try again.');
+    }
+  }
+
+  /** A pet was confirmed in a photo: recognition looks again at the owner's photos most like it. */
+  private async lookForPetAgain(petId: string, assetId: string) {
+    await this.jobRepository.queue({ name: JobName.PetRecognitionNearest, data: { petId, assetId } });
+  }
 
   /**
    * Every read and write of one pet comes through here. While the session is not unlocked a

@@ -11,6 +11,7 @@ import {
   type MemoryShowLessResponseDto,
   type OnThisDayDto,
   type PersonRecapDto,
+  type PetStoryDto,
   type YearInReviewDto,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
@@ -30,13 +31,18 @@ import type { Translations } from 'svelte-i18n';
  * re-interpreting them in the viewer's zone would move a trip by a day.
  */
 
-export type MemoryStoryKind = 'on_this_day' | 'event_story' | 'year_in_review' | 'birthday' | 'person_recap';
+export type MemoryStoryKind =
+  'on_this_day' | 'event_story' | 'year_in_review' | 'pet_story' | 'birthday' | 'person_recap';
 
 export const isEventStory = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: EventStoryDto } =>
   memory.type === MemoryType.EventStory && (memory.data as Partial<EventStoryDto>).kind === 'event_story';
 
 export const isYearInReview = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: YearInReviewDto } =>
   memory.type === MemoryType.YearInReview && (memory.data as Partial<YearInReviewDto>).kind === 'year_in_review';
+
+/** FL-58: a month of photos with one of the owner's named pets; `name` is the pet's current name. */
+export const isPetStory = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: PetStoryDto } =>
+  memory.type === MemoryType.PetStory && (memory.data as Partial<PetStoryDto>).kind === 'pet_story';
 
 export const isBirthday = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: BirthdayMemoryDto } =>
   memory.type === MemoryType.Birthday && (memory.data as Partial<BirthdayMemoryDto>).kind === 'birthday';
@@ -47,6 +53,9 @@ export const isPersonRecap = (memory: MemoryResponseDto): memory is MemoryRespon
 export const memoryStoryKind = (memory: MemoryResponseDto): MemoryStoryKind => {
   if (isEventStory(memory)) {
     return 'event_story';
+  }
+  if (isPetStory(memory)) {
+    return 'pet_story';
   }
   if (isYearInReview(memory)) {
     return 'year_in_review';
@@ -196,6 +205,13 @@ export const monthDayLabel = (monthDay: string, locale?: string): string => {
 
 export type MemoryHeadline = { title: string; subtitle: string };
 
+/** "August 2026" for a pet story's local month ('yyyy-MM'). */
+const monthLabel = (month: string, locale?: string) =>
+  DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc', ...(locale && { locale }) }).toLocaleString({
+    month: 'long',
+    year: 'numeric',
+  });
+
 /**
  * A memory's title and the line under it (Memories.jsx:170-200, discovery-data.mjs:990-1150): "On this
  * day" over "One year ago · September 25, 2025", a trip's place over its days, a birthday, a recap. The
@@ -225,6 +241,13 @@ const generatedHeadline = (
     return {
       title: t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } }),
       subtitle: t('frameleaf_memories_year_in_review_subtitle', { values: { count: memory.data.monthCount } }),
+    };
+  }
+  if (isPetStory(memory)) {
+    // FL-58: a month with one of the owner's pets, under the pet's current name
+    return {
+      title: t('frameleaf_memories_pet_story_title', { values: { name: memory.data.name } }),
+      subtitle: [monthLabel(memory.data.month, locale), count].join(' · '),
     };
   }
   if (isBirthday(memory)) {
@@ -277,6 +300,12 @@ export const showLessOptions = (memory: MemoryResponseDto, { t, locale }: { t: T
         kind: memory.data.subject === Subject.Pet ? MemoryShowLessKind.Pet : MemoryShowLessKind.Person,
         value: memory.data.subjectId,
       },
+      label: t('frameleaf_memories_show_less_subject', { values: { name: memory.data.name } }),
+    });
+  }
+  if (isPetStory(memory)) {
+    options.push({
+      rule: { kind: MemoryShowLessKind.Pet, value: memory.data.petId },
       label: t('frameleaf_memories_show_less_subject', { values: { name: memory.data.name } }),
     });
   }

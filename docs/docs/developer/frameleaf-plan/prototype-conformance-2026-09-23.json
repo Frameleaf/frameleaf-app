@@ -20,13 +20,13 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 27,
+      "partial": 26,
       "missing": 1,
-      "fixed": 125,
-      "in-flight": 8,
+      "fixed": 126,
+      "in-flight": 6,
       "studio-parked": 3,
       "retained-live-route": 8,
-      "intentional-product-change": 3
+      "intentional-product-change": 5
     }
   },
   "webActions": [
@@ -364,9 +364,9 @@
       "title": "Add a person: draw bounding box, search existing person, confirm",
       "prototype": ["design/frameleaf/template/src/FaceTagger.jsx", "design/frameleaf/template/src/face-tags.mjs"],
       "production": ["web/src/lib/components/frameleaf/FaceTagger.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-28"],
-      "followUp": "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face and batch Save face tags ported (FL-38); the stale-revision banner is deferred by the owner and detected face boxes stay read-only until the server can update a face box"
+      "followUp": "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face, batch Save face tags and the stale-revision banner (FL-38); detected faces move and resize through the revision-checked PATCH /faces/:id, and every correction is kept in the person's correction history (FL-57)"
     },
     {
       "requirementId": "action:info-people:add-edit-location",
@@ -2022,7 +2022,7 @@
       ],
       "status": "partial",
       "gaps": ["CC-42", "CC-43", "CC-44"],
-      "followUp": "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts); open: the enrichment dialog shell (CC-42, FL-59) and the RunPod manager and provider history (CC-43, CC-44, FL-43)"
+      "followUp": "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns, Account filter J-1 with per-account counts) and FL-59 (CC-42, the Frameleaf Enrichment tasks dialog with When and Acceleration); open: the RunPod manager and provider history (CC-43, CC-44, FL-43)"
     },
     {
       "route": "/admin/queues/[name]",
@@ -2365,11 +2365,12 @@
       "production": [
         "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/components/frameleaf/people/PersonHero.svelte",
-        "web/src/lib/components/frameleaf/people/FixMatchPanel.svelte"
+        "web/src/lib/components/frameleaf/people/FixMatchPanel.svelte",
+        "web/src/lib/components/frameleaf/people/CorrectionHistoryPanel.svelte"
       ],
       "status": "fixed",
-      "gaps": ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8"],
-      "followUp": "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); PD-9 Correction history stays as an extra action pending an owner decision"
+      "gaps": ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
+      "followUp": "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); Fix incorrect match splits selected faces into an existing or new person with revision-checked corrections, and PD-9 Correction history is FL-57's paginated history with Undo (the story requires it; FL-146 defaults accepted 2026-09-25)"
     },
     {
       "route": "/people/manage",
@@ -2383,17 +2384,17 @@
       "route": "/pets",
       "prototype": ["design/frameleaf/template/src/App.jsx"],
       "production": ["web/src/routes/(user)/pets/+page.svelte"],
-      "status": "in-flight",
+      "status": "intentional-product-change",
       "gaps": [],
-      "followUp": "FL-58 pets (beyond the prototype)"
+      "followUp": "FL-58 pets beyond the prototype's tag query: durable named cat/dog profiles, checksum-guarded review with Undo, CLIP-based recognition on the routed destination (this server, a computer on the network or Frameleaf Cloud) with actionable refusals; composed from the People grid and grouped-list patterns"
     },
     {
       "route": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
       "prototype": ["design/frameleaf/template/src/App.jsx"],
       "production": ["web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
-      "status": "in-flight",
+      "status": "intentional-product-change",
       "gaps": [],
-      "followUp": "FL-58 pets (beyond the prototype)"
+      "followUp": "FL-58 pet page (beyond the prototype): the pet's confirmed photos through the petIds search filter, and its decisions with stale regions to check"
     },
     {
       "route": "/photos/[[assetId=id]]",

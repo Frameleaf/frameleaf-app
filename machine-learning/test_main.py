@@ -2389,7 +2389,7 @@ def test_capabilities_endpoint_lists_only_library_workloads(deployed_app: TestCl
     body = response.json()
     assert body["protocol"] == "predict-v1"
     # The ordinary predict container never claims restoration or Studio workloads.
-    assert body["workloads"] == ["face", "clip", "ocr", "enrichment"]
+    assert body["workloads"] == ["face", "clip", "ocr", "enrichment", "pet-recognition"]
     assert not {"restoration-faithful", "restoration-creative", "studio-ai"} & set(body["workloads"])
 
 

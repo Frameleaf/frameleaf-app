@@ -127,35 +127,45 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForGenerateThumbnailJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .select([
-        'asset.id',
-        'asset.visibility',
-        'asset.originalFileName',
-        'asset.originalPath',
-        'asset.ownerId',
-        'asset.thumbhash',
-        'asset.type',
-        // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
-        'asset.checksum',
-      ])
-      .select((eb) =>
-        jsonArrayFrom(
+    return (
+      this.db
+        .selectFrom('asset')
+        .select([
+          'asset.id',
+          'asset.visibility',
+          'asset.originalFileName',
+          'asset.originalPath',
+          'asset.ownerId',
+          'asset.thumbhash',
+          'asset.type',
+          // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
+          'asset.checksum',
+        ])
+        .select((eb) =>
+          jsonArrayFrom(
+            eb
+              .selectFrom('asset_file')
+              .select(columns.assetFilesForThumbnail)
+              .whereRef('asset_file.assetId', '=', 'asset.id')
+              .where('asset_file.type', 'in', [AssetFileType.Thumbnail, AssetFileType.Preview, AssetFileType.FullSize]),
+          ).as('files'),
+        )
+        .select(withEdits)
+        .$call(withExifInner)
+        .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
+        .select((eb) => withVideoStream(eb).as('videoStream'))
+        .select((eb) => withVideoFormat(eb).as('format'))
+        // FL-59: the owner's chosen video cover (a time in the video) is where the thumbnail is cut.
+        .select((eb) =>
           eb
-            .selectFrom('asset_file')
-            .select(columns.assetFilesForThumbnail)
-            .whereRef('asset_file.assetId', '=', 'asset.id')
-            .where('asset_file.type', 'in', [AssetFileType.Thumbnail, AssetFileType.Preview, AssetFileType.FullSize]),
-        ).as('files'),
-      )
-      .select(withEdits)
-      .$call(withExifInner)
-      .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
-      .select((eb) => withVideoStream(eb).as('videoStream'))
-      .select((eb) => withVideoFormat(eb).as('format'))
-      .where('asset.id', '=', id)
-      .executeTakeFirst();
+            .selectFrom('video_moment_index')
+            .select('video_moment_index.coverTimestampMs')
+            .whereRef('video_moment_index.assetId', '=', 'asset.id')
+            .as('coverTimestampMs'),
+        )
+        .where('asset.id', '=', id)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -275,14 +285,17 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   getForDetectFacesJob(id: string) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id', 'asset.visibility'])
-      .$call(withExifInner)
-      .select((eb) => withFaces(eb, true, true))
-      .select((eb) => withFiles(eb, AssetFileType.Preview))
-      .where('asset.id', '=', id)
-      .executeTakeFirst();
+    return (
+      this.db
+        .selectFrom('asset')
+        // FL-57: the checksum tells whether a face decision was made about this original
+        .select(['asset.id', 'asset.visibility', 'asset.checksum'])
+        .$call(withExifInner)
+        .select((eb) => withFaces(eb, true, true))
+        .select((eb) => withFiles(eb, AssetFileType.Preview))
+        .where('asset.id', '=', id)
+        .executeTakeFirst()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
