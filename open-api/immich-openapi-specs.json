@@ -7902,6 +7902,63 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/{id}/edits/keyframes": {
+      "get": {
+        "description": "The keyframe times of the original video, so an editor can show where a fast (keyframe) trim actually cuts. Owner's edit permission only; never the edited version.",
+        "operationId": "getAssetEditKeyframes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetEditKeyframesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the original video's keyframes",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/{id}/image-enrichment": {
       "get": {
         "description": "Retrieve private image description, tag, and NSFW detection metadata for a specific asset.",
@@ -9096,6 +9153,15 @@
         "description": "Streams the video file for the specified asset. This endpoint also supports byte range requests.",
         "operationId": "playAssetVideo",
         "parameters": [
+          {
+            "name": "edited",
+            "required": false,
+            "in": "query",
+            "description": "Play the edited version when one exists (default). false plays the unedited source for the asset's owner, as the quick editor needs; everyone else is always given the edited version",
+            "schema": {
+              "type": "boolean"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -31753,6 +31819,104 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/workspace": {
+      "get": {
+        "description": "The editor layout you last saved, or nulls when you have none. Only ever your own.",
+        "operationId": "getStudioWorkspace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioWorkspaceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your Studio workspace layout",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Replaces your stored editor layout. The layout is stored as JSON and returned as the same value (key order and spacing are not kept), up to 256 KiB.",
+        "operationId": "saveStudioWorkspace",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioWorkspaceSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioWorkspaceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save your Studio workspace layout",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/sync/ack": {
       "delete": {
         "description": "Delete specific synchronization acknowledgments.",
@@ -37790,6 +37954,12 @@
             "minimum": -100,
             "type": "number"
           },
+          "blacks": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "blueTone": {
             "format": "double",
             "maximum": 100,
@@ -37802,10 +37972,35 @@
             "minimum": -100,
             "type": "number"
           },
+          "clarity": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "contrast": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "description": "Exposure in EV (develop model)",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "grain": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
             "type": "number"
           },
           "hdr": {
@@ -37820,6 +38015,25 @@
             "minimum": -100,
             "type": "number"
           },
+          "model": {
+            "$ref": "#/components/schemas/VideoAdjustModel"
+          },
+          "noiseReduction": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/VideoDevelopPreset"
+          },
+          "presetStrength": {
+            "description": "Strength of the preset, 0 to 100",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
           "saturation": {
             "format": "double",
             "maximum": 100,
@@ -37832,13 +38046,31 @@
             "minimum": -100,
             "type": "number"
           },
+          "sharpen": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
           "skinTone": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
+          "temperature": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
           "tint": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -37857,6 +38089,12 @@
             "type": "number"
           },
           "whitePoint": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -44418,6 +44656,9 @@
                 "$ref": "#/components/schemas/ToggleParameters"
               },
               {
+                "$ref": "#/components/schemas/StabilizeParameters"
+              },
+              {
                 "$ref": "#/components/schemas/TextOverlayParameters"
               },
               {
@@ -44474,6 +44715,9 @@
                 "$ref": "#/components/schemas/ToggleParameters"
               },
               {
+                "$ref": "#/components/schemas/StabilizeParameters"
+              },
+              {
                 "$ref": "#/components/schemas/TextOverlayParameters"
               },
               {
@@ -44490,6 +44734,23 @@
           "action",
           "id",
           "parameters"
+        ],
+        "type": "object"
+      },
+      "AssetEditKeyframesResponseDto": {
+        "properties": {
+          "keyframesMs": {
+            "description": "Times of the original's video keyframes in milliseconds from its start, ascending. A fast trim starts at the last one at or before its in point.",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "keyframesMs"
         ],
         "type": "object"
       },
@@ -46402,6 +46663,10 @@
       },
       "AudioParameters": {
         "properties": {
+          "limit": {
+            "description": "Limit a gain above 1 so it cannot clip (the Frameleaf quick editor). Absent or false keeps the earlier unlimited gain",
+            "type": "boolean"
+          },
           "muted": {
             "type": "boolean"
           },
@@ -62434,6 +62699,15 @@
             "minLength": 16,
             "type": "string"
           },
+          "formats": {
+            "description": "Containers the check verified writing, such as `mp4`, `webm` or `mov`",
+            "items": {
+              "maxLength": 30,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
           "gpuMemoryBytes": {
             "description": "GPU memory measured by the conformance check",
             "nullable": true,
@@ -62529,7 +62803,8 @@
           "claim_refused",
           "limit_exceeded",
           "revoked",
-          "updated"
+          "updated",
+          "device_lost"
         ],
         "type": "string"
       },
@@ -63295,7 +63570,8 @@
           "wall_clock_exceeded",
           "output_bytes_exceeded",
           "destination_unavailable",
-          "manifest_incomplete"
+          "manifest_incomplete",
+          "codec_unsupported"
         ],
         "type": "string"
       },
@@ -68355,6 +68631,19 @@
         ],
         "type": "object"
       },
+      "StabilizeParameters": {
+        "properties": {
+          "cropEdges": {
+            "description": "Crop the corrected edges 4% and scale back (the Frameleaf quick editor). Absent or false keeps the earlier uncropped render",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "StackCreateDto": {
         "properties": {
           "assetIds": {
@@ -69096,6 +69385,10 @@
             "maximum": 45,
             "minimum": -45,
             "type": "number"
+          },
+          "fill": {
+            "description": "Scale the straightened picture to fill its frame (the Frameleaf quick editor). Absent or false keeps the earlier behaviour: black corners, no zoom",
+            "type": "boolean"
           }
         },
         "required": [
@@ -71165,6 +71458,52 @@
         "required": [
           "den",
           "num"
+        ],
+        "type": "object"
+      },
+      "StudioWorkspaceDto": {
+        "properties": {
+          "engineRevision": {
+            "description": "The engine revision that wrote the layout",
+            "nullable": true,
+            "type": "string"
+          },
+          "layout": {
+            "additionalProperties": {},
+            "description": "The engine layout as the same JSON value it was saved as (key order and spacing are not kept); null when none is stored",
+            "nullable": true,
+            "type": "object"
+          },
+          "savedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "engineRevision",
+          "layout",
+          "savedAt"
+        ],
+        "type": "object"
+      },
+      "StudioWorkspaceSaveDto": {
+        "properties": {
+          "engineRevision": {
+            "description": "The pinned engine revision writing it",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "layout": {
+            "additionalProperties": {},
+            "description": "The engine layout; stored and returned as the same JSON value (key order and spacing are not kept)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "engineRevision",
+          "layout"
         ],
         "type": "object"
       },
@@ -74467,12 +74806,19 @@
             "minimum": 1,
             "type": "integer"
           },
+          "position": {
+            "$ref": "#/components/schemas/TextOverlayPosition"
+          },
+          "shadow": {
+            "description": "Draw a soft drop shadow behind the text",
+            "type": "boolean"
+          },
           "size": {
             "default": 0.06,
             "description": "Font size as a percentage of video height",
             "format": "double",
             "maximum": 0.2,
-            "minimum": 0.02,
+            "minimum": 0.01,
             "type": "number"
           },
           "startMs": {
@@ -74507,6 +74853,21 @@
           "y"
         ],
         "type": "object"
+      },
+      "TextOverlayPosition": {
+        "description": "Anchor on a 3 × 3 grid; when set, the text is aligned to it and x/y are ignored",
+        "enum": [
+          "top-left",
+          "top",
+          "top-right",
+          "left",
+          "center",
+          "right",
+          "bottom-left",
+          "bottom",
+          "bottom-right"
+        ],
+        "type": "string"
       },
       "TimeBucketAssetResponseDto": {
         "properties": {
@@ -75129,6 +75490,9 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/VideoTrimMode"
           },
           "startMs": {
             "description": "Trim start time in milliseconds",
@@ -76540,6 +76904,13 @@
         ],
         "type": "object"
       },
+      "VideoAdjustModel": {
+        "description": "develop: the values follow the photo develop model (exposure, whites, blacks, temperature…), as the Frameleaf quick editor writes them. Absent: the earlier video adjustment model.",
+        "enum": [
+          "develop"
+        ],
+        "type": "string"
+      },
       "VideoCodec": {
         "description": "Target video codec",
         "enum": [
@@ -76557,6 +76928,21 @@
           "mp4",
           "ogg",
           "webm"
+        ],
+        "type": "string"
+      },
+      "VideoDevelopPreset": {
+        "enum": [
+          "Original",
+          "Vivid",
+          "Natural",
+          "Warm",
+          "Cool",
+          "Mono",
+          "Silvertone",
+          "Noir",
+          "Fade",
+          "B&W"
         ],
         "type": "string"
       },
@@ -77041,6 +77427,14 @@
           "state"
         ],
         "type": "object"
+      },
+      "VideoTrimMode": {
+        "description": "Precise cuts are frame accurate and re-encode; fast cuts snap to keyframes and copy the streams when nothing else in the recipe needs a re-encode",
+        "enum": [
+          "precise",
+          "fast"
+        ],
+        "type": "string"
       },
       "WorkerCredentialState": {
         "description": "How a worker credential is held",

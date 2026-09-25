@@ -604,6 +604,31 @@ describe(MediaOperationRepository.name, () => {
     });
   });
 
+  describe('revocation lookup (FL-90)', () => {
+    it("lists a project's unfinished jobs of the named kinds, optionally for one account", async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: reviewer } = await ctx.newUser();
+      const exported = await newOperation(sut, owner.id, { projectId: 'project-1' });
+      const previewed = await newOperation(sut, reviewer.id, {
+        projectId: 'project-1',
+        kind: MediaOperationKind.StudioPreview,
+      });
+      const finished = await newOperation(sut, owner.id, { projectId: 'project-1' });
+      await sut.requestCancel(finished.id, owner.id);
+      await newOperation(sut, owner.id, { projectId: 'project-2' });
+      await newOperation(sut, owner.id, { projectId: 'project-1', kind: MediaOperationKind.Bulk });
+
+      const kinds = [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview];
+      const all = await sut.listUnfinishedForProjects(['project-1'], kinds);
+      expect(all.map((row) => row.id).toSorted()).toEqual([exported.id, previewed.id].toSorted());
+      expect(await sut.listUnfinishedForProjects(['project-1'], kinds, reviewer.id)).toEqual([
+        expect.objectContaining({ id: previewed.id, ownerId: reviewer.id }),
+      ]);
+      expect(await sut.listUnfinishedForProjects([], kinds)).toEqual([]);
+    });
+  });
+
   describe('checkpoints', () => {
     const chunk = (sequence: number) => ({
       sequence,

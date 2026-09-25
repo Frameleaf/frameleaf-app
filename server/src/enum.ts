@@ -1629,6 +1629,11 @@ export enum RenderWorkerAuditEvent {
   Revoked = 'revoked',
   /** An administrator changed the worker's limits or scopes. */
   Updated = 'updated',
+  /**
+   * FL-95: the worker reported that its GPU was lost mid-job. Every session it held is revoked, so
+   * it must present fresh conformance evidence before it is given anything again.
+   */
+  DeviceLost = 'device_lost',
 }
 
 export const RenderWorkerAuditEventSchema = z
@@ -1670,6 +1675,11 @@ export enum RenderWorkerRefusalReason {
   DestinationUnavailable = 'destination_unavailable',
   /** FL-90 refused at least one graph resource; a render needs a complete manifest. */
   ManifestIncomplete = 'manifest_incomplete',
+  /**
+   * FL-95: the operation's output needs an encoder or a container the session's conformance check
+   * did not verify.
+   */
+  CodecUnsupported = 'codec_unsupported',
 }
 
 export const RenderWorkerRefusalReasonSchema = z

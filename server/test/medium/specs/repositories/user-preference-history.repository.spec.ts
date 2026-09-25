@@ -133,6 +133,13 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
     VALUES (${kept.id}::uuid, 'Family', ARRAY[${kept.id}::uuid, ${removed}::uuid])
     RETURNING id::text AS id
   `.execute(db);
+  // FL-91: Studio workspace layouts of a removed and a kept account.
+  for (const userId of [removed, kept.id]) {
+    await sql`
+      INSERT INTO immich_fork.studio_workspace_layout ("userId", layout, "engineRevision")
+      VALUES (${userId}::uuid, '{"zoom":1}'::jsonb, 'rev')
+    `.execute(db);
+  }
 
   // FL-62: a removed account's memory show-less rules and memory curation go too; the kept account's stay.
   for (const userId of [kept.id, removed]) {
@@ -170,6 +177,12 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
     { table: 'curation', userId: kept.id },
     { table: 'show_less', userId: kept.id },
   ]);
+  expect(swept?.workspaceLayouts).toBeGreaterThanOrEqual(1);
+  const layouts = await sql<{ userId: string }>`
+    SELECT "userId"::text AS "userId" FROM immich_fork.studio_workspace_layout
+    WHERE "userId" IN (${removed}::uuid, ${kept.id}::uuid)
+  `.execute(db);
+  expect(layouts.rows).toEqual([{ userId: kept.id }]);
   await expect(sut.getPreferenceHistory(removed)).resolves.toEqual([]);
   await expect(sut.getPreferenceHistory(kept.id)).resolves.toHaveLength(1);
 

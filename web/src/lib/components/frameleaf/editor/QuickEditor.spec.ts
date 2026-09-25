@@ -3,6 +3,7 @@ import {
   AssetDevelopRevisionStatus,
   AssetTypeEnum,
   getAssetDevelop,
+  getAssetEdits,
   getVideoEditVersions,
   previewAssetDevelop,
   saveAssetDevelop,
@@ -30,6 +31,11 @@ vi.mock('@immich/sdk', async () => {
     getDevelopPresets: vi.fn().mockResolvedValue([]),
     getAssetDevelopExports: vi.fn().mockResolvedValue([]),
     getVideoEditVersions: vi.fn().mockResolvedValue([]),
+    getAssetEdits: vi.fn().mockResolvedValue({
+      assetId: 'asset',
+      edits: [],
+      originalVideo: { width: 1920, height: 1080, durationMs: 24_000 },
+    }),
   };
 });
 
@@ -42,11 +48,6 @@ vi.mock('@immich/ui', async () => {
     modalManager: { showDialog: vi.fn() },
     toastManager: { primary: vi.fn(), danger: vi.fn() },
   };
-});
-
-vi.mock('$lib/components/asset-viewer/editor/VideoEditorPanel.svelte', async () => {
-  const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
-  return { default: MockViewerControls };
 });
 
 const revision = (overrides: Partial<AssetDevelopRevisionResponseDto> = {}): AssetDevelopRevisionResponseDto => ({
@@ -192,21 +193,130 @@ describe('QuickEditor', () => {
     expect(onClose).toHaveBeenCalledWith(false);
   });
 
+  describe('hold to compare (September 24 design)', () => {
+    const stageImage = () => screen.getByAltText(photo.originalFileName);
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        width: 800,
+        height: 600,
+        top: 0,
+        left: 0,
+        right: 800,
+        bottom: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('holds the untouched original on backslash, geometry included, and releases on key up', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_crop' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_rotate_right' }));
+      expect(stageImage().getAttribute('style')).toContain('rotate(90deg)');
+
+      const dialog = screen.getByRole('dialog');
+      await fireEvent.keyDown(dialog, { key: '\\', code: 'Backslash' });
+      expect(document.querySelector('.ed-badge.ed-original')).toHaveTextContent('frameleaf_editor_version_original');
+      expect(stageImage().getAttribute('style')).toContain('rotate(0deg)');
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_hold_before' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      // A release counts even with a modifier held, so the original never sticks.
+      await fireEvent.keyUp(dialog, { key: '\\', code: 'Backslash', metaKey: true });
+      expect(stageImage().getAttribute('style')).toContain('rotate(90deg)');
+    });
+
+    it('compares while an adjustment slider has focus, and releases when the window loses focus', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      const slider = screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' });
+      await fireEvent.keyDown(slider, { key: 'y', code: 'KeyY' });
+      const hold = screen.getByRole('button', { name: 'frameleaf_editor_hold_before' });
+      expect(hold).toHaveAttribute('aria-pressed', 'true');
+
+      await fireEvent.blur(globalThis as unknown as Window);
+      expect(hold).toHaveAttribute('aria-pressed', 'false');
+
+      await fireEvent.keyDown(slider, { key: 'y', code: 'KeyY', metaKey: true });
+      expect(hold).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('keeps the edited framing in split view', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_crop' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_rotate_right' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_split_view' }));
+      await fireEvent.keyDown(screen.getByRole('dialog'), { key: '\\', code: 'Backslash' });
+      expect(stageImage().getAttribute('style')).toContain('rotate(90deg)');
+      expect(document.querySelector('.ed-badge.ed-original')).toBeNull();
+    });
+  });
+
+  it('puts Versions in a top-bar menu that loads a saved recipe', async () => {
+    vi.mocked(getAssetDevelop).mockResolvedValue({
+      assetId: photo.id,
+      currentRevisionId: null,
+      revisions: [revision({ label: 'Warm' })],
+    });
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_versions' })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' }));
+    const original = await screen.findByRole('menuitemradio', { name: /frameleaf_editor_version_original/ });
+    expect(original).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: /Warm/ }));
+
+    const contrast = screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }) as HTMLInputElement;
+    expect(contrast.value).toBe('30');
+  });
+
+  it('offers the phone More actions menu and names the people in the photo', async () => {
+    const withPeople = assetFactory.build({
+      ...photo,
+      people: [{ id: 'p1', name: 'Anna' } as never, { id: 'p2', name: '' } as never],
+    });
+    render(QuickEditor, { asset: withPeople, onClose: vi.fn() });
+    await ready();
+    expect(screen.getByText(/frameleaf_editor_with_people/)).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_more_actions' }));
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      'frameleaf_editor_copy_settings',
+      'frameleaf_editor_paste_settings',
+      'frameleaf_editor_revert_draft',
+      'frameleaf_editor_open_in_studio',
+    ]);
+    expect(items[1]).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('offers Open in Studio in the top bar', () => {
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
     expect(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' })).toBeInTheDocument();
   });
 
-  it('opens a video on the production video editor inside the frame', () => {
+  it('opens a video on the video quick editor in the same frame (VE-1)', async () => {
     const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
     render(QuickEditor, { asset: video, onClose: vi.fn() });
 
-    expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_adjust' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_trim' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await waitFor(() => expect(getAssetEdits).toHaveBeenCalledWith({ id: video.id }));
     expect(getAssetDevelop).not.toHaveBeenCalled();
+    // The photo Masks tool is not offered for a clip.
+    expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_masks' })).not.toBeInTheDocument();
   });
 
-  it('opens the video Versions menu over the still-mounted video editor (FL-39)', async () => {
+  it('opens the video Versions menu without discarding the open draft (FL-39)', async () => {
     const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
     render(QuickEditor, { asset: video, onClose: vi.fn() });
 
@@ -215,11 +325,31 @@ describe('QuickEditor', () => {
     await fireEvent.click(versions);
 
     expect(await screen.findByRole('menu', { name: 'editor_video_versions' })).toBeInTheDocument();
-    // Looking at history never discards the open draft.
-    expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeInTheDocument();
     await waitFor(() => expect(getVideoEditVersions).toHaveBeenCalledWith({ id: video.id }));
-    // The draft is already the original, so there is nothing to revert.
-    expect(screen.queryByRole('button', { name: 'frameleaf_editor_revert' })).not.toBeInTheDocument();
+  });
+
+  it(String.raw`hands the dialog keys to the video editor: undo with ⌘Z, compare with \ (VE-12)`, async () => {
+    const video = assetFactory.build({ type: AssetTypeEnum.Video, originalFileName: 'MOV_0001.mp4' });
+    render(QuickEditor, { asset: video, onClose: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'frameleaf_editor_save_version' })).toBeEnabled());
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_video_editor_tool_audio' }));
+    const mute = screen.getByRole('switch', { name: 'frameleaf_video_editor_mute' });
+    await fireEvent.click(mute);
+    expect(mute).toHaveAttribute('aria-checked', 'true');
+
+    const dialog = screen.getByRole('dialog');
+    await fireEvent.keyDown(dialog, { key: 'z', metaKey: true });
+    expect(mute).toHaveAttribute('aria-checked', 'false');
+    await fireEvent.keyDown(dialog, { key: 'z', metaKey: true, shiftKey: true });
+    expect(mute).toHaveAttribute('aria-checked', 'true');
+
+    const compare = screen.getByRole('button', { name: 'frameleaf_editor_hold_before' });
+    await fireEvent.keyDown(dialog, { key: '\\' });
+    expect(compare).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.keyUp(dialog, { key: '\\' });
+    expect(compare).toHaveAttribute('aria-pressed', 'false');
   });
 
   describe('selective photo tools (FL-64)', () => {
@@ -299,8 +429,9 @@ describe('QuickEditor', () => {
         revisions: [imported, revision()],
       });
       render(QuickEditor, { asset: photo, onClose: vi.fn() });
-      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
-      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_versions' }));
+      await ready();
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_tool_versions' }));
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'frameleaf_editor_manage_versions' }));
 
       expect(await screen.findByText(/frameleaf_editor_version_external · darktable 5/)).toBeInTheDocument();
       expect(screen.getAllByText('frameleaf_editor_version_lineage')).toHaveLength(1);

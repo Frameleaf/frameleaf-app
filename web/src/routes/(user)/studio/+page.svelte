@@ -14,6 +14,7 @@
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
   import StudioBundleExportDialog from '$lib/components/frameleaf/StudioBundleExportDialog.svelte';
+  import StudioExportDialog, { type StudioExportChoice } from '$lib/components/frameleaf/StudioExportDialog.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -31,7 +32,10 @@
     type StudioCapabilities,
     type StudioHostServices,
     type StudioProjectHandle,
+    type StudioWorkspaceMode,
+    type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
+  import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioPreviewClient,
     idleStudioPreviewView,
@@ -45,7 +49,10 @@
     STUDIO_DRAFT_PROJECT_ID,
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
+  import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
   import { getProfileImageUrl } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
+  import { createStudioExport } from '@immich/sdk';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
@@ -57,8 +64,17 @@
   let accessLost = $state(false);
   let preview = $state<StudioPreviewView>(idleStudioPreviewView());
   let sessionState = $state<StudioProjectSessionState | null>(null);
-  /** Bundle jobs this session handed to Activity (FL-91). */
+  /** Bundle and export jobs this session handed to Activity (FL-91, FL-106). */
   let queuedJobs = $state(0);
+  /** Where the engine's playhead is, for pinning review comments (`Studio.jsx:1759`). */
+  let playhead = $state<Rational | null>(null);
+  /** Open review comments on the project, for the Review button's count. */
+  let unresolvedComments = $state(0);
+  /**
+   * The account's workspace layout (FL-91, `STU-204`), stored on the server rather than in
+   * Freecut's workspace folder. Undefined until read; the engine then starts from its defaults.
+   */
+  let workspace = $state<StudioWorkspaceView | undefined>(undefined);
 
   const assets = $derived(toStudioAssets(data.assets));
   const handoffAssetIds = $derived(assets.map((asset) => asset.id));
@@ -318,10 +334,17 @@
     reportFatal: (error) => {
       toastManager.danger(error instanceof Error ? error.message : $t('frameleaf_studio_error_body'));
     },
+    reportPlayhead: (time) => {
+      playhead = { num: time.num, den: time.den };
+    },
+    saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
   };
 
-  /** Back to the project library (FL-91), where every project and the trash live. */
-  const onBack = () => void goto(Route.studioProjects());
+  /**
+   * Back to the library, as the prototype's header does (`Studio.jsx:2586-2588`). The project
+   * library stays one click away under Tools > Studio in the rail.
+   */
+  const onBack = () => void goto(Route.photos());
   const onOpenActivity = () => void goto(Route.activity());
 
   /** Only an owner's saved project can be exported, so the header offers nothing otherwise. */
@@ -352,6 +375,91 @@
     }
   };
 
+  /* Rename (`Studio.jsx:2590-2607`): the owner's, for a draft or a saved project. */
+  const canRename = $derived(
+    !accessLost && !forbidden && (project.id === STUDIO_DRAFT_PROJECT_ID || sessionState?.access === 'owner'),
+  );
+  const onRename = async (name: string) => {
+    const renamed = await session.rename(name);
+    if (!renamed) {
+      toastManager.danger($t('frameleaf_studio_rename_failed'));
+    }
+    return renamed;
+  };
+
+  /* Basic and Advanced (`Studio.jsx:2626-2633`): remembered per project in this browser. */
+  const modeKey = $derived(`frameleaf.studio.mode.${project.id}`);
+  let mode = $state<StudioWorkspaceMode>('basic');
+  $effect(() => {
+    const key = modeKey;
+    untrack(() => {
+      try {
+        mode = globalThis.localStorage?.getItem(key) === 'advanced' ? 'advanced' : 'basic';
+      } catch {
+        mode = 'basic';
+      }
+    });
+  });
+  $effect(() => {
+    const value = mode;
+    const key = untrack(() => modeKey);
+    try {
+      globalThis.localStorage?.setItem(key, value);
+    } catch {
+      // A private window without storage keeps the choice for this page only.
+    }
+  });
+
+  /* Review count (`Studio.jsx:2640-2643`): open comments, re-read when the head moves. */
+  $effect(() => {
+    const saved = storedRevision;
+    if (saved === null) {
+      unresolvedComments = 0;
+      return;
+    }
+    void session
+      .comments(0, 100)
+      .then((page) => {
+        unresolvedComments = page.items.filter((comment) => !comment.resolvedAt).length;
+      })
+      .catch(() => {
+        unresolvedComments = 0;
+      });
+  });
+
+  /* Video export (FL-106 server; `Studio.jsx` ExportDialog): the owner's saved, writable project. */
+  let videoExportOpen = $state(false);
+  let exporting = $state(false);
+  const canExportVideo = $derived(canExportBundle && writable);
+  const onExportVideo = async (choice: StudioExportChoice) => {
+    if (sessionState?.hasDraft && writable) {
+      await session.flush().catch(() => {});
+    }
+    const revision = storedRevision;
+    if (revision === null) {
+      return;
+    }
+    exporting = true;
+    try {
+      await createStudioExport({
+        id: project.id,
+        studioExportCreateDto: {
+          ...choice,
+          cloudConsent: choice.cloudConsent || undefined,
+          expectedRevision: revision,
+          requestKey: crypto.randomUUID(),
+        },
+      });
+      videoExportOpen = false;
+      queuedJobs += 1;
+      toastManager.primary($t('frameleaf_studio_export_queued', { values: { name: project.name } }));
+    } catch (error) {
+      handleError(error, $t('frameleaf_studio_export_failed'));
+    } finally {
+      exporting = false;
+    }
+  };
+
   const onReload = () => void session.reload();
   const onReacquire = () => void session.reacquire();
   const onTakeOver = () => void session.takeOver();
@@ -368,6 +476,9 @@
   onMount(() => {
     online = globalThis.navigator?.onLine;
     void session.open();
+    void loadStudioWorkspace().then((view) => {
+      workspace = view;
+    });
 
     const goOnline = () => {
       online = true;
@@ -460,6 +571,12 @@
   {onBack}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
+  onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
+  onRename={canRename ? onRename : undefined}
+  bind:mode
+  {workspace}
+  {unresolvedComments}
+  {playhead}
   {queuedJobs}
   dirty={dirty || (sessionState?.hasDraft ?? false)}
   accessLost={accessLost || forbidden}
@@ -473,6 +590,13 @@
   {onReacquire}
   {onTakeOver}
   {onSaveCopy}
+/>
+
+<StudioExportDialog
+  bind:open={videoExportOpen}
+  sequenceName={project.name}
+  busy={exporting}
+  onExport={(choice) => void onExportVideo(choice)}
 />
 
 <!-- The host-side export dialog: the header's Export bundle and the editor's own export both ask here. -->

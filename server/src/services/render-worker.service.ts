@@ -38,6 +38,7 @@ import {
 import {
   AlbumUserRole,
   CacheControl,
+  MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -50,7 +51,11 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import {
   AuthenticatedRenderWorker,
   RenderWorker,
@@ -62,9 +67,16 @@ import { StudioProjectRepository } from 'src/repositories/studio-project.reposit
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { RENDER_WORKER_MEDIA_OPERATION_KINDS, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
+import {
+  ChunkPlan,
+  RENDER_WORKER_MEDIA_OPERATION_KINDS,
+  StoredChunk,
+  canReuseChunk,
+  isRenderWorkerMediaOperationKind,
+} from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -91,6 +103,22 @@ export const RENDER_WORKER_HEARTBEAT_INTERVAL_MS = 30_000;
 /** How many queued candidates admission looks at before telling the worker there is nothing. */
 const CLAIM_CANDIDATES = 25;
 const DEFAULT_AUDIT_TAKE = 100;
+
+/** A stored checkpoint in the shape the reuse rules compare (FL-104). */
+const asStoredChunk = (chunk: MediaOperationCheckpoint): StoredChunk => ({
+  sequence: chunk.sequence,
+  state: chunk.state as MediaOperationCheckpointState,
+  chunkKey: chunk.chunkKey,
+  inputDigest: chunk.inputDigest,
+  historyDigest: chunk.historyDigest,
+  configDigest: chunk.configDigest,
+  seed: chunk.seed,
+  timebase: chunk.timebase,
+  startTicks: BigInt(chunk.startTicks as never),
+  endTicks: BigInt(chunk.endTicks as never),
+  requiresSequentialContext: !!chunk.requiresSequentialContext,
+  outputPath: chunk.outputPath,
+});
 
 const asIso = (value: Date | string | null | undefined): string | null => {
   if (!value) {
@@ -225,6 +253,8 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
 
 /** A worker named a result asset that is not a live asset of the job's owner (FL-43). */
 export const RENDER_RESULT_NOT_OWNED = 'result_not_owned';
+/** The error code a worker reports when its GPU disappears mid-job (FL-95 device loss). */
+export const RENDER_DEVICE_LOST = 'device_lost';
 
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
@@ -258,6 +288,7 @@ export class RenderWorkerService {
     private studioResources: StudioResourceService,
     private studioProjects: StudioProjectRepository,
     private studioExports: StudioExportService,
+    private studioPreviews: StudioPreviewService,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
@@ -525,7 +556,7 @@ export class RenderWorkerService {
     // FL-73: a scope saved before the render-only rule keeps only its renders in the session.
     const scopes = (worker.kinds as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
 
-    await this.repository.createSession({
+    const created = await this.repository.createSession({
       workerId: worker.id,
       token: this.cryptoRepository.hashSha256(sessionToken),
       scopes,
@@ -533,6 +564,11 @@ export class RenderWorkerService {
       engineDigest: dto.engineDigest,
       conformanceReportedAt: reportedAt,
       expiresAt,
+    });
+    // FL-95: what the check verified travels with the session, so claims are measured against it.
+    await this.repository.recordSessionCapabilities(created.id, {
+      codecs: dto.codecs ?? [],
+      formats: dto.formats ?? [],
     });
     await this.repository.markAdmitted(worker.id, reportedAt);
     await this.repository.recordAudit({
@@ -543,6 +579,7 @@ export class RenderWorkerService {
         conformanceReportedAt: dto.conformanceReportedAt,
         gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
         codecs: dto.codecs ?? [],
+        formats: dto.formats ?? [],
         expiresAt: expiresAt.toISOString(),
       },
     });
@@ -613,6 +650,7 @@ export class RenderWorkerService {
       throw new ForbiddenException('Requested kinds are outside this session’s scopes');
     }
 
+    const sessionCapabilities = await this.repository.getSessionCapabilities(session.id);
     const [workerActive, instanceLimit, destinationHealth] = await Promise.all([
       this.repository.countActiveForWorker(worker.id),
       this.repository.getLimit(RENDER_WORKER_LIMIT_INSTANCE_SUBJECT),
@@ -660,12 +698,14 @@ export class RenderWorkerService {
             scopes,
             gpuMemoryBytes: asNumberOrNull(session.gpuMemoryBytes),
             engineDigest: session.engineDigest,
+            capabilities: sessionCapabilities ?? null,
           },
           operation: {
             kind: candidate.kind as MediaOperationKind,
             destination: candidate.destination as MediaOperationDestination,
             destinationDetail: candidate.destinationDetail,
             snapshot: asObject(candidate.snapshot),
+            settings: asObject(candidate.settings),
           },
           owner: { activeOperations: ownerCounts.get(candidate.ownerId)!, limits: ownerLimits.get(candidate.ownerId)! },
           destinationHealth,
@@ -727,6 +767,10 @@ export class RenderWorkerService {
             engineDigest: session.engineDigest,
             entries: resolved.studio.entries,
           });
+        }
+        if (operation.kind === MediaOperationKind.StudioPreview) {
+          // FL-96: the frame's own directory, which is the only place its output is accepted from.
+          this.studioPreviews.onRenderClaimed(operation);
         }
         const checkpoints = await this.operations.getCheckpoints(operation.id);
         const manifest = resolved.studio
@@ -871,6 +915,31 @@ export class RenderWorkerService {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
 
+    /**
+     * FL-104: reuse is the server's decision, not the worker's. A finished chunk is kept only when
+     * every digest (input, effect history, config, seed), the timebase and the range match the new
+     * plan. Anything else is planned afresh, and the history after it no longer holds: every later
+     * chunk, and the run of chunks before it whose filter or audio state flows into it, is
+     * invalidated so the render restarts at a boundary it can legitimately begin from.
+     */
+    const stored = await this.operations.getCheckpoints(operation.id);
+    const existing = stored.find((chunk) => chunk.sequence === dto.sequence);
+    const planned: ChunkPlan = {
+      sequence: dto.sequence,
+      chunkKey: dto.chunkKey,
+      inputDigest: dto.inputDigest,
+      historyDigest: dto.historyDigest,
+      configDigest: dto.configDigest,
+      seed: dto.seed ?? null,
+      timebase: dto.timebase,
+      startTicks: BigInt(dto.startTicks),
+      endTicks: BigInt(dto.endTicks),
+      requiresSequentialContext: dto.requiresSequentialContext ?? false,
+    };
+    if (existing && canReuseChunk(asStoredChunk(existing), planned).reusable) {
+      return { accepted: true, refusal: null };
+    }
+
     const accepted = await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
       operationId: operation.id,
       sequence: dto.sequence,
@@ -886,6 +955,35 @@ export class RenderWorkerService {
       requiresSequentialContext: dto.requiresSequentialContext ?? false,
       claimToken: dto.claimToken,
     });
+
+    if (accepted && existing) {
+      let restart = dto.sequence;
+      const bySequence = new Map(stored.map((chunk) => [chunk.sequence, chunk]));
+      while (bySequence.get(restart - 1)?.requiresSequentialContext) {
+        restart--;
+      }
+      // The re-planned chunk itself is pending again; everything else from the restart is invalid.
+      if (restart < dto.sequence) {
+        await this.operations.invalidateCheckpointsFrom(operation.id, restart);
+        await this.operations.upsertCheckpoint(operation.id, dto.claimToken, {
+          operationId: operation.id,
+          sequence: dto.sequence,
+          chunkKey: dto.chunkKey,
+          inputDigest: dto.inputDigest,
+          historyDigest: dto.historyDigest,
+          configDigest: dto.configDigest,
+          seed: dto.seed,
+          timebase: dto.timebase,
+          startTicks: dto.startTicks,
+          endTicks: dto.endTicks,
+          prerollTicks: dto.prerollTicks ?? '0',
+          requiresSequentialContext: dto.requiresSequentialContext ?? false,
+          claimToken: dto.claimToken,
+        });
+      } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
+        await this.operations.invalidateCheckpointsFrom(operation.id, dto.sequence + 1);
+      }
+    }
 
     return { accepted, refusal: null };
   }
@@ -918,6 +1016,12 @@ export class RenderWorkerService {
   ): Promise<RenderWorkerWriteResultDto> {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+
+    // FL-104: output built on a chunk the server invalidated, or never saw finish, is not validated.
+    const checkpoints = await this.operations.getCheckpoints(operation.id);
+    if (checkpoints.some((chunk) => chunk.state !== MediaOperationCheckpointState.Complete)) {
+      return { accepted: false, refusal: null };
+    }
 
     const accepted = await this.operations.beginValidation(operation.id, dto.claimToken);
     return { accepted, refusal: null };
@@ -971,6 +1075,25 @@ export class RenderWorkerService {
       return { accepted, refusal: null };
     }
 
+    if (operation.kind === MediaOperationKind.StudioPreview) {
+      if (dto.resultAssetId !== null) {
+        throw new BadRequestException('A preview frame is published by the server; a worker cannot name its result');
+      }
+      if (!dto.output) {
+        throw new BadRequestException('A preview render must report the frame it produced');
+      }
+      // FL-96: the frame is published (or, when superseded meanwhile, discarded) before the job
+      // completes, so the person never waits on a finished render whose frame is missing.
+      const { published } = await this.studioPreviews.onRenderCompleted(operation, dto.output);
+      const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: null });
+      if (accepted) {
+        this.logger.log(
+          `Render worker ${worker.id} completed preview ${operation.id}${published ? '' : ' (superseded, discarded)'}`,
+        );
+      }
+      return { accepted, refusal: null };
+    }
+
     if (dto.resultAssetId && !(await this.operations.isPublishableResult(operation.ownerId, dto.resultAssetId))) {
       this.logger.warn(
         `Render worker ${worker.id} named a result for media operation ${operation.id} that is not the owner's`,
@@ -1004,9 +1127,24 @@ export class RenderWorkerService {
       error: dto.error,
       errorCode: dto.errorCode,
     });
+    if (dto.errorCode === RENDER_DEVICE_LOST) {
+      // FL-95: the GPU the session was admitted on is gone, so its evidence no longer holds. Every
+      // session of the worker ends; it is given nothing until it re-admits with a fresh check.
+      const revoked = await this.repository.revokeSessions(worker.id);
+      await this.repository.recordAudit({
+        workerId: worker.id,
+        event: RenderWorkerAuditEvent.DeviceLost,
+        operationId: operation.id,
+        detail: { revokedSessions: revoked },
+      });
+      this.logger.warn(`Render worker ${worker.id} lost its GPU; ${revoked} session(s) revoked until it re-admits`);
+    }
     const accepted = outcome !== false;
     if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioExport) {
       await this.studioExports.onRenderFailed(operation, { errorCode: dto.errorCode, error: dto.error });
+    }
+    if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioPreview) {
+      await this.studioPreviews.onRenderFailed(operation, dto.errorCode);
     }
     if (accepted) {
       this.logger.warn(

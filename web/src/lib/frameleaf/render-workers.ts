@@ -198,13 +198,17 @@ export const auditEventKey: Readonly<Record<RenderWorkerAuditEvent, Translations
   [RenderWorkerAuditEvent.LimitExceeded]: 'frameleaf_render_workers_event_limit_exceeded',
   [RenderWorkerAuditEvent.Revoked]: 'frameleaf_render_workers_event_revoked',
   [RenderWorkerAuditEvent.Updated]: 'frameleaf_render_workers_event_updated',
+  [RenderWorkerAuditEvent.DeviceLost]: 'frameleaf_render_workers_event_device_lost',
 };
 
 /** Events that mean something was turned away or stopped; the audit list marks them. */
 export const auditEventIsRefusal = (event: RenderWorkerAuditEvent): boolean =>
-  [RenderWorkerAuditEvent.Refused, RenderWorkerAuditEvent.ClaimRefused, RenderWorkerAuditEvent.LimitExceeded].includes(
-    event,
-  );
+  [
+    RenderWorkerAuditEvent.Refused,
+    RenderWorkerAuditEvent.ClaimRefused,
+    RenderWorkerAuditEvent.LimitExceeded,
+    RenderWorkerAuditEvent.DeviceLost,
+  ].includes(event);
 
 /**
  * Every stable refusal code the server writes, as a sentence an administrator can act on. The
@@ -228,6 +232,7 @@ export const refusalReasonKey: Readonly<Record<RenderWorkerRefusalReason, Transl
   [RenderWorkerRefusalReason.OutputBytesExceeded]: 'frameleaf_render_workers_refusal_output_bytes_exceeded',
   [RenderWorkerRefusalReason.DestinationUnavailable]: 'frameleaf_render_workers_refusal_destination_unavailable',
   [RenderWorkerRefusalReason.ManifestIncomplete]: 'frameleaf_render_workers_refusal_manifest_incomplete',
+  [RenderWorkerRefusalReason.CodecUnsupported]: 'frameleaf_render_workers_refusal_codec_unsupported',
 };
 
 /**
