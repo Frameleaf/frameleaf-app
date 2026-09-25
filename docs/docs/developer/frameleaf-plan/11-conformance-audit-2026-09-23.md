@@ -71,7 +71,7 @@ On `codex/FL-30-complete-shell`, based on `master/frameleaf-implementation` @ `a
 - **Session** (FL-31): Work opens its panel by itself only above 1000px (`mediaQueryManager.wideInspector`); every owner library page writes its portable view state to the link; an album's shared display order stays shared while the viewer's own Sort for it is kept per album on this device (`lib/frameleaf/album-view-sort.ts`); a chosen filter value the list no longer offers stays listed and removable.
 - **Locked** (FL-34): Mark Safe releases only marked and detected locks, so an item kept in the upstream Locked folder stays Locked; PostgreSQL specs cover marking with machine learning or the detector off and an elevated administrator refused another owner's original, thumbnail and video; `GET /timeline/ordered` refuses a shared link that hides EXIF.
 
-Recorded deviations: a tile's accessible name stays its descriptive alt text rather than "Open \{title\}" (accessibility); the search page's empty state keeps the Ask question field and suggestions, a production feature the template has no screen for (the one library search entry stays the top bar).
+Recorded deviation: a tile's accessible name stays its descriptive alt text rather than "Open \{title\}" (accessibility). The search page's empty-state Ask field, recorded here as a deviation at first, is now built to the template by owner decision (FL-146, 2026-09-25; see "September 25 Ask about your photos" below).
 
 ### September 24 settings and Library analytics (Packet 5: FL-71, FL-76, FL-10, FL-79, FL-81)
 
@@ -442,6 +442,18 @@ Recorded deviations and defaults:
 - The player keeps production's side arrows, adjacent-memory previews, header play control, export control and below-the-fold gallery with the Frameleaf selection bar. The prototype's footer transport is not rebuilt; its actions are all reachable.
 
 Validation: web unit specs `memory-stories`, `memory-engine`, `MemoriesPanel`, `MemoryPlayerPanel`, `memory-manager`, `PlacesPanel`, `places`, `map-markers`, `bulk-operations`, `GeolocationUtility`, `ViewerFooter`, `AssetViewerNavBar`, `PublicViewerShell`, `asset.service`; server unit specs for memories, map and assets; CI-strict svelte-check; e2e type check against the branch SDK. Not run here: the e2e specs (memory viewer, map, shared link, Explore) and the server medium spec `memory-curation.repository.spec.ts`.
+
+### September 25 Ask about your photos (FL-31)
+
+On `codex/FL-31-search-ask`, based on `master/frameleaf-implementation` @ `729ac1b277`. By owner decision (FL-146, 2026-09-25) the /search empty-state Ask field is a built feature, no longer a deviation. The template draws no separate Ask screen, so it is composed from the search palette (`SearchPalette.jsx`, `search-palette.css` at `effd05ffb7`) and wired to the real natural-language search.
+
+- **Look** (`web/src/lib/components/frameleaf/SearchAsk.svelte`): the palette's frosted glass panel with a solid fallback under Increase Contrast and Reduce Transparency. It has the palette's large field with the magnifier, the Clear button and the live status ("Searching…", "N matches"). Examples sit under "Try a search" as the palette's rows, and an empty answer reads "No matches in your library.". The line "What Frameleaf searched for" repeats the server's reading of the question and its warnings. It carries the indigo AI sparkle only when smart search answered.
+- **Search**: `POST /search/ask`, which plans the question and answers through smart search or metadata search. It pages into the Frameleaf results grid, and the question stays in the link (`?ask=`).
+- **Settings**: the Ask feature follows `localFeatures.askSearch`. A new `askSearch` flag in `GET /server/features` is true when that setting and smart search are both on. When an administrator has turned Ask off, the panel says so and offers no field that cannot answer; a 400 "not enabled" answer during a session does the same. The server caps every answer at the "Most answers shown" limit (`maxResults`).
+- **Keyboard and accessibility**: the field is a labelled combobox over the examples' listbox. ArrowDown and ArrowUp move through the examples, Enter asks the highlighted example or the typed question, and Escape leaves the list, then clears the field. The status is a polite live region. A failure is an alert with Try again, not a toast. Nothing is asked while an answer is loading.
+- **Contract**: `ServerFeaturesDto.askSearch`; OpenAPI and the TypeScript SDK are regenerated.
+
+Validation: web unit specs `SearchAsk` and the search page; server `server.service` unit spec; CI-strict svelte-check. E2E expectations for the new feature flag are updated but were not run.
 
 ## 1. Coverage
 
