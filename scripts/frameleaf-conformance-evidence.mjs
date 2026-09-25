@@ -581,7 +581,7 @@ const actions = {
     { production: [`${W}/lib/frameleaf/search-context.ts`] },
   ],
   "clear-all-removable-chips-filter-presets": [
-    "partial",
+    "fixed",
     ["S-19", "SD-12"],
     "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
     {
@@ -742,9 +742,9 @@ const actions = {
     "Recent searches keep chips, mode and filters, with the Try a search fallback (fixed on codex/FL-49-search-palette)",
   ],
   "server-paging-load-more-and-large-result-sets": [
-    "partial",
+    "fixed",
     ["T-14"],
-    "ShowMore only outside the timeline layout; Select all N on matching pages",
+    "ShowMore only where a page pages its results (never under the timeline); Select all N reads the grid's count until the server has counted (FL-33 shell completion)",
     {
       production: [
         `${W}/lib/components/frameleaf/ShowMore.svelte`,
@@ -766,9 +766,9 @@ const actions = {
     { production: [`${W}/lib/components/frameleaf/BulkAlbumDialog.svelte`] },
   ],
   "bulk-change-date-location-description": [
-    "partial",
+    "intentional-product-change",
     ["T-13", "T-19"],
-    "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)",
+    "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); the location place-name fields are not built by owner decision (T-13, FL-146 2026-09-25)",
     {
       production: [
         `${W}/lib/components/frameleaf/BulkDateDialog.svelte`,
@@ -783,30 +783,30 @@ const actions = {
     { production: [`${W}/lib/frameleaf/bulk-controller.svelte.ts`] },
   ],
   "bulk-download-archive-unarchive": [
-    "partial",
+    "fixed",
     ["T-17"],
-    "Archived items leave the library scope",
+    "Archived items leave a Timeline view and unarchived ones leave Archive; no Archived badge; Offline badge from the bucket (FL-33 shell completion)",
     { production: [`${W}/lib/frameleaf/bulk-operations.ts`] },
   ],
   "bulk-favorite-unfavorite": ["match", []],
   "bulk-mark-unmark-sensitive": ["match", []],
   "bulk-refresh-thumbnails-metadata-transcodes": ["match", []],
   "click-open-asset-select-deselect-items": [
-    "partial",
+    "fixed",
     ["T-4", "T-20"],
-    "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)",
+    "Tile hover quick actions are done (T-4, FL-33 library gaps); Deselect label, full day titles and Timeline-only Locked (T-20, FL-33 shell completion)",
     { production: [`${W}/lib/components/frameleaf/AssetTile.svelte`] },
   ],
   "date-grouped-photos-browse-chronological-library": [
-    "partial",
+    "fixed",
     ["T-3", "T-7", "T-10"],
-    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)",
+    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3)",
     { production: [`${W}/lib/components/frameleaf/LibraryTimeline.svelte`] },
   ],
   "grid-list-compare-and-persisted-query-selection-layout": [
-    "partial",
+    "fixed",
     ["T-8", "S-15", "S-17"],
-    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)",
+    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8; the month-boundary row gap is owner decision FL-143)",
     { production: [`${W}/lib/components/frameleaf/ResultsToolbar.svelte`] },
   ],
   "jump-scroll-to-time-restore-asset-position": [
@@ -817,9 +817,9 @@ const actions = {
   ],
   "link-live-photo-still-and-video": ["match", []],
   "select-all-select-groups-range-multi-selection-keyboard-bulk-behavior": [
-    "partial",
+    "fixed",
     ["T-5", "S-22", "T-14"],
-    "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain",
+    "Library action shortcuts work on every library page (T-5, FL-33 library gaps); ←/→ move focus in the timeline and Delete has no Shift path there (S-22); Select all N (T-14)",
     {
       production: [
         `${W}/lib/frameleaf/library-shortcuts.ts`,
@@ -1427,9 +1427,9 @@ const routes = {
     [`${W}/routes/auth/register/+page.svelte`],
   ],
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-6"],
-    "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
+    "Tiles show each item's own rating from the buckets and details, the score orders the page as in App.jsx (T-6); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
     [`${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1488,9 +1488,9 @@ const routes = {
     [`${W}/routes/link/+page.ts`],
   ],
   "/locked/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["S-6", "S-7", "T-20"],
-    "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); layout forced to Timeline (T-20)",
+    "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); the layout switch offers the Timeline only (T-20)",
     [`${P}/LockedContent.jsx`, `${P}/locked-content.mjs`],
     [`${W}/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte`],
   ],
@@ -1614,7 +1614,7 @@ const routes = {
     ],
   ],
   "/photos/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "T-3",
       "T-4",
@@ -1630,7 +1630,7 @@ const routes = {
       "S-17",
       "S-19",
     ],
-    "Timeline, toolbar and bottom bar conformance",
+    "Timeline, toolbar and bottom bar conformance (FL-30/FL-33 shell completion)",
     [`${P}/TimelineLibrary.jsx`, `${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/photos/[[assetId=id]]/+page.svelte`,

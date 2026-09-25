@@ -164,6 +164,12 @@ export type BulkRunContext = {
 export type BulkView = {
   isLocked: boolean;
   revealsLocks: boolean;
+  /**
+   * The visibility the view lists, when it lists only one (T-17): archiving takes an item out of a
+   * Timeline view and unarchiving out of the Archive view, as the template's library scope does
+   * (`App.jsx`: the library leaves `visibility === "archive"` out, Archive shows only those).
+   */
+  visibility?: AssetVisibility;
 };
 
 export type BulkRunOptions = {
@@ -1240,7 +1246,8 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
 /**
  * Whether a finished item has left `view`. Marking sensitive (FL-34) hides an item everywhere except
  * the Locked view and a view that reveals the owner's marks, where it stays; unmarking only takes it
- * out of the Locked view.
+ * out of the Locked view. Archiving leaves a Timeline view and unarchiving leaves the Archive view
+ * (T-17), so an archived item never lingers in the library with an "Archived" badge.
  */
 const ORDINARY_VIEW: BulkView = { isLocked: false, revealsLocks: false };
 
@@ -1250,6 +1257,12 @@ export const removesFromView = (action: BulkActionId, view: BulkView = ORDINARY_
   }
   if (action === 'unmark-sensitive') {
     return view.isLocked;
+  }
+  if (action === 'archive') {
+    return view.visibility === AssetVisibility.Timeline;
+  }
+  if (action === 'unarchive') {
+    return view.visibility === AssetVisibility.Archive;
   }
   return REMOVES_FROM_VIEW.has(action);
 };

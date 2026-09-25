@@ -131,6 +131,10 @@ const TimeBucketAssetResponseSchema = z
       .array(AssetVisibilitySchema)
       .describe('Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED)'),
     isTrashed: z.array(z.boolean()).describe('Array indicating whether each asset is in the trash'),
+    isOffline: z
+      .array(z.boolean())
+      .optional()
+      .describe('Array indicating whether each asset is offline (its file is missing from an external library)'),
     isImage: z.array(z.boolean()).describe('Array indicating whether each asset is an image (false for videos)'),
     thumbhash: z
       .array(z.string().nullable())
