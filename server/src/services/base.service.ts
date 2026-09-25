@@ -38,6 +38,7 @@ import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
@@ -113,6 +114,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   MachineLearningRepository,
   MapRepository,
   MediaRepository,
+  MediaOperationRepository,
   MemoryRepository,
   MetadataRepository,
   MlDestinationRepository,
@@ -185,6 +187,7 @@ export class BaseService {
     protected machineLearningRepository: MachineLearningRepository,
     protected mapRepository: MapRepository,
     protected mediaRepository: MediaRepository,
+    protected mediaOperationRepository: MediaOperationRepository,
     protected memoryRepository: MemoryRepository,
     protected metadataRepository: MetadataRepository,
     protected mlDestinationRepository: MlDestinationRepository,
@@ -266,6 +269,7 @@ export class BaseService {
       ctx.machineLearningRepository,
       ctx.mapRepository,
       ctx.mediaRepository,
+      ctx.mediaOperationRepository,
       ctx.memoryRepository,
       ctx.metadataRepository,
       ctx.mlDestinationRepository,

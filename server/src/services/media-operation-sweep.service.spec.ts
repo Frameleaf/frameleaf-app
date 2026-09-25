@@ -1,3 +1,4 @@
+import { JobName, MediaOperationKind } from 'src/enum.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
   MEDIA_OPERATION_LEASE_EXPIRED,
@@ -10,13 +11,29 @@ const nothing = { requeued: 0, retried: 0, failed: 0, abandonedCancels: 0, pause
 
 describe(MediaOperationSweepService.name, () => {
   let sut: MediaOperationSweepService;
-  let operations: { recoverExpiredClaims: ReturnType<typeof vi.fn> };
+  let operations: {
+    recoverExpiredClaims: ReturnType<typeof vi.fn>;
+    claimJobQueueDispatch: ReturnType<typeof vi.fn>;
+    releaseJobQueueDispatch: ReturnType<typeof vi.fn>;
+    requestCancel: ReturnType<typeof vi.fn>;
+  };
+  let jobs: { queue: ReturnType<typeof vi.fn>; queueAll: ReturnType<typeof vi.fn> };
   let logger: ReturnType<typeof getMocks>['logger'];
 
   beforeEach(() => {
     logger = getMocks().logger;
-    operations = { recoverExpiredClaims: vi.fn().mockResolvedValue(nothing) };
-    sut = new MediaOperationSweepService(logger as never, operations as unknown as MediaOperationRepository);
+    operations = {
+      recoverExpiredClaims: vi.fn().mockResolvedValue(nothing),
+      claimJobQueueDispatch: vi.fn().mockResolvedValue([]),
+      releaseJobQueueDispatch: vi.fn().mockResolvedValue(undefined),
+      requestCancel: vi.fn().mockResolvedValue(undefined),
+    };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined), queueAll: vi.fn().mockResolvedValue(undefined) };
+    sut = new MediaOperationSweepService(
+      logger as never,
+      operations as unknown as MediaOperationRepository,
+      jobs as never,
+    );
   });
 
   afterEach(async () => {
@@ -47,6 +64,57 @@ describe(MediaOperationSweepService.name, () => {
       await sut.sweep();
 
       expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('1 paused'));
+    });
+
+    it('puts edits the job queue runs back on it, each with its row (FL-43)', async () => {
+      operations.claimJobQueueDispatch.mockResolvedValue([
+        {
+          id: 'op-1',
+          ownerId: 'owner-1',
+          snapshot: {
+            executor: 'job_queue',
+            job: { name: JobName.AssetDevelopRender, data: { id: 'revision-1' } },
+          },
+        },
+      ]);
+
+      await sut.sweep();
+
+      // Recovery first, so a lapsed claim it just requeued is dispatched in the same pass.
+      expect(operations.recoverExpiredClaims.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.claimJobQueueDispatch.mock.invocationCallOrder[0],
+      );
+      expect(jobs.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetDevelopRender, data: { id: 'revision-1', operationId: 'op-1' } },
+      ]);
+      expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('Dispatched 1 edit render'));
+    });
+
+    it('never dispatches a row whose snapshot names no edit job, and stops it instead', async () => {
+      operations.claimJobQueueDispatch.mockResolvedValue([
+        { id: 'op-2', ownerId: 'owner-1', snapshot: { executor: 'job_queue', job: { name: JobName.FileDelete } } },
+        { id: 'op-3', ownerId: 'owner-1', snapshot: { kind: MediaOperationKind.QuickEdit } },
+      ]);
+
+      await sut.sweep();
+
+      expect(jobs.queueAll).toHaveBeenCalledWith([]);
+      expect(operations.requestCancel).toHaveBeenCalledWith('op-2', 'owner-1');
+      expect(operations.requestCancel).toHaveBeenCalledWith('op-3', 'owner-1');
+    });
+
+    it('hands the rows back when the job queue cannot take them', async () => {
+      operations.claimJobQueueDispatch.mockResolvedValue([
+        {
+          id: 'op-4',
+          ownerId: 'owner-1',
+          snapshot: { executor: 'job_queue', job: { name: JobName.AssetEditThumbnailGeneration, data: { id: 'a' } } },
+        },
+      ]);
+      jobs.queueAll.mockRejectedValue(new Error('redis went away'));
+
+      await expect(sut.sweep()).rejects.toThrow('redis went away');
+      expect(operations.releaseJobQueueDispatch).toHaveBeenCalledWith(['op-4']);
     });
 
     it('stays quiet when there was nothing to recover', async () => {
