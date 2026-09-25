@@ -1,11 +1,13 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import { setSharedLink } from '$lib/utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
 import ViewerFooter from './ViewerFooter.svelte';
 
 const base = {
@@ -43,6 +45,25 @@ describe('ViewerFooter (V-13, MediaViewer.jsx:1693-1797)', () => {
   it('cannot play a slideshow with nothing to move to', () => {
     render(ViewerFooter, { asset: assetFactory.build(), ...base, canNavigateCollection: false });
     expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
+  });
+
+  it('applies the Play slideshow gates: never Locked, and downloads on a shared link', () => {
+    const locked = render(ViewerFooter, {
+      asset: assetFactory.build({ visibility: AssetVisibility.Locked }),
+      ...base,
+    });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
+    locked.unmount();
+
+    setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
+    const noDownload = render(ViewerFooter, { asset: assetFactory.build(), ...base });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeDisabled();
+    noDownload.unmount();
+
+    setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
+    render(ViewerFooter, { asset: assetFactory.build({ visibility: AssetVisibility.Timeline }), ...base });
+    expect(screen.getByRole('button', { name: 'frameleaf_viewer_play_slideshow' })).toBeEnabled();
+    setSharedLink(undefined);
   });
 
   it('announces the position and toggles the settings flag and the filmstrip', async () => {
