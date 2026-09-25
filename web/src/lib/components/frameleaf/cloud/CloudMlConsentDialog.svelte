@@ -35,6 +35,8 @@
   let medicalSignals = $state(false);
   let read = $state(false);
   let saving = $state(false);
+  // The destination this dialog added, kept so a retry after a failed consent does not add it twice.
+  let createdId = $state<string | null>(null);
 
   // Every opening starts from the choices on record, with the terms not yet marked as read.
   $effect(() => {
@@ -54,11 +56,12 @@
     try {
       const id =
         destinationId ??
-        (
+        createdId ??
+        (createdId = (
           await createCloudMlDestination({
             cloudMlDestinationCreateDto: { workloads: [...FRAMELEAF_CLOUD_WORKLOADS] },
           })
-        ).id;
+        ).id);
       await grantMlDestinationConsent({
         id,
         mlDestinationConsentRequestDto: {
