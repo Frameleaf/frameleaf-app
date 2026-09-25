@@ -139,6 +139,7 @@ const ServerConfigSchema = z
     oauthButtonText: z.string().describe('OAuth button text'),
     oauthAccountManagementUrl: z.string().describe('OAuth account management URL').optional().default(''),
     loginPageMessage: z.string().describe('Login page message'),
+    serverName: z.string().describe('Server name set by an administrator; empty when none is set'),
     trashDays: z.int().describe('Number of days before trashed assets are permanently deleted'),
     userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),
     isInitialized: z.boolean().describe('Whether the server has been initialized'),

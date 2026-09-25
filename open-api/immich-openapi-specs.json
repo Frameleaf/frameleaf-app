@@ -899,6 +899,108 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/database-backups/restore-verification": {
+      "get": {
+        "description": "When restoring the database and the original files was last proved, and whether a test is due",
+        "operationId": "getBackupRestoreVerification",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestoreVerificationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get backup restore verification",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Records that restoring the database, the original files or both was proved just now",
+        "operationId": "recordBackupRestoreVerification",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreVerificationRecordDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestoreVerificationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Record a backup restore test",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups/start-restore": {
       "post": {
         "description": "Put Immich into maintenance mode to restore a backup (Immich must not be configured)",
@@ -2104,6 +2206,52 @@
           }
         ],
         "summary": "Search the render worker audit trail",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/compatibility": {
+      "get": {
+        "description": "Which render kinds a qualified GPU worker (live session, fresh conformance, pinned engine) can take right now.",
+        "operationId": "getRenderWorkerCompatibility",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerCompatibilityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get render worker compatibility",
         "tags": [
           "Render workers"
         ],
@@ -22230,6 +22378,17 @@
             }
           },
           {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Only jobs whose item belongs to this account (FL-71 account filter)",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
             "name": "status",
             "required": false,
             "in": "query",
@@ -22340,6 +22499,73 @@
           }
         ],
         "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/{name}/statistics": {
+      "get": {
+        "description": "Counts, per state, the jobs of the specified queue that work on one account's items. At most 1,000 jobs of each state are read; `truncated` marks lower bounds.",
+        "operationId": "getQueueOwnerStatistics",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/QueueName"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": true,
+            "in": "query",
+            "description": "The account whose jobs are counted",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueOwnerStatisticsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve queue statistics for an account",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -38394,6 +38620,11 @@
             "description": "Login page message",
             "type": "string"
           },
+          "name": {
+            "description": "Server name shown in settings; empty uses the host name",
+            "maxLength": 100,
+            "type": "string"
+          },
           "publicUsers": {
             "description": "Public users",
             "type": "boolean"
@@ -38402,6 +38633,7 @@
         "required": [
           "externalDomain",
           "loginPageMessage",
+          "name",
           "publicUsers"
         ],
         "type": "object"
@@ -44909,6 +45141,83 @@
             "$ref": "#/components/schemas/UserAvatarColor"
           }
         },
+        "type": "object"
+      },
+      "BackupRestoreVerificationRecordDto": {
+        "properties": {
+          "metadata": {
+            "description": "The database restored and was checked",
+            "type": "boolean"
+          },
+          "originals": {
+            "description": "Original files restored and their checksums were verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metadata",
+          "originals"
+        ],
+        "type": "object"
+      },
+      "BackupRestoreVerificationResponseDto": {
+        "properties": {
+          "dueAt": {
+            "description": "When the next test is due; null when a part has never been proved",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "intervalDays": {
+            "description": "How often a restore test is due",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "metadataVerifiedAt": {
+            "description": "When restoring the database was last proved",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "originalsVerifiedAt": {
+            "description": "When restoring the original files was last proved",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "overdue": {
+            "description": "Whether a restore test is due",
+            "type": "boolean"
+          },
+          "verifiedBy": {
+            "description": "The administrator who recorded the last test; null once that account is gone",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "dueAt",
+          "intervalDays",
+          "metadataVerifiedAt",
+          "originalsVerifiedAt",
+          "overdue",
+          "verifiedBy"
+        ],
         "type": "object"
       },
       "BestPhotoAssetResponseDto": {
@@ -58594,10 +58903,16 @@
           "loginPageMessage": {
             "description": "Login page message",
             "type": "string"
+          },
+          "name": {
+            "description": "Server name shown in settings; empty uses the host name",
+            "maxLength": 100,
+            "type": "string"
           }
         },
         "required": [
-          "loginPageMessage"
+          "loginPageMessage",
+          "name"
         ],
         "type": "object"
       },
@@ -58823,6 +59138,60 @@
           "editor"
         ],
         "type": "string"
+      },
+      "QueueOwnerStatisticsResponseDto": {
+        "properties": {
+          "active": {
+            "description": "Number of active jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "completed": {
+            "description": "Number of completed jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "delayed": {
+            "description": "Number of delayed jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Number of failed jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "paused": {
+            "description": "Number of paused jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "Whether a state had more jobs than were scanned, so its count is a lower bound",
+            "type": "boolean"
+          },
+          "waiting": {
+            "description": "Number of waiting jobs",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "completed",
+          "delayed",
+          "failed",
+          "paused",
+          "truncated",
+          "waiting"
+        ],
+        "type": "object"
       },
       "QueueResponseDto": {
         "properties": {
@@ -60329,6 +60698,29 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "RenderWorkerCompatibilityResponseDto": {
+        "properties": {
+          "qualified": {
+            "description": "Render kinds a qualified worker can take now",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "unavailable": {
+            "description": "Render kinds no qualified worker can take now",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "qualified",
+          "unavailable"
+        ],
         "type": "object"
       },
       "RenderWorkerCompleteDto": {
@@ -63642,6 +64034,10 @@
             "description": "Whether public user registration is enabled",
             "type": "boolean"
           },
+          "serverName": {
+            "description": "Server name set by an administrator; empty when none is set",
+            "type": "string"
+          },
           "trashDays": {
             "description": "Number of days before trashed assets are permanently deleted",
             "maximum": 9007199254740991,
@@ -63667,6 +64063,7 @@
           "minFaces",
           "oauthButtonText",
           "publicUsers",
+          "serverName",
           "trashDays",
           "userDeleteDelay"
         ],
@@ -73454,6 +73851,11 @@
             "description": "Login page message",
             "type": "string"
           },
+          "name": {
+            "description": "Server name shown in settings; empty uses the host name",
+            "maxLength": 100,
+            "type": "string"
+          },
           "publicUsers": {
             "description": "Public users",
             "type": "boolean"
@@ -73462,6 +73864,7 @@
         "required": [
           "externalDomain",
           "loginPageMessage",
+          "name",
           "publicUsers"
         ],
         "type": "object"

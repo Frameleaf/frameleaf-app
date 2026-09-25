@@ -18,6 +18,7 @@ import {
   RenderWorkerCheckpointPlanDto,
   RenderWorkerClaimDto,
   RenderWorkerClaimRequestDto,
+  RenderWorkerCompatibilityResponseDto,
   RenderWorkerCompleteDto,
   RenderWorkerCreateDto,
   RenderWorkerCreateResponseDto,
@@ -74,6 +75,7 @@ import {
   evaluateClaimAdmission,
   evaluateRunningLimits,
   evaluateSessionAdmission,
+  isQualifiedRenderSession,
   isWorkerRefusal,
   signInputGrant,
   tightestLimits,
@@ -266,6 +268,37 @@ export class RenderWorkerService {
   /* ------------------------------------------------------------------ */
   /* Administrator                                                       */
   /* ------------------------------------------------------------------ */
+
+  /** FL-71 (CC-9): the render kinds with and without a qualified GPU worker right now. */
+  async getCompatibility(): Promise<RenderWorkerCompatibilityResponseDto> {
+    const sessions = await this.repository.listLiveSessions();
+    const now = new Date();
+    const qualifiedFor = (kind: MediaOperationKind) =>
+      sessions.some(
+        ({ worker, session }) =>
+          session.scopes.includes(kind) &&
+          isQualifiedRenderSession({
+            worker: {
+              revoked: worker.status !== RenderWorkerStatus.Active,
+              engineDigest: worker.engineDigest,
+              conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+            },
+            session: {
+              revoked: session.revokedAt !== null,
+              expiresAt: new Date(session.expiresAt),
+              engineDigest: session.engineDigest,
+              conformanceReportedAt: new Date(session.conformanceReportedAt),
+              scopes: [kind],
+            },
+            now,
+          }),
+      );
+    const qualified = RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) => qualifiedFor(kind));
+    return {
+      qualified: [...qualified],
+      unavailable: RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) => !qualified.includes(kind)),
+    };
+  }
 
   async list(): Promise<RenderWorkerDto[]> {
     const workers = await this.repository.listWorkers();
