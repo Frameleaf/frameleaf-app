@@ -14,6 +14,7 @@ import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
+import { stubFocusVisible } from '@test-data/focus-visible';
 import AssetViewer from './AssetViewer.svelte';
 
 const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
@@ -382,6 +383,9 @@ describe('AssetViewer', () => {
 
   // FL-36 + V-13: during a slideshow a tap on the photo toggles the one chrome state (header, footer, capsule).
   it('toggles the shared chrome with a tap during a slideshow and restores it when the slideshow ends', async () => {
+    // the focus trap's initial focus is not keyboard focus here, so it does not hold the chrome
+    const focusVisible = stubFocusVisible();
+    onTestFinished(() => focusVisible.restore());
     const user = userAdminFactory.build();
     const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
     authManager.setUser(user);
@@ -405,6 +409,8 @@ describe('AssetViewer', () => {
 
   // A key press reveals the chrome (revealChrome); the slideshow's idle hide must start again.
   it('hides the chrome again after a key press reveals it during a slideshow', async () => {
+    const focusVisible = stubFocusVisible();
+    onTestFinished(() => focusVisible.restore());
     const user = userAdminFactory.build();
     const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
     authManager.setUser(user);
