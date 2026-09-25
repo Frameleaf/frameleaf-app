@@ -55,14 +55,6 @@ export enum ModelTask {
   OCR = 'ocr',
   IMAGE_DESCRIPTION = 'image-description-tagging',
   NSFW_DETECTION = 'nsfw-detection',
-  /**
-   * Pet recognition (FL-58). The contract is declared here so the server side of the
-   * feature is complete and typed, but no model in `machine-learning/immich_ml`
-   * implements this task yet: the container will answer an unknown task with an error.
-   * `PetService` therefore reports the capability as unavailable rather than issuing a
-   * request that is guaranteed to fail. Remove that guard when the model lands.
-   */
-  PET_RECOGNITION = 'pet-recognition',
 }
 
 export enum ModelType {
@@ -190,37 +182,13 @@ export interface Face {
 
 export type FacialRecognitionResponse = { [ModelTask.FACIAL_RECOGNITION]: Face[] } & VisualResponse;
 
-export type PetDetectionOptions = ModelOptions & { minScore: number };
-
-/**
- * One animal a pet model found in one image. `species` is the detector's guess and is
- * advisory only; the owner's `pet.species` is never derived from it. `embedding` is the
- * replaceable part: it belongs to the model revision that produced it and is discarded
- * whenever that revision changes.
- */
-export interface PetDetectionResult {
-  boundingBox: BoundingBox;
-  embedding: string;
-  score: number;
-  species: string | null;
-}
-
-export type PetRecognitionRequest = {
-  [ModelTask.PET_RECOGNITION]: {
-    [ModelType.DETECTION]: ModelOptions & { options: { minScore: number } };
-    [ModelType.RECOGNITION]: ModelOptions;
-  };
-};
-
-export type PetRecognitionResponse = { [ModelTask.PET_RECOGNITION]: PetDetectionResult[] } & VisualResponse;
 export type MachineLearningRequest =
   | ClipVisualRequest
   | ClipTextualRequest
   | FacialRecognitionRequest
   | OcrRequest
   | ImageDescriptionRequest
-  | NsfwDetectionRequest
-  | PetRecognitionRequest;
+  | NsfwDetectionRequest;
 export type TextEncodingOptions = ModelOptions & { language?: string };
 
 export type MachineLearningHardwareResponse = {
@@ -581,30 +549,6 @@ export class MachineLearningRepository implements RestorationInference {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
       faces: response[ModelTask.FACIAL_RECOGNITION],
-    };
-  }
-
-  /**
-   * Ask the selected destination for the animals in an image.
-   *
-   * Nothing calls this yet: `machine-learning/immich_ml` has no pet model, so the task
-   * name would not be recognised. It exists so the server contract is whole and so the
-   * remaining work is a model plus a caller, not a redesign. See `ModelTask.PET_RECOGNITION`.
-   * Like every other request it takes an admitted selection first (FL-110); a future caller
-   * routes it through `selectRoutedMlDestination` and never reaches for a URL directly.
-   */
-  async detectPets(selection: MlSelection, imagePath: string, { modelName, minScore }: PetDetectionOptions) {
-    const request = {
-      [ModelTask.PET_RECOGNITION]: {
-        [ModelType.DETECTION]: { modelName, options: { minScore } },
-        [ModelType.RECOGNITION]: { modelName },
-      },
-    };
-    const response = await this.predict<PetRecognitionResponse>(selection, { imagePath }, request);
-    return {
-      imageHeight: response.imageHeight,
-      imageWidth: response.imageWidth,
-      pets: response[ModelTask.PET_RECOGNITION],
     };
   }
 

@@ -43,6 +43,7 @@ const QueuesResponseLegacySchema = z
     [QueueName.Workflow]: QueueResponseLegacySchema,
     [QueueName.Editor]: QueueResponseLegacySchema,
     [QueueName.IntegrityCheck]: QueueResponseLegacySchema,
+    [QueueName.PetRecognition]: QueueResponseLegacySchema,
   })
   .meta({ id: 'QueuesResponseLegacyDto' });
 
