@@ -3,6 +3,7 @@ import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { getForPartner } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -13,6 +14,7 @@ describe(MapService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MapService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   describe('getMapMarkers', () => {
@@ -50,6 +52,25 @@ describe(MapService.name, () => {
       await sut.getMapMarkers(auth, {});
 
       expect(mocks.map.getMapMarkers).toHaveBeenCalledWith(auth.user.id, [auth.user.id], [], { excludeNsfw: true });
+    });
+
+    it('leaves shared-album markers of owners who hide locations from the viewer off the map (FL-54)', async () => {
+      const auth = AuthFactory.create();
+      const hiding = UserFactory.create();
+      mocks.album.getAllIds.mockResolvedValue(['album-1']);
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(auth.user).build()),
+      ]);
+      mocks.map.getMapMarkers.mockResolvedValue([]);
+
+      await sut.getMapMarkers(auth, { withSharedAlbums: true });
+
+      expect(mocks.map.getMapMarkers).toHaveBeenCalledWith(
+        auth.user.id,
+        [auth.user.id],
+        ['album-1'],
+        expect.objectContaining({ locationHiddenOwnerIds: [hiding.id] }),
+      );
     });
 
     it('should include partner assets', async () => {

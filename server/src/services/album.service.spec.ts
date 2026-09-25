@@ -7,9 +7,10 @@ import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { getForAlbum } from 'test/mappers.js';
+import { getForAlbum, getForPartner } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -19,6 +20,7 @@ describe(AlbumService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AlbumService));
+    mocks.partner.getAll.mockResolvedValue([]);
     mocks.album.getPositions.mockResolvedValue(new Map());
   });
 
@@ -1366,6 +1368,37 @@ describe(AlbumService.name, () => {
 
     beforeEach(() => {
       mocks.map.getAlbumMapMarkers.mockResolvedValue([]);
+    });
+
+    it('leaves out the markers of an owner who hides locations from the viewer (FL-54)', async () => {
+      const me = UserFactory.create();
+      const hiding = UserFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
+      ]);
+
+      await sut.getMapMarkers(AuthFactory.create(me), albumId, {});
+
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(
+        albumId,
+        expect.objectContaining({ locationHiddenOwnerIds: [hiding.id] }),
+      );
+    });
+
+    it("judges a shared album link's markers by the link creator's partner settings (FL-54)", async () => {
+      const creator = UserFactory.create();
+      const hiding = UserFactory.create();
+      const auth = AuthFactory.from(creator).sharedLink({ userId: creator.id, albumId, showExif: true }).build();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(creator).build()),
+      ]);
+
+      await sut.getMapMarkers(auth, albumId, {});
+
+      expect(mocks.partner.getAll).toHaveBeenCalledWith(creator.id);
+      expect(mocks.map.getAlbumMapMarkers).toHaveBeenCalledWith(albumId, { locationHiddenOwnerIds: [hiding.id] });
     });
 
     it('requires album read access before reading any markers', async () => {
