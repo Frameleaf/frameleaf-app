@@ -662,7 +662,23 @@ export class PersonService extends BaseService {
 
   async getById(auth: AuthDto, personGroupId: string): Promise<PersonResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    return mapPerson(await this.findOrFail(auth, personGroupId));
+    return this.mapOwnPerson(await this.findOrFail(auth, personGroupId));
+  }
+
+  /**
+   * FL-37: a person as their owner sees it, with the photo their featured face is in, so the
+   * featured-photo picker can mark the current one. `findOrFail` reads only the caller's own
+   * people, so the field never reaches anyone else. A photo since trashed, hidden or moved to
+   * Locked is not named.
+   */
+  private async mapOwnPerson(person: Person): Promise<PersonResponseDto> {
+    const asset = person.faceAssetId ? await this.personRepository.getFeaturedAsset(person.faceAssetId) : undefined;
+    const shown =
+      !!asset &&
+      !asset.deletedAt &&
+      asset.visibility !== AssetVisibility.Hidden &&
+      !isLockedAssetRow({ visibility: asset.visibility });
+    return { ...mapPerson(person), featuredAssetId: shown ? asset.id : null };
   }
 
   async getStatistics(auth: AuthDto, personGroupId: string): Promise<PersonStatisticsResponseDto> {
@@ -757,7 +773,7 @@ export class PersonService extends BaseService {
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
-    return mapPerson(person);
+    return this.mapOwnPerson(person);
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
