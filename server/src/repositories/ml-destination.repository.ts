@@ -198,7 +198,10 @@ export class MlDestinationRepository {
    * rows changed; a settlement for a job this server never recorded changes nothing.
    */
   async applySettlements(settlements: MlSettlement[]): Promise<number> {
-    if (settlements.length === 0) {
+    // A job reported twice counts once, with its last report: Postgres would otherwise apply one of
+    // the duplicate rows arbitrarily.
+    const unique = new Map(settlements.map((settlement) => [settlement.cloudJobId, settlement])).values().toArray();
+    if (unique.length === 0) {
       return 0;
     }
     // One statement per reconcile, matched through the cloud job id index (fork migration 201); a
@@ -206,7 +209,7 @@ export class MlDestinationRepository {
     const result = await sql<{ id: string }>`
       UPDATE public.ml_workload_accounting AS a
       SET "costUsd" = s."costUsd", credits = s.credits
-      FROM jsonb_to_recordset(${JSON.stringify(settlements)}::text::jsonb)
+      FROM jsonb_to_recordset(${JSON.stringify(unique)}::text::jsonb)
         AS s("cloudJobId" text, "costUsd" double precision, credits double precision)
       WHERE a."cloudJobId" = s."cloudJobId"
         AND (a."costUsd" IS DISTINCT FROM s."costUsd" OR a.credits IS DISTINCT FROM s.credits)
