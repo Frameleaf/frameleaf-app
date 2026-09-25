@@ -20,6 +20,7 @@ import {
   EnrichmentItemState,
   EnrichmentStaleReason,
   ImmichWorker,
+  JobName,
   MlWorkload,
   Permission,
   StorageFolder,
@@ -29,6 +30,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -143,6 +145,7 @@ export class VideoMomentIndexService {
     private people: PersonRepository,
     private configRepository: ConfigRepository,
     private systemMetadata: SystemMetadataRepository,
+    private jobs: JobRepository,
   ) {
     this.logger.setContext(VideoMomentIndexService.name);
   }
@@ -335,6 +338,8 @@ export class VideoMomentIndexService {
       throw new BadRequestException('This video has no frames to choose a cover from yet');
     }
     await this.moments.setCover(assetId, dto.timestampMs, auth.user.id);
+    // The video's own thumbnail follows the chosen cover (or the automatic pick again when reset).
+    await this.jobs.queue({ name: JobName.AssetGenerateThumbnails, data: { id: assetId } });
     return this.present(assetId);
   }
 

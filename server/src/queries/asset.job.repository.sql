@@ -318,7 +318,15 @@ select
         where
           "asset_video"."assetId" is not null
       ) as obj
-  ) as "format"
+  ) as "format",
+  (
+    select
+      "video_moment_index"."coverTimestampMs"
+    from
+      "video_moment_index"
+    where
+      "video_moment_index"."assetId" = "asset"."id"
+  ) as "coverTimestampMs"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
