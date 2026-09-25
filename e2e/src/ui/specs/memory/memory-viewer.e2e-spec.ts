@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import type { MemoryResponseDto } from '@immich/sdk';
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { generateMemoriesFromTimeline } from 'src/ui/generators/memory.js';
 import {
   Changes,
@@ -211,6 +211,85 @@ test.describe('Memory Viewer - Gallery Asset Viewer Navigation', () => {
 
       await page.keyboard.press('ArrowRight');
       await memoryAssetViewerUtils.waitForAssetLoad(page, firstAssetOfSecond);
+    });
+  });
+
+  // FL-62: the shared Memories engine opens a memory with its title card, then shows the lower third.
+  test.describe('Memories engine', () => {
+    test('opens with the title card and plays on from it', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[0].id);
+
+      const viewer = memoryViewerUtils.locator(page);
+      const titleCard = viewer.locator('.fmp-title-card');
+      await expect(titleCard).toBeVisible();
+      await expect(titleCard.getByText('Memory', { exact: true })).toBeVisible();
+      await expect(titleCard.getByText(`${firstMemory.assets.length} items`)).toBeVisible();
+      // data-initial-focus (MemoryPlayer.jsx:343)
+      await expect(titleCard.getByRole('button', { name: 'Play' })).toBeFocused();
+
+      await titleCard.getByRole('button', { name: 'Play' }).click();
+      await expect(titleCard).toHaveCount(0);
+      await expect(viewer.locator('.fmp-lower-third')).toBeVisible();
+    });
+
+    test('Previous from the first item returns to the title card', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[0].id);
+      const titleCard = memoryViewerUtils.locator(page).locator('.fmp-title-card');
+      await titleCard.getByRole('button', { name: 'Play' }).click();
+      await expect(titleCard).toHaveCount(0);
+
+      await page.keyboard.press('ArrowLeft');
+      await expect(titleCard).toBeVisible();
+      await expect(titleCard.locator('img.fmp-title-bg')).toHaveCount(1);
+    });
+
+    // MPY-4 (MemoryPlayer.jsx:403-446): the end card closes the memory after its last item.
+    test('ends a memory on its end card, and Previous returns to the last item', async ({ page }) => {
+      const firstMemory = memories[0];
+      const lastAsset = firstMemory.assets.at(-1)!;
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, lastAsset.id);
+      const viewer = memoryViewerUtils.locator(page);
+      await page.keyboard.press('ArrowRight');
+
+      const endCard = viewer.locator('.fmp-end-card');
+      await expect(endCard).toBeVisible();
+      await expect(endCard.getByText('That was', { exact: true })).toBeVisible();
+      // data-initial-focus (MemoryPlayer.jsx:414)
+      await expect(endCard.getByRole('button', { name: 'Play again' })).toBeFocused();
+      await expect(endCard.getByRole('button', { name: 'Back to memories' })).toBeVisible();
+      await expect(endCard.getByRole('button', { name: /^Next memory: / })).toBeVisible();
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, lastAsset.id);
+
+      await page.keyboard.press('ArrowLeft');
+      await expect(endCard).toHaveCount(0);
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, lastAsset.id);
+    });
+
+    test('Play again starts the memory from its first item', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets.at(-1)!.id);
+      await page.keyboard.press('ArrowRight');
+      await memoryViewerUtils
+        .locator(page)
+        .locator('.fmp-end-card')
+        .getByRole('button', { name: 'Play again' })
+        .click();
+
+      await memoryAssetViewerUtils.expectCurrentAssetId(page, firstMemory.assets[0].id);
+    });
+
+    test('does not show the title card when opened part way through', async ({ page }) => {
+      const firstMemory = memories[0];
+
+      await memoryViewerUtils.openMemoryPageWithAsset(page, firstMemory.id, firstMemory.assets[1].id);
+
+      await expect(memoryViewerUtils.locator(page).locator('.fmp-title-card')).toHaveCount(0);
     });
   });
 });

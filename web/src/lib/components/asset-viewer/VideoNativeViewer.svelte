@@ -1,6 +1,7 @@
 <script lang="ts">
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
+  import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -10,8 +11,9 @@
   import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
   import { getAssetActions } from '$lib/services/asset.service';
   import { autoPlayVideo, lang, loopVideo as loopVideoPreference, videoQuality } from '$lib/stores/preferences.store';
+  import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetHlsSessionUrl, getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl, isEnabled } from '$lib/utils';
-  import { AssetMediaSize, type AssetResponseDto } from '@immich/sdk';
+  import { AssetMediaSize, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner, shortcuts } from '@immich/ui';
   import {
     mdiCheck,
@@ -50,7 +52,7 @@
   import 'media-chrome/menu/media-settings-menu';
   import 'media-chrome/menu/media-settings-menu-button';
   import 'media-chrome/menu/media-settings-menu-item';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
@@ -394,6 +396,55 @@
   $effect(() => {
     window.addEventListener('pagehide', onPagehide);
     return () => window.removeEventListener('pagehide', onPagehide);
+  });
+
+  // FL-36 (MediaViewer.jsx:886-923): media keys and the lock screen control the open video. A
+  // running slideshow owns the session itself (SlideshowBar), so this steps aside then.
+  const { slideshowState } = slideshowStore;
+  $effect(() => {
+    const player = videoPlayer;
+    if (!player || !extendedControls || $slideshowState !== SlideshowState.None) {
+      return;
+    }
+    return bindMediaSession({
+      // a Locked video never reaches the lock screen or the OS media controls
+      locked: asset.visibility === AssetVisibility.Locked,
+      title: asset.originalFileName,
+      artist: MEDIA_SESSION_ARTIST,
+      album: asset.exifInfo?.city ?? undefined,
+      artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey }),
+      controls: {
+        play: () => void player.play().catch(() => {}),
+        pause: () => player.pause(),
+        previous: onPreviousAsset,
+        next: onNextAsset,
+      },
+    });
+  });
+
+  // FL-36 (MediaViewer.jsx:422-460, 898-903): pausing or resuming a slideshow (its button, Space
+  // or the media keys) pauses or resumes the video on screen, and so does opening and closing the
+  // slideshow settings, which hold the slideshow without pausing it.
+  const { settingsOpen: slideshowSettingsOpen } = slideshowStore;
+  const slideshowHeld = (state: SlideshowState, settingsOpen: boolean) =>
+    state === SlideshowState.PauseSlideshow || (state === SlideshowState.PlaySlideshow && settingsOpen);
+  let previousHeld = untrack(() => slideshowHeld($slideshowState, $slideshowSettingsOpen));
+  $effect(() => {
+    const held = slideshowHeld($slideshowState, $slideshowSettingsOpen);
+    const resumable = $slideshowState === SlideshowState.PlaySlideshow;
+    const player = videoPlayer;
+    untrack(() => {
+      const wasHeld = previousHeld;
+      previousHeld = held;
+      if (!player || held === wasHeld) {
+        return;
+      }
+      if (held) {
+        player.pause();
+      } else if (resumable) {
+        player.play().catch(() => {});
+      }
+    });
   });
 
   onDestroy(() => {

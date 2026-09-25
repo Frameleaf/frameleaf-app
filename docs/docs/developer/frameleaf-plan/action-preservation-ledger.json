@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "e65a6ddefb81910bd9cb3c9b7482cec3537f7746e44db4d9c815c02076721209",
+  "sourceEvidenceSha256": "fb91b84e36a2a9b20f581d6ef5c9fe31b5eeb48a171a4cf40adb9fdee4208e66",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -70082,7 +70082,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70090,7 +70090,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70124,7 +70124,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70132,7 +70132,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70170,7 +70170,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70178,7 +70178,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70216,7 +70216,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70224,7 +70224,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70258,7 +70258,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70266,7 +70266,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70304,7 +70304,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70312,7 +70312,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70350,7 +70350,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70358,7 +70358,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Partial", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70396,7 +70396,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70404,7 +70404,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70442,7 +70442,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70450,7 +70450,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70484,7 +70484,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70492,7 +70492,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70530,7 +70530,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70538,7 +70538,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70576,7 +70576,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70584,7 +70584,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70618,7 +70618,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70626,7 +70626,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70664,7 +70664,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70672,7 +70672,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70710,7 +70710,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70718,7 +70718,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70752,7 +70752,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70760,7 +70760,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": {
@@ -70798,7 +70798,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70806,7 +70806,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70840,7 +70840,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70848,7 +70848,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70886,7 +70886,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70894,7 +70894,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70928,7 +70928,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70936,7 +70936,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -70970,7 +70970,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -70978,7 +70978,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71012,7 +71012,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71020,7 +71020,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71058,7 +71058,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71066,7 +71066,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71100,7 +71100,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71108,7 +71108,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71146,7 +71146,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71154,7 +71154,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71192,7 +71192,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71200,7 +71200,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71238,7 +71238,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71246,7 +71246,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71284,7 +71284,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71292,7 +71292,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71330,7 +71330,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71338,7 +71338,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71376,7 +71376,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71384,7 +71384,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71422,7 +71422,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71430,7 +71430,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71468,7 +71468,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71476,7 +71476,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Partial", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71514,7 +71514,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71522,7 +71522,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71560,7 +71560,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71568,7 +71568,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71606,7 +71606,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71614,7 +71614,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": {
@@ -71656,7 +71656,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71664,7 +71664,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Partial", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71702,7 +71702,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71710,7 +71710,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71744,7 +71744,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71752,7 +71752,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Partial", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71790,7 +71790,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71798,7 +71798,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71836,7 +71836,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71844,7 +71844,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71882,7 +71882,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71890,7 +71890,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Missing", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71928,7 +71928,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71936,7 +71936,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -71970,7 +71970,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -71978,7 +71978,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Partial", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },
@@ -72016,7 +72016,7 @@
             "web/src/lib/services/asset.service.ts",
             "web/src/lib/components/asset-viewer/actions",
             "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-            "web/src/lib/modals/SlideshowSettingsModal.svelte"
+            "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
           ],
           "evidence": [
             "accepted-main:web/src/lib/components/asset-viewer/AssetViewer.svelte:dcf49c6d1bd14c2cd83942f77ba77a9a54fd46a75e4871c0307da3e11dc4524f",
@@ -72024,7 +72024,7 @@
             "accepted-main:web/src/lib/services/asset.service.ts:b136d2eefc0694cc97e6a8043db605dfc8c558c28d149f42e99b6cb82f351275",
             "accepted-main-directory:web/src/lib/components/asset-viewer/actions:directory",
             "accepted-main:web/src/lib/components/asset-viewer/SlideshowBar.svelte:6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2",
-            "accepted-main:web/src/lib/modals/SlideshowSettingsModal.svelte:ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+            "accepted-main:web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte:9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
           ]
         },
         "newUi": { "status": "Local", "target": "Media viewer and its menus", "evidence": ["none-qualified"] },

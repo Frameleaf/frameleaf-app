@@ -1390,9 +1390,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1438,9 +1438,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1486,9 +1486,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1534,9 +1534,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1582,9 +1582,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1630,9 +1630,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1678,9 +1678,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1726,9 +1726,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1774,9 +1774,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1822,9 +1822,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1870,9 +1870,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1918,9 +1918,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -1966,9 +1966,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2014,9 +2014,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2062,9 +2062,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2110,9 +2110,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2158,9 +2158,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2206,9 +2206,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2254,9 +2254,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2302,9 +2302,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2350,9 +2350,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2398,9 +2398,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2446,9 +2446,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2494,9 +2494,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2542,9 +2542,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2590,9 +2590,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2638,9 +2638,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2686,9 +2686,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2734,9 +2734,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2782,9 +2782,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2830,9 +2830,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2878,9 +2878,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2926,9 +2926,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -2974,9 +2974,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3022,9 +3022,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3070,9 +3070,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3118,9 +3118,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3166,9 +3166,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3214,9 +3214,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3262,9 +3262,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3310,9 +3310,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3358,9 +3358,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3406,9 +3406,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },
@@ -3454,9 +3454,9 @@
           "sha256": "6dc7bf05ec78672d95d3b6c48cda23f8e584aa214088350feb99d7fa4195f5b2"
         },
         {
-          "path": "web/src/lib/modals/SlideshowSettingsModal.svelte",
+          "path": "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
           "availability": "accepted-main",
-          "sha256": "ecc6385eaa150e47b2fcf7fc0164d8b46ab8fc182de90155707c1daaa60033b8"
+          "sha256": "9e81355e492b799bf01b9122fbce177219e21bc922440102a3e785a6c4697207"
         }
       ]
     },

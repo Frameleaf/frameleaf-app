@@ -1,4 +1,4 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
@@ -261,8 +261,13 @@ describe('AssetViewerNavBar component', () => {
     });
 
     it('offers Play slideshow in the bar when the link allows downloads', async () => {
-      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
-      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      // the factories pick random values: metadata must be shown for a link to send, and a Locked item never is
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true, showMetadata: true }));
+      const asset = assetFactory.build({
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
       const { getByLabelText, queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
         asset,
         ...additionalProps,
@@ -286,8 +291,13 @@ describe('AssetViewerNavBar component', () => {
     });
 
     it('leaves the slideshow out when there is nothing to move to', () => {
-      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
-      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      // the factories pick random values: metadata must be shown for a link to send, and a Locked item never is
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true, showMetadata: true }));
+      const asset = assetFactory.build({
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
       const { queryByLabelText } = renderWithTooltips(AssetViewerNavBar, {
         asset,
         ...additionalProps,
@@ -342,8 +352,13 @@ describe('AssetViewerNavBar component', () => {
 
     it('offers Send a copy in a shared link’s bar only where the browser can share files', () => {
       authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
-      setSharedLink(sharedLinkFactory.build({ allowDownload: true }));
-      const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
+      // the factories pick random values: metadata must be shown for a link to send, and a Locked item never is
+      setSharedLink(sharedLinkFactory.build({ allowDownload: true, showMetadata: true }));
+      const asset = assetFactory.build({
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        visibility: AssetVisibility.Timeline,
+      });
 
       const withoutShare = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
       expect(withoutShare.queryByLabelText('frameleaf_send_copy')).not.toBeInTheDocument();

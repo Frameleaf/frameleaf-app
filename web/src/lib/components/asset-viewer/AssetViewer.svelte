@@ -17,6 +17,7 @@
   import { AssetAction } from '$lib/constants';
   import { isPanorama } from '$lib/frameleaf/viewer-media';
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
+  import { slideshowStage, type SlideshowDirection } from '$lib/frameleaf/slideshow-stage.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -46,20 +47,21 @@
   } from '@immich/sdk';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import { CommandPaletteDefaultProvider, modalManager } from '@immich/ui';
+  import { CommandPaletteDefaultProvider } from '@immich/ui';
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFly } from '$lib/frameleaf/motion';
   import { isGestureExempt, ViewerGesture, type DismissDrag } from '$lib/frameleaf/viewer-gesture';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
-  import SlideshowSettingsModal from '$lib/modals/SlideshowSettingsModal.svelte';
   import ActivityStatus from './ActivityStatus.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
   import SlideshowBar from './SlideshowBar.svelte';
+  import SlideshowSettingsPanel from '$lib/components/frameleaf/SlideshowSettingsPanel.svelte';
+  import SlideshowMemoriesOverlay from './SlideshowMemoriesOverlay.svelte';
   import SlideshowMetadataOverlay from './SlideshowMetadataOverlay.svelte';
   import VideoViewer from './VideoWrapperViewer.svelte';
 
@@ -125,7 +127,12 @@
     slideshowState,
     slideshowRepeat,
     slideshowAutoplay,
+    slideshowTransition,
+    slideshowDelay,
+    settingsOpen: slideshowSettingsOpen,
   } = slideshowStore;
+  // FL-36: which way the slideshow last moved, so a Slide transition arrives from that side.
+  let slideshowDirection = $state<SlideshowDirection>('next');
 
   let previewStackedAsset: AssetResponseDto | undefined = $state();
   let stack: StackResponseDto | null = $state(null);
@@ -189,11 +196,15 @@
 
   onMount(() => {
     syncAssetViewerOpenClass(true);
+    // FL-36: a slideshow starts only from a stopped viewer; resuming from pause is not a new run.
+    let previousSlideshowState = $slideshowState;
     const slideshowStateUnsubscribe = slideshowState.subscribe((value) => {
-      if (value === SlideshowState.PlaySlideshow) {
+      const previous = previousSlideshowState;
+      previousSlideshowState = value;
+      if (value === SlideshowState.PlaySlideshow && previous !== SlideshowState.PauseSlideshow) {
         slideshowHistory.reset();
         slideshowHistory.queue(toTimelineAsset(asset));
-        handlePromiseError(handlePlaySlideshow());
+        handlePlaySlideshow();
       } else if (value === SlideshowState.StopSlideshow) {
         handlePromiseError(handleStopSlideshow());
       }
@@ -254,6 +265,7 @@
       }
     }
 
+    slideshowDirection = order;
     preloadManager.cancelBeforeNavigation(order);
 
     if (tracker.isActive()) {
@@ -332,16 +344,12 @@
     }
   };
 
-  const handlePlaySlideshow = async () => {
+  // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer. Full screen is an
+  // explicit choice from the slideshow controls, never forced.
+  const handlePlaySlideshow = () => {
     slideshowStartAssetId = asset.id;
     if (!$slideshowAutoplay) {
       $slideshowState = SlideshowState.PauseSlideshow;
-    }
-    try {
-      await assetViewerHtmlElement?.requestFullscreen?.();
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_enter_fullscreen'));
-      $slideshowState = SlideshowState.StopSlideshow;
     }
   };
 
@@ -588,6 +596,13 @@
     gesture.cancel();
   });
 
+  // FL-36: a slideshow hides the chrome while it plays; ending it brings the chrome back.
+  $effect(() => {
+    if ($slideshowState === SlideshowState.None) {
+      untrack(() => (chromeHidden = false));
+    }
+  });
+
   const canvasTransform = $derived(
     dismissDrag
       ? `translate(${dismissDrag.x}px, ${dismissDrag.y}px) scale(${1 - dismissDrag.progress * 0.25})`
@@ -603,17 +618,8 @@
     }
   };
 
-  /**
-   * V-13: the footer's cog sets the settings-open flag. Until the slideshow's own settings panel reads
-   * it, the flag opens the existing slideshow settings and is cleared when they close.
-   */
-  const { settingsOpen: slideshowSettingsOpen } = slideshowStore;
-  $effect(() => {
-    if (!$slideshowSettingsOpen) {
-      return;
-    }
-    void untrack(() => modalManager.show(SlideshowSettingsModal)).finally(() => slideshowStore.closeSettings());
-  });
+  // V-13 / FL-36: the footer's cog and the slideshow share `slideshowStore.settingsOpen`; the viewer
+  // renders `SlideshowSettingsPanel` for it (below), which returns focus to the control that opened it.
 
   /** Hidden chrome comes back as soon as the keyboard is used, so nothing focusable stays invisible. */
   const revealChrome = () => {
@@ -636,7 +642,9 @@
 
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
 
-  const showFooter = $derived($slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor);
+  // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
+  // reachable; the slideshow's idle hide and tap toggle hide it with the rest of the chrome.
+  const showFooter = $derived(!assetViewerManager.isShowEditor);
 
   const showStackStrip = $derived(
     !!stack && withStacked && !assetViewerManager.isShowEditor && $slideshowState === SlideshowState.None,
@@ -731,14 +739,20 @@
   {#if $slideshowState !== SlideshowState.None}
     <div class="absolute inset-s-0 top-0 flex w-full justify-start">
       <SlideshowBar
-        {isFullScreen}
+        {asset}
+        bind:chromeHidden
+        title={album?.albumName ?? person?.name}
         assetType={previewStackedAsset?.type ?? asset.type}
-        onSetToFullScreen={() => assetViewerHtmlElement?.requestFullscreen?.()}
         onPrevious={() => navigateAsset('previous')}
         onNext={() => navigateAsset('next')}
         onClose={() => ($slideshowState = SlideshowState.StopSlideshow)}
       />
     </div>
+  {/if}
+
+  <!-- FL-36: the slideshow settings panel (MediaViewer.jsx:2086); any control may open it through slideshowStore.toggleSettings. -->
+  {#if $slideshowSettingsOpen}
+    <SlideshowSettingsPanel onClose={() => void slideshowStore.closeSettings()} />
   {/if}
 
   {#if $slideshowState === SlideshowState.None && showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && previousAsset}
@@ -748,6 +762,7 @@
   {/if}
 
   <!-- Asset Viewer -->
+  <!-- FL-36: while a slideshow runs, each item arrives with the chosen transition. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     data-viewer-content
@@ -755,6 +770,17 @@
     class:fl-viewer-video={VIDEO_VIEWERS.has(viewerKind)}
     style:transform={canvasTransform}
     onpointerdown={onCanvasPointerDown}
+    {@attach slideshowStage(
+      () => ({
+        active: $slideshowState !== SlideshowState.None,
+        assetId: asset.id,
+        transition: $slideshowTransition,
+        intervalSeconds: $slideshowDelay,
+        direction: slideshowDirection,
+        video: asset.type === AssetTypeEnum.Video,
+      }),
+      () => $slideshowState === SlideshowState.PauseSlideshow || $slideshowSettingsOpen,
+    )}
   >
     {#if viewerKind === 'StackVideoViewer'}
       <VideoViewer
@@ -836,6 +862,7 @@
 
     {#if $slideshowState !== SlideshowState.None}
       <SlideshowMetadataOverlay {asset} />
+      <SlideshowMemoriesOverlay {asset} {album} {person} />
     {/if}
   </div>
 

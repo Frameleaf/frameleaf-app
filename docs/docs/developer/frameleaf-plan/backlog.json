@@ -825,7 +825,7 @@
         "web/src/lib/components/asset-viewer/AssetViewer.svelte",
         "web/src/lib/components/asset-viewer/AssetViewerNavBar.svelte",
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
-        "web/src/lib/modals/SlideshowSettingsModal.svelte",
+        "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte",
         "e2e/src/specs/web/asset-viewer/navbar.e2e-spec.ts",
         "prototypes/frameleaf/src/MediaViewer.jsx"
       ],
