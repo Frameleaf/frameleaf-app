@@ -45,7 +45,13 @@
     </li>
   </ul>
 
-  {#if !status}
+  {#if !status && cloudManager.error}
+    <!-- the step stays skippable; linking can also be done later in Settings -->
+    <p class="auth-error" role="alert">{$t('frameleaf_onboarding_account_unavailable')}</p>
+    <button type="button" class="auth-link" onclick={() => void cloudManager.refresh()}>
+      {$t('frameleaf_personal_try_again')}
+    </button>
+  {:else if !status}
     <p class="auth-note" role="status">{$t('frameleaf_cloud_loading')}</p>
   {:else if status.state === 'not-configured'}
     <p class="auth-note">{$t('frameleaf_onboarding_account_not_configured')}</p>

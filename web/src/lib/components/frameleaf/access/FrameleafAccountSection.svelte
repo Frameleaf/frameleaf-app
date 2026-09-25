@@ -17,14 +17,16 @@
   import './access.css';
 
   let link = $state<FrameleafAccountLinkResponseDto | null>(null);
+  let loadFailed = $state(false);
   let working = $state(false);
   let error = $state('');
 
   const load = async () => {
+    loadFailed = false;
     try {
       link = await getFrameleafAccountLink();
-    } catch (error_) {
-      error = getServerErrorMessage(error_) ?? $t('frameleaf_personal_link_failed');
+    } catch {
+      loadFailed = true;
     }
   };
 
@@ -82,7 +84,9 @@
     <div>
       <h3 id="fl-access-frameleaf">{$t('frameleaf_personal_title')}</h3>
       <p>
-        {#if !link}
+        {#if !link && loadFailed}
+          {$t('frameleaf_personal_load_failed')}
+        {:else if !link}
           {$t('frameleaf_personal_loading')}
         {:else if link.linked}
           {$t('frameleaf_personal_linked', { values: { email: link.email, date: since(link.linkedAt) } })}
@@ -93,7 +97,9 @@
         {/if}
       </p>
     </div>
-    {#if link?.linked}
+    {#if !link && loadFailed}
+      <Button disabled={working} onclick={() => void load()}>{$t('frameleaf_personal_try_again')}</Button>
+    {:else if link?.linked}
       <Button disabled={working} onclick={disconnect}>{$t('frameleaf_personal_unlink')}</Button>
     {:else}
       <Button disabled={working || !link?.available} onclick={connect}>{$t('frameleaf_personal_link')}</Button>
