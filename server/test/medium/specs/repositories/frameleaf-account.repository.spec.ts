@@ -1,8 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as links from 'src/fork-schema/migrations/0000000000201-FrameleafAccountLinks.js';
-import * as sessions from 'src/fork-schema/migrations/0000000000202-FrameleafSessions.js';
+import * as links from 'src/fork-schema/migrations/0000000000202-FrameleafAccountLinks.js';
+import * as sessions from 'src/fork-schema/migrations/0000000000203-FrameleafSessions.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
