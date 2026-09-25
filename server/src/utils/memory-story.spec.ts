@@ -3,7 +3,11 @@ import {
   EVENT_GAP_HOURS,
   MIN_EVENT_ASSETS,
   type StoryCandidate,
+  birthdayAge,
+  birthdayOn,
+  calendarDayWindow,
   diversifyByDay,
+  diversifyByMonth,
   dominantPlace,
   groupEventStories,
   placeLabel,
@@ -203,5 +207,50 @@ describe('memory story grouping', () => {
       expect(placeLabel(null)).toBeUndefined();
       expect(placeLabel({ city: null, state: null, country: null })).toBeUndefined();
     });
+  });
+});
+
+describe('birthdays and recaps (FL-62)', () => {
+  it('keeps the month and day of a birth date in the given year', () => {
+    expect(birthdayOn('1990-09-25', 2026)).toBe('2026-09-25');
+    expect(birthdayOn('1990-01-01T00:00:00.000Z', 2027)).toBe('2027-01-01');
+  });
+
+  it('keeps a leap-day birthday on 28 February outside leap years', () => {
+    expect(birthdayOn('2000-02-29', 2026)).toBe('2026-02-28');
+    expect(birthdayOn('2000-02-29', 2028)).toBe('2028-02-29');
+  });
+
+  it('returns null for an unreadable birth date', () => {
+    expect(birthdayOn('not a date', 2026)).toBeNull();
+  });
+
+  it('counts the age reached, and none for a missing birth year', () => {
+    expect(birthdayAge('1990-09-25', 2026)).toBe(36);
+    expect(birthdayAge('0001-09-25', 2026)).toBeNull();
+    expect(birthdayAge('2030-01-01', 2026)).toBeNull();
+  });
+
+  it('shows a calendar day from its first moment anywhere to its last moment anywhere', () => {
+    const { showAt, hideAt } = calendarDayWindow('2026-09-25');
+    expect(showAt.toISOString()).toBe('2026-09-24T10:00:00.000Z');
+    expect(hideAt.toISOString()).toBe('2026-09-26T11:59:59.999Z');
+  });
+
+  it('spreads a recap across the months instead of one busy weekend', () => {
+    const busy = Array.from({ length: 40 }, (_, index) => ({
+      id: `june-${index}`,
+      localDateTime: new Date(Date.UTC(2025, 5, 1, 0, index)),
+    }));
+    const quiet = [1, 3, 8, 11].map((month) => ({
+      id: `month-${month}`,
+      localDateTime: new Date(Date.UTC(2025, month, 5)),
+    }));
+    const kept = diversifyByMonth(
+      [...busy, ...quiet].toSorted((a, b) => +a.localDateTime - +b.localDateTime),
+      8,
+    );
+    expect(kept).toHaveLength(8);
+    expect(kept.map(({ id }) => id)).toEqual(expect.arrayContaining(quiet.map(({ id }) => id)));
   });
 });

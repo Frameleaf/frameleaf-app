@@ -57,6 +57,10 @@ const ServerAppReleasesResponseSchema = z
           .optional()
           .describe('SHA-256 fingerprint of the release signing certificate, as AA:BB:...'),
         links: ServerApkLinksSchema.optional().describe('Signed APK downloads for this server version'),
+        storeUrl: z
+          .string()
+          .optional()
+          .describe('Store listing of the Android app, when the operator configured one (FL-135)'),
       })
       .describe('Android application'),
     ios: z

@@ -324,6 +324,8 @@
   let videoQuickEditor = $state<VideoQuickEditor>();
   // The before-and-after the restoration panel asked the stage to show. Cleared with the tool.
   let restorationCompare = $state<RestorationCompareRequest | null>(null);
+  // Prototype RestorePanel "Loupe" (Studio.jsx:1634).
+  let restorationLoupe = $state(false);
   const restoring = $derived(tool === 'restore');
   $effect(() => {
     if (!restoring) {
@@ -1039,7 +1041,7 @@
           <div class="ed-canvas" bind:this={canvasEl}>
             {#if restoring && restorationCompare}
               <div class="ed-restore-stage">
-                <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+                <RestorationCompare {...restorationCompare} alt={asset.originalFileName} loupe={restorationLoupe} />
               </div>
             {:else if tool === 'versions' && versionCompare}
               <div class="ed-restore-stage" aria-label={$t('frameleaf_editor_version_compare_stage')}>
@@ -1266,6 +1268,8 @@
               crop={recipe.crop}
               onCompare={(compare) => (restorationCompare = compare)}
               onCurrentChanged={() => (saveChangedCurrent = true)}
+              loupe={restorationLoupe}
+              onLoupeChange={(value) => (restorationLoupe = value)}
             />
           {:else if tool === 'presets'}
             <div class="ed-panel-body">

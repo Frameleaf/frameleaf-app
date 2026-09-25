@@ -34,7 +34,6 @@
   import { AssetMediaSize, AssetVisibility } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
-    mdiArchiveArrowDownOutline,
     mdiCheck,
     mdiCloudOffOutline,
     mdiDotsHorizontal,
@@ -66,6 +65,7 @@
     rating?: number | null;
     /** Marked sensitive. Metadata only — the asset is never relocated. */
     sensitive?: boolean;
+    /** Offline override; by default the asset's own flag (its time bucket or its details). */
     offline?: boolean;
     /** Timeline and Work: space under the photo for the caption; `height` includes it. */
     captionHeight?: number;
@@ -93,7 +93,7 @@
     layout = 'timeline',
     rating,
     sensitive = false,
-    offline = false,
+    offline,
     captionHeight = 0,
     showFileName = false,
     onOpen,
@@ -122,7 +122,9 @@
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
   // FL-34: `Locked` for an item from the old Locked folder, `Sensitive` for a mark or a detection
   const lockLabelKey = $derived(lockBadgeLabelKey(asset.lockReason));
-  const isArchived = $derived(asset.visibility === AssetVisibility.Archive);
+  // T-17: the template draws no Archived badge (archiving takes an item out of the library), and the
+  // Offline badge follows the asset's own flag (`AssetTile.jsx` `asset.isOffline`).
+  const isOffline = $derived(offline ?? !!asset.isOffline);
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
   const stars = $derived(typeof rating === 'number' ? rating : typeof asset.rating === 'number' ? asset.rating : 0);
@@ -393,7 +395,7 @@
         </span>
       {/if}
       {#if isLive}
-        <span class="fl-badge fl-badge-icon" title={$t('frameleaf_library_badge_live_photo')}>
+        <span class="fl-badge" title={$t('frameleaf_library_badge_live_photo')}>
           <Icon icon={mdiMotionPlayOutline} size="13" />
           <span class="fl-sr">{$t('frameleaf_library_badge_live_photo')}</span>
         </span>
@@ -418,13 +420,7 @@
           <span class="fl-sr">{label}</span>
         </span>
       {/if}
-      {#if isArchived}
-        <span class="fl-badge fl-badge-icon" title={$t('archived')}>
-          <Icon icon={mdiArchiveArrowDownOutline} size="13" />
-          <span class="fl-sr">{$t('archived')}</span>
-        </span>
-      {/if}
-      {#if offline}
+      {#if isOffline}
         <span class="fl-badge fl-badge-icon" title={$t('asset_offline')}>
           <Icon icon={mdiCloudOffOutline} size="13" />
           <span class="fl-sr">{$t('asset_offline')}</span>
@@ -436,11 +432,11 @@
           <span class="fl-sr">{$t('favorite')}</span>
         </span>
       {/if}
-      <!-- Last, so it sits in the tile's top-right corner. -->
-      {#if job && jobLabel}
-        <TileJobState {job} label={jobLabel} />
-      {/if}
     </span>
+    {#if job && jobLabel}
+      <!-- The durable job's state keeps the tile's top-right corner. -->
+      <span class="fl-tile-job-slot"><TileJobState {job} label={jobLabel} /></span>
+    {/if}
     {#if showRating}
       <span
         class="fl-tile-rating"
@@ -620,45 +616,73 @@
     outline: 3px solid var(--fl-accent);
     outline-offset: -3px;
   }
+  /* T-16 (asset-tile.css:177-237): badges sit bottom-left on 20px, 4px-radius plates; the rating
+     sits bottom-right as plain stars over a drop shadow. */
   .fl-tile-badges {
     position: absolute;
-    inset-inline-end: 6px;
-    top: 6px;
+    inset-inline-start: 6px;
+    bottom: 6px;
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    align-items: center;
     gap: 4px;
+    max-width: calc(100% - 12px);
     pointer-events: none;
   }
   .fl-badge {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 2px 5px;
-    border-radius: 999px;
-    background: rgb(0 0 0 / 55%);
+    gap: 3px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgb(0 0 0 / 58%);
     color: #fff;
-    font-size: var(--fl-font-small, 12px);
-    line-height: 1.2;
+    font-size: var(--fl-font-micro, 11px);
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .fl-badge-icon {
-    padding: 3px;
+    width: 20px;
+    padding: 0;
+    justify-content: center;
   }
   .fl-favorite {
-    color: #fff;
+    color: #ff7b8a;
   }
   .fl-tile-rating {
     position: absolute;
-    inset-inline-start: 6px;
-    bottom: 6px;
+    inset-inline-end: 8px;
+    bottom: 8px;
     display: inline-flex;
+    align-items: center;
     gap: 1px;
-    padding: 2px 4px;
-    border-radius: 999px;
-    background: rgb(0 0 0 / 55%);
     color: #fff;
-    font-size: var(--fl-font-small, 12px);
+    font-size: var(--fl-font-micro, 11px);
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 70%));
     pointer-events: none;
+  }
+  .fl-tile-job-slot {
+    position: absolute;
+    inset-inline-end: 6px;
+    top: 6px;
+    pointer-events: none;
+  }
+  .fl-tile[data-layout='list'] .fl-tile-badges {
+    inset-inline-start: 4px;
+    bottom: 4px;
+    gap: 2px;
+  }
+  .fl-tile[data-layout='list'] .fl-badge {
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+  .fl-tile[data-layout='list'] .fl-badge-icon {
+    width: 16px;
+    padding: 0;
   }
   /* Template asset-tile.css `.at-actions`: a dark capsule in the top corner, shown on hover and focus. */
   .fl-tile-actions {
@@ -703,13 +727,10 @@
   .fl-tile-actions button.is-favorite {
     color: var(--fl-accent);
   }
-  /* The actions take the top corner while they show; the badges there step aside. */
-  .fl-tile.has-actions:hover .fl-tile-badges,
-  .fl-tile.has-actions:focus-within .fl-tile-badges {
+  /* The actions take the top corner while they show; the job state there steps aside. */
+  .fl-tile.has-actions:hover .fl-tile-job-slot,
+  .fl-tile.has-actions:focus-within .fl-tile-job-slot {
     opacity: 0;
-  }
-  .fl-tile-badges {
-    transition: opacity var(--fl-motion-fast, 120ms) ease;
   }
   .fl-tile-select {
     position: absolute;

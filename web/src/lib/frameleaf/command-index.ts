@@ -383,8 +383,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'version-check',
-    titleKey: 'admin.version_check_settings',
-    descriptionKey: 'admin.version_check_settings_description',
+    titleKey: 'frameleaf_cc_section_versions',
+    descriptionKey: 'frameleaf_cc_section_versions_description',
     icon: mdiUpdate,
   },
   {

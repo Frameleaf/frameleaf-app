@@ -26,6 +26,7 @@ import {
   cappedOutputSize,
   estimateSeconds,
   isFullRegion,
+  isReviewedModel,
   mediaOperationDestinationOf,
   parseRestorationSnapshot,
   planRestorationChunks,
@@ -265,6 +266,28 @@ describe('restoration rules (FL-115)', () => {
       expect(restorationChunkIdentity({ ...base, destinationId: 'elsewhere' }, chunk).chunkKey).not.toBe(
         identity.chunkKey,
       );
+      expect(
+        restorationChunkIdentity({ ...base, model: { name: 'faithful-v1', version: 'r2' } }, chunk).chunkKey,
+      ).not.toBe(identity.chunkKey);
+    });
+  });
+
+  describe('reviewed model binding', () => {
+    it('accepts only the model and revision the preview ran, once a snapshot binds one', () => {
+      const bound = { model: { name: 'faithful-v1', version: 'r1' } };
+      expect(isReviewedModel(bound, { modelName: 'faithful-v1', modelVersion: 'r1' })).toBe(true);
+      expect(isReviewedModel(bound, { modelName: 'faithful-v1', modelVersion: 'r2' })).toBe(false);
+      expect(isReviewedModel(bound, { modelName: 'creative-v1', modelVersion: 'r1' })).toBe(false);
+      expect(isReviewedModel({ model: { name: 'm', version: null } }, { modelName: 'm', modelVersion: null })).toBe(
+        true,
+      );
+      expect(isReviewedModel({}, { modelName: 'anything', modelVersion: null })).toBe(true);
+    });
+
+    it('round-trips a snapshot that binds a model', () => {
+      const valid = snapshot({ stage: 'full', model: { name: 'faithful-v1', version: null } });
+      expect(parseRestorationSnapshot(valid)).toEqual(valid);
+      expect(parseRestorationSnapshot({ ...valid, model: { name: '', version: null } })).toBeNull();
     });
   });
 

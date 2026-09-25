@@ -223,7 +223,10 @@
         <hr class="fl-separator" />
       {/if}
 
-      {#if section.labelKey && !iconOnly}
+      {#if section.labelKey && iconOnly}
+        <!-- `.sidebar.rail-collapsed .nav-heading`: the icon-only rail keeps a hairline per section. -->
+        <div class="fl-heading fl-heading-rule" aria-hidden="true"></div>
+      {:else if section.labelKey}
         {@const create = SECTION_CREATE[section.id]}
         <div class="fl-heading">
           <!-- The heading folds its section away (LibraryRail.jsx `heading`). -->
@@ -331,30 +334,36 @@
 </Sidebar>
 
 <style>
+  /* S-28: the rail follows styles.css:291-357 and 1674-1729 (flat full-width rows, 34px, 22px
+     inset, 11px uppercase headings over a hairline, the accent tint with an inset bar). */
   .fl-rail {
     display: flex;
     flex: 1 1 auto;
     min-height: 100%;
     flex-direction: column;
-    gap: 0.125rem;
     background: var(--fl-panel);
-    padding: 0.5rem 0.5rem 1rem;
-    font-size: 0.875rem;
+    font-size: 13px;
   }
   .fl-heading {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    /* Section titles keep clear of the divider, with consistent padding above and
-       below, as the interaction requirements ask. */
-    padding: 0.75rem 0.5rem 0.25rem;
+    margin: 8px 0 0;
+    padding: 10px 22px 6px 21px;
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
+  }
+  .fl-heading-rule {
+    height: 1px;
+    margin: 10px 12px;
+    padding: 0;
   }
   .fl-heading h2 {
     color: var(--fl-muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.7px;
     text-transform: uppercase;
     margin: 0;
   }
@@ -363,14 +372,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    margin-top: -1.5rem;
-    padding: 0 0.5rem 0.25rem 1rem;
+    height: 44px;
+    padding: 0 12px 0 22px;
     color: var(--fl-muted);
     background: var(--fl-panel);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
   .fl-rail-header.fl-icon-only {
     justify-content: center;
@@ -433,51 +438,62 @@
     display: none;
   }
   .fl-separator {
-    /* Library Care, Settings and Support sit at the bottom of the rail. */
+    /* `.sidebar-bottom`: Library Care, Settings and Support sit at the bottom of the rail. */
     margin-top: auto;
-    margin-bottom: 0.5rem;
+    margin-bottom: 10px;
     border: 0;
     border-top: 1px solid var(--fl-border);
   }
+  /* `.nav-heading .button`: a bare 24px "+" beside the heading. */
   .fl-action {
     display: inline-flex;
     text-decoration: none;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
-    border: 1px solid var(--fl-border);
+    width: 24px;
+    min-height: 24px;
+    border: 0;
     border-radius: var(--fl-radius);
+    background: none;
+    color: var(--fl-muted);
+  }
+  .fl-action:hover {
     background: var(--fl-raised);
     color: var(--fl-text);
   }
   .fl-link {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    min-height: 40px;
+    gap: 11px;
+    min-height: 34px;
     width: 100%;
-    padding: 0.375rem 0.5rem;
+    padding: 7px 22px;
     border: 0;
     border-radius: var(--fl-radius);
     background: transparent;
     color: var(--fl-text);
     text-align: start;
     text-decoration: none;
+    transition: background var(--fl-motion-fast) var(--fl-ease);
   }
   .fl-icon-only .fl-link {
     justify-content: center;
+    min-height: 36px;
+    padding: 8px 0;
   }
   .fl-link:hover {
     background: var(--fl-raised);
   }
-  .fl-current {
-    background: var(--fl-raised);
-    color: var(--fl-accent);
-    font-weight: 600;
+  .fl-current,
+  .fl-current:hover {
+    background: color-mix(in srgb, var(--fl-accent), var(--fl-panel) 86%);
+    box-shadow: inset 3px 0 var(--fl-accent);
+  }
+  :global([dir='rtl']) .fl-current {
+    box-shadow: inset -3px 0 var(--fl-accent);
   }
   .fl-nested {
-    padding-inline-start: 1.75rem;
+    padding-inline-start: 42px;
   }
   .fl-label {
     min-width: 0;
@@ -489,6 +505,7 @@
     display: flex;
     align-items: center;
     gap: 0.125rem;
+    padding-inline-start: 14px;
     border-radius: var(--fl-radius);
   }
   .fl-branch .fl-link {

@@ -236,6 +236,22 @@ describe('LibrarySessionStore', () => {
     expect(store.session.page).toBe(1);
   });
 
+  it('comes back from the editor or Studio to the same query, sort, grouping, layout and open item (FL-31)', () => {
+    store.setLayout('work');
+    store.patchView({ sort: 'filename', grouping: 'months' });
+    store.open('asset-3', 42);
+    expect(store.persist('user-1')).toBe(true);
+
+    // Studio is a separate page: the library mounts again and restores from this device
+    const back = new LibrarySessionStore({ userId: 'user-1', storage });
+    back.restore(new URL('https://example.test/photos'), 'user-1');
+    expect(back.layout).toBe('work');
+    expect(back.state.sort).toBe('filename');
+    expect(back.state.grouping).toBe('months');
+    expect(back.openAssetId).toBe('asset-3');
+    expect(back.playbackPosition).toBe(42);
+  });
+
   it('falls back to the stored view when the link carries none, and to defaults when neither does', () => {
     storage.setItem(
       libraryPreferenceKey('user-1'),

@@ -148,9 +148,9 @@ const actions = {
     },
   ],
   "real-folders-and-external-library-path-browsing": [
-    "missing",
+    "fixed",
     ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6"],
-    "Browsable folder file list, sort, counts, Frameleaf tree",
+    "Folders browser: storage-folder tree, sort, counts and sizes, browsable files with the viewer and bulk actions (fixed on codex/FL-46-complete-browsers)",
     {
       prototype: [`${P}/Folders.jsx`],
       production: [`${W}/lib/components/frameleaf/FolderBrowserPanel.svelte`],
@@ -407,13 +407,14 @@ const actions = {
   ],
   // quick-edit
   "ai-preview-full-job-faithful-creative-local-lan-versus-runpod": [
-    "partial",
+    "fixed",
     ["R-1", "R-2", "R-3"],
-    "Cost/size estimate, loupe, labels",
+    "Estimate Output and Cloud cost rows, 100% loupe, Use current frame and the video labels (fixed in FL-115)",
     {
       prototype: [`${P}/Studio.jsx`],
       production: [
         `${W}/lib/components/frameleaf/editor/RestorationPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/RestorationCompare.svelte`,
       ],
     },
   ],
@@ -498,7 +499,7 @@ const actions = {
   "open-full-workspace-retaining-draft-and-playhead": [
     "partial",
     ["E-1", "MPY-10"],
-    "Open in Studio from the editor (fix-editor-albums, FL-113); keeping the draft and playhead in the workspace is studio-parked",
+    "Open in Studio from the editor (fix-editor-albums, FL-113); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62); keeping the draft and playhead in the workspace is studio-parked",
   ],
   "persistent-render-status-cancel-retry-reload-revision-supersession": [
     "match",
@@ -581,7 +582,7 @@ const actions = {
     { production: [`${W}/lib/frameleaf/search-context.ts`] },
   ],
   "clear-all-removable-chips-filter-presets": [
-    "partial",
+    "fixed",
     ["S-19", "SD-12"],
     "Chips open their section, the search text is a chip and Clear all shows whenever anything is active (S-19, fixed by the FL-30 library gaps); Save search and the results-page chips (SD-12) fixed on codex/FL-49-search-palette",
     {
@@ -679,9 +680,9 @@ const actions = {
   "image-video-type": ["match", []],
   "interpret-natural-language-into-editable-constraints": ["match", []],
   "map-search-results-clustering-bounded-truncated-result-disclosure": [
-    "partial",
+    "fixed",
     ["MV-2", "MV-4", "MV-5", "MV-6"],
-    "Cluster zoom, In-view chip, empty state, list rows",
+    "Cluster zoom, In-view chip, empty state, list rows (fixed, FL-51 on codex/FL-50-complete-discovery)",
     {
       prototype: [`${P}/MapView.jsx`],
       production: [`${W}/lib/components/shared-components/map/Map.svelte`],
@@ -742,9 +743,9 @@ const actions = {
     "Recent searches keep chips, mode and filters, with the Try a search fallback (fixed on codex/FL-49-search-palette)",
   ],
   "server-paging-load-more-and-large-result-sets": [
-    "partial",
+    "fixed",
     ["T-14"],
-    "ShowMore only outside the timeline layout; Select all N on matching pages",
+    "ShowMore only where a page pages its results (never under the timeline); Select all N reads the grid's count until the server has counted (FL-33 shell completion)",
     {
       production: [
         `${W}/lib/components/frameleaf/ShowMore.svelte`,
@@ -766,9 +767,9 @@ const actions = {
     { production: [`${W}/lib/components/frameleaf/BulkAlbumDialog.svelte`] },
   ],
   "bulk-change-date-location-description": [
-    "partial",
+    "intentional-product-change",
     ["T-13", "T-19"],
-    "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); location place-name fields need a server field and an owner decision (T-13)",
+    "Friendly searchable zones and the selection pre-fill are done (T-19, FL-32 library gaps); the location place-name fields are not built by owner decision (T-13, FL-146 2026-09-25)",
     {
       production: [
         `${W}/lib/components/frameleaf/BulkDateDialog.svelte`,
@@ -783,30 +784,30 @@ const actions = {
     { production: [`${W}/lib/frameleaf/bulk-controller.svelte.ts`] },
   ],
   "bulk-download-archive-unarchive": [
-    "partial",
+    "fixed",
     ["T-17"],
-    "Archived items leave the library scope",
+    "Archived items leave a Timeline view and unarchived ones leave Archive; no Archived badge; Offline badge from the bucket (FL-33 shell completion)",
     { production: [`${W}/lib/frameleaf/bulk-operations.ts`] },
   ],
   "bulk-favorite-unfavorite": ["match", []],
   "bulk-mark-unmark-sensitive": ["match", []],
   "bulk-refresh-thumbnails-metadata-transcodes": ["match", []],
   "click-open-asset-select-deselect-items": [
-    "partial",
+    "fixed",
     ["T-4", "T-20"],
-    "Tile hover quick actions are done (T-4, FL-33 library gaps); aria nits remain (T-20)",
+    "Tile hover quick actions are done (T-4, FL-33 library gaps); Deselect label, full day titles and Timeline-only Locked (T-20, FL-33 shell completion)",
     { production: [`${W}/lib/components/frameleaf/AssetTile.svelte`] },
   ],
   "date-grouped-photos-browse-chronological-library": [
-    "partial",
+    "fixed",
     ["T-3", "T-7", "T-10"],
-    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); grouping remains (T-3)",
+    "Timeline captions and the Frameleaf empty states are done (T-7, T-10, FL-33 library gaps); Years/Months/Days/All grouping with ⌘-wheel, pinch, D/M/Y and the announcement (T-3)",
     { production: [`${W}/lib/components/frameleaf/LibraryTimeline.svelte`] },
   ],
   "grid-list-compare-and-persisted-query-selection-layout": [
-    "partial",
+    "fixed",
     ["T-8", "S-15", "S-17"],
-    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); the Browse/Work grid remains (T-8)",
+    "Toolbar count, Slideshow, information toggle, Sort (Timeline dated; Browse/Work/List by upload date, file name or rating through GET /timeline/ordered), Grid/List and More library actions are in (S-15, FL-30 library gaps and review); square Browse and Work grids with Thumbnail size (T-8; the month-boundary row gap is owner decision FL-143)",
     { production: [`${W}/lib/components/frameleaf/ResultsToolbar.svelte`] },
   ],
   "jump-scroll-to-time-restore-asset-position": [
@@ -817,9 +818,9 @@ const actions = {
   ],
   "link-live-photo-still-and-video": ["match", []],
   "select-all-select-groups-range-multi-selection-keyboard-bulk-behavior": [
-    "partial",
+    "fixed",
     ["T-5", "S-22", "T-14"],
-    "Library action shortcuts work on every library page (T-5, FL-33 library gaps); key-map drift (S-22) and Select all N (T-14) remain",
+    "Library action shortcuts work on every library page (T-5, FL-33 library gaps); ←/→ move focus in the timeline and Delete has no Shift path there (S-22); Select all N (T-14)",
     {
       production: [
         `${W}/lib/frameleaf/library-shortcuts.ts`,
@@ -1020,9 +1021,9 @@ const actions = {
     },
   ],
   "shared-link-download-with-link-restrictions": [
-    "partial",
+    "fixed",
     ["AL-37"],
-    "Labelled Download in the public viewer; decouple the slideshow gate",
+    "Labelled Download in the public viewer; slideshow no longer gated on downloads (fixed, FL-56)",
     {
       prototype: [`${P}/PublicViewer.jsx`],
       production: [`${W}/lib/components/pages/SharedLinkPage.svelte`],
@@ -1149,9 +1150,9 @@ const routes = {
     [`${W}/routes/admin/jobs-status/+page.ts`],
   ],
   "/admin/library-management": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/(list)/+page.ts`,
@@ -1159,9 +1160,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/[id]": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/[id]/+page.ts`,
@@ -1169,9 +1170,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/[id]/edit": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/[id]/edit/+page.ts`,
@@ -1179,9 +1180,9 @@ const routes = {
     ],
   ],
   "/admin/library-management/new": [
-    "in-flight",
+    "fixed",
     ["CC-34"],
-    "FL-78 external libraries",
+    "Frameleaf libraries in the Command Center: search, filter, sort, status and scan progress, Cancel scan, typed-name removal (FL-78, closed September 25)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/library-management/(list)/new/+page.ts`,
@@ -1209,9 +1210,9 @@ const routes = {
     ],
   ],
   "/admin/physical-deduplication": [
-    "partial",
-    ["UT-23", "UT-24"],
-    "Configuration-error state; file availability",
+    "fixed",
+    ["UT-23", "UT-24", "UT-25"],
+    "Configuration-error state with Open settings; per-read file availability with the unavailable overlay; detail line, picker and Change link (FL-71, September 25)",
     [`${P}/PhysicalDedupManager.jsx`, `${P}/physical-dedup-data.mjs`],
     [
       `${W}/routes/admin/physical-deduplication/+page.ts`,
@@ -1279,7 +1280,7 @@ const routes = {
       "CC-11",
       "CC-12",
     ],
-    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); open: the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)",
+    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); the server name fixed (CC-4, `server.name`); the platform shortcut hint fixed (CC-7, September 25); configuration transfer fixed by FL-71 (CC-46..CC-48)",
     [
       `${P}/CommandCenter.jsx`,
       `${P}/settings-catalog.mjs`,
@@ -1403,9 +1404,9 @@ const routes = {
     [`${W}/routes/auth/logout/+page.svelte`],
   ],
   "/auth/onboarding": [
-    "partial",
+    "fixed",
     ["O-8", "O-12"],
-    "Version check stays off by privacy policy; app store links await the owner. Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
+    "Store links only when configured (O-12, FL-135); the version check stays off under the FL-146 privacy default (O-8, intentional). Onboarding ported by FL-80 (ON-1, O-1..O-7, O-9..O-11)",
     [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
     [`${W}/routes/auth/onboarding/+page.svelte`],
   ],
@@ -1427,9 +1428,9 @@ const routes = {
     [`${W}/routes/auth/register/+page.svelte`],
   ],
   "/best-photos/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["T-6"],
-    "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
+    "Tiles show each item's own rating and Best Photos keeps the server quality order (T-6 fixed, FL-50); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map",
     [`${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1471,9 +1472,9 @@ const routes = {
     ],
   ],
   "/folders/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7"],
-    "Browsable folder files, sort, counts, tree",
+    "fixed",
+    ["FD-1", "FD-2", "FD-3", "FD-4", "FD-5", "FD-6", "FD-7", "FD-8"],
+    "Folders browser ported from Folders.jsx (fixed on codex/FL-46-complete-browsers)",
     [`${P}/Folders.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1488,9 +1489,9 @@ const routes = {
     [`${W}/routes/link/+page.ts`],
   ],
   "/locked/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["S-6", "S-7", "T-20"],
-    "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); layout forced to Timeline (T-20)",
+    "Locked control and in-place unlock dialog (fixed on claude/frameleaf-implementation by FL-80); the layout switch offers the Timeline only (T-20)",
     [`${P}/LockedContent.jsx`, `${P}/locked-content.mjs`],
     [`${W}/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte`],
   ],
@@ -1502,16 +1503,16 @@ const routes = {
     [`${W}/routes/maintenance/+page.svelte`],
   ],
   "/map/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
-    ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7"],
-    "Map settings sheet, cluster zoom, chips, empty state, list rows",
+    "fixed",
+    ["MV-1", "MV-2", "MV-3", "MV-4", "MV-5", "MV-6", "MV-7", "MV-8"],
+    "Map settings sheet with counts, cluster zoom, chips, empty, offline and disabled states, list rows and hover card (fixed, FL-51)",
     [`${P}/MapView.jsx`, `${P}/discovery-data.mjs`],
     [`${W}/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte`],
   ],
   "/memories": [
-    "partial",
+    "fixed",
     ["MI-1", "MI-2", "MI-3", "MI-4", "MI-5", "MI-6", "MI-7"],
-    "Memories sections, remove confirm (fix-discovery), settings; card overline and preview fixed (MI-5)",
+    "Today/Upcoming/Earlier from the local date, badges, quiet card, Hide memory with Hidden memories, show-less, Memory settings (fixed, FL-62)",
     [`${P}/Memories.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/memories/+page.svelte`,
@@ -1519,7 +1520,7 @@ const routes = {
     ],
   ],
   "/memories/[id]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "MPY-1",
       "MPY-2",
@@ -1530,8 +1531,9 @@ const routes = {
       "MPY-7",
       "MPY-8",
       "MPY-9",
+      "MPY-10",
     ],
-    "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)",
+    "Header and segment labels, Show all items (G), Space/M/G/Home/End, soundtrack, Open item, people, rename/reorder/favorite, Make a movie opens Studio (fixed, FL-62)",
     [`${P}/MemoryPlayer.jsx`],
     [
       `${W}/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1614,7 +1616,7 @@ const routes = {
     ],
   ],
   "/photos/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "T-3",
       "T-4",
@@ -1630,7 +1632,7 @@ const routes = {
       "S-17",
       "S-19",
     ],
-    "Timeline, toolbar and bottom bar conformance",
+    "Timeline, toolbar and bottom bar conformance (FL-30/FL-33 shell completion)",
     [`${P}/TimelineLibrary.jsx`, `${P}/App.jsx`, `${P}/AssetTile.jsx`],
     [
       `${W}/routes/(user)/photos/[[assetId=id]]/+page.svelte`,
@@ -1638,9 +1640,9 @@ const routes = {
     ],
   ],
   "/places": [
-    "partial",
-    ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7"],
-    "Frameleaf Places panel (PL-1/PL-6/PL-7 by fix-discovery)",
+    "fixed",
+    ["PL-1", "PL-2", "PL-3", "PL-4", "PL-5", "PL-6", "PL-7", "PL-8"],
+    "Frameleaf Places panel: summary, counts, grouping, state map, search and empty states (fixed, FL-51)",
     [`${P}/Places.jsx`, `${P}/discovery-data.mjs`],
     [`${W}/routes/(user)/places/+page.svelte`],
   ],
@@ -1661,9 +1663,9 @@ const routes = {
     ],
   ],
   "/s/[slug]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-    "Public viewer states and title line",
+    "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)",
     [`${P}/PublicViewer.jsx`],
     [
       `${W}/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1686,9 +1688,9 @@ const routes = {
     ],
   ],
   "/share/[key]/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     ["AL-34", "AL-35", "AL-36", "AL-37", "AL-38"],
-    "Public viewer states and title line",
+    "Public viewer states, title line and footer; slideshow not gated on downloads (fixed, FL-56)",
     [`${P}/PublicViewer.jsx`],
     [
       `${W}/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1791,7 +1793,7 @@ const routes = {
     ],
   ],
   "/tags/[[photos=photos]]/[[assetId=id]]": [
-    "partial",
+    "fixed",
     [
       "TG-1",
       "TG-2",
@@ -1804,8 +1806,9 @@ const routes = {
       "TG-9",
       "TG-10",
       "TG-11",
+      "TG-12",
     ],
-    "Frameleaf tag tree and actions",
+    "Tags browser ported from Tags.jsx (fixed on codex/FL-46-complete-browsers)",
     [`${P}/Tags.jsx`, `${P}/discovery-data.mjs`],
     [
       `${W}/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
@@ -1831,9 +1834,9 @@ const routes = {
     ],
   ],
   "/user-settings": [
-    "partial",
+    "fixed",
     ["CC-49", "AL-46", "US-2"],
-    "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54)",
+    "Personal preferences inside the command center; App settings controls, confirmations and People & sharing fixed by FL-67/FL-71 (CC-50..CC-54, AL-46); server key product name fixed (US-2)",
     [
       `${P}/AccountPreferences.jsx`,
       `${P}/AccountsLibraries.jsx`,
@@ -1842,9 +1845,9 @@ const routes = {
     [`${W}/routes/(user)/user-settings/+page.svelte`],
   ],
   "/utilities": [
-    "partial",
+    "match",
     ["UT-12"],
-    "Hub scope line (UT-12). PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility",
+    "UT-12 obsolete: the September 24 prototype has no hub cards, utilities are Command Center directory rows. PL-0, UT-1 and UT-1a are fixed on claude/frameleaf-implementation: utilities are the Command Center utilities area and application setup is a utility",
     [`${P}/UtilitiesManager.jsx`, `${P}/utilities-data.mjs`],
     [
       `${W}/routes/(user)/utilities/+page.ts`,

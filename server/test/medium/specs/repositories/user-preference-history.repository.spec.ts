@@ -141,6 +141,17 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
     `.execute(db);
   }
 
+  // FL-62: a removed account's memory show-less rules and memory curation go too; the kept account's stay.
+  for (const userId of [kept.id, removed]) {
+    await sql`
+      INSERT INTO immich_fork.memory_show_less ("userId", kind, value) VALUES (${userId}::uuid, 'date', '09-25')
+    `.execute(db);
+    await sql`
+      INSERT INTO immich_fork.memory_curation ("memoryId", "ownerId", title)
+      VALUES (${randomUUID()}::uuid, ${userId}::uuid, 'Summer')
+    `.execute(db);
+  }
+
   await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
   try {
     await expect(sut.sweepRemovedAccountForkRows()).resolves.toBeUndefined();
@@ -152,6 +163,20 @@ it('sweeps fork rows of accounts that no longer exist, only while the fork schem
   const swept = await sut.sweepRemovedAccountForkRows();
   expect(swept?.preferenceHistory).toBeGreaterThanOrEqual(1);
   expect(swept?.recipientGroups).toBeGreaterThanOrEqual(1);
+  expect(swept?.memoryShowLess).toBeGreaterThanOrEqual(1);
+  expect(swept?.memoryCurations).toBeGreaterThanOrEqual(1);
+  const memoryRows = await sql<{ table: string; userId: string }>`
+    SELECT 'show_less' AS table, "userId"::text AS "userId" FROM immich_fork.memory_show_less
+    WHERE "userId" IN (${kept.id}::uuid, ${removed}::uuid)
+    UNION ALL
+    SELECT 'curation', "ownerId"::text FROM immich_fork.memory_curation
+    WHERE "ownerId" IN (${kept.id}::uuid, ${removed}::uuid)
+    ORDER BY 1
+  `.execute(db);
+  expect(memoryRows.rows).toEqual([
+    { table: 'curation', userId: kept.id },
+    { table: 'show_less', userId: kept.id },
+  ]);
   expect(swept?.workspaceLayouts).toBeGreaterThanOrEqual(1);
   const layouts = await sql<{ userId: string }>`
     SELECT "userId"::text AS "userId" FROM immich_fork.studio_workspace_layout
