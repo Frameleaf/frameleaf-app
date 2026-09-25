@@ -258,7 +258,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
     labelKey: 'frameleaf_viewer_group_viewer',
     items: compact([
       isOwner && isImage && !isTrashed && 'tag-people',
-      hasCastDestination && 'cast',
+      hasCastDestination && !isTrashed && 'cast',
       canShowFilmstrip && canNavigateCollection && 'toggle-filmstrip',
       canPlay && 'play-slideshow',
       canPlay && 'slideshow-settings',

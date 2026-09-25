@@ -9,7 +9,7 @@
    */
   import { shortcuts } from '$lib/actions/shortcut';
   import { AssetAction } from '$lib/constants';
-  import { isTypingTarget } from '$lib/frameleaf/viewer-keys';
+  import { isControlTarget, isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { deleteAssets as deleteAssetsUtil, type OnUndoDelete } from '$lib/utils/actions';
   import { handleError } from '$lib/utils/handle-error';
@@ -31,6 +31,9 @@
   let { asset, onAction, preAction, onUndoDelete = undefined }: Props = $props();
 
   const forceDefault = $derived(asset.isTrashed || !featureFlagsManager.value.trash);
+
+  /** The viewer's delete keys do nothing in a field, or while a dialog (a confirmation, a chooser) is open. */
+  const viewerOwnsKey = (event: KeyboardEvent) => !isTypingTarget(event.target) && !isDialogOpen();
 
   const trashOrDelete = async (forceRequest?: boolean) => {
     if (forceDefault || forceRequest) {
@@ -55,11 +58,15 @@
 
 <svelte:document
   use:shortcuts={[
-    { shortcut: { key: 'Delete' }, onShortcut: (event) => !isTypingTarget(event.target) && trashOrDelete() },
-    { shortcut: { key: 'Backspace' }, onShortcut: (event) => !isTypingTarget(event.target) && trashOrDelete() },
+    { shortcut: { key: 'Delete' }, onShortcut: (event) => viewerOwnsKey(event) && trashOrDelete() },
+    // Backspace is also "go back" in fields and on controls, so a focused control keeps it too.
+    {
+      shortcut: { key: 'Backspace' },
+      onShortcut: (event) => viewerOwnsKey(event) && !isControlTarget(event.target) && trashOrDelete(),
+    },
     {
       shortcut: { key: 'Delete', shift: true },
-      onShortcut: (event) => !isTypingTarget(event.target) && trashOrDelete(true),
+      onShortcut: (event) => viewerOwnsKey(event) && trashOrDelete(true),
     },
   ]}
 />

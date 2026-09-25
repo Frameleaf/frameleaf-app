@@ -56,7 +56,8 @@
   });
 
   const preAction = async (payload: Action) => {
-    if (payload.type === AssetAction.TRASH) {
+    // A permanent delete (trash turned off) moves on the same way.
+    if (payload.type === AssetAction.TRASH || payload.type === AssetAction.DELETE) {
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       (await navigateToAsset(assetCursor.nextAsset)) ||
         (await navigateToAsset(assetCursor.previousAsset)) ||

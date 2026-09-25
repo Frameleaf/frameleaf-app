@@ -17,3 +17,7 @@ export const isTypingTarget = (target: EventTarget | null): boolean => closest(t
 /** Space on a focused control presses that control. */
 export const isControlTarget = (target: EventTarget | null): boolean =>
   isTypingTarget(target) || closest(target, VIEWER_CONTROL_SELECTOR);
+
+/** Whether a modal dialog is open over the viewer; its keys are its own (MediaViewer.jsx:727-747). */
+export const isDialogOpen = (root: ParentNode = document): boolean =>
+  !!root.querySelector('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"]');
