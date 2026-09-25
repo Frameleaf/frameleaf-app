@@ -61,10 +61,13 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
+    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     const panel = page.getByRole('region', { name: 'Slideshow' });
     await expect(panel).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    // MediaViewer.jsx:499-502: focus starts on Photo duration
+    await expect(panel.getByLabel('Photo duration')).toBeFocused();
     // source behaviour retained: the Autoplay preference stays reachable
     await expect(panel.getByRole('switch', { name: 'Autoplay slideshow' })).toBeVisible();
     const transition = panel.getByLabel('Transition');
@@ -86,6 +89,7 @@ test.describe('Slideshow', () => {
     await context.addInitScript(() => localStorage.setItem('slideshow-transition', 'false'));
     await openSlideshow(page);
 
+    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     await expect(page.getByRole('region', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
   });
@@ -105,6 +109,7 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
+    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     const panel = page.getByRole('region', { name: 'Slideshow' });
     await expect(panel).toBeVisible();
@@ -116,5 +121,16 @@ test.describe('Slideshow', () => {
 
     await page.keyboard.press('Escape');
     await expect(exitButton).not.toBeVisible();
+  });
+
+  // Source behaviour: the controls and the pointer hide after 2.5 s idle; moving the pointer shows them.
+  test('hides the controls when idle and shows them on movement', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await openSlideshow(page);
+
+    const controls = page.getByRole('toolbar', { name: 'Slideshow' });
+    await expect(controls).toHaveClass(/chrome-hidden/, { timeout: 5000 });
+    await page.mouse.move(300, 300);
+    await expect(controls).not.toHaveClass(/chrome-hidden/);
   });
 });
