@@ -12,6 +12,7 @@
   import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { canPlaySlideshow } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import type { AssetResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -62,6 +63,8 @@
 
   const { slideshowState, settingsOpen } = slideshowStore;
   const playing = $derived($slideshowState === SlideshowState.PlaySlideshow);
+  // The same gates as the menu's and the shared link's Play slideshow: never Locked, downloads on a link.
+  const canPlay = $derived(canNavigateCollection && canPlaySlideshow(asset));
   const zoom = $derived(assetViewerManager.zoom);
   const lookingAround = $derived(!assetViewerManager.isPanoramaFlattened);
   const fullscreenEnabled = typeof document !== 'undefined' && !!document.fullscreenEnabled;
@@ -82,7 +85,7 @@
       aria-label={playing ? $t('frameleaf_viewer_pause_slideshow') : $t('frameleaf_viewer_play_slideshow')}
       title={playing ? $t('frameleaf_viewer_pause_slideshow_title') : $t('frameleaf_viewer_play_slideshow_title')}
       aria-pressed={playing}
-      disabled={!canNavigateCollection}
+      disabled={!canPlay && !playing}
       onclick={togglePlay}
     >
       <Icon icon={playing ? mdiPause : mdiPlay} size="21" aria-hidden />
