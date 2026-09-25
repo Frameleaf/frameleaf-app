@@ -12,8 +12,10 @@
  * - The engine receives data, never credentials. There is no token, no API base URL and no
  *   SDK instance in `StudioHostContext`. Media arrives as already-authorized URLs the host
  *   built, and everything else goes through `StudioHostServices`.
- * - The engine never writes. Every change is a `StudioCommandEnvelope` handed to
- *   `submitCommands`, where the host applies revision, lease and access rules.
+ * - The engine never writes storage. A canonical change is a `StudioCommandEnvelope` handed to
+ *   `submitCommands`; the editor's own autosave hands the complete graph to `stageDraft` (the
+ *   FL-89 draft primitive). Either way the host applies revision, lease and access rules, and the
+ *   server validates the envelope again before it stores a revision.
  * - The engine renders into the element it is given and owns nothing global. The host owns
  *   the route, the document title, the theme and the full-screen chrome.
  * - `dispose` must release media element sources and object URLs, AudioContexts, GPU
@@ -65,6 +67,11 @@ export interface StudioAssetRef {
   playbackUrl: string | null;
   /** The original is missing from storage, so the engine must not offer it as a source. */
   isOffline: boolean;
+  /** Pixel size the library recorded, when it has one; the engine probes the rest. */
+  width?: number | null;
+  height?: number | null;
+  /** The original's MIME type, when the library knows it. */
+  mimeType?: string | null;
 }
 
 /**
@@ -200,6 +207,15 @@ export type StudioWorkspaceView =
 
 export type StudioWorkspaceSaveResult = { status: 'saved'; savedAt: string } | { status: 'unavailable' };
 
+/**
+ * The answer to `stageDraft`. `staged` means the host holds the graph and autosave will store it
+ * as the next revision; every other status says why it will not, so the editor never believes an
+ * edit is kept when it is not.
+ */
+export type StudioDraftResult =
+  | { status: 'staged' }
+  | { status: 'rejected'; reason: 'invalid' | 'forbidden' | 'lease-lost' | 'offline' };
+
 export const unavailableStudioWorkspace = (): StudioWorkspaceView => ({
   state: 'unavailable',
   reason: 'engine-absent',
@@ -226,6 +242,13 @@ export interface StudioHostServices {
    * silently dropped.
    */
   submitCommands(envelopes: readonly StudioCommandEnvelope[]): Promise<StudioCommandResult[]>;
+  /**
+   * Hand the host the editor's complete graph after its own edits (FL-89 autosave, FL-92's
+   * "replace graph" draft primitive). `commandIds` names the editor actions the draft contains,
+   * for the revision summary. Optional: a host without project storage leaves it out and the
+   * editor stays read-only.
+   */
+  stageDraft?(graph: unknown, commandIds: readonly string[]): Promise<StudioDraftResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
   /** Resolve one asset the engine knows only by id. */
@@ -272,6 +295,25 @@ export interface StudioEngineInstance {
   dispose(): Promise<void> | void;
 }
 
+/**
+ * Canonical command semantics against the real engine (FL-92). Given a stored graph and an ordered
+ * batch, the engine applies every command with its own timeline actions and returns the resulting
+ * graph, or refuses the whole batch and names the envelope that failed: a batch is atomic, so a
+ * partial result is never staged.
+ */
+export interface StudioCommandEngine {
+  apply(
+    graph: unknown,
+    envelopes: readonly StudioCommandEnvelope[],
+    assets: readonly StudioAssetRef[],
+  ): Promise<StudioCommandApplication>;
+  dispose(): void;
+}
+
+export type StudioCommandApplication =
+  | { status: 'applied'; graph: unknown; digest: string }
+  | { status: 'rejected'; index: number; reason: 'invalid' | 'not-implemented' | 'failed'; detail: string };
+
 export interface StudioEngineModule {
   /**
    * The pinned Freecut revision this adapter was built from. The loader refuses a module
@@ -282,4 +324,9 @@ export interface StudioEngineModule {
   /** Feature manifest rows this build claims. Used by the conformance work in FL-85. */
   readonly features: readonly string[];
   mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices): Promise<StudioEngineInstance>;
+  /**
+   * Start the command engine (FL-92), separate from any mounted editor so applying a command never
+   * disturbs what the person is editing. Absent when the build has no command runtime.
+   */
+  createCommandEngine?(): Promise<StudioCommandEngine>;
 }
