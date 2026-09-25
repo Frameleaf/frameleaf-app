@@ -463,7 +463,7 @@
     <span class="sr-only">{$t('language')}</span>
     <select value={choices.language} onchange={(event) => void chooseLanguage(event.currentTarget.value)}>
       {#each langs as entry (entry.code)}
-        <option value={entry.code}>{entry.name}</option>
+        <option value={convertBCP47(entry.code)}>{entry.name}</option>
       {/each}
     </select>
   </label>
@@ -515,7 +515,7 @@
   </dl>
 {/snippet}
 
-<section class="frameleaf frs-root" data-theme={SETUP_THEME} data-flow={setup.flow}>
+<section class="frameleaf auth-screen frs-root" data-theme={SETUP_THEME} data-flow={setup.flow}>
   {#if current.id === 'admin-sign-in'}
     <div class="frs frs-stage-screen">
       <div class="frs-stage">

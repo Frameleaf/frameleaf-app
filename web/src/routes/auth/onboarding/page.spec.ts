@@ -20,7 +20,9 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: server }));
 
 const run = () =>
-  load({ url: new URL('http://localhost/auth/onboarding') } as never) as Promise<Record<string, unknown>>;
+  load({ parent: () => Promise.resolve({}), url: new URL('http://localhost/auth/onboarding') } as never) as Promise<
+    Record<string, unknown>
+  >;
 
 describe('/auth/onboarding (FL-176)', () => {
   beforeAll(() => {
