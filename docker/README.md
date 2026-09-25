@@ -7,7 +7,7 @@ Install from a [published Frameleaf release](https://github.com/Frameleaf/framel
 | Server and web   | `ghcr.io/frameleaf/frameleaf-server`           |
 | Machine learning | `ghcr.io/frameleaf/frameleaf-machine-learning` |
 
-Release bundles pin `IMMICH_VERSION` to their version. The `release` and `latest` tags follow stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-cuda-runpod`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable RunPod image is `ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
+Release bundles pin `IMMICH_VERSION` to their version. The `release` and `latest` tags follow stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
 
 The release includes `docker-compose.yml`, `docker-compose.rootless.yml`, `example.env`, `hwaccel.ml.yml` and `hwaccel.transcoding.yml`. Use the regular **or** rootless Compose file. Copy `example.env` to `.env` only for a new installation. Read the [installation steps](../docs/docs/install/docker-compose.mdx) and review the release notes before starting or upgrading.
 
@@ -27,11 +27,11 @@ docker compose exec database pg_isready
 
 Back up the database and originals before changing releases. Preserve pinned PostgreSQL/base images and the exact official image required by the [handoff procedure](../docs/docs/administration/upstream-handoff.md); the Frameleaf image rename does not change database compatibility certification.
 
-Existing custom RunPod image settings and remote resource names are retained. The new default affects unconfigured installations; it does not replace running Pods or authorize cloud processing.
+Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
 
 ## Local builds
 
-`docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images. They retain their existing project names, development volumes and storage paths and are not interchangeable with the release installation file. Ordinary ML builds explicitly use the `prod` stage; the RunPod variant uses `prod-runpod`. Neither a local image name nor successful compilation establishes release, hardware or model qualification.
+`docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images. They retain their existing project names, development volumes and storage paths and are not interchangeable with the release installation file. ML builds explicitly use the `prod` stage. Neither a local image name nor successful compilation establishes release, hardware or model qualification.
 
 ## Restoration worker
 

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlAdmissionRefusal,
@@ -10,6 +9,11 @@ import {
   MlWorkerRole,
   MlWorkload,
 } from 'src/enum.js';
+import {
+  FRAMELEAF_CLOUD_ENDPOINT,
+  type MachineLearningRepository,
+  type MlEndpointProbe,
+} from 'src/repositories/machine-learning.repository.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -36,8 +40,7 @@ const deps = (overrides: {
   destination?: typeof mlDestinationStub.local | undefined;
   probe?: MlEndpointProbe;
   spend?: number;
-  runPod?: { url: string; authToken?: string } | null;
-  route?: { workload: MlWorkload; destinationId: string } | undefined;
+  route?: { workload: MlWorkload; destinationId: string; modelId?: string | null } | undefined;
 }) => {
   const mlDestinationRepository = {
     getById: vi.fn().mockResolvedValue('destination' in overrides ? overrides.destination : mlDestinationStub.local),
@@ -48,7 +51,6 @@ const deps = (overrides: {
   } as unknown as MlDestinationRepository;
   const machineLearningRepository = {
     probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.healthy),
-    getRunPodEndpoint: vi.fn().mockReturnValue(overrides.runPod ?? null),
   } as unknown as MachineLearningRepository;
   return { mlDestinationRepository, machineLearningRepository };
 };
@@ -120,10 +122,10 @@ describe('evaluateAdmission', () => {
     expect(
       evaluateAdmission({
         ...base,
-        destination: mlDestinationStub.runPod,
+        destination: mlDestinationStub.frameleafCloud,
         workload: MlWorkload.Enrichment,
-        endpoint: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
-        probe: { ...mlProbeStub.healthy, workloads: [MlWorkload.Enrichment] },
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        probe: mlProbeStub.frameleafCloud,
       }),
     ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.ConsentMissing });
   });
@@ -132,25 +134,13 @@ describe('evaluateAdmission', () => {
     expect(
       evaluateAdmission({
         ...base,
-        destination: mlDestinationStub.runPodConsented,
+        destination: mlDestinationStub.frameleafCloudConsented,
         workload: MlWorkload.Enrichment,
-        endpoint: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
-        probe: { ...mlProbeStub.healthy, workloads: [MlWorkload.Enrichment] },
+        endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+        probe: mlProbeStub.frameleafCloud,
         spentUsd: 25,
       }),
     ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.BudgetExceeded });
-  });
-
-  it('refuses a consented RunPod destination with no ready worker instead of using anything else', () => {
-    expect(
-      evaluateAdmission({
-        ...base,
-        destination: mlDestinationStub.runPodConsented,
-        workload: MlWorkload.Enrichment,
-        endpoint: null,
-        probe: null,
-      }),
-    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.EndpointUnresolved });
   });
 
   it('refuses an unreachable destination', () => {
@@ -174,32 +164,134 @@ describe('evaluateAdmission', () => {
   });
 });
 
+describe('evaluateAdmission for Frameleaf Cloud (FL-159)', () => {
+  const facts = mlProbeStub.frameleafCloud.cloud!;
+  const cloud = {
+    destination: mlDestinationStub.frameleafCloudConsented,
+    workload: MlWorkload.RestorationCreative,
+    endpoint: FRAMELEAF_CLOUD_ENDPOINT,
+    probe: mlProbeStub.frameleafCloud,
+    spentUsd: 0,
+  };
+  const withFacts = (overrides: Partial<typeof facts>) => ({
+    ...cloud,
+    probe: { ...mlProbeStub.frameleafCloud, cloud: { ...facts, ...overrides } },
+  });
+  const refusal = (input: Parameters<typeof evaluateAdmission>[0]) => {
+    const verdict = evaluateAdmission(input);
+    return verdict.admitted ? null : verdict.refusal;
+  };
+
+  it('admits a consented, entitled destination with a balance that offers the workload', () => {
+    expect(evaluateAdmission(cloud)).toEqual({ admitted: true });
+    // Library analysis and restoration may share Frameleaf Cloud: each job gets its own capacity.
+    expect(evaluateAdmission({ ...cloud, workload: MlWorkload.Enrichment })).toEqual({ admitted: true });
+  });
+
+  it('refuses faces by policy even when a row allows them', () => {
+    const faces = { ...mlDestinationStub.frameleafCloudConsented, workloads: [MlWorkload.Face] };
+    expect(refusal({ ...cloud, destination: faces, workload: MlWorkload.Face })).toBe(
+      MlAdmissionRefusal.WorkloadNotAllowed,
+    );
+  });
+
+  it('refuses before the first check and when the cloud is unavailable, never falling back', () => {
+    expect(refusal({ ...cloud, probe: null })).toBe(MlAdmissionRefusal.DestinationUnhealthy);
+    expect(refusal({ ...cloud, probe: { ...mlProbeStub.unreachable, cloud: null } })).toBe(
+      MlAdmissionRefusal.CloudUnavailable,
+    );
+  });
+
+  it('maps a refused check to its reason', () => {
+    for (const reason of [
+      MlAdmissionRefusal.CloudUnavailable,
+      MlAdmissionRefusal.QuotaExceeded,
+      MlAdmissionRefusal.WalletInsufficient,
+      MlAdmissionRefusal.ConsentVersionOutdated,
+    ]) {
+      expect(refusal(withFacts({ refusal: { refusal: reason, detail: 'refused' } }))).toBe(reason);
+      expect(
+        refusal({
+          ...cloud,
+          probe: { ...mlProbeStub.unreachable, cloud: { ...facts, refusal: { refusal: reason, detail: 'refused' } } },
+        }),
+      ).toBe(reason);
+    }
+  });
+
+  it('refuses without the entitlement', () => {
+    expect(refusal(withFacts({ entitled: false }))).toBe(MlAdmissionRefusal.EntitlementMissing);
+  });
+
+  it('refuses a consent older than the version the cloud requires now', () => {
+    expect(refusal(withFacts({ consentRequiredVersion: '2026-10-01' }))).toBe(
+      MlAdmissionRefusal.ConsentVersionOutdated,
+    );
+  });
+
+  it('refuses an empty wallet and a hold the wallet cannot cover', () => {
+    expect(refusal(withFacts({ balanceUsd: 0, heldUsd: 0 }))).toBe(MlAdmissionRefusal.WalletInsufficient);
+    expect(refusal(withFacts({ balanceUsd: 10, heldUsd: 10 }))).toBe(MlAdmissionRefusal.WalletInsufficient);
+    expect(refusal({ ...cloud, holdUsd: 36 })).toBe(MlAdmissionRefusal.WalletInsufficient);
+    expect(refusal({ ...cloud, holdUsd: 35 })).toBeNull();
+  });
+
+  it("refuses once today's AI Wallet limit is reached", () => {
+    expect(refusal(withFacts({ dailyCapUsd: 5, spentTodayUsd: 5 }))).toBe(MlAdmissionRefusal.BudgetExceeded);
+  });
+
+  it('refuses a model that is not in the catalogue any more', () => {
+    expect(refusal({ ...cloud, modelId: 'retired-model' })).toBe(MlAdmissionRefusal.ModelMismatch);
+    expect(refusal({ ...cloud, modelId: 'restore-faithful' })).toBeNull();
+  });
+
+  it('refuses a cloud job for the local-only nllb-clip, MusicGen-small and Qwen2.5-VL-3B models, even if listed (FL-146)', () => {
+    for (const modelId of [
+      'nllb-clip-base-siglip__mrl',
+      'nllb-clip-large-siglip__v1',
+      'Xenova/musicgen-small',
+      'Qwen/Qwen2.5-VL-3B-Instruct',
+      'llmware/qwen2.5-vl-3b-ov',
+    ]) {
+      expect(refusal({ ...withFacts({ modelIds: ['restore-faithful', modelId] }), modelId })).toBe(
+        MlAdmissionRefusal.ModelMismatch,
+      );
+    }
+  });
+
+  it('refuses a workload the cloud does not offer this account right now', () => {
+    expect(refusal({ ...cloud, probe: { ...mlProbeStub.frameleafCloud, workloads: [MlWorkload.Enrichment] } })).toBe(
+      MlAdmissionRefusal.WorkloadNotServed,
+    );
+  });
+});
+
 describe('resolveEndpoint', () => {
   it('uses the stored URL and token for local and LAN destinations', () => {
-    expect(resolveEndpoint(mlDestinationStub.local, null)).toEqual({ url: mlDestinationStub.local.url });
-    expect(resolveEndpoint(mlDestinationStub.lan, null)).toEqual({
+    expect(resolveEndpoint(mlDestinationStub.local)).toEqual({ url: mlDestinationStub.local.url });
+    expect(resolveEndpoint(mlDestinationStub.lan)).toEqual({
       url: mlDestinationStub.lan.url,
       authToken: 'lan-token',
     });
   });
 
-  it('resolves a RunPod destination only to what the RunPod service published', () => {
-    expect(resolveEndpoint(mlDestinationStub.runPodConsented, null)).toBeNull();
-    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
-    expect(resolveEndpoint(mlDestinationStub.runPodConsented, published)).toEqual(published);
+  it('resolves Frameleaf Cloud to its sentinel, never to a URL or token of its own (FL-159)', () => {
+    expect(resolveEndpoint(mlDestinationStub.frameleafCloudConsented)).toBe(FRAMELEAF_CLOUD_ENDPOINT);
+    expect(
+      resolveEndpoint({ ...mlDestinationStub.frameleafCloudConsented, url: 'https://elsewhere', authToken: 't' }),
+    ).toBe(FRAMELEAF_CLOUD_ENDPOINT);
   });
 
-  it('never resolves a non-cloud destination to the RunPod endpoint', () => {
-    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
-    expect(resolveEndpoint({ ...mlDestinationStub.local, url: null }, published)).toBeNull();
+  it('resolves a local destination without a URL to nothing', () => {
+    expect(resolveEndpoint({ ...mlDestinationStub.local, url: null })).toBeNull();
   });
 });
 
 describe('consent and probe helpers', () => {
   it('requires consent for cloud kinds only', () => {
     expect(hasRequiredConsent(mlDestinationStub.local)).toBe(true);
-    expect(hasRequiredConsent(mlDestinationStub.runPod)).toBe(false);
-    expect(hasRequiredConsent(mlDestinationStub.runPodConsented)).toBe(true);
+    expect(hasRequiredConsent(mlDestinationStub.frameleafCloud)).toBe(false);
+    expect(hasRequiredConsent(mlDestinationStub.frameleafCloudConsented)).toBe(true);
   });
 
   it('derives health and a readable summary from a probe', () => {
@@ -211,16 +303,51 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
-  it('refuses when the RunPod endpoint is replaced while the probe runs', async () => {
-    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
-    const d = deps({ destination: mlDestinationStub.runPodConsented as never, runPod: published });
-    vi.mocked(d.machineLearningRepository.getRunPodEndpoint)
-      .mockReturnValueOnce(published)
-      .mockReturnValue({ url: 'https://replaced.api.runpod.ai/', authToken: 'rp2' });
+  it('admits Frameleaf Cloud through its delegated check and records the cloud facts (FL-159)', async () => {
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    const selection = await selectMlDestination(d, {
+      workload: MlWorkload.RestorationFaithful,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(selection.endpoint).toBe(FRAMELEAF_CLOUD_ENDPOINT);
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(FRAMELEAF_CLOUD_ENDPOINT, {
+      maxAgeMs: expect.any(Number),
+    });
+    expect(d.mlDestinationRepository.recordProbe).toHaveBeenCalledWith(
+      mlDestinationStub.frameleafCloudConsented.id,
+      expect.objectContaining({ cloud: mlProbeStub.frameleafCloud.cloud }),
+    );
+  });
 
-    await expect(
-      selectMlDestination(d, { workload: MlWorkload.Face, destinationId: 'ml-destination-runpod' }),
-    ).rejects.toBeInstanceOf(MlDestinationRefusedError);
+  it('names the licensed cloud description default when no model is routed, never the local one (FL-146)', async () => {
+    const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
+    const cloud = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    });
+    expect(cloud.cloudModelId).toBe('qwen3.5-9b@1');
+    const local = await selectMlDestination(deps({}), {
+      workload: MlWorkload.Enrichment,
+      destinationId: 'ml-destination-local',
+    });
+    expect(local.cloudModelId).toBeNull();
+  });
+
+  it('refuses the routed model when the catalogue dropped it, and never picks another (FL-159)', async () => {
+    const d = deps({
+      destination: mlDestinationStub.frameleafCloudConsented,
+      probe: mlProbeStub.frameleafCloud,
+      route: {
+        workload: MlWorkload.Enrichment,
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+        modelId: 'retired-model',
+      },
+    });
+    const error = await selectMlDestination(d, {
+      workload: MlWorkload.Enrichment,
+      destinationId: mlDestinationStub.frameleafCloudConsented.id,
+    }).catch((error_) => error_);
+    expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ModelMismatch);
   });
 
   it('admits and returns a selection whose accounting hook records the request', async () => {
@@ -271,13 +398,10 @@ describe('selectMlDestination', () => {
   });
 
   it('refuses an unconsented cloud destination before touching the network', async () => {
-    const d = deps({
-      destination: mlDestinationStub.runPod,
-      runPod: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
-    });
+    const d = deps({ destination: mlDestinationStub.frameleafCloud });
     const error = await selectMlDestination(d, {
       workload: MlWorkload.Enrichment,
-      destinationId: 'ml-destination-runpod',
+      destinationId: mlDestinationStub.frameleafCloud.id,
     }).catch((error_) => error_);
     expect(error).toBeInstanceOf(MlDestinationRefusedError);
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ConsentMissing);
@@ -295,16 +419,6 @@ describe('selectMlDestination', () => {
       'ml-destination-local',
       expect.objectContaining({ health: MlDestinationHealth.Unhealthy, workloads: null }),
     );
-  });
-
-  it('refuses a consented RunPod destination with no published worker rather than resolving elsewhere', async () => {
-    const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: null });
-    const error = await selectMlDestination(d, {
-      workload: MlWorkload.Enrichment,
-      destinationId: 'ml-destination-runpod',
-    }).catch((error_) => error_);
-    expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.EndpointUnresolved);
-    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
   });
 
   it('checks the budget only when a limit is set', async () => {
@@ -349,21 +463,27 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
     expect(workloadPolicyProblem(MlDestinationKind.Local, [MlWorkload.Face, MlWorkload.Clip])).toBeNull();
   });
 
-  it('keeps the managed RunPod pod on library analysis and the RunPod video worker on restoration', () => {
-    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.RestorationCreative])).toMatch(
-      /library analysis only/,
+  it('lets Frameleaf Cloud mix only the workloads it offers, and never faces (FL-159)', () => {
+    expect(
+      workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Enrichment, MlWorkload.RestorationCreative]),
+    ).toBeNull();
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Face])).toMatch(
+      /face stays on this network/,
     );
-    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.Enrichment])).toBeNull();
-    expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.Clip])).toMatch(/restoration only/);
-    expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.RestorationFaithful])).toBeNull();
-  });
-
-  it('resolves a RunPod video worker to its own URL, never to the published library pod', () => {
-    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
-    expect(resolveEndpoint(mlDestinationStub.runPodVideoConsented, published)).toEqual({
-      url: mlDestinationStub.runPodVideoConsented.url,
-      authToken: 'video-token',
-    });
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.Clip, MlWorkload.Ocr])).toMatch(
+      /clip, ocr stays/,
+    );
+    expect(
+      workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [
+        MlWorkload.Upscale,
+        MlWorkload.Interpolation,
+        MlWorkload.StudioAi,
+      ]),
+    ).toBeNull();
+    // Studio exports render at home only (§2.7).
+    expect(workloadPolicyProblem(MlDestinationKind.FrameleafCloud, [MlWorkload.StudioRender])).toMatch(
+      /studio-render stays/,
+    );
   });
 
   it('refuses restoration on a row saved before FL-72 that also allows library analysis', () => {
@@ -389,17 +509,14 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
     ).toEqual({ admitted: true });
   });
 
-  it('refuses restoration on the managed RunPod pod even when a row allows it', () => {
-    const legacy = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationCreative] };
-    expect(
-      evaluateAdmission({
-        destination: legacy,
-        workload: MlWorkload.RestorationCreative,
-        endpoint: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
-        probe: restorationProbe,
-        spentUsd: 0,
-      }),
-    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.RoleConflict });
+  it('never reports a role conflict for Frameleaf Cloud, which schedules each job on its own capacity', async () => {
+    const d = conflictDeps(
+      [mlDestinationStub.frameleafCloudConsented],
+      [{ workload: MlWorkload.Enrichment, destinationId: mlDestinationStub.frameleafCloudConsented.id }],
+    );
+    await expect(
+      restorationRoleConflict(d, mlDestinationStub.frameleafCloudConsented, MlWorkload.RestorationCreative),
+    ).resolves.toBeNull();
   });
 
   const conflictDeps = (
@@ -410,9 +527,6 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
       getById: vi.fn().mockImplementation((id: string) => Promise.resolve(rows.find((row) => row.id === id))),
       getRoutes: vi.fn().mockResolvedValue(routes),
     } as unknown as MlDestinationRepository,
-    machineLearningRepository: {
-      getRunPodEndpoint: vi.fn().mockReturnValue(null),
-    } as unknown as MachineLearningRepository,
   });
 
   it('allows restoration on its own worker', async () => {

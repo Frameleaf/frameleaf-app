@@ -32,6 +32,36 @@ it('shares every explicitly selected ID after part of the selection leaves the l
   );
 });
 
+it('opens the preservation export on the selection and says what was left out (FL-74)', async () => {
+  addMessages('dev', en);
+  const onAction = vi.fn();
+  render(SelectionBar, {
+    props: {
+      count: 3,
+      assets: [
+        { id: 'mine', ownerId: 'me' },
+        { id: 'partner', ownerId: 'partner' },
+      ],
+      selectedIds: ['mine', 'partner', 'offscreen'],
+      context: { currentUserId: 'me' },
+      onAction,
+      onClear: vi.fn(),
+    },
+  });
+
+  await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_selection_more_actions }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: en.frameleaf_bulk_export_preservation }));
+
+  const dialog = await screen.findByRole('dialog', { name: en.frameleaf_preservation_export_title });
+  expect(within(dialog).getByRole('button', { name: en.frameleaf_preservation_scope_selection })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(within(dialog).getByText('2 selected items of yours')).toBeInTheDocument();
+  expect(within(dialog).getByText('1 selected item belongs to someone else and is left out.')).toBeInTheDocument();
+  expect(onAction).not.toHaveBeenCalled();
+});
+
 describe('one toolbar while selecting (September 24)', () => {
   const baseProps = () => ({
     count: 2,

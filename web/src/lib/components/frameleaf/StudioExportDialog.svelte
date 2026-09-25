@@ -3,10 +3,7 @@
     format: StudioExportFormat;
     color: StudioExportColor;
     resolution: StudioExportResolution;
-    /** This server or a worker on the home network: Studio exports never leave home (effd05ffb7). */
     destination: MediaOperationDestination;
-    /** Always false: kept for the API, which refuses a cloud Studio export. */
-    cloudConsent: boolean;
   };
 </script>
 
@@ -17,10 +14,12 @@
    * with the prototype's notes. The render runs as a durable job on the server and is followed in
    * Activity; nothing renders in the browser.
    *
-   * Exports render at home, on this server or another computer on the home network (owner prototype
-   * effd05ffb7: "Studio exports always render at home"); Frameleaf Cloud is not offered, and the
-   * server refuses it. One deliberate difference: the time and size rows are not shown, because
-   * nothing on the server measures them for a Studio export yet and the prototype's are simulated.
+   * Exports render on this server or another computer on the home network, never on Frameleaf Cloud
+   * (FL-159 §2.7). Each format, colour and resolution is judged against what the qualified render
+   * workers verified (FL-42, `studio.render` evidence, `studioRenderChoices`): a choice the server
+   * would refuse is disabled, and the chosen combination's refusal is named before anything is
+   * submitted. The time, size and cost rows are not shown, because nothing on the server measures
+   * them for a Studio export yet and the prototype's figures are simulated.
    */
   import { t } from 'svelte-i18n';
   import {
@@ -34,16 +33,26 @@
   import type { Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
+  import {
+    evaluateStudioRender,
+    studioRenderChoices,
+    studioRenderRefusalKey,
+    type StudioRenderVerdict,
+  } from '$lib/frameleaf/studio/render-output';
 
   let {
     open = $bindable(false),
     sequenceName,
     busy = false,
+    renderEvidence = [],
     onExport,
   }: {
     open?: boolean;
     sequenceName: string;
     busy?: boolean;
+    /** What the qualified render workers verified, per destination (FL-42). */
+    renderEvidence?: readonly StudioRenderEvidence[];
     onExport: (choice: StudioExportChoice) => void;
   } = $props();
 
@@ -76,7 +85,7 @@
   let destination = $state(MediaOperationDestination.Local);
   const fieldId = $props.id();
 
-  // Every opening starts from the prototype's defaults and without consent.
+  // Every opening starts from the prototype's defaults.
   $effect(() => {
     if (!open) {
       return;
@@ -88,11 +97,15 @@
     destination = MediaOperationDestination.Local;
   });
 
-  const canExport = $derived(!busy);
+  const choices = $derived(studioRenderChoices(renderEvidence, destination, { format, color, resolution }));
+  const verdict = $derived(evaluateStudioRender(renderEvidence, destination, { format, color, resolution }));
+  const canExport = $derived(!busy && verdict.supported);
+  const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
+    list.find((entry) => entry.value === value)?.verdict.supported === false;
 
   const submit = () => {
     if (canExport) {
-      onExport({ format, color, resolution, destination, cloudConsent: false });
+      onExport({ format, color, resolution, destination });
     }
   };
 </script>
@@ -108,7 +121,7 @@
         <span>{$t('frameleaf_studio_export_format')}</span>
         <select id="{fieldId}-format" bind:value={format}>
           {#each formats as item (item.value)}
-            <option value={item.value}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(choices.formats, item.value)}>{$t(item.label)}</option>
           {/each}
         </select>
       </label>
@@ -116,7 +129,7 @@
         <span>{$t('frameleaf_studio_export_color')}</span>
         <select id="{fieldId}-color" bind:value={color}>
           {#each colors as item (item.value)}
-            <option value={item.value}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(choices.colors, item.value)}>{$t(item.label)}</option>
           {/each}
         </select>
       </label>
@@ -124,7 +137,7 @@
         <span>{$t('frameleaf_studio_export_resolution')}</span>
         <select id="{fieldId}-resolution" bind:value={resolution}>
           {#each resolutions as item (item.value)}
-            <option value={item.value}>{$t(item.label)}</option>
+            <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}>{$t(item.label)}</option>
           {/each}
         </select>
       </label>
@@ -145,6 +158,12 @@
       </p>
     {/if}
 
+    {#if !verdict.supported}
+      <p class="note warning" role="status">
+        <Icon icon={mdiAlertOutline} size="14" aria-hidden={true} />
+        {$t(studioRenderRefusalKey(verdict.refusal))}
+      </p>
+    {/if}
     <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
 
     <footer>

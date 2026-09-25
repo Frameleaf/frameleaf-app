@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
@@ -27,11 +28,15 @@ export type MlDestinationInsert = {
   maxUploadBytes: number | null;
   /** FL-72: a restoration worker on the GPU library analysis uses. Defaults to false. */
   sharesLibraryHardware?: boolean;
+  /** FL-159: the Frameleaf Cloud data region. */
+  region?: string | null;
 };
 
 export type MlDestinationPatch = Partial<MlDestinationInsert> & {
   consentAcknowledgedAt?: Date | null;
   consentAcknowledgedBy?: string | null;
+  /** FL-159: the Frameleaf Cloud consent version the administrator accepted. */
+  consentVersion?: string | null;
 };
 
 export type MlProbeRecord = {
@@ -42,6 +47,8 @@ export type MlProbeRecord = {
   /** FL-72: acceleration facts from the same check. Omitted leaves the stored value alone. */
   hardware?: MlProbeHardware | null;
   latencyMs?: number | null;
+  /** FL-159: what a Frameleaf Cloud check learned. Omitted leaves the stored value alone. */
+  cloud?: CloudProbeFacts | null;
 };
 
 export type MlAccountingInsert = {
@@ -57,7 +64,12 @@ export type MlAccountingInsert = {
   costUsd: number | null;
   startedAt: Date;
   finishedAt: Date;
+  /** FL-159: the Frameleaf Cloud job this request created, so its settlement can find the row. */
+  cloudJobId?: string | null;
 };
+
+/** FL-159: one Frameleaf Cloud settlement applied to the accounting row of its job. */
+export type MlSettlement = { cloudJobId: string; costUsd: number; credits: number | null };
 
 /** FL-71: the destination that last served a job, for the Job manager's Worker column. */
 export type MlJobDestination = {
@@ -146,6 +158,9 @@ export class MlDestinationRepository {
           lastProbeHardware: probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
         }),
         ...(probe.latencyMs !== undefined && { lastProbeLatencyMs: probe.latencyMs }),
+        ...(probe.cloud !== undefined && {
+          lastProbeCloud: probe.cloud === null ? null : (toJson(probe.cloud) as unknown as CloudProbeFacts),
+        }),
       })
       .where('id', '=', id)
       .execute();
@@ -161,11 +176,11 @@ export class MlDestinationRepository {
     return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();
   }
 
-  async setRoute(workload: MlWorkload, destinationId: string): Promise<void> {
+  async setRoute(workload: MlWorkload, destinationId: string, modelId: string | null = null): Promise<void> {
     await this.db
       .insertInto('ml_workload_route')
-      .values({ workload, destinationId, updatedAt: new Date() })
-      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, updatedAt: new Date() }))
+      .values({ workload, destinationId, modelId, updatedAt: new Date() })
+      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, modelId, updatedAt: new Date() }))
       .execute();
   }
 
@@ -176,6 +191,48 @@ export class MlDestinationRepository {
 
   async recordAccounting(entry: MlAccountingInsert): Promise<void> {
     await this.db.insertInto('ml_workload_accounting').values(entry).execute();
+  }
+
+  /**
+   * FL-159: apply Frameleaf Cloud settlements to the accounting rows of their jobs. Returns how many
+   * rows changed; a settlement for a job this server never recorded changes nothing.
+   */
+  async applySettlements(settlements: MlSettlement[]): Promise<number> {
+    // A job reported twice counts once, with its last report: Postgres would otherwise apply one of
+    // the duplicate rows arbitrarily.
+    const unique = new Map(settlements.map((settlement) => [settlement.cloudJobId, settlement])).values().toArray();
+    if (unique.length === 0) {
+      return 0;
+    }
+    // One statement per reconcile, matched through the cloud job id index (fork migration 201); a
+    // row already carrying the settled figures is left alone.
+    const result = await sql<{ id: string }>`
+      UPDATE public.ml_workload_accounting AS a
+      SET "costUsd" = s."costUsd", credits = s.credits
+      FROM jsonb_to_recordset(${JSON.stringify(unique)}::text::jsonb)
+        AS s("cloudJobId" text, "costUsd" double precision, credits double precision)
+      WHERE a."cloudJobId" = s."cloudJobId"
+        AND (a."costUsd" IS DISTINCT FROM s."costUsd" OR a.credits IS DISTINCT FROM s.credits)
+      RETURNING a.id
+    `.execute(this.db);
+    return result.rows.length;
+  }
+
+  /**
+   * FL-159: the destination's settled Frameleaf Cloud charges, newest first. Only requests the cloud
+   * has settled (a cost on a row with a cloud job id) are listed; nothing about the media is read.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, 50] })
+  getSettlements(destinationId: string, limit: number) {
+    return this.db
+      .selectFrom('ml_workload_accounting')
+      .select(['cloudJobId', 'workload', 'jobName', 'outcome', 'costUsd', 'credits', 'startedAt', 'finishedAt'])
+      .where('destinationId', '=', destinationId)
+      .where('cloudJobId', 'is not', null)
+      .where('costUsd', 'is not', null)
+      .orderBy('finishedAt', 'desc')
+      .limit(limit)
+      .execute();
   }
 
   /**

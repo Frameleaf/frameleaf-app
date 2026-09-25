@@ -1,5 +1,6 @@
 import { CronExpression } from '@nestjs/schedule';
 import { validateCronExpression } from 'cron';
+import { cloneDeep, defaultsDeep } from 'lodash-es';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
@@ -36,6 +37,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
+import { CLOUD_DESCRIPTION_DEFAULT_MODEL, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -169,44 +171,52 @@ const nsfwDetectionDefaults = {
   hideFromLibrary: false,
 };
 
-const runpodServerlessDefaults = {
-  // GPU **pool IDs** (not specific types). RunPod's serverless API
-  // accepts AMPERE_16, AMPERE_24, ADA_24, AMPERE_48, ADA_48_PRO,
-  // AMPERE_80, ADA_80_PRO, HOPPER_141, ADA_32_PRO, BLACKWELL_96,
-  // BLACKWELL_180.
-  //
-  // Defaults target Qwen2.5-VL-9B image description at fp16 (~24 GB
-  // weights + activations). 48 GB pools (A40/A6000, L40/L40S) leave
-  // headroom; 80 GB (A100, H100) is the fallback for availability.
-  // Smaller pools work for CLIP/face/OCR but Qwen 9B will OOM there.
-  // See https://docs.runpod.io/references/gpu-types#gpu-pools.
-  gpuTypeIds: ['AMPERE_48', 'ADA_48_PRO', 'AMPERE_80'],
-  workersMin: 0,
-  workersMax: 3,
-  idleTimeoutSeconds: 30,
-  executionTimeoutMs: 600_000,
-  // LB endpoints have no queue, so REQUEST_COUNT is the only meaningful
-  // scaler. RunPod silently accepts QUEUE_DELAY for LB but it's a no-op.
-  scalerType: 'REQUEST_COUNT' as const,
-  scalerValue: 4,
+/**
+ * FL-159: Frameleaf Cloud processing. Everything is off until an administrator turns it on and adds the
+ * destination; faces are refused by policy and cannot be turned on in this version.
+ */
+const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studio', 'interpolation'] as const;
+const frameleafCloudDefaults = {
+  cloudMl: {
+    enabled: false,
+    // Where each kind of work may run (§3.2): this server only until an administrator chooses.
+    routing: {
+      descriptions: 'local' as 'local' | 'both' | 'cloud',
+      upscale: 'local' as 'local' | 'both' | 'cloud',
+      restoration: 'local' as 'local' | 'both' | 'cloud',
+      studio: 'local' as 'local' | 'both' | 'cloud',
+      interpolation: 'local' as 'local' | 'both' | 'cloud',
+    },
+    startWith: 'local' as 'local' | 'cloud',
+    // The model slider's saved position per kind of work; empty = the heaviest that runs well here.
+    // Descriptions start at the licensed cloud default (FL-146), never the local Qwen2.5-VL-3B.
+    models: {
+      descriptions: CLOUD_DESCRIPTION_DEFAULT_MODEL,
+      upscale: '',
+      restoration: '',
+      studio: '',
+      interpolation: '',
+    },
+    autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
+    faces: { enabled: false as const },
+  },
 };
 
-const runpodDefaults = {
-  enabled: false,
-  mode: 'disabled' as const,
-  apiKey: '',
-  hfToken: '',
-  imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
-  dataPrivacyAcknowledged: false,
-  defaultGpuTypeId: 'NVIDIA RTX A5000',
-  containerDiskGb: 50,
-  volumeGb: 20,
-  autoStopEnabled: true,
-  autoStopGraceMinutes: 15,
-  autoBackfillOnLaunch: false,
-  maxRuntimeHours: 24,
-  provisionTimeoutMinutes: 5,
-  serverless: runpodServerlessDefaults,
+/**
+ * Library care (FL-69, settings-catalog.mjs:905-977): the template's Media health & integrity,
+ * Repair queues and Enrichment completeness toggles. Hoisted like the other fork defaults so the
+ * schema can default a configuration saved before the section existed.
+ */
+const libraryCareDefaults = {
+  healthScan: true,
+  healthScanCronExpression: CronExpression.EVERY_DAY_AT_2AM as string,
+  checksumScan: true,
+  integrityAudit: true,
+  livePhotoRepair: true,
+  rawRecovery: true,
+  duplicateReview: true,
+  incrementalEnrichment: true,
+  manualMetadata: true,
 };
 
 const smartAlbumRulesDefaults = {
@@ -458,90 +468,100 @@ export const NsfwDetectionConfigSchema = AdminConfigMachineLearningModelSchema.e
     .describe('Hide NSFW assets from library views unless the session has PIN-elevated access'),
 }).meta({ id: 'AdminConfigNsfwDetectionDto' });
 
-const AdminConfigRunPodServerlessSchema = z
-  .object({
-    gpuTypeIds: z
-      .array(z.string())
-      .min(1)
-      .describe('Ranked GPU pool IDs the endpoint can use (cheapest first). At least one required.'),
-    workersMin: z.int().min(0).max(10).describe('Always-warm workers (0 = scale to zero)'),
-    workersMax: z.int().min(1).max(20).describe('Max concurrent workers'),
-    idleTimeoutSeconds: z.int().min(5).max(3600).describe('Seconds before an idle worker scales down'),
-    executionTimeoutMs: z.int().min(5000).max(3_600_000).describe('Max time per request (ms)'),
-    scalerType: z.enum(['QUEUE_DELAY', 'REQUEST_COUNT']).describe('Worker autoscaler strategy'),
-    scalerValue: z.int().min(1).max(60).describe('Scaler threshold (queue seconds or request count)'),
-  })
-  .meta({ id: 'AdminConfigRunPodServerlessDto' })
-  // Cross-field guard — reject configs where workersMin > workersMax instead
-  // of letting RunPod's endpoint create fail at provisioning time with a less
-  // obvious error.
-  .refine((data) => data.workersMax >= data.workersMin, {
-    message: 'workersMax must be greater than or equal to workersMin',
-    path: ['workersMax'],
-  });
+const CloudRouteModeSchema = z
+  .enum(['local', 'both', 'cloud'])
+  .describe(
+    'local: this server or a home-network worker only; both: each job lets the person pick; cloud: Frameleaf Cloud only',
+  )
+  .meta({ id: 'CloudRouteMode' });
 
-const AdminConfigRunPodSchema = z
+const routedRecord = <T extends z.ZodType>(schema: T) =>
+  z.object(
+    Object.fromEntries(CLOUD_ROUTED_WORKLOADS.map((workload) => [workload, schema])) as Record<
+      (typeof CLOUD_ROUTED_WORKLOADS)[number],
+      T
+    >,
+  );
+
+const AdminConfigFrameleafCloudSchema = z
   .object({
-    enabled: configBool.describe('Enabled'),
-    // Optional in the wire DTO so older clients that don't know about the
-    // discriminator can still PUT the legacy shape. Server back-compat
-    // infers the effective mode from `enabled` when this is undefined or
-    // 'disabled' (see `effectiveMode` in runpod.service.ts).
-    mode: z
-      .enum(['disabled', 'pod', 'serverless'])
-      .default('disabled')
-      .describe(
-        'disabled = off, pod = manually launched dedicated GPU, serverless = auto-managed scale-to-zero endpoint. Optional for back-compat with legacy clients.',
-      ),
-    // apiKey is a billing credential. mapAdminConfig() redacts it to '' on
-    // every GET response, and updateAdminConfig() interprets an empty incoming
-    // value as "preserve the stored key" (rather than "wipe it"). Net effect:
-    // the secret is never returned by the API once set, and admin form
-    // round-trips don't accidentally erase it. To rotate, send a new
-    // non-empty value.
-    //
-    // We intentionally do NOT use `.meta({ writeOnly: true })`: although the
-    // OpenAPI semantics are correct, oazapfts removes write-only fields from
-    // the generated TypeScript type entirely, which breaks the admin form's
-    // ability to bind to the field as an input. The masking + preserve
-    // pattern above achieves the same security guarantee at the application
-    // layer.
-    apiKey: z.string().describe('RunPod API key (write-only; empty preserves the existing key)'),
-    apiKeyConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that a key is currently stored. Set by the server; ignored on write.'),
-    // Same redact/preserve pattern as apiKey. Forwarded to the ML worker as
-    // HF_TOKEN so it can pull gated/large HuggingFace models (Qwen-VL etc.)
-    // without rate-limit hits. Optional — empty string disables forwarding.
-    hfToken: z
-      .string()
-      .default('')
-      .describe('HuggingFace token forwarded to worker as HF_TOKEN (write-only; empty preserves the existing token)'),
-    hfTokenConfigured: z
-      .boolean()
-      .optional()
-      .describe('Read-only indicator that an HF token is currently stored. Set by the server; ignored on write.'),
-    imageName: z.string().min(1).describe('Container image to launch'),
-    dataPrivacyAcknowledged: configBool.describe('User accepted that image previews leave the network'),
-    // Pod-mode settings
-    defaultGpuTypeId: z.string().min(1).describe('Preferred GPU type ID (Pod mode)'),
-    containerDiskGb: z.int().min(10).max(2000).describe('Container disk size (GB) (Pod mode)'),
-    volumeGb: z.int().min(0).max(2000).describe('Persistent volume size (GB) (Pod mode)'),
-    autoStopEnabled: configBool.describe('Auto-stop when idle (Pod mode)'),
-    autoStopGraceMinutes: z.int().min(1).max(1440).describe('Idle minutes before auto-stop (Pod mode)'),
-    autoBackfillOnLaunch: configBool.describe('Auto-run ML backfill on pod ready (Pod mode)'),
-    maxRuntimeHours: z.int().min(1).max(168).describe('Hard runtime ceiling (hours) (Pod mode)'),
-    provisionTimeoutMinutes: z
-      .int()
-      .min(1)
-      .max(60)
-      .default(5)
-      .describe('How long to wait for the pod to reach RUNNING + healthy /ping before giving up (Pod mode)'),
-    // Serverless-mode settings
-    serverless: AdminConfigRunPodServerlessSchema.default(runpodServerlessDefaults),
+    cloudMl: z
+      .object({
+        enabled: configBool.describe(
+          'Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation)',
+        ),
+        routing: routedRecord(CloudRouteModeSchema)
+          .describe('Where each kind of work may run')
+          .meta({ id: 'AdminConfigFrameleafCloudRoutingDto' }),
+        startWith: z
+          .enum(['local', 'cloud'])
+          .describe('The destination a job preselects when its kind of work may run in both places'),
+        models: routedRecord(z.string().max(200))
+          .describe('The model slider position per kind of work; empty = the heaviest that runs well here')
+          .meta({ id: 'AdminConfigFrameleafCloudModelsDto' }),
+        autoDescribe: z
+          .object({
+            enabled: configBool.describe('Describe new photos automatically on Frameleaf Cloud'),
+            dailyBudgetUsd: z
+              .number()
+              .min(0.5)
+              .max(100)
+              .meta({ format: 'double' })
+              .describe('Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap'),
+          })
+          .meta({ id: 'AdminConfigFrameleafCloudAutoDescribeDto' }),
+        faces: z
+          .object({ enabled: z.literal(false).describe('Faces never run on Frameleaf Cloud') })
+          .meta({ id: 'AdminConfigFrameleafCloudFacesDto' }),
+      })
+      // FL-146: a local-only model (Qwen2.5-VL-3B, nllb-clip, MusicGen-small) is never the choice for
+      // work allowed on Frameleaf Cloud.
+      .superRefine((cloudMl, context) => {
+        for (const workload of CLOUD_ROUTED_WORKLOADS) {
+          if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(cloudMl.models[workload])) {
+            context.addIssue({
+              code: 'custom',
+              path: ['models', workload],
+              message: `${cloudMl.models[workload]} runs on this server only; choose another model or set this work to Local only`,
+            });
+          }
+        }
+      })
+      .meta({ id: 'AdminConfigFrameleafCloudMlDto' }),
   })
-  .meta({ id: 'AdminConfigRunPodDto' });
+  .meta({ id: 'AdminConfigFrameleafCloudDto' });
+
+/**
+ * A stored Frameleaf Cloud configuration read back over the defaults, so a value saved before a
+ * field existed (or in an older shape) still yields a complete configuration. Unknown keys are dropped.
+ * A model entry naming a local-only model for work allowed on the cloud (FL-146) is reset to its
+ * default on its own, with a warning; enabled, routing and budgets are kept. Only a configuration
+ * that is still invalid after that falls back to the defaults.
+ */
+export const readFrameleafCloudConfig = (
+  value: unknown,
+  warn: (message: string) => void = () => {},
+): SystemConfig['frameleafCloud'] => {
+  const merged = defaultsDeep({}, value ?? {}, frameleafCloudDefaults) as SystemConfig['frameleafCloud'];
+  const cloudMl = merged.cloudMl;
+  if (cloudMl?.models && cloudMl.routing) {
+    for (const workload of CLOUD_ROUTED_WORKLOADS) {
+      const model = cloudMl.models[workload];
+      if (cloudMl.routing[workload] !== 'local' && isLocalOnlyModel(model)) {
+        cloudMl.models[workload] = frameleafCloudDefaults.cloudMl.models[workload];
+        warn(
+          `Frameleaf Cloud: ${model} runs on this server only; the ${workload} model was reset to ${cloudMl.models[workload] || 'the default'}`,
+        );
+      }
+    }
+  }
+  const parsed = AdminConfigFrameleafCloudSchema.safeParse(merged);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  warn(`Frameleaf Cloud settings could not be read and were reset to the defaults: ${parsed.error.message}`);
+  return cloneDeep(frameleafCloudDefaults);
+};
 
 // Admin-controlled but unbounded strings flow into background-job log lines
 // and the smart-album evaluator. Cap to 256 chars and reject control characters
@@ -592,6 +612,26 @@ const AdminConfigSmartAlbumsSchema = z
       .meta({ id: 'AdminConfigSmartAlbumBuiltInDto' }),
   })
   .meta({ id: 'AdminConfigSmartAlbumsDto' });
+
+const AdminConfigLibraryCareSchema = z
+  .object({
+    healthScan: configBool.describe(
+      'Schedule incremental health scans of every account; each resumes from its recorded checkpoints',
+    ),
+    healthScanCronExpression: cronExpressionSchema.describe('When the scheduled health scan starts'),
+    checksumScan: configBool.describe('Health scans verify each original against its recorded checksum'),
+    integrityAudit: configBool.describe(
+      'Run the scheduled database and file reference audits (missing and untracked files)',
+    ),
+    livePhotoRepair: configBool.describe('Suggest Live Photo pairs to relink; ambiguous pairs stay in review'),
+    rawRecovery: configBool.describe('Search for recoverable copies of RAW originals when locating originals'),
+    duplicateReview: configBool.describe('Group near-duplicates for review; deletion stays explicit'),
+    incrementalEnrichment: configBool.describe(
+      'A full description rerun reprocesses only results that are missing, failed or out of date',
+    ),
+    manualMetadata: configBool.describe('A description rerun replaces only generated text and keeps manual text'),
+  })
+  .meta({ id: 'AdminConfigLibraryCareDto' });
 
 const AdminConfigGeneratedImageSchema = z
   .object({
@@ -653,7 +693,7 @@ const AdminConfigSmtpSchema = z
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
         secure: configBool.describe('Whether to use secure connection (TLS/SSL)'),
         username: z.string().describe('SMTP username'),
-        // FL-67: write-only, like runpod.apiKey below. mapAdminConfig() returns '' and
+        // FL-67: write-only, like oauth.clientSecret. mapAdminConfig() returns '' and
         // updateAdminConfig() keeps the stored password when '' comes back. Replace or clear it
         // through /admin/config/credentials/smtp-password.
         password: z.string().describe('SMTP password (write-only; empty preserves the existing password)'),
@@ -783,7 +823,6 @@ const AdminConfigSchemaWithVisibility = z
         }).meta({ id: 'AdminConfigOcrDto' }),
         imageDescription: ImageDescriptionConfigSchema.default(imageDescriptionDefaults),
         nsfwDetection: NsfwDetectionConfigSchema.default(nsfwDetectionDefaults),
-        runpod: AdminConfigRunPodSchema.default(runpodDefaults),
       })
       .meta({ id: 'AdminConfigMachineLearningDto' }),
     map: z
@@ -984,6 +1023,8 @@ const AdminConfigSchemaWithVisibility = z
       .object({ deleteDelay: z.int().min(1).describe('Delete delay').meta({ visibility: User }) })
       .meta({ id: 'AdminConfigUserDto' }),
     smartAlbums: AdminConfigSmartAlbumsSchema.default(smartAlbumsDefaults),
+    frameleafCloud: AdminConfigFrameleafCloudSchema.default(frameleafCloudDefaults),
+    libraryCare: AdminConfigLibraryCareSchema.default(libraryCareDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1132,16 +1173,6 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
       clientSecret: '',
       clientSecretConfigured: config.oauth.clientSecret.length > 0,
     },
-    machineLearning: {
-      ...config.machineLearning,
-      runpod: {
-        ...config.machineLearning.runpod,
-        apiKey: '',
-        apiKeyConfigured: config.machineLearning.runpod.apiKey.length > 0,
-        hfToken: '',
-        hfTokenConfigured: config.machineLearning.runpod.hfToken.length > 0,
-      },
-    },
   };
 }
 
@@ -1277,7 +1308,6 @@ export const defaults = Object.freeze<SystemConfig>({
     },
     imageDescription: imageDescriptionDefaults,
     nsfwDetection: nsfwDetectionDefaults,
-    runpod: runpodDefaults,
   },
   map: {
     enabled: true,
@@ -1423,4 +1453,6 @@ export const defaults = Object.freeze<SystemConfig>({
     deleteDelay: 7,
   },
   smartAlbums: smartAlbumsDefaults,
+  frameleafCloud: frameleafCloudDefaults,
+  libraryCare: libraryCareDefaults,
 });

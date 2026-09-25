@@ -9,6 +9,8 @@ import {
   type PhysicalDeduplicationPlanDto,
   type PhysicalDeduplicationRetainedDto,
   type PhysicalDeduplicationReviewResponseDto,
+  PhysicalDeduplicationCopyFile,
+  PhysicalDeduplicationRetainedFile,
 } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
@@ -16,20 +18,25 @@ import {
   applyForPlan,
   applyStatusKey,
   blocksReview,
+  canVerifyApply,
   checksumAlgorithmKey,
   confirmationPhrase,
   DEDUP_SCOPE_ALL,
+  dedupConfigurationError,
   formatBytes,
   groupPlanCopies,
   isApplyActive,
   isDecidableGroup,
   matchesConfirmation,
+  mediaDetail,
   planMetrics,
   planSelection,
   planStaleReason,
   reviewExport,
   reviewMatches,
   skipReasonKey,
+  undoKey,
+  verificationItemKey,
 } from '$lib/frameleaf/physical-dedup';
 
 const retained = (overrides: Partial<PhysicalDeduplicationRetainedDto> = {}): PhysicalDeduplicationRetainedDto => ({
@@ -46,6 +53,9 @@ const retained = (overrides: Partial<PhysicalDeduplicationRetainedDto> = {}): Ph
   referencesAfter: 3,
   hiddenCopies: 0,
   fileAvailable: true,
+  width: 6000,
+  height: 4000,
+  duration: null,
   ...overrides,
 });
 
@@ -63,6 +73,9 @@ const copy = (overrides: Partial<PhysicalDeduplicationCopyDto> = {}): PhysicalDe
   checksumMatch: true,
   decision: PhysicalDeduplicationDecision.Share,
   reason: null,
+  width: 6000,
+  height: 4000,
+  duration: null,
   ...overrides,
 });
 
@@ -79,6 +92,8 @@ const plan = (overrides: Partial<PhysicalDeduplicationPlanDto> = {}): PhysicalDe
   skippedMissingMaster: 1,
   reclaimableBytes: 14_850_240 * 2,
   deletedBytes: 0,
+  logicalBytes: 14_850_240 * 3,
+  sharedOriginalBytes: 14_850_240,
   retained: [retained()],
   copies: [
     copy(),
@@ -200,13 +215,105 @@ describe('Frameleaf physical deduplication helpers', () => {
   });
 
   describe(planMetrics.name, () => {
-    it('derives the four headline numbers from the plan', () => {
+    it('derives the four headline numbers and keeps the byte figures apart (FL-73)', () => {
       expect(planMetrics(plan())).toEqual({
         copiesToShare: 2,
         retainedOriginals: 1,
         reclaimableBytes: 14_850_240 * 2,
         skippedCopies: 3,
+        logicalBytes: 14_850_240 * 3,
+        sharedOriginalBytes: 14_850_240,
+        measuredReclaimedBytes: null,
       });
+    });
+
+    it('reports measured bytes from the apply, or from the plan once applied', () => {
+      expect(planMetrics(plan(), apply({ reclaimedBytes: 42 })).measuredReclaimedBytes).toBe(42);
+      expect(
+        planMetrics(plan({ mode: PhysicalDeduplicationPlanMode.Apply, deletedBytes: 7 })).measuredReclaimedBytes,
+      ).toBe(7);
+    });
+  });
+
+  describe(dedupConfigurationError.name, () => {
+    const accountIds = ['taylor', 'jamie'];
+
+    it('asks to enable file reuse first (UT-23)', () => {
+      expect(dedupConfigurationError({ enabled: false, masterUserId: 'taylor', accountIds })).toBe('disabled');
+    });
+
+    it('asks for an account to retain shared originals in', () => {
+      expect(dedupConfigurationError({ enabled: true, masterUserId: null, accountIds })).toBe('no-master');
+      // A saved account that no longer exists (deleted master) is not an account to retain originals in.
+      expect(dedupConfigurationError({ enabled: true, masterUserId: 'deleted', accountIds })).toBe('no-master');
+    });
+
+    it('is null once file reuse is on and the account exists', () => {
+      expect(dedupConfigurationError({ enabled: true, masterUserId: 'jamie', accountIds })).toBeNull();
+    });
+  });
+
+  describe(mediaDetail.name, () => {
+    it('writes a photo as its pixel dimensions (UT-25)', () => {
+      expect(mediaDetail({ type: AssetTypeEnum.Image, width: 6000, height: 4000 })).toBe('6000 × 4000');
+    });
+
+    it('writes a video as its length and resolution', () => {
+      expect(mediaDetail({ type: AssetTypeEnum.Video, width: 3840, height: 2160, duration: 72_000 })).toBe('1:12 · 4K');
+      expect(mediaDetail({ type: AssetTypeEnum.Video, width: 1080, height: 1920, duration: 3_725_000 })).toBe(
+        '1:02:05 · 1080p',
+      );
+    });
+
+    it('is empty when nothing is recorded', () => {
+      expect(mediaDetail({ type: AssetTypeEnum.Image, width: null, height: null })).toBe('');
+      expect(mediaDetail({ type: AssetTypeEnum.Video, duration: null })).toBe('');
+    });
+  });
+
+  describe('verification (FL-73)', () => {
+    const item = {
+      retainedFile: PhysicalDeduplicationRetainedFile.Intact,
+      linked: true,
+      restored: false,
+      copyFile: PhysicalDeduplicationCopyFile.Removed,
+      restorable: false,
+    };
+
+    it('verifies only a finished apply that changed something', () => {
+      expect(canVerifyApply(apply({ status: MediaOperationStatus.Completed }))).toBe(true);
+      expect(canVerifyApply(apply({ status: MediaOperationStatus.Cancelled, applied: 0, alreadyApplied: 1 }))).toBe(
+        true,
+      );
+      expect(canVerifyApply(apply({ status: MediaOperationStatus.Rendering }))).toBe(false);
+      expect(canVerifyApply(apply({ status: MediaOperationStatus.Failed, applied: 0 }))).toBe(false);
+    });
+
+    it('names each copy result, most serious first', () => {
+      expect(verificationItemKey(item)).toBe('frameleaf_dedup_verify_item_verified');
+      expect(verificationItemKey({ ...item, retainedFile: PhysicalDeduplicationRetainedFile.Missing })).toBe(
+        'frameleaf_dedup_verify_item_retained_missing',
+      );
+      expect(verificationItemKey({ ...item, retainedFile: PhysicalDeduplicationRetainedFile.Changed })).toBe(
+        'frameleaf_dedup_verify_item_retained_changed',
+      );
+      expect(verificationItemKey({ ...item, linked: false })).toBe('frameleaf_dedup_verify_item_not_linked');
+      expect(verificationItemKey({ ...item, linked: false, restored: true })).toBe(
+        'frameleaf_dedup_verify_item_restored',
+      );
+    });
+
+    it('says plainly what can be undone', () => {
+      expect(undoKey(item)).toBe('frameleaf_dedup_undo_removed');
+      expect(undoKey({ ...item, copyFile: PhysicalDeduplicationCopyFile.Present, restorable: true })).toBe(
+        'frameleaf_dedup_undo_restorable',
+      );
+      expect(undoKey({ ...item, copyFile: PhysicalDeduplicationCopyFile.Changed })).toBe(
+        'frameleaf_dedup_undo_changed',
+      );
+      expect(undoKey({ ...item, restored: true, copyFile: PhysicalDeduplicationCopyFile.Present })).toBe(
+        'frameleaf_dedup_undo_restored',
+      );
     });
   });
 

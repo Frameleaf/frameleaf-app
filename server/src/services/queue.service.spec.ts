@@ -339,6 +339,7 @@ describe(QueueService.name, () => {
       mocks.mlDestination.getRoute.mockResolvedValue({
         workload: MlWorkload.Clip,
         destinationId: mlDestinationStub.local.id,
+        modelId: null,
         updatedAt: new Date(),
       });
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
@@ -346,8 +347,8 @@ describe(QueueService.name, () => {
         {
           jobId: personId,
           jobName: JobName.SmartSearch,
-          destinationKind: MlDestinationKind.RunPod,
-          destinationName: 'Pod',
+          destinationKind: MlDestinationKind.FrameleafCloud,
+          destinationName: 'Frameleaf Cloud',
         },
       ]);
 
@@ -356,7 +357,7 @@ describe(QueueService.name, () => {
       expect(mocks.mlDestination.getRoute).toHaveBeenCalledWith(MlWorkload.Clip);
       expect(mocks.mlDestination.getLatestJobDestinations).toHaveBeenCalledWith([personId], [JobName.SmartSearch]);
       expect(result[0].worker).toEqual({ kind: QueueJobWorkerKind.Local, name: mlDestinationStub.local.name });
-      expect(result[1].worker).toEqual({ kind: QueueJobWorkerKind.RunPod, name: 'Pod' });
+      expect(result[1].worker).toEqual({ kind: QueueJobWorkerKind.FrameleafCloud, name: 'Frameleaf Cloud' });
       expect(result[0]).not.toHaveProperty('account');
       expect(result[0]).not.toHaveProperty('status');
     });

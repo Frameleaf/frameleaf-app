@@ -7,7 +7,7 @@
  * settings that changed since, so nothing is overwritten and the draft is kept.
  *
  * Transaction boundaries. The draft only ever commits the system configuration, as one request.
- * Resource actions on the settings pages (unlinking OAuth accounts, RunPod pods and endpoints,
+ * Resource actions on the settings pages (unlinking OAuth accounts, adding Frameleaf Cloud,
  * re-queueing descriptions, machine learning destinations) go through their own endpoints and
  * permissions and never ride along with a settings save; the pages call `refresh()` after one so
  * a value a resource action wrote on the server becomes the new baseline instead of a conflict.

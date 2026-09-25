@@ -1858,6 +1858,64 @@ describe(MediaService.name, () => {
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
     });
 
+    describe('as a job in Activity (FL-43)', () => {
+      const edited = () =>
+        AssetFactory.from()
+          .exif()
+          .edit({ action: AssetEditAction.Crop })
+          .files([
+            { type: AssetFileType.FullSize, isEdited: true },
+            { type: AssetFileType.Preview, isEdited: true },
+            { type: AssetFileType.Thumbnail, isEdited: true },
+          ])
+          .build();
+
+      beforeEach(() => {
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.heartbeat.mockResolvedValue(true);
+        mocks.mediaOperation.complete.mockResolvedValue(true);
+        mocks.media.generateThumbhash.mockResolvedValue(Buffer.from('a thumbhash', 'utf8'));
+      });
+
+      it('replaces the edited previews under the job’s claim and completes it with the photo', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+
+        await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        expect(mocks.mediaOperation.beginValidation.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.asset.upsertFiles.mock.invocationCallOrder[0],
+        );
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledWith('op-1', 'token-1', { resultAssetId: asset.id });
+      });
+
+      it('leaves the recorded previews alone when the job lost its claim', async () => {
+        const asset = edited();
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: null } as never);
+
+        await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id, operationId: 'op-1' })).resolves.toBe(
+          JobStatus.Skipped,
+        );
+
+        expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+      });
+    });
+
     it('should skip videos', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
@@ -3366,6 +3424,98 @@ describe(MediaService.name, () => {
         }),
       );
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    describe('as a job in Activity (FL-43)', () => {
+      const exportSetup = () => {
+        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = versionFor(asset, 'export');
+        mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled } });
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: [] });
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [{ ...videoStream, width: 200, height: 100 }],
+          audioStreams: [],
+          format: { ...asset.format, duration: 30 },
+        });
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue({
+          operation: { id: 'op-1', ownerId: asset.ownerId, assetId: asset.id },
+          claimToken: 'token-1',
+        } as never);
+        mocks.mediaOperation.reportProgress.mockResolvedValue(true);
+        mocks.mediaOperation.heartbeat.mockResolvedValue(true);
+        mocks.mediaOperation.complete.mockResolvedValue(true);
+        mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'other' } as never);
+        return { asset, version };
+      };
+
+      it('publishes the version only after its job moved to validating, then completes it', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginValidation.mockResolvedValue(true);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.mediaOperation.beginValidation.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.assetEdit.publishVideoVersion.mock.invocationCallOrder[0],
+        );
+        expect(mocks.mediaOperation.complete).toHaveBeenCalledWith('op-1', 'token-1', { resultAssetId: asset.id });
+      });
+
+      it('publishes nothing and removes its files when the job lost its claim, leaving the current version', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        const master = mocks.media.transcode.mock.calls[0][1];
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(master);
+        expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      });
+
+      it('reports a failed render with its reason and never publishes it', async () => {
+        const { asset, version } = exportSetup();
+        mocks.media.transcode.mockRejectedValue(new Error('ffmpeg exited with code 1'));
+        mocks.mediaOperation.fail.mockResolvedValue('retrying');
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          'op-1',
+          'token-1',
+          expect.objectContaining({ errorCode: 'edit_render_failed' }),
+          { retry: true },
+        );
+      });
+
+      it('does not render a job another delivery holds', async () => {
+        const { asset, version } = exportSetup();
+        mocks.mediaOperation.beginJobQueueRun.mockResolvedValue(undefined);
+
+        await expect(
+          sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id, operationId: 'op-1' }),
+        ).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+      });
     });
 
     it.each(['save', 'export', 'revert'] as const)(

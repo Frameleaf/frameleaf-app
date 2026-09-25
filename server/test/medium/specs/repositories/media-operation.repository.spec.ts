@@ -2,6 +2,8 @@ import { Kysely, sql } from 'kysely';
 import {
   AssetVisibility,
   DatabaseLock,
+  JobName,
+  JobStatus,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -11,7 +13,11 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { DB } from 'src/schema/index.js';
 import { up as migrateRetryIndex } from 'src/schema/migrations/2100000000590-HardenMediaOperationRetryAndCheckpoints.js';
 import { BaseService } from 'src/services/base.service.js';
+import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -324,8 +330,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-3',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-3',
       });
       await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
       await sut.requestCancel(operation.id, user.id);
@@ -549,8 +555,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-1',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-1',
       });
       const claim = await sut.claimNext({
         kinds: [MediaOperationKind.StudioExport],
@@ -576,8 +582,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-2',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-2',
       });
       const claim = await sut.claimNext({
         kinds: [MediaOperationKind.StudioExport],
@@ -978,8 +984,8 @@ describe(MediaOperationRepository.name, () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const operation = await newOperation(sut, user.id, {
-        destination: MediaOperationDestination.RunPod,
-        remoteJobId: 'runpod-9',
+        destination: MediaOperationDestination.FrameleafCloud,
+        remoteJobId: 'cloud-9',
       });
       const first = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
       await lapse(ctx, operation.id);
@@ -1449,6 +1455,306 @@ describe(MediaOperationRepository.name, () => {
           }),
         ).resolves.toBe(true);
       });
+    });
+  });
+
+  /**
+   * Edits the job queue runs (FL-43): saved photo edits, photo versions, video edits and exports. The
+   * executors are the edit jobs; these tests hold the row to the same rules as every other job, with
+   * a real database, through cancellation races, worker loss, restart, retry and changed access.
+   */
+  describe('job-queue edits (FL-43)', () => {
+    const quiet = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const newEdit = async (
+      ctx: ReturnType<typeof setup>['ctx'],
+      sut: MediaOperationRepository,
+      ownerId: string,
+      edit = EditOperationEdit.PhotoEdit,
+    ) => {
+      const { asset } = await ctx.newAsset({ ownerId, originalFileName: 'IMG_0042.jpg' });
+      const operation = await sut.create(
+        editOperationCreate({
+          ownerId,
+          edit,
+          assetId: asset.id,
+          label: 'IMG_0042.jpg',
+          job: { name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } },
+        }),
+      );
+      return { asset, operation };
+    };
+
+    const lapse = (ctx: ReturnType<typeof setup>['ctx'], id: string) =>
+      ctx.database
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+        .where('id', '=', id)
+        .execute();
+
+    const tracker = (sut: MediaOperationRepository) => {
+      const jobs = { queue: vi.fn().mockResolvedValue(undefined), queueAll: vi.fn().mockResolvedValue(undefined) };
+      return { jobs, edits: new EditOperationTracker(sut, jobs as never, quiet as never, LEASE_MS) };
+    };
+
+    it('is never claimed by a polling worker, only by its own job, and only once', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation } = await newEdit(ctx, sut, user.id);
+
+      await expect(
+        sut.claimNext({ kinds: [MediaOperationKind.QuickEdit], workerId: 'render-worker', leaseMs: LEASE_MS }),
+      ).resolves.toBeUndefined();
+
+      const [first, second] = await Promise.all([
+        sut.beginJobQueueRun(operation.id, LEASE_MS),
+        sut.beginJobQueueRun(operation.id, LEASE_MS),
+      ]);
+      const runs = [first, second].filter(Boolean);
+      expect(runs).toHaveLength(1);
+      expect(runs[0]!.operation).toMatchObject({
+        status: MediaOperationStatus.Preparing,
+        claimedBy: JOB_QUEUE_CLAIMANT,
+        attempt: 1,
+      });
+    });
+
+    it('never runs an edit cancelled while it waited, whichever reaches the row first', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation } = await newEdit(ctx, sut, user.id, EditOperationEdit.PhotoVersion);
+
+      const [cancelled, run] = await Promise.all([
+        sut.requestCancel(operation.id, user.id),
+        sut.beginJobQueueRun(operation.id, LEASE_MS),
+      ]);
+
+      const row = await sut.getForOwner(operation.id, user.id);
+      if (run) {
+        // The run won: the cancel waits for it to acknowledge, and it can.
+        expect(row!.status).toBe(MediaOperationStatus.Cancelling);
+        await expect(sut.acknowledgeCancel(operation.id, run.claimToken, { released: true })).resolves.toBe(true);
+      } else {
+        // The cancel won: the job's delivery finds nothing to run.
+        expect(cancelled!.status).toBe(MediaOperationStatus.Cancelled);
+        await expect(sut.beginJobQueueRun(operation.id, LEASE_MS)).resolves.toBeUndefined();
+      }
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Cancelled,
+      });
+    });
+
+    it('recovers a run whose worker died: the row is dispatched once, and the old run can no longer publish', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation } = await newEdit(ctx, sut, user.id);
+      const lost = await sut.beginJobQueueRun(operation.id, LEASE_MS);
+      await lapse(ctx, operation.id);
+
+      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        claimedBy: null,
+        autoRetries: 1,
+      });
+      await ctx.database.updateTable('media_operation').set({ retryAt: null }).where('id', '=', operation.id).execute();
+
+      const [first, second] = await Promise.all([
+        sut.claimJobQueueDispatch({ limit: 10, staleMs: 60_000 }),
+        sut.claimJobQueueDispatch({ limit: 10, staleMs: 60_000 }),
+      ]);
+      expect([...first, ...second].map(({ id }) => id)).toEqual([operation.id]);
+
+      // The dead worker comes back and tries to publish: refused.
+      await expect(sut.beginValidation(operation.id, lost!.claimToken)).resolves.toBe(false);
+      await expect(sut.complete(operation.id, lost!.claimToken, { resultAssetId: null })).resolves.toBe(false);
+
+      const replacement = await sut.beginJobQueueRun(operation.id, LEASE_MS);
+      expect(replacement?.operation.attempt).toBe(2);
+    });
+
+    it('dispatches an edit again after a restart lost its queued job, but not one waiting normally', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation: waiting } = await newEdit(ctx, sut, user.id);
+      const { operation: lostJob } = await newEdit(ctx, sut, user.id);
+      // The updatedAt trigger would stamp now(); replica mode skips it so the row really looks old.
+      await ctx.database.transaction().execute(async (trx) => {
+        await sql`SET LOCAL session_replication_role = replica`.execute(trx);
+        await trx
+          .updateTable('media_operation')
+          .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+          .where('id', '=', lostJob.id)
+          .execute();
+      });
+
+      const dispatched = await sut.claimJobQueueDispatch({ limit: 10, staleMs: 15 * 60_000 });
+
+      expect(dispatched.map(({ id }) => id)).toEqual([lostJob.id]);
+      expect(dispatched.map(({ id }) => id)).not.toContain(waiting.id);
+    });
+
+    it('retries a failure once through the dispatcher, then reports it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation } = await newEdit(ctx, sut, user.id);
+      const { edits } = tracker(sut);
+
+      await expect(edits.execute(operation.id, () => Promise.resolve(JobStatus.Failed))).resolves.toBe(
+        JobStatus.Failed,
+      );
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        claimedBy: null,
+        autoRetries: 1,
+        errorCode: 'edit_render_failed',
+      });
+
+      await ctx.database.updateTable('media_operation').set({ retryAt: null }).where('id', '=', operation.id).execute();
+      await expect(sut.claimJobQueueDispatch({ limit: 10, staleMs: 60_000 })).resolves.toHaveLength(1);
+      await edits.execute(operation.id, () => Promise.resolve(JobStatus.Failed));
+
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Failed,
+      });
+    });
+
+    it('completes a published edit with the edited item as its result', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset, operation } = await newEdit(ctx, sut, user.id);
+      const { edits } = tracker(sut);
+
+      await edits.execute(operation.id, async (run) => {
+        expect(await run!.validate()).toBe(true);
+        return JobStatus.Success;
+      });
+
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Completed,
+        resultAssetId: asset.id,
+      });
+    });
+
+    describe('changed access while the job is claimed', () => {
+      it('withholds the job’s details from a locked session once its item is Locked mid-run', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { asset, operation } = await newEdit(ctx, sut, user.id);
+        const run = await sut.beginJobQueueRun(operation.id, LEASE_MS);
+        expect(run).toBeDefined();
+
+        await ctx.database
+          .insertInto('asset_lock')
+          .values({ assetId: asset.id, reason: 'marked' } as never)
+          .execute();
+
+        const service = new MediaOperationService(
+          quiet as never,
+          sut,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        );
+        const locked = factory.auth({ user: { id: user.id } });
+        const unlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+
+        const { items } = await service.search(locked, {} as never);
+        expect(items.find(({ id }) => id === operation.id)).toMatchObject({
+          withheld: true,
+          label: '',
+          assetId: null,
+          status: MediaOperationStatus.Preparing,
+        });
+        await expect(service.get(locked, operation.id)).resolves.toMatchObject({ withheld: true, snapshot: {} });
+
+        await expect(service.get(unlocked, operation.id)).resolves.toMatchObject({
+          withheld: false,
+          label: 'IMG_0042.jpg',
+          assetId: asset.id,
+        });
+
+        // Another account never learns the job exists.
+        const { user: other } = await ctx.newUser();
+        await expect(service.get(factory.auth({ user: { id: other.id } }), operation.id)).rejects.toThrow(
+          'Media operation not found',
+        );
+      });
+
+      it('refuses to publish once the item left the owner’s library mid-run, and reports it', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { user: other } = await ctx.newUser();
+        const { asset, operation } = await newEdit(ctx, sut, user.id);
+        const { edits } = tracker(sut);
+
+        await edits.execute(operation.id, async (run) => {
+          // Mid-render the item is handed to another account (the owner lost access to it).
+          await ctx.database.updateTable('asset').set({ ownerId: other.id }).where('id', '=', asset.id).execute();
+          expect(await run!.validate()).toBe(true);
+          return JobStatus.Success;
+        });
+
+        await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+          status: MediaOperationStatus.Failed,
+          errorCode: 'result_not_owned',
+          resultAssetId: null,
+        });
+      });
+
+      it('refuses to publish an item trashed mid-run', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { asset, operation } = await newEdit(ctx, sut, user.id);
+        const run = await sut.beginJobQueueRun(operation.id, LEASE_MS);
+        await sut.beginValidation(operation.id, run!.claimToken);
+
+        await ctx.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+
+        await expect(sut.complete(operation.id, run!.claimToken, { resultAssetId: asset.id })).resolves.toBe(false);
+        await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+          status: MediaOperationStatus.Validating,
+          resultAssetId: null,
+        });
+      });
+    });
+
+    it('lists every unfinished job first, however many finished since (reload recovery)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { operation: running } = await newEdit(ctx, sut, user.id);
+      for (let finished = 0; finished < 3; finished++) {
+        const { operation } = await newEdit(ctx, sut, user.id);
+        await sut.requestCancel(operation.id, user.id);
+      }
+
+      const newestFirst = await sut.list({ ownerId: user.id, take: 2, skip: 0 });
+      expect(newestFirst.items.map(({ id }) => id)).not.toContain(running.id);
+
+      const unfinishedFirst = await sut.list({ ownerId: user.id, take: 2, skip: 0, unfinishedFirst: true });
+      expect(unfinishedFirst.items[0].id).toBe(running.id);
+      expect(unfinishedFirst.total).toBe(4);
+    });
+
+    it('tells its listeners which owner’s job changed, and nothing else', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const changes: Array<{ id: string; ownerId: string }> = [];
+      const stop = sut.onChange((batch) => {
+        changes.push(...batch);
+      });
+
+      const { operation } = await newEdit(ctx, sut, user.id);
+      const run = await sut.beginJobQueueRun(operation.id, LEASE_MS);
+      await sut.beginValidation(operation.id, run!.claimToken);
+      await sut.complete(operation.id, run!.claimToken, { resultAssetId: null });
+      stop();
+      await sut.dismiss(operation.id, user.id);
+
+      expect(changes).toEqual(Array.from({ length: 4 }, () => ({ id: operation.id, ownerId: user.id })));
     });
   });
 });

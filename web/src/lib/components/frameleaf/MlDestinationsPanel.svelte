@@ -9,13 +9,18 @@
    * destination on the administrator's behalf: an unrouted workload is labelled as refused,
    * not quietly sent to whatever is available.
    *
-   * FL-72: library analysis and restoration never share a worker. The form closes restoration
-   * once library work is ticked (and the reverse), the managed RunPod pod offers library work
-   * only, and a RunPod video worker (its own URL and token) offers restoration only.
+   * FL-72: library analysis and restoration never share a worker on this network. The form closes
+   * restoration once library work is ticked (and the reverse).
+   *
+   * FL-159: Frameleaf Cloud is the only cloud destination. Its row has no URL or token (requests
+   * use short-lived tokens this server signs), keeps consent and the budget, and shows the AI Wallet
+   * the last check read instead of an hourly rate. It is added, and its consent reviewed, from the
+   * Frameleaf Cloud section, because consent there is versioned and per feature.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Chip from '$lib/components/frameleaf/Chip.svelte';
+  import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import RestorationModelsDialog from '$lib/components/frameleaf/RestorationModelsDialog.svelte';
@@ -24,32 +29,37 @@
   import {
     canRouteTo,
     isConsentBlocking,
+    isConsentOutdated,
     isOverBudget,
     isRestorationWorkload,
     ML_WORKLOAD_ORDER,
     mlDestinationKindLabelKey,
     mlHealthLabelKey,
     mlHealthTone,
+    mlRefusalLabelKey,
     mlWorkloadLabelKey,
     parseOptionalNumber,
     routableDestinations,
     workloadBlockedInDraft,
     workloadsForKind,
   } from '$lib/frameleaf/ml-destinations';
+  import { formatUsd } from '$lib/frameleaf/cloud-ml';
   import { allowsRestoration } from '$lib/frameleaf/restoration-models';
+  import { Route } from '$lib/route';
   import { roleLabelKey } from '$lib/frameleaf/worker-inventory';
   import { handleError } from '$lib/utils/handle-error';
   import {
     createMlDestination,
     deleteMlDestination,
+    getCloudMlStatus,
     getMlWorkloadRoutes,
-    grantMlDestinationConsent,
     listMlDestinations,
     MlDestinationKind,
     probeMlDestination,
     revokeMlDestinationConsent,
     setMlWorkloadRoute,
     updateMlDestination,
+    type CloudMlConsentStateDto,
     type MlDestinationResponseDto,
     type MlWorkload,
     type MlWorkloadRouteDto,
@@ -97,32 +107,32 @@
 
   /* ---------------- consent ---------------- */
 
+  /**
+   * Only Frameleaf Cloud needs consent, and its consent is versioned (FL-159): the sheet shows the
+   * version and optional details the cloud requires now, read when it opens.
+   */
   let consentTarget = $state<MlDestinationResponseDto | null>(null);
-  let consentAcknowledged = $state(false);
-  let consentOpen = $state(false);
+  let cloudConsent = $state<CloudMlConsentStateDto | null>(null);
+  let cloudConsentOpen = $state(false);
+  let cloudRegion = $state<string | null>(null);
 
-  const openConsent = (destination: MlDestinationResponseDto) => {
-    consentTarget = destination;
-    consentAcknowledged = false;
-    consentOpen = true;
-  };
-
-  const grantConsent = async () => {
-    const target = consentTarget;
-    if (!target || !consentAcknowledged) {
-      return;
+  const openConsent = async (destination: MlDestinationResponseDto) => {
+    busy = `consent-${destination.id}`;
+    try {
+      const status = await getCloudMlStatus();
+      if (status.consent) {
+        consentTarget = destination;
+        cloudConsent = status.consent;
+        cloudRegion = status.region;
+        cloudConsentOpen = true;
+      } else {
+        statusMessage = $t('admin.frameleaf_cloud_ml_consent_needs_cloud');
+      }
+    } catch (error) {
+      handleError(error, $t('admin.frameleaf_cloud_ml_error_load'));
+    } finally {
+      busy = null;
     }
-    await run(
-      `consent-${target.id}`,
-      () =>
-        grantMlDestinationConsent({
-          id: target.id,
-          mlDestinationConsentRequestDto: { acknowledgeMediaLeavesNetwork: true },
-        }),
-      $t('admin.frameleaf_ml_destinations_error_consent'),
-    );
-    consentOpen = false;
-    statusMessage = $t('admin.frameleaf_ml_destinations_consent_recorded', { values: { name: target.name } });
   };
 
   const revokeConsent = async (destination: MlDestinationResponseDto) => {
@@ -194,15 +204,10 @@
     draft = {
       id: null,
       kind,
-      name:
-        kind === MlDestinationKind.Runpod
-          ? 'RunPod'
-          : kind === MlDestinationKind.RunpodVideo
-            ? $t('admin.frameleaf_ml_destinations_runpod_video_default_name')
-            : '',
+      name: '',
       url: '',
       authToken: '',
-      workloads: kind === MlDestinationKind.RunpodVideo ? workloadsForKind(kind) : [],
+      workloads: [],
       budgetLimitUsd: '',
       maxRuntimeMinutes: '',
       maxUploadMb: '',
@@ -217,10 +222,9 @@
       id: destination.id,
       kind: destination.kind,
       name: destination.name,
-      url: destination.kind === MlDestinationKind.Runpod ? '' : (destination.url ?? ''),
+      url: destination.url ?? '',
       authToken: '',
-      // A RunPod pod saved before FL-72 may still allow restoration, which it can no longer run
-      // and the form cannot show; leave it out so saving the form clears it instead of failing.
+      // A workload the kind can no longer run cannot be shown; leave it out so saving clears it.
       workloads: destination.workloads.filter((workload) => workloadsForKind(destination.kind).includes(workload)),
       budgetLimitUsd: destination.costControls.budgetLimitUsd?.toString() ?? '',
       maxRuntimeMinutes: destination.costControls.maxRuntimeMinutes?.toString() ?? '',
@@ -263,10 +267,7 @@
       draftError = $t('admin.frameleaf_ml_destinations_error_limits');
       return;
     }
-    if (
-      (current.kind === MlDestinationKind.Lan || current.kind === MlDestinationKind.RunpodVideo) &&
-      current.url.trim() === ''
-    ) {
+    if (current.kind === MlDestinationKind.Lan && current.url.trim() === '') {
       draftError = $t('admin.frameleaf_ml_destinations_error_url');
       return;
     }
@@ -280,7 +281,8 @@
       maxRuntimeMinutes: maxRuntimeMinutes === null ? null : Math.round(maxRuntimeMinutes),
       maxUploadBytes: maxUploadMb === null ? null : Math.round(maxUploadMb * 1_000_000),
     };
-    const isRunPod = current.kind === MlDestinationKind.Runpod;
+    // Frameleaf Cloud has no URL or token to send (FL-159).
+    const isCloud = current.kind === MlDestinationKind.FrameleafCloud;
     const sharesLibraryHardware = canShareHardware(current) && current.sharesLibraryHardware;
 
     await run(
@@ -292,8 +294,8 @@
               mlDestinationUpdateDto: {
                 name,
                 workloads: current.workloads,
-                ...(!isRunPod && { url: current.url.trim() || null }),
-                ...(current.authToken && { authToken: current.authToken }),
+                ...(!isCloud && { url: current.url.trim() || null }),
+                ...(!isCloud && current.authToken && { authToken: current.authToken }),
                 sharesLibraryHardware,
                 ...costControls,
               },
@@ -303,7 +305,7 @@
                 kind: current.kind,
                 name,
                 workloads: current.workloads,
-                ...(!isRunPod && { url: current.url.trim() }),
+                url: current.url.trim(),
                 ...(current.authToken && { authToken: current.authToken }),
                 sharesLibraryHardware,
                 ...costControls,
@@ -330,9 +332,6 @@
           new Date(value),
         )
       : null;
-
-  const formatUsd = (value: number) =>
-    new Intl.NumberFormat($locale ?? undefined, { style: 'currency', currency: 'USD' }).format(value);
 </script>
 
 <Pane label={$t('admin.frameleaf_ml_destinations_title')}>
@@ -343,14 +342,9 @@
     </div>
     <div class="head-actions">
       <Button onclick={() => openCreate(MlDestinationKind.Lan)}>{$t('admin.frameleaf_ml_destinations_add_lan')}</Button>
-      {#if destinations.every((destination) => destination.kind !== MlDestinationKind.Runpod)}
-        <Button onclick={() => openCreate(MlDestinationKind.Runpod)}>
-          {$t('admin.frameleaf_ml_destinations_add_runpod')}
-        </Button>
+      {#if destinations.every((destination) => destination.kind !== MlDestinationKind.FrameleafCloud)}
+        <a class="link-button" href={Route.cloudMl()}>{$t('admin.frameleaf_ml_destinations_add_frameleaf_cloud')}</a>
       {/if}
-      <Button onclick={() => openCreate(MlDestinationKind.RunpodVideo)}>
-        {$t('admin.frameleaf_ml_destinations_add_runpod_video')}
-      </Button>
     </div>
   </div>
 
@@ -408,10 +402,14 @@
           </header>
 
           <p class="endpoint">
-            {#if destination.url}
+            {#if destination.kind === MlDestinationKind.FrameleafCloud}
+              {destination.cloud?.region
+                ? $t('admin.frameleaf_ml_destinations_cloud_endpoint_region', {
+                    values: { region: destination.cloud.region },
+                  })
+                : $t('admin.frameleaf_ml_destinations_cloud_endpoint')}
+            {:else if destination.url}
               <code>{destination.url}</code>
-            {:else if destination.kind === MlDestinationKind.Runpod}
-              {$t('admin.frameleaf_ml_destinations_runpod_not_ready')}
             {:else}
               {$t('admin.frameleaf_ml_destinations_no_url')}
             {/if}
@@ -451,10 +449,24 @@
               <div>
                 <dt>{$t('admin.frameleaf_ml_destinations_consent')}</dt>
                 <dd>
-                  {#if destination.consent.acknowledgedAt}
-                    {$t('admin.frameleaf_ml_destinations_consent_recorded_at', {
-                      values: { date: formatDate(destination.consent.acknowledgedAt) },
+                  {#if destination.consent.acknowledgedAt && isConsentOutdated(destination)}
+                    {$t('admin.frameleaf_ml_destinations_consent_outdated', {
+                      values: {
+                        version: destination.consent.version ?? '',
+                        required: destination.consent.requiredVersion ?? '',
+                      },
                     })}
+                  {:else if destination.consent.acknowledgedAt}
+                    {destination.consent.version
+                      ? $t('admin.frameleaf_ml_destinations_consent_version_recorded_at', {
+                          values: {
+                            version: destination.consent.version,
+                            date: formatDate(destination.consent.acknowledgedAt),
+                          },
+                        })
+                      : $t('admin.frameleaf_ml_destinations_consent_recorded_at', {
+                          values: { date: formatDate(destination.consent.acknowledgedAt) },
+                        })}
                   {:else}
                     {$t('admin.frameleaf_ml_destinations_consent_needed')}
                   {/if}
@@ -487,6 +499,25 @@
                     })}
               </dd>
             </div>
+            {#if destination.cloud}
+              <div>
+                <dt>{$t('admin.frameleaf_ml_destinations_cloud_wallet')}</dt>
+                <dd>
+                  {$t('admin.frameleaf_ml_destinations_cloud_wallet_value', {
+                    values: {
+                      available: formatUsd(destination.cloud.balanceUsd - destination.cloud.heldUsd),
+                      held: formatUsd(destination.cloud.heldUsd),
+                    },
+                  })}
+                </dd>
+              </div>
+              {#if destination.cloud.refusal}
+                <div>
+                  <dt>{$t('admin.frameleaf_cloud_ml_last_refusal')}</dt>
+                  <dd>{$t(mlRefusalLabelKey(destination.cloud.refusal))}</dd>
+                </div>
+              {/if}
+            {/if}
             {#if destination.sharesLibraryHardware}
               <div>
                 <dt>{$t('admin.frameleaf_ml_destinations_shares_hardware')}</dt>
@@ -524,13 +555,14 @@
               </Button>
             {/if}
             {#if destination.consent.required}
+              {#if isConsentBlocking(destination)}
+                <Button variant="primary" onclick={() => void openConsent(destination)} disabled={busy !== null}>
+                  {$t('admin.frameleaf_cloud_ml_consent_review')}
+                </Button>
+              {/if}
               {#if destination.consent.acknowledgedAt}
                 <Button onclick={() => void revokeConsent(destination)} disabled={busy !== null}>
                   {$t('admin.frameleaf_ml_destinations_revoke_consent')}
-                </Button>
-              {:else}
-                <Button variant="primary" onclick={() => openConsent(destination)} disabled={busy !== null}>
-                  {$t('admin.frameleaf_ml_destinations_grant_consent')}
                 </Button>
               {/if}
             {/if}
@@ -599,27 +631,20 @@
   </section>
 </Pane>
 
-<Dialog
-  title={$t('admin.frameleaf_ml_destinations_consent_dialog_title')}
-  closeLabel={$t('close')}
-  bind:open={consentOpen}
->
-  <div class="dialog-body">
-    <p>
-      {$t('admin.frameleaf_ml_destinations_consent_dialog_body', { values: { name: consentTarget?.name ?? '' } })}
-    </p>
-    <label class="check">
-      <input type="checkbox" bind:checked={consentAcknowledged} />
-      {$t('admin.frameleaf_ml_destinations_consent_dialog_acknowledge')}
-    </label>
-    <div class="dialog-actions">
-      <Button onclick={() => (consentOpen = false)} disabled={busy !== null}>{$t('cancel')}</Button>
-      <Button variant="primary" onclick={grantConsent} disabled={!consentAcknowledged || busy !== null}>
-        {$t('admin.frameleaf_ml_destinations_consent_dialog_action')}
-      </Button>
-    </div>
-  </div>
-</Dialog>
+{#if cloudConsent && consentTarget}
+  <CloudMlConsentDialog
+    bind:open={cloudConsentOpen}
+    destinationId={consentTarget.id}
+    consent={cloudConsent}
+    region={cloudRegion}
+    onRecorded={() => {
+      statusMessage = $t('admin.frameleaf_ml_destinations_consent_recorded', {
+        values: { name: consentTarget?.name ?? '' },
+      });
+      void refresh();
+    }}
+  />
+{/if}
 
 <RestorationModelsDialog destination={restorationTarget} bind:open={restorationOpen} />
 
@@ -655,16 +680,14 @@
         {$t('name')}
         <input type="text" bind:value={draft.name} maxlength="80" required />
       </label>
-      {#if draft.kind !== MlDestinationKind.Runpod}
+      {#if draft.kind !== MlDestinationKind.FrameleafCloud}
         <label>
           {$t('url')}
           <input
             type="url"
             bind:value={draft.url}
-            placeholder={draft.kind === MlDestinationKind.RunpodVideo
-              ? 'https://pod-id-3004.proxy.runpod.net'
-              : 'http://machine-learning:3003'}
-            required={draft.kind === MlDestinationKind.Lan || draft.kind === MlDestinationKind.RunpodVideo}
+            placeholder="http://machine-learning:3003"
+            required={draft.kind === MlDestinationKind.Lan}
           />
         </label>
         <label>
@@ -672,11 +695,8 @@
           <input type="password" bind:value={draft.authToken} autocomplete="off" />
           <small class="muted">{$t('admin.frameleaf_ml_destinations_auth_token_hint')}</small>
         </label>
-        {#if draft.kind === MlDestinationKind.RunpodVideo}
-          <p class="muted">{$t('admin.frameleaf_ml_destinations_runpod_video_hint')}</p>
-        {/if}
       {:else}
-        <p class="muted">{$t('admin.frameleaf_ml_destinations_runpod_hint')}</p>
+        <p class="muted">{$t('admin.frameleaf_ml_destinations_cloud_hint')}</p>
       {/if}
       <fieldset>
         <legend>{$t('admin.frameleaf_ml_destinations_allowed_workloads')}</legend>
@@ -691,7 +711,9 @@
             {$t(mlWorkloadLabelKey(workload))}
           </label>
         {/each}
-        <small class="muted">{$t('admin.frameleaf_ml_destinations_roles_hint')}</small>
+        {#if draft.kind !== MlDestinationKind.FrameleafCloud}
+          <small class="muted">{$t('admin.frameleaf_ml_destinations_roles_hint')}</small>
+        {/if}
       </fieldset>
       {#if canShareHardware(draft)}
         <label class="check">
@@ -748,6 +770,11 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  .link-button {
+    font-size: var(--fl-font-small);
+    color: var(--fl-accent);
+    align-self: center;
   }
   .head-actions,
   .actions,

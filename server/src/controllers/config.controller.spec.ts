@@ -123,13 +123,15 @@ describe('config controllers', () => {
     });
 
     it('should clear a credential', async () => {
-      service.clearCredential.mockResolvedValue({ name: ConfigCredential.HuggingFaceToken, configured: false });
+      service.clearCredential.mockResolvedValue({ name: ConfigCredential.OAuthClientSecret, configured: false });
 
-      const { status, body } = await request(ctx.getHttpServer()).delete('/admin/config/credentials/huggingface-token');
+      const { status, body } = await request(ctx.getHttpServer()).delete(
+        '/admin/config/credentials/oauth-client-secret',
+      );
 
       expect(status).toBe(200);
-      expect(body).toEqual({ name: 'huggingface-token', configured: false });
-      expect(service.clearCredential).toHaveBeenCalledWith(undefined, ConfigCredential.HuggingFaceToken);
+      expect(body).toEqual({ name: 'oauth-client-secret', configured: false });
+      expect(service.clearCredential).toHaveBeenCalledWith(undefined, ConfigCredential.OAuthClientSecret);
     });
   });
 

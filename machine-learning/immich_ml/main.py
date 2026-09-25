@@ -28,6 +28,7 @@ from immich_ml.models.base import InferenceModel
 from immich_ml.models.transforms import decode_pil
 
 from .config import PreloadModelData, log, settings
+from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
     ImageDescriptionAcceleration,
@@ -206,7 +207,7 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
 app = FastAPI(lifespan=lifespan)
 
 
-# Health endpoints stay unauthenticated so RunPod's proxy probes and LAN deployments
+# Health endpoints stay unauthenticated so reverse-proxy probes and LAN deployments
 # (the default UX) keep working unchanged. Auth only kicks in for paths that actually
 # do inference, and only when IMMICH_ML_AUTH_TOKEN is set in the environment.
 # Normalised exempt paths — comparison strips trailing slash and lowercases.
@@ -235,12 +236,12 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         # No token configured -> auth disabled; serve every request. This is the
         # default for local / same-LAN deployments — upstream Immich ships the ML
         # service without authentication. A token is only present when something
-        # sets IMMICH_ML_AUTH_TOKEN, e.g. RunPod Pod mode, whose endpoint is
-        # exposed on the public internet and must stay authenticated.
+        # sets IMMICH_ML_AUTH_TOKEN, e.g. a LAN worker reached through a proxy,
+        # whose endpoint may be exposed beyond this host and must stay authenticated.
         if self._expected_bytes is None:
             return await call_next(request)
         # Token configured: enforce bearer auth on everything except the health
-        # endpoints, which stay open so RunPod's proxy probes keep working.
+        # endpoints, which stay open so proxy health probes keep working.
         normalized_path = _normalize_auth_path(request.url.path)
         if normalized_path in _AUTH_EXEMPT_PATHS:
             return await call_next(request)
@@ -261,8 +262,8 @@ _expected_token = os.environ.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None
 
 # Startup banner so the auth state is visible in worker logs — a single log
 # line is easy to miss when gunicorn boots, so the banner mirrors other Immich
-# startup output. Bearer auth is enforced only when a token is set (e.g. RunPod
-# Pod mode injects one); otherwise the service is open, matching upstream
+# startup output. Bearer auth is enforced only when a token is set (e.g. a LAN
+# worker configured with one); otherwise the service is open, matching upstream
 # Immich, which ships the ML service without authentication.
 _auth_state = (
     "ENABLED  (bearer token required for /predict)"
@@ -341,6 +342,8 @@ def hardware() -> ORJSONResponse:
             "torchCudaAvailable": torch_cuda_available,
             "cudaDeviceCount": cuda_device_count,
             "preferredAcceleration": preferred_acceleration,
+            # FL-159: which GPU this container reaches, through which backend (Hardware & GPU).
+            "container": container_report(providers, openvino_device_ids),
         }
     )
 

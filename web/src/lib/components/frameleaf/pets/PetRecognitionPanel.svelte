@@ -39,8 +39,7 @@
       case MlDestinationKind.Lan: {
         return mdiLanConnect;
       }
-      case MlDestinationKind.Runpod:
-      case MlDestinationKind.RunpodVideo: {
+      case MlDestinationKind.FrameleafCloud: {
         return mdiCloudOutline;
       }
       default: {

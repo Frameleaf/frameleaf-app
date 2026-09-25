@@ -46,8 +46,10 @@ jobs:
           - origin-v3.1.0-to-fork
           - current-fork-to-official-v3.1.0
           - official-v3.1.0-to-fork-return
+          - official-v3.1.0-to-fork-to-official-v3.1.0-to-fork
     env:
       FORK_ROUNDTRIP_LANE: ${{ matrix.lane }}
+      FORK_ROUNDTRIP_EVIDENCE_DIR: ${{ github.workspace }}/fork-roundtrip-evidence
       GITHUB_TOKEN: ${{ github.token }}
       OFFICIAL_IMMICH_TAG: v3.1.0
     steps:
@@ -73,4 +75,7 @@ jobs:
         if: always()
         with:
           name: fork-roundtrip-${{ matrix.lane }}
-          path: fork-roundtrip-${{ matrix.lane }}.log
+          # The evidence JSON names the candidate commit and image id and the certified official digest.
+          path: |
+            fork-roundtrip-${{ matrix.lane }}.log
+            fork-roundtrip-evidence/

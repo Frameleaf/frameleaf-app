@@ -37,3 +37,43 @@ export const lockForkWrites = async (tx: Transaction<DB>, message: string) => {
     throw new ConflictException(message);
   }
 };
+
+/**
+ * FL-44 (FN-304): the message every Frameleaf-owned public table refuses a write with while a
+ * database handoff holds the schema, so callers and specs can recognise it.
+ */
+export const FORK_HANDOFF_WRITE_REFUSAL = 'This change is unavailable during database handoff';
+
+/**
+ * FL-44 (FN-304): the guard for Frameleaf-owned tables in the public schema (media operations,
+ * Studio, preservation, render workers, Takeout, physical files). Those tables exist whether or not
+ * the fork schema was installed, so a server without `immich_fork.state` keeps writing them; once
+ * the fork schema exists the same rule as `lockForkWrites` applies — the phase is held steady
+ * (`FOR SHARE`) and the write is refused while the phase is not writable or a handoff or return
+ * reconciliation runs, so nothing is written that the handoff would not carry.
+ */
+export const lockPublicForkWrites = async (tx: Transaction<DB>, message = FORK_HANDOFF_WRITE_REFUSAL) => {
+  const exists = await sql<{ table: string | null }>`SELECT to_regclass('immich_fork.state')::text AS table`.execute(
+    tx,
+  );
+  if (!exists.rows[0]?.table) {
+    return;
+  }
+  if (!(await canWriteFork(tx))) {
+    throw new ConflictException(message);
+  }
+};
+
+/**
+ * FL-44 (FN-304): runs `write` in a transaction that first takes `lockPublicForkWrites`. Use it for
+ * single-statement writers that otherwise would not open a transaction.
+ */
+export const withPublicForkWrites = <T>(
+  db: Kysely<DB>,
+  write: (tx: Transaction<DB>) => Promise<T>,
+  message = FORK_HANDOFF_WRITE_REFUSAL,
+): Promise<T> =>
+  db.transaction().execute(async (tx) => {
+    await lockPublicForkWrites(tx, message);
+    return write(tx);
+  });

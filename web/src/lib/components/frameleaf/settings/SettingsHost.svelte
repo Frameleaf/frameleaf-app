@@ -77,6 +77,7 @@
     mdiChevronDoubleLeft,
     mdiChevronDoubleRight,
     mdiChevronRight,
+    mdiCloudOutline,
     mdiDesktopTowerMonitor,
     mdiFolderOutline,
     mdiHarddisk,
@@ -149,6 +150,11 @@
       title: $t('frameleaf_settings_area_processing'),
       description: $t('frameleaf_settings_area_processing_description'),
       icon: mdiDesktopTowerMonitor,
+    },
+    cloud: {
+      title: $t('frameleaf_settings_area_cloud'),
+      description: $t('frameleaf_settings_area_cloud_description'),
+      icon: mdiCloudOutline,
     },
     security: {
       title: $t('frameleaf_settings_area_security'),
@@ -262,6 +268,8 @@
     'workers',
     'routing',
     'render-workers',
+    'cloud-processing',
+    'hardware',
     'deduplication',
     'mode',
     'backups',
@@ -305,6 +313,7 @@
           title: $t(tool.titleKey),
           description: $t(tool.descriptionKey),
           group: $t('frameleaf_cc_group_tools'),
+          icon: tool.icon,
           onSelect: () => void navigate('utilities', tool.id),
         });
       }

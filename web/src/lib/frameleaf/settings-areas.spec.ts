@@ -108,6 +108,7 @@ describe('Frameleaf settings areas', () => {
       'sharing',
       'care',
       'processing',
+      'cloud',
       'security',
       'notifications',
       'server',

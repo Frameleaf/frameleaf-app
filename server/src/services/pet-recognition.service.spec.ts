@@ -162,16 +162,16 @@ describe(PetRecognitionService.name, () => {
       });
     });
 
-    it('refuses a cloud destination without recorded consent', async () => {
+    it('refuses Frameleaf Cloud, which never runs pet recognition (FL-159)', async () => {
       mocks.mlDestination.getById.mockResolvedValue({
-        ...mlDestinationStub.runPod,
+        ...mlDestinationStub.frameleafCloud,
         workloads: [MlWorkload.PetRecognition],
       });
 
       await expect(sut.getStatus(ownerId)).resolves.toMatchObject({
         available: false,
-        reason: PetRecognitionUnavailableReason.ConsentMissing,
-        destination: { kind: MlDestinationKind.RunPod },
+        reason: PetRecognitionUnavailableReason.WorkloadNotAllowed,
+        destination: { kind: MlDestinationKind.FrameleafCloud },
       });
     });
 
@@ -287,14 +287,14 @@ describe(PetRecognitionService.name, () => {
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
 
-    it('fails the run with the refusal when the cloud destination has no consent, sending nothing', async () => {
+    it('fails the run with the refusal when routed to Frameleaf Cloud, sending nothing (FL-159)', async () => {
       mocks.mlDestination.getById.mockResolvedValue({
-        ...mlDestinationStub.runPod,
+        ...mlDestinationStub.frameleafCloud,
         workloads: [MlWorkload.PetRecognition],
       });
 
       await expect(sut.handleRecognize({ id: assetId, runId })).resolves.toBe(JobStatus.Failed);
-      expect(pets.failRun).toHaveBeenCalledWith(runId, expect.stringContaining('consent-missing'));
+      expect(pets.failRun).toHaveBeenCalledWith(runId, expect.stringContaining('workload-not-allowed'));
       expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
       expect(pets.recordRunProgress).not.toHaveBeenCalled();
     });

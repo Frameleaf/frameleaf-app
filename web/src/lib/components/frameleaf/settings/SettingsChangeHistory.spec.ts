@@ -20,10 +20,10 @@ describe('SettingsChangeHistory', () => {
           actorId: 'admin',
           actorName: 'Grace',
           kind: SystemConfigHistoryKind.Credential,
-          title: 'Updated RunPod API key',
+          title: 'Updated OAuth client secret',
           changes: [
             {
-              path: 'machineLearning.runpod.apiKey',
+              path: 'oauth.clientSecret',
               before: null,
               after: null,
               credential: SystemConfigHistoryCredentialChange.Replaced,
@@ -55,7 +55,7 @@ describe('SettingsChangeHistory', () => {
     });
 
     const titles = screen.getAllByRole('article').map((article) => article.querySelector('strong')?.textContent);
-    expect(titles).toEqual(['Updated RunPod API key', '2 preferences changed', '2 settings changed']);
+    expect(titles).toEqual(['Updated OAuth client secret', '2 preferences changed', '2 settings changed']);
     expect(screen.getByText('Ada · macOS · Web')).toBeInTheDocument();
 
     const preference = screen.getAllByRole('article')[1];
