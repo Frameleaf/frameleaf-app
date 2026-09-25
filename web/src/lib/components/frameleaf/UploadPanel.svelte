@@ -1,7 +1,6 @@
 <script lang="ts">
   import '$lib/frameleaf/tokens.css';
   import { cancelRemainingUploads, fileUploadHandler, uploadExecutionQueue } from '$lib/utils/file-uploader';
-  import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { UploadState, type UploadAsset } from '$lib/types';
@@ -12,12 +11,10 @@
     mdiAlertCircleOutline,
     mdiCheckCircle,
     mdiChevronDown,
-    mdiCircleOutline,
     mdiClose,
     mdiCloudCheckOutline,
     mdiContentDuplicate,
     mdiImageOutline,
-    mdiOpenInNew,
     mdiProgressUpload,
     mdiRefresh,
     mdiTrashCan,
@@ -35,7 +32,7 @@
    * simulation — every row reflects a real `fileUploadHandler` request.
    */
 
-  const { stats, isDismissible, isUploading, remainingUploads } = uploadAssetsStore;
+  const { stats, isUploading, remainingUploads } = uploadAssetsStore;
 
   let minimized = $state(false);
   let concurrency = $state(uploadExecutionQueue.concurrency);
@@ -66,25 +63,55 @@
   const weightedBytes = $derived.by(() => {
     let sum = 0;
     for (const item of $uploadAssetsStore) {
-      if (item.state === UploadState.DONE || item.state === UploadState.DUPLICATED) {
-        sum += item.file.size;
-      } else if (item.state === UploadState.STARTED) {
+      if (item.state === UploadState.STARTED) {
         sum += (item.file.size * (item.progress ?? 0)) / 100;
+      } else if (item.state !== UploadState.PENDING) {
+        // Done, duplicate and failed rows are finished, as in the prototype's `uploadSummary`.
+        sum += item.file.size;
       }
     }
     return sum;
   });
   const percent = $derived(totalBytes > 0 ? Math.round((weightedBytes / totalBytes) * 100) : 0);
 
+  /** `uploadSummary` (system-data.mjs:422-423): "Uploading 3 of 10" counts the file in flight. */
+  const processed = $derived(Math.min($stats.total, $stats.total - $remainingUploads + 1));
   const label = $derived(
     active
-      ? $t('frameleaf_transfer_uploading_count', {
-          values: { processed: $stats.total - $remainingUploads, total: $stats.total },
-        })
+      ? $t('frameleaf_transfer_uploading_count', { values: { processed, total: $stats.total } })
       : $stats.errors > 0
         ? $t('frameleaf_transfer_upload_needs_attention', { values: { count: $stats.errors } })
         : $t('frameleaf_transfer_upload_complete'),
   );
+
+  /** The header's second line, also read out by the minimised pill (`UploadPanel.jsx:296-302`). */
+  const counts = $derived(
+    [
+      $t('frameleaf_transfer_count_uploaded', { values: { count: $stats.success } }),
+      $stats.duplicates ? $t('frameleaf_transfer_count_duplicates', { values: { count: $stats.duplicates } }) : null,
+      $stats.errors ? $t('frameleaf_transfer_count_failed', { values: { count: $stats.errors } }) : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  );
+
+  /** `STATUS_TEXT` in `UploadPanel.jsx:262-268`. */
+  const statusText = (item: UploadAsset) => {
+    switch (item.state) {
+      case UploadState.STARTED: {
+        return `${$t('frameleaf_transfer_status_uploading')} ${Math.round(item.progress ?? 0)}%`;
+      }
+      case UploadState.DONE: {
+        return $t('asset_uploaded');
+      }
+      case UploadState.DUPLICATED: {
+        return $t(item.isTrashed ? 'asset_skipped_in_trash' : 'frameleaf_transfer_status_duplicate');
+      }
+      default: {
+        return $t('frameleaf_transfer_status_pending');
+      }
+    }
+  };
 
   const retryItem = async (item: UploadAsset) => {
     uploadAssetsStore.removeItem(item.id);
@@ -117,32 +144,29 @@
 {#if $isUploading}
   <div class="frameleaf fl-panel-wrap" data-theme={appTheme}>
     {#if minimized}
+      <!-- UploadPanel.jsx:315-326: ring, label and overall percent. -->
       <button
         type="button"
         class="fl-pill"
         in:motionScale={{ duration: 250, easing: quartInOut }}
-        aria-label={`${$t('frameleaf_transfer_show_uploads')}. ${label}`}
+        aria-label={`${$t('frameleaf_transfer_show_uploads')}. ${label}. ${counts}`}
         onclick={() => (minimized = false)}
       >
         <span class="fl-ring" style={`--pct: ${percent}`} aria-hidden="true"></span>
-        <strong>{$remainingUploads > 0 ? $remainingUploads.toLocaleString($locale) : $stats.errors}</strong>
+        <strong>{label}</strong>
+        <span>{percent}%</span>
       </button>
     {:else}
-      <section class="fl-panel" aria-label={$t('upload')} in:motionScale={{ duration: 250, easing: quartInOut }}>
+      <section
+        class="fl-panel"
+        aria-label={$t('frameleaf_transfer_uploads')}
+        in:motionScale={{ duration: 250, easing: quartInOut }}
+      >
         <header class="fl-panel-head">
           <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
           <div class="fl-panel-head-text">
             <strong aria-live="polite">{label}</strong>
-            <span>
-              {$t('frameleaf_transfer_count_uploaded', { values: { count: $stats.success } })}
-              {#if $stats.duplicates}
-                · {$t('frameleaf_transfer_count_duplicates', { values: { count: $stats.duplicates } })}
-              {/if}
-              {#if $stats.errors}
-                · {$t('frameleaf_transfer_count_failed', { values: { count: $stats.errors } })}
-              {/if}
-              · {getByteUnitString(totalBytes, $locale)}
-            </span>
+            <span>{counts} · {getByteUnitString(totalBytes, $locale)}</span>
           </div>
           <button
             type="button"
@@ -168,9 +192,7 @@
           class="fl-progress"
           class:has-errors={$stats.errors > 0}
           role="progressbar"
-          aria-label={$t('frameleaf_transfer_uploading_count', {
-            values: { processed: $stats.total - $remainingUploads, total: $stats.total },
-          })}
+          aria-label={$t('frameleaf_transfer_overall_progress')}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -194,10 +216,7 @@
               </span>
               <span class="fl-name" title={item.file.name}>{item.file.name}</span>
               <span class="fl-state">
-                {#if item.state === UploadState.PENDING}
-                  <Icon icon={mdiCircleOutline} size="18" aria-hidden="true" />
-                  <span class="fl-sr-only">{$t('frameleaf_transfer_status_pending')}</span>
-                {:else if item.state === UploadState.STARTED}
+                {#if item.state === UploadState.PENDING || item.state === UploadState.STARTED}
                   <span
                     class="fl-ring"
                     style={`--pct: ${item.progress ?? 0}`}
@@ -209,62 +228,29 @@
                   ></span>
                 {:else if item.state === UploadState.DONE}
                   <Icon icon={mdiCheckCircle} size="18" class="fl-success" aria-hidden="true" />
-                  <span class="fl-sr-only">{$t('asset_uploaded')}</span>
+                  <span class="fl-sr-only">{statusText(item)}</span>
                 {:else if item.state === UploadState.DUPLICATED}
                   {#if item.isTrashed}
                     <Icon icon={mdiTrashCan} size="18" class="fl-muted-icon" aria-hidden="true" />
                   {:else}
                     <Icon icon={mdiContentDuplicate} size="18" class="fl-warning" aria-hidden="true" />
                   {/if}
-                  <span class="fl-sr-only">{$t(item.isTrashed ? 'asset_skipped_in_trash' : 'asset_skipped')}</span>
+                  <span class="fl-sr-only">{statusText(item)}</span>
                 {:else if item.state === UploadState.ERROR}
                   <Icon icon={mdiAlertCircleOutline} size="18" class="fl-danger" aria-hidden="true" />
-                  <span class="fl-sr-only">{$t('error')}</span>
+                  <span class="fl-sr-only">{$t('frameleaf_transfer_status_failed')}</span>
                 {/if}
               </span>
               <span class="fl-meta">
                 {#if item.state === UploadState.ERROR}
-                  {typeof item.error === 'string' ? item.error : $t('error')}
-                {:else if item.state === UploadState.STARTED}
-                  {item.message ?? $t('asset_uploading')} {Math.round(item.progress ?? 0)}%
+                  {typeof item.error === 'string' ? item.error : $t('frameleaf_transfer_status_failed')}
                 {:else}
-                  {getByteUnitString(item.file.size, $locale)}
+                  {getByteUnitString(item.file.size, $locale)} · {statusText(item)}
                 {/if}
               </span>
-              {#if item.state === UploadState.DUPLICATED}
-                <span class="fl-actions">
-                  {#if item.assetId}
-                    <a
-                      href={item.isTrashed
-                        ? Route.viewTrashedAsset({ id: item.assetId })
-                        : Route.viewAsset({ id: item.assetId })}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={$t('view')}
-                    >
-                      <Icon icon={mdiOpenInNew} size="16" aria-hidden="true" />
-                    </a>
-                  {/if}
-                  <button
-                    type="button"
-                    aria-label={$t('dismiss')}
-                    onclick={() => uploadAssetsStore.removeItem(item.id)}
-                  >
-                    <Icon icon={mdiClose} size="16" aria-hidden="true" />
-                  </button>
-                </span>
-              {:else if item.state === UploadState.ERROR}
-                <span class="fl-actions">
-                  <button type="button" aria-label={$t('retry_upload')} onclick={() => retryItem(item)}>
-                    <Icon icon={mdiRefresh} size="16" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={$t('dismiss')}
-                    onclick={() => uploadAssetsStore.removeItem(item.id)}
-                  >
-                    <Icon icon={mdiClose} size="16" aria-hidden="true" />
-                  </button>
+              {#if item.state === UploadState.STARTED}
+                <span class="fl-mini" aria-hidden="true">
+                  <span style={`width: ${item.progress ?? 0}%`}></span>
                 </span>
               {/if}
             </li>
@@ -291,7 +277,7 @@
                 {$t('frameleaf_transfer_retry_failed')}
               </button>
             {/if}
-            {#if $isDismissible}
+            {#if $stats.errors > 0}
               <button type="button" class="fl-button" onclick={() => uploadAssetsStore.dismissErrors()}>
                 {$t('frameleaf_transfer_dismiss_errors')}
               </button>
@@ -395,7 +381,7 @@
   .fl-row {
     display: grid;
     grid-template-columns: 1.75rem 1fr auto;
-    grid-template-areas: 'thumb name state' 'thumb meta actions';
+    grid-template-areas: 'thumb name state' 'thumb meta state' 'thumb mini state';
     align-items: center;
     column-gap: 0.5rem;
     row-gap: 0.125rem;
@@ -444,27 +430,23 @@
     color: var(--fl-muted);
     font-size: 0.6875rem;
   }
-  .fl-actions {
-    grid-area: actions;
-    display: inline-flex;
-    gap: 0.25rem;
-    justify-self: end;
+  .fl-row[data-state='error'] .fl-meta {
+    color: var(--fl-danger);
   }
-  .fl-actions button,
-  .fl-actions a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.125rem;
-    color: var(--fl-muted);
-    border: 0;
-    background: transparent;
-    border-radius: var(--fl-radius);
+  /* upload.css:263-275: the thin per-row bar under an upload in flight. */
+  .fl-mini {
+    grid-area: mini;
+    display: block;
+    block-size: 0.1875rem;
+    overflow: hidden;
+    border-radius: 0.125rem;
+    background: var(--fl-border);
   }
-  .fl-actions button:hover,
-  .fl-actions a:hover {
-    background: var(--fl-canvas);
-    color: var(--fl-text);
+  .fl-mini span {
+    display: block;
+    block-size: 100%;
+    background: var(--fl-accent);
+    transition: width var(--fl-motion) linear;
   }
   :global(.fl-success) {
     color: var(--fl-accent);
@@ -535,21 +517,33 @@
     background: var(--fl-accent);
     border-color: var(--fl-accent);
   }
+  /* upload.css:317-348: a capsule with the ring, the label and the overall percent. */
   .fl-pill {
-    position: relative;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    inline-size: 3.5rem;
-    block-size: 3.5rem;
+    gap: 0.625rem;
+    min-block-size: 2.5rem;
+    padding: 0.375rem 0.875rem 0.375rem 0.5rem;
     color: var(--fl-text);
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: 50%;
+    border-radius: 999px;
     box-shadow: var(--fl-shadow-2);
   }
+  .fl-pill:hover {
+    background: var(--fl-raised);
+  }
+  .fl-pill .fl-ring {
+    inline-size: 1.625rem;
+    block-size: 1.625rem;
+  }
   .fl-pill strong {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .fl-pill span:last-child {
+    color: var(--fl-muted);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
   }
 </style>
