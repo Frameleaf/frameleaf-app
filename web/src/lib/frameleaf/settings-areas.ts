@@ -30,6 +30,7 @@ export type SettingsAreaId =
   | 'editing'
   | 'care'
   | 'processing'
+  | 'cloud'
   | 'security'
   | 'notifications'
   | 'server'
@@ -102,8 +103,11 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'processing',
     group: 'server',
-    sections: ['workers', 'routing', 'queues', 'cloud-ml', 'render-workers', 'nightly-tasks'],
+    sections: ['workers', 'hardware', 'routing', 'queues', 'render-workers', 'nightly-tasks'],
   },
+  // FL-159 (handoff §3.1): Frameleaf Cloud, after Compute & jobs in "Your server". This branch adds
+  // Cloud processing; the account, plan, licence, remote access and backup pages join it (FL-154+).
+  { id: 'cloud', group: 'server', sections: ['cloud-processing'] },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
   {
@@ -162,6 +166,7 @@ export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object
   utilities: '#636366',
   trash: '#8e8e93',
   processing: '#636366',
+  cloud: '#0a84ff',
   security: '#0a84ff',
   notifications: '#ff453a',
   server: '#8e8e93',
@@ -413,9 +418,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     workers: 'workers',
     routing: 'workers',
     'render-workers': 'workers',
+    hardware: 'workers',
     queues: 'job_management',
-    // FL-159: Frameleaf Cloud sits where the template's provider manager sat.
-    'cloud-ml': 'workers',
     'nightly-tasks': 'schedules',
   },
   security: {
