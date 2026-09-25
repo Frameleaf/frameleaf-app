@@ -197,9 +197,9 @@ const actions = {
     },
   ],
   "add-a-person-draw-bounding-box-search-existing-person-confirm": [
-    "partial",
+    "fixed",
     ["V-28"],
-    "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face and batch Save face tags ported (FL-38); the stale-revision banner is deferred by the owner and detected face boxes stay read-only until the server can update a face box",
+    "Draw-to-tag, numeric inputs, multi-face session, Undo, Remove face, batch Save face tags and the stale-revision banner (FL-38); detected faces move and resize through the revision-checked PATCH /faces/:id, and every correction is kept in the person's correction history (FL-57)",
     {
       prototype: [`${P}/FaceTagger.jsx`, `${P}/face-tags.mjs`],
       production: [`${W}/lib/components/frameleaf/FaceTagger.svelte`],
@@ -1581,13 +1581,14 @@ const routes = {
   ],
   "/people/[personId]/[[photos=photos]]/[[assetId=id]]": [
     "fixed",
-    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8"],
-    "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); PD-9 Correction history stays as an extra action pending an owner decision",
+    ["PD-1", "PD-2", "PD-3", "PD-4", "PD-5", "PD-6", "PD-7", "PD-8", "PD-9"],
+    "Person hero toolbar, facts line, name editor, Fix incorrect match panel and Frameleaf featured/merge/birthday dialogs (codex/FL-37-people-faces); Fix incorrect match splits selected faces into an existing or new person with revision-checked corrections, and PD-9 Correction history is FL-57's paginated history with Undo (the story requires it; FL-146 defaults accepted 2026-09-25)",
     [`${P}/PersonDetail.jsx`, `${P}/People.jsx`],
     [
       `${W}/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
       `${W}/lib/components/frameleaf/people/PersonHero.svelte`,
       `${W}/lib/components/frameleaf/people/FixMatchPanel.svelte`,
+      `${W}/lib/components/frameleaf/people/CorrectionHistoryPanel.svelte`,
     ],
   ],
   "/people/manage": [
@@ -1598,16 +1599,16 @@ const routes = {
     [`${W}/routes/(user)/people/manage/+page.svelte`],
   ],
   "/pets": [
-    "in-flight",
+    "intentional-product-change",
     [],
-    "FL-58 pets (beyond the prototype)",
+    "FL-58 pets beyond the prototype's tag query: durable named cat/dog profiles, checksum-guarded review with Undo, CLIP-based recognition on the routed destination (this server, a computer on the network or Frameleaf Cloud) with actionable refusals; composed from the People grid and grouped-list patterns",
     [`${P}/App.jsx`],
     [`${W}/routes/(user)/pets/+page.svelte`],
   ],
   "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]": [
-    "in-flight",
+    "intentional-product-change",
     [],
-    "FL-58 pets (beyond the prototype)",
+    "FL-58 pet page (beyond the prototype): the pet's confirmed photos through the petIds search filter, and its decisions with stale regions to check",
     [`${P}/App.jsx`],
     [
       `${W}/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte`,
