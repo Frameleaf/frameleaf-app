@@ -397,17 +397,17 @@
       "version": 2
     },
     {
-      "bytes": 15224,
+      "bytes": 15200,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceSha256": "bdec0d0d9a2a2866a06fd1ef879f20218fd857f13e56ff49b76956c0e114206c",
+      "sourceSha256": "3a8c44cdedd7bc145f2f1098a0d20b641ebb9185fff226ae31e02dea96f66980",
       "title": "Feature Reference \u2014 Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "verification": "Confluence page read back at version 4 with source hash and reviewed plan guidance",
+      "verification": "FL-159 Confluence page read back at version 5 with source hash 3a8c44cd and 15200 bytes in the header; compared with version 4 (which matched source bdec0d0d apart from the usual Confluence link rewrites and markdown normalization), the only differences are the header and the three Telemetry and Automatic Reporting lines that now say Frameleaf Cloud / every machine-learning image; no RunPod reference remains on the page.",
       "verified": true,
-      "verifiedAt": "2026-09-23T12:00:16Z",
-      "version": 4
+      "verifiedAt": "2026-09-25T16:27:29.416Z",
+      "version": 5
     },
     {
       "bytes": 3750,
@@ -423,17 +423,17 @@
       "verifiedAt": "2026-09-23T14:10:06.000Z"
     },
     {
-      "bytes": 15222,
+      "bytes": 15103,
       "category": "features",
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
-      "sourceSha256": "91eafee35b4580cbd054a1bd1088b3146ba5e797e132be6609b0023d954f3610",
+      "sourceSha256": "73970170cae1681c7f8dcd30facaa4a3dbd8db3676dc8f9661531a141ccde712",
       "title": "Feature Reference \u2014 Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
-      "verification": "Confluence page read back at version 4 with source hash and sample first guidance",
+      "verification": "FL-159 Confluence page read back at version 5 with source hash 73970170 and 15103 bytes in the header; compared with version 4 (which matched source 91eafee3 apart from the usual Confluence link rewrites), the only differences are the header, the fallback sentence in Descriptions and Tags and the Frameleaf Cloud destination bullet and sentence under Fallback model behavior; no RunPod reference remains on the page.",
       "verified": true,
-      "verifiedAt": "2026-09-23T12:00:16Z",
-      "version": 4
+      "verifiedAt": "2026-09-25T16:29:41.087Z",
+      "version": 5
     },
     {
       "bytes": 3873,
@@ -767,17 +767,17 @@
       "version": 2
     },
     {
-      "bytes": 27655,
+      "bytes": 27536,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceSha256": "1e855050dc9b3ba6a63a49515e0d363d1e0e301f14515107533617dd5ac4742e",
+      "sourceSha256": "d31b9970cecad9d978e8df3031ddb560f120c81bbb983e4d769efa04e6fa2868",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "FL-142 local review correction read back: source hash, new source revision prerequisite for manual rebuild, existing fresh/reused candidate rejection before scheduling, failed-job recovery and preserved historical delivery checkpoints. Not publication or runtime qualification.",
+      "verification": "FL-159 Confluence page read back at version 12 with source hash d31b9970 and 27536 bytes in the header; compared with version 11 (which matched source 1e855050), the only differences are the header status paragraph, the ML hardware suffix paragraph, the Frameleaf Cloud processing paragraph (Workers and Endpoints cited by repository path because the care branch is not pushed) and the valid-targets sentence; the preserved historical delivery checkpoints are unchanged and no RunPod reference remains. Not publication or runtime qualification.",
       "verified": true,
-      "verifiedAt": "2026-09-21T20:31:19.757Z",
-      "version": 11
+      "verifiedAt": "2026-09-25T16:33:29.967Z",
+      "version": 12
     },
     {
       "bytes": 411,
