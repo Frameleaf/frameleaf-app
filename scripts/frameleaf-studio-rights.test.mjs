@@ -84,6 +84,12 @@ test('the owner approved every one of the 210 reviewed resources on 2026-09-25, 
   }
   const mirror = await read(SERVER_MIRROR_PATH);
   assert.equal((mirror.match(/localRuntime: 'allowed'/g) ?? []).length, 210);
+  // FL-146 comment 34944: MusicGen-small (CC-BY-NC-4.0) is withheld from hosted use only.
+  assert.equal((mirror.match(/hostedUse: 'allowed'/g) ?? []).length, 209);
+  assert.match(
+    mirror,
+    /'model:Xenova\/musicgen-small': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*hostedUse:\n {8}'CC-BY-NC-4\.0/s,
+  );
   assert.equal((mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length, 211);
   assert.match(mirror, /STUDIO_DISTRIBUTION_APPROVAL = false;/);
 });
@@ -117,5 +123,43 @@ test('an approval covers only the exact row it was given; new, changed and unkno
   assert.throws(
     () => buildServerMirror(minimal(resources), approval([]).replace('2026-09-25', 'yesterday')),
     /approvedOn must be a date/,
+  );
+});
+
+test('an approved row may withhold a use, with its reason, and the withheld use stays blocked', () => {
+  const resources = [row('model:M'), row('model:N')];
+  const approval = (entries) =>
+    JSON.stringify({
+      schemaVersion: 1,
+      approvedBy: 'Owner',
+      approvedOn: '2026-09-25',
+      source: 'FL-146',
+      uses: ['redistribution', 'localRuntime', 'hostedUse'],
+      resources: entries,
+    });
+  const text = buildServerMirror(
+    minimal(resources),
+    approval([
+      { id: 'model:M', sha256: approvalRowDigest(resources[0]), excludedUses: { hostedUse: 'CC-BY-NC-4.0' } },
+      { id: 'model:N', sha256: approvalRowDigest(resources[1]) },
+    ]),
+  );
+  assert.match(text, /'model:M': \{[^}]*localRuntime: 'allowed',\n {4}hostedUse: 'blocked',[^}]*restrictions: \{\n {6}hostedUse: 'CC-BY-NC-4.0',/s);
+  assert.match(text, /'model:N': \{[^}]*hostedUse: 'allowed',[^}]*restrictions: \{\},/s);
+  assert.throws(
+    () =>
+      buildServerMirror(
+        minimal(resources),
+        approval([{ id: 'model:M', sha256: approvalRowDigest(resources[0]), excludedUses: { printing: 'x' } }]),
+      ),
+    /excludes unknown use printing/,
+  );
+  assert.throws(
+    () =>
+      buildServerMirror(
+        minimal(resources),
+        approval([{ id: 'model:M', sha256: approvalRowDigest(resources[0]), excludedUses: { hostedUse: ' ' } }]),
+      ),
+    /must give the reason hostedUse is excluded/,
   );
 });
