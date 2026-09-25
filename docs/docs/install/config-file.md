@@ -164,7 +164,8 @@ The default configuration looks like this:
     }
   },
   "newVersionCheck": {
-    "enabled": true
+    "enabled": false,
+    "channel": "stable"
   },
   "nightlyTasks": {
     "clusterNewFaces": true,
