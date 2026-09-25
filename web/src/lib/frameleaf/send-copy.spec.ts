@@ -1,4 +1,5 @@
 import { AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import { toastManager } from '@immich/ui';
 import {
   canSendCopies,
   isSendable,
@@ -7,6 +8,7 @@ import {
   SEND_COPY_LIMIT,
   SEND_COPY_MAX_BYTES,
   sendCopies,
+  sendCopiesWithFeedback,
   sendCopyPermitted,
   type SendCopyDeps,
 } from '$lib/frameleaf/send-copy';
@@ -226,5 +228,36 @@ describe('sendCopies', () => {
     const ids = Array.from({ length: SEND_COPY_LIMIT + 1 }, (_, index) => `id-${index}`);
     expect((await sendCopies(ids, dependencies, true)).outcome).toBe('too-many');
     expect(dependencies.getInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe('byte cap for items without a recorded size', () => {
+  it('counts unknown sizes as they arrive and gives up past the cap', async () => {
+    const dependencies = deps({
+      maxBytes: 10,
+      getOriginal: vi.fn(() => Promise.resolve(new Blob(['0123456789ab'], { type: 'image/jpeg' }))),
+    });
+    const result = await sendCopies(['a'], dependencies, true);
+    expect(result.outcome).toBe('too-large');
+    expect(dependencies.share).not.toHaveBeenCalled();
+  });
+
+  it('still sends a set that stays under the cap', async () => {
+    const result = await sendCopies(['a', 'b'], deps({ maxBytes: 100 }), true);
+    expect(result.outcome).toBe('sent');
+  });
+});
+
+describe('sendCopiesWithFeedback', () => {
+  it('reports a failed partner lookup instead of failing silently', async () => {
+    const danger = vi.spyOn(toastManager, 'danger').mockImplementation(() => {});
+    const dependencies = deps(
+      { getLocationHiddenOwners: vi.fn(() => Promise.reject(new Error('offline'))) },
+      { a: asset('a', { ownerId: 'partner' }) },
+    );
+    await expect(sendCopiesWithFeedback(['a'], dependencies, true)).resolves.toBeUndefined();
+    expect(danger).toHaveBeenCalledOnce();
+    expect(dependencies.share).not.toHaveBeenCalled();
+    danger.mockRestore();
   });
 });

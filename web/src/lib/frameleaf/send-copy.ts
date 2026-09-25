@@ -98,6 +98,8 @@ export type SendCopyDeps = {
   onPreparing?: (count: number) => void;
   /** Called once the downloads have settled, before the share sheet opens. */
   onPrepared?: () => void;
+  /** The byte cap; `SEND_COPY_MAX_BYTES` unless a test sets a smaller one. */
+  maxBytes?: number;
 };
 
 export type PreparedCopies = {
@@ -218,20 +220,37 @@ export const prepareCopies = async (ids: readonly string[], deps: SendCopyDeps):
   const sendable = infos.filter((info) => !hidden.has(info.ownerId));
   prepared.locationHidden = infos.length - sendable.length;
 
-  const bytes = sendable.reduce((total, info) => total + (info.exifInfo?.fileSizeInByte ?? 0), 0);
-  if (bytes > SEND_COPY_MAX_BYTES) {
+  // Known sizes are checked before anything is downloaded; an item without a recorded size is
+  // counted as it arrives, and the set is abandoned as soon as the total passes the cap.
+  const maxBytes = deps.maxBytes ?? SEND_COPY_MAX_BYTES;
+  const known = sendable.reduce((total, info) => total + (info.exifInfo?.fileSizeInByte ?? 0), 0);
+  if (known > maxBytes) {
     return { outcome: 'too-large', prepared };
   }
 
   if (sendable.length > 0) {
     deps.onPreparing?.(sendable.length);
   }
+  let received = 0;
+  let overCap = false;
   const downloads = await mapSettled(sendable, SEND_COPY_CONCURRENCY, async (info) => {
+    if (overCap) {
+      throw new RangeError('over the byte cap');
+    }
     const blob = await deps.getOriginal(info.id);
+    received += blob.size;
+    if (received > maxBytes) {
+      overCap = true;
+      throw new RangeError('over the byte cap');
+    }
     return new File([blob], fileName(info, blob, deps.servesEdited), {
       type: blob.type || info.originalMimeType || 'application/octet-stream',
     });
   });
+  if (overCap) {
+    deps.onPrepared?.();
+    return { outcome: 'too-large', prepared };
+  }
   for (const download of downloads) {
     if (download.status === 'fulfilled') {
       prepared.files.push(download.value);
@@ -351,8 +370,15 @@ const report = (result: SendCopyResult) => {
   }
 };
 
-/** The entry points' action: one send at a time, with progress and the outcome in toasts. */
-export const sendCopiesWithFeedback = async (ids: readonly string[]): Promise<void> => {
+/**
+ * The entry points' action: one send at a time, with progress and the outcome in toasts. Nothing
+ * fails silently: an unexpected error (a partner lookup that fails, say) is reported as a failure.
+ */
+export const sendCopiesWithFeedback = async (
+  ids: readonly string[],
+  overrides: Partial<SendCopyDeps> = {},
+  permitted: boolean = sendCopyPermitted(),
+): Promise<void> => {
   if (sending || ids.length === 0) {
     return;
   }
@@ -368,8 +394,11 @@ export const sendCopiesWithFeedback = async (ids: readonly string[]): Promise<vo
         });
       },
       onPrepared: () => closePreparing?.(),
+      ...overrides,
     };
-    report(await sendCopies(ids, deps));
+    report(await sendCopies(ids, deps, permitted));
+  } catch {
+    report({ files: [], skipped: 0, locationHidden: 0, failed: ids.length, outcome: 'failed' });
   } finally {
     closePreparing?.();
     sending = false;
