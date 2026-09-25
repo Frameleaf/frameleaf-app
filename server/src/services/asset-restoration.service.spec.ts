@@ -359,6 +359,8 @@ describe(AssetRestorationService.name, () => {
             upscale: 2,
             sourceChecksumHex: asset.checksum.toString('hex'),
             output: { width: 3240, height: 2160, scale: 0.54, capped: true },
+            // The model the reviewed preview ran (FL-115).
+            model: { name: 'faithful-v1', version: null },
           }),
           settings: expect.objectContaining({ preview: false }),
         }),
