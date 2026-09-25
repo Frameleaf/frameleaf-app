@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type Selectable, type Updateable, sql } from 'kysely';
+import { type Insertable, type Kysely, type Selectable, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { PetObservationState, PetRecognitionRunStatus, PetSpecies, VectorIndex } from 'src/enum.js';
 import { probes } from 'src/repositories/database.repository.js';
@@ -750,7 +751,8 @@ export class PetRepository {
 
   /** Start (or restart) the owner's run: a new run id, so jobs of an earlier run stop counting. */
   startRun(ownerId: string, destinationKind: string | null): Promise<PetRecognitionRun> {
-    return sql<PetRecognitionRun>`
+    return this.forkWrite((tx) =>
+      sql<PetRecognitionRun>`
       INSERT INTO immich_fork.pet_recognition_run ("ownerId", id, status, "destinationKind")
       VALUES (${ownerId}, gen_random_uuid(), ${PetRecognitionRunStatus.Queued}, ${destinationKind})
       ON CONFLICT ("ownerId") DO UPDATE SET
@@ -766,20 +768,34 @@ export class PetRepository {
         "finishedAt" = NULL
       RETURNING *
     `
-      .execute(this.db)
-      .then(({ rows }) => rows[0]);
+        .execute(tx)
+        .then(({ rows }) => rows[0]),
+    );
+  }
+
+  /**
+   * Every pet_recognition_run write takes the fork-state lock first (as face_correction writes do),
+   * so it is refused cleanly (ConflictException) during a database handoff.
+   */
+  private forkWrite<T>(write: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Pet recognition runs');
+      return write(tx);
+    });
   }
 
   /** The run found its assets; with none it is complete at once. Only the named run is touched. */
   async setRunAssets(runId: string, assetCount: number): Promise<void> {
-    await sql`
+    await this.forkWrite((tx) =>
+      sql`
       UPDATE immich_fork.pet_recognition_run
       SET "assetCount" = ${assetCount},
         status = CASE WHEN ${assetCount}::integer = 0 THEN ${PetRecognitionRunStatus.Completed} ELSE ${PetRecognitionRunStatus.Running} END,
         "finishedAt" = CASE WHEN ${assetCount}::integer = 0 THEN clock_timestamp() ELSE NULL END,
         "updatedAt" = clock_timestamp()
       WHERE id = ${runId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
-    `.execute(this.db);
+    `.execute(tx),
+    );
   }
 
   /** Whether the run a job belongs to is still wanted. A cancelled or replaced run is not. */
@@ -795,7 +811,8 @@ export class PetRepository {
 
   /** One asset of the run is done; the last one completes the run. */
   async recordRunProgress(runId: string, proposals: number): Promise<void> {
-    await sql`
+    await this.forkWrite((tx) =>
+      sql`
       UPDATE immich_fork.pet_recognition_run
       SET "processedCount" = LEAST("assetCount", "processedCount" + 1),
         "proposalCount" = "proposalCount" + ${proposals},
@@ -803,27 +820,32 @@ export class PetRepository {
         "finishedAt" = CASE WHEN "processedCount" + 1 >= "assetCount" THEN clock_timestamp() ELSE "finishedAt" END,
         "updatedAt" = clock_timestamp()
       WHERE id = ${runId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
-    `.execute(this.db);
+    `.execute(tx),
+    );
   }
 
   /** The owner cancelled; jobs still queued for this run see it and stop. Returns the run as it is now. */
   cancelRun(ownerId: string): Promise<PetRecognitionRun | undefined> {
-    return sql<PetRecognitionRun>`
+    return this.forkWrite((tx) =>
+      sql<PetRecognitionRun>`
       UPDATE immich_fork.pet_recognition_run
       SET status = ${PetRecognitionRunStatus.Cancelled}, "finishedAt" = clock_timestamp(), "updatedAt" = clock_timestamp()
       WHERE "ownerId" = ${ownerId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
       RETURNING *
     `
-      .execute(this.db)
-      .then(({ rows }) => rows[0]);
+        .execute(tx)
+        .then(({ rows }) => rows[0]),
+    );
   }
 
   async failRun(runId: string, error: string): Promise<void> {
-    await sql`
+    await this.forkWrite((tx) =>
+      sql`
       UPDATE immich_fork.pet_recognition_run
       SET status = ${PetRecognitionRunStatus.Failed}, error = ${error.slice(0, 500)},
         "finishedAt" = clock_timestamp(), "updatedAt" = clock_timestamp()
       WHERE id = ${runId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
-    `.execute(this.db);
+    `.execute(tx),
+    );
   }
 }

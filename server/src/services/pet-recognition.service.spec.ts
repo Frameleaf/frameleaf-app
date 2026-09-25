@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import type { Mock } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -341,6 +342,25 @@ describe(PetRecognitionService.name, () => {
       await sut.handleQueueAll({ userId: ownerId });
 
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    // L2: pet_recognition_run is fork-owned; during a database handoff its writes are refused
+    it('leaves the run alone during a database handoff instead of failing the job', async () => {
+      const handoff = new ConflictException('Pet recognition runs are unavailable during database handoff');
+      pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
+      pets.setRunAssets.mockRejectedValue(handoff);
+
+      await expect(sut.handleQueueAll({ userId: ownerId })).resolves.toBe(JobStatus.Success);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+
+      pets.recordRunProgress.mockRejectedValue(handoff);
+      await expect(sut.handleRecognize({ id: assetId, runId })).resolves.not.toBe(JobStatus.Failed);
+    });
+
+    it('lets any other run write error through', async () => {
+      pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
+      pets.setRunAssets.mockRejectedValue(new Error('connection lost'));
+      await expect(sut.handleQueueAll({ userId: ownerId })).rejects.toThrow('connection lost');
     });
 
     it('starts a run for every owner with a confirmed pet from the Job manager', async () => {
