@@ -1,11 +1,16 @@
+import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as cloudJobIndexMigration from 'src/fork-schema/migrations/0000000000201-MlWorkloadAccountingCloudJobIndex.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -153,5 +158,58 @@ describe(MlDestinationRepository.name, () => {
     expect((await getCatalogEvidence(defaultDatabase)).indexes.filter((entry) => isIndex(entry))).toEqual([]);
     await cloudJobIndexMigration.up(defaultDatabase);
     expect((await getCatalogEvidence(defaultDatabase)).indexes).toEqual(before.indexes);
+  });
+
+  it('withdraws Frameleaf Cloud consent and clears the destination in one step, never during a handoff (FL-159)', async () => {
+    const { sut } = setup();
+    const consents = new FrameleafConsentRepository(defaultDatabase);
+    const destination = await sut.create({
+      kind: MlDestinationKind.FrameleafCloud,
+      name: `cloud ${randomUUID()}`,
+      url: null,
+      authToken: null,
+      enabled: true,
+      workloads: [MlWorkload.Enrichment],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
+    });
+    const { ctx } = newMediumService(BaseService, { database: defaultDatabase, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    const acceptedBy = user.id;
+    await consents.record({
+      destinationId: destination.id,
+      version: '2026-10-01',
+      features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+      acceptedBy,
+      cloudRecordedVersion: '2026-10-01',
+    });
+    await sut.update(destination.id, {
+      consentAcknowledgedAt: new Date(),
+      consentAcknowledgedBy: acceptedBy,
+      consentVersion: '2026-10-01',
+    });
+
+    await sql`
+      INSERT INTO immich_fork.migration_audit (name, phase, status)
+      VALUES ('official-handoff-preparation', 'active', 'running')
+    `.execute(defaultDatabase);
+    try {
+      await expect(consents.revoke(destination.id)).rejects.toBeInstanceOf(ConflictException);
+    } finally {
+      await sql`
+        DELETE FROM immich_fork.migration_audit WHERE name = 'official-handoff-preparation' AND status = 'running'
+      `.execute(defaultDatabase);
+    }
+    expect(await consents.getCurrent(destination.id)).toBeDefined();
+    expect((await sut.getById(destination.id))?.consentVersion).toBe('2026-10-01');
+
+    await consents.revoke(destination.id);
+    expect(await consents.getCurrent(destination.id)).toBeUndefined();
+    expect(await sut.getById(destination.id)).toMatchObject({
+      consentVersion: null,
+      consentAcknowledgedAt: null,
+      consentAcknowledgedBy: null,
+    });
   });
 });
