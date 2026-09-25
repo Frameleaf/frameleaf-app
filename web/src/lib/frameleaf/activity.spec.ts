@@ -341,16 +341,33 @@ describe('browser-local transfers', () => {
     expect(item.statusKey).toBe('frameleaf_activity_upload_started');
   });
 
-  it('marks downloads as belonging to this tab', () => {
-    const item = fromDownload('key-1', {
-      url: '/download',
-      assetIds: ['a'],
-      archiveName: 'Summer.zip',
-      total: 10,
-      downloaded: false,
-    });
+  const download = (status: 'preparing' | 'ready' | 'error', progress = 40) => ({
+    name: 'Summer.zip',
+    archiveName: 'Summer',
+    assetIds: ['a'],
+    count: 1,
+    total: 10,
+    received: 4,
+    status,
+    progress,
+  });
 
-    expect(item).toMatchObject({ browserLocal: true, running: true, title: 'Summer.zip', progress: null });
+  it('marks downloads as belonging to this tab, with their real progress', () => {
+    const item = fromDownload('key-1', download('preparing'));
+
+    expect(item).toMatchObject({ browserLocal: true, running: true, title: 'Summer', progress: 40 });
+    expect(item.statusKey).toBe('frameleaf_activity_download_running');
+  });
+
+  it('reports a ready download as done and a failed one as failed (FL-45 D-2)', () => {
+    expect(fromDownload('key-1', download('ready', 100))).toMatchObject({
+      finished: true,
+      failed: false,
+      progress: 100,
+    });
+    const failed = fromDownload('key-2', download('error'));
+    expect(failed).toMatchObject({ finished: true, failed: true, progress: null });
+    expect(failed.statusKey).toBe('frameleaf_activity_download_failed');
   });
 });
 
@@ -394,7 +411,21 @@ describe('buildActivityList', () => {
     const list = buildActivityList({
       operations: [operation({ id: 'shared-id' as never })],
       uploads: [{ id: 'shared-id', file: { name: 'a.jpg' } as File, state: UploadState.PENDING }],
-      downloads: [['shared-id', { url: '', assetIds: [], archiveName: 'a.zip', total: 1, downloaded: false }]],
+      downloads: [
+        [
+          'shared-id',
+          {
+            name: 'a.zip',
+            archiveName: 'a',
+            assetIds: [],
+            count: 0,
+            total: 1,
+            received: 0,
+            status: 'preparing',
+            progress: 0,
+          },
+        ],
+      ],
     });
 
     expect(new Set(list.map((item) => item.id)).size).toBe(3);

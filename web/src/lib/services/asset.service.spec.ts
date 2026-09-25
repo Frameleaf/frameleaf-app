@@ -5,7 +5,7 @@ import { vitest } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
 import { setSharedLink } from '$lib/utils';
-import { getFormatter } from '$lib/utils/i18n';
+import { downloadAssetFile } from '$lib/utils/asset-utils';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
@@ -23,6 +23,11 @@ vitest.mock('$lib/utils/i18n', () => ({
 }));
 
 vitest.mock('@immich/sdk');
+
+vitest.mock('$lib/utils/asset-utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/asset-utils')>()),
+  downloadAssetFile: vitest.fn(),
+}));
 
 vitest.mock('$lib/utils', async () => {
   const originalModule = await vitest.importActual('$lib/utils');
@@ -160,25 +165,34 @@ describe('AssetService', () => {
   });
 
   describe('handleDownloadAsset', () => {
-    it('should use the asset originalFileName when showing toasts', async () => {
-      const $t = vitest.fn().mockReturnValue('formatter');
-      vitest.mocked(getFormatter).mockResolvedValue($t);
-      const asset = assetFactory.build({ originalFileName: 'asset.heic' });
-      await handleDownloadAsset(asset, { edited: false });
-      expect($t).toHaveBeenNthCalledWith(1, 'downloading_asset_filename', { values: { filename: 'asset.heic' } });
-      expect(toastManager.primary).toHaveBeenCalledWith('formatter');
+    beforeEach(() => {
+      vitest.clearAllMocks();
     });
 
-    it('should use the motion asset originalFileName when showing toasts', async () => {
-      const $t = vitest.fn().mockReturnValue('formatter');
-      vitest.mocked(getFormatter).mockResolvedValue($t);
+    // FL-45 D-3: a single download goes through the download panel, one row per file.
+    it('adds the asset to the download panel under its originalFileName', async () => {
+      const asset = assetFactory.build({ originalFileName: 'asset.heic', livePhotoVideoId: null });
+      await handleDownloadAsset(asset, { edited: false });
+      expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+      expect(downloadAssetFile).toHaveBeenCalledWith(
+        expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: false }),
+      );
+      expect(toastManager.primary).not.toHaveBeenCalled();
+    });
+
+    it('adds the motion part as its own row with a -motion name', async () => {
       const motionAsset = assetFactory.build({ originalFileName: 'asset.mov' });
       vitest.mocked(getAssetInfo).mockResolvedValue(motionAsset);
       const asset = assetFactory.build({ originalFileName: 'asset.heic', livePhotoVideoId: '1' });
-      await handleDownloadAsset(asset, { edited: false });
-      expect($t).toHaveBeenNthCalledWith(1, 'downloading_asset_filename', { values: { filename: 'asset.heic' } });
-      expect($t).toHaveBeenNthCalledWith(2, 'downloading_asset_filename', { values: { filename: 'asset-motion.mov' } });
-      expect(toastManager.primary).toHaveBeenCalledWith('formatter');
+      await handleDownloadAsset(asset, { edited: true });
+      expect(downloadAssetFile).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: true }),
+      );
+      expect(downloadAssetFile).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ id: '1', filename: 'asset-motion.mov', edited: true }),
+      );
     });
   });
 });

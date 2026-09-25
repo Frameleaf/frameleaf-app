@@ -305,9 +305,10 @@
         <NavigationLoadingBar />
       {/if}
 
+      <!-- App.jsx PanelDock: uploads above downloads. -->
       <PanelDock>
-        <DownloadPanel />
         <UploadPanel />
+        <DownloadPanel />
       </PanelDock>
     </SessionPrivacyGuard>
   </SessionLockShield>

@@ -75,10 +75,13 @@ test.describe('Shared Links', () => {
     await page.locator(`[data-asset-id="${asset.id}"]`).hover();
     await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').click();
     // PublicViewer.jsx: a selection turns the header's download into "Download selected (n)".
-    await Promise.all([
-      page.waitForEvent('download'),
-      page.getByRole('button', { name: 'Download selected (1)' }).click(),
-    ]);
+    await page.getByRole('button', { name: 'Download selected (1)' }).click();
+    // FL-45: the archive is prepared in the download panel (UploadPanel.jsx DownloadPanel), then saved.
+    const downloads = page.getByRole('region', { name: 'Downloads' });
+    await expect(downloads.getByText('1 download ready')).toBeVisible();
+    await expect(downloads.getByText(/^1 item · .* · Ready$/)).toBeVisible();
+    await Promise.all([page.waitForEvent('download'), downloads.getByRole('button', { name: 'Save' }).click()]);
+    await expect(downloads).toHaveCount(0);
   });
 
   test('a public page has no sticky toolbar, so its header scrolls away with the photos', async ({ page }) => {
@@ -92,7 +95,14 @@ test.describe('Shared Links', () => {
   test('download all from shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
-    await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download all' }).click()]);
+    await page.getByRole('button', { name: 'Download all' }).click();
+    const downloads = page.getByRole('region', { name: 'Downloads' });
+    await expect(downloads.getByRole('button', { name: 'Save' })).toBeVisible();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      downloads.getByRole('button', { name: 'Save' }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.zip$/);
   });
 
   test('select mode picks items with a plain click', async ({ page }) => {
