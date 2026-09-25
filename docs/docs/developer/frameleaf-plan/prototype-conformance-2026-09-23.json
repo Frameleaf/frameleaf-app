@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 63,
-      "partial": 100,
+      "partial": 99,
       "missing": 5,
-      "fixed": 41,
+      "fixed": 42,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1765,9 +1765,9 @@
         "web/src/lib/components/asset-viewer/SlideshowBar.svelte",
         "web/src/lib/components/frameleaf/SlideshowSettingsPanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["V-8", "V-18"],
-      "followUp": "Inline slideshow (V-18); the Frameleaf settings and the five transitions are fixed (V-8)"
+      "followUp": "Frameleaf settings panel, five transitions and inline slideshow (fixed on codex/FL-62-sept24-slideshow-memories)"
     },
     {
       "requirementId": "action:viewer:slideshow-duration-contain-cover-metadata-captions",
@@ -2300,7 +2300,7 @@
       ],
       "status": "partial",
       "gaps": ["MPY-1", "MPY-2", "MPY-3", "MPY-4", "MPY-5", "MPY-6", "MPY-7", "MPY-8", "MPY-9"],
-      "followUp": "Player P0s (fix-discovery), end card (the title card is fixed, MPY-4), shortcuts, soundtrack"
+      "followUp": "Player P0s (fix-discovery), shortcuts, soundtrack; title and end cards fixed (MPY-4)"
     },
     {
       "route": "/memory/[[photos=photos]]/[[assetId=id]]",
