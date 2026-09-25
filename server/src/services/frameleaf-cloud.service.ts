@@ -673,6 +673,8 @@ export class FrameleafCloudService extends BaseService {
         // a rotation whose answer was lost may have left the cloud holding the candidate key; only
         // invalid_client can mean that, an explicit instance-revoked never does
         if (this.isInvalidClient(error) && (await this.tryCandidateKey(cloudUrl, link))) {
+          // this check-in still failed: count it, so repeated failures still reach the administrators
+          await this.recordHeartbeatFailure((await this.readLink(cloudUrl)) ?? link, error);
           return JobStatus.Failed;
         }
         await this.revoke(cloudUrl, link, 'Frameleaf Cloud no longer recognises this server.');
