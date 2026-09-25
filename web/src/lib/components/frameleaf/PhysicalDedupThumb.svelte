@@ -6,11 +6,15 @@
    * the image is fetched through the ordinary `/assets/{id}/thumbnail` endpoint, which enforces
    * asset access on its own; otherwise a labelled placeholder stands in, so an administrator
    * never sees another account's photo just because it appears in an operational aggregate.
+   *
+   * `unavailable` marks a retained original whose file was not on disk when the preview ran (FL-73,
+   * UT-24): the prototype's `.pd-thumb.unavailable` with its "Unavailable" overlay
+   * (PhysicalDedupManager.jsx:80-97, physical-dedup-manager.css:322-349).
    */
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiEyeOffOutline, mdiPlay } from '@mdi/js';
+  import { mdiEyeOffOutline, mdiFileAlertOutline, mdiPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let {
@@ -18,23 +22,31 @@
     type,
     canView,
     size = 'copy',
+    unavailable = false,
   }: {
     assetId: string;
     type: AssetTypeEnum;
     canView: boolean;
     size?: 'retained' | 'copy' | 'cell';
+    unavailable?: boolean;
   } = $props();
 
   const src = $derived(canView ? getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Thumbnail }) : undefined);
 </script>
 
-<span class="thumb {size}" class:hidden-media={!canView}>
+<span class="thumb {size}" class:hidden-media={!canView} class:unavailable>
   {#if src}
     <img {src} alt="" loading="lazy" draggable="false" />
-  {:else}
+  {:else if !unavailable}
     <span class="placeholder">
       <Icon icon={mdiEyeOffOutline} size="1.125rem" aria-hidden={true} />
       <span>{$t('frameleaf_dedup_hidden_thumbnail')}</span>
+    </span>
+  {/if}
+  {#if unavailable}
+    <span class="unavailable-label">
+      <Icon icon={mdiFileAlertOutline} size="1.125rem" aria-hidden={true} />
+      <span>{$t('frameleaf_dedup_unavailable')}</span>
     </span>
   {/if}
   {#if type === AssetTypeEnum.Video}
@@ -90,6 +102,31 @@
   }
   .cell .placeholder span,
   .copy .placeholder span {
+    display: none;
+  }
+  .unavailable img {
+    filter: grayscale(1) brightness(0.45);
+  }
+  .unavailable-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    text-align: center;
+    color: var(--fl-text);
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+  }
+  .unavailable:has(img) .unavailable-label {
+    color: #f3f5f6;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .cell .unavailable-label span,
+  .copy .unavailable-label span {
     display: none;
   }
   .kind {
