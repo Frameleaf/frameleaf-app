@@ -45,6 +45,9 @@ export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
     previewUrl: getAssetMediaUrl({ id: asset.id, cacheKey, size: AssetMediaSize.Preview }),
     playbackUrl: isVideo ? getAssetPlaybackUrl({ id: asset.id, cacheKey }) : null,
     isOffline: asset.isOffline,
+    width: asset.width ?? null,
+    height: asset.height ?? null,
+    mimeType: asset.originalMimeType ?? null,
   };
 };
 
