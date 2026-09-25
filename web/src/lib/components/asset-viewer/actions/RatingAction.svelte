@@ -54,7 +54,7 @@
   const enabled = $derived(authManager.authenticated && authManager.preferences.ratings.enabled);
   const current = $derived.by(() => {
     const value = Number(asset.exifInfo?.rating ?? 0);
-    return Number.isInteger(value) && value >= 0 && value <= 5 ? value : 0;
+    return Number.isSafeInteger(value) && value >= 0 && value <= 5 ? value : 0;
   });
   const ratingText = $derived(
     current === 0 ? $t('frameleaf_viewer_not_rated') : $t('frameleaf_viewer_stars', { values: { count: current } }),

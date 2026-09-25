@@ -9,7 +9,7 @@ describe('viewer keys', () => {
   };
 
   afterEach(() => {
-    document.body.innerHTML = '';
+    document.body.replaceChildren();
   });
 
   it('leaves fields, comboboxes, sliders and videos their own keys', () => {
