@@ -49,6 +49,10 @@ export class TimelineService extends BaseService {
    */
   async getTimelineOrdered(auth: AuthDto, dto: TimelineOrderedDto): Promise<string> {
     const { sort, skip, take, ...bucketDto } = dto;
+    // S-15: a shared link that hides EXIF may not sort by file name or rating; the order would reveal them
+    if (auth.sharedLink && !auth.sharedLink.showExif) {
+      throw new BadRequestException('This link does not allow sorting by file name or rating');
+    }
     await this.timeBucketChecks(auth, bucketDto);
     const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, { sort, skip, take });
