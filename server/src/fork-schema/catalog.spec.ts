@@ -107,6 +107,7 @@ describe('catalog manifests', () => {
         'immich_fork.memory_show_less',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
+        'immich_fork.utility_activity',
       ]),
     );
     // 66 v3.1.0 public + the 47 fork tables

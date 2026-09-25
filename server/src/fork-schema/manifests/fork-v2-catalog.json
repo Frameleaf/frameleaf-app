@@ -1517,6 +1517,38 @@
       "identity": "immich_fork.user_preference_history.userId"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.utility_activity.action"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.utility_activity.bytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.utility_activity.createdAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.utility_activity.id"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.utility_activity.itemCount"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.utility_activity.items"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.utility_activity.tool"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.utility_activity.userId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.video_edit_selection.assetId"
     },
@@ -7243,6 +7275,30 @@
       "identity": "immich_fork.user_preference_history.user_preference_history_pkey"
     },
     {
+      "definition": "CHECK (action = ANY (ARRAY['trash'::text, 'restore'::text]))",
+      "identity": "immich_fork.utility_activity.utility_activity_action_check"
+    },
+    {
+      "definition": "CHECK (bytes >= 0)",
+      "identity": "immich_fork.utility_activity.utility_activity_bytes_check"
+    },
+    {
+      "definition": "CHECK (\"itemCount\" >= 0)",
+      "identity": "immich_fork.utility_activity.utility_activity_count_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(items) = 'array'::text)",
+      "identity": "immich_fork.utility_activity.utility_activity_items_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.utility_activity.utility_activity_pkey"
+    },
+    {
+      "definition": "CHECK (tool = 'large-files'::text)",
+      "identity": "immich_fork.utility_activity.utility_activity_tool_check"
+    },
+    {
       "definition": "FOREIGN KEY (\"currentVersionId\", \"assetId\", \"ownerId\") REFERENCES immich_fork.video_edit_version(id, \"assetId\", \"ownerId\")",
       "identity": "immich_fork.video_edit_selection.video_edit_selection_currentVersionId_assetId_ownerId_fkey"
     },
@@ -8958,7 +9014,8 @@
     "0000000000181-RenderWorkerSessionCapabilities",
     "0000000000182-StudioWorkspaceLayout",
     "0000000000187-MemoryCuration",
-    "0000000000188-MemoryShowLess"
+    "0000000000188-MemoryShowLess",
+    "0000000000191-UtilityActivity"
   ],
   "functions": [
     {
@@ -10450,6 +10507,14 @@
     {
       "definition": "CREATE INDEX user_preference_history_user_created_idx ON immich_fork.user_preference_history USING btree (\"userId\", \"createdAt\" DESC)",
       "identity": "immich_fork.user_preference_history.user_preference_history_user_created_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX utility_activity_pkey ON immich_fork.utility_activity USING btree (id)",
+      "identity": "immich_fork.utility_activity.utility_activity_pkey"
+    },
+    {
+      "definition": "CREATE INDEX utility_activity_user_tool_created_idx ON immich_fork.utility_activity USING btree (\"userId\", tool, \"createdAt\" DESC)",
+      "identity": "immich_fork.utility_activity.utility_activity_user_tool_created_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX video_edit_selection_pkey ON immich_fork.video_edit_selection USING btree (\"assetId\")",
@@ -12889,6 +12954,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.user_preference_history"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.utility_activity"
     },
     {
       "definition": "table",
