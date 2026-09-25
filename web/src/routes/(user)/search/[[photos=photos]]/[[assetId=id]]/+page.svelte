@@ -8,6 +8,7 @@
   import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchChip from '$lib/components/frameleaf/SearchChip.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
+  import SearchAsk from '$lib/components/frameleaf/SearchAsk.svelte';
   import {
     DISCOVERY_QUERY_PARAMETER,
     discoverySearchRequest,
@@ -22,6 +23,7 @@
   } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
+  import type { SearchAskProblem } from '$lib/frameleaf/search-ask';
   import { forgetEntityNames, resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { LibrarySearchSession, type LibrarySearchQuery } from '$lib/frameleaf/library-search-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
@@ -47,6 +49,7 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     type AssetResponseDto,
+    isHttpError,
     getPerson,
     getPet,
     getTagById,
@@ -54,16 +57,8 @@
     type MetadataSearchDto,
     type SmartSearchDto,
   } from '@immich/sdk';
-  import { Button, Icon, LoadingSpinner, Theme as AppTheme, themeManager } from '@immich/ui';
-  import {
-    mdiAccountMultipleOutline,
-    mdiArrowLeft,
-    mdiCalendarHeart,
-    mdiFileDocumentOutline,
-    mdiImageAlbum,
-    mdiImageOffOutline,
-    mdiMapMarkerOutline,
-  } from '@mdi/js';
+  import { Icon, LoadingSpinner, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { mdiArrowLeft, mdiImageOffOutline } from '@mdi/js';
   import { onDestroy, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -107,7 +102,19 @@
         : {},
   );
   let hasSearchQuery = $derived(discoveryQuery !== undefined || Object.keys(terms).length > 0);
-  let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
+  /**
+   * FL-31: Ask answers through smart search under the server's `localFeatures.askSearch` settings. The
+   * panel shows while search and smart search are on; when an administrator has turned Ask off it
+   * says so instead of offering a field that cannot answer.
+   */
+  let showAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
+  /** Set when the server answers that Ask is off although the flags said it was on (changed meanwhile). */
+  let askTurnedOff = $state(false);
+  let canUseAskSearch = $derived(showAskSearch && featureFlagsManager.value.askSearch && !askTurnedOff);
+  let askFailed = $state(false);
+  const askProblem = $derived<SearchAskProblem | undefined>(
+    canUseAskSearch ? (askFailed ? 'failed' : undefined) : 'disabled',
+  );
   const isAskLoading = $derived(!hasSearchQuery && searchSession.loading);
 
   // Endpoint and query identity share one request owner. Opening a result changes neither.
@@ -132,6 +139,7 @@
     untrack(() => {
       const query = JSON.parse(key) as LibrarySearchQuery | null;
       searchSession.reset(query);
+      askFailed = false;
       if (query?.kind === 'ask') {
         askQuery = query.query;
       }
@@ -346,12 +354,32 @@
 
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
   export const loadNextPage = async () => {
+    const asking = activeSearch?.kind === 'ask';
     try {
       await searchSession.loadNextPage({ language: $lang });
     } catch (error) {
-      handleError(error, $t('loading_search_results_failed'));
+      if (!asking) {
+        handleError(error, $t('loading_search_results_failed'));
+        return;
+      }
+      // FL-31: Ask shows its own error state; a server that has Ask turned off answers 400.
+      if (isHttpError(error) && error.status === 400 && /not enabled/i.test(error.data?.message ?? '')) {
+        askTurnedOff = true;
+        return;
+      }
+      askFailed = true;
     }
   };
+
+  function retryAsk() {
+    const query = askSearchQuery.trim();
+    if (!query) {
+      return;
+    }
+    askFailed = false;
+    searchSession.reset({ kind: 'ask', query });
+    handlePromiseError(loadNextPage());
+  }
 
   function getHumanReadableDate(dateString: string) {
     const date = parseUtcDate(dateString).startOf('day');
@@ -544,19 +572,6 @@
   async function loadNextAskPage() {
     await loadNextPage();
   }
-
-  function onAskSubmit(event: SubmitEvent) {
-    event.preventDefault();
-    handlePromiseError(updateAskSearchUrl(askQuery));
-  }
-
-  const suggestedSearches = [
-    { icon: mdiAccountMultipleOutline, title: $t('people'), query: 'photos of Alice last summer' },
-    { icon: mdiMapMarkerOutline, title: $t('places'), query: 'photos in Banff from April 2024' },
-    { icon: mdiFileDocumentOutline, title: $t('documents'), query: 'receipts from last year' },
-    { icon: mdiCalendarHeart, title: $t('memories'), query: 'favorite videos since 2020' },
-    { icon: mdiImageAlbum, title: $t('albums'), query: 'screenshots from last month' },
-  ];
 </script>
 
 <svelte:window bind:scrollY />
@@ -645,51 +660,18 @@
       <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
       <VideoMomentResults query={terms.query} />
     {/if}
-    {#if !hasSearchQuery && canUseAskSearch}
-      <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">
-        <form class="mx-auto flex w-full max-w-3xl gap-2" onsubmit={onAskSubmit}>
-          <label for="ask-search-input" class="sr-only">{$t('search_your_photos')}</label>
-          <input
-            id="ask-search-input"
-            type="search"
-            class="h-12 min-w-0 flex-1 rounded-full border border-gray-300 bg-white px-5 text-base outline-none focus:border-immich-primary dark:border-gray-700 dark:bg-gray-900"
-            bind:value={askQuery}
-            disabled={isAskLoading}
-            placeholder={$t('search_your_photos')}
-          />
-          <Button type="submit" disabled={isAskLoading || !askQuery.trim()}>
-            {isAskLoading ? $t('searching') : $t('ask')}
-          </Button>
-        </form>
-
-        {#if askResponse}
-          <div
-            class="rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900"
-          >
-            <p class="font-medium">{askResponse.explanation}</p>
-            {#if askResponse.warnings.length > 0}
-              <p class="mt-2 text-gray-500 dark:text-gray-400">{askResponse.warnings.join(' ')}</p>
-            {/if}
-          </div>
-        {/if}
-
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {#each suggestedSearches as item (item.query)}
-            <button
-              type="button"
-              disabled={isAskLoading}
-              class="flex min-h-28 flex-col justify-between rounded-lg border border-gray-200 bg-white p-4 text-start shadow-sm transition hover:border-immich-primary hover:text-immich-primary dark:border-gray-800 dark:bg-gray-900 dark:hover:border-immich-dark-primary dark:hover:text-immich-dark-primary"
-              onclick={() => {
-                askQuery = item.query;
-                handlePromiseError(updateAskSearchUrl(item.query));
-              }}
-            >
-              <Icon icon={item.icon} size="1.7em" />
-              <span class="text-base font-medium">{item.title}</span>
-              <span class="text-sm text-gray-500 dark:text-gray-400">{item.query}</span>
-            </button>
-          {/each}
-        </div>
+    {#if !hasSearchQuery && showAskSearch}
+      <!-- FL-31: Ask about your photos, in the search palette's language (SearchAsk.svelte). -->
+      <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-2 sm:px-6">
+        <SearchAsk
+          bind:query={askQuery}
+          response={askResponse}
+          loading={isAskLoading}
+          problem={askProblem}
+          matches={searchResultAssets.length}
+          onAsk={(query) => handlePromiseError(updateAskSearchUrl(query))}
+          onRetry={retryAsk}
+        />
 
         {#if askResponse && searchResultAssets.length > 0}
           <ResultsView
@@ -700,14 +682,6 @@
             onSelectAll={handleSelectAll}
             onOpen={(asset) => void navigateToAsset(asset)}
           />
-        {:else if askResponse && !isAskLoading}
-          <div class="flex min-h-56 w-full place-content-center items-center dark:text-white">
-            <div class="flex flex-col content-center items-center text-center">
-              <Icon icon={mdiImageOffOutline} size="3.5em" />
-              <p class="mt-5 text-3xl font-medium">{$t('no_results')}</p>
-              <p class="text-base font-normal">{$t('no_results_description')}</p>
-            </div>
-          </div>
         {/if}
       </div>
     {:else if hasSearchQuery && searchResultAssets.length > 0}
