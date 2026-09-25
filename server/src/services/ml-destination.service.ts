@@ -365,15 +365,17 @@ export class MlDestinationService extends BaseService {
   }
 
   /**
-   * Withdraw consent. For Frameleaf Cloud it is withdrawn here first (refused during a handoff, like
-   * recording it), then with Frameleaf Cloud when it answers; when it does not, the withdrawal still
-   * stands on this server, which refuses every cloud job without consent, and the miss is logged.
+   * Withdraw consent. For Frameleaf Cloud the consent records and the destination are cleared here
+   * first, in one transaction (refused with 409 during a handoff, like recording it), then with
+   * Frameleaf Cloud; whatever happens there, the withdrawal stands on this server, which refuses
+   * every cloud job without consent, and a miss is logged.
    */
   async revokeConsent(id: string): Promise<MlDestinationResponseDto> {
     const current = await this.require(id);
     if (current.kind === MlDestinationKind.FrameleafCloud) {
       await this.frameleafConsentRepository.revoke(id);
       await this.revokeCloudConsent(current);
+      return this.toDto(await this.require(id));
     }
     const row = await this.mlDestinationRepository.update(id, {
       consentAcknowledgedAt: null,
@@ -394,11 +396,9 @@ export class MlDestinationService extends BaseService {
       }
       await this.frameleafCloudMlRepository.revokeConsent(resolution.gateway);
     } catch (error) {
-      if (!(error instanceof FrameleafCloudError)) {
-        throw error;
-      }
+      // Never undoes the local withdrawal, whatever went wrong on the way to the cloud.
       this.logger.warn(
-        `Consent for ${destination.name} was withdrawn on this server only; Frameleaf Cloud did not record it: ${error.message}`,
+        `Consent for ${destination.name} was withdrawn on this server only; Frameleaf Cloud did not record it: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
