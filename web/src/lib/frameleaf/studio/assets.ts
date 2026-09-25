@@ -3,8 +3,9 @@
  *
  * The engine gets no SDK, no token and no API base URL. It gets this projection: a name, a
  * duration and three URLs the host already authorized with the session's own credentials.
- * That is what makes FL-96's rule — no client API dependency inside the editor — a property
- * of the boundary rather than a convention the engine is asked to observe.
+ * That keeps FL-96's rule — no client API dependency inside the editor — explicit in the
+ * contract. It is a convention the pinned engine follows, not an enforced boundary: the editor
+ * runs same-origin with the session's cookies, and the server authorizes every request itself.
  *
  * The projection is also where the library's privacy rules are enforced for Studio:
  *

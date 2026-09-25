@@ -18,7 +18,9 @@
  * - **Lifetime.** `dispose` unmounts React, releases every media URL and the workspace, and the
  *   host then removes this document, which ends whatever audio, GPU and worker state remains.
  *
- * Nothing here receives a token, an API base URL or an SDK: the only channel out is the host port.
+ * Nothing here is given a token, an API base URL or an SDK, and saves, commands and navigation go
+ * through the host port. That is a design rule, not a sandbox: this document is same-origin with the
+ * session's cookies, and its media requests use them.
  */
 import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'

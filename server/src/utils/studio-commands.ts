@@ -216,10 +216,12 @@ export type StudioCommandBatchCheck =
  * The canonical commands a saved revision claims to contain (FL-92). The editor applied them with
  * the engine before saving the graph they produced; the server cannot re-run the engine, but it can
  * refuse a batch that is not one: an unknown command, a malformed payload, a command issued against
- * a head later than the one this save builds on, a key used twice, or a command that changes nothing
- * in the graph (those never reach a revision). A command issued against an earlier head is normal:
- * edits made while the previous autosave was in flight travel in the next one. The revision's summary is then counted from
- * the envelopes rather than trusted from the client.
+ * a head later than the one this save builds on, a key used twice, or a command the catalogue does
+ * not flag `mutatesGraph` (those never reach a revision). Only that catalogue flag is checked: the
+ * server does not re-run the command, so it cannot tell whether it actually changed the graph. A
+ * command issued against an earlier head is normal: edits made while the previous autosave was in
+ * flight travel in the next one. The revision's summary is then counted from the envelopes rather
+ * than trusted from the client.
  */
 export const checkStudioCommandBatch = (
   commands: readonly unknown[],
