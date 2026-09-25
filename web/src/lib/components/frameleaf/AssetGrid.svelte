@@ -18,7 +18,13 @@
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
   import { bindGridZoom } from '$lib/frameleaf/grid-zoom';
-  import { cellGrid, cellGridOptions, timelineRowHeight, type TileLayout } from '$lib/frameleaf/library-grid';
+  import {
+    cellGrid,
+    cellGridOptions,
+    timelineRowHeight,
+    type CellGridOptions,
+    type TileLayout,
+  } from '$lib/frameleaf/library-grid';
   import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
   import { animateFlip } from '$lib/frameleaf/motion';
   import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -53,6 +59,16 @@
     publicView?: boolean;
     /** Extra chrome drawn over every tile. */
     tileOverlay?: Snippet<[TimelineAsset]>;
+    /**
+     * A fixed cell grid of square tiles, whatever the session's layout or Thumbnail size (the
+     * Folders file grid, FL-46: `discovery.css` `.dv-file-grid`). Its `captionHeight` is the space
+     * under each tile where `caption` is drawn. No pinch or keyboard zoom applies to it.
+     */
+    cellOptions?: CellGridOptions;
+    /** Drawn under each tile of a `cellOptions` grid, inside its caption space. */
+    caption?: Snippet<[TimelineAsset]>;
+    /** Whether an item's original is offline (an external library file that went missing). */
+    offlineFor?: (asset: TimelineAsset) => boolean;
     /** Rendered above the grid, inside the same scroll container. */
     header?: Snippet;
     empty?: Snippet;
@@ -70,6 +86,9 @@
     layout,
     publicView = authManager.isSharedLink,
     tileOverlay,
+    cellOptions,
+    caption,
+    offlineFor,
     header,
     empty,
   }: Props = $props();
@@ -87,11 +106,12 @@
   const selected = $derived(new Set(selection));
   const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
-  const tileLayout = $derived<TileLayout>(publicView ? 'browse' : (layout ?? session.layout));
+  const tileLayout = $derived<TileLayout>(publicView || cellOptions ? 'browse' : (layout ?? session.layout));
   const cells = $derived(
-    tileLayout === 'timeline'
-      ? null
-      : cellGridOptions(tileLayout, libraryGridPreferences.thumbnailSize, libraryGridPreferences.phone),
+    cellOptions ??
+      (tileLayout === 'timeline'
+        ? null
+        : cellGridOptions(tileLayout, libraryGridPreferences.thumbnailSize, libraryGridPreferences.phone)),
   );
   const grid = $derived(cells ? cellGrid(assets.length, width, cells) : null);
 
@@ -153,7 +173,7 @@
    */
   $effect(() => {
     const element = root;
-    if (!element || !cells || publicView) {
+    if (!element || !cells || publicView || cellOptions) {
       return;
     }
     return bindGridZoom(element, {
@@ -247,7 +267,7 @@
 
 <div
   class="fl-grid"
-  class:is-zoomable={!!cells && !publicView}
+  class:is-zoomable={!!cells && !publicView && !cellOptions}
   data-testid="frameleaf-asset-grid"
   data-layout={tileLayout}
   bind:this={root}
@@ -272,18 +292,22 @@
           <AssetTile
             {asset}
             width={position.width}
-            height={position.height}
+            height={caption && cellOptions ? Math.max(1, position.height - cellOptions.captionHeight) : position.height}
             selected={selected.has(asset.id)}
             {selecting}
             layout={tileLayout}
             rating={ratingFor?.(asset)}
-            captionHeight={cells?.captionHeight ?? 0}
+            captionHeight={cellOptions ? 0 : (cells?.captionHeight ?? 0)}
+            offline={offlineFor?.(asset) ?? false}
             showFileName={libraryGridPreferences.showFileNames}
             onOpen={handleOpen}
             onToggleSelect={toggleSelect}
             onFocus={(focused) => session.setScrollAnchor(focused.id)}
             overlay={tileOverlay}
           />
+          {#if caption && cellOptions}
+            <div class="fl-grid-caption" style:height="{cellOptions.captionHeight}px">{@render caption(asset)}</div>
+          {/if}
         </div>
       {/each}
     </div>
@@ -306,6 +330,10 @@
   }
   .fl-grid-cell {
     position: absolute;
+  }
+  .fl-grid-caption {
+    min-width: 0;
+    overflow: hidden;
   }
   .fl-grid-end {
     height: 1px;
