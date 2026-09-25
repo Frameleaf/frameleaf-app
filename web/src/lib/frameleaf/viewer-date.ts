@@ -45,7 +45,7 @@ export const COMMON_TIMEZONES = Object.freeze([
 
 /** `2026-09-24T18:05…` → its wall-clock date and time; a missing time is midnight. */
 export function splitDateTime(value: string | null | undefined): { date: string; time: string } {
-  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?)?/.exec(String(value ?? ''));
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?)?/.exec(value ?? '');
   return match ? { date: match[1], time: match[2] ?? '00:00' } : { date: '', time: '' };
 }
 
