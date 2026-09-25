@@ -107,7 +107,8 @@ describe(FrameleafCloudService.name, () => {
             url: cloudUrl,
             identityDir,
             linkToken,
-            edge: { port: 2443, bind: '0.0.0.0' },
+            edge: { port: 2443, bind: '0.0.0.0', secret: null },
+            localUrl: null,
             trustedLanCidrs: [],
           },
         }) as never,
@@ -503,6 +504,22 @@ describe(FrameleafCloudService.name, () => {
       (sut as unknown as { frameleafCloudRepository: FrameleafCloudRepository }).frameleafCloudRepository.forget();
   });
 
+  describe('Sign in with Frameleaf settings (FL-158)', () => {
+    it('reports the linked accounts and offers the button at home only once linked', async () => {
+      mocks.frameleafAccount.countLinks.mockResolvedValue(3);
+      await expect(sut.getStatus()).resolves.toMatchObject({ signInLinkedAccounts: 3, signInShowOnLocalLogin: false });
+      await expect(sut.updateSignIn(authStub.admin, { showOnLocalLogin: true })).rejects.toThrow(
+        'Link this server first.',
+      );
+
+      await linkNow();
+      await expect(sut.updateSignIn(authStub.admin, { showOnLocalLogin: true })).resolves.toMatchObject({
+        signInShowOnLocalLogin: true,
+        signInClientId: 'instance-1',
+      });
+    });
+  });
+
   describe('unlink (FL-155)', () => {
     it('tells the cloud, clears the link and switches cloud features off', async () => {
       await linkNow();
@@ -519,6 +536,24 @@ describe(FrameleafCloudService.name, () => {
         expect.objectContaining({ action: AdminAuditAction.CloudUnlinked, actorId: authStub.admin.user.id }),
       ]);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_frameleaf_cloud', admin.id, { topic: 'link' });
+    });
+
+    it('ends every Sign in with Frameleaf session, removes the account links and the client secret (FL-158)', async () => {
+      await linkNow();
+      cloud.on('DELETE /api/v1/instance', () => ({ status: 200, body: {} }));
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { clientSecret: 'secret' } } });
+      clearConfigCache();
+      mocks.frameleafAccount.deleteAllSessions.mockResolvedValue(['session-1', 'session-2']);
+      mocks.session.delete.mockResolvedValue();
+
+      await sut.unlink(authStub.admin);
+      expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+      expect(mocks.session.delete).toHaveBeenCalledWith('session-2');
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-2' });
+      expect(mocks.frameleafAccount.deleteAllLinks).toHaveBeenCalled();
+      const stored = metadata.get(SystemMetadataKey.SystemConfig) as
+        { frameleafCloud?: { signIn?: { clientSecret?: string } } } | undefined;
+      expect(stored?.frameleafCloud?.signIn?.clientSecret ?? '').toBe('');
     });
 
     it('unlinks locally even when the cloud cannot be reached', async () => {

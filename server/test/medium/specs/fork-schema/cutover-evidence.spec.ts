@@ -382,8 +382,9 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     // merge verdict (FL-57), album position (FL-52), recipient group (FL-55), preference
     // history (FL-71), face correction history (FL-57), pet recognition run (FL-58), memory curation
     // and show-less (FL-62), render worker session capability (FL-95) and Studio workspace layout
-    // (FL-91) tables included
-    expect(observedLocks).toHaveLength(113);
+    // (FL-91) tables included, and every later fork table, among them the supporter keys (FL-156),
+    // Frameleaf account links and Sign in with Frameleaf sessions (FL-158)
+    expect(observedLocks).toHaveLength(117);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -398,6 +399,9 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.pet_recognition_run',
         'immich_fork.memory_curation',
         'immich_fork.memory_show_less',
+        'immich_fork.frameleaf_user_license',
+        'immich_fork.frameleaf_account_link',
+        'immich_fork.frameleaf_session',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
       ]),

@@ -450,6 +450,66 @@ describe(SystemConfigService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('getPublicConfig (FL-158)', () => {
+    const secret = 'edge-secret-0123456789';
+    const relay = { 'x-frameleaf-via': 'relay', 'x-frameleaf-via-auth': secret };
+
+    beforeEach(() => {
+      const env = mockEnvData({});
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        frameleafCloud: {
+          ...env.frameleafCloud,
+          url: 'https://cloud.test',
+          edge: { ...env.frameleafCloud.edge, secret },
+          localUrl: 'http://192.168.1.10:2283',
+        },
+      });
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? {
+                status: 'linked',
+                cloudUrl: 'https://cloud.test',
+                instanceId: 'instance-1',
+                oidc: { issuer: 'https://id.cloud.test', clientId: 'instance-1' },
+                services: { relayOrigin: 'https://r.label.frameleaf-direct.test' },
+              }
+            : null) as never,
+        ),
+      );
+    });
+
+    it('offers only Sign in with Frameleaf to a visitor arriving through remote access', async () => {
+      await expect(sut.getPublicConfig({ headers: relay, clientIp: '203.0.113.9' })).resolves.toMatchObject({
+        frameleaf: {
+          signInAvailable: true,
+          signInRequired: true,
+          via: 'relay',
+          relayHost: 'r.label.frameleaf-direct.test',
+          localUrl: 'http://192.168.1.10:2283',
+          sameNetwork: false,
+        },
+      });
+    });
+
+    it('offers the local address to a remote-access visitor on the home network', async () => {
+      await expect(sut.getPublicConfig({ headers: relay, clientIp: '192.168.1.44' })).resolves.toMatchObject({
+        frameleaf: { signInRequired: true, sameNetwork: true },
+      });
+    });
+
+    it('ignores a via header without the edge secret, and is unavailable when not linked', async () => {
+      await expect(
+        sut.getPublicConfig({ headers: { 'x-frameleaf-via': 'relay' }, clientIp: '203.0.113.9' }),
+      ).resolves.toMatchObject({ frameleaf: { signInRequired: false, via: null, signInAvailable: true } });
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      await expect(sut.getPublicConfig()).resolves.toMatchObject({
+        frameleaf: { signInAvailable: false, signInRequired: false },
+      });
+    });
+  });
+
   describe('getDefaults', () => {
     it('should return the default config', () => {
       mocks.systemMetadata.get.mockResolvedValue(partialConfig);

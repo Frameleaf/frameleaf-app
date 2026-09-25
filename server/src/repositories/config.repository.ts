@@ -133,7 +133,9 @@ export interface EnvData {
     /** FL-155: single-use headless link token, or null. */
     linkToken: string | null;
     /** FL-154: the edge worker's direct listener. */
-    edge: { port: number; bind: string };
+    edge: { port: number; bind: string; secret: string | null };
+    /** FL-158: this server's home-network address, or null. */
+    localUrl: string | null;
     /** FL-154: networks treated as home besides RFC 1918 and ULA. */
     trustedLanCidrs: string[];
   };
@@ -338,7 +340,12 @@ const getEnv = (): EnvData => {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
-      edge: { port: dto.FRAMELEAF_EDGE_PORT ?? 2443, bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0' },
+      edge: {
+        port: dto.FRAMELEAF_EDGE_PORT ?? 2443,
+        bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0',
+        secret: dto.FRAMELEAF_EDGE_SECRET ?? null,
+      },
+      localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
       trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
     },
 

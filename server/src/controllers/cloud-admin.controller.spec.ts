@@ -25,6 +25,7 @@ describe(CloudAdminController.name, () => {
       ['delete', '/admin/cloud/link'],
       ['delete', '/admin/cloud/link/pending'],
       ['put', '/admin/cloud/permissions'],
+      ['put', '/admin/cloud/sign-in'],
       ['post', '/admin/cloud/heartbeat'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
@@ -50,5 +51,13 @@ describe(CloudAdminController.name, () => {
     const ok = await request(ctx.getHttpServer()).put('/admin/cloud/permissions').send({ allowBackupTrigger: false });
     expect(ok.status).toBe(200);
     expect(service.updatePermissions.mock.calls[0][1]).toEqual({ allowBackupTrigger: false });
+  });
+
+  it('accepts only the showOnLocalLogin switch for Sign in with Frameleaf (FL-158)', async () => {
+    const bad = await request(ctx.getHttpServer()).put('/admin/cloud/sign-in').send({ showOnLocalLogin: 'on' });
+    expect(bad.status).toBe(400);
+    const ok = await request(ctx.getHttpServer()).put('/admin/cloud/sign-in').send({ showOnLocalLogin: true });
+    expect(ok.status).toBe(200);
+    expect(service.updateSignIn.mock.calls[0][1]).toEqual({ showOnLocalLogin: true });
   });
 });

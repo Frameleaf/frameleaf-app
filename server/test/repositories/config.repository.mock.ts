@@ -97,7 +97,8 @@ export const envData: EnvData = {
     url: null,
     identityDir: null,
     linkToken: null,
-    edge: { port: 2443, bind: '0.0.0.0' },
+    edge: { port: 2443, bind: '0.0.0.0', secret: null },
+    localUrl: null,
     trustedLanCidrs: [],
   },
 

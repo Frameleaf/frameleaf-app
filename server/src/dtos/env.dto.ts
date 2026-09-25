@@ -110,6 +110,13 @@ export const EnvSchema = z
     /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
     FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
     FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
+    /**
+     * FL-158: the per-boot secret the edge worker sends as `X-Frameleaf-Via-Auth`; without it every
+     * `X-Frameleaf-Via` header is ignored.
+     */
+    FRAMELEAF_EDGE_SECRET: z.string().min(16).optional(),
+    /** FL-158: this server's address on the home network, offered to visitors who are on it. */
+    FRAMELEAF_LOCAL_URL: z.url({ protocol: /^https?$/ }).optional(),
     /** FL-154: extra networks treated as home (comma-separated CIDRs) besides RFC 1918 and ULA. */
     FRAMELEAF_TRUSTED_LAN_CIDRS: z.string().optional(),
     /** FL-135: the Android store listing and this installation's help destinations (https). */

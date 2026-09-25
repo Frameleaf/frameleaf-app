@@ -382,7 +382,7 @@
     },
     "/admin/cloud/link": {
       "delete": {
-        "description": "Clears the link and switches remote access, cloud processing and cloud backup off. Local photos, accounts and sign-in are unchanged.",
+        "description": "Clears the link and switches remote access, cloud processing and cloud backup off. Sign in with Frameleaf sessions end; local photos, accounts and password sign-in are unchanged.",
         "operationId": "unlinkCloud",
         "parameters": [],
         "responses": {
@@ -935,6 +935,63 @@
           }
         ],
         "summary": "Choose what Frameleaf Cloud may ask this server to do",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/sign-in": {
+      "put": {
+        "description": "Remote access always requires Sign in with Frameleaf. This also offers it on the login page at home, once the server is linked.",
+        "operationId": "updateCloudSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudSignInUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose where Sign in with Frameleaf is offered",
         "tags": [
           "Frameleaf Cloud (admin)"
         ],
@@ -20211,6 +20268,320 @@
         ]
       }
     },
+    "/oauth/frameleaf/authorize": {
+      "post": {
+        "description": "The Frameleaf authorization URL for one of the callbacks registered for this server. PKCE is used when the provider advertises it.",
+        "operationId": "startFrameleafSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthConfigDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAuthorizeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Start Sign in with Frameleaf",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/frameleaf/callback": {
+      "post": {
+        "description": "Exchanges the authorization code, requires a verified email, links or creates the account Frameleaf Cloud authorized, and signs in with a session Frameleaf Cloud can end.",
+        "operationId": "finishFrameleafSignIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCallbackDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Finish Sign in with Frameleaf",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/frameleaf/handoff": {
+      "post": {
+        "description": "A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over.",
+        "operationId": "createFrameleafHandoff",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafHandoffResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Hand a Sign in with Frameleaf session to another address",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/frameleaf/handoff/redeem": {
+      "post": {
+        "description": "Exchanges a handoff code for a new session tagged like the one that created it.",
+        "operationId": "redeemFrameleafHandoff",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafHandoffRedeemDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Sign in with a handoff code",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/frameleaf/link": {
+      "delete": {
+        "description": "Unlinks your Frameleaf account and ends your other Sign in with Frameleaf sessions. Signing in at home is unchanged.",
+        "operationId": "unlinkFrameleafAccount",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlink your Frameleaf account",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "frameleafAccount.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Whether your account here is linked to a Frameleaf account, and which one.",
+        "operationId": "getFrameleafAccountLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafAccountLinkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your Frameleaf account link",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "frameleafAccount.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Links the Frameleaf account you just signed in with to your account here, so you can sign in with it when you are away from home. A verified email is required.",
+        "operationId": "linkFrameleafAccount",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCallbackDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link your Frameleaf account",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "frameleafAccount.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/oauth/link": {
       "post": {
         "description": "Link an OAuth account to the authenticated user.",
@@ -39305,6 +39676,9 @@
         "properties": {
           "cloudMl": {
             "$ref": "#/components/schemas/AdminConfigFrameleafCloudMlDto"
+          },
+          "signIn": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafSignInDto"
           }
         },
         "required": [
@@ -39366,6 +39740,33 @@
         "required": [
           "defaultModel",
           "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafSignInDto": {
+        "properties": {
+          "buttonText": {
+            "description": "Sign in with Frameleaf button text",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "clientSecret": {
+            "description": "Frameleaf client secret (write-only; empty preserves the existing secret)",
+            "type": "string"
+          },
+          "clientSecretConfigured": {
+            "description": "Read-only indicator that a client secret is stored. Set by the server; ignored on write.",
+            "type": "boolean"
+          },
+          "showOnLocalLogin": {
+            "description": "Show Sign in with Frameleaf on the local sign-in page too",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "buttonText",
+          "clientSecret",
+          "showOnLocalLogin"
         ],
         "type": "object"
       },
@@ -49263,6 +49664,18 @@
         },
         "type": "object"
       },
+      "CloudSignInUpdateDto": {
+        "properties": {
+          "showOnLocalLogin": {
+            "description": "Offer Sign in with Frameleaf on the login page at home",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "showOnLocalLogin"
+        ],
+        "type": "object"
+      },
       "CloudStatusResponseDto": {
         "properties": {
           "account": {
@@ -49389,6 +49802,16 @@
             "nullable": true,
             "type": "string"
           },
+          "signInLinkedAccounts": {
+            "description": "Accounts here linked to a Frameleaf account",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "signInShowOnLocalLogin": {
+            "description": "Sign in with Frameleaf is offered at home too",
+            "type": "boolean"
+          },
           "state": {
             "$ref": "#/components/schemas/CloudLinkState"
           }
@@ -49414,6 +49837,8 @@
           "revoked",
           "signInClientId",
           "signInIssuer",
+          "signInLinkedAccounts",
+          "signInShowOnLocalLogin",
           "state"
         ],
         "type": "object"
@@ -49480,7 +49905,8 @@
         "description": "A server secret that can be replaced or cleared but never read back",
         "enum": [
           "smtp-password",
-          "oauth-client-secret"
+          "oauth-client-secret",
+          "frameleaf-oidc-client-secret"
         ],
         "type": "string"
       },
@@ -52099,6 +52525,124 @@
           }
         },
         "type": "object"
+      },
+      "FrameleafAccountLinkResponseDto": {
+        "properties": {
+          "available": {
+            "description": "Sign in with Frameleaf is available on this server (it is linked)",
+            "type": "boolean"
+          },
+          "email": {
+            "description": "The linked Frameleaf account’s email",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastSignInAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "linkedAt": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "email",
+          "lastSignInAt",
+          "linked",
+          "linkedAt"
+        ],
+        "type": "object"
+      },
+      "FrameleafHandoffRedeemDto": {
+        "properties": {
+          "code": {
+            "description": "The code from POST oauth/frameleaf/handoff",
+            "maxLength": 200,
+            "minLength": 16,
+            "type": "string"
+          },
+          "rememberMe": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "FrameleafHandoffResponseDto": {
+        "properties": {
+          "code": {
+            "description": "A single-use code for signing in on another address of this server",
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "FrameleafPublicConfigDto": {
+        "properties": {
+          "localUrl": {
+            "description": "This server on the home network, when configured",
+            "nullable": true,
+            "type": "string"
+          },
+          "relayHost": {
+            "description": "The remote-access host shown on the login page, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "sameNetwork": {
+            "description": "Whether a remote-access visitor is on the same network as this server",
+            "type": "boolean"
+          },
+          "signInAvailable": {
+            "description": "Whether Sign in with Frameleaf is available (the server is linked)",
+            "type": "boolean"
+          },
+          "signInRequired": {
+            "description": "Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered",
+            "type": "boolean"
+          },
+          "via": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FrameleafVia"
+              }
+            ],
+            "description": "How the request arrived; null when the edge worker did not vouch for it",
+            "nullable": true
+          }
+        },
+        "required": [
+          "localUrl",
+          "relayHost",
+          "sameNetwork",
+          "signInAvailable",
+          "signInRequired",
+          "via"
+        ],
+        "type": "object"
+      },
+      "FrameleafVia": {
+        "description": "How the request arrived, as vouched for by the edge worker",
+        "enum": [
+          "lan",
+          "wan",
+          "relay"
+        ],
+        "type": "string"
       },
       "HlsVideoResolution": {
         "description": "HLS video resolution",
@@ -59819,6 +60363,8 @@
           "adminCloud.read",
           "adminCloud.update",
           "adminCloud.link",
+          "frameleafAccount.read",
+          "frameleafAccount.update",
           "adminCloudMl.read",
           "adminCloudMl.update",
           "serverLicense.read",
@@ -63315,8 +63861,13 @@
         "type": "object"
       },
       "PublicConfigDto": {
-        "description": "Configuration properties that are visible to everyone",
         "properties": {
+          "frameleaf": {
+            "$ref": "#/components/schemas/FrameleafPublicConfigDto"
+          },
+          "frameleafCloud": {
+            "$ref": "#/components/schemas/PublicConfigFrameleafCloudDto"
+          },
           "oauth": {
             "$ref": "#/components/schemas/PublicConfigOAuthDto"
           },
@@ -63331,10 +63882,41 @@
           }
         },
         "required": [
+          "frameleaf",
+          "frameleafCloud",
           "oauth",
           "passwordLogin",
           "server",
           "theme"
+        ],
+        "type": "object"
+      },
+      "PublicConfigFrameleafCloudDto": {
+        "properties": {
+          "signIn": {
+            "$ref": "#/components/schemas/PublicConfigFrameleafSignInDto"
+          }
+        },
+        "required": [
+          "signIn"
+        ],
+        "type": "object"
+      },
+      "PublicConfigFrameleafSignInDto": {
+        "properties": {
+          "buttonText": {
+            "description": "Sign in with Frameleaf button text",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "showOnLocalLogin": {
+            "description": "Show Sign in with Frameleaf on the local sign-in page too",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "buttonText",
+          "showOnLocalLogin"
         ],
         "type": "object"
       },
@@ -78182,6 +78764,9 @@
           "ffmpeg": {
             "$ref": "#/components/schemas/UserConfigFFmpegDto"
           },
+          "frameleafCloud": {
+            "$ref": "#/components/schemas/UserConfigFrameleafCloudDto"
+          },
           "image": {
             "$ref": "#/components/schemas/UserConfigImageDto"
           },
@@ -78215,6 +78800,7 @@
         },
         "required": [
           "ffmpeg",
+          "frameleafCloud",
           "image",
           "machineLearning",
           "map",
@@ -78298,6 +78884,35 @@
         ],
         "type": "object"
       },
+      "UserConfigFrameleafCloudDto": {
+        "properties": {
+          "signIn": {
+            "$ref": "#/components/schemas/UserConfigFrameleafSignInDto"
+          }
+        },
+        "required": [
+          "signIn"
+        ],
+        "type": "object"
+      },
+      "UserConfigFrameleafSignInDto": {
+        "properties": {
+          "buttonText": {
+            "description": "Sign in with Frameleaf button text",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "showOnLocalLogin": {
+            "description": "Show Sign in with Frameleaf on the local sign-in page too",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "buttonText",
+          "showOnLocalLogin"
+        ],
+        "type": "object"
+      },
       "UserConfigGeneratedFullsizeImageDto": {
         "properties": {
           "enabled": {
@@ -78321,6 +78936,18 @@
         },
         "required": [
           "size"
+        ],
+        "type": "object"
+      },
+      "UserConfigImageDescriptionDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the task is enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
         ],
         "type": "object"
       },
@@ -78358,6 +78985,12 @@
           "facialRecognition": {
             "$ref": "#/components/schemas/UserConfigFacialRecognitionDto"
           },
+          "imageDescription": {
+            "$ref": "#/components/schemas/UserConfigImageDescriptionDto"
+          },
+          "nsfwDetection": {
+            "$ref": "#/components/schemas/UserConfigNsfwDetectionDto"
+          },
           "ocr": {
             "$ref": "#/components/schemas/UserConfigOcrDto"
           }
@@ -78367,6 +79000,8 @@
           "duplicateDetection",
           "enabled",
           "facialRecognition",
+          "imageDescription",
+          "nsfwDetection",
           "ocr"
         ],
         "type": "object"
@@ -78392,6 +79027,18 @@
           "darkStyle",
           "enabled",
           "lightStyle"
+        ],
+        "type": "object"
+      },
+      "UserConfigNsfwDetectionDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the task is enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
         ],
         "type": "object"
       },
