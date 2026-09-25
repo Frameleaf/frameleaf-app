@@ -9,6 +9,7 @@
   import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
+  import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { Route } from '$lib/route';
   import { handleCreateJob } from '$lib/services/job.service';
@@ -172,6 +173,7 @@
   />
 {:else if section === 'backups' && backups}
   <MaintenanceBackupsPanel {backups} {expectedVersion} />
+  <MaintenanceRestoreTest />
 {:else}
   <p role="status">{$t('loading')}</p>
 {/if}
