@@ -534,7 +534,10 @@ export class AssetRestorationService {
    * partner, a shared space or a shared link always gets the ordinary version, because an AI result
    * is the owner's derived data and choosing it never publishes it. Thumbnails and the original
    * download are never replaced. While the owner has a finished result to switch to, both versions
-   * are served for revalidation rather than from a day-long cache, so a switch shows at once.
+   * are served for revalidation rather than from a day-long cache. That cannot reach a response the
+   * browser cached before the result existed (a day plus stale-while-revalidate), so the web viewer
+   * also gives the video, preview and full-size URLs a fresh cache key when the choice changes
+   * (web/src/lib/frameleaf/playback-revision.svelte.ts).
    *
    * `view` is what the caller serves: video playback, or a photo's preview or full-size view.
    */

@@ -107,6 +107,7 @@ describe(AssetRestorationService.name, () => {
       setCurrent: vi.fn().mockResolvedValue(void 0),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
+      clearExpiredResult: vi.fn(),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn().mockResolvedValue([]),
       deleteByAsset: vi.fn().mockResolvedValue(void 0),

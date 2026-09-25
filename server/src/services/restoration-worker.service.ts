@@ -280,12 +280,12 @@ export class RestorationWorkerService {
     // A failed or cancelled full render keeps its chunk checkpoints for a while so a retry can
     // resume; past that date the work folder goes. The row stays, still retryable from scratch.
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
+      // Re-check the status in the write: a retry started since the read owns the folder now.
+      const cleared = await this.restorationRepository.clearExpiredResult(row.id, row.status, now);
+      if (!cleared) {
+        continue;
+      }
       const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
-      await this.restorationRepository.update(row.id, {
-        resultPath: null,
-        resultPreviewPath: null,
-        resultExpiresAt: null,
-      });
       if (files.length > 0) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
         removed += files.length;
