@@ -829,12 +829,15 @@ const actions = {
   ],
   "stack-selected-photos": ["match", []],
   "upload-from-library-progress-errors-duplicates": [
-    "partial",
-    ["U-1", "S-20"],
-    "Dismiss errors scope (S-20 fixed)",
+    "fixed",
+    ["U-1", "U-2", "U-3", "U-4", "U-5", "S-20"],
+    "Dismiss errors scope, pill, row status and region fixed on codex/FL-45-download-panel (S-20 fixed earlier)",
     {
       prototype: [`${P}/UploadPanel.jsx`],
-      production: [`${W}/lib/components/frameleaf/UploadPanel.svelte`],
+      production: [
+        `${W}/lib/components/frameleaf/UploadPanel.svelte`,
+        `${W}/lib/stores/upload.ts`,
+      ],
     },
   ],
   // viewer
@@ -854,8 +857,32 @@ const actions = {
     { production: [`${W}/lib/services/app.service.ts`] },
   ],
   "copy-image-to-clipboard": ["partial", ["V-5"], 'Label "Copy image"'],
-  "download-current-edited-media": ["match", []],
-  "download-original-separately": ["match", []],
+  "download-current-edited-media": [
+    "fixed",
+    ["D-1", "D-2", "D-3"],
+    "Single downloads go through the download panel with progress, Cancel and Retry (codex/FL-45-download-panel)",
+    {
+      prototype: [`${P}/UploadPanel.jsx`, `${P}/system-data.mjs`],
+      production: [
+        `${W}/lib/components/frameleaf/DownloadPanel.svelte`,
+        `${W}/lib/managers/download-manager.svelte.ts`,
+        `${W}/lib/services/asset.service.ts`,
+      ],
+    },
+  ],
+  "download-original-separately": [
+    "fixed",
+    ["D-1", "D-2", "D-3"],
+    "Original and edited files are separate download panel rows (codex/FL-45-download-panel)",
+    {
+      prototype: [`${P}/UploadPanel.jsx`, `${P}/system-data.mjs`],
+      production: [
+        `${W}/lib/components/frameleaf/DownloadPanel.svelte`,
+        `${W}/lib/managers/download-manager.svelte.ts`,
+        `${W}/lib/services/asset.service.ts`,
+      ],
+    },
+  ],
   "favorite-unfavorite": [
     "partial",
     ["V-5"],
