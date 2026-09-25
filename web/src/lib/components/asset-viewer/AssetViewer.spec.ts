@@ -1,5 +1,6 @@
 import { AssetTypeEnum, getAssetInfo, updateAsset, type AssetResponseDto } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
@@ -346,5 +347,76 @@ describe('AssetViewer', () => {
       expect(footer).not.toBeNull();
       expect(footer.querySelector('[data-testid="viewer-position"]')).toHaveAttribute('aria-live', 'polite');
     });
+  });
+
+  // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer; full screen is a choice.
+  it('starts a slideshow in the viewer without forcing full screen', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    HTMLElement.prototype.requestFullscreen = requestFullscreen;
+    Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true });
+    const { findByTestId, getByLabelText } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+    });
+
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+
+    expect(await findByTestId('slideshow-controls')).toBeInTheDocument();
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    // the footer stays while the slideshow plays, with Pause, the settings and full screen
+    expect(await findByTestId('viewer-footer')).toBeInTheDocument();
+    expect(getByLabelText('frameleaf_viewer_pause_slideshow')).toBeInTheDocument();
+    await fireEvent.click(getByLabelText('frameleaf_viewer_enter_fullscreen'));
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+
+    // the viewer renders the settings panel for the footer's cog
+    await fireEvent.click(getByLabelText('frameleaf_viewer_slideshow_settings'));
+    expect(await findByTestId('slideshow-settings')).toBeInTheDocument();
+    slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+    await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
+  });
+
+  // FL-36 + V-13: during a slideshow a tap on the photo toggles the one chrome state (header, footer, capsule).
+  it('toggles the shared chrome with a tap during a slideshow and restores it when the slideshow ends', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const { container, findByTestId } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+    });
+    const viewer = container.querySelector<HTMLElement>(':scope #immich-asset-viewer')!;
+    const canvas = viewer.querySelector<HTMLElement>(':scope [data-viewer-content]')!;
+
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    await findByTestId('slideshow-controls');
+    await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
+    await fireEvent.pointerUp(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
+    await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+
+    slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+    await waitFor(() => expect(viewer).not.toHaveClass('chrome-hidden'));
+  });
+
+  // Resuming from pause is not a new run: Autoplay off must not bounce a resumed slideshow back to paused.
+  it('keeps a resumed slideshow playing when Autoplay is off', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    slideshowStore.slideshowAutoplay.set(false);
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow));
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+    await Promise.resolve();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    slideshowStore.slideshowAutoplay.set(true);
   });
 });

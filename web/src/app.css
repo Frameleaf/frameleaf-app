@@ -259,3 +259,18 @@
     animation: none;
   }
 }
+
+/*
+ * The shared Memories pan and zoom (apple-style.css:414-421): the Memories engine
+ * (memory-engine.ts) sets --kb-from, --kb-to and --kb-duration per item for the player and
+ * the Memories card previews. Under Reduce Motion the engine sets none, so nothing moves.
+ * Global here because tokens.css only holds .frameleaf-scoped rules.
+ */
+@keyframes fl-ken-burns {
+  from {
+    transform: var(--kb-from);
+  }
+  to {
+    transform: var(--kb-to);
+  }
+}
