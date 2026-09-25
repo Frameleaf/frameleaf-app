@@ -531,6 +531,24 @@ describe(FrameleafCloudService.name, () => {
       expect(after.retiring.kid).toBe(before.kid);
     });
 
+    it('revokes at once on an explicit instance-revoked, without trying the candidate', async () => {
+      await writeFile(
+        join(identityDir, CANDIDATE_KEY_FILE),
+        generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }),
+        { mode: 0o600 },
+      );
+      let tokenRequests = 0;
+      cloud.on('POST /id/token', () => {
+        tokenRequests++;
+        return { status: 401, body: { error: 'instance-revoked' } };
+      });
+      sutForgetTokens();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(storedLink()?.status).toBe('revoked');
+      expect(tokenRequests).toBe(1);
+    });
+
     it('revokes when the cloud refuses both the current and the candidate key', async () => {
       await writeFile(
         join(identityDir, CANDIDATE_KEY_FILE),

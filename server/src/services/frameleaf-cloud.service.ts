@@ -670,8 +670,9 @@ export class FrameleafCloudService extends BaseService {
       });
     } catch (error) {
       if (this.isRevocation(error)) {
-        // a rotation whose answer was lost may have left the cloud holding the candidate key
-        if (await this.tryCandidateKey(cloudUrl, link)) {
+        // a rotation whose answer was lost may have left the cloud holding the candidate key; only
+        // invalid_client can mean that, an explicit instance-revoked never does
+        if (this.isInvalidClient(error) && (await this.tryCandidateKey(cloudUrl, link))) {
           return JobStatus.Failed;
         }
         await this.revoke(cloudUrl, link, 'Frameleaf Cloud no longer recognises this server.');
@@ -767,6 +768,11 @@ export class FrameleafCloudService extends BaseService {
     }
     const code = error.oauth?.error ?? error.envelope?.code ?? '';
     return ['invalid_client', 'instance-revoked', 'instance_revoked'].includes(code);
+  }
+
+  /** The token endpoint refused this server's key (not an explicit revoke). */
+  private isInvalidClient(error: unknown): boolean {
+    return error instanceof FrameleafCloudError && (error.oauth?.error ?? error.envelope?.code) === 'invalid_client';
   }
 
   // ------------------------------------------------------------------ commands (FL-155)
