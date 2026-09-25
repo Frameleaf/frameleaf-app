@@ -3,7 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { CloudConsentFeatures } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 
 export type FrameleafConsentRow = {
@@ -35,9 +35,7 @@ export class FrameleafConsentRepository {
     cloudRecordedVersion: string | null;
   }): Promise<FrameleafConsentRow> {
     return this.db.transaction().execute(async (trx) => {
-      if (!(await canWriteFork(trx))) {
-        throw new Error('Consent cannot be recorded while the server is being handed over');
-      }
+      await lockForkWrites(trx, 'Consent cannot be recorded while the server is being handed over');
       const result = await sql<FrameleafConsentRow>`
         INSERT INTO immich_fork.frameleaf_consent ("destinationId", version, features, "acceptedBy", "cloudRecordedVersion")
         VALUES (
@@ -77,16 +75,22 @@ export class FrameleafConsentRepository {
     return result.rows;
   }
 
-  /** Revoke every consent in force for a destination. Refused, like `record`, during a handoff. */
+  /**
+   * Revoke every consent in force for a destination and clear the consent the destination carries,
+   * in one transaction, so the two never disagree. Refused, like `record`, during a handoff.
+   */
   async revoke(destinationId: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      if (!(await canWriteFork(trx))) {
-        throw new Error('Consent cannot be withdrawn while the server is being handed over');
-      }
+      await lockForkWrites(trx, 'Consent cannot be withdrawn while the server is being handed over');
       await sql`
         UPDATE immich_fork.frameleaf_consent SET "revokedAt" = clock_timestamp()
         WHERE "destinationId" = ${destinationId}::uuid AND "revokedAt" IS NULL
       `.execute(trx);
+      await trx
+        .updateTable('ml_destination')
+        .set({ consentAcknowledgedAt: null, consentAcknowledgedBy: null, consentVersion: null })
+        .where('id', '=', destinationId)
+        .execute();
     });
   }
 }
