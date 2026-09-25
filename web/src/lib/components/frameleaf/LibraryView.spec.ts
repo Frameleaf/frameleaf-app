@@ -180,16 +180,31 @@ describe('LibraryView', () => {
         syncUrl: false,
       });
       await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
-      // A city is a condition the time buckets cannot apply: the server counts it for "Select all".
       librarySession.patchView({
-        query: { ...emptyDiscoveryQuery(), filter: { city: { eq: 'Halifax' } } } as never,
+        query: { ...emptyDiscoveryQuery(), filter: { tagIds: { any: ['t1'] } } } as never,
       });
 
-      await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce());
+      // One count for "select all matching" and one for the scope without the filter (the status bar's Y).
+      await waitFor(() => expect(sdkMock.searchAssetStatistics).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(librarySession.total).toBe(7));
       // One count per result set: re-rendering does not ask again.
       await tick();
-      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledOnce();
+      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledTimes(2);
+      librarySession.patchView({ query: emptyDiscoveryQuery() });
+    });
+
+    it('drops a condition the grid cannot apply instead of showing a chip for it (M3)', async () => {
+      render(LibraryView, { options: {}, destination: { kind: 'library' }, syncUrl: false });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.patchView({
+        query: {
+          ...emptyDiscoveryQuery(),
+          text: 'beach',
+          filter: { city: { eq: 'Halifax' }, tagIds: { any: ['t1'] } },
+        } as never,
+      });
+      await waitFor(() => expect(librarySession.query.filter).toEqual({ tagIds: { any: ['t1'] } }));
+      expect(librarySession.query.text).toBe('');
       librarySession.patchView({ query: emptyDiscoveryQuery() });
     });
 

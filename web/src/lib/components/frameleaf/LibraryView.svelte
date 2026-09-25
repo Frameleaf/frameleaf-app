@@ -46,6 +46,7 @@
   import WorkFileNamesToggle from '$lib/components/frameleaf/WorkFileNamesToggle.svelte';
   import {
     activeFilterFields,
+    withoutDiscoveryFilter,
     type DiscoveryDestination,
     type DiscoveryFilterSection,
   } from '$lib/components/discovery/query';
@@ -274,6 +275,25 @@
       ? timelineQueryOptions(session.query, options)
       : { options, unapplied: [] as string[] },
   );
+  /**
+   * A condition the buckets cannot apply never stays on a library page (review M3): "View in library"
+   * sends such queries to the search results instead, and one restored with the session is dropped
+   * here, so every chip, the count and "select all matching" describe exactly what the grid shows.
+   */
+  $effect(() => {
+    const { unapplied } = queryApplied;
+    if (unapplied.length === 0) {
+      return;
+    }
+    untrack(() => {
+      let query = session.query;
+      for (const field of unapplied) {
+        query = field === 'text' ? { ...query, text: '' } : withoutDiscoveryFilter(query, field);
+      }
+      session.setQuery(query);
+    });
+  });
+
   /** Filters the grid itself applies. */
   const appliedFilterCount = $derived(
     activeFilterFields(session.query).filter((field) => !queryApplied.unapplied.includes(field)).length,
@@ -1336,6 +1356,7 @@
                 inspectorOpen={canShowInfoPanel ? inspectorOpen : undefined}
                 onToggleInspector={() => (inspectorOpen = !inspectorOpen)}
                 {sorts}
+                unappliedFields={queryApplied.unapplied}
                 view={gridLayout === 'timeline' || publicView ? undefined : listView ? 'list' : 'grid'}
                 onViewChange={(view) => session.patchView({ view })}
                 onMoreActions={libraryChrome ? () => (moreActionsOpen = true) : undefined}
