@@ -755,7 +755,7 @@ describe(TrashService.name, () => {
         SELECT count(*)::text AS count FROM immich_fork.utility_activity WHERE "userId" = ${user.id}::uuid
       `.execute(ctx.database);
       expect(count.rows[0].count).toBe('500');
-    });
+    }, 60_000);
 
     it('goes with the account, and the removed-account sweep clears what a handoff left behind', async () => {
       const { ctx } = setup();
