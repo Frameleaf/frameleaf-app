@@ -14,7 +14,7 @@
 <h3 align="center">高性能的照片和视频自托管解决方案</h3>
 <br/>
 <a href="https://immich.app">
-<img src="../design/immich-screenshots.png" title="界面截图">
+<img src="../design/frameleaf/references/desktop-dark.jpg" title="界面截图">
 </a>
 <br/>
 <p align="center">
