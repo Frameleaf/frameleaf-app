@@ -201,7 +201,10 @@ export class InstanceIdentityRepository {
   /** The in-flight key becomes the candidate; its start time goes in a 0600 sidecar first. */
   private async makeCandidate(dir: string, now: number) {
     const nextFile = join(dir, NEXT_KEY_FILE);
-    const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(nextFile))));
+    const kid = await this.kidOrDiscard(nextFile);
+    if (!kid) {
+      return;
+    }
     await this.writeSidecar(join(dir, CANDIDATE_META_FILE), { kid, since: new Date(now).toISOString() });
     await rename(nextFile, join(dir, CANDIDATE_KEY_FILE));
   }
@@ -218,7 +221,10 @@ export class InstanceIdentityRepository {
       await rm(metaFile, { force: true });
       return;
     }
-    const kid = ed25519Thumbprint(publicJwkOf(createPrivateKey(await readFile(keyFile))));
+    const kid = await this.kidOrDiscard(keyFile, metaFile);
+    if (!kid) {
+      return;
+    }
     const meta = await readFile(metaFile, 'utf8')
       .then((text) => JSON.parse(text) as { kid?: unknown; since?: unknown })
       .catch(() => null);
@@ -233,6 +239,24 @@ export class InstanceIdentityRepository {
       return;
     }
     return { kid, keyFile, since: new Date(since).toISOString() };
+  }
+
+  /**
+   * The kid of a next or candidate key, or `undefined` after deleting a file that does not parse
+   * (FL-175). Such a file is a write a crash cut short; a key whose write did not complete was never
+   * sent to the cloud, so dropping it (and its sidecar) is safe and keeps the current key working.
+   */
+  private async kidOrDiscard(keyFile: string, sidecar?: string) {
+    const pem = await readFile(keyFile);
+    try {
+      return ed25519Thumbprint(publicJwkOf(createPrivateKey(pem)));
+    } catch (error) {
+      this.logger.warn(`Discarding ${keyFile}, a Frameleaf identity key that does not parse: ${error}`);
+      await rm(keyFile, { force: true });
+      if (sidecar) {
+        await rm(sidecar, { force: true });
+      }
+    }
   }
 
   private async writeSidecar(file: string, content: Record<string, unknown>) {
