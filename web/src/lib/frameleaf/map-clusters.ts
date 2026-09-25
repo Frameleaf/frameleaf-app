@@ -57,12 +57,21 @@ export const clusterObstacleLayer = (source: string): LayerSpecification => ({
   paint: { 'icon-opacity': 0 },
 });
 
-/** The base map's place-name layers (OpenMapTiles `place` source layer, the Immich and Frameleaf styles). */
+const SETTLEMENT = /\b(city|town|village)\b|_(city|town|village)/i;
+const REGION = /country|state|continent|province/i;
+
+/**
+ * The base map's settlement names (OpenMapTiles `place` source layer: city, town and village layers,
+ * by id or by their `class` filter). The prototype only moves the names of places, which sit where
+ * photos cluster; country, state and continent names are left where the style puts them.
+ */
 export const isPlaceLabelLayer = (layer: LayerSpecification) =>
   layer.type === 'symbol' &&
   'source-layer' in layer &&
   layer['source-layer'] === 'place' &&
-  !!layer.layout?.['text-field'];
+  !!layer.layout?.['text-field'] &&
+  !REGION.test(layer.id) &&
+  SETTLEMENT.test(`${layer.id} ${JSON.stringify(layer.filter ?? [])}`);
 
 /**
  * Place names start past their dot and may move to another side of it when a bubble is in the way
@@ -75,21 +84,24 @@ export const placeLabelLayout = (textSize = 12) => ({
 });
 
 /**
- * Applies the prototype's label offsets and the bubble obstacles to the current style. Safe to call
- * on every style change (it is, on `styledata`): nothing is added or set twice.
+ * Applies the prototype's label offsets and the bubble obstacles to the current style. It is called
+ * on style and source events, so it returns at once while the obstacle layer is in place: a new
+ * style (a theme change) drops that layer and the label changes with it, and only then is the style
+ * read and changed again.
  */
 export const applyClusterLabelLayout = (map: MapLibreMap, source: string) => {
+  if (map.getLayer(CLUSTER_OBSTACLE_LAYER) || !map.getSource(source)) {
+    return;
+  }
   const style = map.getStyle();
-  if (!style || !map.getSource(source)) {
+  if (!style) {
     return;
   }
   if (!map.hasImage(CLUSTER_OBSTACLE_IMAGE)) {
     const size = CLUSTER_OBSTACLE_IMAGE_SIZE;
     map.addImage(CLUSTER_OBSTACLE_IMAGE, { width: size, height: size, data: new Uint8Array(size * size * 4) });
   }
-  if (!map.getLayer(CLUSTER_OBSTACLE_LAYER)) {
-    map.addLayer(clusterObstacleLayer(source));
-  }
+  map.addLayer(clusterObstacleLayer(source));
   for (const layer of style.layers) {
     if (!isPlaceLabelLayer(layer)) {
       continue;
