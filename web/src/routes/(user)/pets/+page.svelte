@@ -119,13 +119,11 @@
     if (!isRecognitionRunActive(recognition.run)) {
       return;
     }
-    pollTimer = setTimeout(async () => {
-      try {
-        await refreshCandidates();
-      } catch {
-        // the next poll or a reload tries again
-      }
-      schedulePoll();
+    pollTimer = setTimeout(() => {
+      // a failed read is left to the next poll or a reload
+      void refreshCandidates()
+        .catch(() => {})
+        .finally(() => schedulePoll());
     }, RUN_POLL_MS);
   };
 

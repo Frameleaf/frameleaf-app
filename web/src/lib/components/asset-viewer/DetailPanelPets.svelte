@@ -68,7 +68,7 @@
   const confirmed = $derived(
     confirmedObservations(observations).filter((observation) => petsById.has(observation.petId)),
   );
-  const addable = $derived(pets.filter((pet) => !confirmed.some((observation) => observation.petId === pet.id)));
+  const addable = $derived(pets.filter((pet) => confirmed.every((observation) => observation.petId !== pet.id)));
   const nameOf = (pet: PetResponseDto | undefined) => pet?.name || $t('frameleaf_pets_unnamed');
 
   const load = async (assetId: string) => {

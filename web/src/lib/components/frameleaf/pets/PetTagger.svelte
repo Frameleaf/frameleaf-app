@@ -176,13 +176,13 @@
         petObservationCreateDto: {
           assetId: asset.id,
           expectedChecksum: asset.checksum,
-          ...(!wholePhoto && box && natural ? regionFromBox(box, natural) : {}),
+          ...(!wholePhoto && box && natural && regionFromBox(box, natural)),
         },
       });
       onSaved(observation, pet);
       open = false;
-    } catch (caught) {
-      error = isSourceConflict(caught) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
+    } catch (error_) {
+      error = isSourceConflict(error_) ? $t('frameleaf_pets_photo_changed') : $t('frameleaf_viewer_pets_error');
     } finally {
       saving = false;
     }
@@ -207,7 +207,7 @@
         <input type="checkbox" bind:checked={wholePhoto} />
         {$t('frameleaf_pet_tagger_whole_photo')}
       </label>
-      <Button disabled={wholePhoto || !natural} onclick={() => (box = box ?? DEFAULT_FACE_BOX)}>
+      <Button disabled={wholePhoto || !natural} onclick={() => (box ??= DEFAULT_FACE_BOX)}>
         {$t('frameleaf_pet_tagger_place')}
       </Button>
     </div>
