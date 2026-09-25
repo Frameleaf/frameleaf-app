@@ -38,11 +38,6 @@ export const envData: EnvData = {
     config: {},
   },
 
-  licensePublicKey: {
-    client: 'client-public-key',
-    server: 'server-public-key',
-  },
-
   versionCheck: {
     url: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
@@ -98,7 +93,14 @@ export const envData: EnvData = {
   },
 
   appReleases: {},
-  frameleafCloud: { url: null, identityDir: null },
+  frameleafCloud: {
+    url: null,
+    identityDir: null,
+    linkToken: null,
+    edge: { port: 2443, bind: '0.0.0.0', secret: null },
+    localUrl: null,
+    trustedLanCidrs: [],
+  },
 
   noColor: false,
 };

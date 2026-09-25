@@ -53,6 +53,12 @@ export interface ClientEventMap {
    * owner-scoped job list again, so nothing about the job is revealed by the event itself.
    */
   on_media_operation_update: [string];
+  /**
+   * FL-155: the Frameleaf Cloud link, licence or a person's Frameleaf account changed. Sent to
+   * administrators (and, for `account`, to that person); only the topic travels, and the client
+   * reads the admin-only status again.
+   */
+  on_frameleaf_cloud: [{ topic: FrameleafCloudTopic }];
 
   AssetUploadReadyV2: [{ asset: SyncAssetV2; exif: SyncAssetExifV1 }];
   AppRestartV1: [AppRestartEvent];
@@ -74,6 +80,8 @@ export interface ClientEventMap {
    */
   PartnerRevokeV1: [{ sharedById: string; sharedWithId: string }];
 }
+
+export type FrameleafCloudTopic = 'link' | 'license' | 'account';
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 

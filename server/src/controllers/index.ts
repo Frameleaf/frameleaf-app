@@ -13,6 +13,7 @@ import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
+import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
 import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
@@ -25,11 +26,13 @@ import { DuplicateReviewController } from 'src/controllers/duplicate-review.cont
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
+import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
 import { LibraryController } from 'src/controllers/library.controller.js';
+import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
 import { MapController } from 'src/controllers/map.controller.js';
@@ -75,6 +78,10 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  CloudAdminController,
+  FrameleafAuthController,
+  LicenseAdminController,
+  LicenseController,
   CloudMlAdminController,
   HardwareCheckController,
   ICloudSyncController,

@@ -1,206 +1,137 @@
 <script lang="ts">
   /**
-   * Supporter status, from the `supporter` section of the design template's `PersonalAccess`.
+   * Your preferences → Supporter (FL-157): the personal view of Support Frameleaf, built from the same
+   * components as the Buy screen (`BuyActivated`, `BuyKeyField`; AuthScreens.jsx:1880-1990).
    *
-   * - Personal: whether this account has supporter status and since when, Activate or Remove, and
-   *   the supporter badge preference while it is active.
-   * - Administrators also see the server support key: registered or not, its product, a masked
-   *   key reference and activation date, Register and Remove. Personal and server actions are
-   *   separate buttons calling separate endpoints; a personal key is never registered for the
-   *   server and the reverse.
-   * - The notice explains what supporting Frameleaf gives (FL-146 owner decision, 2026-09-25): a
-   *   product key gives access to Frameleaf Cloud, the enhanced machine learning features and more.
-   *   Frameleaf Cloud replaces the inherited licensing system; key certificates and the store are
-   *   FL-156/FL-157 work, so no purchase link is offered here yet.
+   * - A personal key (`FL-I…`) is activated for this account through `users/me/license`; the key
+   *   travels only in that request body and is shown again only as its last four symbols.
+   * - The activated card carries "Hide the supporter badge" (on hides it) and "Remove key" in place.
+   * - A server key is an administrator's: it is refused here and activated under Frameleaf Cloud →
+   *   Licence, so a personal key is never registered for the server and the reverse.
    */
+  import '$lib/frameleaf/auth.css';
+  import '$lib/components/frameleaf/buy/buy.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import SupporterKeyDialog from '$lib/components/frameleaf/access/SupporterKeyDialog.svelte';
+  import BuyActivated from '$lib/components/frameleaf/buy/BuyActivated.svelte';
+  import BuyKeyField from '$lib/components/frameleaf/buy/BuyKeyField.svelte';
+  import { productKeyMessageKey, validateProductKey } from '$lib/frameleaf/cloud';
   import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
-  import { maskLicenseKey } from '$lib/frameleaf/personal-access';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { locale } from '$lib/stores/preferences.store';
-  import { handleError } from '$lib/utils/handle-error';
-  import {
-    deleteServerLicense,
-    deleteUserLicense,
-    getAboutInfo,
-    getMyUser,
-    getServerLicense,
-    isHttpError,
-    updateMyPreferences,
-    type LicenseResponseDto,
-  } from '@immich/sdk';
-  import { modalManager, toastManager } from '@immich/ui';
-  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { DateTime } from 'luxon';
-  import { onMount } from 'svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { Route } from '$lib/route';
+  import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { deleteUserLicense, getMyUser, setUserLicense, updateMyPreferences } from '@immich/sdk';
   import { t } from 'svelte-i18n';
-  import './access.css';
 
-  let serverLicensed = $state(false);
-  let serverLicense = $state<LicenseResponseDto | null>(null);
-  let working = $state(false);
+  let key = $state('');
+  let keyError = $state('');
+  let busy = $state(false);
+  let notice = $state('');
 
-  const isAdmin = $derived(authManager.user.isAdmin);
   const personal = $derived(authManager.user.license ?? null);
-  const showBadge = $derived(authManager.preferences.purchase.showSupportBadge);
+  const badgeHidden = $derived(!authManager.preferences.purchase.showSupportBadge);
 
-  const date = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
-
-  const refresh = async () => {
-    try {
-      const [user, about] = await Promise.all([getMyUser(), getAboutInfo()]);
-      authManager.setUser(user);
-      serverLicensed = about.licensed;
-      serverLicense = isAdmin && about.licensed ? await readServerLicense() : null;
-      authManager.isPurchased = !!user.license || about.licensed;
-    } catch (error) {
-      handleError(error, $t('frameleaf_access_supporter_load_failed'));
-    }
+  const reloadUser = async () => {
+    const user = await getMyUser();
+    authManager.setUser(user);
+    authManager.isPurchased = !!user.license || featureFlagsManager.value.supporter;
   };
 
-  const readServerLicense = async () => {
-    try {
-      return await getServerLicense();
-    } catch (error) {
-      if (isHttpError(error) && error.status === 404) {
-        return null;
-      }
-      throw error;
-    }
-  };
-
-  const activate = async (kind: 'personal' | 'server') => {
-    if (!(await modalManager.show(SupporterKeyDialog, { kind }))) {
+  const activate = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (busy) {
       return;
     }
-
-    toastManager.primary(
-      kind === 'server' ? $t('frameleaf_access_server_key_registered') : $t('frameleaf_access_supporter_activated'),
-    );
-    await refresh();
-  };
-
-  const removePersonal = async () => {
-    const confirmed = await confirmFrameleaf({
-      title: $t('frameleaf_access_supporter_remove_title'),
-      prompt: $t('frameleaf_access_supporter_remove_prompt'),
-      confirmText: $t('frameleaf_access_supporter_remove'),
-      danger: true,
-    });
-    if (!confirmed) {
+    const check = validateProductKey(key);
+    if (!check.valid) {
+      keyError = $t(productKeyMessageKey(check.reason));
       return;
     }
-    working = true;
+    if (check.kind === 'server') {
+      keyError = $t('frameleaf_buy_server_key_elsewhere');
+      return;
+    }
+    busy = true;
+    keyError = '';
+    try {
+      await setUserLicense({ licenseActivateDto: { key: check.key } });
+      await reloadUser();
+      key = '';
+      notice = $t('frameleaf_buy_activated');
+    } catch (error) {
+      keyError = getServerErrorMessage(error) ?? $t('frameleaf_buy_activation_failed');
+    } finally {
+      busy = false;
+    }
+  };
+
+  const remove = async () => {
+    busy = true;
     try {
       await deleteUserLicense();
-      toastManager.primary($t('frameleaf_access_supporter_removed'));
+      await reloadUser();
+      notice = $t('frameleaf_buy_removed');
     } catch (error) {
-      handleError(error, $t('errors.failed_to_remove_product_key'));
+      keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
-      working = false;
-      await refresh();
+      busy = false;
     }
   };
 
-  const removeServer = async () => {
-    const confirmed = await confirmFrameleaf({
-      title: $t('frameleaf_access_server_key_remove'),
-      prompt: $t('frameleaf_access_server_key_remove_prompt'),
-      confirmText: $t('frameleaf_access_server_key_remove'),
-      danger: true,
-    });
-    if (!confirmed) {
-      return;
-    }
-    working = true;
-    try {
-      await deleteServerLicense();
-      toastManager.primary($t('frameleaf_access_server_key_removed'));
-    } catch (error) {
-      handleError(error, $t('errors.failed_to_remove_product_key'));
-    } finally {
-      working = false;
-      await refresh();
-    }
-  };
-
-  const setBadge = async (value: boolean) => {
+  const setBadgeHidden = async (hidden: boolean) => {
     try {
       const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { purchase: { showSupportBadge: value } },
+        userPreferencesUpdateDto: { purchase: { showSupportBadge: !hidden } },
       });
       authManager.setPreferences(withoutLockedRuleIds(response));
     } catch (error) {
-      handleError(error, $t('errors.unable_to_update_settings'));
+      keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }
   };
-
-  onMount(() => void refresh());
 </script>
 
-<section class="fl-access-section" aria-labelledby="fl-access-supporter">
-  <div class="fl-access-head">
-    <div>
-      <h3 id="fl-access-supporter">{$t('frameleaf_access_supporter_title')}</h3>
-      <p>
-        {personal
-          ? $t('frameleaf_access_supporter_active_since', { values: { date: date(personal.activatedAt) } })
-          : $t('frameleaf_access_supporter_inactive')}
-      </p>
-    </div>
-    {#if personal}
-      <Button disabled={working} onclick={removePersonal}>{$t('frameleaf_access_supporter_remove')}</Button>
-    {:else}
-      <Button disabled={working} onclick={() => activate('personal')}>
-        {$t('frameleaf_access_supporter_activate_short')}
-      </Button>
-    {/if}
-  </div>
-
-  {#if personal || serverLicensed}
-    <SettingToggle
-      title={$t('frameleaf_access_supporter_badge')}
-      subtitle={$t('frameleaf_access_supporter_badge_description')}
-      checked={showBadge}
-      onToggle={setBadge}
+<div class="buy-screen supporter-section">
+  {#if notice}
+    <p class="auth-success" role="status"><span>{notice}</span></p>
+  {/if}
+  {#if personal}
+    <BuyActivated
+      name={authManager.user.name}
+      kind="individual"
+      keyHint={personal.keyHint}
+      activatedAt={personal.activatedAt}
+      {badgeHidden}
+      {busy}
+      onBadgeHidden={(hidden) => void setBadgeHidden(hidden)}
+      onRemove={() => void remove()}
     />
-  {/if}
-
-  {#if isAdmin}
-    <div class="fl-access-section">
-      <h3>{$t('frameleaf_access_server_key_title')}</h3>
-      <dl class="fl-access-facts">
-        <dt>{$t('frameleaf_access_server_key_status')}</dt>
-        <dd>
-          {serverLicensed ? $t('frameleaf_access_server_key_registered_state') : $t('frameleaf_access_server_key_none')}
-        </dd>
-        <dt>{$t('frameleaf_access_server_key_product')}</dt>
-        <dd>{$t('frameleaf_access_server_key_product_name')}</dd>
-        {#if serverLicense}
-          <dt>{$t('frameleaf_access_server_key_reference')}</dt>
-          <dd><code>{maskLicenseKey(serverLicense.licenseKey)}</code></dd>
-          <dt>{$t('frameleaf_access_server_key_activated')}</dt>
-          <dd>{date(serverLicense.activatedAt)}</dd>
-        {/if}
-      </dl>
-      <div class="fl-access-actions">
-        {#if !serverLicensed}
-          <Button disabled={working} onclick={() => activate('server')}>
-            {$t('frameleaf_access_server_key_register')}
+  {:else}
+    <section class="auth-card buy-key fl-continuous-corners" aria-labelledby="supporter-have-key">
+      <h3 id="supporter-have-key">{$t('frameleaf_buy_have_key')}</h3>
+      <p class="auth-note">{$t('frameleaf_buy_personal_key_help')}</p>
+      <form class="buy-key-row" onsubmit={(event) => void activate(event)} novalidate>
+        <BuyKeyField bind:value={key} error={keyError} />
+        <span class="buy-key-submit">
+          <Button variant="primary" type="submit" disabled={busy}>
+            {busy ? $t('frameleaf_buy_activating') : $t('frameleaf_buy_activate')}
           </Button>
-        {/if}
-        <Button disabled={working || !serverLicensed} onclick={removeServer}>
-          {$t('frameleaf_access_server_key_remove')}
-        </Button>
-      </div>
-    </div>
+        </span>
+      </form>
+    </section>
   {/if}
+  <p class="auth-note">
+    <a class="auth-link" href={Route.buy()}>{$t('frameleaf_buy_open')}</a>
+    {#if authManager.user.isAdmin}
+      · <a class="auth-link" href={commandCenterUrl('cloud', 'cloud-license')}
+        >{$t('frameleaf_buy_server_licence_link')}</a
+      >
+    {/if}
+  </p>
+</div>
 
-  <div class="fl-access-notice">
-    <strong>{$t('frameleaf_access_supporter_cloud_title')}</strong>
-    <p>{$t('frameleaf_access_supporter_cloud')}</p>
-    <p>{$t('frameleaf_access_supporter_help')}</p>
-  </div>
-</section>
+<style>
+  .supporter-section {
+    gap: 14px;
+  }
+</style>

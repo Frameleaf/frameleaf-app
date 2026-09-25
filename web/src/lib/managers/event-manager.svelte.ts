@@ -111,6 +111,9 @@ export type Events = {
 
   ReleaseEvent: [ReleaseEventV1];
 
+  /** FL-155: the Frameleaf Cloud link, licence or a Frameleaf account changed (`on_frameleaf_cloud`). */
+  FrameleafCloudUpdate: [{ topic: 'link' | 'license' | 'account' }];
+
   WebsocketConnect: [];
 };
 

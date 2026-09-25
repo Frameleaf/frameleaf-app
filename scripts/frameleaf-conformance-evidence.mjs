@@ -1417,7 +1417,7 @@ const routes = {
   "/auth/login": [
     "fixed",
     ["AU-1"],
-    'Heading, forgot-password note and "Keep me signed in" (fixed on claude/frameleaf-implementation by the FL-80 auth screens)',
+    'Heading, forgot-password note and "Keep me signed in" (fixed on claude/frameleaf-implementation by the FL-80 auth screens); relay-only and local Sign in with Frameleaf views with the same-network banner (FL-158)',
     [`${P}/AuthScreens.jsx`],
     [`${W}/routes/auth/login/+page.svelte`],
   ],
@@ -1462,11 +1462,14 @@ const routes = {
     ],
   ],
   "/buy": [
-    "partial",
+    "fixed",
     ["BU-1", "S-31", "B-1", "B-2", "B-3", "B-4", "B-5", "B-6", "B-7", "B-9"],
-    "Frameleaf supporter page; Support Frameleaf wording and store-link removal done (FL-157 wording pass); full prototype screen port and store from FRAMELEAF_CLOUD_URL stay with FL-157",
+    'Support Frameleaf screen ported (FL-157): plan and supporter cards in US dollars, FL- key field with check symbol, activated card, hide-badge switch, remove key in place, wide auth shell; store from FRAMELEAF_CLOUD_URL or "not available yet" (FL-172); backup priced separately (coordinator decision)',
     [`${P}/AuthScreens.jsx`, `${P}/system-data.mjs`],
-    [`${W}/routes/(user)/buy/+page.svelte`],
+    [
+      `${W}/routes/(user)/buy/+page.svelte`,
+      `${W}/lib/components/frameleaf/buy/BuyScreen.svelte`,
+    ],
   ],
   "/documents/[[photos=photos]]/[[assetId=id]]": [
     "in-flight",
@@ -1509,7 +1512,7 @@ const routes = {
   "/link": [
     "retained-live-route",
     [],
-    "Deep-link resolver",
+    "Deep-link resolver; licence-key fragment relay (FL-157) and the Frameleaf account link return (FL-158)",
     [`${P}/App.jsx`],
     [`${W}/routes/link/+page.ts`],
   ],

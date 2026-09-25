@@ -103,6 +103,10 @@ describe('settings areas', () => {
     expect(commands).toHaveLength(USER_SETTINGS_AREAS.length);
     expect(commands.some((command) => command.id.startsWith('admin:'))).toBe(false);
   });
+
+  it('always offers "Frameleaf account", as the prototype does (FL-158)', () => {
+    expect(buildSettingsCommands($t, context()).map((command) => command.id)).toContain('user:frameleaf-account');
+  });
 });
 
 describe('buildCatalogueCommands', () => {

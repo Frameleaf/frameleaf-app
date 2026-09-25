@@ -51,7 +51,6 @@ const ADMIN_ROUTES = new Set([
   'POST system-config/image-description/requeue',
   'POST system-config/smart-albums/reevaluate',
   'DELETE queues/:name/jobs',
-  'DELETE server/license',
   'GET jobs',
   'GET libraries',
   'GET libraries/:id',
@@ -61,7 +60,6 @@ const ADMIN_ROUTES = new Set([
   'GET queues/:name',
   'GET queues/:name/jobs',
   'GET queues/:name/statistics',
-  'GET server/license',
   'GET server/statistics',
   'GET system-config',
   'GET system-config/defaults',
@@ -83,7 +81,6 @@ const ADMIN_ROUTES = new Set([
   'PUT jobs/:name',
   'PUT libraries/:id',
   'PUT queues/:name',
-  'PUT server/license',
   'PUT system-config',
 ]);
 

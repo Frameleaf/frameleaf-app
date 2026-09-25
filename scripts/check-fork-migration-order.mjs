@@ -17,7 +17,41 @@ export function checkOrder(base, current, upstream) {
   }
 }
 
+/**
+ * FL-156: the fork-schema migration manifest
+ * (`server/src/fork-schema/manifests/fork-migration-order.json`) is append-only: the base's list must
+ * be a prefix of the head's (checked with `checkOrder`, everything in the fork authority), and the
+ * head's list must be strictly ascending, so a new fork migration always sorts after every released
+ * one (Kysely runs fork migrations in ordered mode).
+ */
+export function checkForkManifest(base, current) {
+  checkOrder(base, current, new Set());
+  for (let index = 1; index < current.length; index++) {
+    assert.ok(
+      current[index] > current[index - 1],
+      `Fork migration ${current[index]} must sort after ${current[index - 1]}`,
+    );
+  }
+}
+
 if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href &&
+  process.argv[2] === "--fork-manifest"
+) {
+  // A base without the manifest (before it existed) has released nothing it lists.
+  const migrations = (path) => {
+    try {
+      return JSON.parse(readFileSync(path, "utf8")).migrations;
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  };
+  checkForkManifest(migrations(process.argv[3]), migrations(process.argv[4]));
+} else if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {

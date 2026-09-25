@@ -7,7 +7,16 @@ import type { JobItem, JobSource, UploadFile } from 'src/types.js';
 import { Asset } from 'src/database.js';
 import { EventConfig } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobStatus, MetadataKey, QueueName, UserAvatarColor, UserStatus } from 'src/enum.js';
+import {
+  ImmichWorker,
+  JobStatus,
+  MetadataKey,
+  NotificationLevel,
+  NotificationType,
+  QueueName,
+  UserAvatarColor,
+  UserStatus,
+} from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
@@ -135,6 +144,19 @@ type EventMap = {
 
   // websocket events
   WebsocketConnect: [{ userId: string }];
+
+  /** FL-155: tell every administrator once per `dedupeDays` (at most 30) for the same `dedupeKey`. */
+  AdminNotify: [AdminNotice];
+};
+
+export type AdminNotice = {
+  type: NotificationType;
+  level: NotificationLevel;
+  title: string;
+  description: string;
+  /** Notices with the same key are sent once per window; omit to always send. */
+  dedupeKey?: string;
+  dedupeDays?: number;
 };
 
 export type AppRestartEvent = {

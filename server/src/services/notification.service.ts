@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { AdminNotice, ArgOf } from 'src/repositories/event.repository.js';
 import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
 import { JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -314,6 +314,45 @@ export class NotificationService extends BaseService {
     });
 
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
+  /**
+   * FL-155: one notice to every administrator. With a `dedupeKey`, an administrator who already got
+   * a notice with that key in the last `dedupeDays` (1 to 30, default 7) is skipped, so a repeating
+   * condition (a failing check-in, a clone warning) notifies once per window.
+   */
+  async notifyAdmins(notice: AdminNotice): Promise<number> {
+    const days = Math.min(30, Math.max(1, Math.floor(notice.dedupeDays ?? 7)));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let sent = 0;
+    for (const admin of await this.userRepository.getAdmins()) {
+      if (
+        notice.dedupeKey &&
+        (await this.notificationRepository.findRecentByDedupeKey(admin.id, notice.dedupeKey, since))
+      ) {
+        continue;
+      }
+      const item = await this.notificationRepository.create({
+        userId: admin.id,
+        type: notice.type,
+        level: notice.level,
+        title: notice.title,
+        description: notice.description,
+        data: notice.dedupeKey ? { dedupeKey: notice.dedupeKey } : null,
+      });
+      this.websocketRepository.clientSend('on_notification', admin.id, mapNotification(item));
+      sent++;
+    }
+    return sent;
+  }
+
+  @OnEvent({ name: 'AdminNotify' })
+  async onAdminNotify(notice: ArgOf<'AdminNotify'>) {
+    try {
+      await this.notifyAdmins(notice);
+    } catch (error) {
+      this.logger.warn(`Unable to notify administrators (${notice.title}): ${error}`);
+    }
   }
 
   @OnEvent({ name: 'SessionDelete' })

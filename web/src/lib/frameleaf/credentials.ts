@@ -1,5 +1,6 @@
 /**
- * Write-only server credentials (FL-67): the SMTP password, and the OAuth client secret.
+ * Write-only server credentials (FL-67): the SMTP password, the OAuth client secret, and (FL-158) the
+ * Sign in with Frameleaf client secret.
  *
  * The server never returns these values, only whether each one is stored (`...Configured`).
  * They are replaced or cleared one at a time through `/admin/config/credentials/:name` from a
@@ -30,6 +31,11 @@ export const CREDENTIALS: Record<ConfigCredential, CredentialDefinition> = {
     labelKey: 'frameleaf_credentials_oauth_client_secret',
     helpKey: 'frameleaf_credentials_oauth_client_secret_help',
   },
+  [ConfigCredential.FrameleafOidcClientSecret]: {
+    name: ConfigCredential.FrameleafOidcClientSecret,
+    labelKey: 'frameleaf_credentials_frameleaf_oidc_client_secret',
+    helpKey: 'frameleaf_credentials_frameleaf_oidc_client_secret_help',
+  },
 };
 
 /** The same limit the server applies. */
@@ -50,6 +56,9 @@ export const isCredentialConfigured = (config: PartialConfig, name: ConfigCreden
     case ConfigCredential.OauthClientSecret: {
       return !!config.oauth?.clientSecretConfigured;
     }
+    case ConfigCredential.FrameleafOidcClientSecret: {
+      return !!config.frameleafCloud?.signIn?.clientSecretConfigured;
+    }
   }
 };
 
@@ -66,6 +75,9 @@ export const withoutCredentialValues = <T extends PartialConfig>(config: T): T =
   if (copy.oauth) {
     copy.oauth.clientSecret = '';
   }
+  if (copy.frameleafCloud?.signIn) {
+    copy.frameleafCloud.signIn.clientSecret = '';
+  }
   return copy;
 };
 
@@ -78,12 +90,17 @@ export const forConfigSave = <T extends PartialConfig>(config: T): T => {
   const copy = withoutCredentialValues(config);
   delete copy.notifications?.smtp?.transport?.passwordConfigured;
   delete copy.oauth?.clientSecretConfigured;
+  delete copy.frameleafCloud?.signIn?.clientSecretConfigured;
   return copy;
 };
 
 /** Whether a configuration (for example an imported file) carries any credential value. */
 export const hasCredentialValues = (config: PartialConfig): boolean =>
-  !!(config.notifications?.smtp?.transport?.password || config.oauth?.clientSecret);
+  !!(
+    config.notifications?.smtp?.transport?.password ||
+    config.oauth?.clientSecret ||
+    config.frameleafCloud?.signIn?.clientSecret
+  );
 
 /**
  * The configuration after a credential change, for the shared settings state: the flag follows
@@ -102,6 +119,12 @@ export const withCredentialState = (
     }
     case ConfigCredential.OauthClientSecret: {
       next.oauth.clientSecretConfigured = configured;
+      break;
+    }
+    case ConfigCredential.FrameleafOidcClientSecret: {
+      if (next.frameleafCloud.signIn) {
+        next.frameleafCloud.signIn.clientSecretConfigured = configured;
+      }
       break;
     }
   }

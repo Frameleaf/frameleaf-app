@@ -4,8 +4,12 @@
    * the old administration pages (deduplication, Compute & jobs, Maintenance, Users), the account's
    * Trash and repair queues, and the account settings (`UserSettingsList`).
    */
+  import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
+  import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
+  import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
+  import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
   import DeduplicationSection from './DeduplicationSection.svelte';
@@ -42,6 +46,14 @@
     <CloudMlSection />
   {:else if section.key === 'hardware'}
     <HardwareSection />
+  {:else if section.key === 'cloud-account'}
+    <CloudAccountSection />
+  {:else if section.key === 'cloud-plan'}
+    <PlanSection />
+  {:else if section.key === 'cloud-license'}
+    <LicenseSection />
+  {:else if section.key === 'frameleaf-signin'}
+    <FrameleafSignInSection />
   {:else if section.key === 'render-workers'}
     <Loader load={loadRenderWorkers}>
       {#snippet children(data)}

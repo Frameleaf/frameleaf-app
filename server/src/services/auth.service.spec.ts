@@ -4,8 +4,8 @@ import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
-import { AuthType, Permission, UserMetadataKey } from 'src/enum.js';
-import { AuthService } from 'src/services/auth.service.js';
+import { AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { OAuthProfileFactory } from 'test/factories/oauth-profile.factory.js';
@@ -268,6 +268,67 @@ describe(AuthService.name, () => {
 
   describe('backchannelLogout', () => {
     const dto = { logout_token: 'fake-jwt-token' };
+
+    describe('for Sign in with Frameleaf (FL-158)', () => {
+      const token = (aud: string) =>
+        ['e30', Buffer.from(JSON.stringify({ aud })).toString('base64url'), 'sig'].join('.');
+
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue({
+          ...mocks.config.getEnv(),
+          frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url: 'https://cloud.test' },
+        });
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? {
+                  status: 'linked',
+                  cloudUrl: 'https://cloud.test',
+                  instanceId: 'instance-1',
+                  oidc: {
+                    issuer: 'https://id.cloud.test',
+                    clientId: 'instance-1',
+                    scope: 'openid',
+                    roleClaim: 'frameleaf_role',
+                    storageLabelClaim: '',
+                  },
+                }
+              : key === SystemMetadataKey.SystemConfig
+                ? { frameleafCloud: { signIn: { clientSecret: 'secret' } } }
+                : null) as never,
+          ),
+        );
+      });
+
+      it('ends every session tagged with the sid or sub, verified against the Frameleaf client', async () => {
+        mocks.oauth.validateLogoutToken.mockResolvedValue({ sid: 'fl-sid', sub: 'fl-sub' });
+        mocks.session.delete.mockResolvedValue();
+        mocks.frameleafAccount.findSessions.mockResolvedValue([
+          { sessionId: 'session-1' },
+          { sessionId: 'session-2' },
+        ] as never);
+
+        await sut.backchannelLogout({ logout_token: token('instance-1') });
+
+        expect(mocks.oauth.validateLogoutToken).toHaveBeenCalledWith(
+          expect.objectContaining({ clientId: 'instance-1', issuerUrl: 'https://id.cloud.test' }),
+          expect.any(String),
+        );
+        expect(mocks.frameleafAccount.findSessions).toHaveBeenCalledWith({ sid: 'fl-sid', sub: 'fl-sub' });
+        expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+        expect(mocks.session.delete).toHaveBeenCalledWith('session-2');
+        expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-2' });
+        expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2']);
+        expect(mocks.session.invalidateOAuth).not.toHaveBeenCalled();
+      });
+
+      it('leaves a token for another audience to the administrator’s own provider', async () => {
+        await expect(sut.backchannelLogout({ logout_token: token('someone-else') })).rejects.toThrow(
+          'Received backchannel logout request but OAuth is not enabled',
+        );
+        expect(mocks.frameleafAccount.findSessions).not.toHaveBeenCalled();
+      });
+    });
 
     it('should throw a Bad Request Exception if OAuth is not enabled', async () => {
       await expect(sut.backchannelLogout(dto)).rejects.toBeInstanceOf(BadRequestException);
@@ -1071,6 +1132,49 @@ describe(AuthService.name, () => {
   });
 
   describe('callback', () => {
+    it('refuses to link an existing account by an email the provider has not verified (FL-158)', async () => {
+      const user = UserFactory.create();
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthEnabled);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({
+        profile: OAuthProfileFactory.create({ email: user.email, email_verified: false }),
+      });
+      mocks.user.getByEmail.mockResolvedValue(user);
+
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toThrow('has not been verified');
+      expect(mocks.user.update).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses to register an account when the provider omits email_verified, saying how to fix it (FL-158)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithAutoRegister);
+      mocks.oauth.getProfileAndOAuthSid.mockResolvedValue({
+        profile: OAuthProfileFactory.create({ email_verified: undefined }),
+      });
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+
+      await expect(
+        sut.callback(
+          { url: 'http://immich/auth/login?code=abc123', state: 'xyz789', codeVerifier: 'foo' },
+          {},
+          loginDetails,
+        ),
+      ).rejects.toThrow('map the email_verified claim');
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts email_verified sent as the string "true" (FL-158)', () => {
+      expect(emailVerificationProblem({ email_verified: 'true' })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: true })).toBeNull();
+      expect(emailVerificationProblem({ email_verified: 'false' })).toContain('has not been verified');
+      expect(emailVerificationProblem({})).toContain('map the email_verified claim');
+    });
+
     it('should throw an error if OAuth is not enabled', async () => {
       await expect(
         sut.callback({ url: '', state: 'xyz789', codeVerifier: 'foo' }, {}, loginDetails),

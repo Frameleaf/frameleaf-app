@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
+import type { IncomingHttpHeaders } from 'node:http';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -46,6 +47,8 @@ import {
   readConfigHistory,
 } from 'src/utils/config-history.js';
 import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { frameleafVia, isHomeAddress, signInClient } from 'src/utils/frameleaf-sign-in.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -57,6 +60,7 @@ const DEFAULT_SECONDS_PER_ASSET = 1.5;
 const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
   [ConfigCredential.SmtpPassword]: 'notifications.smtp.transport.password',
   [ConfigCredential.OAuthClientSecret]: 'oauth.clientSecret',
+  [ConfigCredential.FrameleafOidcClientSecret]: 'frameleafCloud.signIn.clientSecret',
 };
 
 const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
@@ -70,6 +74,7 @@ const readCredential = (config: SystemConfig, name: ConfigCredential): string =>
 const stripCredentialFlags = (config: AdminConfigDto) => {
   delete config.notifications?.smtp?.transport?.passwordConfigured;
   delete config.oauth?.clientSecretConfigured;
+  delete config.frameleafCloud?.signIn?.clientSecretConfigured;
 };
 
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
@@ -102,6 +107,10 @@ const resolveCredentials = (dto: AdminConfigDto, stored: SystemConfig) => {
   }
   if (dto.oauth?.clientSecret === '') {
     dto.oauth.clientSecret = dto.oauth.issuerUrl === stored.oauth.issuerUrl ? stored.oauth.clientSecret : '';
+  }
+  // FL-158: the Frameleaf client secret belongs to this server's link, so an empty value keeps it
+  if (dto.frameleafCloud?.signIn?.clientSecret === '') {
+    dto.frameleafCloud.signIn.clientSecret = stored.frameleafCloud.signIn?.clientSecret ?? '';
   }
 };
 
@@ -141,9 +150,38 @@ export class SystemConfigService extends BaseService {
     return mapUserConfig(defaults);
   }
 
-  async getPublicConfig(): Promise<PublicConfigDto> {
+  /**
+   * FL-158: the public configuration, with how Sign in with Frameleaf applies to this visitor. A
+   * visitor arriving through remote access (`relay` or `wan`, vouched for by the edge worker) is
+   * offered only Sign in with Frameleaf; one who is also on the home network is offered the local
+   * address.
+   */
+  async getPublicConfig(arrival?: { headers: IncomingHttpHeaders; clientIp: string }) {
     const config = await this.getConfig({ withCache: false });
-    return mapPublicConfig(config);
+    const env = this.configRepository.getEnv().frameleafCloud;
+    const { link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    const via = frameleafVia(arrival?.headers ?? {}, env.edge.secret);
+    const signInRequired = via === 'relay' || via === 'wan';
+    const relayOrigin = link?.services?.relayOrigin;
+    let relayHost: string | null;
+    try {
+      relayHost = typeof relayOrigin === 'string' ? new URL(relayOrigin).host : null;
+    } catch {
+      relayHost = null;
+    }
+    const sameNetwork = signInRequired && !!env.localUrl && isHomeAddress(arrival?.clientIp, env.trustedLanCidrs);
+    return mapPublicConfig(config, {
+      signInAvailable: !!signInClient(link, linked),
+      signInRequired,
+      via,
+      relayHost,
+      // the home address is told only to a visitor who is already on the home network
+      localUrl: sameNetwork ? env.localUrl : null,
+      sameNetwork,
+    });
   }
 
   getPublicConfigDefaults(): PublicConfigDto {

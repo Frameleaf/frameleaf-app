@@ -5099,7 +5099,7 @@
         "server/src/dtos/user.dto.ts",
         "server/src/dtos/license.dto.ts",
         "server/src/repositories/config.repository.ts",
-        "server/src/emails/license.email.tsx",
+        "server/src/services/frameleaf-license.service.ts",
         "server/helmet.json"
       ],
       "phase": 4,

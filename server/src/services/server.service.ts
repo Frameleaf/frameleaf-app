@@ -1,8 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
-import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
   ServerAboutResponseDto,
   ServerApkLinksDto,
@@ -21,6 +20,8 @@ import { BaseService } from 'src/services/base.service.js';
 import { DEFAULT_RAW_PROMPT_TEMPLATE } from 'src/services/prompt-assembler.service.js';
 import { apkLinks } from 'src/utils/app-releases.js';
 import { asHumanReadable } from 'src/utils/bytes.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   isDuplicateDetectionEnabled,
@@ -49,14 +50,16 @@ export class ServerService extends BaseService {
     const version = `v${serverVersion.toString()}`;
     const { buildMetadata } = this.configRepository.getEnv();
     const buildVersions = await this.serverInfoRepository.getBuildVersions();
-    const licensed = await this.systemMetadataRepository.get(SystemMetadataKey.License);
+    // FL-156: licensed while the supporter key or the plan certificate is active or in grace
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const licensed = isLicensed(licenses);
 
     return {
       version,
       // Releases are tagged frameleaf-v<version>-<n> (.github/frameleaf-release.cjs) and carry GitHub's generated notes;
       // the server only knows <version>, so link the release search for it.
       versionUrl: `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${version}&expanded=true`,
-      licensed: !!licensed,
+      licensed,
       ...buildMetadata,
       ...buildVersions,
     };
@@ -129,8 +132,10 @@ export class ServerService extends BaseService {
       localFeatures,
     } = await this.getConfig({ withCache: false });
     const { configFile } = this.configRepository.getEnv();
+    const cloud = await this.frameleafCloudFlags();
 
     return {
+      ...cloud,
       smartSearch: isSmartSearchEnabled(machineLearning),
       // FL-31: Ask Search answers through smart search, so it needs both the setting and smart search
       askSearch: localFeatures.askSearch.enabled && isSmartSearchEnabled(machineLearning),
@@ -153,6 +158,27 @@ export class ServerService extends BaseService {
       nsfwHiding: isNsfwHidingEnabled(machineLearning),
       physicalDeduplication: physicalDeduplication.enabled,
       realtimeTranscoding: ffmpeg.realtime.enabled,
+    };
+  }
+
+  /**
+   * FL-156: what cloud-connected features the server may offer. `frameleafCloud` is true while the
+   * server is linked; the others follow the licence certificates. Self-hosted features never read
+   * these flags.
+   */
+  private async frameleafCloudFlags() {
+    const { linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const flags = entitlementFlags([licenses?.key, licenses?.plan]);
+    return {
+      frameleafCloud: linked,
+      remoteAccess: linked && flags.remoteAccess,
+      cloudMl: linked && flags.cloudMl,
+      cloudBackup: linked && flags.cloudBackup,
+      supporter: flags.supporter,
     };
   }
 
@@ -219,38 +245,5 @@ export class ServerService extends BaseService {
       image: Object.keys(mimeTypes.image),
       sidecar: Object.keys(mimeTypes.sidecar),
     };
-  }
-
-  async deleteLicense(): Promise<void> {
-    await this.systemMetadataRepository.delete(SystemMetadataKey.License);
-  }
-
-  async getLicense(): Promise<LicenseResponseDto> {
-    const license = await this.systemMetadataRepository.get(SystemMetadataKey.License);
-    if (!license) {
-      throw new NotFoundException();
-    }
-    return license;
-  }
-
-  async setLicense(dto: LicenseKeyDto): Promise<LicenseResponseDto> {
-    if (!dto.licenseKey.startsWith('IMSV-')) {
-      throw new BadRequestException('Invalid license key');
-    }
-    const { licensePublicKey } = this.configRepository.getEnv();
-    const isLicenseValid = this.cryptoRepository.verifySha256(
-      dto.licenseKey,
-      dto.activationKey,
-      licensePublicKey.server,
-    );
-    if (!isLicenseValid) {
-      throw new BadRequestException('Invalid license key');
-    }
-
-    const licenseData = { ...dto, activatedAt: new Date() };
-
-    await this.systemMetadataRepository.set(SystemMetadataKey.License, licenseData);
-
-    return licenseData;
   }
 }

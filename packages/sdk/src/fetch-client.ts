@@ -54,6 +54,73 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type CloudLinkPendingDto = {
+    expiresAt: string;
+    /** How often this server asks whether the code was approved */
+    intervalSeconds: number;
+    /** The code to enter on the approval page, XXXX-XXXX */
+    userCode: string;
+    verificationUri: string;
+    /** The approval page with the code filled in; shown as a QR code */
+    verificationUriComplete: string;
+};
+export type CloudPermissionsDto = {
+    /** Frameleaf Cloud may start a cloud backup run */
+    allowBackupTrigger: boolean;
+    /** Frameleaf Cloud may refresh the plan and rotate this server’s credentials */
+    allowEntitlementRefresh: boolean;
+    /** Frameleaf Cloud may turn remote access on or off */
+    allowRemoteEnable: boolean;
+};
+export type CloudStatusResponseDto = {
+    /** The linked Frameleaf account */
+    account: {
+        id: string | null;
+        label: string | null;
+    } | null;
+    /** Frameleaf Cloud saw this server’s identity start from two places */
+    cloneSuspected: boolean;
+    /** Host of the configured Frameleaf Cloud address */
+    cloudHost: string | null;
+    /** FRAMELEAF_CLOUD_URL is set */
+    configured: boolean;
+    dataRegion: string | null;
+    /** Check-ins that failed in a row */
+    heartbeatFailures: number;
+    /** Exactly the fields each check-in sends; the "What this server sends" panel lists them */
+    heartbeatFields: CloudHeartbeatField[];
+    /** This server’s instance ID, once its identity exists */
+    instanceId: string | null;
+    /** RFC 7638 thumbprint of this server’s key */
+    keyFingerprint: string | null;
+    lastContactAt: string | null;
+    /** The last link or check-in problem, in plain words */
+    lastError: string | null;
+    linkResult: (CloudLinkResult) | null;
+    /** FRAMELEAF_LINK_TOKEN is set */
+    linkTokenConfigured: boolean;
+    linkedAt: string | null;
+    pending: (CloudLinkPendingDto) | null;
+    permissions: CloudPermissionsDto;
+    /** Frameleaf Cloud asked an administrator to link again */
+    relinkRequested: boolean;
+    /** Remote access is switched on for this linked server */
+    remoteAccessEnabled: boolean;
+    revoked: {
+        at: string;
+        reason: string;
+    } | null;
+    /** The Sign in with Frameleaf button text */
+    signInButtonText: string;
+    /** The OpenID client ID for Sign in with Frameleaf */
+    signInClientId: string | null;
+    signInIssuer: string | null;
+    /** Accounts here linked to a Frameleaf account */
+    signInLinkedAccounts: number;
+    /** Sign in with Frameleaf is offered at home too */
+    signInShowOnLocalLogin: boolean;
+    state: CloudLinkState;
+};
 export type CloudMlConsentFeaturesDto = {
     identityNames: boolean;
     medicalSignals: boolean;
@@ -246,6 +313,20 @@ export type CloudMlWalletUpdateDto = {
     /** Daily spending cap, USD */
     dailyCapUsd?: number;
 };
+export type CloudPermissionsUpdateDto = {
+    /** Frameleaf Cloud may start a cloud backup run */
+    allowBackupTrigger?: boolean;
+    /** Frameleaf Cloud may refresh the plan and rotate this server’s credentials */
+    allowEntitlementRefresh?: boolean;
+    /** Frameleaf Cloud may turn remote access on or off */
+    allowRemoteEnable?: boolean;
+};
+export type CloudSignInUpdateDto = {
+    /** The Sign in with Frameleaf button text */
+    buttonText?: string;
+    /** Offer Sign in with Frameleaf on the login page at home */
+    showOnLocalLogin?: boolean;
+};
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
     enabled: boolean;
@@ -344,8 +425,19 @@ export type AdminConfigFrameleafCloudMlDto = {
     /** The destination a job preselects when its kind of work may run in both places */
     startWith: StartWith;
 };
+export type AdminConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Frameleaf client secret (write-only; empty preserves the existing secret) */
+    clientSecret: string;
+    /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
+    clientSecretConfigured?: boolean;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
 export type AdminConfigFrameleafCloudDto = {
     cloudMl: AdminConfigFrameleafCloudMlDto;
+    signIn?: AdminConfigFrameleafSignInDto;
 };
 export type AdminConfigEnhancedRawImageDto = {
     /** Enhanced RAW rendering */
@@ -1013,6 +1105,67 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type LicenseEntitlementsDto = {
+    cloudBackup: boolean;
+    cloudMl: boolean;
+    frameleafCloud: boolean;
+    remoteAccess: boolean;
+    supporter: boolean;
+};
+export type LicenseSlotDto = {
+    /** When this server received the certificate */
+    activatedAt: string;
+    /** When the certificate or its period ends; null for a lifetime key */
+    expiresAt: string | null;
+    graceUntil: string | null;
+    /** Last four symbols of the key, for a key activation */
+    keyHint: string | null;
+    kind: LicenseKind;
+    refreshedAt: string | null;
+    /** Activated by key, installed from a file, or from the account */
+    source: Source;
+    state: LicenseState;
+};
+export type LicenseStatusResponseDto = {
+    /** Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL) */
+    configured: boolean;
+    entitlements: LicenseEntitlementsDto;
+    expiresAt: string | null;
+    /** What a licence is bound to: this server’s instance ID and key thumbprint */
+    fingerprint: {
+        instanceId: string | null;
+        jkt: string | null;
+    };
+    graceUntil: string | null;
+    /** The supporter key held by this server */
+    key: (LicenseSlotDto) | null;
+    keyHint: string | null;
+    kind: (LicenseKind) | null;
+    /** A supporter key or plan is active or in grace; plans then cost 20% less */
+    licensed: boolean;
+    /** This server is linked to a Frameleaf account */
+    linked: boolean;
+    /** The licence came from a file and is not refreshed online */
+    offline: boolean;
+    /** The Frameleaf Cloud plan held by this server */
+    plan: (LicenseSlotDto) | null;
+    /** The daily certificate refresh */
+    refresh: {
+        lastError: string | null;
+        nextRefreshAt: string | null;
+        refreshedAt: string | null;
+    };
+    /** The overall state: the plan’s when there is one, else the key’s */
+    state: LicenseState;
+};
+export type LicenseActivateDto = {
+    /** A licence key, FL-KXXX-XXXX-XXXX */
+    key: string;
+};
+export type LicenseCertificateDto = {
+    /** The contents of a licence file: the signed certificate, or a JSON file holding it */
+    certificate: string;
+};
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
@@ -1494,10 +1647,10 @@ export type RenderWorkerUpdateDto = {
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
-    /** Activation key */
-    activationKey: string;
-    /** License key (format: /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/) */
-    licenseKey: string;
+    /** Last four symbols of the key */
+    keyHint: string;
+    /** Supporter key kind; personal keys are always individual */
+    kind: Kind2;
 };
 export type UserAdminResponseDto = {
     avatarColor: UserAvatarColor;
@@ -3916,6 +4069,15 @@ export type UserConfigFFmpegRealtimeDto = {
 export type UserConfigFFmpegDto = {
     realtime: UserConfigFFmpegRealtimeDto;
 };
+export type UserConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
+export type UserConfigFrameleafCloudDto = {
+    signIn: UserConfigFrameleafSignInDto;
+};
 export type UserConfigGeneratedFullsizeImageDto = {
     /** Enabled */
     enabled: boolean;
@@ -3943,6 +4105,14 @@ export type UserConfigFacialRecognitionDto = {
     /** Minimum number of faces required for recognition */
     minFaces: number;
 };
+export type UserConfigImageDescriptionDto = {
+    /** Whether the task is enabled */
+    enabled: boolean;
+};
+export type UserConfigNsfwDetectionDto = {
+    /** Whether the task is enabled */
+    enabled: boolean;
+};
 export type UserConfigOcrDto = {
     /** Whether the task is enabled */
     enabled: boolean;
@@ -3953,6 +4123,8 @@ export type UserConfigMachineLearningDto = {
     /** Enabled */
     enabled: boolean;
     facialRecognition: UserConfigFacialRecognitionDto;
+    imageDescription: UserConfigImageDescriptionDto;
+    nsfwDetection: UserConfigNsfwDetectionDto;
     ocr: UserConfigOcrDto;
 };
 export type UserConfigMapDto = {
@@ -4005,6 +4177,7 @@ export type UserConfigUserDto = {
 };
 export type UserConfigDto = {
     ffmpeg: UserConfigFFmpegDto;
+    frameleafCloud: UserConfigFrameleafCloudDto;
     image: UserConfigImageDto;
     machineLearning: UserConfigMachineLearningDto;
     map: UserConfigMapDto;
@@ -4977,6 +5150,32 @@ export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
     importPaths?: ValidateLibraryImportPathResponseDto[];
 };
+export type LicenseProductDto = {
+    id: string;
+    kind: Kind3;
+    period: Period;
+    priceUsd: number;
+    /** Where to buy it; null when no store is configured */
+    storeUrl: string | null;
+};
+export type LicenseProductsResponseDto = {
+    /** Cloud backup is usage based, not part of a plan */
+    backup: {
+        minimumTb: number;
+        usdPerTbMonth: number;
+    };
+    /** AI credit top-ups the store accepts; credit is never discounted */
+    credit: {
+        maximumUsd: number;
+        minimumUsd: number;
+    };
+    currency: Currency;
+    /** Share taken off plans on a licensed server */
+    licensedDiscount: number;
+    products: LicenseProductDto[];
+    /** The store this server was deployed with; null when there is none */
+    storeUrl: string | null;
+};
 export type LivePhotoCandidateDto = {
     confidence: LivePhotoMatchConfidence;
     /** Why these two assets are believed to be a separated live photo pair */
@@ -5434,7 +5633,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind2;
+    kind: Kind4;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -5447,7 +5646,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind3;
+    kind: Kind5;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -5457,7 +5656,7 @@ export type PetStoryDto = {
     /** Confirmed photos of the pet that month, before the diversity pass */
     assetCount: number;
     /** Discriminator for a pet story */
-    kind: Kind4;
+    kind: Kind6;
     /** The owner's local month, 'yyyy-MM' */
     month: string;
     /** The pet name */
@@ -5475,7 +5674,7 @@ export type BirthdayMemoryDto = {
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
     /** Discriminator for a birthday */
-    kind: Kind5;
+    kind: Kind7;
     /** Their name when the memory was made */
     name: string;
     /** Whether the birthday is a person's or a pet's */
@@ -5489,7 +5688,7 @@ export type PersonRecapDto = {
     /** Number of their photos and videos that year */
     assetCount: number;
     /** Discriminator for a person or pet recap */
-    kind: Kind6;
+    kind: Kind8;
     /** Their name when the memory was made */
     name: string;
     /** Whether the recap is about a person or a pet */
@@ -5824,6 +6023,25 @@ export type OAuthCallbackDto = {
     state?: string;
     /** OAuth callback URL */
     url: string;
+};
+export type FrameleafHandoffResponseDto = {
+    /** A single-use code for signing in on another address of this server */
+    code: string;
+    expiresAt: string;
+};
+export type FrameleafHandoffRedeemDto = {
+    /** The code from POST oauth/frameleaf/handoff */
+    code: string;
+    rememberMe?: boolean;
+};
+export type FrameleafAccountLinkResponseDto = {
+    /** Sign in with Frameleaf is available on this server (it is linked) */
+    available: boolean;
+    /** The linked Frameleaf account’s email */
+    email: string | null;
+    lastSignInAt: string | null;
+    linked: boolean;
+    linkedAt: string | null;
 };
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
@@ -6668,6 +6886,29 @@ export type PreservationUploadCreateDto = {
     /** A `.frameleaf-preservation.zip` package */
     file: Blob;
 };
+export type FrameleafPublicConfigDto = {
+    /** This server on the home network; given only to a remote-access visitor who is on it */
+    localUrl: string | null;
+    /** The remote-access host shown on the login page, when known */
+    relayHost: string | null;
+    /** Whether a remote-access visitor is on the same network as this server */
+    sameNetwork: boolean;
+    /** Whether Sign in with Frameleaf is available (the server is linked) */
+    signInAvailable: boolean;
+    /** Whether this visitor arrived through remote access, where only Sign in with Frameleaf is offered */
+    signInRequired: boolean;
+    /** How the request arrived; null when the edge worker did not vouch for it */
+    via: (FrameleafVia) | null;
+};
+export type PublicConfigFrameleafSignInDto = {
+    /** Sign in with Frameleaf button text */
+    buttonText: string;
+    /** Show Sign in with Frameleaf on the local sign-in page too */
+    showOnLocalLogin: boolean;
+};
+export type PublicConfigFrameleafCloudDto = {
+    signIn: PublicConfigFrameleafSignInDto;
+};
 export type PublicConfigOAuthDto = {
     /** Auto launch */
     autoLaunch: boolean;
@@ -6691,6 +6932,8 @@ export type PublicConfigThemeDto = {
     customCss: string;
 };
 export type PublicConfigDto = {
+    frameleaf: FrameleafPublicConfigDto;
+    frameleafCloud: PublicConfigFrameleafCloudDto;
     oauth: PublicConfigOAuthDto;
     passwordLogin: PublicConfigPasswordLoginDto;
     server: PublicConfigServerDto;
@@ -7037,8 +7280,7 @@ export type AskSearchPlanDto = {
         /** Include stacked assets */
         withStacked?: boolean;
     };
-    /** Search mode used to answer the query */
-    mode: Mode;
+    mode: SearchAskMode;
     /** Normalized query text */
     normalizedQuery: string;
 };
@@ -7691,6 +7933,10 @@ export type ServerConfigDto = {
 export type ServerFeaturesDto = {
     /** Whether Ask Search (natural-language questions about the library) is enabled and can answer */
     askSearch: boolean;
+    /** Whether the Frameleaf Cloud plan includes cloud backup (FL-156) */
+    cloudBackup: boolean;
+    /** Whether the Frameleaf Cloud plan includes cloud processing (FL-156) */
+    cloudMl: boolean;
     /** Whether config file is available */
     configFile: boolean;
     /** Whether duplicate detection is enabled */
@@ -7699,6 +7945,8 @@ export type ServerFeaturesDto = {
     email: boolean;
     /** Whether facial recognition is enabled */
     facialRecognition: boolean;
+    /** Whether this server is linked to Frameleaf Cloud (FL-156) */
+    frameleafCloud: boolean;
     /** Whether image description and tag generation is enabled */
     imageDescription: boolean;
     /** Whether face import is enabled */
@@ -7721,6 +7969,8 @@ export type ServerFeaturesDto = {
     physicalDeduplication: boolean;
     /** Whether real-time transcoding is enabled */
     realtimeTranscoding: boolean;
+    /** Whether the Frameleaf Cloud plan includes remote access (FL-156) */
+    remoteAccess: boolean;
     /** Whether reverse geocoding is enabled */
     reverseGeocoding: boolean;
     /** Whether search is enabled */
@@ -7729,14 +7979,10 @@ export type ServerFeaturesDto = {
     sidecar: boolean;
     /** Whether smart search is enabled */
     smartSearch: boolean;
+    /** Whether this server carries a Frameleaf supporter licence (FL-156) */
+    supporter: boolean;
     /** Whether trash feature is enabled */
     trash: boolean;
-};
-export type LicenseKeyDto = {
-    /** Activation key */
-    activationKey: string;
-    /** License key (format: /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/) */
-    licenseKey: string;
 };
 export type ServerMediaTypesResponseDto = {
     /** Supported image MIME types */
@@ -10005,6 +10251,65 @@ export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Check in with Frameleaf Cloud now
+ */
+export function checkInCloud(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/heartbeat", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Unlink this server from Frameleaf Cloud
+ */
+export function unlinkCloud(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Check the Frameleaf Cloud link
+ */
+export function getCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts
+    }));
+}
+/**
+ * Start linking this server to a Frameleaf account
+ */
+export function startCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Cancel a pending link
+ */
+export function cancelCloudLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/link/pending", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get Frameleaf Cloud processing status
  */
 export function getCloudMlStatus(opts?: Oazapfts.RequestOpts) {
@@ -10097,6 +10402,47 @@ export function updateCloudMlWallet({ cloudMlWalletUpdateDto }: {
         method: "PUT",
         body: cloudMlWalletUpdateDto
     })));
+}
+/**
+ * Choose what Frameleaf Cloud may ask this server to do
+ */
+export function updateCloudPermissions({ cloudPermissionsUpdateDto }: {
+    cloudPermissionsUpdateDto: CloudPermissionsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/permissions", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudPermissionsUpdateDto
+    })));
+}
+/**
+ * Choose where Sign in with Frameleaf is offered
+ */
+export function updateCloudSignIn({ cloudSignInUpdateDto }: {
+    cloudSignInUpdateDto: CloudSignInUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/sign-in", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudSignInUpdateDto
+    })));
+}
+/**
+ * Get the Frameleaf Cloud link status
+ */
+export function getCloudStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudStatusResponseDto;
+    }>("/admin/cloud/status", {
+        ...opts
+    }));
 }
 /**
  * Get the admin configuration
@@ -10409,6 +10755,83 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
         ...opts
+    }));
+}
+/**
+ * Remove the licence key
+ */
+export function removeLicenseKey(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get the licence status
+ */
+export function getLicenseStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license", {
+        ...opts
+    }));
+}
+/**
+ * Activate a server licence key
+ */
+export function activateLicense({ licenseActivateDto }: {
+    licenseActivateDto: LicenseActivateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/activate", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: licenseActivateDto
+    })));
+}
+/**
+ * Install a licence file
+ */
+export function installLicenseCertificate({ licenseCertificateDto }: {
+    licenseCertificateDto: LicenseCertificateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/certificate", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: licenseCertificateDto
+    })));
+}
+/**
+ * Remove the plan from this server
+ */
+export function removeLicensePlan(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/plan", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Refresh the licence now
+ */
+export function refreshLicense(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseStatusResponseDto;
+    }>("/admin/license/refresh", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -13600,6 +14023,17 @@ export function validate({ id, validateLibraryDto }: {
     })));
 }
 /**
+ * Get Support Frameleaf prices
+ */
+export function getLicenseProducts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LicenseProductsResponseDto;
+    }>("/license/products", {
+        ...opts
+    }));
+}
+/**
  * List live photo relink candidates
  */
 export function getLivePhotoCandidates(opts?: Oazapfts.RequestOpts) {
@@ -14589,6 +15023,98 @@ export function redirectOAuthToFrameleafMobile(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/oauth/frameleaf-mobile-redirect", {
         ...opts
     }));
+}
+/**
+ * Start Sign in with Frameleaf
+ */
+export function startFrameleafSignIn({ oAuthConfigDto }: {
+    oAuthConfigDto: OAuthConfigDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: OAuthAuthorizeResponseDto;
+    }>("/oauth/frameleaf/authorize", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthConfigDto
+    })));
+}
+/**
+ * Finish Sign in with Frameleaf
+ */
+export function finishFrameleafSignIn({ oAuthCallbackDto }: {
+    oAuthCallbackDto: OAuthCallbackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/callback", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCallbackDto
+    })));
+}
+/**
+ * Hand a Sign in with Frameleaf session to another address
+ */
+export function createFrameleafHandoff(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: FrameleafHandoffResponseDto;
+    }>("/oauth/frameleaf/handoff", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Sign in with a handoff code
+ */
+export function redeemFrameleafHandoff({ frameleafHandoffRedeemDto }: {
+    frameleafHandoffRedeemDto: FrameleafHandoffRedeemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    }>("/oauth/frameleaf/handoff/redeem", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafHandoffRedeemDto
+    })));
+}
+/**
+ * Unlink your Frameleaf account
+ */
+export function unlinkFrameleafAccount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/oauth/frameleaf/link", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get your Frameleaf account link
+ */
+export function getFrameleafAccountLink(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafAccountLinkResponseDto;
+    }>("/oauth/frameleaf/link", {
+        ...opts
+    }));
+}
+/**
+ * Link your Frameleaf account
+ */
+export function linkFrameleafAccount({ oAuthCallbackDto }: {
+    oAuthCallbackDto: OAuthCallbackDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminResponseDto;
+    }>("/oauth/frameleaf/link", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthCallbackDto
+    })));
 }
 /**
  * Link OAuth account
@@ -16235,43 +16761,6 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }>("/server/features", {
         ...opts
     }));
-}
-/**
- * Delete server product key
- */
-export function deleteServerLicense(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/server/license", {
-        ...opts,
-        method: "DELETE"
-    }));
-}
-/**
- * Get product key
- */
-export function getServerLicense(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: UserLicense;
-    } | {
-        status: 404;
-    }>("/server/license", {
-        ...opts
-    }));
-}
-/**
- * Set server product key
- */
-export function setServerLicense({ licenseKeyDto }: {
-    licenseKeyDto: LicenseKeyDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: UserLicense;
-    }>("/server/license", oazapfts.json({
-        ...opts,
-        method: "PUT",
-        body: licenseKeyDto
-    })));
 }
 /**
  * Get supported media types
@@ -18506,7 +18995,7 @@ export function getMyCalendarHeatmap({ $from, to, $type }: {
     }));
 }
 /**
- * Delete user product key
+ * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/users/me/license", {
@@ -18515,7 +19004,7 @@ export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Retrieve user product key
+ * Get your supporter key
  */
 export function getUserLicense(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -18526,10 +19015,10 @@ export function getUserLicense(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Set user product key
+ * Activate your supporter key
  */
-export function setUserLicense({ licenseKeyDto }: {
-    licenseKeyDto: LicenseKeyDto;
+export function setUserLicense({ licenseActivateDto }: {
+    licenseActivateDto: LicenseActivateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -18537,7 +19026,7 @@ export function setUserLicense({ licenseKeyDto }: {
     }>("/users/me/license", oazapfts.json({
         ...opts,
         method: "PUT",
-        body: licenseKeyDto
+        body: licenseActivateDto
     })));
 }
 /**
@@ -18855,6 +19344,29 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum CloudHeartbeatField {
+    Version = "version",
+    BootId = "bootId",
+    UptimeSec = "uptimeSec",
+    Health = "health",
+    Endpoints = "endpoints",
+    RemoteAccess = "remoteAccess",
+    Permissions = "permissions",
+    LicenseKid = "licenseKid"
+}
+export enum CloudLinkResult {
+    Pending = "pending",
+    Approved = "approved",
+    Denied = "denied",
+    Expired = "expired"
+}
+export enum CloudLinkState {
+    NotConfigured = "not-configured",
+    Unlinked = "unlinked",
+    Pending = "pending",
+    Linked = "linked",
+    Revoked = "revoked"
+}
 export enum CloudMlConnection {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
@@ -19014,7 +19526,8 @@ export enum ClassificationRuleAction {
 }
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret"
+    OauthClientSecret = "oauth-client-secret",
+    FrameleafOidcClientSecret = "frameleaf-oidc-client-secret"
 }
 export enum SystemConfigHistoryCredentialChange {
     Replaced = "replaced",
@@ -19042,6 +19555,23 @@ export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
     ChecksumMismatch = "checksum_mismatch"
+}
+export enum LicenseKind {
+    Server = "server",
+    Individual = "individual",
+    Plan = "plan"
+}
+export enum Source {
+    Key = "key",
+    File = "file",
+    Account = "account"
+}
+export enum LicenseState {
+    None = "none",
+    Active = "active",
+    Grace = "grace",
+    Expired = "expired",
+    Invalid = "invalid"
 }
 export enum MaintenanceAction {
     Start = "start",
@@ -19208,6 +19738,9 @@ export enum RenderWorkerRefusalReason {
     ManifestIncomplete = "manifest_incomplete",
     CodecUnsupported = "codec_unsupported"
 }
+export enum Kind2 {
+    Individual = "individual"
+}
 export enum UserStatus {
     Active = "active",
     Removing = "removing",
@@ -19238,7 +19771,15 @@ export enum AdminAuditAction {
     LibraryUpdated = "library-updated",
     LibraryScanQueued = "library-scan-queued",
     LibraryScanCancelled = "library-scan-cancelled",
-    LibraryDeleted = "library-deleted"
+    LibraryDeleted = "library-deleted",
+    CloudLinked = "cloud-linked",
+    CloudUnlinked = "cloud-unlinked",
+    CloudRevoked = "cloud-revoked",
+    CloudPermissionsChanged = "cloud-permissions-changed",
+    LicenseActivated = "license-activated",
+    LicenseRemoved = "license-removed",
+    FrameleafAccountLinked = "frameleaf-account-linked",
+    FrameleafAccountUnlinked = "frameleaf-account-unlinked"
 }
 export enum AssetOrder {
     Asc = "asc",
@@ -19538,6 +20079,11 @@ export enum Permission {
     ServerStorage = "server.storage",
     ServerStatistics = "server.statistics",
     ServerVersionCheck = "server.versionCheck",
+    AdminCloudRead = "adminCloud.read",
+    AdminCloudUpdate = "adminCloud.update",
+    AdminCloudLink = "adminCloud.link",
+    FrameleafAccountRead = "frameleafAccount.read",
+    FrameleafAccountUpdate = "frameleafAccount.update",
     AdminCloudMlRead = "adminCloudMl.read",
     AdminCloudMlUpdate = "adminCloudMl.update",
     ServerLicenseRead = "serverLicense.read",
@@ -19990,6 +20536,19 @@ export enum LibraryImportPathReason {
     Nested = "nested",
     OtherLibrary = "other_library"
 }
+export enum Currency {
+    Usd = "USD"
+}
+export enum Kind3 {
+    Plan = "plan",
+    Supporter = "supporter",
+    Credit = "credit"
+}
+export enum Period {
+    Month = "month",
+    Year = "year",
+    OneTime = "one-time"
+}
 export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
@@ -20069,23 +20628,23 @@ export enum MemoryType {
     Birthday = "birthday",
     PersonRecap = "person_recap"
 }
-export enum Kind2 {
+export enum Kind4 {
     EventStory = "event_story"
 }
-export enum Kind3 {
+export enum Kind5 {
     YearInReview = "year_in_review"
 }
-export enum Kind4 {
+export enum Kind6 {
     PetStory = "pet_story"
 }
-export enum Kind5 {
+export enum Kind7 {
     Birthday = "birthday"
 }
 export enum Subject {
     Person = "person",
     Pet = "pet"
 }
-export enum Kind6 {
+export enum Kind8 {
     PersonRecap = "person_recap"
 }
 export enum MemoryShowLessKind {
@@ -20288,6 +20847,11 @@ export enum PreservationRestoreItemState {
     Matched = "matched",
     Skipped = "skipped"
 }
+export enum FrameleafVia {
+    Lan = "lan",
+    Wan = "wan",
+    Relay = "relay"
+}
 export enum QueueJobStatus {
     Active = "active",
     Failed = "failed",
@@ -20368,6 +20932,8 @@ export enum JobName {
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
+    FrameleafHeartbeat = "FrameleafHeartbeat",
+    FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",
@@ -20420,7 +20986,7 @@ export enum SearchOrderField {
     FileSizeInBytes = "fileSizeInBytes",
     Rating = "rating"
 }
-export enum Mode {
+export enum SearchAskMode {
     Smart = "smart",
     Metadata = "metadata"
 }

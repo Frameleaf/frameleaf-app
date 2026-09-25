@@ -638,6 +638,12 @@ export class JobRepository {
       case JobName.VersionCheck: {
         return { deduplication: { id: JobName.VersionCheck } };
       }
+      case JobName.FrameleafHeartbeat: {
+        return { deduplication: { id: JobName.FrameleafHeartbeat } };
+      }
+      case JobName.FrameleafLicenseRefresh: {
+        return { deduplication: { id: JobName.FrameleafLicenseRefresh } };
+      }
       case JobName.DatabaseBackup: {
         return { deduplication: { id: JobName.DatabaseBackup } };
       }
