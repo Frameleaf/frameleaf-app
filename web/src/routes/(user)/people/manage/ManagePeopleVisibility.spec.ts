@@ -306,3 +306,118 @@ it('retries a failed page without dropping earlier visibility drafts or duplicat
   expect(a.isHidden).toBe(false);
   expect(sdkMock.getAllPeople.mock.calls.map(([request]) => request?.page)).toEqual([2, 2]);
 });
+
+// FL-37: ManagePeople.jsx:56-84 applies Hide all / Hide unnamed / Show all to everyone, not only the
+// people loaded so far; the page reads the remaining pages first and keeps every existing draft.
+describe('visibility shortcuts cover everyone', () => {
+  const pageOf = (people: ReturnType<typeof peopleListItemFactory.build>[], hasNextPage = false) => ({
+    people,
+    total: 3,
+    hidden: 1,
+    hasNextPage,
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    vi.mocked(goto).mockClear();
+    sdkMock.getAllPeople.mockReset();
+    sdkMock.updatePeople.mockReset();
+  });
+
+  it('Hide all reads the remaining pages, then hides every person', async () => {
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const b = peopleListItemFactory.build({ id: 'b', name: 'Bruno', isHidden: false });
+    const c = peopleListItemFactory.build({ id: 'c', name: '', isHidden: true });
+    sdkMock.getAllPeople.mockResolvedValueOnce(pageOf([b], true)).mockResolvedValueOnce(pageOf([c]));
+    sdkMock.updatePeople.mockResolvedValueOnce([
+      { id: 'a', success: true },
+      { id: 'b', success: true },
+    ]);
+    const view = render(ManagePeoplePageTestWrapper, { data: { ...getData([a], true), people: pageOf([a], true) } });
+    const user = userEvent.setup();
+
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_hide_all' }));
+
+    await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(3));
+    expect(sdkMock.getAllPeople.mock.calls.map(([request]) => request?.page)).toEqual([2, 3]);
+    for (const card of view.container.querySelectorAll('button[aria-pressed]')) {
+      expect(card).toHaveAttribute('aria-pressed', 'false');
+    }
+    expect(view.container.querySelector('.pm-pending')?.textContent).toBe('frameleaf_people_hidden_draft');
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_save_changes_count' }));
+    await waitFor(() => expect(sdkMock.updatePeople).toHaveBeenCalledOnce());
+    // the person already hidden on a later page is not sent again
+    expect(sdkMock.updatePeople.mock.calls[0][0]).toEqual({
+      peopleUpdateDto: {
+        people: [
+          { id: 'a', isHidden: true },
+          { id: 'b', isHidden: true },
+        ],
+      },
+    });
+  });
+
+  it('Hide unnamed reaches unnamed people on later pages and keeps earlier drafts', async () => {
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const b = peopleListItemFactory.build({ id: 'b', name: '', isHidden: false });
+    sdkMock.getAllPeople.mockResolvedValueOnce(pageOf([b]));
+    const view = render(ManagePeoplePageTestWrapper, { data: { ...getData([a], true), people: pageOf([a], true) } });
+    const user = userEvent.setup();
+    await user.click(view.container.querySelector('button[aria-pressed]')!);
+
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_hide_unnamed' }));
+
+    await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(2));
+    const cards = view.container.querySelectorAll('button[aria-pressed]');
+    expect(cards[0]).toHaveAttribute('aria-pressed', 'false');
+    expect(cards[1]).toHaveAttribute('aria-pressed', 'false');
+    expect(view.getByRole('button', { name: 'frameleaf_people_save_changes_count' })).not.toBeDisabled();
+  });
+
+  it('drafts nothing when a remaining page cannot be read, and Retry picks the load up again', async () => {
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const b = peopleListItemFactory.build({ id: 'b', name: 'Bruno', isHidden: false });
+    sdkMock.getAllPeople.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(pageOf([b]));
+    const view = render(ManagePeoplePageTestWrapper, { data: { ...getData([a], true), people: pageOf([a], true) } });
+    const user = userEvent.setup();
+
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_hide_all' }));
+
+    await waitFor(() => expect(view.getByRole('alert')).toBeInTheDocument());
+    expect(view.container.querySelector('button[aria-pressed]')).toHaveAttribute('aria-pressed', 'true');
+    expect(view.getByRole('button', { name: 'frameleaf_settings_draft_save' })).toBeDisabled();
+
+    await user.click(view.getByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(2));
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_hide_all' }));
+    await waitFor(() =>
+      expect(
+        [...view.container.querySelectorAll('button[aria-pressed]')].map((card) => card.getAttribute('aria-pressed')),
+      ).toEqual(['false', 'false']),
+    );
+  });
+
+  it('searches everyone by reading the remaining pages', async () => {
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const z = peopleListItemFactory.build({ id: 'z', name: 'Zora', isHidden: false });
+    sdkMock.getAllPeople.mockResolvedValueOnce(pageOf([z]));
+    const view = render(ManagePeoplePageTestWrapper, { data: { ...getData([a], true), people: pageOf([a], true) } });
+    const user = userEvent.setup();
+
+    await user.type(view.getByRole('searchbox'), 'zor');
+
+    await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(1));
+    expect(view.container.querySelector('button[aria-pressed]')?.textContent).toContain('Zora');
+    expect(sdkMock.getAllPeople).toHaveBeenCalledOnce();
+  });
+
+  it('says what a single card change will do once saved', async () => {
+    const a = peopleListItemFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const view = render(ManagePeoplePageTestWrapper, { data: getData([a]) });
+    const user = userEvent.setup();
+
+    await user.click(view.container.querySelector('button[aria-pressed]')!);
+
+    expect(view.container.querySelector('.pm-pending')?.textContent).toBe('frameleaf_people_will_be_hidden');
+  });
+});
