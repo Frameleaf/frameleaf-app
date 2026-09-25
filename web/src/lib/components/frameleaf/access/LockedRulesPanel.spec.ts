@@ -216,7 +216,7 @@ describe('LockedRulesPanel (FL-67)', () => {
     );
   });
 
-  it('lists the account\'s people before any search, filtered by the query (UT-26)', async () => {
+  it("lists the account's people before any search, filtered by the query (UT-26)", async () => {
     const alice = personFactory.build({ id: 'person-alice', name: 'Alice' });
     const bob = personFactory.build({ id: 'person-bob', name: 'Bob' });
     sdkMock.getAllPeople.mockResolvedValue({ people: [alice, bob], total: 2, hidden: 0, hasNextPage: false } as never);
