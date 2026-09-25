@@ -17,12 +17,21 @@
 export const maxStudioHandoffAssets = 200;
 
 const identifier = /^[\w-]{1,64}$/;
+/** An exact playhead in seconds, `num/den` (FL-93). */
+const playheadPattern = /^\d{1,15}\/[1-9]\d{0,8}$/;
 
 export interface StudioHandoff {
   /** The project to open, or null for a new draft. */
   projectId: string | null;
   /** Asset ids to start from, in the order the person selected them. */
   assetIds: string[];
+  /**
+   * The asset whose quick editor opened Studio (FL-113). Studio offers the way back to it, and the
+   * draft the person left there is waiting for them.
+   */
+  returnTo: string | null;
+  /** Where the quick editor's playhead was, as exact seconds (`num/den`), so Studio starts there. */
+  at: { num: number; den: number } | null;
 }
 
 export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
@@ -42,9 +51,15 @@ export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
     }
   }
 
+  const returnTo = params.get('from');
+  const at = params.get('at');
+  const [num, den] = at && playheadPattern.test(at) ? at.split('/').map(Number) : [];
+
   return {
     projectId: projectId && identifier.test(projectId) ? projectId : null,
     assetIds,
+    returnTo: returnTo && identifier.test(returnTo) ? returnTo : null,
+    at: num !== undefined && den !== undefined && Number.isSafeInteger(num) ? { num, den } : null,
   };
 };
 
@@ -52,9 +67,13 @@ export const parseStudioHandoff = (params: URLSearchParams): StudioHandoff => {
 export const studioHandoffQuery = ({
   projectId,
   assetIds = [],
+  returnTo,
+  at,
 }: {
   projectId?: string | null;
   assetIds?: readonly string[];
+  returnTo?: string | null;
+  at?: { num: number; den: number } | null;
 }): string => {
   const params = new URLSearchParams();
   if (projectId) {
@@ -63,6 +82,12 @@ export const studioHandoffQuery = ({
   const ids = assetIds.filter((id) => identifier.test(id)).slice(0, maxStudioHandoffAssets);
   if (ids.length > 0) {
     params.set('assets', ids.join(','));
+  }
+  if (returnTo && identifier.test(returnTo)) {
+    params.set('from', returnTo);
+  }
+  if (at && playheadPattern.test(`${at.num}/${at.den}`)) {
+    params.set('at', `${at.num}/${at.den}`);
   }
   const query = params.toString();
   return query ? `?${query}` : '';

@@ -176,6 +176,11 @@ export interface StudioHostContext {
    * the host, because the engine's locale files do not carry Frameleaf strings.
    */
   strings?: Readonly<Partial<Record<StudioAdapterString, string>>>;
+  /**
+   * Where the quick editor that opened Studio had its playhead (FL-113), as exact seconds. The engine
+   * starts there once, when it mounts; later updates never move the playhead.
+   */
+  handoffPlayhead?: { num: number; den: number } | null;
 }
 
 export type StudioAdapterString =

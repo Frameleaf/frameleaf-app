@@ -54,6 +54,7 @@
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { loadStudioWorkspace, saveStudioWorkspaceLayout } from '$lib/frameleaf/studio/workspace';
+  import { reportStudioPlayhead } from '$lib/frameleaf/editor-continuity';
   import { getProfileImageUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { createStudioExport } from '@immich/sdk';
@@ -440,6 +441,19 @@
    * library stays one click away under Tools > Studio in the rail.
    */
   const onBack = () => void goto(Route.photos());
+
+  /**
+   * Back to the quick editor that opened Studio (FL-113). Studio's playhead goes with the person, and
+   * the draft they left there is waiting for them (`editor-continuity.ts`); the unsaved-work guard
+   * still runs for anything Studio holds.
+   */
+  const returnTo = data.returnTo;
+  const onBackToEditor = returnTo
+    ? () => {
+        reportStudioPlayhead(returnTo, playhead);
+        void goto(`${Route.viewAsset({ id: returnTo })}?edit=1`);
+      }
+    : undefined;
   const onOpenActivity = () => void goto(Route.activity());
 
   /** Only an owner's saved project can be exported, so the header offers nothing otherwise. */
@@ -670,6 +684,8 @@
   {capabilities}
   {services}
   {onBack}
+  {onBackToEditor}
+  handoffPlayhead={data.at}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
