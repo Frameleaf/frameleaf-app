@@ -1,30 +1,29 @@
 <script lang="ts">
   /**
-   * Frameleaf Explore destination (FL-50).
+   * Frameleaf Explore destination (FL-50, T-12).
    *
-   * Ported from the approved prototype (`design/frameleaf/template/src/ExploreLibrary.jsx`),
-   * but every section below is real, already-accessible data the route loader
-   * (`explore/+page.ts`) gathered from production endpoints — `SearchService.getExploreData`
-   * for people/cities/recent uploads, `BestPhotosService.getBestPhotos` for the quality-score
-   * highlight, `AssetService`/`SearchService` statistics for the shortcut counts, the memory
-   * manager for "Days to revisit", and the existing albums endpoint for "From your albums".
-   * There is no local sample array and no rating-based fallback for Best Photos.
+   * Ported from the approved prototype (`design/frameleaf/template/src/ExploreLibrary.jsx`,
+   * `explore-library.css`, the snapping carousels of `apple-style.css` "#5"), but every section
+   * below is real, already-accessible data the route loader (`explore/+page.ts`) gathered from
+   * production endpoints: `POST /search/facets` counts People, Places and "Things in your photos"
+   * in the same scope as the search each card opens, `BestPhotosService.getBestPhotos` gives the
+   * quality-score highlight, `AssetService`/`SearchService` statistics the shortcut counts, the
+   * memory manager "Days to revisit", the albums endpoint "From your albums", and a capture-date
+   * metadata search "Recent captures". There is no local sample array and no rating-based fallback
+   * for Best Photos.
    */
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
-  import type { ExploreBestPhotosPreview, ExploreShortcutCounts } from '$lib/frameleaf/explore';
-  import { buildExploreShortcuts } from '$lib/frameleaf/explore';
+  import type {
+    ExploreBestPhotosPreview,
+    ExploreCoverCard,
+    ExplorePersonCard,
+    ExploreShortcutCounts,
+  } from '$lib/frameleaf/explore';
+  import { buildExploreShortcuts, captureDay, isVideoAsset } from '$lib/frameleaf/explore';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { getAltText } from '$lib/utils/thumbnail-util';
-  import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import {
-    AssetMediaSize,
-    AssetTypeEnum,
-    type AlbumResponseDto,
-    type AssetResponseDto,
-    type PersonResponseDto,
-  } from '@immich/sdk';
+  import { AssetMediaSize, type AlbumResponseDto, type AssetResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiChevronRight,
@@ -37,88 +36,121 @@
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  export interface ExplorePlaceCard {
-    value: string;
-    data: AssetResponseDto;
-  }
-
   export interface ExploreMemoryCard {
     id: string;
     title: string;
     href: string;
     alt: string;
     src: string;
+    count: number;
   }
 
   interface Props {
-    people: PersonResponseDto[];
-    places: ExplorePlaceCard[];
+    people: ExplorePersonCard[];
+    places: ExploreCoverCard[];
+    things: ExploreCoverCard[];
+    /** Newest captures first (not uploads). */
     recents: AssetResponseDto[];
     memories: ExploreMemoryCard[];
     albums: AlbumResponseDto[];
     bestPhotos: ExploreBestPhotosPreview;
     shortcutCounts: ExploreShortcutCounts;
+    /** Items the account can see in the library, when known; 0 shows the empty state. */
+    libraryTotal?: number | null;
     onViewAsset: (id: string) => void;
   }
 
-  let { people, places, recents, memories, albums, bestPhotos, shortcutCounts, onViewAsset }: Props = $props();
+  let {
+    people,
+    places,
+    things,
+    recents,
+    memories,
+    albums,
+    bestPhotos,
+    shortcutCounts,
+    libraryTotal = null,
+    onViewAsset,
+  }: Props = $props();
 
   const shortcuts = $derived(buildExploreShortcuts(shortcutCounts));
 
   const hasAnything = $derived(
-    people.length > 0 || places.length > 0 || recents.length > 0 || memories.length > 0 || albums.length > 0,
+    libraryTotal === null
+      ? people.length > 0 ||
+          places.length > 0 ||
+          things.length > 0 ||
+          recents.length > 0 ||
+          memories.length > 0 ||
+          albums.length > 0
+      : libraryTotal > 0,
   );
 
-  const altTextFor = (asset: AssetResponseDto) => $getAltText(toTimelineAsset(asset));
+  const countLabel = (count: number) => $t('frameleaf_explore_item_count', { values: { count } });
+  const thumbnail = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
+  const nameOf = (asset: AssetResponseDto) => asset.originalFileName;
 </script>
 
-<div class="explore">
-  <header class="explore-header">
+{#snippet heading(id: string, title: string, href?: string)}
+  <div class="el-section-heading">
+    <h2 {id}>{title}</h2>
+    {#if href}
+      <a {href}>
+        {$t('frameleaf_explore_view_all')}
+        <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
+      </a>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet cover(assetId: string | null | undefined)}
+  {#if assetId}
+    <img src={thumbnail(assetId)} alt="" loading="lazy" />
+  {:else}
+    <span class="el-cover-empty"><Icon icon={mdiImageMultipleOutline} size="28" aria-hidden="true" /></span>
+  {/if}
+{/snippet}
+
+<div class="explore-library">
+  <header class="el-header">
     <h1>{$t('explore')}</h1>
     <p>{$t('frameleaf_explore_intro')}</p>
   </header>
 
   {#if !hasAnything}
-    <div class="explore-empty" role="status">
+    <!--
+      The prototype's empty state (ExploreLibrary.jsx:60-66) speaks of albums and filters, which
+      production Explore does not have: here it is only ever an empty library, so the same pattern
+      and tone point at uploading instead.
+    -->
+    <div class="el-empty" role="status">
       <Icon icon={mdiImageSearchOutline} size="32" aria-hidden="true" />
-      <p>{$t('no_explore_results_message')}</p>
+      <h2>{$t('frameleaf_explore_empty_title')}</h2>
+      <p>{$t('frameleaf_explore_empty_body')}</p>
     </div>
   {:else}
     {#if people.length > 0}
-      <section class="explore-section" aria-labelledby="explore-people-heading">
-        <div class="explore-section-heading">
-          <h2 id="explore-people-heading">{$t('people')}</h2>
-          <a href={Route.people()}>
-            {$t('view_all')}
-            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
-          </a>
-        </div>
-        <div class="explore-people">
-          {#each people.slice(0, 12) as person (person.id)}
-            <a href={Route.viewPerson(person)} class="explore-person">
-              <PersonAvatar {person} size={88} />
-              <strong>{person.name}</strong>
+      <section class="el-section" aria-labelledby="explore-people-heading">
+        {@render heading('explore-people-heading', $t('people'), Route.people())}
+        <div class="el-people">
+          {#each people as item (item.id)}
+            <a href={item.href} class="el-person">
+              <PersonAvatar person={item.person} size={88} />
+              <strong>{item.label}</strong>
+              <small>{countLabel(item.count)}</small>
             </a>
           {/each}
         </div>
       </section>
     {/if}
 
-    <section class="explore-section" aria-label={$t('frameleaf_explore_highlights_label')}>
-      <div class="explore-highlights">
-        <a class="explore-best" href={Route.bestPhotos()}>
-          {#if bestPhotos.cover}
-            <img
-              src={getAssetMediaUrl({ id: bestPhotos.cover.id, size: AssetMediaSize.Thumbnail })}
-              alt=""
-              loading="lazy"
-            />
-          {:else}
-            <div class="explore-cover-empty"><Icon icon={mdiImageMultipleOutline} size="28" aria-hidden="true" /></div>
-          {/if}
-          <span class="explore-cover-shade"></span>
-          <span class="explore-best-copy">
-            <span class="explore-overline"
+    <section class="el-section" aria-label={$t('frameleaf_explore_highlights_label')}>
+      <div class="el-highlights">
+        <a class="el-best fl-continuous-corners" href={Route.bestPhotos()}>
+          {@render cover(bestPhotos.cover?.id)}
+          <span class="el-cover-shade"></span>
+          <span class="el-best-copy">
+            <span class="el-overline"
               ><Icon icon={mdiStarOutline} size="16" aria-hidden="true" /> {$t('best_photos')}</span
             >
             <strong>{$t('frameleaf_explore_highlight_copy')}</strong>
@@ -132,18 +164,16 @@
               {/if}
             </small>
           </span>
-          <span class="explore-cover-arrow"><Icon icon={mdiChevronRight} aria-hidden="true" /></span>
+          <span class="el-cover-arrow"><Icon icon={mdiChevronRight} aria-hidden="true" /></span>
         </a>
-        <div class="explore-shortcuts">
+        <div class="el-shortcuts">
           {#each shortcuts as shortcut (shortcut.id)}
-            <a href={shortcut.href}>
-              <span class="explore-shortcut-icon"><Icon icon={shortcut.icon} size="20" aria-hidden="true" /></span>
+            <a class="el-shortcut" href={shortcut.href}>
+              <span class="el-shortcut-icon"><Icon icon={shortcut.icon} size="20" aria-hidden="true" /></span>
               <span>
                 <strong>{$t(shortcut.labelKey)}</strong>
                 <small>
-                  {shortcut.count === null
-                    ? $t('frameleaf_explore_highlight_loading')
-                    : $t('frameleaf_explore_item_count', { values: { count: shortcut.count } })}
+                  {shortcut.count === null ? $t('frameleaf_explore_highlight_loading') : countLabel(shortcut.count)}
                 </small>
               </span>
               <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
@@ -154,47 +184,16 @@
     </section>
 
     {#if places.length > 0}
-      <section class="explore-section" aria-labelledby="explore-places-heading">
-        <div class="explore-section-heading">
-          <h2 id="explore-places-heading">{$t('places')}</h2>
-          <a href={Route.places()}>
-            {$t('view_all')}
-            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
-          </a>
-        </div>
-        <div class="explore-places">
-          {#each places.slice(0, 8) as place (place.data.id)}
-            <a href={Route.search({ city: place.value })} class="explore-place">
-              <img
-                src={getAssetMediaUrl({ id: place.data.id, size: AssetMediaSize.Thumbnail })}
-                alt=""
-                loading="lazy"
-              />
-              <span class="explore-cover-shade"></span>
-              <span>{place.value}</span>
-            </a>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    {#if memories.length > 0}
-      <section class="explore-section" aria-labelledby="explore-memories-heading">
-        <div class="explore-section-heading">
-          <h2 id="explore-memories-heading">{$t('frameleaf_explore_days_to_revisit')}</h2>
-          <a href={Route.memories()}>
-            {$t('view_all')}
-            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
-          </a>
-        </div>
-        <div class="explore-memory-row">
-          {#each memories as memory (memory.id)}
-            <a href={memory.href}>
-              <img src={memory.src} alt={memory.alt} loading="lazy" />
-              <span class="explore-cover-shade"></span>
-              <span class="explore-memory-copy">
-                <Icon icon={mdiHistory} size="14" aria-hidden="true" />
-                <strong>{memory.title}</strong>
+      <section class="el-section" aria-labelledby="explore-places-heading">
+        {@render heading('explore-places-heading', $t('places'), Route.places())}
+        <div class="el-places">
+          {#each places as place (place.id)}
+            <a href={place.href} class="el-place fl-continuous-corners">
+              {@render cover(place.coverAssetId)}
+              <span class="el-cover-shade"></span>
+              <span>
+                <strong>{place.label}</strong>
+                <small>{countLabel(place.count)}</small>
               </span>
             </a>
           {/each}
@@ -202,22 +201,52 @@
       </section>
     {/if}
 
-    {#if albums.length > 0}
-      <section class="explore-section" aria-labelledby="explore-albums-heading">
-        <div class="explore-section-heading">
-          <h2 id="explore-albums-heading">{$t('frameleaf_explore_from_your_albums')}</h2>
-          <a href={Route.albums()}>
-            {$t('view_all')}
-            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
-          </a>
+    {#if memories.length > 0}
+      <section class="el-section" aria-labelledby="explore-memories-heading">
+        {@render heading('explore-memories-heading', $t('frameleaf_explore_days_to_revisit'), Route.memories())}
+        <div class="el-memory-row">
+          {#each memories as memory (memory.id)}
+            <a href={memory.href}>
+              <img src={memory.src} alt={memory.alt} loading="lazy" />
+              <span class="el-cover-shade"></span>
+              <span class="el-memory-copy">
+                <strong>{memory.title}</strong>
+                <small>{countLabel(memory.count)}</small>
+              </span>
+            </a>
+          {/each}
         </div>
-        <div class="explore-albums">
-          {#each albums.slice(0, 6) as album (album.id)}
-            <a href={Route.viewAlbum({ id: album.id })} class="explore-album">
-              <AlbumCover {album} class="explore-album-cover" />
+      </section>
+    {/if}
+
+    {#if things.length > 0}
+      <section class="el-section" aria-labelledby="explore-things-heading">
+        {@render heading('explore-things-heading', $t('frameleaf_explore_things'))}
+        <div class="el-things">
+          {#each things as thing (thing.id)}
+            <a href={thing.href}>
+              {@render cover(thing.coverAssetId)}
               <span>
-                <strong>{album.albumName}</strong>
-                <small>{$t('frameleaf_explore_item_count', { values: { count: album.assetCount } })}</small>
+                <strong>{thing.label}</strong>
+                <small>{countLabel(thing.count)}</small>
+              </span>
+              <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if albums.length > 0}
+      <section class="el-section" aria-labelledby="explore-albums-heading">
+        {@render heading('explore-albums-heading', $t('frameleaf_explore_from_your_albums'))}
+        <div class="el-collections">
+          {#each albums as album (album.id)}
+            <a href={Route.viewAlbum({ id: album.id })}>
+              <AlbumCover {album} class="el-album-cover" />
+              <span>
+                <strong>{album.albumName || $t('unnamed_album')}</strong>
+                <small>{countLabel(album.assetCount)}</small>
               </span>
               <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
             </a>
@@ -227,29 +256,31 @@
     {/if}
 
     {#if recents.length > 0}
-      <section class="explore-section" aria-labelledby="explore-recent-heading">
-        <div class="explore-section-heading">
-          <h2 id="explore-recent-heading">{$t('recently_added')}</h2>
-          <a href={Route.recentlyAdded()}>
-            {$t('view_all')}
-            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
-          </a>
-        </div>
-        <div class="explore-recent">
-          {#each recents.slice(0, 8) as asset (asset.id)}
-            <button type="button" onclick={() => onViewAsset(asset.id)} aria-label={altTextFor(asset)}>
-              <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
-              {#if asset.type === AssetTypeEnum.Video}
-                <span class="explore-media-label"><Icon icon={mdiMovieOpenOutline} size="14" aria-hidden="true" /></span
-                >
+      <section class="el-section" aria-labelledby="explore-recent-heading">
+        {@render heading('explore-recent-heading', $t('frameleaf_explore_recent_captures'))}
+        <div class="el-recent">
+          {#each recents as asset (asset.id)}
+            <button
+              type="button"
+              onclick={() => onViewAsset(asset.id)}
+              aria-label={$t('frameleaf_explore_open_item', { values: { name: nameOf(asset) } })}
+            >
+              <img src={thumbnail(asset.id)} alt="" loading="lazy" />
+              <span>{nameOf(asset)}</span>
+              {#if isVideoAsset(asset)}
+                <span class="el-media-label">
+                  <Icon icon={mdiMovieOpenOutline} size="14" aria-hidden="true" />
+                  {$t('video')}
+                </span>
               {/if}
+              <small>{captureDay(asset) ?? $t('frameleaf_explore_date_unknown')}</small>
             </button>
           {/each}
         </div>
       </section>
     {/if}
 
-    <div class="explore-more">
+    <div class="el-more">
       <a href={Route.memories()}>
         <Icon icon={mdiHistory} aria-hidden="true" />
         <span>{$t('memories')}</span>
@@ -265,316 +296,483 @@
 </div>
 
 <style>
-  .explore {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+  /* explore-library.css, with apple-style.css's card radius, continuous corners and "#5 snapping carousels". */
+  .explore-library {
+    width: 100%;
+    max-width: 1400px;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0 auto;
+    padding: 26px 30px 36px;
     color: var(--fl-text);
-    padding-block-end: 1.5rem;
   }
-  .explore-header h1 {
-    font-size: 1.375rem;
+  .explore-library a,
+  .explore-library button {
+    font: inherit;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
   }
-  .explore-header p {
-    margin: 0.125rem 0 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+  .explore-library :focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 4px;
   }
-  .explore-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 3rem 1rem;
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .explore-section-heading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-block-end: 0.625rem;
-  }
-  .explore-section-heading h2 {
-    font-size: 1rem;
+  .explore-library h1 {
     margin: 0;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.035em;
   }
-  .explore-section-heading a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.125rem;
+  .el-header {
+    margin-bottom: 28px;
+  }
+  .el-header p {
+    margin: 8px 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
+    font-size: 13px;
+    line-height: 1.6;
   }
-  .explore-section-heading a:hover {
-    color: var(--fl-accent);
+  .el-section {
+    min-width: 0;
+    margin: 0 0 28px;
   }
-  .explore-people {
+  .el-section-heading {
     display: flex;
-    gap: 1rem;
-    overflow-x: auto;
-    padding-block-end: 0.25rem;
-  }
-  .explore-person {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 0.375rem;
-    flex-shrink: 0;
-    width: 5.5rem;
-    text-align: center;
-    text-decoration: none;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .explore-library h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 580;
+  }
+  .el-section-heading a {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 0 5px 8px;
+    color: var(--fl-muted);
+    font-size: 12px;
+  }
+  .el-section-heading a:hover {
     color: var(--fl-text);
   }
-  .explore-person strong {
-    font-size: var(--fl-font-small);
-    font-weight: 500;
+  .explore-library strong {
+    font-weight: 560;
+  }
+  .explore-library small {
+    color: var(--fl-muted);
+    font-size: 11px;
+    font-weight: 400;
+  }
+  .el-people {
+    display: flex;
+    gap: 22px;
+    overflow: auto;
+    padding: 4px 4px 10px;
+  }
+  .el-person {
+    display: flex;
+    flex: 0 0 92px;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    text-align: center;
+  }
+  .el-person strong {
+    max-width: 100%;
     overflow: hidden;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 100%;
   }
-  .explore-highlights {
+  .el-person small {
+    margin-top: -2px;
+  }
+  .el-highlights {
     display: grid;
-    grid-template-columns: minmax(16rem, 1.4fr) 1fr;
-    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr);
+    gap: 18px;
   }
-  @media (max-width: 56rem) {
-    .explore-highlights {
-      grid-template-columns: 1fr;
-    }
-  }
-  .explore-best {
+  .el-best {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    min-height: 10rem;
-    border-radius: var(--fl-radius-card);
+    display: block;
+    min-height: 220px;
     overflow: hidden;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
-    text-decoration: none;
-    color: inherit;
+    text-align: left;
   }
-  .explore-best img {
+  .explore-library .el-best {
+    color: white;
+  }
+  .el-best > img,
+  .el-place > img,
+  .el-best > .el-cover-empty,
+  .el-place > .el-cover-empty {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .explore-cover-empty {
+  .el-cover-shade {
     position: absolute;
     inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--fl-muted);
-    background: var(--fl-raised);
+    background: linear-gradient(180deg, transparent 20%, rgb(0 0 0 / 72%));
+    pointer-events: none;
   }
-  .explore-cover-shade {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgb(0 0 0 / 65%), transparent 60%);
-  }
-  .explore-best-copy {
+  .el-best-copy {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
-    padding: 0.875rem;
-    color: #fff;
+    gap: 8px;
+    margin: 90px 24px 22px;
   }
-  .explore-overline {
-    display: inline-flex;
+  .el-best-copy > strong {
+    max-width: 24ch;
+    font-size: 23px;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+  }
+  .explore-library .el-best-copy small {
+    color: #e3e7e5;
+  }
+  .el-overline {
+    display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-size: var(--fl-font-small);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    opacity: 0.85;
+    gap: 7px;
+    font-size: 12px;
   }
-  .explore-best-copy strong {
-    font-size: 1.0625rem;
-  }
-  .explore-best-copy small {
-    opacity: 0.85;
-  }
-  .explore-cover-arrow {
+  .el-cover-arrow {
     position: absolute;
-    inset-block-start: 0.75rem;
-    inset-inline-end: 0.75rem;
-    color: #fff;
+    right: 15px;
+    bottom: 20px;
   }
-  .explore-shortcuts {
+  .el-shortcuts {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+    gap: 10px;
   }
-  .explore-shortcuts a {
+  .el-shortcut {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    color: var(--fl-text);
-    text-decoration: none;
+    text-align: left;
   }
-  .explore-shortcuts a:hover {
-    background: var(--fl-raised);
-  }
-  .explore-shortcuts strong {
-    display: block;
-    font-size: var(--fl-font-small);
-    font-weight: 500;
-  }
-  .explore-shortcuts small {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
-  .explore-shortcut-icon {
-    display: inline-flex;
-    color: var(--fl-accent);
-  }
-  .explore-shortcuts a > span:nth-child(2) {
-    flex: 1 1 auto;
+  .el-shortcut > span:nth-child(2) {
+    flex: 1;
     min-width: 0;
   }
-  .explore-places,
-  .explore-albums,
-  .explore-recent {
-    display: flex;
-    gap: 0.625rem;
-    overflow-x: auto;
-    padding-block-end: 0.25rem;
+  .el-shortcut strong,
+  .el-shortcut small {
+    display: block;
   }
-  .explore-place {
+  .el-shortcut strong {
+    font-size: 12px;
+  }
+  .el-shortcut small {
+    margin-top: 6px;
+  }
+  .el-shortcut-icon {
+    display: inline-flex;
+    color: var(--fl-muted);
+  }
+  .el-places {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+  }
+  .el-place {
     position: relative;
-    flex-shrink: 0;
-    width: 7rem;
-    height: 7rem;
-    border-radius: var(--fl-radius-card);
+    display: block;
+    min-height: 180px;
     overflow: hidden;
-    color: #fff;
-    text-decoration: none;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+    text-align: left;
   }
-  .explore-place img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  .explore-library .el-place {
+    color: white;
   }
-  .explore-place span:last-child {
+  .el-place > span:last-child {
     position: absolute;
-    inset-inline: 0;
-    inset-block-end: 0.375rem;
-    text-align: center;
-    font-size: var(--fl-font-small);
+    right: 16px;
+    bottom: 14px;
+    left: 16px;
+  }
+  .el-place strong,
+  .el-place small {
+    display: block;
+  }
+  .el-place strong {
+    font-size: 15px;
     text-transform: capitalize;
   }
-  .explore-memory-row {
-    display: flex;
-    gap: 0.625rem;
+  .explore-library .el-place small {
+    margin-top: 5px;
+    color: #e3e7e5;
+  }
+  .el-memory-row {
+    display: grid;
+    grid-auto-columns: minmax(180px, 1fr);
+    grid-auto-flow: column;
+    gap: 12px;
     overflow-x: auto;
-    padding-block-end: 0.25rem;
+    padding-bottom: 6px;
   }
-  .explore-memory-row a {
+  .el-memory-row a {
     position: relative;
-    flex-shrink: 0;
-    width: 11rem;
-    height: 7rem;
-    border-radius: var(--fl-radius-card);
+    display: block;
+    min-height: 205px;
     overflow: hidden;
-    color: #fff;
-    text-decoration: none;
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-raised);
+    text-align: left;
   }
-  .explore-memory-row img {
+  .el-memory-row img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .explore-memory-copy {
+  .el-memory-copy {
     position: absolute;
-    inset-inline: 0.625rem;
-    inset-block-end: 0.5rem;
+    right: 14px;
+    bottom: 16px;
+    left: 14px;
+    color: white;
+  }
+  .el-memory-copy strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .explore-library .el-memory-copy small {
+    display: block;
+    margin-top: 5px;
+    color: #e3e7e5;
+  }
+  .el-things,
+  .el-collections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+    gap: 10px;
+  }
+  .el-things a,
+  .el-collections a {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-size: var(--fl-font-small);
-  }
-  .explore-album {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    flex-shrink: 0;
-    width: 8rem;
-    text-decoration: none;
-    color: var(--fl-text);
-  }
-  .explore-album :global(.explore-album-cover) {
-    width: 8rem;
-    height: 8rem;
+    gap: 12px;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    text-align: left;
+  }
+  .el-things img,
+  .el-things .el-cover-empty,
+  .el-collections :global(.el-album-cover) {
+    flex: 0 0 62px;
+    width: 62px;
+    height: 62px;
     object-fit: cover;
   }
-  .explore-album strong {
+  .el-things a > span:not(.el-cover-empty),
+  .el-collections a > span {
+    flex: 1;
+    min-width: 0;
+  }
+  .el-things a > :global(svg),
+  .el-collections a > :global(svg) {
+    flex: 0 0 auto;
+    margin-right: 12px;
+    color: var(--fl-muted);
+  }
+  .el-things strong,
+  .el-collections strong {
     display: block;
-    font-size: var(--fl-font-small);
     overflow: hidden;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .explore-album small {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+  .el-things strong {
+    text-transform: capitalize;
   }
-  .explore-recent button {
+  .el-things small,
+  .el-collections small {
+    display: block;
+    margin-top: 4px;
+  }
+  .el-recent {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .el-recent button {
     position: relative;
-    flex-shrink: 0;
-    width: 6.5rem;
-    height: 6.5rem;
+    min-width: 0;
     padding: 0;
     border: 0;
-    border-radius: var(--fl-radius);
-    overflow: hidden;
-    background: var(--fl-raised);
+    background: none;
+    text-align: left;
   }
-  .explore-recent img {
+  .el-recent img {
+    display: block;
     width: 100%;
-    height: 100%;
+    aspect-ratio: 1.45;
     object-fit: cover;
-  }
-  .explore-media-label {
-    position: absolute;
-    inset-block-start: 0.25rem;
-    inset-inline-end: 0.25rem;
-    display: inline-flex;
-    padding: 0.125rem;
     border-radius: var(--fl-radius);
-    background: rgb(0 0 0 / 55%);
-    color: #fff;
   }
-  .explore-more {
-    display: flex;
-    gap: 0.625rem;
+  .el-recent button > span:not(.el-media-label) {
+    display: block;
+    margin-top: 7px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .explore-more a {
+  .el-recent small {
+    display: block;
+    margin-top: 4px;
+  }
+  .el-media-label {
+    position: absolute;
+    top: 7px;
+    right: 7px;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
+    gap: 4px;
+    padding: 3px 5px;
+    border-radius: 3px;
+    background: rgb(0 0 0 / 65%);
+    color: white;
+    font-size: 10px;
+  }
+  .el-more {
+    display: flex;
+    gap: 12px;
+    padding-top: 20px;
+    border-top: 1px solid var(--fl-border);
+  }
+  .el-more a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 16px;
+    padding: 8px 0;
+    font-size: 12px;
+  }
+  .el-empty {
+    padding: 50px 12px;
+    color: var(--fl-muted);
+    text-align: center;
+  }
+  .el-empty h2 {
+    margin-top: 14px;
     color: var(--fl-text);
-    text-decoration: none;
   }
-  .explore-more a:hover {
+  .el-empty p {
+    font-size: 13px;
+  }
+  .el-cover-empty {
+    display: grid;
+    place-items: center;
+    min-height: 62px;
     background: var(--fl-raised);
+    color: var(--fl-muted);
   }
-  .explore-more span {
-    font-size: var(--fl-font-small);
+  .explore-library a:hover,
+  .explore-library button:hover {
+    filter: brightness(1.08);
+  }
+
+  /* apple-style.css "#5 snapping carousels" */
+  :is(.el-memory-row, .el-people, .el-places, .el-highlights) {
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 4px;
+    overscroll-behavior-inline: contain;
+  }
+  :is(.el-memory-row, .el-people, .el-places, .el-highlights) > * {
+    scroll-snap-align: start;
+  }
+
+  /* apple-style.css:109-135 continuous corners, grown for the squircle */
+  @supports (corner-shape: squircle) {
+    .el-best,
+    .el-place {
+      border-radius: calc(var(--fl-radius-card) * 1.8);
+    }
+  }
+
+  @media (max-width: 1050px) {
+    .el-highlights {
+      grid-template-columns: 1fr;
+    }
+    .el-shortcuts {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .el-shortcut {
+      gap: 8px;
+      padding: 12px;
+    }
+    .el-shortcut > :global(svg:last-child) {
+      display: none;
+    }
+  }
+  @media (max-width: 600px) {
+    .explore-library {
+      padding: 22px 16px 30px;
+    }
+    .el-people {
+      gap: 13px;
+    }
+    .el-shortcuts {
+      grid-template-columns: 1fr 1fr;
+    }
+    .el-places {
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .el-place {
+      min-height: 160px;
+    }
+    .el-recent {
+      grid-template-columns: 1fr 1fr;
+    }
+    .el-things {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .el-things img,
+    .el-things .el-cover-empty {
+      flex-basis: 45px;
+      width: 45px;
+      height: 52px;
+    }
+    .el-things a {
+      gap: 8px;
+    }
+    .el-things a > :global(svg) {
+      display: none;
+    }
+    .el-best-copy {
+      margin-left: 18px;
+    }
+    .el-more a {
+      min-height: 40px;
+    }
   }
 </style>

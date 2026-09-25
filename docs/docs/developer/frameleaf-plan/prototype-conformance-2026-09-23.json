@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 95,
+      "partial": 89,
       "missing": 5,
-      "fixed": 48,
+      "fixed": 54,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -988,9 +988,9 @@
       "title": "Explore empty/error/loading states",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "Explore empty copy"
+      "followUp": "Explore empty copy \"Nothing to explore in this view\" (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "requirementId": "action:search-discovery:explore-memories-carousel-and-open-memory-story",
@@ -1006,36 +1006,36 @@
       "title": "Explore people and View all",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "Per-card counts"
+      "followUp": "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "requirementId": "action:search-discovery:explore-places-and-view-all",
       "title": "Explore places and View all",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "Per-card counts"
+      "followUp": "Per-card counts from POST /search/facets in the scope of the search each card opens (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "requirementId": "action:search-discovery:explore-recently-added-and-direct-asset-viewer",
       "title": "Explore recently added and direct asset viewer",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "Recent captures tile content"
+      "followUp": "Recent captures by capture date with name, Video label and capture day (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "requirementId": "action:search-discovery:extra-things-collections-highlight-cards",
       "title": "Extra Things/Collections/highlight cards",
       "prototype": ["design/frameleaf/template/src/ExploreLibrary.jsx"],
       "production": ["web/src/lib/components/frameleaf/ExplorePanel.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "\"Things in your photos\" tags section"
+      "followUp": "\"Things in your photos\" tags section with counts and covers (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "requirementId": "action:search-discovery:image-video-type",
@@ -2211,7 +2211,7 @@
       "production": ["web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte"],
       "status": "partial",
       "gaps": ["T-6"],
-      "followUp": "Score as tile rating"
+      "followUp": "Score as tile rating (T-6 open); ranked video best-moment play and cover actions added on codex/FL-50-explore-albums-map"
     },
     {
       "route": "/buy",
@@ -2239,9 +2239,9 @@
         "web/src/routes/(user)/explore/+page.svelte",
         "web/src/lib/components/frameleaf/ExplorePanel.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["T-12"],
-      "followUp": "Explore sections"
+      "followUp": "Explore sections, counts and snapping carousels (fixed on codex/FL-50-explore-albums-map)"
     },
     {
       "route": "/favorites/[[photos=photos]]/[[assetId=id]]",

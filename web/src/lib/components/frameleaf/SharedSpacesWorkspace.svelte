@@ -386,10 +386,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* The Albums page's denser grid (apple-style.css:970-983). */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+    gap: 18px 12px;
+    align-items: start;
   }
   .empty {
     display: flex;
@@ -414,9 +416,10 @@
     .spaces {
       padding: 0.75rem;
     }
+  }
+  @media (max-width: 700px) {
     .grid {
-      grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
-      gap: 0.75rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

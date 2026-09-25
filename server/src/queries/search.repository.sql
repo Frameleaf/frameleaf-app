@@ -2879,7 +2879,8 @@ with
         "asset"."id",
         "asset"."ownerId",
         "asset"."type",
-        "asset"."isFavorite"
+        "asset"."isFavorite",
+        "asset"."fileCreatedAt"
       from
         "asset"
       where
@@ -2904,7 +2905,15 @@ with
       $4::text as field,
       m.type::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
     group by
@@ -2917,7 +2926,15 @@ with
         and m."ownerId" = $6::uuid
       )::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
     group by
@@ -2930,7 +2947,15 @@ with
         else 'unrated'
       end as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       left join asset_exif e on e."assetId" = m.id
@@ -2941,7 +2966,15 @@ with
       $8::text as field,
       nullif(trim("e"."city"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -2955,7 +2988,15 @@ with
       $10::text as field,
       nullif(trim("e"."country"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -2969,7 +3010,15 @@ with
       $12::text as field,
       nullif(trim("e"."make"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -2983,7 +3032,15 @@ with
       $13::text as field,
       nullif(trim("e"."model"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -2997,7 +3054,15 @@ with
       $14::text as field,
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3011,7 +3076,15 @@ with
       $15::text as field,
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
-      count(distinct m.id) as count
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_face f on f."assetId" = m.id
@@ -3029,7 +3102,15 @@ with
       $18::text as field,
       t.id::text as value,
       max(t.value) as label,
-      count(distinct m.id) as count
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join tag_asset ta on ta."assetId" = m.id
@@ -3053,7 +3134,8 @@ with
       'total'::text as field,
       null::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      null::text as cover
     from
       matched
   ),
@@ -3074,7 +3156,8 @@ select
   field,
   value,
   label,
-  count
+  count,
+  cover
 from
   ranked
 where
@@ -3091,7 +3174,8 @@ with
         "asset"."id",
         "asset"."ownerId",
         "asset"."type",
-        "asset"."isFavorite"
+        "asset"."isFavorite",
+        "asset"."fileCreatedAt"
       from
         "asset"
         left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
@@ -3116,7 +3200,15 @@ with
       $4::text as field,
       m.type::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
     group by
@@ -3129,7 +3221,15 @@ with
         and m."ownerId" = $6::uuid
       )::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
     group by
@@ -3142,7 +3242,15 @@ with
         else 'unrated'
       end as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       left join asset_exif e on e."assetId" = m.id
@@ -3153,7 +3261,15 @@ with
       $8::text as field,
       nullif(trim("e"."city"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3167,7 +3283,15 @@ with
       $10::text as field,
       nullif(trim("e"."country"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3181,7 +3305,15 @@ with
       $12::text as field,
       nullif(trim("e"."make"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3195,7 +3327,15 @@ with
       $13::text as field,
       nullif(trim("e"."model"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3209,7 +3349,15 @@ with
       $14::text as field,
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_exif e on e."assetId" = m.id
@@ -3223,7 +3371,15 @@ with
       $15::text as field,
       f."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
-      count(distinct m.id) as count
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join asset_face f on f."assetId" = m.id
@@ -3241,7 +3397,15 @@ with
       $18::text as field,
       t.id::text as value,
       max(t.value) as label,
-      count(distinct m.id) as count
+      count(distinct m.id) as count,
+      (
+        array_agg(
+          m.id
+          order by
+            m."fileCreatedAt" desc,
+            m.id desc
+        )
+      ) [1]::text as cover
     from
       matched m
       inner join tag_asset ta on ta."assetId" = m.id
@@ -3265,7 +3429,8 @@ with
       'total'::text as field,
       null::text as value,
       null::text as label,
-      count(*) as count
+      count(*) as count,
+      null::text as cover
     from
       matched
   ),
@@ -3286,7 +3451,8 @@ select
   field,
   value,
   label,
-  count
+  count,
+  cover
 from
   ranked
 where

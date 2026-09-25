@@ -484,10 +484,36 @@
     flex: 1;
     min-width: 12rem;
   }
+  /* The collection header's large title, shrinking as the page scrolls (apple-style.css:219-244). */
   h1 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 30px;
     font-weight: 700;
+    letter-spacing: -0.02em;
+    transform-origin: left bottom;
+  }
+  @supports (animation-timeline: scroll()) {
+    h1 {
+      animation: fl-space-title-shrink linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0 90px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      h1 {
+        animation-name: fl-space-title-fade;
+      }
+    }
+  }
+  @keyframes fl-space-title-shrink {
+    to {
+      scale: 0.62;
+      opacity: 0.2;
+    }
+  }
+  @keyframes fl-space-title-fade {
+    to {
+      opacity: 0.2;
+    }
   }
   .heading p {
     margin: 0.125rem 0 0;
