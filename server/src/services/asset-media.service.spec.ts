@@ -424,6 +424,9 @@ describe(AssetMediaService.name, () => {
         originalPath: '/data/library/master.jpeg',
         physicalOriginalFileId: null,
         sizeInBytes: file.size,
+        width: null,
+        height: null,
+        duration: null,
       });
       mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue(physicalFile as never);
 

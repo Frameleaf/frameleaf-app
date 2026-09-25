@@ -250,6 +250,19 @@ export class MediaOperationRepository {
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
+  /**
+   * A job of one kind by id, whoever submitted it (FL-73). Only for kinds whose page every
+   * administrator shares, like physical deduplication; the caller decides what of it to answer with.
+   */
+  async getOfKind(id: string, kind: MediaOperationKind): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('id', '=', id)
+      .where('kind', '=', kind)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
   async list(options: MediaOperationListOptions): Promise<{ items: MediaOperation[]; total: number }> {
     let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
 

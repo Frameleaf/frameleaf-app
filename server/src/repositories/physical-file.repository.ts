@@ -119,6 +119,9 @@ export class PhysicalFileRepository {
         'asset.type',
         'asset.physicalOriginalFileId',
         'asset.checksum',
+        'asset.width',
+        'asset.height',
+        'asset.duration',
         'asset_exif.fileSizeInByte as sizeInBytes',
       ])
       .where('asset.ownerId', '=', asUuid(masterUserId))
@@ -194,6 +197,8 @@ export class PhysicalFileRepository {
         'asset.isOffline',
         'asset.libraryId',
         'asset.physicalOriginalFileId',
+        'asset.originalFileName',
+        'asset.type',
         'asset_exif.fileSizeInByte as sizeInBytes',
       ])
       .where('asset.id', '=', anyUuid(ids))
@@ -793,6 +798,46 @@ export class PhysicalFileRepository {
     return physicalFile?.canonicalAssetId === assetId;
   }
 
+  /**
+   * Point an asset back at its own original file (FL-73): the rollback a verified physical
+   * deduplication offers for a copy whose own file is still on disk. The file gets (or keeps) its
+   * own physical file row with the asset as canonical owner, under the path's lock so a concurrent
+   * removal cannot count the path unreferenced in between. Nothing on disk is written.
+   */
+  async restoreOriginalPhysicalFile(
+    assetId: string,
+    file: { path: string; checksum: Buffer; sizeInBytes: number },
+  ): Promise<PhysicalFile> {
+    return this.withPathLock(file.path, async (trx) => {
+      const physicalFile = await trx
+        .insertInto('physical_file')
+        .values({
+          canonicalAssetId: assetId,
+          checksum: file.checksum,
+          path: file.path,
+          sizeInBytes: file.sizeInBytes,
+          type: PhysicalFileType.Original,
+        })
+        .onConflict((oc) =>
+          oc.column('path').doUpdateSet((eb) => ({
+            checksum: eb.ref('excluded.checksum'),
+            sizeInBytes: eb.ref('excluded.sizeInBytes'),
+            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+          })),
+        )
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      await trx
+        .updateTable('asset')
+        .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+        .where('id', '=', asUuid(assetId))
+        .execute();
+
+      return physicalFile;
+    });
+  }
+
   // Moves a physical file onto `path`, which makes that path referenced.
   async updateOriginalPhysicalPathForAsset(assetId: string, path: string) {
     await this.withPathLock(path, async (trx) => {
@@ -994,6 +1039,9 @@ export class PhysicalFileRepository {
         'asset.isOffline',
         'asset.libraryId',
         'asset.physicalOriginalFileId',
+        'asset.width',
+        'asset.height',
+        'asset.duration',
         'asset_exif.fileSizeInByte as sizeInBytes',
       ])
       .where('asset.ownerId', '!=', asUuid(masterUserId))

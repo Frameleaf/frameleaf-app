@@ -149,4 +149,69 @@ describe(PhysicalDeduplicationController.name, () => {
       expect(plans.apply).toHaveBeenCalledWith(auth, dto);
     });
   });
+
+  describe('POST /admin/physical-deduplication/applies/:id/verify (FL-73)', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+
+    it('is an administrator route that needs job read permission', async () => {
+      await request(ctx.getHttpServer()).post(`/admin/physical-deduplication/applies/${id}/verify`);
+
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ permission: Permission.JobRead, adminRoute: true }),
+        }),
+      );
+    });
+
+    it('rejects an id that is not a uuid', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/admin/physical-deduplication/applies/nope/verify');
+
+      expect(status).toBe(400);
+      expect(plans.verify).not.toHaveBeenCalled();
+    });
+
+    it('verifies the applied plan', async () => {
+      const auth = AuthFactory.create({ isAdmin: true });
+      ctx.authenticate.mockResolvedValue(auth);
+      const { status } = await request(ctx.getHttpServer()).post(`/admin/physical-deduplication/applies/${id}/verify`);
+
+      expect(status).toBe(200);
+      expect(plans.verify).toHaveBeenCalledWith(auth, id);
+    });
+  });
+
+  describe('POST /admin/physical-deduplication/applies/:id/restore (FL-73)', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const assetId = '00000000-0000-4000-8000-000000000002';
+
+    it('is an administrator route that needs job create permission', async () => {
+      await request(ctx.getHttpServer()).post(`/admin/physical-deduplication/applies/${id}/restore`).send({ assetId });
+
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ permission: Permission.JobCreate, adminRoute: true }),
+        }),
+      );
+    });
+
+    it('requires the copy to restore', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/admin/physical-deduplication/applies/${id}/restore`)
+        .send({});
+
+      expect(status).toBe(400);
+      expect(plans.restore).not.toHaveBeenCalled();
+    });
+
+    it('restores the copy', async () => {
+      const auth = AuthFactory.create({ isAdmin: true });
+      ctx.authenticate.mockResolvedValue(auth);
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/admin/physical-deduplication/applies/${id}/restore`)
+        .send({ assetId });
+
+      expect(status).toBe(200);
+      expect(plans.restore).toHaveBeenCalledWith(auth, id, { assetId });
+    });
+  });
 });

@@ -10,6 +10,7 @@ import {
   normalizeExcluded,
   parsePhysicalDeduplicationResult,
   parsePhysicalDeduplicationSnapshot,
+  physicalDeduplicationByteAccounting,
   physicalDeduplicationConfirmation,
   physicalDeduplicationFingerprint,
   physicalDeduplicationPlanId,
@@ -172,6 +173,24 @@ describe('physical deduplication plans (FL-73)', () => {
     it('never include a copy whose retained original is not in the plan', () => {
       const { items } = physicalDeduplicationPlanItems(plan({ retained: [retained('garden')] }), []);
       expect(items.map((item) => item.assetId)).toEqual(['garden-j']);
+    });
+  });
+
+  describe('byte accounting', () => {
+    it('counts logical bytes per referencing asset and shared-original bytes once per file', () => {
+      expect(
+        physicalDeduplicationByteAccounting([
+          // One original, its owner's asset and copies from two other owners: 3 × 10 logical, 10 on disk.
+          { sizeInBytes: 10, referencesAfter: 3 },
+          { sizeInBytes: 7, referencesAfter: 2 },
+          // Nothing else would reference this one (its copies were skipped): not shared.
+          { sizeInBytes: 1000, referencesAfter: 1 },
+        ]),
+      ).toEqual({ logicalBytes: 44, sharedOriginalBytes: 17 });
+    });
+
+    it('is zero for a plan that shares nothing', () => {
+      expect(physicalDeduplicationByteAccounting([])).toEqual({ logicalBytes: 0, sharedOriginalBytes: 0 });
     });
   });
 
