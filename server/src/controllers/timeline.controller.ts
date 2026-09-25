@@ -43,8 +43,10 @@ export class TimelineController {
     return this.service.getTimeBucket(auth, dto);
   }
 
+  // Public (shared link) pages never sort, and an order by file name or rating could reveal metadata
+  // a link that hides EXIF withholds, so shared links may not call this route.
   @Get('ordered')
-  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @Authenticated({ permission: Permission.AssetRead })
   @ApiOkResponse({ type: TimeBucketAssetResponseDto })
   @Header('Content-Type', 'application/json')
   @Endpoint({
