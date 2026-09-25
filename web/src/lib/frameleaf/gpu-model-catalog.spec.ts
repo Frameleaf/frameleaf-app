@@ -45,7 +45,7 @@ const gpus: Record<string, DetectedGpu | null> = {
 };
 const bands = (workload: LadderWorkload, gpu: DetectedGpu | null, cpuProfile?: 'cpu8' | 'mac_docker') =>
   ladderFor(workload).map((item) => bandFor(item, gpu, cpuProfile));
-const messages = en as Record<string, string>;
+const messages = en as unknown as Record<string, string>;
 
 describe('gpu model catalogue (FL-159, CLD-201)', () => {
   it('runs ladders light to heavy with at most two models per size class; Studio export is local only', () => {
@@ -59,7 +59,7 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
         expect(cloudPositions(workload).length).toBeGreaterThanOrEqual(1);
       }
       const sizes = ladder.map((item) => order.indexOf(item.sizeClass));
-      expect(sizes).toEqual(sizes.toSorted((a, b) => a - b));
+      expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
       for (const size of order) {
         expect(ladder.filter((item) => item.sizeClass === size).length).toBeLessThanOrEqual(2);
       }
@@ -167,10 +167,10 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
     for (const item of gpuClasses) {
       expect(Math.abs(item.customerUsdPerSec - item.loadedUsdPerSec * 2)).toBeLessThan(1e-7);
     }
-    expect(Math.abs(gpuClasses.find((item) => item.id === 'gpu48pro')!.customerUsdPerSec - 0.001_300_35)).toBeLessThan(
+    expect(Math.abs(gpuClasses.find((item) => item.id === 'gpu48pro')!.customerUsdPerSec - 0.00130035)).toBeLessThan(
       1e-7,
     );
-    expect(Math.abs(gpuClasses.find((item) => item.id === 'gpu80pro')!.customerUsdPerSec - 0.003_701_61)).toBeLessThan(
+    expect(Math.abs(gpuClasses.find((item) => item.id === 'gpu80pro')!.customerUsdPerSec - 0.00370161)).toBeLessThan(
       1e-7,
     );
     const item = positionById('qwen3.5-27b@1')!;
@@ -197,10 +197,12 @@ describe('gpu model catalogue (FL-159, CLD-201)', () => {
 
   it('never offers a licence that forbids hosted use on the cloud', () => {
     for (const item of Object.values(modelLadders).flat()) {
-      if (item.commercialHosted === 'no') {
-        expect(cloudPositions(item.workload)).not.toContain(item);
-        expect(bandFor(item, null)).not.toBe('cloud');
+      if (item.commercialHosted !== 'no') {
+        continue;
       }
+
+      expect(cloudPositions(item.workload)).not.toContain(item);
+      expect(bandFor(item, null)).not.toBe('cloud');
     }
     for (const item of cloudPositions()) {
       expect(item.commercialHosted).toBe('yes');

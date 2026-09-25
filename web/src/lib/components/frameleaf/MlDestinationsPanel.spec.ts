@@ -98,6 +98,7 @@ const routes: MlWorkloadRouteDto[] = Object.values(MlWorkload).map((workload) =>
   destinationId: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment].includes(workload)
     ? destination().id
     : null,
+  modelId: null,
 }));
 
 describe('MlDestinationsPanel (FL-110)', () => {
