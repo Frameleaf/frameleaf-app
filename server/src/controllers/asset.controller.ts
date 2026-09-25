@@ -22,6 +22,7 @@ import {
   UpdateAssetDto,
 } from 'src/dtos/asset.dto.js';
 import {
+  AssetEditKeyframesResponseDto,
   AssetEditsCreateDto,
   AssetEditsResponseDto,
   VideoEditExportDto,
@@ -308,6 +309,18 @@ export class AssetController {
   })
   getAssetEdits(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetEditsResponseDto> {
     return this.service.getAssetEdits(auth, id);
+  }
+
+  @Get(':id/edits/keyframes')
+  @Authenticated({ permission: Permission.AssetEditGet })
+  @Endpoint({
+    summary: "List the original video's keyframes",
+    description:
+      "The keyframe times of the original video, so an editor can show where a fast (keyframe) trim actually cuts. Owner's edit permission only; never the edited version.",
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  getAssetEditKeyframes(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetEditKeyframesResponseDto> {
+    return this.service.getAssetEditKeyframes(auth, id);
   }
 
   @Put(':id/edits')

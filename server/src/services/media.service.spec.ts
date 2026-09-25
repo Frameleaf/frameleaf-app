@@ -2,7 +2,7 @@ import { ShallowDehydrateObject } from 'kysely';
 import { OutputInfo } from 'sharp';
 import { Exif } from 'src/database.js';
 import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -2606,6 +2606,159 @@ describe(MediaService.name, () => {
       expect(filterGraph).toContain('[aconcat]volume=0.75[aout]');
     });
 
+    it('plays the whole-clip speed in the gaps between speed ranges (FL-113)', () => {
+      const edits = [
+        { action: AssetEditAction.Speed, parameters: { rate: 2 } },
+        { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
+      ];
+      const command = editCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
+      const filterGraph = command.outputOptions[command.outputOptions.indexOf('-filter_complex') + 1];
+
+      expect(filterGraph).toContain('[0:0]trim=start=0:end=1,setpts=0.5*(PTS-STARTPTS)[v0]');
+      expect(filterGraph).toContain('[0:0]trim=start=1:end=3,setpts=2*(PTS-STARTPTS)[v1]');
+      expect(filterGraph).toContain('[0:0]trim=start=3:end=5,setpts=0.5*(PTS-STARTPTS)[v2]');
+      // The whole-clip rate is not applied a second time on top of the ranges.
+      expect(filterGraph).not.toContain('setpts=0.5*PTS');
+      expect((sut as any).getVideoEditDurationMs(edits, format)).toBe(500 + 4000 + 1000);
+    });
+
+    it('scales a straightened picture to cover its frame instead of leaving black corners (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Straighten, parameters: { angle: 5, fill: true } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toContain('rotate=5*PI/180:fillcolor=black');
+      expect(filters).toMatch(
+        /rotate=5\*PI\/180:fillcolor=black,scale=trunc\(iw\*1\.\d+\/2\)\*2:trunc\(ih\*1\.\d+\/2\)\*2,crop=1920:1080/,
+      );
+    });
+
+    it("renders the develop model of the quick editor with the still renderer's tone curve (FL-113)", () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          {
+            action: AssetEditAction.Adjust,
+            parameters: { model: 'develop', exposure: 0.5, contrast: 20, saturation: -10, preset: 'Mono' },
+          },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toMatch(/curves=r='0\/0 [^']+':g='[^']+':b='[^']+'/);
+      expect(filters).toContain('eq=saturation=0.9');
+      expect(filters).toContain('colorchannelmixer=rr=0.2126:rg=0.7152:rb=0.0722');
+      // The earlier adjustment model is not applied to develop values.
+      expect(filters).not.toContain('eq=contrast=');
+    });
+
+    it('keeps the earlier adjustment model for recipes without the develop marker', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Adjust, parameters: { contrast: 20 } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(getFilterOption(command.outputOptions)).toContain('eq=contrast=1.2');
+    });
+
+    it('anchors text on the prototype grid with a shadow (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          {
+            action: AssetEditAction.TextOverlay,
+            parameters: {
+              text: 'Title',
+              x: 0.5,
+              y: 1,
+              position: 'bottom',
+              shadow: true,
+              size: 0.05,
+              color: '#ffffff',
+            },
+          },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toContain("drawtext=text='Title':x=(w-text_w)/2:y=h-text_h-w*0.04:fontsize=h*0.05");
+      expect(filters).toContain(':shadowcolor=black@0.7:shadowx=0:shadowy=3');
+    });
+
+    it('crops the stabilized edges and limits gain above 100% (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true, cropEdges: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4, limit: true } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(getFilterOption(command.outputOptions)).toContain(
+        'deshake,crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2,scale=1920:1080',
+      );
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4,alimiter=limit=0.98');
+    });
+
+    it('renders an earlier recipe exactly as before: no fill, no edge crop, no limiter', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Straighten, parameters: { angle: 5 } },
+          { action: AssetEditAction.Stabilize, parameters: { enabled: true } },
+          { action: AssetEditAction.Audio, parameters: { volume: 1.4 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      const filters = getFilterOption(command.outputOptions);
+      expect(filters).toMatch(/^rotate=5\*PI\/180:fillcolor=black,deshake(,|$)/);
+      expect(filters).not.toContain('scale=trunc(iw*');
+      expect(filters).not.toContain('crop=trunc(iw*0.96');
+      expect(getFilterOption(command.outputOptions, '-filter:a')).toBe('volume=1.4');
+    });
+
+    it('copies the packets for a lone fast trim instead of re-encoding (FL-113)', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000, mode: 'fast' } }],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(command.inputOptions).toEqual(['-ss', '1']);
+      expect(command.outputOptions).toEqual(expect.arrayContaining(['-t', '3', '-c', 'copy']));
+      expect(command.outputOptions).not.toContain('-vf');
+    });
+
+    it('renders a fast trim frame-accurately when another edit needs a re-encode', () => {
+      const command = editCommand(
+        defaults.ffmpeg,
+        [
+          { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 4000, mode: 'fast' } },
+          { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        ],
+        videoStream,
+        audioStream,
+        format,
+      );
+      expect(command.outputOptions).not.toEqual(expect.arrayContaining(['-c', 'copy']));
+      expect(getFilterOption(command.outputOptions)).toContain('transpose=1');
+    });
+
     it('should offset text overlay timing after trimming video', () => {
       const command = editCommand(
         defaults.ffmpeg,
@@ -3007,6 +3160,33 @@ describe(MediaService.name, () => {
         expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
         expect(command.outputOptions).not.toContain('-vf');
         expect(command.outputOptions).not.toContain('-crf');
+      });
+
+      it('records the probed length of a stream-copied fast trim, which starts at a keyframe (FL-113)', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          {
+            id: 'edit-id',
+            action: AssetEditAction.Trim,
+            parameters: { startMs: 1500, endMs: 4000, mode: VideoTrimMode.Fast },
+          },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+        mocks.media.probe.mockResolvedValue({
+          format: { duration: 3.2 },
+          videoStreams: [probeStub.videoStreamH264.videoStream],
+          audioStreams: [],
+        } as any);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.transcode.mock.calls.at(-1)![2].outputOptions).toEqual(
+          expect.arrayContaining(['-c', 'copy']),
+        );
+        // Out minus in would be 2500 ms; the copy ran from the keyframe before the in point.
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'video-id', duration: 3200 }));
       });
 
       it('re-encodes a rotation that is combined with another edit', async () => {

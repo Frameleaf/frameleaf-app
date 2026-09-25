@@ -35,6 +35,7 @@ import {
   restoreStudioProjectRevision,
   saveStudioProjectRevision,
   StudioProjectShelf,
+  updateStudioProject,
   updateStudioProjectComment,
   type StudioCommentCreateDto,
   type StudioCommentDto,
@@ -197,6 +198,8 @@ export interface StudioProjectApi {
   comments(id: string, page: { skip: number; take: number }): Promise<StudioCommentListResponseDto>;
   addComment(id: string, dto: StudioCommentCreateDto): Promise<StudioCommentDto>;
   updateComment(id: string, commentId: string, dto: StudioCommentUpdateDto): Promise<StudioCommentDto>;
+  /** Rename a saved project; answers with the stored name. */
+  rename(id: string, name: string): Promise<{ name: string }>;
 }
 
 export const studioProjectSdkApi: StudioProjectApi = {
@@ -211,6 +214,7 @@ export const studioProjectSdkApi: StudioProjectApi = {
   addComment: (id, studioCommentCreateDto) => addStudioProjectComment({ id, studioCommentCreateDto }),
   updateComment: (id, commentId, studioCommentUpdateDto) =>
     updateStudioProjectComment({ id, commentId, studioCommentUpdateDto }),
+  rename: (id, name) => updateStudioProject({ id, studioProjectUpdateDto: { name } }),
 };
 
 /* ------------------------------------------------------------------ */
@@ -255,6 +259,11 @@ export interface StudioProjectSession {
   takeOver(): Promise<boolean>;
   /** Save the draft (or the current graph) as a new project and switch to it. Returns its id. */
   saveAsCopy(name: string): Promise<string | null>;
+  /**
+   * Rename the project (`Studio.jsx` `renameProject`). A draft keeps the name for its first save;
+   * a saved project is renamed on the server. Resolves false when the name was refused.
+   */
+  rename(name: string): Promise<boolean>;
   /** Append an earlier revision as the new head. Flushes any draft first. */
   restore(revision: number): Promise<boolean>;
   history(skip: number, take: number): Promise<StudioProjectHistoryResponseDto>;
@@ -773,6 +782,27 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
 
     async takeOver() {
       return acquire(true);
+    },
+
+    async rename(name) {
+      const next = name.trim();
+      if (!next) {
+        return false;
+      }
+      if (!projectId) {
+        emit({ project: { ...state.project, name: next } });
+        return true;
+      }
+      const gen = generation;
+      try {
+        const renamed = await api.rename(projectId, next);
+        if (gen === generation) {
+          emit({ project: { ...state.project, name: renamed.name } });
+        }
+        return true;
+      } catch {
+        return false;
+      }
     },
 
     async saveAsCopy(name) {

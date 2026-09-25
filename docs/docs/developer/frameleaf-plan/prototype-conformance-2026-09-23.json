@@ -20,9 +20,9 @@
     "routes": 83,
     "byStatus": {
       "match": 61,
-      "partial": 26,
-      "missing": 1,
-      "fixed": 126,
+      "partial": 14,
+      "missing": 0,
+      "fixed": 139,
       "in-flight": 6,
       "studio-parked": 3,
       "retained-live-route": 8,
@@ -622,10 +622,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-1"],
-      "followUp": "Frameleaf video editor (large)"
+      "followUp": "Audio panel in the Frameleaf video editor: clip gain 0-150% (limited above 100%), mute switch, channels preserved (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:auto-enhance-and-stabilization",
@@ -635,10 +635,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-10", "VE-1"],
-      "followUp": "Enhance panel copy/status inside the Frameleaf video editor"
+      "followUp": "Enhance panel: Stabilize (edges cropped) and Auto-enhance, applied when the version is saved (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:brightness-contrast-white-point-highlights-shadows-black-point-saturation-warmth-tint-skin-tone-blue-tone-vignette-hdr-adjustments",
@@ -650,11 +650,11 @@
       ],
       "production": [
         "web/src/lib/components/frameleaf/editor/DevelopGroup.svelte",
-        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["VE-4"],
-      "followUp": "Photo Adjust matches; video Adjust needs the develop groups"
+      "followUp": "Video Adjust uses the develop groups with a histogram of the current frame; the server renders the develop model (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:extract-frame-from-playhead",
@@ -664,10 +664,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-3"],
-      "followUp": "Export frame on the transport instead of a tab"
+      "followUp": "Export frame on the transport and in More actions, saved as a new photo (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:fast-keyframe-trim-versus-precise-trim-with-actual-boundaries",
@@ -677,10 +677,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-7"],
-      "followUp": "Precise/Fast trim mode, In/Out fields, I/O keys"
+      "followUp": "Precise / Fast · keyframes trim, In/Out fields, I/O keys; a lone fast trim copies the streams (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:filter-effect-presets-and-strengths",
@@ -692,11 +692,11 @@
       ],
       "production": [
         "web/src/lib/components/frameleaf/editor/PresetStrip.svelte",
-        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["VE-5"],
-      "followUp": "Video presets through PresetStrip"
+      "followUp": "Video presets through PresetStrip, with strength and the video-only B&W (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:numeric-trim-input-and-draggable-start-end-handles",
@@ -706,10 +706,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-7", "VE-1"],
-      "followUp": "Filmstrip trim handles + numeric In/Out"
+      "followUp": "Filmstrip trim handles (drag and keys) and numeric In/Out (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:open-close-reset-save-photo-edit",
@@ -735,7 +735,7 @@
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
       "status": "partial",
       "gaps": ["E-1", "MPY-10"],
-      "followUp": "Open in Studio from the editor (fix-editor-albums); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62)"
+      "followUp": "Open in Studio from the editor (fix-editor-albums, FL-113); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62); keeping the draft and playhead in the workspace is studio-parked"
     },
     {
       "requirementId": "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
@@ -773,11 +773,11 @@
       ],
       "production": [
         "web/src/lib/components/frameleaf/editor/CropOverlay.svelte",
-        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["VE-6"],
-      "followUp": "Video crop chips/dial through CropOverlay"
+      "followUp": "Video crop chips, straighten dial, turns, flips and the draggable crop through CropOverlay (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:save-version-versus-export-versus-revert",
@@ -789,11 +789,11 @@
       ],
       "production": [
         "web/src/lib/components/frameleaf/editor/QuickEditor.svelte",
-        "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"
+        "web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"
       ],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["VE-11", "E-2"],
-      "followUp": "Video versions; Versions popover"
+      "followUp": "Video versions with Save version, Versions menu, export and revert (FL-39, FL-113); Versions popover (E-2)"
     },
     {
       "requirementId": "action:quick-edit:text-overlay-content-position-timing-style",
@@ -803,10 +803,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-9"],
-      "followUp": "Multiple overlays, position grid, swatches, shadow"
+      "followUp": "Up to 20 overlays with grid position, timing, size, swatches and shadow, rendered the same way (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:undo-redo-reset-and-reopen-draft",
@@ -817,9 +817,9 @@
         "design/frameleaf/template/src/state.mjs"
       ],
       "production": ["web/src/lib/components/frameleaf/editor/QuickEditor.svelte"],
-      "status": "partial",
+      "status": "fixed",
       "gaps": ["VE-11"],
-      "followUp": "Undo/redo for video (photo matches)"
+      "followUp": "Undo/redo (buttons and ⌘Z) and Revert for video as for photos (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:video-quick-tools-trim-rotate-crop-adjust-audio",
@@ -829,10 +829,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "missing",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-1", "VE-2", "VE-3", "VE-12"],
-      "followUp": "Frameleaf video quick editor (VE-2 fixed by fix-editor-albums)"
+      "followUp": "Frameleaf video quick editor (VideoQuickEditor.svelte), opens on Trim (FL-113)"
     },
     {
       "requirementId": "action:quick-edit:whole-video-and-segment-speed-changes",
@@ -842,10 +842,10 @@
         "design/frameleaf/template/src/develop.mjs",
         "design/frameleaf/template/src/state.mjs"
       ],
-      "production": ["web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte"],
-      "status": "partial",
+      "production": ["web/src/lib/components/frameleaf/editor/VideoQuickEditor.svelte"],
+      "status": "fixed",
       "gaps": ["VE-8"],
-      "followUp": "Speed ranges at the playhead, filmstrip bands"
+      "followUp": "Whole-clip speed plus ranges at the playhead, blue bands on the filmstrip (FL-113)"
     },
     {
       "requirementId": "action:search-discovery:camera-make-model-lens",
@@ -1897,8 +1897,8 @@
         "web/src/lib/components/frameleaf/ActivityView.svelte"
       ],
       "status": "fixed",
-      "gaps": ["A-1", "A-6"],
-      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port"
+      "gaps": ["A-1", "A-6", "A-8", "A-9", "A-10"],
+      "followUp": "The indicator and filter count say \"jobs\" (A-1) and rows carry the status line with percent, ETA, \"Paused at N%\" and \"Waiting for connection\" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port. FL-104 adds the completion live region (A-8), the Reduce Motion guard (A-9) and Pause disabled with its reason (A-10)"
     },
     {
       "route": "/admin",
@@ -2535,7 +2535,7 @@
       "production": ["web/src/routes/(user)/studio/+page.svelte", "web/src/lib/components/frameleaf/StudioHost.svelte"],
       "status": "studio-parked",
       "gaps": ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-      "followUp": "Studio workspace waits on the parked engine"
+      "followUp": "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)"
     },
     {
       "route": "/studio/projects",

@@ -228,6 +228,7 @@ export class UserRepository {
         memoryShowLess: number;
         memoryCurations: number;
         peopleAndPets: number;
+        workspaceLayouts: number;
       }
     | undefined
   > {
@@ -242,6 +243,11 @@ export class UserRepository {
       const groups = await sql`
         DELETE FROM immich_fork.recipient_group AS recipient_group
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
+      `.execute(trx);
+      // FL-91: a Studio workspace layout left by an account removed during a handoff.
+      const layouts = await sql`
+        DELETE FROM immich_fork.studio_workspace_layout AS layout
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = layout."userId")
       `.execute(trx);
       await sql`
         UPDATE immich_fork.recipient_group
@@ -279,6 +285,7 @@ export class UserRepository {
       return {
         preferenceHistory: Number(history.numAffectedRows ?? 0),
         recipientGroups: Number(groups.numAffectedRows ?? 0),
+        workspaceLayouts: Number(layouts.numAffectedRows ?? 0),
         memoryShowLess: Number(showLess.numAffectedRows ?? 0),
         memoryCurations: Number(curations.numAffectedRows ?? 0),
         peopleAndPets,

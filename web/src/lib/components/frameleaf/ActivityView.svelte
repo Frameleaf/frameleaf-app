@@ -5,6 +5,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import {
     ACTIVITY_FILTERS,
+    activityCompletion,
     activityCounts,
     activityStatusText,
     buildActivityList,
@@ -21,6 +22,7 @@
   import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { downloadUrl, getAssetMediaUrl } from '$lib/utils';
+  import { getByteUnitString } from '$lib/utils/byte-units';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, getBaseUrl, getStudioBundleOperation } from '@immich/sdk';
   import { Icon, Theme, themeManager } from '@immich/ui';
@@ -93,6 +95,26 @@
 
   onMount(() => activitySession.watch());
 
+  /**
+   * Announce a job that finishes by itself while the page is open (`Activity.jsx`: "Export of
+   * Lake trip finished."). The first sight of the list only records where everything stands.
+   */
+  let seenStatuses: Map<string, Translations> | null = null;
+  $effect(() => {
+    const current = items;
+    const completed = seenStatuses ? activityCompletion(seenStatuses, current) : null;
+    seenStatuses = new Map(current.map((item) => [item.id, item.statusKey]));
+    const item = completed && current.find((entry) => entry.id === completed.id);
+    if (item) {
+      announcement = $t(
+        completed.outcome === 'finished'
+          ? 'frameleaf_activity_announce_finished'
+          : 'frameleaf_activity_announce_failed',
+        { values: { kind: $t(item.kindKey), name: nameOf(item) } },
+      );
+    }
+  });
+
   /** The row's name: a translated one where the server withheld or never had the words (FL-43). */
   const nameOf = (item: ActivityItem) => (item.titleKey ? $t(item.titleKey) : item.title);
 
@@ -129,6 +151,7 @@
       translate: $t,
       online: !activitySession.unreachable,
       formatDuration: (seconds) => formatActivityDuration(seconds, $locale ?? undefined),
+      formatSize: (bytes) => getByteUnitString(bytes, $locale ?? undefined),
     });
 
   let retrying = $state(false);
@@ -215,6 +238,13 @@
   const openResult = (item: ActivityItem) => {
     if (item.assetId) {
       void goto(Route.viewAsset({ id: item.assetId }));
+    }
+  };
+
+  /** A Studio render's project (FL-104): open it in Studio. */
+  const openInStudio = (item: ActivityItem) => {
+    if (item.projectId) {
+      void goto(Route.studio({ projectId: item.projectId }));
     }
   };
 
@@ -417,6 +447,20 @@
             >
               <Icon icon={mdiPlay} size="1.125rem" aria-hidden={true} />{$t('resume')}
             </Button>
+          {:else if item.pauseBlockedKey && item.source === 'job'}
+            <!-- Shown disabled with its reason rather than hidden, like the notifications panel's
+                 Running now rows (RunningJobsSection); focusable so the reason can be read aloud. -->
+            <button
+              type="button"
+              class="fla-disabled"
+              aria-disabled="true"
+              aria-label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
+              aria-describedby="{rowIdPrefix}-pause-{index}"
+              title={$t(item.pauseBlockedKey)}
+            >
+              <Icon icon={mdiPause} size="1.125rem" aria-hidden={true} />{$t('pause')}
+            </button>
+            <span id="{rowIdPrefix}-pause-{index}" class="sr-only">{$t(item.pauseBlockedKey)}</span>
           {/if}
           {#if item.canCancel && item.source === 'job'}
             <Button disabled={busyId === item.id} onclick={() => cancel(item)}>
@@ -437,6 +481,13 @@
           {:else if item.finished && !item.failed && item.studioBundle === 'import'}
             <Button variant="primary" onclick={() => void openImportedProject(item)}>
               <Icon icon={mdiOpenInApp} size="1.125rem" aria-hidden={true} />{$t('frameleaf_studio_library_open')}
+            </Button>
+          {/if}
+          {#if item.projectId}
+            <Button onclick={() => openInStudio(item)}>
+              <Icon icon={mdiMovieEditOutline} size="1.125rem" aria-hidden={true} />{$t(
+                'frameleaf_activity_open_in_studio',
+              )}
             </Button>
           {/if}
           {#if item.finished && !item.failed && item.assetId}
@@ -655,6 +706,32 @@
   @keyframes fla-pulse {
     50% {
       opacity: 0.3;
+    }
+  }
+  /* A disabled control that still explains itself (RunningJobsSection's pattern). */
+  .fla-disabled {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  /* Reduce Motion: the pulsing dot, the moving bar and the width glide stop (tokens.json motion). */
+  @media (prefers-reduced-motion: reduce) {
+    .fla-dot,
+    .fla-progress.is-indeterminate > span {
+      animation: none;
+    }
+    .fla-progress > span {
+      transition: none;
     }
   }
   .fla-meta,

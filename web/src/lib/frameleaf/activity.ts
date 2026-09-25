@@ -194,6 +194,12 @@ export type ActivityItem = {
    * project it created; both are looked up through the owner-scoped bundle routes when asked for.
    */
   studioBundle?: 'export' | 'import';
+  /** A Studio export or preview (FL-104): the project it renders, so the row can open it in Studio. */
+  projectId?: string;
+  /** The server's measured estimate of the time left, in seconds, when it has one. */
+  estimateSeconds?: number;
+  /** The server's estimate of the output size, in bytes, when it has one (prototype "Done · 12 MB"). */
+  sizeBytes?: number;
 };
 
 const DESTINATION_KEY: Record<MediaOperationDestination, Translations> = {
@@ -343,6 +349,26 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     canDismiss: finished,
     browserLocal: false,
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
+    ...(operation.projectId && STUDIO_RENDER_KINDS.has(operation.kind) && { projectId: operation.projectId }),
+    ...estimateOf(operation),
+  };
+};
+
+/** Renders of a Studio project, which Activity can open in Studio (FL-104, `Activity.jsx` Open in Studio). */
+const STUDIO_RENDER_KINDS: ReadonlySet<MediaOperationKind> = new Set([
+  MediaOperationKind.StudioExport,
+  MediaOperationKind.StudioPreview,
+]);
+
+/** The server's measured estimate, when it sent one; nothing is invented when it did not. */
+const estimateOf = (
+  operation: Pick<MediaOperationDto, 'estimate'>,
+): Pick<ActivityItem, 'estimateSeconds' | 'sizeBytes'> => {
+  const seconds = operation.estimate?.seconds;
+  const size = asCount(operation.estimate?.sizeBytes);
+  return {
+    ...(typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 && { estimateSeconds: seconds }),
+    ...(size !== null && size > 0 && { sizeBytes: size }),
   };
 };
 
@@ -669,9 +695,13 @@ export const activityIndicatorState = (items: readonly ActivityItem[]) => {
 
 /** Seconds left at the rate so far, or null when there is no honest estimate yet. */
 export const activityEtaSeconds = (
-  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running'>,
+  item: Pick<ActivityItem, 'progress' | 'startedAt' | 'running' | 'estimateSeconds'>,
   now: number,
 ): number | null => {
+  // The server's own measurement wins over a guess from elapsed time.
+  if (item.running && item.estimateSeconds !== undefined) {
+    return item.estimateSeconds > 0 ? Math.ceil(item.estimateSeconds) : null;
+  }
   const progress = item.progress;
   const elapsed = (now - item.startedAt) / 1000;
   if (!item.running || progress === null || progress <= 0 || progress >= 100 || item.startedAt <= 0 || elapsed <= 0) {
@@ -687,23 +717,32 @@ export const activityEtaSeconds = (
  * without a measured percentage, and a failure's reason is added by the page, as given.
  */
 export const activityStatusText = (
-  item: Pick<ActivityItem, 'statusKey' | 'progress' | 'startedAt' | 'running' | 'paused' | 'finished'>,
+  item: Pick<
+    ActivityItem,
+    'statusKey' | 'progress' | 'startedAt' | 'running' | 'paused' | 'finished' | 'estimateSeconds' | 'sizeBytes'
+  >,
   {
     translate,
     online = true,
     now = Date.now(),
     formatDuration,
+    formatSize,
   }: {
     translate: (key: Translations, options?: { values?: Record<string, unknown> }) => string;
     online?: boolean;
     now?: number;
     /** "3 minutes", in the reader's language. */
     formatDuration: (seconds: number) => string;
+    /** "12 MB", in the reader's language. */
+    formatSize?: (bytes: number) => string;
   },
 ): string => {
   const status = translate(item.statusKey);
   const progress = item.progress === null ? null : Math.round(item.progress);
   if (item.finished) {
+    if (item.statusKey === 'frameleaf_activity_status_completed' && item.sizeBytes && formatSize) {
+      return translate('frameleaf_activity_status_done_size', { values: { status, size: formatSize(item.sizeBytes) } });
+    }
     return item.statusKey === 'frameleaf_activity_status_cancelled' && progress !== null && progress < 100
       ? translate('frameleaf_activity_status_at', { values: { status, progress } })
       : status;
@@ -735,4 +774,28 @@ export const formatActivityDuration = (seconds: number, locale?: string): string
         ? [Math.ceil(seconds / 60), 'minute']
         : [Math.round(seconds / 360) / 10, 'hour'];
   return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+};
+
+/**
+ * What the page's live region says when a server job finishes on its own (`Activity.jsx`:
+ * "Export of Lake trip finished." / "… failed."). Compares the previous statuses with the current
+ * items; returns null when nothing finished since, and the first finished job otherwise.
+ */
+export const activityCompletion = (
+  previous: ReadonlyMap<string, Translations>,
+  items: readonly Pick<ActivityItem, 'id' | 'source' | 'statusKey' | 'finished' | 'failed'>[],
+): { id: string; outcome: 'finished' | 'failed' } | null => {
+  for (const item of items) {
+    const before = previous.get(item.id);
+    if (item.source !== 'job' || !item.finished || before === undefined || before === item.statusKey) {
+      continue;
+    }
+    if (item.statusKey === 'frameleaf_activity_status_completed') {
+      return { id: item.id, outcome: 'finished' };
+    }
+    if (item.failed) {
+      return { id: item.id, outcome: 'failed' };
+    }
+  }
+  return null;
 };

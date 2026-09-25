@@ -1030,6 +1030,28 @@ export class MediaOperationRepository {
    * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
    * leave the job stuck at `cancelling` with nobody able to settle it.
    */
+  /**
+   * FL-90: unfinished operations of these kinds for these Studio projects, for revocation. With
+   * `ownerId`, only that account's.
+   */
+  async listUnfinishedForProjects(
+    projectIds: readonly string[],
+    kinds: readonly MediaOperationKind[],
+    ownerId?: string,
+  ): Promise<Array<{ id: string; ownerId: string; kind: string; projectId: string | null }>> {
+    if (projectIds.length === 0 || kinds.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id', 'ownerId', 'kind', 'projectId'])
+      .where('projectId', 'in', [...projectIds])
+      .where('kind', 'in', [...kinds])
+      .$if(ownerId !== undefined, (qb) => qb.where('ownerId', '=', ownerId!))
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+  }
+
   async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
     return (await this.db
       .updateTable('media_operation')

@@ -398,6 +398,7 @@ describe(UserService.name, () => {
         memoryShowLess: 3,
         memoryCurations: 4,
         peopleAndPets: 3,
+        workspaceLayouts: 1,
       });
 
       await sut.handleUserDeleteCheck();

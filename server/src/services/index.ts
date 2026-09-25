@@ -84,6 +84,8 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
+import { StudioWorkspaceService } from 'src/services/studio-workspace.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
@@ -192,6 +194,8 @@ export const services = [
   StudioBundleService,
   StudioProjectService,
   StudioResourceService,
+  StudioRevocationService,
+  StudioWorkspaceService,
   SyncService,
   SystemConfigService,
   SystemMetadataService,

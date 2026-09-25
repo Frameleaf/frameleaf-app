@@ -292,6 +292,49 @@ export class StudioPreviewRepository {
       .execute()) as unknown as StudioPreviewFrame[];
   }
 
+  /**
+   * FL-90: frames of these projects that can still be delivered or are still being made, for
+   * revocation. With `ownerId`, only that account's frames.
+   */
+  async listLiveForProjects(projectIds: readonly string[], ownerId?: string): Promise<StudioPreviewFrame[]> {
+    if (projectIds.length === 0) {
+      return [];
+    }
+    return (await this.db
+      .selectFrom('studio_preview_frame')
+      .selectAll()
+      .where('projectId', 'in', [...projectIds])
+      .$if(ownerId !== undefined, (qb) => qb.where('ownerId', '=', ownerId!))
+      .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering, StudioPreviewStatus.Ready])
+      .execute()) as unknown as StudioPreviewFrame[];
+  }
+
+  /**
+   * Rows whose file can go: ready frames past their expiry, and superseded or failed frames last
+   * touched before `retiredBefore`. For the retention sweep.
+   */
+  async listRetired(now: Date, retiredBefore: Date, limit: number): Promise<StudioPreviewFrame[]> {
+    return (await this.db
+      .selectFrom('studio_preview_frame')
+      .selectAll()
+      .where((eb) =>
+        eb.or([
+          eb.and([
+            eb('status', '=', StudioPreviewStatus.Ready),
+            eb('expiresAt', 'is not', null),
+            eb('expiresAt', '<=', now),
+          ]),
+          eb.and([
+            eb('status', 'in', [StudioPreviewStatus.Superseded, StudioPreviewStatus.Failed]),
+            eb('updatedAt', '<', retiredBefore),
+          ]),
+        ]),
+      )
+      .orderBy('updatedAt', 'asc')
+      .limit(limit)
+      .execute()) as unknown as StudioPreviewFrame[];
+  }
+
   /** Expired rows across all projects, for the retention sweep. */
   async listExpired(now: Date, limit: number): Promise<StudioPreviewFrame[]> {
     return (await this.db

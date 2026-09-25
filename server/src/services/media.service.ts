@@ -22,7 +22,13 @@ import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/st
 import { AssetFile } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { ConfigFFmpegDto, SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetEditAction, AssetEditActionItem, CropParameters } from 'src/dtos/editing.dto.js';
+import {
+  AssetEditAction,
+  AssetEditActionItem,
+  CropParameters,
+  TextOverlayPosition,
+  VideoAdjustModel,
+} from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetType,
@@ -46,6 +52,7 @@ import {
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
+import { straightenScale } from 'src/utils/develop-recipe.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
 import {
   type DecodeQualification,
@@ -77,6 +84,7 @@ import {
   getEditedMasterLineagePath,
   getEditedMasterTimingArgs,
   qualifyMetadataOnlyRotation,
+  qualifyStreamCopyTrim,
   resolveEditedMasterColorPolicy,
   serializeEditedMasterLineage,
   validateVideoMaster,
@@ -87,6 +95,7 @@ import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
+import { videoDevelopFilters } from 'src/utils/video-develop.js';
 
 /**
  * Decimal places in a generated ffmpeg filter argument. Four has always been this service's
@@ -1191,7 +1200,7 @@ export class MediaService extends BaseService {
     await this.assetRepository.update({
       id: asset.id,
       thumbhash: generated.thumbhash,
-      duration: this.getVideoEditDurationMs(edits, format),
+      duration: await this.getRenderedVideoDurationMs(edits, { videoStream, audioStream, format }, output),
       ...fullsizeDimensions,
     });
 
@@ -1430,7 +1439,11 @@ export class MediaService extends BaseService {
         isProgressive: false,
         isTransparent: false,
       };
-      const duration = this.getVideoEditDurationMs(edits, original.format);
+      const duration = await this.getRenderedVideoDurationMs(
+        edits,
+        { videoStream, audioStream, format: original.format },
+        masterInfo,
+      );
 
       if (version.purpose === 'export') {
         published = await this.publishVideoVersion(version, {
@@ -1661,10 +1674,8 @@ export class MediaService extends BaseService {
     const globalSpeed = edits
       .filter(isEditAction(AssetEditAction.Speed))
       .find((edit) => edit.parameters.startMs === undefined && edit.parameters.endMs === undefined);
-    const intervals =
-      globalSpeed === undefined
-        ? this.getSpeedIntervals(edits, startMs, endMs)
-        : [{ startMs, endMs, rate: globalSpeed.parameters.rate }];
+    // The whole-clip rate plays everywhere a speed range does not (FL-113, `develop.mjs` speedAt).
+    const intervals = this.getSpeedIntervals(edits, startMs, endMs, globalSpeed?.parameters.rate ?? 1);
 
     return { startMs, endMs, intervals };
   }
@@ -1707,6 +1718,12 @@ export class MediaService extends BaseService {
     const metadataRotation = qualifyMetadataOnlyRotation({ edits, videoStream, audioStream, format });
     if (metadataRotation) {
       return this.getMetadataOnlyRotationCommand(metadataRotation, videoStream, audioStream);
+    }
+
+    // FL-113: a fast trim with nothing else in the recipe copies the packets between keyframes.
+    const streamCopyTrim = qualifyStreamCopyTrim({ edits, videoStream, audioStream, format });
+    if (streamCopyTrim) {
+      return this.getStreamCopyTrimCommand(streamCopyTrim, videoStream, audioStream);
     }
 
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
@@ -1760,7 +1777,9 @@ export class MediaService extends BaseService {
       (edit) =>
         edit.parameters.startMs === undefined && edit.parameters.endMs === undefined && edit.parameters.rate !== 1,
     );
-    if (globalSpeed) {
+    // With speed ranges the segmented graph carries the whole-clip rate in its gaps (FL-113), so
+    // the whole-clip rate is applied here only when there are no ranges.
+    if (globalSpeed && speedSegments.length === 0) {
       videoFilters.push(`setpts=${this.roundFilterNumber(1 / globalSpeed.parameters.rate)}*PTS`);
       audioFilters.push(...this.getAudioTempoFilters(globalSpeed.parameters.rate));
     }
@@ -1792,6 +1811,17 @@ export class MediaService extends BaseService {
     const straighten = edits.find((edit) => edit.action === AssetEditAction.Straighten);
     if (straighten && straighten.parameters.angle !== 0) {
       videoFilters.push(`rotate=${this.roundFilterNumber(straighten.parameters.angle)}*PI/180:fillcolor=black`);
+      // `fill` (FL-113 quick editor): scale the straightened picture to cover its own frame, as the
+      // prototype and the still renderer do (`straightenScale`). Recipes without it keep their
+      // black corners, so an earlier save re-renders exactly as it did.
+      const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+      const cover = straightenScale(width, height, straighten.parameters.angle);
+      if (straighten.parameters.fill && cover > 1) {
+        videoFilters.push(
+          `scale=trunc(iw*${this.roundFilterNumber(cover)}/2)*2:trunc(ih*${this.roundFilterNumber(cover)}/2)*2`,
+          `crop=${width}:${height}`,
+        );
+      }
     }
 
     const mirrors = edits.filter((edit) => edit.action === AssetEditAction.Mirror);
@@ -1799,8 +1829,15 @@ export class MediaService extends BaseService {
       videoFilters.push(mirror.parameters.axis === 'horizontal' ? 'hflip' : 'vflip');
     }
 
-    if (edits.some((edit) => edit.action === AssetEditAction.Stabilize && edit.parameters.enabled)) {
+    const stabilize = edits.find(isEditAction(AssetEditAction.Stabilize));
+    if (stabilize?.parameters.enabled) {
       videoFilters.push('deshake');
+      // `cropEdges` (FL-113, `Editor.jsx` Stabilize: "Edges are cropped slightly to hide the
+      // correction"): crop 4% and scale back to the frame. Earlier recipes render as before.
+      if (stabilize.parameters.cropEdges) {
+        const { width, height } = this.getVideoEditDimensions(edits, videoStream);
+        videoFilters.push('crop=trunc(iw*0.96/2)*2:trunc(ih*0.96/2)*2', `scale=${width}:${height}`);
+      }
     }
 
     if (edits.some((edit) => edit.action === AssetEditAction.AutoEnhance && edit.parameters.enabled)) {
@@ -1809,7 +1846,11 @@ export class MediaService extends BaseService {
 
     const adjust = edits.find((edit) => edit.action === AssetEditAction.Adjust);
     if (adjust) {
-      videoFilters.push(...this.getAdjustmentFilters(adjust.parameters));
+      videoFilters.push(
+        ...(adjust.parameters.model === VideoAdjustModel.Develop
+          ? videoDevelopFilters(adjust.parameters)
+          : this.getAdjustmentFilters(adjust.parameters)),
+      );
     }
 
     const looks = edits.filter(
@@ -1823,8 +1864,9 @@ export class MediaService extends BaseService {
     }
 
     const overlays = edits.filter((edit) => edit.action === AssetEditAction.TextOverlay);
+    const outputDimensions = overlays.length > 0 ? this.getVideoEditDimensions(edits, videoStream) : null;
     for (const overlay of overlays) {
-      videoFilters.push(this.getTextOverlayFilter(overlay.parameters, timeline));
+      videoFilters.push(this.getTextOverlayFilter(overlay.parameters, timeline, outputDimensions!));
     }
 
     videoFilters.push(...transcodeFilters);
@@ -1833,6 +1875,10 @@ export class MediaService extends BaseService {
     const muted = !!audioEdit?.parameters.muted;
     if (audioEdit?.parameters.volume !== undefined && !muted) {
       audioFilters.push(`volume=${this.roundFilterNumber(audioEdit.parameters.volume)}`);
+      // `limit` (FL-113, `Editor.jsx` Audio): gain above 100% is limited so it cannot clip.
+      if (audioEdit.parameters.limit && audioEdit.parameters.volume > 1) {
+        audioFilters.push('alimiter=limit=0.98');
+      }
     }
 
     let outputOptions = [
@@ -1924,6 +1970,38 @@ export class MediaService extends BaseService {
     };
   }
 
+  /**
+   * The keyframe-snapped fast trim (FL-113): the input is opened at the keyframe at or before the in
+   * point and every packet up to the out point is copied, so nothing is decoded or re-encoded.
+   */
+  private getStreamCopyTrimCommand(
+    trim: { startMs: number; endMs: number },
+    videoStream: VideoStreamInfo,
+    audioStream: AudioStreamInfo | undefined,
+  ): TranscodeCommand {
+    const outputOptions = [
+      '-t',
+      this.msToSeconds(trim.endMs - trim.startMs),
+      '-c',
+      'copy',
+      '-map',
+      `0:${videoStream.index}`,
+      '-map_metadata',
+      '-1',
+    ];
+    if (audioStream) {
+      outputOptions.push('-map', `0:${audioStream.index}`);
+    }
+    outputOptions.push('-avoid_negative_ts', 'make_zero', '-movflags', 'faststart');
+
+    return {
+      inputOptions: ['-ss', this.msToSeconds(trim.startMs)],
+      outputOptions,
+      twoPass: false,
+      progress: { frameCount: videoStream.frameCount, percentInterval: 10 },
+    };
+  }
+
   private getSegmentedSpeedFilterGraph(
     intervals: SpeedInterval[],
     videoStream: VideoStreamInfo,
@@ -1976,7 +2054,12 @@ export class MediaService extends BaseService {
     return { filters: filters.join(';'), maps: ['[vout]'] };
   }
 
-  private getSpeedIntervals(edits: AssetEditActionItem[], startMs: number, endMs: number): SpeedInterval[] {
+  private getSpeedIntervals(
+    edits: AssetEditActionItem[],
+    startMs: number,
+    endMs: number,
+    baseRate = 1,
+  ): SpeedInterval[] {
     const speedSegments = edits
       .filter(isEditAction(AssetEditAction.Speed))
       .filter((edit) => edit.parameters.startMs !== undefined && edit.parameters.endMs !== undefined)
@@ -1992,7 +2075,7 @@ export class MediaService extends BaseService {
       }
 
       if (segmentStartMs > cursorMs) {
-        intervals.push({ startMs: cursorMs, endMs: segmentStartMs, rate: 1 });
+        intervals.push({ startMs: cursorMs, endMs: segmentStartMs, rate: baseRate });
       }
 
       intervals.push({ startMs: segmentStartMs, endMs: segmentEndMs, rate: segment.parameters.rate });
@@ -2000,7 +2083,7 @@ export class MediaService extends BaseService {
     }
 
     if (cursorMs < endMs) {
-      intervals.push({ startMs: cursorMs, endMs, rate: 1 });
+      intervals.push({ startMs: cursorMs, endMs, rate: baseRate });
     }
 
     return intervals;
@@ -2098,6 +2181,7 @@ export class MediaService extends BaseService {
   private getTextOverlayFilter(
     parameters: Extract<AssetEditActionItem, { action: AssetEditAction.TextOverlay }>['parameters'],
     timeline: VideoEditTimeline,
+    output: ImageDimensions,
   ) {
     const color = parameters.color.replace('#', '0x');
     const escapedComma = `${String.fromCodePoint(92)},`;
@@ -2108,7 +2192,28 @@ export class MediaService extends BaseService {
       startMs !== undefined && endMs !== undefined
         ? `:enable='between(t${escapedComma}${this.msToSeconds(startMs)}${escapedComma}${this.msToSeconds(endMs)})'`
         : '';
-    return `drawtext=text='${this.escapeFfmpegText(parameters.text)}':x=w*${this.roundFilterNumber(parameters.x)}:y=h*${this.roundFilterNumber(parameters.y)}:fontsize=h*${this.roundFilterNumber(parameters.size)}:fontcolor=${color}${enable}`;
+    const { x, y } = parameters.position
+      ? this.getTextOverlayAnchor(parameters.position)
+      : { x: `w*${this.roundFilterNumber(parameters.x)}`, y: `h*${this.roundFilterNumber(parameters.y)}` };
+    // The prototype's shadow is `0 2px 6px` at its preview size; drawtext has no blur, so it is an
+    // offset shadow of the same proportion.
+    const shadow = parameters.shadow
+      ? `:shadowcolor=black@0.7:shadowx=0:shadowy=${Math.max(1, Math.round(output.height / 360))}`
+      : '';
+    return `drawtext=text='${this.escapeFfmpegText(parameters.text)}':x=${x}:y=${y}:fontsize=h*${this.roundFilterNumber(parameters.size)}:fontcolor=${color}${shadow}${enable}`;
+  }
+
+  /**
+   * Text aligned on the prototype's 3 × 3 grid (`Editor.jsx` `.ed-text-layer`, padding 4% of the
+   * width on every side).
+   */
+  private getTextOverlayAnchor(position: TextOverlayPosition) {
+    const margin = 'w*0.04';
+    const column = position.endsWith('left') ? 0 : position.endsWith('right') ? 2 : 1;
+    const row = position.startsWith('top') ? 0 : position.startsWith('bottom') ? 2 : 1;
+    const x = [margin, '(w-text_w)/2', `w-text_w-${margin}`][column];
+    const y = [margin, '(h-text_h)/2', `h-text_h-${margin}`][row];
+    return { x, y };
   }
 
   private getVideoEditDimensions(edits: AssetEditActionItem[], videoStream: VideoStreamInfo): ImageDimensions {
@@ -2131,6 +2236,26 @@ export class MediaService extends BaseService {
     }
 
     return { width, height };
+  }
+
+  /**
+   * The rendered length to record. A stream-copied fast trim starts at the keyframe at or before
+   * the in point, so it runs longer than out minus in (FL-113): its length is read from the file
+   * that was written. Every other render is exactly the recipe's timeline.
+   */
+  private async getRenderedVideoDurationMs(
+    edits: AssetEditActionItem[],
+    source: { videoStream: VideoStreamInfo; audioStream?: AudioStreamInfo; format: VideoFormat },
+    output: string | VideoInfo,
+  ): Promise<number> {
+    if (qualifyStreamCopyTrim({ edits, ...source })) {
+      const info = typeof output === 'string' ? await this.mediaRepository.probe(output) : output;
+      const probed = Math.round((info.format.duration ?? 0) * 1000);
+      if (probed > 0) {
+        return probed;
+      }
+    }
+    return this.getVideoEditDurationMs(edits, source.format);
   }
 
   private getVideoEditDurationMs(edits: AssetEditActionItem[], format: VideoFormat) {

@@ -1,15 +1,21 @@
-import { ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent } from 'src/decorators.js';
 import { StudioPreviewDto, StudioPreviewRequestDto, StudioPreviewResponseDto } from 'src/dtos/studio-preview.dto.js';
 import {
   CacheControl,
+  ImmichWorker,
   MediaOperationDestination,
   MediaOperationKind,
+  StorageFolder,
   StudioPreviewQuality,
   StudioPreviewStatus,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
@@ -19,9 +25,14 @@ import {
 } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { rational } from 'src/utils/rational-time.js';
+import { isInsideFolder } from 'src/utils/studio-export.js';
 import {
+  PREVIEW_CONTENT_TYPES,
   PREVIEW_FRAMES_PER_REVISION,
+  PREVIEW_RETENTION_MS,
   PREVIEW_REVISIONS_PER_PROJECT,
+  PREVIEW_SWEEP_MS,
+  PREVIEW_TOMBSTONE_MS,
   PreviewBinding,
   PreviewStatusValue,
   PreviewTime,
@@ -40,6 +51,23 @@ export type StudioPreviewFrameRequest = Omit<StudioPreviewRequestDto, 'projectId
 
 /** How many rows one project's eviction pass considers. Well above the per-revision cap. */
 const PROJECT_SCAN_LIMIT = 500;
+/** How many retired frames one sweep pass removes. */
+const SWEEP_BATCH = 500;
+
+/**
+ * Where a render worker writes one preview frame: a directory the server names for that frame,
+ * inside the owner's private exports folder, never shared between frames.
+ */
+export const studioPreviewFrameFolder = (ownerId: string, frameId: string) =>
+  join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'studio-previews', frameId);
+
+const previewFrameIdOf = (operation: Pick<MediaOperation, 'snapshot'>): string | null => {
+  const snapshot = operation.snapshot as Record<string, unknown> | null;
+  const id = snapshot?.previewFrameId;
+  return typeof id === 'string' ? id : null;
+};
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 500);
 
 const asIso = (value: Date | string | null | undefined): string | null => {
   if (!value) {
@@ -87,12 +115,16 @@ const staleRevision = (currentRevision: number) =>
  */
 @Injectable()
 export class StudioPreviewService {
+  private sweepHandle?: ReturnType<typeof setInterval>;
+  private sweeping?: Promise<void>;
+
   constructor(
     private logger: LoggingRepository,
     private repository: StudioPreviewRepository,
     private operations: MediaOperationRepository,
     private resources: StudioResourceService,
     private projects: StudioProjectService,
+    private storage: StorageRepository,
   ) {
     this.logger.setContext(StudioPreviewService.name);
 
@@ -223,7 +255,7 @@ export class StudioPreviewService {
      */
     const head = await this.projects.getReadableRevision(frame.projectId, auth.user.id);
     if (head === null) {
-      await this.repository.evict([frame.id]);
+      await this.dropFrames([frame]);
       throw new NotFoundException('Preview frame not found');
     }
 
@@ -240,7 +272,7 @@ export class StudioPreviewService {
         auth,
       });
       if (!verification.valid) {
-        await this.repository.evict([frame.id]);
+        await this.dropFrames([frame]);
         throw new ConflictException({
           message: 'This preview is no longer authorized',
           code: 'studio_preview_grant_revoked',
@@ -325,7 +357,7 @@ export class StudioPreviewService {
    */
   async cancel(auth: AuthDto, id: string): Promise<StudioPreviewDto> {
     const frame = await this.findOwned(auth, id);
-    const [cancelled] = await this.repository.evict([frame.id]);
+    const [cancelled] = await this.dropFrames([frame]);
     await this.cancelOperation(frame, auth.user.id);
     return this.map(cancelled ?? frame);
   }
@@ -355,6 +387,157 @@ export class StudioPreviewService {
     }
 
     return superseded;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Render worker publication (FL-95 claims, this service publishes)    */
+  /* ---------------------------------------------------------------- */
+
+  /** A worker claimed a preview: give it the frame's own directory to write into. */
+  onRenderClaimed(operation: Pick<MediaOperation, 'ownerId' | 'snapshot'>): string | null {
+    const frameId = previewFrameIdOf(operation);
+    if (!frameId) {
+      return null;
+    }
+    const folder = studioPreviewFrameFolder(operation.ownerId, frameId);
+    this.storage.mkdirSync(folder);
+    return folder;
+  }
+
+  /**
+   * A worker reports the frame it rendered. The file must be an image inside the frame's own
+   * directory with the reported size. Publication is guarded on the frame still awaiting this
+   * operation's render for the binding it was asked for, so a frame superseded, cancelled or
+   * revoked in the meantime is discarded instead of shown; the render itself still completes.
+   */
+  async onRenderCompleted(
+    operation: Pick<MediaOperation, 'id' | 'ownerId' | 'snapshot'>,
+    output: { path: string; checksum: string; sizeInBytes: string; contentType: string },
+  ): Promise<{ published: boolean }> {
+    const frameId = previewFrameIdOf(operation);
+    if (!frameId) {
+      throw new BadRequestException('This operation names no preview frame');
+    }
+    if (!PREVIEW_CONTENT_TYPES.includes(output.contentType)) {
+      throw new BadRequestException('A preview frame must be a PNG, JPEG or WebP image');
+    }
+    const folder = studioPreviewFrameFolder(operation.ownerId, frameId);
+    if (!isInsideFolder(folder, output.path)) {
+      throw new BadRequestException('The frame must be inside the directory this render was given');
+    }
+    const stat = await this.storage.stat(output.path).catch(() => null);
+    if (!stat?.isFile() || String(stat.size) !== output.sizeInBytes) {
+      throw new BadRequestException('The frame is missing or its size does not match');
+    }
+
+    const frame = await this.repository.getForOwner(frameId, operation.ownerId);
+    const now = new Date();
+    const published =
+      !!frame &&
+      frame.operationId === operation.id &&
+      (await this.repository.publish(frame.id, frame.revisionDigest, {
+        framePath: output.path,
+        contentType: output.contentType,
+        sizeInBytes: output.sizeInBytes,
+        frameChecksum: Buffer.from(output.checksum, 'hex'),
+        // The worker renders the exact instant the frame was requested for (FL-93 rational time).
+        framePts: frame.timeNumerator,
+        framePtsTimebase: `1/${frame.timeDenominator}`,
+        toneMapped: false,
+        readyAt: now,
+        expiresAt: previewExpiry(now),
+      }));
+    if (!published) {
+      await this.removeFiles(folder);
+    }
+    return { published };
+  }
+
+  /** The render failed for good (its automatic retry is spent): the frame says so, and its files go. */
+  async onRenderFailed(operation: Pick<MediaOperation, 'ownerId' | 'snapshot'>, errorCode: string): Promise<void> {
+    const frameId = previewFrameIdOf(operation);
+    if (!frameId) {
+      return;
+    }
+    await this.repository.markFailed(frameId, errorCode);
+    await this.removeFiles(studioPreviewFrameFolder(operation.ownerId, frameId));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Revocation (FL-90) and retention                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Stop every live preview of these projects now: frames are evicted with their files and renders
+   * still in flight are cancelled. With `ownerId`, only that account's previews stop.
+   */
+  async revokeForProjects(projectIds: readonly string[], ownerId?: string): Promise<number> {
+    const frames = await this.repository.listLiveForProjects(projectIds, ownerId);
+    for (const frame of frames) {
+      if (frame.status !== StudioPreviewStatus.Ready) {
+        await this.cancelOperation(frame, frame.ownerId);
+      }
+    }
+    await this.dropFrames(frames);
+    return frames.length;
+  }
+
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  onBootstrap() {
+    this.sweepHandle ??= setInterval(() => void this.sweep(), PREVIEW_SWEEP_MS);
+    void this.sweep();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async onShutdown() {
+    if (this.sweepHandle) {
+      clearInterval(this.sweepHandle);
+      this.sweepHandle = undefined;
+    }
+    await this.sweeping;
+  }
+
+  /**
+   * The retention sweep. Never overlaps itself. Removes the files of ready frames past their
+   * expiry and of superseded or failed frames nobody can be shown, then deletes old tombstones.
+   */
+  sweep(now = new Date()): Promise<void> {
+    this.sweeping ??= this.sweepOnce(now)
+      .catch((error) => this.logger.warn(`Studio preview retention sweep failed: ${errorMessage(error)}`))
+      .finally(() => {
+        this.sweeping = undefined;
+      });
+    return this.sweeping;
+  }
+
+  private async sweepOnce(now: Date): Promise<void> {
+    const retired = await this.repository.listRetired(now, new Date(now.getTime() - PREVIEW_RETENTION_MS), SWEEP_BATCH);
+    await this.dropFrames(retired);
+    const removed = await this.repository.deleteEvictedBefore(
+      new Date(now.getTime() - PREVIEW_TOMBSTONE_MS),
+      SWEEP_BATCH,
+    );
+    if (retired.length > 0 || removed > 0) {
+      this.logger.debug(`Preview retention: ${retired.length} frame(s) evicted, ${removed} tombstone(s) removed`);
+    }
+  }
+
+  /** Evict rows and remove their files. The row stays as a tombstone so the answer is "gone". */
+  private async dropFrames(frames: readonly StudioPreviewFrame[]): Promise<StudioPreviewFrame[]> {
+    if (frames.length === 0) {
+      return [];
+    }
+    const evicted = await this.repository.evict(frames.map((frame) => frame.id));
+    for (const frame of frames) {
+      await this.removeFiles(studioPreviewFrameFolder(frame.ownerId, frame.id));
+    }
+    return evicted;
+  }
+
+  private async removeFiles(folder: string): Promise<void> {
+    await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch((error) => {
+      this.logger.warn(`Could not remove preview files at ${folder}: ${errorMessage(error)}`);
+    });
   }
 
   /* ---------------------------------------------------------------- */
@@ -561,19 +744,17 @@ export class StudioPreviewService {
       },
     );
 
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const rowsOf = (ids: readonly string[]) => ids.flatMap((id) => byId.get(id) ?? []);
     if (plan.cancel.length > 0) {
-      const byId = new Map(rows.map((row) => [row.id, row]));
-      for (const id of plan.cancel) {
-        const row = byId.get(id);
-        if (row) {
-          await this.cancelOperation(row, ownerId);
-        }
+      for (const row of rowsOf(plan.cancel)) {
+        await this.cancelOperation(row, ownerId);
       }
-      await this.repository.evict(plan.cancel);
+      await this.dropFrames(rowsOf(plan.cancel));
     }
 
     if (plan.evict.length > 0) {
-      await this.repository.evict(plan.evict);
+      await this.dropFrames(rowsOf(plan.evict));
     }
   }
 

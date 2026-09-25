@@ -201,6 +201,11 @@ export enum StudioRefusalReason {
   DerivedInputRefused = 'derived-input-refused',
   /** The resource class may not travel to the chosen destination. */
   DestinationNotPermitted = 'destination-not-permitted',
+  /**
+   * The reviewed rights decision for this resource does not admit the use (FL-86): every model,
+   * voice, font, weight and tool stays blocked until the owner approves it (FL-146).
+   */
+  RightsBlocked = 'rights-blocked',
 }
 
 /* ------------------------------------------------------------------ */
@@ -333,7 +338,12 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     fileBacked: true,
     carriesPersonalData: false,
     graphKeys: ['fontFamily', 'fontId'],
-    refusals: [StudioRefusalReason.InvalidId, StudioRefusalReason.NotBundled, StudioRefusalReason.ExternalLocator],
+    refusals: [
+      StudioRefusalReason.InvalidId,
+      StudioRefusalReason.NotBundled,
+      StudioRefusalReason.RightsBlocked,
+      StudioRefusalReason.ExternalLocator,
+    ],
   }),
   define({
     kind: StudioResourceKind.Lut,
@@ -351,6 +361,7 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     refusals: [
       StudioRefusalReason.InvalidId,
       StudioRefusalReason.NotBundled,
+      StudioRefusalReason.RightsBlocked,
       StudioRefusalReason.UndeclaredImport,
       StudioRefusalReason.ChecksumMismatch,
       StudioRefusalReason.ExternalLocator,
@@ -370,7 +381,12 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     fileBacked: false,
     carriesPersonalData: false,
     graphKeys: ['modelId'],
-    refusals: [StudioRefusalReason.InvalidId, StudioRefusalReason.NotBundled, StudioRefusalReason.ExternalLocator],
+    refusals: [
+      StudioRefusalReason.InvalidId,
+      StudioRefusalReason.NotBundled,
+      StudioRefusalReason.RightsBlocked,
+      StudioRefusalReason.ExternalLocator,
+    ],
   }),
   define({
     kind: StudioResourceKind.Preset,
@@ -423,7 +439,14 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     fileBacked: true,
     carriesPersonalData: true,
     graphKeys: ['musicId'],
-    refusals: [...new Set([...commonSourceRefusals, ...importRefusals, StudioRefusalReason.NotBundled])],
+    refusals: [
+      ...new Set([
+        ...commonSourceRefusals,
+        ...importRefusals,
+        StudioRefusalReason.NotBundled,
+        StudioRefusalReason.RightsBlocked,
+      ]),
+    ],
   }),
   define({
     kind: StudioResourceKind.VectorGraphic,
@@ -461,6 +484,7 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
       StudioRefusalReason.DerivedInputRefused,
       StudioRefusalReason.SharedLinkSession,
       StudioRefusalReason.DestinationNotPermitted,
+      StudioRefusalReason.RightsBlocked,
     ],
   }),
   define({

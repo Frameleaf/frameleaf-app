@@ -425,75 +425,75 @@ const actions = {
     },
   ],
   "audio-mute-gain-channel-timing-preservation": [
-    "partial",
+    "fixed",
     ["VE-1"],
-    "Frameleaf video editor (large)",
+    "Audio panel in the Frameleaf video editor: clip gain 0-150% (limited above 100%), mute switch, channels preserved (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "auto-enhance-and-stabilization": [
-    "partial",
+    "fixed",
     ["VE-10", "VE-1"],
-    "Enhance panel copy/status inside the Frameleaf video editor",
+    "Enhance panel: Stabilize (edges cropped) and Auto-enhance, applied when the version is saved (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "brightness-contrast-white-point-highlights-shadows-black-point-saturation-warmth-tint-skin-tone-blue-tone-vignette-hdr-adjustments":
     [
-      "partial",
+      "fixed",
       ["VE-4"],
-      "Photo Adjust matches; video Adjust needs the develop groups",
+      "Video Adjust uses the develop groups with a histogram of the current frame; the server renders the develop model (FL-113)",
       {
         production: [
           `${W}/lib/components/frameleaf/editor/DevelopGroup.svelte`,
-          `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+          `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
         ],
       },
     ],
   "extract-frame-from-playhead": [
-    "partial",
+    "fixed",
     ["VE-3"],
-    "Export frame on the transport instead of a tab",
+    "Export frame on the transport and in More actions, saved as a new photo (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "fast-keyframe-trim-versus-precise-trim-with-actual-boundaries": [
-    "partial",
+    "fixed",
     ["VE-7"],
-    "Precise/Fast trim mode, In/Out fields, I/O keys",
+    "Precise / Fast · keyframes trim, In/Out fields, I/O keys; a lone fast trim copies the streams (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "filter-effect-presets-and-strengths": [
-    "partial",
+    "fixed",
     ["VE-5"],
-    "Video presets through PresetStrip",
+    "Video presets through PresetStrip, with strength and the video-only B&W (FL-113)",
     {
       production: [
         `${W}/lib/components/frameleaf/editor/PresetStrip.svelte`,
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "numeric-trim-input-and-draggable-start-end-handles": [
-    "partial",
+    "fixed",
     ["VE-7", "VE-1"],
-    "Filmstrip trim handles + numeric In/Out",
+    "Filmstrip trim handles (drag and keys) and numeric In/Out (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
@@ -505,7 +505,7 @@ const actions = {
   "open-full-workspace-retaining-draft-and-playhead": [
     "partial",
     ["E-1", "MPY-10"],
-    "Open in Studio from the editor (fix-editor-albums); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62)",
+    "Open in Studio from the editor (fix-editor-albums, FL-113); the memory player's Make a movie opens Studio with its items (MPY-10 fixed, FL-62); keeping the draft and playhead in the workspace is studio-parked",
   ],
   "persistent-render-status-cancel-retry-reload-revision-supersession": [
     "match",
@@ -523,59 +523,59 @@ const actions = {
       },
     ],
   "rotate-straighten-mirror-crop-coordinates-aspect": [
-    "partial",
+    "fixed",
     ["VE-6"],
-    "Video crop chips/dial through CropOverlay",
+    "Video crop chips, straighten dial, turns, flips and the draggable crop through CropOverlay (FL-113)",
     {
       production: [
         `${W}/lib/components/frameleaf/editor/CropOverlay.svelte`,
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "save-version-versus-export-versus-revert": [
-    "partial",
+    "fixed",
     ["VE-11", "E-2"],
-    "Video versions; Versions popover",
+    "Video versions with Save version, Versions menu, export and revert (FL-39, FL-113); Versions popover (E-2)",
     {
       production: [
         `${W}/lib/components/frameleaf/editor/QuickEditor.svelte`,
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "text-overlay-content-position-timing-style": [
-    "partial",
+    "fixed",
     ["VE-9"],
-    "Multiple overlays, position grid, swatches, shadow",
+    "Up to 20 overlays with grid position, timing, size, swatches and shadow, rendered the same way (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "undo-redo-reset-and-reopen-draft": [
-    "partial",
+    "fixed",
     ["VE-11"],
-    "Undo/redo for video (photo matches)",
+    "Undo/redo (buttons and ⌘Z) and Revert for video as for photos (FL-113)",
   ],
   "video-quick-tools-trim-rotate-crop-adjust-audio": [
-    "missing",
+    "fixed",
     ["VE-1", "VE-2", "VE-3", "VE-12"],
-    "Frameleaf video quick editor (VE-2 fixed by fix-editor-albums)",
+    "Frameleaf video quick editor (VideoQuickEditor.svelte), opens on Trim (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
   "whole-video-and-segment-speed-changes": [
-    "partial",
+    "fixed",
     ["VE-8"],
-    "Speed ranges at the playhead, filmstrip bands",
+    "Whole-clip speed plus ranges at the playhead, blue bands on the filmstrip (FL-113)",
     {
       production: [
-        `${W}/lib/components/asset-viewer/editor/VideoEditorPanel.svelte`,
+        `${W}/lib/components/frameleaf/editor/VideoQuickEditor.svelte`,
       ],
     },
   ],
@@ -1136,8 +1136,8 @@ const routes = {
   ],
   "/activity": [
     "fixed",
-    ["A-1", "A-6"],
-    'The indicator and filter count say "jobs" (A-1) and rows carry the status line with percent, ETA, "Paused at N%" and "Waiting for connection" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port',
+    ["A-1", "A-6", "A-8", "A-9", "A-10"],
+    'The indicator and filter count say "jobs" (A-1) and rows carry the status line with percent, ETA, "Paused at N%" and "Waiting for connection" (A-6), both by the FL-30 library gaps. A-2…A-5 and A-7 are fixed on claude/frameleaf-implementation by the design foundation Activity port. FL-104 adds the completion live region (A-8), the Reduce Motion guard (A-9) and Pause disabled with its reason (A-10)',
     [`${P}/Activity.jsx`],
     [
       `${W}/routes/(user)/activity/+page.svelte`,
@@ -1770,7 +1770,7 @@ const routes = {
   "/studio": [
     "studio-parked",
     ["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"],
-    "Studio workspace waits on the parked engine",
+    "The header is done (ST-2…ST-7, FL-88: rename, Library back, review count, Basic/Advanced, avatar, export dialog; the workspace layout is stored per account, FL-91). The workspace itself waits on the parked engine (ST-1)",
     [`${P}/Studio.jsx`, `${P}/studio-project.mjs`],
     [
       `${W}/routes/(user)/studio/+page.svelte`,

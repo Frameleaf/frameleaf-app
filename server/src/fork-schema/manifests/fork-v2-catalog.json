@@ -1381,6 +1381,22 @@
       "identity": "immich_fork.recipient_group.userIds"
     },
     {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.render_worker_session_capability.codecs"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.render_worker_session_capability.createdAt"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.render_worker_session_capability.formats"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.render_worker_session_capability.sessionId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.smart_album_exclusion.assetId"
     },
@@ -1459,6 +1475,22 @@
     {
       "definition": "character varying(64)|not null|||",
       "identity": "immich_fork.state.upstreamVersion"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.engineRevision"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.layout"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.studio_workspace_layout.savedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.studio_workspace_layout.userId"
     },
     {
       "definition": "jsonb|not null|||",
@@ -7159,6 +7191,10 @@
       "identity": "immich_fork.recipient_group.recipient_group_size_check"
     },
     {
+      "definition": "PRIMARY KEY (\"sessionId\")",
+      "identity": "immich_fork.render_worker_session_capability.render_worker_session_capability_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (\"smartAlbumId\", \"assetId\")",
       "identity": "immich_fork.smart_album_exclusion.smart_album_exclusion_pkey"
     },
@@ -7185,6 +7221,14 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(layout) = 'object'::text)",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_object_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"userId\")",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_pkey"
     },
     {
       "definition": "CHECK (jsonb_typeof(changes) = 'array'::text)",
@@ -8911,6 +8955,8 @@
     "0000000000171-UserPreferenceHistory",
     "0000000000175-FaceCorrectionHistory",
     "0000000000176-PetObservationSourceAndRecognitionRuns",
+    "0000000000181-RenderWorkerSessionCapabilities",
+    "0000000000182-StudioWorkspaceLayout",
     "0000000000187-MemoryCuration",
     "0000000000188-MemoryShowLess"
   ],
@@ -10358,6 +10404,10 @@
       "identity": "immich_fork.recipient_group.recipient_group_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX render_worker_session_capability_pkey ON immich_fork.render_worker_session_capability USING btree (\"sessionId\")",
+      "identity": "immich_fork.render_worker_session_capability.render_worker_session_capability_pkey"
+    },
+    {
       "definition": "CREATE INDEX smart_album_exclusion_asset_idx ON immich_fork.smart_album_exclusion USING btree (\"assetId\")",
       "identity": "immich_fork.smart_album_exclusion.smart_album_exclusion_asset_idx"
     },
@@ -10388,6 +10438,10 @@
     {
       "definition": "CREATE UNIQUE INDEX state_pkey ON immich_fork.state USING btree (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_workspace_layout_pkey ON immich_fork.studio_workspace_layout USING btree (\"userId\")",
+      "identity": "immich_fork.studio_workspace_layout.studio_workspace_layout_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX user_preference_history_pkey ON immich_fork.user_preference_history USING btree (id)",
@@ -12810,6 +12864,10 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.render_worker_session_capability"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.smart_album_exclusion"
     },
     {
@@ -12823,6 +12881,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.state"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.studio_workspace_layout"
     },
     {
       "definition": "table",
