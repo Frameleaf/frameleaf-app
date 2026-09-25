@@ -82,6 +82,12 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(result.undo).toEqual({ action: 'unfavorite', ids: ['a', 'b'] });
   });
 
+  // Send a copy runs through the selection bar's share sheet; a bulk run of it is a wiring mistake.
+  it('refuses send-copy loudly instead of reporting an empty success', async () => {
+    await expect(runBulkAction('send-copy', ['a'], { gateway: api })).rejects.toThrow(/selection bar/);
+    expect(api.updateAssets).not.toHaveBeenCalled();
+  });
+
   it('archives with the visibility field, never by moving the asset', async () => {
     await runBulkAction('archive', ['a'], { gateway: api });
     expect(api.updateAssets).toHaveBeenCalledWith({

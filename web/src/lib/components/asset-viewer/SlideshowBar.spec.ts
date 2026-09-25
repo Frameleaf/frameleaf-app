@@ -6,6 +6,7 @@ import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
 import { progressBarCalls } from '@test-data/components/progress-bar-calls';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { stubFocusVisible } from '@test-data/focus-visible';
 import SlideshowBar from './SlideshowBar.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -226,7 +227,9 @@ describe('SlideshowBar (FL-36)', () => {
 
   describe('idle auto-hide', () => {
     let canvas: HTMLElement;
+    let focusVisible: ReturnType<typeof stubFocusVisible>;
     beforeEach(() => {
+      focusVisible = stubFocusVisible();
       if (!('PointerEvent' in globalThis)) {
         // jsdom has no PointerEvent; a MouseEvent carries the coordinates a tap needs
         vi.stubGlobal(
@@ -246,6 +249,7 @@ describe('SlideshowBar (FL-36)', () => {
       document.body.append(canvas);
     });
     afterEach(() => {
+      focusVisible.restore();
       canvas.remove();
       vi.useRealTimers();
     });
@@ -293,12 +297,35 @@ describe('SlideshowBar (FL-36)', () => {
       await vi.advanceTimersByTimeAsync(2500);
       expect(controls()).toHaveClass('chrome-hidden');
 
-      await fireEvent.keyDown(document, { key: 'Tab' });
-      screen.getByLabelText('exit_slideshow').focus();
+      const exit = screen.getByLabelText('exit_slideshow');
+      focusVisible.visible.add(exit);
+      exit.focus();
       await Promise.resolve();
       expect(controls()).not.toHaveClass('chrome-hidden');
       await vi.advanceTimersByTimeAsync(5000);
       expect(controls()).not.toHaveClass('chrome-hidden');
+    });
+
+    // MediaViewer.jsx:740-744: Escape hands focus back to the cog, which is keyboard (visible) focus.
+    it('keeps the chrome up when Escape returns focus to the cog', async () => {
+      const { container } = renderBar();
+      const footer = document.createElement('footer');
+      footer.dataset.viewerChrome = 'footer';
+      const cog = document.createElement('button');
+      footer.append(cog);
+      container.append(footer);
+      focusVisible.visible.add(cog);
+      cog.focus();
+      slideshowStore.toggleSettings(cog);
+      await vi.advanceTimersByTimeAsync(0);
+
+      await fireEvent.keyDown(document, { key: 'Escape' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(get(slideshowStore.settingsOpen)).toBe(false);
+      expect(cog).toHaveFocus();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(controls()).not.toHaveClass('chrome-hidden');
+      footer.remove();
     });
 
     it('keeps the controls while the settings are open', async () => {

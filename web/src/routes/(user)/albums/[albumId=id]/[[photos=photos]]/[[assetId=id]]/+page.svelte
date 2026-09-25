@@ -456,6 +456,7 @@
             bind:timelineManager
             {options}
             destination={{ kind: 'album', id: albumId }}
+            headerHasSlideshow
             {bulkContext}
             downloadFileName={albumDownloadFileName}
             {tagOptions}

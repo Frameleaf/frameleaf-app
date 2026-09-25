@@ -150,6 +150,30 @@ describe('LibraryView', () => {
       navigation.goto.mockClear();
     });
 
+    // A collection page's header carries Slideshow (CollectionHeader.jsx:1430-1436, and the phone "…"
+    // menu), so the results toolbar leaves it out there and the page has exactly one.
+    it('offers Slideshow in the results toolbar unless the page header already does', async () => {
+      const viewer = createRawSnippet(() => ({ render: () => '<div></div>' }));
+      const first = render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        viewer,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-results-toolbar')).toHaveTextContent('slideshow'));
+      first.unmount();
+
+      render(LibraryView, {
+        options: { albumId: 'album-1' },
+        destination: { kind: 'album', id: 'album-1' },
+        syncUrl: false,
+        viewer,
+        headerHasSlideshow: true,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument());
+      expect(screen.getByTestId('frameleaf-results-toolbar')).not.toHaveTextContent('slideshow');
+    });
+
     it('shows the status bar with nothing selected and no Compare in the results toolbar', async () => {
       await setupBars();
 
@@ -312,8 +336,10 @@ describe('LibraryView', () => {
     it('shows the Frameleaf empty state, not the legacy upload card (T-10)', async () => {
       await setupLibrary();
       const empty = await screen.findByTestId('frameleaf-library-empty');
-      expect(empty).toHaveTextContent('frameleaf_library_empty');
-      expect(screen.queryByText('no_assets_message')).not.toBeInTheDocument();
+      // the Frameleaf copy (TimelineLibrary.jsx `.tl-empty`): a status message, no upload card or button
+      expect(empty).toHaveAttribute('role', 'status');
+      expect(empty.querySelector(':scope p')).toHaveTextContent('frameleaf_library_empty');
+      expect(empty.querySelector(':scope button')).toBeNull();
     });
 
     it('says a filter left nothing, never how much it hides, and offers to clear it', async () => {
