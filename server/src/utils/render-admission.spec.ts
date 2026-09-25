@@ -306,10 +306,22 @@ describe(evaluateClaimAdmission.name, () => {
       expect(evaluateClaimAdmission(claimInput())).toEqual({ admitted: true });
     });
 
-    it('matches encoder families by name, case-insensitively', () => {
+    it('matches encoder names exactly, case-insensitively, so a decoder proves nothing', () => {
       expect(
         provesOutput({ codecs: ['LIBX265'], formats: ['MP4'] }, requiredOutput({ format: 'mp4-hevc-main10' })!),
       ).toBe(true);
+      for (const decoder of ['h264_cuvid', 'hevc_cuvid', 'h264', 'hevc', 'av1', 'libdav1d']) {
+        expect(
+          provesOutput({ codecs: [decoder], formats: ['mp4', 'webm'] }, requiredOutput({ format: 'mp4-h264' })!),
+          decoder,
+        ).toBe(false);
+      }
+      expect(
+        provesOutput(
+          { codecs: ['h264_cuvid', 'hevc_cuvid'], formats: ['mp4'] },
+          requiredOutput({ format: 'mp4-hevc-main10' })!,
+        ),
+      ).toBe(false);
       expect(requiredOutput({})).toBeNull();
       expect(requiredOutput(undefined)).toBeNull();
     });

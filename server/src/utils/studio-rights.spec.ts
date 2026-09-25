@@ -80,6 +80,9 @@ describe('studio rights (FL-86)', () => {
 
   it('admits a model-backed producer when any model of its family is approved', () => {
     expect(checkStudioProducerRights('proxy', StudioRightsUse.LocalRuntime)).toBeNull();
+    // A producer the server does not know is refused, not admitted by default.
+    expect(checkStudioProducerRights('mystery-model', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
+    expect(checkStudioProducerRights('constructor', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
     expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime)).toMatchObject({ allowed: false });
     const table = { 'model:supertonic-3': row({ localRuntime: 'allowed' }) };
     expect(checkStudioProducerRights('tts', StudioRightsUse.LocalRuntime, table)).toEqual({
