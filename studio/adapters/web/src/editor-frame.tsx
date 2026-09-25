@@ -47,12 +47,14 @@ import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
 import { call, connectToHost, post } from './host-port'
+import { setPersistenceGate } from './persistence-gate'
 import { VirtualWorkspace } from './virtual-workspace'
 import {
   acceptsWrite,
   beginMount,
   confirmEcho,
   markLoaded,
+  saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
   shouldResendDraft,
@@ -463,6 +465,11 @@ async function mount(context: StudioHostContext): Promise<void> {
   }
   session = state
   const first = state.mount
+  // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
+  setPersistenceGate({
+    mayStartSave: (projectId) => saveMayStart(state, projectId),
+    loadFinished: () => undefined,
+  })
 
   // The bin first (the handoff needs frame rates), then the project that uses it.
   await state.media.seed(context.assets)
@@ -541,6 +548,7 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
+  setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
   for (const timer of state.mountTimers) clearTimeout(timer)
   state.mountTimers.clear()
   for (const stop of state.unsubscribe.splice(0)) stop()

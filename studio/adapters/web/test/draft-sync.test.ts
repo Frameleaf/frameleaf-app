@@ -4,6 +4,7 @@ import {
   beginMount,
   confirmEcho,
   markLoaded,
+  saveMayStart,
   sendEditorDraft,
   shouldReloadFromHost,
   shouldResendDraft,
@@ -50,20 +51,13 @@ class Frame {
   /** The graph each mount was seeded with: what its `loadTimeline` reads. */
   seeded = new Map<EditorMount, string>([[this.state.mount, 'r3']])
   live: EditorMount = this.state.mount
-  pendingSaves: Array<{ projectId: string; content: string; whileLoading: boolean }> = []
+  pendingSaves: Array<{ projectId: string; content: string }> = []
   pendingSends: EditorMount[] = []
   staged: Array<{ base: number; graph: string; lineage: number }> = []
   private counter = 0
 
-  /**
-   * `perMountFiles: false` models the frame without per-mount project files (every mount writes
-   * `p`). `loadingSavesLandLate: false` lands every save started while loading before that load
-   * completes; `true` lets one land afterwards (the known gap, see the `it.fails` reproduction).
-   */
-  constructor(
-    private readonly perMountFiles = true,
-    private readonly loadingSavesLandLate = false,
-  ) {}
+  /** `perMountFiles: false` models the frame without per-mount project files (every mount writes `p`). */
+  constructor(private readonly perMountFiles = true) {}
 
   edit() {
     if (!this.live.loaded || this.live !== this.state.mount) return
@@ -72,13 +66,27 @@ class Frame {
     this.store = next
   }
 
-  /** `saveTimeline` (settled timer, interval autosave, migration) of the instance on screen. */
+  /**
+   * `saveTimeline` (settled timer, Freecut's interval autosave, Ctrl+S, media deletion) of the
+   * instance on screen. The gate judges it as it starts; one it lets through snapshots the store now.
+   */
   startSave() {
-    this.pendingSaves.push({
-      projectId: this.live.projectId,
-      content: this.store,
-      whileLoading: !this.live.loaded,
-    })
+    if (!saveMayStart(this.state, this.live.projectId)) return
+    this.pendingSaves.push({ projectId: this.live.projectId, content: this.store })
+  }
+
+  /**
+   * `loadTimeline`'s own migration write, which no gate sees: while the rendered instance loads, it
+   * rewrites its file with the normalized head it then hydrates.
+   */
+  migrate() {
+    const mount = this.live
+    if (mount !== this.state.mount || mount.loaded) return
+    const migrated = `${this.seeded.get(mount)}~`
+    this.parent.set(migrated, this.seeded.get(mount)!)
+    this.seeded.set(mount, migrated)
+    this.pendingSaves.push({ projectId: mount.projectId, content: migrated })
+    this.landSave(this.pendingSaves.length - 1)
   }
 
   /** A save's `updateProject` lands; `watchDrafts` sees the write. */
@@ -140,15 +148,9 @@ class Frame {
     this.live = newest
   }
 
-  /**
-   * The rendered instance's `loadTimeline` finishes: the store holds the graph it read, which is the
-   * seeded head (Freecut reads the file when the load starts, before a save made while loading lands).
-   */
+  /** The rendered instance's `loadTimeline` finishes: the store holds the (migrated) head it read. */
   hydrate() {
     if (this.live !== this.state.mount || this.live.loaded) return
-    if (!this.loadingSavesLandLate)
-      for (let index = this.pendingSaves.length - 1; index >= 0; index -= 1)
-        if (this.pendingSaves[index]!.whileLoading) this.landSave(index)
     this.store = this.seeded.get(this.live) ?? this.store
     markLoaded(this.state, this.live)
   }
@@ -220,13 +222,14 @@ describe('editor frame draft sync (FL-88)', () => {
     expect(frame.host).toEqual({ revision: 4, content: 't3' })
   })
 
-  it('drops a Freecut interval autosave the new instance makes while it is still loading', async () => {
+  it('refuses a Freecut interval autosave the new instance starts while it is still loading', async () => {
     const frame = new Frame()
     frame.edit()
     frame.reload()
     frame.render()
-    // The store still holds the old instance's timeline; the save snapshots it into the new file.
+    // The store still holds the old instance's timeline; a save now would snapshot it.
     frame.startSave()
+    expect(frame.pendingSaves).toEqual([])
     frame.landSave()
     await frame.flushSends()
     expect(frame.staged).toEqual([])
@@ -309,7 +312,7 @@ describe('editor frame draft sync (FL-88)', () => {
     for (let run = 0; run < 400; run += 1) {
       const frame = new Frame()
       for (let step = 0; step < 50; step += 1) {
-        const pick = Math.floor(random() * 8)
+        const pick = Math.floor(random() * 9)
         if (pick === 0) frame.edit()
         else if (pick === 1) frame.startSave()
         else if (pick === 2) frame.landSave(Math.floor(random() * frame.pendingSaves.length))
@@ -317,7 +320,8 @@ describe('editor frame draft sync (FL-88)', () => {
         else if (pick === 4) frame.render()
         else if (pick === 5) frame.hydrate()
         else if (pick === 6) frame.echo()
-        else await frame.flushSends()
+        else if (pick === 8) frame.migrate()
+        else if (pick === 7) await frame.flushSends()
       }
       while (frame.pendingSaves.length > 0) frame.landSave()
       await frame.flushSends()
@@ -325,11 +329,10 @@ describe('editor frame draft sync (FL-88)', () => {
     }
   })
 
-  // Known gap (reported, not fixed here): a save that starts while the new mount is loading snapshots
-  // the replaced instance's timeline from Freecut's global stores; if its write lands after the load
-  // completes, the mount is loaded and current, so the stale graph goes out with the new head.
-  it.fails('drops a save started while loading that lands after the load completes', async () => {
-    const frame = new Frame(true, true)
+  // A save that starts while the new mount loads would snapshot the replaced timeline from Freecut's
+  // global stores and, landing after the load, be taken for the new mount's own write.
+  it('never lets a save started while loading land after the load completes', async () => {
+    const frame = new Frame()
     frame.edit()
     frame.reload()
     frame.render()
