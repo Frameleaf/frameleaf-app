@@ -25,6 +25,12 @@ import { stubFocusVisible } from '@test-data/focus-visible';
 import AssetViewer from './AssetViewer.svelte';
 
 const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
+const { app } = vi.hoisted(() => ({ app: { page: { url: new URL('http://localhost/photos'), state: {} } } }));
+vi.mock('$app/state', () => ({ page: app.page }));
+vi.mock('$app/navigation', async () => ({
+  ...(await vi.importActual<typeof import('$app/navigation')>('$app/navigation')),
+  replaceState: vi.fn(),
+}));
 vi.mock('socket.io-client', () => ({
   io: () => {
     const socket = {
@@ -112,6 +118,41 @@ describe('AssetViewer', () => {
     onAssetUpdate.mockClear();
     eventManager.emit('AssetUpdate', { ...updated, id: 'another-asset' });
     expect(onAssetUpdate).not.toHaveBeenCalled();
+  });
+
+  describe('back from Studio to the quick editor (FL-113)', () => {
+    afterEach(() => {
+      app.page.url = new URL('http://localhost/photos');
+      assetViewerManager.closeEditor();
+    });
+
+    it('opens the editor for ?edit=1 on the owner’s item and drops the flag from the address', async () => {
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Video });
+      app.page.url = new URL(`http://localhost/photos/${asset.id}?edit=1`);
+
+      renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+      await waitFor(() => expect(assetViewerManager.isShowEditor).toBe(true));
+      const { replaceState } = await import('$app/navigation');
+      const [url] = vi.mocked(replaceState).mock.calls.at(-1) ?? [];
+      expect(String(url)).toBe(`http://localhost/photos/${asset.id}`);
+    });
+
+    it('does not open an editor on someone else’s item', async () => {
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const asset = assetFactory.build({ ownerId: 'someone-else', type: AssetTypeEnum.Image });
+      app.page.url = new URL(`http://localhost/photos/${asset.id}?edit=1`);
+
+      renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(assetViewerManager.isShowEditor).toBe(false);
+    });
   });
 
   describe('the open item removed elsewhere (FL-35)', () => {

@@ -156,6 +156,27 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     });
   });
 
+  it('goes back to the quick editor that opened Studio, starting the engine at its playhead (FL-113)', async () => {
+    const engine = stubEngine();
+    const onBackToEditor = vi.fn();
+    render(StudioHost, {
+      ...baseProps(),
+      onBackToEditor,
+      handoffPlayhead: { num: 25, den: 2 },
+      loadEngine: engine.load,
+    });
+    await waitFor(() => expect(engine.module.mount).toHaveBeenCalledTimes(1));
+    expect(engine.contexts[0].handoffPlayhead).toEqual({ num: 25, den: 2 });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_back_to_quick_edit' }));
+    expect(onBackToEditor).toHaveBeenCalled();
+  });
+
+  it('offers no way back to a quick editor when Studio was not opened from one', () => {
+    render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+    expect(screen.queryByRole('button', { name: 'frameleaf_studio_back_to_quick_edit' })).not.toBeInTheDocument();
+  });
+
   it('has no mode switch without an engine', () => {
     render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
     expect(screen.queryByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).not.toBeInTheDocument();
@@ -254,6 +275,8 @@ describe('Studio route, engine present', () => {
       'auth',
       'capabilities',
       'handoffAssetIds',
+      // FL-113: where the quick editor's playhead was, as exact seconds.
+      'handoffPlayhead',
       // Basic or Advanced from the header (Studio.jsx:2626-2633).
       'mode',
       'online',

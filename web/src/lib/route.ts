@@ -226,8 +226,12 @@ export const Route = {
    * Opening Studio, optionally with a project and the "make a movie" selection. The query
    * is built by `studioHandoffQuery` so the link and the route's parser stay one contract.
    */
-  studio: (params?: { projectId?: string | null; assetIds?: readonly string[] }) =>
-    '/studio' + studioHandoffQuery(params ?? {}),
+  studio: (params?: {
+    projectId?: string | null;
+    assetIds?: readonly string[];
+    returnTo?: string | null;
+    at?: { num: number; den: number } | null;
+  }) => '/studio' + studioHandoffQuery(params ?? {}),
   /** The Studio project library (FL-91): every project, the archive and the trash. */
   studioProjects: (params?: { shelf?: 'active' | 'archived' | 'trashed' }) =>
     '/studio/projects' +
