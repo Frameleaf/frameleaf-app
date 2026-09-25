@@ -93,12 +93,12 @@ describe('WorkloadRoutingTable (FL-159 §3.2)', () => {
     const both = within(group).getByRole('radio', { name: 'Both' });
     await vi.waitFor(() => expect(both).toBeEnabled());
     await fireEvent.click(both);
-    expect(store.draft.frameleafCloud.cloudMl.routing.upscale).toBe('both');
+    expect(store.draft.frameleafCloud!.cloudMl.routing.upscale).toBe('both');
     expect(both).toHaveAttribute('aria-checked', 'true');
 
     await fireEvent.change(screen.getByLabelText(/When a job can run in both places, start with/), {
       target: { value: 'cloud' },
     });
-    expect(store.draft.frameleafCloud.cloudMl.startWith).toBe('cloud');
+    expect(store.draft.frameleafCloud!.cloudMl.startWith).toBe('cloud');
   });
 });

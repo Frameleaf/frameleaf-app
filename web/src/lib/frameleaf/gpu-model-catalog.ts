@@ -49,11 +49,11 @@ const gpuClass = (id: GpuClassId, vramGb: number, flexUsdPerSec: number, runtime
 
 /** Serverless GPU classes on Frameleaf Cloud (flex rates from the pricing research). */
 export const gpuClasses: readonly GpuClass[] = Object.freeze([
-  gpuClass('gpu24', 24, 0.000_191_67, 1.25),
-  gpuClass('gpu24pro', 24, 0.000_305_56, 1.25),
-  gpuClass('gpu48pro', 48, 0.000_486_11, 1.25),
-  gpuClass('gpu80pro', 80, 0.001_330_56, 1.3),
-  gpuClass('gpu141', 141, 0.001_647_22, 1.3),
+  gpuClass('gpu24', 24, 0.00019167, 1.25),
+  gpuClass('gpu24pro', 24, 0.00030556, 1.25),
+  gpuClass('gpu48pro', 48, 0.00048611, 1.25),
+  gpuClass('gpu80pro', 80, 0.00133056, 1.3),
+  gpuClass('gpu141', 141, 0.00164722, 1.3),
 ]);
 
 export const gpuClassById = (id: string) => gpuClasses.find((item) => item.id === id) ?? null;
@@ -686,7 +686,7 @@ export const workersFor = (item: ModelPosition, units: number) => {
   if (!workloadUnits[item.workload]?.chunked) {
     return 1;
   }
-  const chunks = Math.max(1, Math.ceil((Number(units) * 60) / CHUNK_SECONDS));
+  const chunks = Math.max(1, Math.ceil((units * 60) / CHUNK_SECONDS));
   return Math.min(MAX_CHUNK_WORKERS, chunks);
 };
 
@@ -711,7 +711,7 @@ export type CostEstimate = {
  */
 export const estimateCost = (itemOrId: ModelPosition | string | null, quantity: number): CostEstimate | null => {
   const item = typeof itemOrId === 'string' ? positionById(itemOrId) : itemOrId;
-  const units = Number(quantity);
+  const units = quantity;
   if (!isCloudOffered(item) || !Number.isFinite(units) || units <= 0) {
     return null;
   }
@@ -840,7 +840,7 @@ export const positionState = (
     runsOn: band === 'cloud' ? 'cloud' : band === 'none' ? null : 'local',
     speedClass,
     seconds: local ? localSecondsPerUnit(item, gpu, { benchmark, cpuProfile }) : null,
-    measured: local && !!benchmark?.factors[item.id],
+    measured: local && benchmark?.factors[item.id] !== undefined,
     quote: band === 'cloud' ? quotedUnitCost(item) : null,
     reasons,
     disabled: reasons.length > 0,

@@ -135,7 +135,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     await fireEvent.click(toggle);
 
     const dialog = await screen.findByRole('dialog', { name: 'Cloud processing terms · version 2026-10-01' });
-    expect(store.draft.frameleafCloud.cloudMl.enabled).toBe(false);
+    expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(false);
     expect(within(dialog).getByText("eu · your account's region")).toBeInTheDocument();
     const accept = within(dialog).getByRole('button', { name: 'Accept and turn on' });
     expect(accept).toBeDisabled();
@@ -151,7 +151,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
         features: { identityNames: false, medicalSignals: false, ocrAddon: false },
       },
     });
-    expect(store.draft.frameleafCloud.cloudMl.enabled).toBe(true);
+    expect(store.draft.frameleafCloud!.cloudMl.enabled).toBe(true);
   });
 
   it('shows the AI Wallet in US dollars and saves a new daily cap', async () => {
@@ -211,7 +211,7 @@ describe('CloudMlSection (FL-159, prototype Processing)', () => {
     const radios = within(slider).getAllByRole('radio');
     const heaviest = radios.findLast((radio) => !(radio as HTMLInputElement).disabled) as HTMLInputElement;
     await fireEvent.click(heaviest);
-    expect(store.draft.frameleafCloud.cloudMl.models.descriptions).toBe(heaviest.value);
+    expect(store.draft.frameleafCloud!.cloudMl.models.descriptions).toBe(heaviest.value);
   });
 
   it('lists recent cloud jobs with GPU time, workers, estimate and settled cost', async () => {
