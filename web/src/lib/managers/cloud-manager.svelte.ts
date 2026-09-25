@@ -1,13 +1,22 @@
 import {
+  activateLicense,
   cancelCloudLink,
   checkInCloud,
   getCloudLink,
   getCloudStatus,
+  getLicenseProducts,
+  getLicenseStatus,
+  installLicenseCertificate,
+  refreshLicense,
+  removeLicenseKey,
+  removeLicensePlan,
   startCloudLink,
   unlinkCloud,
   updateCloudPermissions,
   type CloudPermissionsUpdateDto,
   type CloudStatusResponseDto,
+  type LicenseProductsResponseDto,
+  type LicenseStatusResponseDto,
 } from '@immich/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -19,6 +28,8 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
  */
 export class CloudManager {
   #status = $state<CloudStatusResponseDto | null>(null);
+  #license = $state<LicenseStatusResponseDto | null>(null);
+  #products = $state<LicenseProductsResponseDto | null>(null);
   #error = $state<unknown>(null);
   #loading = $state(false);
   #listeners = 0;
@@ -26,6 +37,16 @@ export class CloudManager {
 
   get status() {
     return this.#status;
+  }
+
+  /** FL-156: the licence certificates this server holds. */
+  get license() {
+    return this.#license;
+  }
+
+  /** FL-157: bundled prices and the deployment's store. */
+  get products() {
+    return this.#products;
   }
 
   get error() {
@@ -39,7 +60,7 @@ export class CloudManager {
   constructor() {
     eventManager.on({
       FrameleafCloudUpdate: ({ topic }) => {
-        if (topic === 'link' && this.#listeners > 0) {
+        if ((topic === 'link' || topic === 'license') && this.#listeners > 0) {
           void this.refresh();
         }
       },
@@ -66,7 +87,14 @@ export class CloudManager {
   async refresh() {
     this.#loading = true;
     try {
-      this.#apply(await getCloudStatus());
+      const [status, license, products] = await Promise.all([
+        getCloudStatus(),
+        getLicenseStatus(),
+        getLicenseProducts(),
+      ]);
+      this.#license = license;
+      this.#products = products;
+      this.#apply(status);
     } catch (error) {
       this.#error = error;
     } finally {
@@ -80,6 +108,19 @@ export class CloudManager {
   checkIn = () => this.#run(() => checkInCloud());
   setPermissions = (dto: CloudPermissionsUpdateDto) =>
     this.#run(() => updateCloudPermissions({ cloudPermissionsUpdateDto: dto }));
+
+  activateLicense = (key: string) => this.#runLicense(() => activateLicense({ licenseActivateDto: { key } }));
+  installLicenseFile = (certificate: string) =>
+    this.#runLicense(() => installLicenseCertificate({ licenseCertificateDto: { certificate } }));
+  removeLicenseKey = () => this.#runLicense(() => removeLicenseKey());
+  removePlan = () => this.#runLicense(() => removeLicensePlan());
+  refreshLicense = () => this.#runLicense(() => refreshLicense());
+
+  async #runLicense(call: () => Promise<LicenseStatusResponseDto>) {
+    const license = await call();
+    this.#license = license;
+    return license;
+  }
 
   async #run(call: () => Promise<CloudStatusResponseDto>) {
     const status = await call();
