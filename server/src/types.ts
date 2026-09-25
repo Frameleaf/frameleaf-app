@@ -288,6 +288,17 @@ export interface IPersonJob {
   personGroupId: string;
 }
 
+/**
+ * FL-57: face or person changes that may make generated text name the wrong people. The owner's assets
+ * showing `personGroupIds`, and `assetIds`, have their stale generated descriptions regenerated and
+ * their stale generated video captions withdrawn.
+ */
+export interface IPersonIdentityRefreshJob {
+  ownerId: string;
+  personGroupIds?: string[];
+  assetIds?: string[];
+}
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -494,6 +505,7 @@ export type JobItem =
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }
+  | { name: JobName.PersonIdentityRefresh; data: IPersonIdentityRefreshJob }
 
   // Smart Search
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }

@@ -26,7 +26,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(PersonService, {
+  const service = newMediumService(PersonService, {
     database: db || defaultDatabase,
     real: [
       AccessRepository,
@@ -41,6 +41,9 @@ const setup = (db?: Kysely<DB>) => {
     ],
     mock: [JobRepository, LoggingRepository, StorageRepository, MachineLearningRepository, MlDestinationRepository],
   });
+  // FL-57: face changes queue the refresh of generated text that may name the wrong people
+  service.ctx.getMock(JobRepository).queue.mockResolvedValue();
+  return service;
 };
 
 const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
@@ -213,8 +216,9 @@ describe(PersonService.name, () => {
   });
 
   describe('Locked media (FL-34)', () => {
-    it("lists a corrected face on Locked media only for that media's owner in an elevated session", async () => {
-      const { sut, ctx } = setup();
+    it('never shows Locked or foreign media as correction history evidence (FL-57)', async () => {
+      // its own database: the corrected faces it leaves would outlast the forced recognition tests below
+      const { sut, ctx } = setup(await getKyselyDB());
       const personRepo = ctx.get(PersonRepository);
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser({ clusterGroupId: user1.clusterGroupId });
@@ -222,25 +226,38 @@ describe(PersonService.name, () => {
       await ctx.newPerson({ ownerId: user2.id, personGroupId: person.personGroupId });
 
       const { asset: locked1 } = await ctx.newAsset({ ownerId: user1.id, visibility: AssetVisibility.Locked });
-      const { asset: locked2 } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { asset: timeline1 } = await ctx.newAsset({ ownerId: user1.id });
       const { asset: timeline2 } = await ctx.newAsset({ ownerId: user2.id });
-      for (const asset of [locked1, locked2, timeline2]) {
-        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+      for (const asset of [locked1, timeline1, timeline2]) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, imageWidth: 100, imageHeight: 100 });
         await personRepo.reassignFace(assetFace.id, person.personGroupId);
+        await personRepo.recordFaceCorrections([
+          {
+            ownerId: user1.id,
+            actorId: user1.id,
+            action: 'reassign',
+            faceId: assetFace.id,
+            toPersonId: person.personGroupId,
+          },
+        ]);
       }
 
-      const assetIds = async (auth: ReturnType<typeof factory.auth>) => {
-        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId);
-        return corrections.map(({ assetId }) => assetId).sort();
-      };
+      for (const auth of [
+        factory.auth({ user: user1 }),
+        factory.auth({ user: user1, session: { hasElevatedPermission: true } }),
+      ]) {
+        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId, { page: 1, size: 25 });
+        expect(corrections).toHaveLength(3);
+        expect(corrections.filter(({ evidence }) => evidence).map(({ evidence }) => evidence!.assetId)).toEqual([
+          timeline1.id,
+        ]);
+        expect(corrections.filter(({ evidenceRevoked }) => evidenceRevoked)).toHaveLength(2);
+      }
 
-      await expect(assetIds(factory.auth({ user: user1 }))).resolves.toEqual([timeline2.id]);
-      await expect(assetIds(factory.auth({ user: user1, session: { hasElevatedPermission: true } }))).resolves.toEqual(
-        [locked1.id, timeline2.id].sort(),
-      );
-      await expect(assetIds(factory.auth({ user: user2, session: { hasElevatedPermission: true } }))).resolves.toEqual(
-        [locked2.id, timeline2.id].sort(),
-      );
+      // the history is the owner's: the partner sees none of it
+      await expect(
+        sut.getCorrectionHistory(factory.auth({ user: user2 }), person.personGroupId, { page: 1, size: 25 }),
+      ).resolves.toEqual({ corrections: [], hasNextPage: false });
     });
 
     it("reaches a face on the caller's own Locked media only from an elevated session", async () => {

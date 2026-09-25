@@ -761,6 +761,74 @@
       "identity": "immich_fork.cutover_verification_run.verifiedCount"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.face_correction.action"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.face_correction.actorId"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.face_correction.assetChecksum"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.assetId"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxX1"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxX2"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxY1"
+    },
+    {
+      "definition": "double precision|nullable|||",
+      "identity": "immich_fork.face_correction.boxY2"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.face_correction.createdAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.faceId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.fromPersonId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.face_correction.fromPersonName"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.face_correction.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.face_correction.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.face_correction.toPersonId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.face_correction.toPersonName"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.face_correction.undoneAt"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.icloud_album.albumId"
     },
@@ -1153,8 +1221,16 @@
       "identity": "immich_fork.person_merge_verdict.ownerId"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.person_merge_verdict.personFaceId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.person_merge_verdict.personId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.person_merge_verdict.suggestionFaceId"
     },
     {
       "definition": "uuid|not null|||",
@@ -6783,6 +6859,22 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
+      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text]))",
+      "identity": "immich_fork.face_correction.face_correction_action_check"
+    },
+    {
+      "definition": "CHECK (action = 'merge'::text OR \"assetId\" IS NOT NULL)",
+      "identity": "immich_fork.face_correction.face_correction_anchor_check"
+    },
+    {
+      "definition": "CHECK (\"boxX1\" IS NULL AND \"boxY1\" IS NULL AND \"boxX2\" IS NULL AND \"boxY2\" IS NULL OR \"boxX1\" IS NOT NULL AND \"boxY1\" IS NOT NULL AND \"boxX2\" IS NOT NULL AND \"boxY2\" IS NOT NULL)",
+      "identity": "immich_fork.face_correction.face_correction_box_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.face_correction.face_correction_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
       "identity": "immich_fork.icloud_album.icloud_album_connectionId_fkey"
     },
@@ -6919,7 +7011,7 @@
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
     },
     {
-      "definition": "CHECK (\"personId\" < \"suggestionId\")",
+      "definition": "CHECK (\"personId\" < \"suggestionId\" AND verdict <> 'ignore'::text OR \"personId\" = \"suggestionId\" AND verdict = 'ignore'::text)",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_check"
     },
     {
@@ -6927,7 +7019,7 @@
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
     },
     {
-      "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text]))",
+      "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text, 'ignore'::text]))",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_verdict_check"
     },
     {
@@ -8696,7 +8788,8 @@
     "0000000000150-AlbumPositions",
     "0000000000160-RecipientGroups",
     "0000000000170-MlWorkloadAccountingJobIndex",
-    "0000000000171-UserPreferenceHistory"
+    "0000000000171-UserPreferenceHistory",
+    "0000000000175-FaceCorrectionHistory"
   ],
   "functions": [
     {
@@ -9972,6 +10065,26 @@
     {
       "definition": "CREATE UNIQUE INDEX cutover_verification_run_pkey ON immich_fork.cutover_verification_run USING btree (id)",
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_pkey"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_asset_idx ON immich_fork.face_correction USING btree (\"assetId\")",
+      "identity": "immich_fork.face_correction.face_correction_asset_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_face_idx ON immich_fork.face_correction USING btree (\"faceId\")",
+      "identity": "immich_fork.face_correction.face_correction_face_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_owner_from_idx ON immich_fork.face_correction USING btree (\"ownerId\", \"fromPersonId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.face_correction.face_correction_owner_from_idx"
+    },
+    {
+      "definition": "CREATE INDEX face_correction_owner_to_idx ON immich_fork.face_correction USING btree (\"ownerId\", \"toPersonId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.face_correction.face_correction_owner_to_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX face_correction_pkey ON immich_fork.face_correction USING btree (id)",
+      "identity": "immich_fork.face_correction.face_correction_pkey"
     },
     {
       "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
@@ -12483,6 +12596,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.cutover_verification_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.face_correction"
     },
     {
       "definition": "table",
