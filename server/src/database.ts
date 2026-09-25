@@ -298,6 +298,8 @@ export type AssetFace = {
   updatedAt: Date;
   updateId: string;
   isVisible: boolean;
+  /** FL-57 correction stamp; optional because not every face query selects it. */
+  correctedAt?: Date | null;
 };
 
 export type Plugin = Selectable<PluginTable>;
