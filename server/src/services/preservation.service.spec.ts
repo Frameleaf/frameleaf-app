@@ -477,6 +477,48 @@ describe(PreservationService.name, () => {
       expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, { status: 'restoring' });
     });
 
+    it('keeps the owner’s choices across a retry of failed items (FL-74)', async () => {
+      const found = packageOf();
+      const itemId = newUuidV7();
+      const restore = restoreOf({
+        packageId: found.id,
+        status: 'restoring',
+        options: { restoreEditRecipes: false, conflictDefault: 'keep' },
+      });
+      repository.getRestore.mockResolvedValue(restore);
+      repository.getPackage.mockResolvedValue(found);
+
+      // The choices made while reviewing, before the first attempt failed part-way.
+      await sut.updateDecisions(owner, restore.id, {
+        conflictDefault: 'replace',
+        items: [{ id: itemId, decisions: { description: 'replace', date: 'keep' } }],
+      });
+      expect(repository.setDecisions).toHaveBeenCalledWith(restore.id, [
+        { id: itemId, decisions: { description: 'replace', date: 'keep' } },
+      ]);
+      const saved = vi.mocked(repository.updateRestore).mock.calls[0][1] as { options: Record<string, unknown> };
+      expect(saved.options).toEqual({ restoreEditRecipes: false, conflictDefault: 'replace' });
+
+      // The retry: what the owner chose is read back, never reset.
+      repository.getRestore.mockResolvedValue({ ...restore, options: saved.options });
+      repository.setDecisions.mockClear();
+      repository.updateRestore.mockClear();
+      repository.resetFailedRestoreItems.mockResolvedValue(3);
+
+      await sut.applyRestore(owner, restore.id);
+
+      expect(repository.resetFailedRestoreItems).toHaveBeenCalledWith(restore.id);
+      expect(repository.setDecisions).not.toHaveBeenCalled();
+      expect(repository.updateRestore).toHaveBeenCalledTimes(1);
+      expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, { status: 'restoring' });
+      expect(operations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: MediaOperationKind.PreservationRestore,
+          settings: { restoreEditRecipes: false, conflictDefault: 'replace' },
+        }),
+      );
+    });
+
     it('answers a second restore request with the job already running', async () => {
       const restore = restoreOf();
       repository.getRestore.mockResolvedValue(restore);
