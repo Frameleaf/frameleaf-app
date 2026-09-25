@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type KeyObject, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { access, link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
@@ -13,6 +13,21 @@ export const INSTANCE_KEY_FILE = 'instance-key.pem';
 const NEXT_KEY_FILE = 'instance-key.next.pem';
 /** The key a rotation replaced, kept until the cloud stops accepting it. */
 export const RETIRING_KEY_FILE = 'instance-key.retiring.pem';
+/** A new key the cloud accepted, about to replace the current one (see `finishRotation`). */
+export const PROVEN_KEY_FILE = 'instance-key.proven.pem';
+/** How long a retiring key found while recovering an interrupted rotation is kept. */
+const RECOVERED_RETIRE_HOURS = 24;
+
+const exists = (path: string) =>
+  access(path)
+    .then(() => true)
+    .catch(() => false);
+
+const ignore = (codes: string[]) => (error: NodeJS.ErrnoException) => {
+  if (!codes.includes(error.code ?? '')) {
+    throw error;
+  }
+};
 
 type Ed25519PublicJwk = FrameleafInstanceIdentity['publicJwk'];
 
@@ -40,9 +55,11 @@ export class InstanceIdentityRepository {
    */
   async loadOrCreate(
     dir: string,
-    existing: Pick<FrameleafInstanceIdentity, 'instanceId' | 'createdAt'> | null,
+    existing: Pick<FrameleafInstanceIdentity, 'instanceId' | 'createdAt' | 'retiring'> | null,
+    now = Date.now(),
   ): Promise<FrameleafInstanceIdentity> {
     const keyFile = join(dir, INSTANCE_KEY_FILE);
+    await this.recoverRotation(dir);
     let privateKey: KeyObject;
     let created = false;
     try {
@@ -75,12 +92,53 @@ export class InstanceIdentityRepository {
     }
     this.cached = { keyFile, privateKey };
     const publicJwk = publicJwkOf(privateKey);
+    const retiring = created ? undefined : await this.retiringOf(dir, existing?.retiring, now);
     return {
       instanceId: !created && existing ? existing.instanceId : uuidv7(),
       kid: ed25519Thumbprint(publicJwk),
       publicJwk,
       keyFile,
       createdAt: !created && existing ? existing.createdAt : new Date().toISOString(),
+      ...(retiring && { retiring }),
+    };
+  }
+
+  /**
+   * Finish or undo a rotation a crash interrupted (FL-155). A key the cloud accepted is renamed to
+   * `instance-key.proven.pem` before anything else changes, so on the next load a proven key always
+   * replaces the current one (keeping the current one as retiring), and a key that was never proven
+   * is discarded. The key file itself is only ever replaced by an atomic rename.
+   */
+  private async recoverRotation(dir: string) {
+    if (await exists(join(dir, PROVEN_KEY_FILE))) {
+      await this.finishRotation(dir);
+    }
+    await rm(join(dir, NEXT_KEY_FILE), { force: true });
+  }
+
+  /** Keep the current key as retiring (a hard link), then atomically put the proven key in place. */
+  private async finishRotation(dir: string) {
+    const keyFile = join(dir, INSTANCE_KEY_FILE);
+    const retiringFile = join(dir, RETIRING_KEY_FILE);
+    await rm(retiringFile, { force: true });
+    await link(keyFile, retiringFile).catch(ignore(['EEXIST', 'ENOENT']));
+    await rename(join(dir, PROVEN_KEY_FILE), keyFile).catch(ignore(['ENOENT']));
+  }
+
+  /** The retiring key's metadata: kept when known, rebuilt when a recovered rotation left one. */
+  private async retiringOf(dir: string, known: FrameleafInstanceIdentity['retiring'] | undefined, now: number) {
+    const retiringFile = join(dir, RETIRING_KEY_FILE);
+    if (!(await exists(retiringFile))) {
+      return;
+    }
+    if (known?.keyFile === retiringFile) {
+      return known;
+    }
+    const retired = createPrivateKey(await readFile(retiringFile));
+    return {
+      kid: ed25519Thumbprint(publicJwkOf(retired)),
+      keyFile: retiringFile,
+      until: new Date(now + RECOVERED_RETIRE_HOURS * 60 * 60 * 1000).toISOString(),
     };
   }
 
@@ -144,8 +202,9 @@ export class InstanceIdentityRepository {
       await rm(nextFile, { force: true });
       throw error;
     }
-    await rename(identity.keyFile, retiringFile);
-    await rename(nextFile, identity.keyFile);
+    // accepted by the cloud: from here a crash finishes the rotation on the next load
+    await rename(nextFile, join(dir, PROVEN_KEY_FILE));
+    await this.finishRotation(dir);
     this.cached = { keyFile: identity.keyFile, privateKey: pair.privateKey };
     return {
       ...identity,

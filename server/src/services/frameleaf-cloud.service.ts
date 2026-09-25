@@ -864,20 +864,24 @@ export class FrameleafCloudService extends BaseService {
       url: endpoints.keyNonce,
       bearer,
     });
-    const rotated = await this.instanceIdentityRepository.rotate(
-      identity,
-      async (newJwk, signWithCurrent) => {
-        await this.frameleafCloudRepository.requestJson(z.unknown(), {
-          method: 'POST',
-          url: endpoints.keyRotate,
-          bearer,
-          body: { newJwk, proof: signWithCurrent({ nonce, jkt: newJwk.kid }) },
-        });
-      },
-      KEY_RETIRE_HOURS,
-    );
-    this.frameleafCloudRepository.forget();
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, rotated);
+    // under the identity lock, so no other worker loads the key while it is being swapped; the swap
+    // itself survives a crash (InstanceIdentityRepository.recoverRotation)
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafIdentity, async () => {
+      const rotated = await this.instanceIdentityRepository.rotate(
+        identity,
+        async (newJwk, signWithCurrent) => {
+          await this.frameleafCloudRepository.requestJson(z.unknown(), {
+            method: 'POST',
+            url: endpoints.keyRotate,
+            bearer,
+            body: { newJwk, proof: signWithCurrent({ nonce, jkt: newJwk.kid }) },
+          });
+        },
+        KEY_RETIRE_HOURS,
+      );
+      this.frameleafCloudRepository.forget();
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafInstance, rotated);
+    });
   }
 
   private async removeRetiredKey() {
