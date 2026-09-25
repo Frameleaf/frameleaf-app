@@ -274,7 +274,9 @@ const getEnv = (): EnvData => {
         defaultJobOptions: {
           attempts: 1,
           removeOnComplete: true,
-          removeOnFail: false,
+          // FL-71: failed jobs are kept for the Job manager to review, retry or remove; each queue
+          // keeps its newest 1,000, the most one "Remove failed records" clears.
+          removeOnFail: { count: 1000 },
         },
       },
       queues: Object.values(QueueName).map((name) => ({ name })),
