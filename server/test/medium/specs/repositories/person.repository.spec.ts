@@ -5,7 +5,7 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { newEmbedding } from 'test/small.factory.js';
+import { newEmbedding, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -241,6 +241,23 @@ describe(PersonRepository.name, () => {
       await expect(
         sut.getForFeatureFaceUpdate({ personGroupId: person.personGroupId, assetId: asset.id }),
       ).resolves.toEqual(undefined);
+    });
+  });
+
+  describe('getFeaturedAsset (FL-37)', () => {
+    it('reads the photo of a face with what decides whether it may be shown', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      await expect(sut.getFeaturedAsset(assetFace.id)).resolves.toEqual({
+        id: asset.id,
+        visibility: AssetVisibility.Archive,
+        deletedAt: null,
+      });
+      await expect(sut.getFeaturedAsset(newUuid())).resolves.toBeUndefined();
     });
   });
 

@@ -81,6 +81,15 @@ export const PersonResponseSchema = z
       .optional()
       .describe('Person color (hex)')
       .meta(new HistoryBuilder().added('v1.126.0').stable('v2').getExtensions()),
+    featuredAssetId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT " +
+          '/people/:id; null when there is none or it may not be shown (trashed, hidden or Locked)',
+      )
+      .meta(new HistoryBuilder().added('v3.2.1').alpha('v3.2.1').getExtensions()),
   })
   .meta({ id: 'PersonResponseDto' });
 
