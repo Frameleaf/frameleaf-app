@@ -22,6 +22,7 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { decideStudioDraft, studioDraftHeld } from '$lib/frameleaf/studio/draft-staging';
   import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '$lib/frameleaf/studio/engine-commands';
   import { registerFrameStudioEngine } from '$lib/frameleaf/studio/frame-engine';
   import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
@@ -368,22 +369,29 @@
    * again before it stores anything.
    */
   const stageDraft = (graph: unknown, commandIds: readonly string[]): Promise<StudioDraftResult> => {
-    if (accessLost || forbidden || !authManager.authenticated) {
-      return Promise.resolve({ status: 'rejected', reason: 'forbidden' });
+    // Offline, after a lost lease or in a conflict the session keeps the draft and sends it when the
+    // connection or the lease is back; only a session that may not hold a draft refuses it.
+    const decision = decideStudioDraft(
+      {
+        accessLost,
+        forbidden,
+        authenticated: authManager.authenticated,
+        access: sessionState?.access ?? null,
+        status: saveStatus,
+      },
+      graph,
+    );
+    if (!decision.stage) {
+      return Promise.resolve(decision.result);
     }
-    if (!online) {
-      return Promise.resolve({ status: 'rejected', reason: 'offline' });
-    }
-    if (!writable) {
+    const before = project.graph;
+    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save']);
+    if (!session.state.hasDraft) {
       return Promise.resolve({ status: 'rejected', reason: 'lease-lost' });
     }
-    if (!graph || typeof graph !== 'object' || Array.isArray(graph)) {
-      return Promise.resolve({ status: 'rejected', reason: 'invalid' });
+    if (before) {
+      history.record(before, graph);
     }
-    if (project.graph) {
-      history.record(project.graph, graph);
-    }
-    session.stage(graph, commandIds.length > 0 ? commandIds : ['editor.save']);
     return Promise.resolve({ status: 'staged' });
   };
 
@@ -686,6 +694,7 @@
   {onBack}
   {onBackToEditor}
   handoffPlayhead={data.at}
+  draftHeld={studioDraftHeld(sessionState?.status)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
