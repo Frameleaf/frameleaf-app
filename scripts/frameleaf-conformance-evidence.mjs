@@ -1079,16 +1079,16 @@ const routes = {
     ],
   ],
   "/admin": [
-    "missing",
+    "partial",
     ["CC-9", "C-2"],
-    "Overview homepage; today a redirect",
+    "Overview homepage lands on /admin (FL-71; copy aligned in the Sept 24 re-audit); the backup-restore and worker rows of Needs attention and the ML endpoint / GPU Studio probes of System at a glance need server data",
     [`${P}/CommandCenter.jsx`],
     [`${W}/routes/admin/+page.ts`],
   ],
   "/admin/jobs-status": [
-    "retained-live-route",
+    "fixed",
     ["CC-35"],
-    "Job status stays live until the queues screen lands",
+    "Redirects to the Job manager (FL-71)",
     [`${P}/JobsManager.jsx`],
     [`${W}/routes/admin/jobs-status/+page.ts`],
   ],
@@ -1133,9 +1133,9 @@ const routes = {
     ],
   ],
   "/admin/maintenance": [
-    "partial",
+    "fixed",
     ["CC-21"],
-    "Per-check last run time (the server records none); mode card, reason, backups, integrity checks and reports fixed by FL-81 (CC-14..CC-20, CC-22, CC-24)",
+    'The server records each check\'s last full run and the card reads "Last run …" / "Never run" (FL-81 CC-21); mode card, reason, backups, integrity checks and reports fixed by FL-81 (CC-14..CC-20, CC-22, CC-24)',
     [`${P}/Maintenance.jsx`, `${P}/maintenance-data.mjs`],
     [
       `${W}/routes/admin/maintenance/+page.ts`,
@@ -1145,7 +1145,7 @@ const routes = {
   "/admin/maintenance/integrity-report/[type]": [
     "fixed",
     ["CC-23"],
-    "Report viewer summary, downloads, delete confirm (fixed by FL-81)",
+    "Report viewer summary, Download CSV and Download report file, delete confirm (fixed by FL-81); severity is server-limited",
     [`${P}/Maintenance.jsx`],
     [
       `${W}/routes/admin/maintenance/integrity-report/[type]/+page.ts`,
@@ -1173,9 +1173,9 @@ const routes = {
     ],
   ],
   "/admin/queues": [
-    "missing",
-    ["CC-35", "CC-36", "CC-37", "CC-39", "CC-40", "CC-41", "CC-42", "J-1"],
-    "Queues & jobs screen",
+    "partial",
+    ["CC-42", "CC-43", "CC-44", "J-1"],
+    "Job manager fixed by FL-71 (CC-35..CC-41, Retry failed, Account and Worker columns); open: the enrichment dialog shell (CC-42, FL-59), the RunPod manager and provider history (CC-43, CC-44, FL-43) and the account filter with per-account counts (J-1, needs server counts)",
     [`${P}/JobsManager.jsx`, `${P}/jobs-data.mjs`],
     [
       `${W}/routes/admin/queues/+page.ts`,
@@ -1183,9 +1183,9 @@ const routes = {
     ],
   ],
   "/admin/queues/[name]": [
-    "missing",
+    "fixed",
     ["CC-38"],
-    "Queue detail with job tabs and detail dialog",
+    "Queue detail with job tabs, Account and Worker columns, Retry failed and the job detail dialog (FL-71)",
     [`${P}/JobsManager.jsx`],
     [
       `${W}/routes/admin/queues/[name]/+page.ts`,
@@ -1203,9 +1203,9 @@ const routes = {
     ],
   ],
   "/admin/server-status": [
-    "retained-live-route",
+    "fixed",
     ["CC-9"],
-    "Upstream statistics until the Overview homepage lands",
+    "Redirects to Library analytics in the Command Center (FL-79); the Overview is /admin",
     [`${P}/CommandCenter.jsx`],
     [`${W}/routes/admin/server-status/+page.ts`],
   ],
@@ -1223,7 +1223,7 @@ const routes = {
       "CC-11",
       "CC-12",
     ],
-    "Command-center rail, areas, search, directory, draft/review (FL-66); configuration transfer fixed by FL-71 (CC-46..CC-48)",
+    "Rail, areas, search, directory and draft/review fixed (FL-66, FL-71; section titles, search count and scope note aligned in the Sept 24 re-audit); open: the server name in the rail footer and context bar (CC-4, needs a server name setting) and the platform shortcut hint (CC-7, shared with the top bar); configuration transfer fixed by FL-71 (CC-46..CC-48)",
     [
       `${P}/CommandCenter.jsx`,
       `${P}/settings-catalog.mjs`,
@@ -1243,9 +1243,9 @@ const routes = {
     [`${W}/routes/admin/user-management/+page.ts`],
   ],
   "/admin/users": [
-    "partial",
+    "fixed",
     ["CC-25", "CC-26", "CC-27"],
-    "Users heading, columns, edit button",
+    '"Your server" heading, Items and Storage used / quota columns, toolbar, Edit account in the detail header (FL-71, FL-76)',
     [`${P}/AccountsLibraries.jsx`, `${P}/account-library-data.mjs`],
     [
       `${W}/routes/admin/users/(list)/+page.ts`,
@@ -1254,9 +1254,9 @@ const routes = {
     ],
   ],
   "/admin/users/[id]": [
-    "partial",
+    "fixed",
     ["CC-28", "CC-30", "CC-32"],
-    "Account detail header, PIN labels, typed email on delete (owner question); snapshot, sign-in provider and device dialog fixed by FL-76 (CC-29, CC-31, CC-33)",
+    "Detail header, PIN is set / No PIN set with Set, Change and Reset PIN from the admin-only PIN state, typed email on every delete (FL-76); snapshot, sign-in provider and device dialog fixed by FL-76 (CC-29, CC-31, CC-33)",
     [`${P}/AccountsLibraries.jsx`],
     [
       `${W}/routes/admin/users/[id]/+page.ts`,
