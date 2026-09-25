@@ -1554,3 +1554,19 @@
   display: inline-block;
   margin-top: 12px;
 }
+
+/* FL-176: setup reuses the auth screens' fields, cards and switches, which auth.css scopes to
+   .auth-screen; the setup root carries that class but keeps its own full-height column layout. */
+.auth-screen.frs-root,
+.auth-screen.frs-tool-root {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  overflow: hidden;
+}
+
+/* The FL-158 account section brings its own status line and button, so it sits under the copy. */
+.frs-link-card .frs-link-action {
+  grid-column: 2 / -1;
+  min-width: 0;
+}

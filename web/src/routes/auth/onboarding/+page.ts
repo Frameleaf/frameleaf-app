@@ -13,7 +13,8 @@ import type { PageLoad } from './$types';
  * opened signed out, at "Sign in to finish setting up". Every other account gets the one-time
  * "Set up your account" tool, which can be reopened from the account menu.
  */
-export const load = (async ({ url }) => {
+export const load = (async ({ parent, url }) => {
+  await parent();
   await authenticate(url, { public: true });
   const $t = await getFormatter();
   const server = serverConfigManager.value;
