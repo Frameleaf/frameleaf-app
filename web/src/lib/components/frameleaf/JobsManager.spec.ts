@@ -388,4 +388,20 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
       await screen.findByText('No matching jobs for Grace Hopper. Other accounts may still have work in this queue.'),
     ).toBeInTheDocument();
   });
+
+  it("shows a dash, not 0, while an account's counts load", async () => {
+    vi.mocked(getQueueOwnerStatistics).mockReturnValue(new Promise(() => {}));
+    render(JobsManager);
+
+    const filter = await screen.findByRole('combobox', { name: 'Account filter' });
+    await screen.findByRole('option', { name: 'Grace Hopper' });
+    await fireEvent.change(filter, { target: { value: 'grace' } });
+
+    const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
+    expect(failed).toHaveTextContent('—');
+    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).closest('.jm-metrics')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+  });
 });

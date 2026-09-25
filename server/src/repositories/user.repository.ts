@@ -130,40 +130,28 @@ export class UserRepository {
     if (ids.length === 0) {
       return [];
     }
-    return this.db
-      .selectFrom((eb) =>
-        eb
-          .selectFrom('asset')
-          .select(['asset.id as subjectId', 'asset.ownerId'])
-          .where('asset.id', 'in', ids)
-          .unionAll(
-            eb
-              .selectFrom('person')
-              .select(['person.personGroupId as subjectId', 'person.ownerId'])
-              .where('person.personGroupId', 'in', ids),
-          )
-          .unionAll(
-            eb
-              .selectFrom('library')
-              .select(['library.id as subjectId', 'library.ownerId'])
-              .where('library.id', 'in', ids),
-          )
-          .unionAll(
-            eb.selectFrom('user').select(['user.id as subjectId', 'user.id as ownerId']).where('user.id', 'in', ids),
-          )
-          .as('subject'),
+    // One array parameter for every table, so a long job list never approaches the protocol's
+    // 65,535-parameter limit.
+    const { rows } = await sql<JobSubjectOwner & { owners: number }>`
+      WITH "ids" AS (SELECT unnest(${ids}::uuid[]) AS "id"),
+      "subject" AS (
+        SELECT "asset"."id" AS "subjectId", "asset"."ownerId" FROM "asset" JOIN "ids" ON "ids"."id" = "asset"."id"
+        UNION ALL
+        SELECT "person"."personGroupId", "person"."ownerId" FROM "person" JOIN "ids" ON "ids"."id" = "person"."personGroupId"
+        UNION ALL
+        SELECT "library"."id", "library"."ownerId" FROM "library" JOIN "ids" ON "ids"."id" = "library"."id"
+        UNION ALL
+        SELECT "user"."id", "user"."id" FROM "user" JOIN "ids" ON "ids"."id" = "user"."id"
       )
-      .innerJoin('user', 'user.id', 'subject.ownerId')
-      .select(['subject.subjectId', 'subject.ownerId', 'user.name as ownerName'])
-      .execute()
-      .then((rows) => {
-        // A person shared through a cluster group belongs to each of its members: no one account.
-        const owners = new Map<string, Set<string>>();
-        for (const { subjectId, ownerId } of rows) {
-          owners.set(subjectId, (owners.get(subjectId) ?? new Set()).add(ownerId));
-        }
-        return rows.filter(({ subjectId }) => owners.get(subjectId)!.size === 1);
-      });
+      SELECT DISTINCT "subject"."subjectId", "subject"."ownerId", "user"."name" AS "ownerName",
+        count(*) OVER (PARTITION BY "subject"."subjectId") AS "owners"
+      FROM (SELECT DISTINCT "subjectId", "ownerId" FROM "subject") AS "subject"
+      JOIN "user" ON "user"."id" = "subject"."ownerId"
+    `.execute(this.db);
+    // A person shared through a cluster group belongs to each of its members: no one account.
+    return rows
+      .filter(({ owners }) => Number(owners) === 1)
+      .map(({ subjectId, ownerId, ownerName }) => ({ subjectId, ownerId, ownerName }));
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
