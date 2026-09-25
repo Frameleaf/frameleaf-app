@@ -286,6 +286,64 @@ describe('studio project session', () => {
       );
     });
 
+    it('treats a 400 as final: quarantines the commands once, and never retries the same request (FL-92)', async () => {
+      api.save
+        .mockRejectedValueOnce(httpError(400, { message: 'command 0: unknown field extra' }))
+        .mockRejectedValueOnce(httpError(400, { message: 'The graph is not JSON-serializable' }))
+        .mockResolvedValueOnce(saved(4));
+      const session = create();
+      await session.open();
+      const envelope = { id: 'track.add', payload: { kind: 'video' }, revision: 3, idempotencyKey: 'k-1', issuedAt: 1 };
+      session.stage({ step: 1 }, ['track.add'], [envelope as never]);
+      await timers.fire((timer) => timer.ms === 1500);
+
+      // The batch was refused: the document goes again once, on its own, with a fresh key.
+      expect(api.save).toHaveBeenCalledTimes(1);
+      expect(last()).toMatchObject({ status: 'dirty', error: expect.stringMatching(/./) });
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenCalledTimes(2);
+      const second = api.save.mock.calls[1][1];
+      expect(second.commands).toBeUndefined();
+      expect(second.requestKey).not.toBe(api.save.mock.calls[0][1].requestKey);
+
+      // Refused again without commands: final, surfaced, no retry timer.
+      expect(last()).toMatchObject({ status: 'error', hasDraft: true });
+      expect(timers.pending().some((timer) => timer.ms === 5000)).toBe(false);
+
+      // The next edit is a new document and gets a new attempt, with no old commands piled on.
+      session.stage({ step: 2 }, ['title.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenCalledTimes(3);
+      expect(api.save.mock.calls[2][1].commands).toBeUndefined();
+      expect(last()).toMatchObject({ status: 'saved', project: { revision: 4 } });
+    });
+
+    it('sends at most 500 commands with a save and counts the rest (FL-92)', async () => {
+      api.save.mockResolvedValue(saved(4));
+      const session = create();
+      await session.open();
+      const envelopes = Array.from({ length: 502 }, (_, index) => ({
+        id: 'track.add',
+        payload: { kind: 'video' },
+        revision: 3,
+        idempotencyKey: `k-${index}`,
+        issuedAt: index,
+      }));
+      session.stage(
+        { step: 1 },
+        envelopes.map(() => 'track.add'),
+        envelopes as never,
+      );
+      // At the limit it is sent now, not after the pause.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(api.save).toHaveBeenCalledTimes(1);
+      const dto = api.save.mock.calls[0][1];
+      expect(dto.commands).toHaveLength(500);
+      expect(dto.commands[0].idempotencyKey).toBe('k-2');
+      expect(dto.summary.counts['commands.unchecked']).toBe(2);
+    });
+
     it('retries a lost response with the same key, and takes a new key for a new document', async () => {
       api.save.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValue(saved(4));
       const session = create();
@@ -426,6 +484,31 @@ describe('studio project session', () => {
       await timers.fire((timer) => timer.ms === 1500);
       expect(api.save).toHaveBeenCalledTimes(2);
       expect(last()).toMatchObject({ status: 'saved', project: { revision: 4 } });
+    });
+
+    it('keeps edits made after the lease was lost with the draft, and sends them on reacquire', async () => {
+      api.save
+        .mockRejectedValueOnce(httpError(409, { reason: 'lease-lost', lease: lease({ heldByYou: false }) }))
+        .mockResolvedValueOnce(saved(4));
+      const session = create();
+      await session.open();
+      session.stage({ step: 1 }, ['clip.add']);
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: true });
+
+      session.stage({ step: 2 }, ['clip.move']);
+      expect(last()).toMatchObject({ status: 'lease-lost', hasDraft: true, project: { graph: { step: 2 } } });
+      expect(timers.pending().some((timer) => timer.ms === 1500)).toBe(false);
+
+      await session.reacquire();
+      await timers.fire((timer) => timer.ms === 1500);
+      expect(api.save).toHaveBeenLastCalledWith(
+        'p-1',
+        expect.objectContaining({
+          envelope: expect.objectContaining({ graph: { step: 2 } }),
+          summary: { counts: { 'clip.add': 1, 'clip.move': 1 }, total: 2 },
+        }),
+      );
     });
 
     it('turns a reacquire into a conflict when the head moved under the draft', async () => {
