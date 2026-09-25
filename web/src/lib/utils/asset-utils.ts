@@ -30,9 +30,10 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import {
   downloadManager,
   EmptyDownloadError,
-  progressFetch,
-  shouldBuffer,
+  bufferLimit,
+  holdOrStream,
   StreamedDownload,
+  type DownloadContext,
   type DownloadTask,
 } from '$lib/managers/download-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -136,30 +137,41 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
     return getBaseUrl() + '/download/archive' + (query ? `?${query}` : '');
   };
 
-  // Buffered parts are fetched one after another, never in parallel (B1).
+  // Held parts are fetched one after another, never in parallel (B1). The next part starts once
+  // the manager has recorded the one before it, so what the tab holds is counted before it decides.
   let turn: Promise<unknown> = Promise.resolve();
-  const inTurn = (signal: AbortSignal, run: () => Promise<Blob>) => {
+  const inTurn = ({ key, signal }: DownloadContext, run: () => Promise<Blob | StreamedDownload>) => {
     const mine = turn.then(() => {
       if (signal.aborted) {
         throw abortError();
       }
       return run();
     });
-    turn = mine.catch(() => {});
+    turn = downloadManager.settled(key).catch(() => {});
     return mine;
   };
 
   const fetchArchive =
     (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
-    ({ signal, onProgress }) =>
-      shouldBuffer(archive.size)
-        ? inTurn(signal, () =>
+    (context) => {
+      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName));
+      // A part that could never be held is ready at once; it does not wait for the parts before it.
+      if (archive.size > bufferLimit()) {
+        return Promise.resolve(stream);
+      }
+      // Each held part waits for the one before it, then holds only what the tab can still hold.
+      return inTurn(context, () =>
+        holdOrStream(context, {
+          size: archive.size,
+          request: (fetch) =>
             requestArchive(
               { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
-              { signal, fetch: progressFetch(onProgress) },
+              { signal: context.signal, fetch },
             ),
-          )
-        : Promise.resolve(new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName)));
+          stream,
+        }),
+      );
+    };
 
   const describeArchive = (archive: DownloadArchiveInfo, archiveName: string) => ({
     name: `${archiveName}.zip`,
@@ -173,7 +185,7 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
   // the other archives) again.
   let plan: DownloadResponseDto | undefined;
   let firstPlan = false;
-  const partKeys: string[] = [];
+  const partOutcomes: Promise<void>[] = [];
 
   const firstKey = downloadManager.start(
     { name: `${nameOf(0, 1)}.zip`, assetIds: options.assetIds ?? [], count: options.assetIds?.length ?? 0, group },
@@ -199,22 +211,25 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
         firstPlan = false;
         for (const [offset, archive] of plan.archives.slice(1).entries()) {
           const partName = nameOf(offset + 1, count);
-          partKeys.push(
-            downloadManager.start(
-              describeArchive(archive, partName),
-              withDownloadErrors(fetchArchive(archive, partName)),
-            ),
+          const key = downloadManager.start(
+            describeArchive(archive, partName),
+            withDownloadErrors(fetchArchive(archive, partName)),
           );
+          // Registered now, so a part saved (and removed) before the first part is ready still
+          // counts as ready rather than cancelled.
+          const settled = downloadManager.settled(key);
+          settled.catch(() => {});
+          partOutcomes.push(settled);
         }
       }
       return first;
     }),
   );
 
-  // The plan (and so every part key) is known before the first part can be ready.
+  // The plan (and so every part's outcome) is known before the first part can be ready.
   return downloadManager
     .settled(firstKey)
-    .then(() => Promise.all(partKeys.map((key) => downloadManager.settled(key))))
+    .then(() => Promise.all(partOutcomes))
     .then(() => undefined);
 };
 
@@ -237,14 +252,15 @@ export const downloadAssetFile = ({
 }) =>
   downloadManager.start(
     { name: filename, assetIds: [id], count: 1, total: size ?? 0, group: downloadGroup() },
-    withDownloadErrors(({ signal, onProgress }) =>
-      shouldBuffer(size)
-        ? requestAsset({ ...authManager.params, id, edited }, { signal, fetch: progressFetch(onProgress) })
-        : Promise.resolve(
-            new StreamedDownload((name) =>
-              downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), name),
-            ),
-          ),
+    withDownloadErrors((context) =>
+      holdOrStream(context, {
+        // An edited file is not the size recorded for the original, so its headers decide.
+        size: edited || !size ? undefined : size,
+        request: (fetch) => requestAsset({ ...authManager.params, id, edited }, { signal: context.signal, fetch }),
+        stream: new StreamedDownload((name) =>
+          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), name),
+        ),
+      }),
     ),
   );
 

@@ -65,9 +65,13 @@
 
   /** A ready file held in the tab is lost if the tab closes before Save, so the browser asks first. */
   const onBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (downloadManager.hasUnsavedFiles) {
-      event.preventDefault();
+    if (!downloadManager.hasUnsavedFiles) {
+      return;
     }
+    event.preventDefault();
+    // Older Safari and Chromium ask only when returnValue is set; newer ones ignore it.
+    // eslint-disable-next-line tscompat/tscompat -- Set for the browsers that need it; harmless elsewhere.
+    event.returnValue = '';
   };
 </script>
 
