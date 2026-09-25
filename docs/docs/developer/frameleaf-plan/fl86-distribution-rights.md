@@ -8,6 +8,22 @@ title: FL-86 Studio artifact attribution and resource rights
 
 Work starts from reviewed dependency `4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c`, stacked over default `0116d4778d7ce34e9bc41a7d1fed46a4cd88a466`. Neither the reviewed dependency nor these local checks proves FL-84 landed or passed current hosted gates. Root lifecycle ownership remains separate from this implementation.
 
+# Owner approval of the 210 bundled resources (2026-09-25)
+
+The owner approved all 210 bundled Studio resources on September 25, 2026 ([FL-146 comment 34941](https://heroit.atlassian.net/browse/FL-146?focusedCommentId=34941)): "all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown." This is the owner's rights decision; it replaces the "blocked until the owner approves" status of the resource table below, whose evidence and blockers remain the record of what was reviewed.
+
+`studio/rights-approval.json` is the approval record. It holds the approver (the owner, AJ Taylor), the date (`2026-09-25`), the source (the FL-146 comment) and the approved uses (redistribution, local runtime and hosted use). It binds each of the 210 approvals to a SHA-256 digest of that resource's reviewed row in `studio/dependency-attribution.json` (id, kind, locator, revision, declared license and files). The 210 rows are the manifest's 121 font families, 64 voices, 16 models, 3 bundled weight files, 2 runtime-code sources, 2 dynamic asset classes and 2 Dolby tool classes.
+
+`node scripts/frameleaf-studio-rights.mjs` regenerates the server mirror `server/src/utils/studio-rights.generated.ts` from both files. The mirror allows a use when the reviewed decision allows it or when the owner approved that exact row, and records the approval date for each approved row. The packager's own decisions in `studio/dependency-attribution.json` are unchanged (still `blocked`). The isolated engine's runtime admission, generated from that manifest, therefore still refuses these resources inside the parked engine; admitting them there needs per-file hashes.
+
+What the approval does not change:
+
+- **Enforcement stays.** A resource that is new, unknown, or changed after approval (its row digest no longer matches) is still blocked by name. A producer the server does not know is refused, and output from a producer none of whose model families is approved is not used.
+- **Redistribution stays refused.** The engine's overall distribution approval (`distributionApproval: false`, mirrored as `STUDIO_DISTRIBUTION_APPROVAL`) blocks every redistribution, whatever the per-row decision, because the package notice and source obligations below are unresolved.
+- **Dolby Vision export stays refused.** The owner approved the Dolby tools' rights, but no render worker is qualified with the administrator-installed Dolby tools yet. `STUDIO_DOLBY_TOOLS_QUALIFIED` stays `false` until that hardware and tool qualification ([FL-145](https://heroit.atlassian.net/browse/FL-145)) passes, and the export dialog says so.
+
+The approval is a rights decision, not qualification: FL-86 acceptance, hosted evidence, offline operation and deployment remain as stated above.
+
 # Implemented artifact boundary
 
 `studio/tools/engine.mjs attest` now creates `studio/engine/dist/attribution/` before computing the output inventory. It contains the exact notice bytes and an `index.json` identifying their source, hashes, installed runtime packages, resource decisions and unresolved embedded components. The build receipt records the attribution index digest and missing-package-notice list. The original build provenance, lockfile declarations and three embedded receipt notices remain preserved.
@@ -30,7 +46,7 @@ Maintained `studio/notices/` contains Freecut MIT, SoundTouch LGPL plus its JS c
 
 The existing attribution manifest now identifies **210 resources**: 16 models, 64 voices, 121 font families, 3 bundled weight files, 2 runtime-code sources, 2 dynamic asset classes and 2 Dolby tool/licensing classes. This count is independent of the 210-row FL-85 feature inventory. Resource IDs are exact model/family/voice identities or explicitly marked dynamic classes; arbitrary project/font/Lottie instances still require individual review.
 
-Every resource separately records **blocked** redistribution, local-runtime and hosted-use decisions. Basis fields explain the evidence and missing conditions. An unknown/unqualified resource is never silently removed from release scope. The packager rejects approval flags: changing a JSON label cannot establish rights or runtime qualification.
+Every resource separately records **blocked** redistribution, local-runtime and hosted-use decisions in the packager's manifest. Basis fields explain the evidence and missing conditions. An unknown/unqualified resource is never silently removed from release scope. The packager rejects approval flags: changing a JSON label cannot establish rights or runtime qualification. The owner's approval is recorded separately, bound per row by digest, and applied by the server mirror (see the owner approval section above); the blockers in the table below are the evidence that was reviewed before that decision.
 
 Pinned primary model cards and full LFM/Supertonic license captures live in `studio/rights-evidence/`, referenced by exact URL/revision and text hash in the manifest. Model-card hashes identify evidence text, not weight bytes. Missing weight checksums remain null or missing file inventories rather than invented digests.
 

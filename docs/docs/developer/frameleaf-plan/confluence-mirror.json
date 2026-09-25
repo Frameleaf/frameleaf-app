@@ -882,14 +882,18 @@
       "version": 8
     },
     {
-      "bytes": 33014,
+      "bytes": 36086,
       "category": "development",
       "id": "61997196",
       "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
-      "sourceSha256": "1ccec63b8b5baabcfd769f5516ce458a156a863b5a38db0fbac23a7b1f655dab",
+      "sourceSha256": "7b41e3b513ace92981b51ff73d44e2915656f48d4208514ad0c983f90a5b0d89",
       "title": "FL-86 Studio artifact attribution and resource rights",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
-      "version": 6
+      "version": 7,
+      "sourceBranch": "codex/FL-90-owner-decisions",
+      "sourceState": "committed-fl-86-eb4834e34e",
+      "readbackResult": "Version 7 published as HTML after the FL-86 owner-approval doc update (all 210 bundled Studio resources approved, FL-146 comment 34941; enforcement, the engine distribution refusal and the Dolby Vision export refusal kept). HTML read-back: the header carries SHA-256 7b41e3b5 and 36086 bytes; the source code block equals the source byte-for-byte (without the final newline, as in version 6); the Earlier source versions and delivery history section is unchanged from version 6. Before the update, the version 6 source block equalled the previous source 1ccec63b, so there were no direct Confluence edits.",
+      "readbackAt": "2026-09-25T16:47:55.301Z"
     },
     {
       "bytes": 28110,

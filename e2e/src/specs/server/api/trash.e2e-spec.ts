@@ -431,6 +431,39 @@ describe('/trash', () => {
       expect(items.body.items.map((item: { id: string }) => item.id)).not.toContain(id);
     });
 
+    it('should keep a persistent history of Large files moves and undos (FL-146)', async () => {
+      const { id } = await utils.createAsset(admin.accessToken);
+      const activity = () =>
+        request(app).get('/trash/activity').query({ tool: 'large-files' }).set('Authorization', bearer());
+      const initial = await activity();
+      const before = initial.body.entries.length;
+
+      const moved = await review({ action: 'trash', ids: [id] });
+      await apply({ action: 'trash', ids: [id], token: moved.body.token, source: 'large-files' }).expect(200);
+      const undone = await review({ action: 'restore', ids: [id] });
+      await apply({ action: 'restore', ids: [id], token: undone.body.token, source: 'large-files' }).expect(200);
+      // a change made elsewhere is not part of it
+      const elsewhere = await review({ action: 'trash', ids: [id] });
+      await apply({ action: 'trash', ids: [id], token: elsewhere.body.token }).expect(200);
+
+      const { status, body } = await activity();
+      expect(status).toBe(200);
+      expect(body.entries).toHaveLength(before + 2);
+      expect(body.entries[0]).toMatchObject({ action: 'restore', itemCount: 1, unavailableCount: 0 });
+      expect(body.entries[1]).toMatchObject({ action: 'trash', items: [expect.objectContaining({ assetId: id })] });
+
+      // Locked afterwards: no longer named in an ordinary session
+      await lock([id]);
+      const locked = await activity();
+      expect(locked.body.entries[0]).toMatchObject({ itemCount: 0, items: [], unavailableCount: 1 });
+
+      await request(app)
+        .get('/trash/activity')
+        .query({ tool: 'duplicates' })
+        .set('Authorization', bearer())
+        .expect(400);
+    });
+
     it("should not review another account's items", async () => {
       const other = await utils.userSetup(admin.accessToken, {
         email: 'trash-other@immich.cloud',

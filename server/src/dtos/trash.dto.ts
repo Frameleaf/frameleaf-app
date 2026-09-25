@@ -105,9 +105,61 @@ const TrashReviewResponseSchema = z
   })
   .meta({ id: 'TrashReviewResponseDto' });
 
+/** The utilities whose trash changes are kept in a persistent activity history (FL-47). */
+export enum UtilityActivityTool {
+  LargeFiles = 'large-files',
+}
+const UtilityActivityToolSchema = z
+  .enum(UtilityActivityTool)
+  .describe('The utility whose activity history this is')
+  .meta({ id: 'UtilityActivityTool' });
+
+export enum UtilityActivityAction {
+  Trash = 'trash',
+  Restore = 'restore',
+}
+const UtilityActivityActionSchema = z
+  .enum(UtilityActivityAction)
+  .describe('A move to the trash, or its undo')
+  .meta({ id: 'UtilityActivityAction' });
+
 const TrashApplySchema = TrashReviewSchema.extend({
   token: z.string().min(1).max(128).describe('The token returned by the review'),
+  source: UtilityActivityToolSchema.optional().describe(
+    'The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history.',
+  ),
 }).meta({ id: 'TrashApplyDto' });
+
+const UtilityActivityQuerySchema = z
+  .object({ tool: UtilityActivityToolSchema })
+  .meta({ id: 'UtilityActivityQueryDto' });
+
+const UtilityActivityItemSchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    fileName: z.string().describe('Original file name'),
+    bytes: z.int().min(0).describe('Size of the original when it was moved, in bytes'),
+  })
+  .meta({ id: 'UtilityActivityItemDto' });
+
+const UtilityActivityEntrySchema = z
+  .object({
+    id: z.uuidv4().describe('Entry ID'),
+    action: UtilityActivityActionSchema,
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the change was made'),
+    itemCount: z.int().min(0).describe('Items listed below'),
+    bytes: z.int().min(0).describe('Combined size of the items listed below, in bytes'),
+    items: z.array(UtilityActivityItemSchema),
+    unavailableCount: z
+      .int()
+      .min(0)
+      .describe('Items of this change no longer shown: permanently deleted, or not visible to this session'),
+  })
+  .meta({ id: 'UtilityActivityEntryDto' });
+
+const UtilityActivityResponseSchema = z
+  .object({ entries: z.array(UtilityActivityEntrySchema).describe('Newest first') })
+  .meta({ id: 'UtilityActivityResponseDto' });
 
 export class TrashSummaryResponseDto extends createZodDto(TrashSummaryResponseSchema) {}
 export class TrashItemsDto extends createZodDto(TrashItemsSchema) {}
@@ -116,3 +168,6 @@ export class TrashItemsResponseDto extends createZodDto(TrashItemsResponseSchema
 export class TrashReviewDto extends createZodDto(TrashReviewSchema) {}
 export class TrashReviewResponseDto extends createZodDto(TrashReviewResponseSchema) {}
 export class TrashApplyDto extends createZodDto(TrashApplySchema) {}
+export class UtilityActivityQueryDto extends createZodDto(UtilityActivityQuerySchema) {}
+export class UtilityActivityEntryDto extends createZodDto(UtilityActivityEntrySchema) {}
+export class UtilityActivityResponseDto extends createZodDto(UtilityActivityResponseSchema) {}
