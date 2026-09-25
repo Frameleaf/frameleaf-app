@@ -45,6 +45,7 @@ import { MapService } from 'src/services/map.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { MediaOperationEventService } from 'src/services/media-operation-event.service.js';
 import { MediaOperationSweepService } from 'src/services/media-operation-sweep.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
@@ -151,6 +152,7 @@ export const services = [
   MediaHealthOperationService,
   MediaHealthService,
   MediaOperationService,
+  MediaOperationEventService,
   MediaOperationSweepService,
   PhotoToolsService,
   RenderWorkerService,

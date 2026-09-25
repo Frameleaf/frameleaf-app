@@ -288,6 +288,11 @@ export interface IPersonJob {
   personGroupId: string;
 }
 
+/** FL-43: the `media_operation` row an edit render runs under, when it was recorded as a job. */
+export interface IEditOperationJob {
+  operationId?: string;
+}
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -441,7 +446,7 @@ export type JobItem =
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
-  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & { versionId?: string } }
+  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & IEditOperationJob & { versionId?: string } }
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
@@ -595,8 +600,8 @@ export type JobItem =
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
 
   // Editor
-  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob }
-  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob };
+  | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
+  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 
