@@ -44,23 +44,24 @@ No library startup script, web/server entry point or Docker image invokes this b
 
 ## Web integration boundary (FL-88)
 
-The Svelte host for the editor is already in the production application. The isolated build
-above remains separate from that host until its adapter is implemented:
+The owner unparked the engine on 2026-09-25, and the web application now mounts it:
 
-- `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` /
-  `dispose` contract an adapter must satisfy, plus the data the host passes (project handle,
-  authorized media URLs, identity, theme tokens, capabilities, online state) and the services
-  it exposes back. The engine receives no token, no API base URL and no SDK.
-- `web/src/lib/frameleaf/studio/commands.ts` is the canonical command vocabulary and
-  registry; `bridge.ts` validates and routes it.
-- `web/src/lib/frameleaf/studio/engine-loader.ts` resolves the engine. The adapter package
-  (`studio/adapters/web`, not present) calls `registerStudioEngine` once from its entry
-  point. The loader refuses any module whose `engineRevision` is not the pinned commit in
-  `freecut-provenance.json`, and the route renders an honest unavailable state until an
-  engine registers.
-
-Adapters live outside `vendor/freecut`; nothing in the vendored snapshot is edited, and any
-unavoidable patch is recorded as a versioned patch with its licensing note.
+- `adapters/web` is the Frameleaf adapter. Built against the prepared `engine/` workspace and its
+  lockfile (`node tools/adapter.mjs build`, tests with `node tools/adapter.mjs test`), it writes
+  `web/static/studio-engine/` (gitignored): the editor document, a separate command runtime, a
+  `manifest.json` naming the pinned revision, and the `notices/` and `attribution/` licence files.
+  It replaces Freecut's File System Access workspace with a host-backed one, offers library media by
+  asset id, forwards the editor's saves to the host as drafts, and routes Export, the exports list
+  and the project bundle to Frameleaf's export dialog, Activity and portable bundles. Nothing in
+  `vendor/freecut` is edited; three editor modules are substituted by alias in the adapter build.
+- `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` / `dispose`
+  contract; `frame-protocol.ts` is the message protocol over one `MessageChannel` per mount;
+  `frame-engine.ts` registers the built editor with `engine-loader.ts`, which refuses any engine
+  whose revision is not the pinned commit and reports `not-built` when the build is absent.
+- `engine-commands.ts` gives canonical commands (FL-92) their meaning through the command runtime;
+  `bridge.ts` still decides shape, access, connectivity, lease, revision and capability first.
+- `server/Dockerfile` builds the adapter in its `studio-engine` stage, which recovers the archive and
+  fails if its SHA-256 or any of the 2,646 file hashes differ from `freecut-provenance.json`.
 
 ## Graph resource inventory (FL-90)
 
