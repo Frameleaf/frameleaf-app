@@ -84,7 +84,7 @@ describe('partner location through albums and place filters (FL-54)', () => {
     const { hiding, member, album, theirs, ownersOwn } = await setupReshare(ctx);
     const partners = ctx.get(PartnerRepository);
 
-    await expect(partners.getLocationHiddenOwnerIdsForAlbums([album.id])).resolves.toEqual([hiding.id]);
+    await expect(partners.getLocationHiddenOwnerIdsForAlbums([album.id], member.id)).resolves.toEqual([hiding.id]);
     await expect(partners.getLocationHiddenThroughAlbums(member.id, [theirs.id, ownersOwn.id])).resolves.toEqual(
       new Set([theirs.id]),
     );
@@ -94,12 +94,13 @@ describe('partner location through albums and place filters (FL-54)', () => {
 
   it('leaves a partner the owner shares locations with alone', async () => {
     const { ctx } = newTimeline();
-    const { hiding, member, theirs } = await setupReshare(ctx);
+    const { hiding, member, album, theirs } = await setupReshare(ctx);
     await ctx.newPartner({ sharedById: hiding.id, sharedWithId: member.id });
+    const partners = ctx.get(PartnerRepository);
 
-    await expect(ctx.get(PartnerRepository).getLocationHiddenThroughAlbums(member.id, [theirs.id])).resolves.toEqual(
-      new Set(),
-    );
+    await expect(partners.getLocationHiddenThroughAlbums(member.id, [theirs.id])).resolves.toEqual(new Set());
+    // album views, maps, searches and facets exempt a direct location-sharing partner the same way
+    await expect(partners.getLocationHiddenOwnerIdsForAlbums([album.id], member.id)).resolves.toEqual([]);
   });
 
   it("never matches a hidden owner's items with a bounding box in an album timeline", async () => {
@@ -130,6 +131,24 @@ describe('partner location through albums and place filters (FL-54)', () => {
     // without a place filter the album shows both
     const all = await sut.searchMetadata(auth, { albumIds: [album.id] });
     expect(all.assets.items).toHaveLength(2);
+  });
+
+  it("returns a hidden owner's album item from search without its location (withExif)", async () => {
+    const { sut, ctx } = newSearch();
+    const { member, album, theirs, ownersOwn } = await setupReshare(ctx);
+    const auth = factory.auth({ user: member });
+
+    const response = await sut.searchMetadata(auth, { albumIds: [album.id], withExif: true });
+    const byId = new Map(response.assets.items.map((asset) => [asset.id, asset]));
+
+    expect(byId.get(theirs.id)?.exifInfo).toMatchObject({
+      latitude: null,
+      longitude: null,
+      city: null,
+      state: null,
+      country: null,
+    });
+    expect(byId.get(ownersOwn.id)?.exifInfo).toMatchObject({ city: 'Oslo', latitude: inOslo.latitude });
   });
 
   it("never counts a hidden owner's places in an album search's facets", async () => {

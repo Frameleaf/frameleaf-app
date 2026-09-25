@@ -163,6 +163,15 @@ where
   "album_owner"."albumId" in ($1)
   and "partner"."shareLocation" = $2
   and "partner"."sharedById" != "partner"."sharedWithId"
+  and not exists (
+    select
+    from
+      "partner" as "direct"
+    where
+      "direct"."sharedById" = "partner"."sharedById"
+      and "direct"."sharedWithId" = $3
+      and "direct"."shareLocation" = $4
+  )
 
 -- PartnerRepository.getLocationHiddenThroughAlbums
 select distinct

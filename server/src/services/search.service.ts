@@ -45,7 +45,11 @@ import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import { applyPartnerLocationPolicy, getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
+import {
+  applyAlbumLocationPolicy,
+  applyPartnerLocationPolicy,
+  getLocationHiddenOwnerIdsForView,
+} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -667,11 +671,17 @@ export class SearchService extends BaseService {
     return [auth.user.id, ...partnerIds];
   }
 
-  /** Strips location EXIF from assets owned by partners who hide it from the viewer (FL-54). */
-  private withLocationPolicy(auth: AuthDto | undefined, assets: AssetResponseDto[]): Promise<AssetResponseDto[]> {
-    return auth
-      ? applyPartnerLocationPolicy(assets, { userId: auth.user.id, repository: this.partnerRepository })
-      : Promise.resolve(assets);
+  /**
+   * Strips location EXIF from assets whose owner hides it from the viewer (FL-54), directly or from the
+   * owner of an album the viewer reaches the asset through (owner default, privacy first).
+   */
+  private async withLocationPolicy(auth: AuthDto | undefined, assets: AssetResponseDto[]): Promise<AssetResponseDto[]> {
+    if (!auth) {
+      return assets;
+    }
+
+    const options = { userId: auth.user.id, repository: this.partnerRepository };
+    return applyAlbumLocationPolicy(await applyPartnerLocationPolicy(assets, options), options);
   }
 
   private async mapResponse(
