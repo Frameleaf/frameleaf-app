@@ -220,7 +220,9 @@ export class UserRepository {
    * goes; recipient groups it owned go, and it leaves everyone else's. Returns what was removed,
    * or undefined while the fork schema is still not writable.
    */
-  async sweepRemovedAccountForkRows(): Promise<{ preferenceHistory: number; recipientGroups: number } | undefined> {
+  async sweepRemovedAccountForkRows(): Promise<
+    { preferenceHistory: number; recipientGroups: number; workspaceLayouts: number } | undefined
+  > {
     return this.db.transaction().execute(async (trx) => {
       if (!(await canWriteFork(trx))) {
         return;
@@ -232,6 +234,11 @@ export class UserRepository {
       const groups = await sql`
         DELETE FROM immich_fork.recipient_group AS recipient_group
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
+      `.execute(trx);
+      // FL-91: a Studio workspace layout left by an account removed during a handoff.
+      const layouts = await sql`
+        DELETE FROM immich_fork.studio_workspace_layout AS layout
+        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = layout."userId")
       `.execute(trx);
       await sql`
         UPDATE immich_fork.recipient_group
@@ -248,6 +255,7 @@ export class UserRepository {
       return {
         preferenceHistory: Number(history.numAffectedRows ?? 0),
         recipientGroups: Number(groups.numAffectedRows ?? 0),
+        workspaceLayouts: Number(layouts.numAffectedRows ?? 0),
       };
     });
   }
