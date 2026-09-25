@@ -11,6 +11,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { websocketEvents } from '$lib/stores/websocket';
   import { handlePromiseError } from '$lib/utils';
@@ -213,6 +214,8 @@
       mergeSuggestions = mergeSuggestions.filter(
         (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
       );
+      // as the merge dialog does: open viewers, search chips and person pages follow the merge
+      eventManager.emit('PersonFacesChange', { personIds: [survivorId, mergedId], removedPersonIds: [mergedId] });
       status = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
       await reloadPeople();
     } catch (error) {

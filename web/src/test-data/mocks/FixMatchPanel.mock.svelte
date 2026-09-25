@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Stand-in for FixMatchPanel in PersonHero specs: reports one moved face when asked.
+  // Stand-in for FixMatchPanel in PersonHero specs: reports one face moved to Grace when asked.
   interface Props {
-    onChanged?: () => void;
+    onChanged?: (personIds: string[]) => void;
     close: () => void;
   }
 
@@ -11,7 +11,7 @@
 <button
   type="button"
   onclick={() => {
-    onChanged?.();
+    onChanged?.(['grace']);
     close();
   }}>Moved a face</button
 >

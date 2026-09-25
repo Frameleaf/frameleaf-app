@@ -84,7 +84,8 @@ import { Point, transformFaceBoundingBox, transformPoints } from 'src/utils/tran
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
 
-const staleFaceRemoval = () => new ConflictException('This face changed in another view. Reload it before removing it.');
+const staleFaceRemoval = () =>
+  new ConflictException('This face changed in another view. Reload it before removing it.');
 
 /** FL-57: the decisions an owner can undo from their correction history. */
 const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>(['reassign', 'new-person', 'unassign', 'remove']);
