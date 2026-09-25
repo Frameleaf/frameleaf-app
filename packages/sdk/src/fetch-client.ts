@@ -9013,6 +9013,81 @@ export type AdminOnboardingUpdateDto = {
     /** Is admin onboarded */
     isOnboarded: boolean;
 };
+export type FrameleafSetupChoicesDto = {
+    /** Whether the local administrator exists */
+    accountCreated?: boolean;
+    /** Administrator email */
+    adminEmail?: string;
+    /** Administrator name */
+    adminName?: string;
+    /** Language chosen on the welcome step */
+    language?: string;
+    /** Folder layout preset, or "keep" */
+    layout?: string;
+    /** Whether the server is linked to a Frameleaf account */
+    linked?: boolean;
+    /** Map tiles */
+    map?: boolean;
+    /** Model tier */
+    model?: FrameleafSetupModelTier;
+    /** Nightly database backups */
+    nightlyBackup?: boolean;
+    /** Where processing runs */
+    processing?: FrameleafSetupProcessing;
+    /** Choice for a found cloud backup */
+    restore?: FrameleafSetupRestore;
+    /** How the administrator signs in */
+    signIn?: FrameleafSetupSignIn;
+    /** Whether the administrator signed in (existing library) */
+    signedIn?: boolean;
+    /** Theme after setup */
+    theme?: FrameleafSetupTheme;
+    /** Check for Frameleaf updates */
+    updates?: boolean;
+};
+export type FrameleafSetupProgressDto = {
+    choices: FrameleafSetupChoicesDto;
+    /** Furthest step index reached */
+    reached: number;
+    /** Current step id */
+    step: string;
+    /** Payload version (1) */
+    version: number;
+};
+export type FrameleafSetupResponseDto = {
+    /** Whether Frameleaf setup is complete */
+    completed: boolean;
+    /** When setup was completed */
+    completedAt: string | null;
+    flow: FrameleafSetupFlow;
+    progress: (FrameleafSetupProgressDto) | null;
+};
+export type FrameleafSetupUpdateDto = {
+    flow?: FrameleafSetupFlow;
+    progress: FrameleafSetupProgressDto;
+};
+export type FrameleafSetupLibraryResponseDto = {
+    /** Albums */
+    albums: number;
+    /** Size of the originals in bytes */
+    bytes: number;
+    /** Photos and videos on the server */
+    items: number;
+    /** Named and unnamed people */
+    people: number;
+    /** Accounts on the server */
+    users: number;
+};
+export type FrameleafSetupStorageResponseDto = {
+    /** Free space in bytes */
+    freeBytes: number;
+    /** Where the library is stored */
+    path: string;
+    /** Total space in bytes */
+    totalBytes: number;
+    /** Whether Frameleaf can write there */
+    writable: boolean;
+};
 export type ReverseGeocodingStateResponseDto = {
     /** Last import file name */
     lastImportFileName: string | null;
@@ -18202,6 +18277,66 @@ export function updateAdminOnboarding({ adminOnboardingUpdateDto }: {
     })));
 }
 /**
+ * Retrieve Frameleaf setup
+ */
+export function getFrameleafSetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupResponseDto;
+    }>("/system-metadata/frameleaf-setup", {
+        ...opts
+    }));
+}
+/**
+ * Save Frameleaf setup progress
+ */
+export function updateFrameleafSetup({ frameleafSetupUpdateDto }: {
+    frameleafSetupUpdateDto: FrameleafSetupUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupResponseDto;
+    }>("/system-metadata/frameleaf-setup", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: frameleafSetupUpdateDto
+    })));
+}
+/**
+ * Finish Frameleaf setup
+ */
+export function finishFrameleafSetup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupResponseDto;
+    }>("/system-metadata/frameleaf-setup/finish", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retrieve library totals for setup
+ */
+export function getFrameleafSetupLibrary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupLibraryResponseDto;
+    }>("/system-metadata/frameleaf-setup/library", {
+        ...opts
+    }));
+}
+/**
+ * Check library storage for setup
+ */
+export function getFrameleafSetupStorage(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupStorageResponseDto;
+    }>("/system-metadata/frameleaf-setup/storage", {
+        ...opts
+    }));
+}
+/**
  * Retrieve reverse geocoding state
  */
 export function getReverseGeocodingState(opts?: Oazapfts.RequestOpts) {
@@ -21213,6 +21348,32 @@ export enum SmartAlbumBuiltInKind {
     Food = "food",
     Pets = "pets",
     Nature = "nature"
+}
+export enum FrameleafSetupFlow {
+    New = "new",
+    Existing = "existing"
+}
+export enum FrameleafSetupModelTier {
+    Light = "light",
+    Balanced = "balanced",
+    Best = "best"
+}
+export enum FrameleafSetupProcessing {
+    Local = "local",
+    Cloud = "cloud",
+    Later = "later"
+}
+export enum FrameleafSetupRestore {
+    Restore = "restore",
+    Fresh = "fresh"
+}
+export enum FrameleafSetupSignIn {
+    Frameleaf = "frameleaf",
+    Local = "local"
+}
+export enum FrameleafSetupTheme {
+    Dark = "dark",
+    Light = "light"
 }
 export enum TakeoutAction {
     Scan = "scan",
