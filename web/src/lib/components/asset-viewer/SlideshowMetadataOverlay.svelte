@@ -39,10 +39,9 @@
   });
 </script>
 
-<!-- FL-36: the caption clears the viewer footer, which stays on screen while a slideshow plays, and
-     fades with the rest of the chrome (apple-style.css:393-396, `.chrome-hidden .mv-caption`) -->
+<!-- FL-36: the caption clears the viewer footer, which stays on screen while a slideshow plays -->
 {#if shouldShow}
-  <div class="fl-slideshow-caption absolute inset-x-0 bottom-0 z-10">
+  <div class="absolute inset-x-0 bottom-0 z-10">
     <div
       class="w-full px-6 pt-4"
       style:padding-bottom="calc(var(--fl-viewer-footer-height, 60px) + 16px)"
@@ -66,13 +65,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  .fl-slideshow-caption {
-    transition: opacity 260ms ease;
-  }
-  :global(.chrome-hidden) .fl-slideshow-caption {
-    opacity: 0;
-    pointer-events: none;
-  }
-</style>
