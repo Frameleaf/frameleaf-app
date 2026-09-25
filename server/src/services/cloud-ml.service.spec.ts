@@ -38,7 +38,7 @@ describe(CloudMlService.name, () => {
   const configure = ({ cloudMlEnabled = true, url = 'https://cloud.test' as string | null } = {}) => {
     mocks.config.getEnv.mockReturnValue({
       ...mocks.config.getEnv(),
-      frameleafCloud: { url, identityDir: '/tmp/identity' },
+      frameleafCloud: { ...mocks.config.getEnv().frameleafCloud, url, identityDir: '/tmp/identity' },
     });
     mocks.systemMetadata.get.mockImplementation((key) =>
       Promise.resolve(

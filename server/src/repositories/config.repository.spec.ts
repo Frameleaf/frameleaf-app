@@ -38,6 +38,13 @@ const resetEnv = () => {
     'REDIS_URL',
 
     'NO_COLOR',
+
+    'FRAMELEAF_CLOUD_URL',
+    'FRAMELEAF_IDENTITY_DIR',
+    'FRAMELEAF_LINK_TOKEN',
+    'FRAMELEAF_EDGE_PORT',
+    'FRAMELEAF_EDGE_BIND',
+    'FRAMELEAF_TRUSTED_LAN_CIDRS',
   ]) {
     delete process.env[env];
   }
@@ -313,6 +320,44 @@ describe('getEnv', () => {
         delete process.env.OTEL_TRACES_EXPORTER;
         delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
       }
+    });
+  });
+  describe('frameleafCloud (FL-154)', () => {
+    it('is not configured by default and never falls back to a default host', () => {
+      expect(getEnv().frameleafCloud).toEqual({
+        url: null,
+        identityDir: null,
+        linkToken: null,
+        edge: { port: 2443, bind: '0.0.0.0' },
+        trustedLanCidrs: [],
+      });
+    });
+
+    it('parses the deployment configuration', () => {
+      process.env.FRAMELEAF_CLOUD_URL = 'https://frameleaf.cloud.test/';
+      process.env.FRAMELEAF_IDENTITY_DIR = '/data/identity';
+      process.env.FRAMELEAF_LINK_TOKEN = 'fll_abcdefgh12345678';
+      process.env.FRAMELEAF_EDGE_PORT = '8443';
+      process.env.FRAMELEAF_EDGE_BIND = '192.168.1.10';
+      process.env.FRAMELEAF_TRUSTED_LAN_CIDRS = '100.64.0.0/10, fd00:1234::/32';
+      expect(getEnv().frameleafCloud).toEqual({
+        url: 'https://frameleaf.cloud.test',
+        identityDir: '/data/identity',
+        linkToken: 'fll_abcdefgh12345678',
+        edge: { port: 8443, bind: '192.168.1.10' },
+        trustedLanCidrs: ['100.64.0.0/10', 'fd00:1234::/32'],
+      });
+    });
+
+    it('refuses a malformed link token, port or network', () => {
+      process.env.FRAMELEAF_LINK_TOKEN = 'not-a-token';
+      expect(() => getEnv()).toThrow('FRAMELEAF_LINK_TOKEN');
+      delete process.env.FRAMELEAF_LINK_TOKEN;
+      process.env.FRAMELEAF_EDGE_PORT = '70000';
+      expect(() => getEnv()).toThrow('FRAMELEAF_EDGE_PORT');
+      delete process.env.FRAMELEAF_EDGE_PORT;
+      process.env.FRAMELEAF_TRUSTED_LAN_CIDRS = '10.0.0.0/40';
+      expect(() => getEnv()).toThrow('FRAMELEAF_TRUSTED_LAN_CIDRS has an invalid network: "10.0.0.0/40"');
     });
   });
 });
