@@ -7,6 +7,7 @@ import {
   TimeBucketsResponseDto,
   TimelineHighlightResponseDto,
   TimelineHighlightsDto,
+  TimelineOrderedDto,
 } from 'src/dtos/time-bucket.dto.js';
 import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
@@ -40,6 +41,18 @@ export class TimelineService extends BaseService {
     // TODO: use id cursor for pagination
     const bucket = await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth);
     return bucket.assets;
+  }
+
+  /**
+   * FL-30 (S-15): one page of the timeline ordered by file name or rating, for Browse and Work. The
+   * time buckets' checks and options, so it never shows what the buckets would not.
+   */
+  async getTimelineOrdered(auth: AuthDto, dto: TimelineOrderedDto): Promise<string> {
+    const { sort, skip, take, ...bucketDto } = dto;
+    await this.timeBucketChecks(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
+    const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, { sort, skip, take });
+    return page.assets;
   }
 
   /**
