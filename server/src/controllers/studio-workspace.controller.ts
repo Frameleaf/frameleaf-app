@@ -31,7 +31,8 @@ export class StudioWorkspaceController {
   @Authenticated()
   @Endpoint({
     summary: 'Save your Studio workspace layout',
-    description: 'Replaces your stored editor layout. The layout is stored and returned byte for byte, up to 256 KiB.',
+    description:
+      'Replaces your stored editor layout. The layout is stored as JSON and returned as the same value (key order and spacing are not kept), up to 256 KiB.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   saveStudioWorkspace(@Auth() auth: AuthDto, @Body() dto: StudioWorkspaceSaveDto): Promise<StudioWorkspaceDto> {
