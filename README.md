@@ -148,7 +148,7 @@ CPU fallback works, but GPU acceleration is strongly recommended for larger libr
 - Admin review tools for generated descriptions
 - Admin review tools for generated tags
 - Admin repair tools for NSFW/sensitive-content decisions
-- Curated model dropdown (Qwen2.5-VL 3B/7B, Phi-3.5-vision, Florence-2 fallback) with no silent RunPod fallback to a different model
+- Curated model dropdown (Qwen2.5-VL 3B/7B, Phi-3.5-vision, Florence-2 fallback) with no silent fallback to a different model on Frameleaf Cloud
 - Configurable prompt vocabulary, length, and tone
 - **Custom instructions** — a free-form natural-language field for guidance like _"if you see a car, identify the make and model"_ or _"name the sport being played"_, without rewriting the whole prompt template
 - **Identity injection with required-naming wording** — recognized named faces are passed into the description prompt, and the prompt explicitly requires the model to name each detected person and forbids generic group nouns like _"a family"_ or _"a group"_. Result: a 4-person photo says _"Kelly, Connor, Alexa, and Jeremy at the beach"_ instead of _"a family at the beach"_

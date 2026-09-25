@@ -64,7 +64,9 @@ services:
       args:
         BUILD_ID: fork-roundtrip
         BUILD_IMAGE: fork-roundtrip
-        BUILD_SOURCE_COMMIT: local
+        # FL-44: becomes the image's org.opencontainers.image.revision label; scripts/test-fork-roundtrip.sh
+        # refuses an image whose revision is not the candidate commit.
+        BUILD_SOURCE_COMMIT: ${FORK_ROUNDTRIP_CANDIDATE_SHA:-unknown}
         BUILD_SOURCE_REF: fork-roundtrip
       secrets:
         - mise_github_token

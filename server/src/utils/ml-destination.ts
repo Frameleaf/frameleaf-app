@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
+  FRAMELEAF_CLOUD_ML_WORKLOADS,
   LIBRARY_ML_WORKLOADS,
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -13,15 +14,16 @@ import {
   RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
 import {
+  FRAMELEAF_CLOUD_ENDPOINT,
   ML_PROBE_FRESHNESS_MS,
   MachineLearningRepository,
   MlEndpoint,
   MlEndpointProbe,
   MlSelection,
   MlUsage,
-  sameEndpoint,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { cloudModelFor, isLocalOnlyModel } from 'src/utils/frameleaf-cloud.js';
 
 /**
  * Explicit destination selection (FL-110).
@@ -66,6 +68,8 @@ export type MlSelectionRequest = {
   /** The durable job this request belongs to, recorded with the accounting row. */
   jobId?: string | null;
   jobName?: string | null;
+  /** FL-159: the AI Wallet hold a time-priced Frameleaf Cloud job needs, when it is known. */
+  holdUsd?: number | null;
 };
 
 export type MlSelectionDeps = {
@@ -80,23 +84,31 @@ export const hasRequiredConsent = (destination: Pick<MlDestinationRow, 'kind' | 
   !isCloudDestination(destination.kind) || destination.consentAcknowledgedAt !== null;
 
 /**
- * Resolve where a destination row actually points. Local, LAN and RunPod video rows carry
- * their URL; RunPod rows resolve to whatever the RunPod state machine has published, and
- * resolve to nothing while no pod or serverless worker is ready. A RunPod video row never
- * resolves to the library-analysis pod (FL-72).
+ * Resolve where a destination row actually points. Local and LAN rows carry their URL; the
+ * Frameleaf Cloud destination resolves to the `FRAMELEAF_CLOUD_ENDPOINT` sentinel, whose check the
+ * cloud processing service answers from the regional gateway (FL-159).
  */
 export const resolveEndpoint = (
   destination: Pick<MlDestinationRow, 'kind' | 'url' | 'authToken'>,
-  runPodEndpoint: MlEndpoint | null,
 ): MlEndpoint | null => {
-  if (destination.kind === MlDestinationKind.RunPod) {
-    return runPodEndpoint;
+  if (destination.kind === MlDestinationKind.FrameleafCloud) {
+    return FRAMELEAF_CLOUD_ENDPOINT;
   }
   if (!destination.url) {
     return null;
   }
   return destination.authToken ? { url: destination.url, authToken: destination.authToken } : { url: destination.url };
 };
+
+/** What a check records for a destination that resolves to no endpoint. */
+export const unresolvedEndpointSummary = (kind: MlDestinationKind): string =>
+  kind === MlDestinationKind.FrameleafCloud ? 'Frameleaf Cloud is not linked to this server' : 'No URL configured';
+
+/**
+ * A worker that may run library analysis and restoration together without either holding the
+ * other's hardware: only Frameleaf Cloud, whose gateway schedules each job on its own capacity.
+ */
+export const mayMixRoles = (kind: MlDestinationKind): boolean => kind === MlDestinationKind.FrameleafCloud;
 
 /* ------------------------------------------------------------------ */
 /* Worker roles (FL-72)                                                */
@@ -124,22 +136,21 @@ export const mlWorkerRoleOf = (workloads: readonly MlWorkload[]): MlWorkerRole =
 /**
  * Why a destination may not be allowed these workloads, or null when it may.
  *
- * - Library analysis and restoration never share a worker, so a long restoration cannot hold
- *   the hardware library analysis needs.
- * - The managed RunPod pod runs the ordinary `/predict` image: it is a library-analysis worker
- *   and is never offered for restoration.
- * - A RunPod video worker exists only for restoration.
+ * - Library analysis and restoration never share a local or LAN worker, so a long restoration
+ *   cannot hold the hardware library analysis needs.
+ * - Frameleaf Cloud may mix them (each cloud job gets its own capacity) but only for the
+ *   workloads it offers; faces are refused by policy and search embeddings and OCR stay local.
  */
 export const workloadPolicyProblem = (kind: MlDestinationKind, workloads: readonly MlWorkload[]): string | null => {
+  if (kind === MlDestinationKind.FrameleafCloud) {
+    const refused = workloads.filter((workload) => !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload));
+    return refused.length > 0
+      ? `Frameleaf Cloud runs descriptions, restoration and Studio AI only; ${refused.join(', ')} stays on this network`
+      : null;
+  }
   const role = mlWorkerRoleOf(workloads);
   if (role === MlWorkerRole.Mixed) {
     return 'A worker runs library analysis or restoration, not both; add the restoration worker as its own destination';
-  }
-  if (kind === MlDestinationKind.RunPod && workloads.some((workload) => isRestorationWorkload(workload))) {
-    return 'The managed RunPod pod runs library analysis only; add a RunPod video worker for restoration';
-  }
-  if (kind === MlDestinationKind.RunPodVideo && workloads.some((workload) => !isRestorationWorkload(workload))) {
-    return 'A RunPod video worker runs restoration only';
   }
   return null;
 };
@@ -161,21 +172,20 @@ export const sameEndpointUrl = (a: string, b: string): boolean => {
  * URL. Only restoration is ever refused here; library analysis keeps its route.
  */
 export const restorationRoleConflict = async (
-  { mlDestinationRepository, machineLearningRepository }: MlSelectionDeps,
+  { mlDestinationRepository }: Pick<MlSelectionDeps, 'mlDestinationRepository'> & Partial<MlSelectionDeps>,
   destination: MlDestinationRow,
   workload: MlWorkload,
 ): Promise<string | null> => {
   if (!isRestorationWorkload(workload)) {
     return null;
   }
-  if (destination.kind === MlDestinationKind.RunPod) {
-    return `${destination.name} is the library-analysis pod; restoration runs on a RunPod video worker`;
+  if (mayMixRoles(destination.kind)) {
+    return null;
   }
   if (mlWorkerRoleOf(destination.workloads) === MlWorkerRole.Mixed) {
     return `${destination.name} is also allowed library analysis; restoration runs only on a separate worker`;
   }
-  const runPodEndpoint = machineLearningRepository.getRunPodEndpoint();
-  const endpoint = resolveEndpoint(destination, runPodEndpoint);
+  const endpoint = resolveEndpoint(destination);
   const routes = await mlDestinationRepository.getRoutes();
   for (const route of routes) {
     if (!isLibraryWorkload(route.workload)) {
@@ -188,7 +198,7 @@ export const restorationRoleConflict = async (
       continue;
     }
     const routed = await mlDestinationRepository.getById(route.destinationId);
-    const routedEndpoint = routed ? resolveEndpoint(routed, runPodEndpoint) : null;
+    const routedEndpoint = routed ? resolveEndpoint(routed) : null;
     if (routedEndpoint && sameEndpointUrl(routedEndpoint.url, endpoint.url)) {
       return `${destination.name} points at the endpoint ${routed?.name ?? route.destinationId} uses for ${route.workload}; restoration runs only on a separate worker`;
     }
@@ -261,7 +271,10 @@ export const readinessOf = (
 
 /** The persisted check as an admission input, so a read never contacts a worker. */
 export const storedProbe = (
-  row: Pick<MlDestinationRow, 'lastProbeAt' | 'lastProbeHealth' | 'lastProbeWorkloads' | 'lastProbeSummary'>,
+  row: Pick<
+    MlDestinationRow,
+    'lastProbeAt' | 'lastProbeHealth' | 'lastProbeWorkloads' | 'lastProbeSummary' | 'lastProbeCloud'
+  >,
 ): MlEndpointProbe | null => {
   if (!row.lastProbeAt) {
     return null;
@@ -274,6 +287,7 @@ export const storedProbe = (
     latencyMs: 0,
     probedAt: new Date(row.lastProbeAt),
     error: healthy ? null : (row.lastProbeSummary ?? 'not probed'),
+    cloud: row.lastProbeCloud,
   };
 };
 
@@ -313,9 +327,91 @@ export type MlAdmissionInput = {
   probe: MlEndpointProbe | null;
   /** Spend attributed to the destination inside the budget window, in USD. */
   spentUsd: number;
+  /** FL-159: the catalogue model the request names, checked against Frameleaf Cloud's catalogue. */
+  modelId?: string | null;
+  /** FL-159: the hold a time-priced Frameleaf Cloud job needs from the AI Wallet, in USD. */
+  holdUsd?: number | null;
 };
 
 export type MlAdmissionVerdict = { admitted: true } | { admitted: false; refusal: MlAdmissionRefusal; detail: string };
+
+type Refused = Extract<MlAdmissionVerdict, { admitted: false }>;
+const refuse = (refusal: MlAdmissionRefusal, detail: string): Refused => ({ admitted: false, refusal, detail });
+
+/**
+ * FL-159: the Frameleaf Cloud rules, checked once the destination is enabled, allowed the workload
+ * and consented. Evaluated from the gateway's own report (`probe.cloud`), in the order a person can
+ * act on: reachability, entitlement, consent version, catalogue model, wallet, then the daily cap.
+ * Every outcome refuses this destination; none picks another one.
+ */
+const evaluateCloudAdmission = (
+  destination: MlDestinationRow,
+  workload: MlWorkload,
+  probe: MlEndpointProbe | null,
+  modelId: string | null | undefined,
+  holdUsd: number | null | undefined,
+): Refused | null => {
+  const facts = probe?.cloud ?? null;
+  if (!probe || !probe.reachable || !facts) {
+    if (facts?.refusal) {
+      return refuse(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
+    }
+    return refuse(
+      MlAdmissionRefusal.CloudUnavailable,
+      `${destination.name}: Frameleaf Cloud is not available${probe?.error ? ` (${probe.error})` : ''}`,
+    );
+  }
+  if (facts.refusal) {
+    return refuse(facts.refusal.refusal, `${destination.name}: ${facts.refusal.detail}`);
+  }
+  if (!facts.entitled) {
+    return refuse(
+      MlAdmissionRefusal.EntitlementMissing,
+      `${destination.name}: the Frameleaf account has no cloud processing entitlement`,
+    );
+  }
+  if (facts.consentRequiredVersion !== null && destination.consentVersion !== facts.consentRequiredVersion) {
+    return refuse(
+      MlAdmissionRefusal.ConsentVersionOutdated,
+      `${destination.name}: consent ${destination.consentVersion ?? 'none'} was given, Frameleaf Cloud now requires ${facts.consentRequiredVersion}`,
+    );
+  }
+  if (isLocalOnlyModel(modelId)) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: the model ${modelId} runs on this server only and is never sent to Frameleaf Cloud`,
+    );
+  }
+  if (modelId && !facts.modelIds.includes(modelId)) {
+    return refuse(
+      MlAdmissionRefusal.ModelMismatch,
+      `${destination.name}: the model ${modelId} is not in the Frameleaf Cloud catalogue any more`,
+    );
+  }
+  const available = facts.balanceUsd - facts.heldUsd;
+  if (facts.balanceUsd <= 0 || available <= 0) {
+    return refuse(MlAdmissionRefusal.WalletInsufficient, `${destination.name}: the AI Wallet is empty`);
+  }
+  if (holdUsd !== null && holdUsd !== undefined && holdUsd > available) {
+    return refuse(
+      MlAdmissionRefusal.WalletInsufficient,
+      `${destination.name}: this job needs ${holdUsd.toFixed(2)} USD held and the AI Wallet has ${available.toFixed(2)} USD available`,
+    );
+  }
+  if (facts.dailyCapUsd !== null && facts.spentTodayUsd >= facts.dailyCapUsd) {
+    return refuse(
+      MlAdmissionRefusal.BudgetExceeded,
+      `${destination.name}: today's AI Wallet limit of ${facts.dailyCapUsd.toFixed(2)} USD is reached`,
+    );
+  }
+  if (!probe.workloads.includes(workload)) {
+    return refuse(
+      MlAdmissionRefusal.WorkloadNotServed,
+      `${destination.name}: Frameleaf Cloud does not offer ${workload} to this account right now`,
+    );
+  }
+  return null;
+};
 
 /**
  * The pure admission rule. Evaluated in order so the most fundamental problem is the one
@@ -328,79 +424,68 @@ export const evaluateAdmission = ({
   endpoint,
   probe,
   spentUsd,
+  modelId,
+  holdUsd,
 }: MlAdmissionInput): MlAdmissionVerdict => {
   if (!destination) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.DestinationMissing,
-      detail: 'the destination does not exist',
-    };
+    return refuse(MlAdmissionRefusal.DestinationMissing, 'the destination does not exist');
   }
   if (!destination.enabled) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.DestinationDisabled,
-      detail: `${destination.name} is disabled`,
-    };
+    return refuse(MlAdmissionRefusal.DestinationDisabled, `${destination.name} is disabled`);
   }
   if (!destination.workloads.includes(workload)) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.WorkloadNotAllowed,
-      detail: `${destination.name} is not allowed to run ${workload}`,
-    };
+    return refuse(MlAdmissionRefusal.WorkloadNotAllowed, `${destination.name} is not allowed to run ${workload}`);
   }
-  if (isRestorationWorkload(workload) && destination.kind === MlDestinationKind.RunPod) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.RoleConflict,
-      detail: `${destination.name} is the library-analysis pod; restoration runs on a RunPod video worker`,
-    };
+  const isCloud = destination.kind === MlDestinationKind.FrameleafCloud;
+  if (isCloud && !FRAMELEAF_CLOUD_ML_WORKLOADS.includes(workload)) {
+    return refuse(
+      MlAdmissionRefusal.WorkloadNotAllowed,
+      `${destination.name}: ${workload} never runs on Frameleaf Cloud`,
+    );
   }
-  if (isRestorationWorkload(workload) && mlWorkerRoleOf(destination.workloads) === MlWorkerRole.Mixed) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.RoleConflict,
-      detail: `${destination.name} is also allowed library analysis; restoration runs only on a separate worker`,
-    };
+  if (
+    isRestorationWorkload(workload) &&
+    !mayMixRoles(destination.kind) &&
+    mlWorkerRoleOf(destination.workloads) === MlWorkerRole.Mixed
+  ) {
+    return refuse(
+      MlAdmissionRefusal.RoleConflict,
+      `${destination.name} is also allowed library analysis; restoration runs only on a separate worker`,
+    );
   }
   if (!hasRequiredConsent(destination)) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.ConsentMissing,
-      detail: `${destination.name} sends media off this network and has no recorded consent`,
-    };
+    return refuse(
+      MlAdmissionRefusal.ConsentMissing,
+      `${destination.name} sends media off this network and has no recorded consent`,
+    );
   }
   if (destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.BudgetExceeded,
-      detail: `${destination.name} has spent ${spentUsd.toFixed(2)} USD of its ${destination.budgetLimitUsd.toFixed(2)} USD limit`,
-    };
+    return refuse(
+      MlAdmissionRefusal.BudgetExceeded,
+      `${destination.name} has spent ${spentUsd.toFixed(2)} USD of its ${destination.budgetLimitUsd.toFixed(2)} USD limit`,
+    );
+  }
+  if (isCloud) {
+    // The pre-flight (no probe yet) only settles the rules above; the cloud rules need its report.
+    if (probe === null) {
+      return refuse(MlAdmissionRefusal.DestinationUnhealthy, `${destination.name} has not been checked yet`);
+    }
+    return evaluateCloudAdmission(destination, workload, probe, modelId, holdUsd) ?? { admitted: true };
   }
   if (!endpoint) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.EndpointUnresolved,
-      detail:
-        destination.kind === MlDestinationKind.RunPod
-          ? `${destination.name} has no running pod or ready serverless worker`
-          : `${destination.name} has no URL`,
-    };
+    return refuse(MlAdmissionRefusal.EndpointUnresolved, `${destination.name} has no URL`);
   }
   if (!probe || !probe.reachable) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.DestinationUnhealthy,
-      detail: `${destination.name} did not answer${probe?.error ? `: ${probe.error}` : ''}`,
-    };
+    return refuse(
+      MlAdmissionRefusal.DestinationUnhealthy,
+      `${destination.name} did not answer${probe?.error ? `: ${probe.error}` : ''}`,
+    );
   }
   if (!probe.workloads.includes(workload)) {
-    return {
-      admitted: false,
-      refusal: MlAdmissionRefusal.WorkloadNotServed,
-      detail: `${destination.name} reports it does not serve ${workload}${probe.error ? ` (${probe.error})` : ''}`,
-    };
+    return refuse(
+      MlAdmissionRefusal.WorkloadNotServed,
+      `${destination.name} reports it does not serve ${workload}${probe.error ? ` (${probe.error})` : ''}`,
+    );
   }
   const memory = insufficientMemoryDetail(destination, workload);
   if (memory) {
@@ -443,7 +528,14 @@ export const selectMlDestination = async (
     throw new MlDestinationNotFoundError(request.workload, request.destinationId);
   }
 
-  const endpoint = resolveEndpoint(destination, machineLearningRepository.getRunPodEndpoint());
+  const endpoint = resolveEndpoint(destination);
+  // FL-159: a catalogue model is chosen per workload for Frameleaf Cloud only; other destinations never
+  // consult the routes here, so a pinned plan keeps going to exactly the destination it pinned.
+  const route =
+    destination.kind === MlDestinationKind.FrameleafCloud
+      ? await mlDestinationRepository.getRoute(request.workload)
+      : undefined;
+  const modelId = route?.destinationId === destination.id ? route.modelId : null;
   const spentUsd =
     destination.budgetLimitUsd === null
       ? 0
@@ -451,25 +543,37 @@ export const selectMlDestination = async (
 
   // Consent, allow-list and budget are decided before the network is touched, so a cloud
   // destination without consent is never even pinged with this request in hand.
-  const preflight = evaluateAdmission({ destination, workload: request.workload, endpoint, probe: null, spentUsd });
+  const preflight = evaluateAdmission({
+    destination,
+    workload: request.workload,
+    endpoint,
+    probe: null,
+    spentUsd,
+    modelId,
+    holdUsd: request.holdUsd,
+  });
   if (!preflight.admitted && preflight.refusal !== MlAdmissionRefusal.DestinationUnhealthy) {
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
   }
 
-  let probe = await machineLearningRepository.probe(endpoint as MlEndpoint, { maxAgeMs: ML_PROBE_FRESHNESS_MS });
-  // The RunPod endpoint can be republished or withdrawn while the spend lookup and the probe
-  // wait; admit only against the endpoint that is still current.
-  if (!sameEndpoint(resolveEndpoint(destination, machineLearningRepository.getRunPodEndpoint()), endpoint)) {
-    probe = { ...probe, reachable: false, workloads: [], hardware: null, error: 'Endpoint configuration changed' };
-  }
+  const probe = await machineLearningRepository.probe(endpoint as MlEndpoint, { maxAgeMs: ML_PROBE_FRESHNESS_MS });
   await mlDestinationRepository.recordProbe(destination.id, {
     health: healthFromProbe(probe),
     summary: summarizeProbe(probe),
     workloads: probe.reachable ? probe.workloads : null,
     probedAt: probe.probedAt,
+    ...(probe.cloud !== undefined && { cloud: probe.cloud }),
   });
 
-  const verdict = evaluateAdmission({ destination, workload: request.workload, endpoint, probe, spentUsd });
+  const verdict = evaluateAdmission({
+    destination,
+    workload: request.workload,
+    endpoint,
+    probe,
+    spentUsd,
+    modelId,
+    holdUsd: request.holdUsd,
+  });
   if (!verdict.admitted) {
     throw new MlDestinationRefusedError(verdict.refusal, request.workload, destination.id, verdict.detail);
   }
@@ -480,6 +584,8 @@ export const selectMlDestination = async (
     kind: destination.kind,
     workload: request.workload,
     endpoint: endpoint as MlEndpoint,
+    cloudModelId:
+      destination.kind === MlDestinationKind.FrameleafCloud ? cloudModelFor(request.workload, modelId) : null,
     record: (usage: MlUsage) => {
       void mlDestinationRepository
         .recordAccounting({
@@ -492,8 +598,8 @@ export const selectMlDestination = async (
           bytesReceived: usage.bytesReceived,
           durationMs: usage.durationMs,
           outcome: usage.outcome,
-          // Per-request cost needs the destination's hourly rate, which only the RunPod
-          // state knows; FL-115 attributes it. Recording null keeps the row honest.
+          // Local and LAN work costs nothing measurable here; Frameleaf Cloud work is settled
+          // later from its usage report (FL-159). Recording null keeps the row honest until then.
           costUsd: null,
           startedAt,
           finishedAt: new Date(startedAt.getTime() + usage.durationMs),

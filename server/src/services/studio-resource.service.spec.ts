@@ -104,7 +104,7 @@ describe(StudioResourceService.name, () => {
       await expect(
         sut.resolveProjectResources(
           auth,
-          context(sequenceWith({ assetId: newUuid() }), { destination: StudioDestination.RunPod }),
+          context(sequenceWith({ assetId: newUuid() }), { destination: StudioDestination.FrameleafCloud }),
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.asset.getByIds).not.toHaveBeenCalled();
@@ -117,10 +117,13 @@ describe(StudioResourceService.name, () => {
 
       const { manifest } = await sut.resolveProjectResources(
         auth,
-        context(sequenceWith({ assetId: asset.id }), { destination: StudioDestination.RunPod, cloudConsent: true }),
+        context(sequenceWith({ assetId: asset.id }), {
+          destination: StudioDestination.FrameleafCloud,
+          cloudConsent: true,
+        }),
       );
 
-      expect(manifest.destination).toBe(StudioDestination.RunPod);
+      expect(manifest.destination).toBe(StudioDestination.FrameleafCloud);
       expect(manifest.privacy.leavesMachine).toBe(true);
       expect(manifest.complete).toBe(true);
     });
@@ -719,7 +722,7 @@ describe(StudioResourceService.name, () => {
       // Local use is approved but hosted use is not, so the cloud destination still refuses both.
       const hosted = await sut.resolveProjectResources(
         auth,
-        context(graph, { catalog, destination: StudioDestination.RunPod, cloudConsent: true }),
+        context(graph, { catalog, destination: StudioDestination.FrameleafCloud, cloudConsent: true }),
       );
       expect(hosted.refused.filter((item) => item.reason === StudioRefusalReason.RightsBlocked)).toHaveLength(2);
 
@@ -899,7 +902,7 @@ describe(StudioResourceService.name, () => {
     });
 
     it('rejects a manifest for a different destination', () => {
-      expect(() => sut.assertAuthorizedManifest(manifest, { destination: StudioDestination.RunPod })).toThrow(
+      expect(() => sut.assertAuthorizedManifest(manifest, { destination: StudioDestination.FrameleafCloud })).toThrow(
         BadRequestException,
       );
     });

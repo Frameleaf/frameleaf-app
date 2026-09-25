@@ -25,6 +25,23 @@ export const PHYSICAL_DEDUPLICATION_PREVIEW_LIMIT = 500;
 
 const checksum = z.string().describe('Hex-encoded SHA-1 checksum of the original file');
 
+/**
+ * What the preview's detail line shows beside owner and size (FL-73, prototype
+ * PhysicalDedupManager.jsx:315-318): pixel dimensions, and for a video its length. Optional in the
+ * stored record, which older previews wrote without them.
+ */
+const mediaDetail = {
+  width: z.int().nonnegative().nullable().optional().describe('Width in pixels, when known'),
+  height: z.int().nonnegative().nullable().optional().describe('Height in pixels, when known'),
+  duration: z.int().nonnegative().nullable().optional().describe('Video length in milliseconds, when known'),
+};
+
+const mediaDetailResponse = {
+  width: z.int().nonnegative().nullable().describe('Width in pixels, when known'),
+  height: z.int().nonnegative().nullable().describe('Height in pixels, when known'),
+  duration: z.int().nonnegative().nullable().describe('Video length in milliseconds, when known'),
+};
+
 const PhysicalDeduplicationRetainedStateSchema = z.object({
   assetId: z.string().describe('Asset that keeps the original file'),
   ownerId: z.string().describe('Owner of the retained asset (the retained account)'),
@@ -43,6 +60,11 @@ const PhysicalDeduplicationRetainedStateSchema = z.object({
     .int()
     .nonnegative()
     .describe('Assets that would reference this original after the plan is applied'),
+  fileAvailable: z
+    .boolean()
+    .optional()
+    .describe('Whether the retained original was on disk when the preview ran (FL-73); absent on older records'),
+  ...mediaDetail,
 });
 
 const PhysicalDeduplicationCopyStateSchema = z.object({
@@ -57,12 +79,14 @@ const PhysicalDeduplicationCopyStateSchema = z.object({
   checksumMatch: z.boolean().describe('Whether checksum and byte size match a retained original'),
   decision: PhysicalDeduplicationDecisionSchema,
   reason: PhysicalDeduplicationSkipReasonSchema.nullable().describe('Present when the decision is skip'),
+  ...mediaDetail,
 });
 
 export type PhysicalDeduplicationRetainedState = z.infer<typeof PhysicalDeduplicationRetainedStateSchema>;
 export type PhysicalDeduplicationCopyState = z.infer<typeof PhysicalDeduplicationCopyStateSchema>;
 
 const PhysicalDeduplicationRetainedResponseSchema = PhysicalDeduplicationRetainedStateSchema.extend({
+  ...mediaDetailResponse,
   ownerName: z.string().describe('Display name of the retained account'),
   canView: z.boolean().describe('Whether the requesting administrator may view this asset and its thumbnail'),
   fileAvailable: z
@@ -78,6 +102,7 @@ const PhysicalDeduplicationRetainedResponseSchema = PhysicalDeduplicationRetaine
 }).meta({ id: 'PhysicalDeduplicationRetainedDto' });
 
 const PhysicalDeduplicationCopyResponseSchema = PhysicalDeduplicationCopyStateSchema.extend({
+  ...mediaDetailResponse,
   ownerName: z.string().describe('Display name of the copy owner'),
   canView: z.boolean().describe('Whether the requesting administrator may view this asset and its thumbnail'),
 }).meta({ id: 'PhysicalDeduplicationCopyDto' });
@@ -97,8 +122,30 @@ const PhysicalDeduplicationPlanResponseSchema = z
     linkedAssets: z.number().int().nonnegative(),
     skippedExternal: z.number().int().nonnegative(),
     skippedMissingMaster: z.number().int().nonnegative(),
-    reclaimableBytes: z.number().int().nonnegative(),
-    deletedBytes: z.number().int().nonnegative(),
+    reclaimableBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Estimate: bytes of the copies to share, with their generated files, that applying would free'),
+    deletedBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Measured: bytes actually removed from disk by applying this plan so far'),
+    logicalBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe(
+        'Logical asset bytes (FL-73): the sizes of every asset that references a shared original once this plan is applied, counted once per asset',
+      ),
+    sharedOriginalBytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe(
+        'Physical shared-original bytes (FL-73): the retained originals those assets share, counted once per file',
+      ),
     retained: z.array(PhysicalDeduplicationRetainedResponseSchema),
     copies: z.array(PhysicalDeduplicationCopyResponseSchema),
     copiesTruncated: z
@@ -217,6 +264,78 @@ const PhysicalDeduplicationApplyRequestSchema = z
   })
   .meta({ id: 'PhysicalDeduplicationApplyRequestDto' });
 
+/** How a retained original read on disk when an applied plan was verified (FL-73). */
+const PhysicalDeduplicationRetainedFileSchema = z
+  .enum(['intact', 'missing', 'changed'])
+  .describe('The retained original on disk: still the reviewed bytes, gone, or different bytes')
+  .meta({ id: 'PhysicalDeduplicationRetainedFile' });
+
+/** What is at a copy's own former path when an applied plan was verified (FL-73). */
+const PhysicalDeduplicationCopyFileSchema = z
+  .enum(['removed', 'present', 'changed'])
+  .describe("The copy's own former file: removed from disk, still the reviewed bytes, or different bytes now")
+  .meta({ id: 'PhysicalDeduplicationCopyFile' });
+
+const PhysicalDeduplicationVerificationItemSchema = z
+  .object({
+    assetId: z.string(),
+    ownerName: z.string(),
+    originalFileName: z.string(),
+    type: AssetTypeSchema,
+    canView: z.boolean().describe('Whether the requesting administrator may view this asset and its thumbnail'),
+    retainedFile: PhysicalDeduplicationRetainedFileSchema,
+    linked: z.boolean().describe('Whether the asset still resolves to the retained original'),
+    copyFile: PhysicalDeduplicationCopyFileSchema,
+    restored: z.boolean().describe('Whether the asset is back on its own former file'),
+    restorable: z
+      .boolean()
+      .describe(
+        'Whether the asset can go back to its own file: it is linked and that file still holds the reviewed bytes',
+      ),
+  })
+  .meta({ id: 'PhysicalDeduplicationVerificationItemDto' });
+
+/**
+ * A post-apply verification (FL-73): every retained original hashed again, and every copy the plan
+ * applied checked to still resolve to it. Copies of another account's Locked media are counted in
+ * the totals and `hiddenCopies`, never listed.
+ */
+const PhysicalDeduplicationVerificationSchema = z
+  .object({
+    operationId: z.string(),
+    planId: z.string(),
+    verifiedAt: z.iso.datetime(),
+    copies: z.number().int().nonnegative().describe('Copies the plan applied, listed or not'),
+    verified: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Copies that resolve to a retained original still holding the reviewed bytes'),
+    retainedOriginals: z.number().int().nonnegative(),
+    retainedIntact: z.number().int().nonnegative(),
+    retainedMissing: z.number().int().nonnegative(),
+    retainedChanged: z.number().int().nonnegative(),
+    notLinked: z.number().int().nonnegative().describe('Copies that no longer resolve to the retained original'),
+    restored: z.number().int().nonnegative(),
+    restorable: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative().describe('Copies whose own file is gone: that cannot be undone'),
+    hiddenCopies: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Copies that are Locked media of another account; counted, never named'),
+    items: z.array(PhysicalDeduplicationVerificationItemSchema),
+  })
+  .meta({ id: 'PhysicalDeduplicationVerificationDto' });
+
+const PhysicalDeduplicationRestoreRequestSchema = z
+  .object({ assetId: z.uuidv4().describe('A copy of the applied plan whose own file is still on disk') })
+  .meta({ id: 'PhysicalDeduplicationRestoreRequestDto' });
+
+export type PhysicalDeduplicationVerificationItem = z.infer<typeof PhysicalDeduplicationVerificationItemSchema>;
+
+export class PhysicalDeduplicationVerificationDto extends createZodDto(PhysicalDeduplicationVerificationSchema) {}
+export class PhysicalDeduplicationRestoreRequestDto extends createZodDto(PhysicalDeduplicationRestoreRequestSchema) {}
 export class PhysicalDeduplicationPlanDto extends createZodDto(PhysicalDeduplicationPlanResponseSchema) {}
 export class PhysicalDeduplicationApplyDto extends createZodDto(PhysicalDeduplicationApplySchema) {}
 export class PhysicalDeduplicationReviewRequestDto extends createZodDto(PhysicalDeduplicationReviewRequestSchema) {}

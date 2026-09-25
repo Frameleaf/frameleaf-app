@@ -85,7 +85,7 @@ describe('studio rights (FL-86)', () => {
   it('maps destinations to uses and catalogue entries to rows', () => {
     expect(studioRightsUseFor(StudioDestination.Local)).toBe(StudioRightsUse.LocalRuntime);
     expect(studioRightsUseFor(StudioDestination.Lan)).toBe(StudioRightsUse.LocalRuntime);
-    expect(studioRightsUseFor(StudioDestination.RunPod)).toBe(StudioRightsUse.HostedUse);
+    expect(studioRightsUseFor(StudioDestination.FrameleafCloud)).toBe(StudioRightsUse.HostedUse);
     expect(studioRightsId('model', 'Xenova/musicgen-small')).toBe('model:Xenova/musicgen-small');
   });
 

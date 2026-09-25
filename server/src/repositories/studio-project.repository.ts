@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Kysely, RawBuilder, Selectable } from 'kysely';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,
@@ -10,6 +10,9 @@ import {
   StudioProjectRevisionTable,
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const STUDIO_PROJECT_HANDOFF_REFUSAL = 'Studio projects are unavailable during database handoff';
 
 export type StudioProject = Selectable<StudioProjectTable>;
 export type StudioProjectRevision = Selectable<StudioProjectRevisionTable>;
@@ -153,16 +156,23 @@ const leaseExpiry = (leaseMs: number) => sql<Date>`now() + ${sql.lit(leaseMs)} *
 export class StudioProjectRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, STUDIO_PROJECT_HANDOFF_REFUSAL);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Projects                                                            */
   /* ------------------------------------------------------------------ */
 
   async create(project: StudioProjectCreate): Promise<StudioProject> {
-    return this.db
-      .insertInto('studio_project')
-      .values({ ownerId: project.ownerId, name: project.name, spaceId: project.spaceId ?? null })
-      .returningAll()
-      .executeTakeFirstOrThrow() as unknown as Promise<StudioProject>;
+    return this.write((db) =>
+      db
+        .insertInto('studio_project')
+        .values({ ownerId: project.ownerId, name: project.name, spaceId: project.spaceId ?? null })
+        .returningAll()
+        .executeTakeFirstOrThrow(),
+    ) as unknown as Promise<StudioProject>;
   }
 
   /**
@@ -183,6 +193,7 @@ export class StudioProjectRepository {
 
     try {
       const project = await this.db.transaction().execute(async (trx) => {
+        await lockPublicForkWrites(trx, STUDIO_PROJECT_HANDOFF_REFUSAL);
         const row = await trx
           .insertInto('studio_project')
           .values({
@@ -344,12 +355,9 @@ export class StudioProjectRepository {
       return this.getById(id);
     }
 
-    return this.db
-      .updateTable('studio_project')
-      .set(values)
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+    return this.write((db) =>
+      db.updateTable('studio_project').set(values).where('id', '=', id).returningAll().executeTakeFirst(),
+    ) as unknown as Promise<StudioProject | undefined>;
   }
 
   /**
@@ -357,7 +365,7 @@ export class StudioProjectRepository {
    * string for lineage, and no asset row is touched: a project references media, it never owns it.
    */
   async delete(id: string): Promise<void> {
-    await this.db.deleteFrom('studio_project').where('id', '=', id).execute();
+    await this.write((db) => db.deleteFrom('studio_project').where('id', '=', id).execute());
   }
 
   /* ------------------------------------------------------------------ */
@@ -370,37 +378,43 @@ export class StudioProjectRepository {
    * writing to a project the owner has thrown away.
    */
   async trash(id: string, purgeAfter: Date): Promise<StudioProject | undefined> {
-    return this.db
-      .updateTable('studio_project')
-      .set({
-        deletedAt: sql<Date>`coalesce("deletedAt", now())`,
-        purgeAfter: sql<Date>`coalesce("purgeAfter", ${purgeAfter})`,
-        leaseHolderId: null,
-        leaseClientId: null,
-        leaseExpiresAt: null,
-      })
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+    return this.write((db) =>
+      db
+        .updateTable('studio_project')
+        .set({
+          deletedAt: sql<Date>`coalesce("deletedAt", now())`,
+          purgeAfter: sql<Date>`coalesce("purgeAfter", ${purgeAfter})`,
+          leaseHolderId: null,
+          leaseClientId: null,
+          leaseExpiresAt: null,
+        })
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst(),
+    ) as unknown as Promise<StudioProject | undefined>;
   }
 
   async untrash(id: string): Promise<StudioProject | undefined> {
-    return this.db
-      .updateTable('studio_project')
-      .set({ deletedAt: null, purgeAfter: null })
-      .where('id', '=', id)
-      .where('deletedAt', 'is not', null)
-      .returningAll()
-      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+    return this.write((db) =>
+      db
+        .updateTable('studio_project')
+        .set({ deletedAt: null, purgeAfter: null })
+        .where('id', '=', id)
+        .where('deletedAt', 'is not', null)
+        .returningAll()
+        .executeTakeFirst(),
+    ) as unknown as Promise<StudioProject | undefined>;
   }
 
   /** Every trashed project of one owner, gone for good. Returns how many. */
   async emptyTrash(ownerId: string): Promise<number> {
-    const result = await this.db
-      .deleteFrom('studio_project')
-      .where('ownerId', '=', ownerId)
-      .where('deletedAt', 'is not', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .deleteFrom('studio_project')
+        .where('ownerId', '=', ownerId)
+        .where('deletedAt', 'is not', null)
+        .executeTakeFirst(),
+    );
     return Number(result.numDeletedRows);
   }
 
@@ -499,29 +513,33 @@ export class StudioProjectRepository {
 
   /** The retention sweep: trashed projects whose deadline has passed. Returns the ids removed. */
   async deletePurgeable(now: Date, limit = 500): Promise<string[]> {
-    const rows = await this.db
-      .deleteFrom('studio_project')
-      .where('id', 'in', (eb) =>
-        eb
-          .selectFrom('studio_project')
-          .select('id')
-          .where('deletedAt', 'is not', null)
-          .where('purgeAfter', 'is not', null)
-          .where('purgeAfter', '<', now)
-          .limit(limit),
-      )
-      .returning('id')
-      .execute();
+    const rows = await this.write((db) =>
+      db
+        .deleteFrom('studio_project')
+        .where('id', 'in', (eb) =>
+          eb
+            .selectFrom('studio_project')
+            .select('id')
+            .where('deletedAt', 'is not', null)
+            .where('purgeAfter', 'is not', null)
+            .where('purgeAfter', '<', now)
+            .limit(limit),
+        )
+        .returning('id')
+        .execute(),
+    );
     return rows.map((row) => row.id);
   }
 
   /** Drop whoever holds the lease. Used when a project is archived or trashed under an editor. */
   async clearLease(id: string): Promise<void> {
-    await this.db
-      .updateTable('studio_project')
-      .set({ leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('studio_project')
+        .set({ leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   async getSpace(spaceId: string): Promise<StudioSpace | undefined> {
@@ -545,40 +563,44 @@ export class StudioProjectRepository {
    * `undefined` means somebody else holds it.
    */
   async acquireLease(projectId: string, options: StudioLeaseAcquire): Promise<StudioProject | undefined> {
-    let query = this.db
-      .updateTable('studio_project')
-      .set({
-        leaseHolderId: options.userId,
-        leaseClientId: options.clientId,
-        leaseExpiresAt: leaseExpiry(options.leaseMs),
-        // A renewal by the holder is not an "open"; a fresh acquisition by any client is.
-        lastOpenedAt: sql<Date>`case when "leaseClientId" = ${options.clientId} and "leaseExpiresAt" > now() then "lastOpenedAt" else now() end`,
-      })
-      .where('id', '=', projectId)
-      .where('ownerId', '=', options.userId);
+    return this.write((db) => {
+      let query = db
+        .updateTable('studio_project')
+        .set({
+          leaseHolderId: options.userId,
+          leaseClientId: options.clientId,
+          leaseExpiresAt: leaseExpiry(options.leaseMs),
+          // A renewal by the holder is not an "open"; a fresh acquisition by any client is.
+          lastOpenedAt: sql<Date>`case when "leaseClientId" = ${options.clientId} and "leaseExpiresAt" > now() then "lastOpenedAt" else now() end`,
+        })
+        .where('id', '=', projectId)
+        .where('ownerId', '=', options.userId);
 
-    if (!options.takeover) {
-      query = query.where((eb) =>
-        eb.or([
-          eb('leaseExpiresAt', 'is', null),
-          eb('leaseExpiresAt', '<', sql<Date>`now()`),
-          eb.and([eb('leaseHolderId', '=', options.userId), eb('leaseClientId', '=', options.clientId)]),
-        ]),
-      );
-    }
+      if (!options.takeover) {
+        query = query.where((eb) =>
+          eb.or([
+            eb('leaseExpiresAt', 'is', null),
+            eb('leaseExpiresAt', '<', sql<Date>`now()`),
+            eb.and([eb('leaseHolderId', '=', options.userId), eb('leaseClientId', '=', options.clientId)]),
+          ]),
+        );
+      }
 
-    return query.returningAll().executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+      return query.returningAll().executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+    });
   }
 
   /** Give the lease back. Only the holder can; anybody else's call changes nothing. */
   async releaseLease(projectId: string, userId: string, clientId: string): Promise<boolean> {
-    const result = await this.db
-      .updateTable('studio_project')
-      .set({ leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null })
-      .where('id', '=', projectId)
-      .where('leaseHolderId', '=', userId)
-      .where('leaseClientId', '=', clientId)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('studio_project')
+        .set({ leaseHolderId: null, leaseClientId: null, leaseExpiresAt: null })
+        .where('id', '=', projectId)
+        .where('leaseHolderId', '=', userId)
+        .where('leaseClientId', '=', clientId)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
@@ -600,6 +622,7 @@ export class StudioProjectRepository {
   async appendRevision(append: StudioRevisionAppend): Promise<StudioRevisionAppendResult> {
     try {
       return await this.db.transaction().execute(async (trx) => {
+        await lockPublicForkWrites(trx, STUDIO_PROJECT_HANDOFF_REFUSAL);
         const head = await trx
           .updateTable('studio_project')
           .set({
@@ -738,19 +761,21 @@ export class StudioProjectRepository {
   /* ------------------------------------------------------------------ */
 
   async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
-    return this.db
-      .insertInto('studio_bundle_upload')
-      .values({
-        ownerId: upload.ownerId,
-        path: upload.path,
-        sizeBytes: String(upload.sizeBytes),
-        digest: upload.digest,
-        originalFileName: upload.originalFileName,
-        manifest: upload.manifest,
-        expiresAt: upload.expiresAt,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow() as unknown as Promise<StudioBundleUpload>;
+    return this.write((db) =>
+      db
+        .insertInto('studio_bundle_upload')
+        .values({
+          ownerId: upload.ownerId,
+          path: upload.path,
+          sizeBytes: String(upload.sizeBytes),
+          digest: upload.digest,
+          originalFileName: upload.originalFileName,
+          manifest: upload.manifest,
+          expiresAt: upload.expiresAt,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow(),
+    ) as unknown as Promise<StudioBundleUpload>;
   }
 
   /** Owner-scoped. Somebody else's upload and an upload that never existed look the same. */
@@ -764,37 +789,43 @@ export class StudioProjectRepository {
   }
 
   async markUploadConsumed(id: string): Promise<void> {
-    await this.db
-      .updateTable('studio_bundle_upload')
-      .set({ consumedAt: sql<Date>`coalesce("consumedAt", now())` })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('studio_bundle_upload')
+        .set({ consumedAt: sql<Date>`coalesce("consumedAt", now())` })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   /** Owner-scoped delete. Returns the row so the caller can remove its file. */
   async deleteUpload(id: string, ownerId: string): Promise<StudioBundleUpload | undefined> {
-    return this.db
-      .deleteFrom('studio_bundle_upload')
-      .where('id', '=', id)
-      .where('ownerId', '=', ownerId)
-      .returningAll()
-      .executeTakeFirst() as unknown as Promise<StudioBundleUpload | undefined>;
+    return this.write((db) =>
+      db
+        .deleteFrom('studio_bundle_upload')
+        .where('id', '=', id)
+        .where('ownerId', '=', ownerId)
+        .returningAll()
+        .executeTakeFirst(),
+    ) as unknown as Promise<StudioBundleUpload | undefined>;
   }
 
   /** The sweep: uploads past their expiry, oldest first. Their files go with them. */
   async deleteExpiredUploads(now: Date, limit = 200): Promise<Array<{ id: string; path: string }>> {
-    return this.db
-      .deleteFrom('studio_bundle_upload')
-      .where('id', 'in', (eb) =>
-        eb
-          .selectFrom('studio_bundle_upload')
-          .select('id')
-          .where('expiresAt', '<', now)
-          .orderBy('expiresAt', 'asc')
-          .limit(limit),
-      )
-      .returning(['id', 'path'])
-      .execute();
+    return this.write((db) =>
+      db
+        .deleteFrom('studio_bundle_upload')
+        .where('id', 'in', (eb) =>
+          eb
+            .selectFrom('studio_bundle_upload')
+            .select('id')
+            .where('expiresAt', '<', now)
+            .orderBy('expiresAt', 'asc')
+            .limit(limit),
+        )
+        .returning(['id', 'path'])
+        .execute(),
+    );
   }
 
   /* ------------------------------------------------------------------ */
@@ -804,19 +835,21 @@ export class StudioProjectRepository {
   /** Returns `undefined` when `(projectId, requestKey)` already exists; the caller re-reads it. */
   async createComment(comment: StudioCommentCreate): Promise<StudioProjectComment | undefined> {
     try {
-      return (await this.db
-        .insertInto('studio_project_comment')
-        .values({
-          projectId: comment.projectId,
-          authorId: comment.authorId,
-          revision: comment.revision,
-          timeNum: String(comment.timeNum),
-          timeDen: String(comment.timeDen),
-          text: comment.text,
-          requestKey: comment.requestKey,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow()) as unknown as StudioProjectComment;
+      return (await this.write((db) =>
+        db
+          .insertInto('studio_project_comment')
+          .values({
+            projectId: comment.projectId,
+            authorId: comment.authorId,
+            revision: comment.revision,
+            timeNum: String(comment.timeNum),
+            timeDen: String(comment.timeDen),
+            text: comment.text,
+            requestKey: comment.requestKey,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow(),
+      )) as unknown as StudioProjectComment;
     } catch (error) {
       if (isUniqueViolation(error)) {
         return undefined;
@@ -874,21 +907,25 @@ export class StudioProjectRepository {
       return this.getComment(projectId, id);
     }
 
-    return this.db
-      .updateTable('studio_project_comment')
-      .set(values)
-      .where('projectId', '=', projectId)
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirst() as unknown as Promise<StudioProjectComment | undefined>;
+    return this.write((db) =>
+      db
+        .updateTable('studio_project_comment')
+        .set(values)
+        .where('projectId', '=', projectId)
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst(),
+    ) as unknown as Promise<StudioProjectComment | undefined>;
   }
 
   async deleteComment(projectId: string, id: string): Promise<boolean> {
-    const result = await this.db
-      .deleteFrom('studio_project_comment')
-      .where('projectId', '=', projectId)
-      .where('id', '=', id)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .deleteFrom('studio_project_comment')
+        .where('projectId', '=', projectId)
+        .where('id', '=', id)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numDeletedRows) === 1;
   }

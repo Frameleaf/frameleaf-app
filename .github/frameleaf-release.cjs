@@ -46,13 +46,6 @@ const VARIANTS = Object.freeze(
     },
     {
       image: "frameleaf-machine-learning",
-      suffix: "-cuda-runpod",
-      device: "cuda",
-      platforms: ["linux/amd64"],
-      target: "prod-runpod",
-    },
-    {
-      image: "frameleaf-machine-learning",
       suffix: "-openvino",
       device: "openvino",
       platforms: ["linux/amd64"],

@@ -248,31 +248,6 @@ const updatedConfig = Object.freeze<SystemConfig>({
       device: 'AUTO',
       hideFromLibrary: false,
     },
-    runpod: {
-      enabled: false,
-      mode: 'disabled',
-      apiKey: '',
-      hfToken: '',
-      imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
-      dataPrivacyAcknowledged: false,
-      defaultGpuTypeId: 'NVIDIA RTX A5000',
-      containerDiskGb: 50,
-      volumeGb: 20,
-      autoStopEnabled: true,
-      autoStopGraceMinutes: 15,
-      autoBackfillOnLaunch: false,
-      maxRuntimeHours: 24,
-      provisionTimeoutMinutes: 5,
-      serverless: {
-        gpuTypeIds: ['AMPERE_48', 'ADA_48_PRO', 'AMPERE_80'],
-        workersMin: 0,
-        workersMax: 3,
-        idleTimeoutSeconds: 30,
-        executionTimeoutMs: 600_000,
-        scalerType: 'REQUEST_COUNT',
-        scalerValue: 4,
-      },
-    },
   },
   map: {
     enabled: true,
@@ -440,6 +415,33 @@ const updatedConfig = Object.freeze<SystemConfig>({
         threshold: 0.28,
       },
     },
+  },
+  frameleafCloud: {
+    cloudMl: {
+      enabled: false,
+      routing: {
+        descriptions: 'local',
+        upscale: 'local',
+        restoration: 'local',
+        studio: 'local',
+        interpolation: 'local',
+      },
+      startWith: 'local',
+      models: { descriptions: 'qwen3.5-9b@1', upscale: '', restoration: '', studio: '', interpolation: '' },
+      autoDescribe: { enabled: false, dailyBudgetUsd: 2 },
+      faces: { enabled: false },
+    },
+  },
+  libraryCare: {
+    healthScan: true,
+    healthScanCronExpression: '0 02 * * *',
+    checksumScan: true,
+    integrityAudit: true,
+    livePhotoRepair: true,
+    rawRecovery: true,
+    duplicateReview: true,
+    incrementalEnrichment: true,
+    manualMetadata: true,
   },
 });
 
@@ -714,120 +716,6 @@ describe(SystemConfigService.name, () => {
       ).resolves.toBeUndefined();
     });
 
-    it('should reject runpod api key changes while pod is provisioning', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ status: 'provisioning' } as never);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: defaults,
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, apiKey: 'new-key' },
-            },
-          },
-        }),
-      ).rejects.toThrow(
-        /Cannot change RunPod API key, image, or mode while a transition is in flight \(status=provisioning\)/,
-      );
-    });
-
-    it('should reject runpod image changes while pod is stopping', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ status: 'stopping' } as never);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: defaults,
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, imageName: 'ghcr.io/x/y:new-tag' },
-            },
-          },
-        }),
-      ).rejects.toThrow(
-        /Cannot change RunPod API key, image, or mode while a transition is in flight \(status=stopping\)/,
-      );
-    });
-
-    it('should allow runpod api key changes when no pod transition is in flight', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ status: 'running' } as never);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: defaults,
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, apiKey: 'new-key' },
-            },
-          },
-        }),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should allow runpod api key changes when there is no runpod state at all', async () => {
-      mocks.systemMetadata.get.mockResolvedValue(null);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: defaults,
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, apiKey: 'new-key' },
-            },
-          },
-        }),
-      ).resolves.toBeUndefined();
-    });
-
-    it('should reject mode changes while serverless setup is in flight', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ status: 'serverless-provisioning' } as never);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, mode: 'serverless' },
-            },
-          },
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, mode: 'disabled' },
-            },
-          },
-        }),
-      ).rejects.toThrow(
-        /Cannot change RunPod API key, image, or mode while a transition is in flight \(status=serverless-provisioning\)/,
-      );
-    });
-
-    it('should reject switching away from pod mode while a pod is running', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({ status: 'running' } as never);
-      await expect(
-        sut.onConfigValidate({
-          oldConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, mode: 'pod' },
-            },
-          },
-          newConfig: {
-            ...defaults,
-            machineLearning: {
-              ...defaults.machineLearning,
-              runpod: { ...defaults.machineLearning.runpod, mode: 'serverless' },
-            },
-          },
-        }),
-      ).rejects.toThrow(/Terminate the running pod before switching modes/);
-    });
-
     it('should update the config and emit an event', async () => {
       mocks.systemMetadata.get.mockResolvedValue(partialConfig);
       await expect(sut.updateAdminConfig(updatedConfig)).resolves.toEqual(mapConfig(updatedConfig));
@@ -842,43 +730,6 @@ describe(SystemConfigService.name, () => {
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({}));
       await expect(sut.updateAdminConfig(defaults)).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
-    });
-
-    it('should redact runpod.apiKey on read via mapConfig', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: { runpod: { apiKey: 'rp_secret_value', enabled: true } },
-      });
-
-      const result = await sut.getAdminConfig();
-
-      expect(result.machineLearning.runpod.apiKey).toBe('');
-    });
-
-    it('should preserve stored runpod.apiKey when an empty value is written back', async () => {
-      const storedConfig = {
-        machineLearning: { runpod: { apiKey: 'rp_secret_value', enabled: true } },
-      };
-      mocks.systemMetadata.get.mockResolvedValue(storedConfig);
-
-      // The admin reads the config (apiKey: ''), edits some other field, and saves.
-      // The empty apiKey in the submitted DTO must not wipe the stored secret.
-      const newConfig = {
-        ...defaults,
-        machineLearning: {
-          ...defaults.machineLearning,
-          runpod: { ...defaults.machineLearning.runpod, apiKey: '', enabled: true },
-        },
-      };
-
-      await sut.updateAdminConfig(newConfig);
-
-      // updateConfig is called with the dto we mutated in-place; verify the
-      // preserved-key value is what gets persisted.
-      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
-      expect(persisted).toBeDefined();
-      // The persisted partial config should include the preserved key.
-      const partial = persisted![0] as { machineLearning?: { runpod?: { apiKey?: string } } };
-      expect(partial.machineLearning?.runpod?.apiKey).toBe('rp_secret_value');
     });
 
     describe('imageDescription lastConfigChangeAt bump', () => {
@@ -1020,33 +871,12 @@ describe(SystemConfigService.name, () => {
         }
       });
     });
-
-    it('should accept a non-empty new runpod.apiKey on write (rotation)', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: { runpod: { apiKey: 'rp_old_value', enabled: true } },
-      });
-
-      const newConfig = {
-        ...defaults,
-        machineLearning: {
-          ...defaults.machineLearning,
-          runpod: { ...defaults.machineLearning.runpod, apiKey: 'rp_NEW_value', enabled: true },
-        },
-      };
-
-      await sut.updateAdminConfig(newConfig);
-
-      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
-      const partial = persisted![0] as { machineLearning?: { runpod?: { apiKey?: string } } };
-      expect(partial.machineLearning?.runpod?.apiKey).toBe('rp_NEW_value');
-    });
   });
 
   describe('write-only credentials (FL-67)', () => {
     type PersistedSecrets = {
       notifications?: { smtp?: { transport?: { password?: string } } };
       oauth?: { clientSecret?: string };
-      machineLearning?: { runpod?: { apiKey?: string } };
     };
     const lastPersisted = () => mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as PersistedSecrets | undefined;
     const storedSecrets = {
@@ -1127,8 +957,6 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getCredentials()).resolves.toEqual([
         { name: ConfigCredential.SmtpPassword, configured: true },
         { name: ConfigCredential.OAuthClientSecret, configured: true },
-        { name: ConfigCredential.RunPodApiKey, configured: false },
-        { name: ConfigCredential.HuggingFaceToken, configured: false },
       ]);
     });
 
@@ -1166,21 +994,10 @@ describe(SystemConfigService.name, () => {
     it('should not write anything when the credential already has that value', async () => {
       mocks.systemMetadata.get.mockResolvedValue({});
 
-      await expect(sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken)).resolves.toEqual({
-        name: ConfigCredential.HuggingFaceToken,
+      await expect(sut.clearCredential(authStub.admin, ConfigCredential.OAuthClientSecret)).resolves.toEqual({
+        name: ConfigCredential.OAuthClientSecret,
         configured: false,
       });
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
-    });
-
-    it('should refuse to clear the RunPod key while RunPod is on', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: { runpod: { apiKey: 'rp_secret_value', enabled: true, mode: 'pod' } },
-      });
-
-      await expect(sut.clearCredential(authStub.admin, ConfigCredential.RunPodApiKey)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
       expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
     });
 
@@ -1389,12 +1206,9 @@ describe(SystemConfigService.name, () => {
     const savedSecrets = {
       notifications: { smtp: { transport: { host: 'mail.example', username: 'frameleaf', password: 'smtp-old' } } },
       oauth: { issuerUrl: 'https://id.example', clientSecret: 'oauth-old' },
-      machineLearning: { runpod: { apiKey: 'rp_old', hfToken: 'hf_old' } },
     };
 
     it.each([
-      [ConfigCredential.RunPodApiKey, 'machineLearning.runpod.apiKey', 'rp_new'],
-      [ConfigCredential.HuggingFaceToken, 'machineLearning.runpod.hfToken', 'hf_new'],
       [ConfigCredential.SmtpPassword, 'notifications.smtp.transport.password', 'smtp-new'],
       [ConfigCredential.OAuthClientSecret, 'oauth.clientSecret', 'oauth-new'],
     ])('should keep a %s replaced while a draft save was validating', async (name, path, replacement) => {
@@ -1429,12 +1243,12 @@ describe(SystemConfigService.name, () => {
 
       const save = sut.updateAdminConfig({ ...config, trash: { ...config.trash, days: 12 } }, authStub.admin);
       await hold.waiting;
-      await sut.setCredential(authStub.admin, ConfigCredential.RunPodApiKey, { value: 'rp_new' });
+      await sut.setCredential(authStub.admin, ConfigCredential.OAuthClientSecret, { value: 'oauth-new' });
       hold.release();
       await save;
 
       expect(store.stored().trash?.days).toBe(12);
-      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_new');
+      expect(store.stored().oauth?.clientSecret).toBe('oauth-new');
     });
 
     it('should refuse a draft save when a credential was cleared while it was validating', async () => {
@@ -1447,21 +1261,23 @@ describe(SystemConfigService.name, () => {
         authStub.admin,
       );
       await hold.waiting;
-      await sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken);
+      await sut.clearCredential(authStub.admin, ConfigCredential.SmtpPassword);
       hold.release();
 
-      // Clearing changes whether the token is set, which is part of the revision: the draft
-      // is refused and nothing it carried brings the token back.
+      // Clearing changes whether the password is set, which is part of the revision: the draft
+      // is refused and nothing it carried brings the password back.
       await expect(draftSave).rejects.toBeInstanceOf(ConflictException);
-      expect(store.stored().machineLearning?.runpod?.hfToken).toBeUndefined();
-      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_old');
+      expect(store.stored().notifications?.smtp?.transport?.password).toBeUndefined();
+      expect(store.stored().oauth?.clientSecret).toBe('oauth-old');
     });
 
     it('should not undo a draft save that landed while a credential change was validating', async () => {
       const store = useStatefulStore(savedSecrets);
       const hold = holdFirstValidation();
 
-      const credentialSave = sut.setCredential(authStub.admin, ConfigCredential.RunPodApiKey, { value: 'rp_new' });
+      const credentialSave = sut.setCredential(authStub.admin, ConfigCredential.OAuthClientSecret, {
+        value: 'oauth-new',
+      });
       await hold.waiting;
 
       // Meanwhile another administrator saves settings.
@@ -1475,7 +1291,7 @@ describe(SystemConfigService.name, () => {
       await credentialSave;
 
       expect(store.stored().trash?.days).toBe(12);
-      expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_new');
+      expect(store.stored().oauth?.clientSecret).toBe('oauth-new');
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
     });
   });
@@ -1543,14 +1359,14 @@ describe(SystemConfigService.name, () => {
     });
 
     it('should title a cleared credential (FL-71 CC-10)', async () => {
-      const store = useStore({ machineLearning: { runpod: { hfToken: 'hf_old' } } } as never);
+      const store = useStore({ notifications: { smtp: { transport: { password: 'smtp_old' } } } } as never);
 
-      await sut.clearCredential(authStub.admin, ConfigCredential.HuggingFaceToken);
+      await sut.clearCredential(authStub.admin, ConfigCredential.SmtpPassword);
 
       expect(store.history()).toEqual({
-        entries: [expect.objectContaining({ kind: 'credential', title: 'Cleared Hugging Face token' })],
+        entries: [expect.objectContaining({ kind: 'credential', title: 'Cleared email server password' })],
       });
-      expect(JSON.stringify(store.history())).not.toContain('hf_old');
+      expect(JSON.stringify(store.history())).not.toContain('smtp_old');
     });
 
     it('should not record a save that changed nothing', async () => {

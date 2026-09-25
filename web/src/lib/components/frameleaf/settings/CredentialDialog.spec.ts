@@ -15,7 +15,6 @@ vi.mock(import('$lib/managers/system-config-manager.svelte'), () => ({
     value: {
       oauth: { clientId: 'frameleaf', clientSecret: '', clientSecretConfigured: false },
       notifications: { smtp: { transport: { password: '', passwordConfigured: false } } },
-      machineLearning: { runpod: { apiKey: '', hfToken: '' } },
     } as unknown as AdminConfigDto,
   } as never,
 }));
@@ -76,10 +75,10 @@ describe('CredentialDialog (FL-67)', () => {
 
   it('drops the typed value when the dialog is dismissed', async () => {
     const onClose = vi.fn();
-    render(CredentialDialog, { name: ConfigCredential.RunpodApiKey, onClose });
+    render(CredentialDialog, { name: ConfigCredential.OauthClientSecret, onClose });
 
     const input = valueInput();
-    await fireEvent.input(input, { target: { value: 'rp-typed' } });
+    await fireEvent.input(input, { target: { value: 'typed-secret' } });
     await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
 
     expect(input.value).toBe('');

@@ -49,6 +49,22 @@ const renderWorker = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** Frameleaf Cloud, consented and routed for enrichment, whose last check found the server unlinked (FL-159). */
+const cloudUnlinked = {
+  ...mlDestinationStub.frameleafCloudConsented,
+  workloads: [MlWorkload.Enrichment],
+  lastProbeHealth: MlDestinationHealth.Unhealthy,
+  lastProbeSummary: 'Unreachable: This server is not linked to a Frameleaf account',
+  lastProbeWorkloads: null,
+  lastProbeCloud: {
+    ...mlDestinationStub.frameleafCloudConsented.lastProbeCloud!,
+    refusal: {
+      refusal: MlAdmissionRefusal.CloudUnavailable,
+      detail: 'This server is not linked to a Frameleaf account',
+    },
+  },
+};
+
 describe(WorkerInventoryService.name, () => {
   let sut: WorkerInventoryService;
   let mocks: ServiceMocks;
@@ -60,26 +76,22 @@ describe(WorkerInventoryService.name, () => {
     operations = { getDestinationLoad: vi.fn().mockResolvedValue([]), getClaimants: vi.fn().mockResolvedValue([]) };
     renderWorkers = { list: vi.fn().mockResolvedValue([]) };
 
-    mocks.mlDestination.getAll.mockResolvedValue([
-      mlDestinationStub.local,
-      mlDestinationStub.lan,
-      mlDestinationStub.runPodConsented,
-    ]);
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked]);
     mocks.mlDestination.getRoutes.mockResolvedValue([
-      { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
-      { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
-      { workload: MlWorkload.Enrichment, destinationId: mlDestinationStub.runPodConsented.id, updatedAt: new Date() },
-      { workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id, updatedAt: new Date() },
+      { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
+      { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
+      { workload: MlWorkload.Enrichment, destinationId: cloudUnlinked.id, modelId: null, updatedAt: new Date() },
+      {
+        workload: MlWorkload.RestorationFaithful,
+        destinationId: mlDestinationStub.lan.id,
+        modelId: null,
+        updatedAt: new Date(),
+      },
     ]);
     mocks.mlDestination.getById.mockImplementation((id: string) =>
-      Promise.resolve(
-        [mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodConsented].find(
-          (row) => row.id === id,
-        ),
-      ),
+      Promise.resolve([mlDestinationStub.local, mlDestinationStub.lan, cloudUnlinked].find((row) => row.id === id)),
     );
     mocks.mlDestination.getSpend.mockResolvedValue(0);
-    mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
     mocks.job.getJobCounts.mockResolvedValue(counts(0, 0));
     mocks.job.isPaused.mockResolvedValue(false);
 
@@ -123,26 +135,28 @@ describe(WorkerInventoryService.name, () => {
     expect(mocks.machineLearning.getRestorationModels).not.toHaveBeenCalled();
   });
 
-  it('shows RunPod-first library routing as routed to RunPod, not as local', async () => {
+  it('shows cloud-first library routing as routed to Frameleaf Cloud, not as local', async () => {
     const inventory = await sut.getInventory();
 
     expect(inventory.libraryRoutes.find((route) => route.workload === MlWorkload.Enrichment)).toEqual({
       workload: MlWorkload.Enrichment,
-      destinationId: mlDestinationStub.runPodConsented.id,
+      destinationId: cloudUnlinked.id,
       queues: [QueueName.ImageDescription, QueueName.NsfwDetection],
     });
-    const runPod = inventory.entries.find((entry) => entry.id === mlDestinationStub.runPodConsented.id)!;
-    expect(runPod).toMatchObject({
+    const cloud = inventory.entries.find((entry) => entry.id === cloudUnlinked.id)!;
+    expect(cloud).toMatchObject({
       leavesNetwork: true,
       consentGranted: true,
+      credential: WorkerCredentialState.Managed,
+      url: null,
       routedWorkloads: [MlWorkload.Enrichment],
     });
-    // No published pod: admission would refuse rather than send the work anywhere else.
-    expect(runPod.admission).toEqual([
+    // Not linked: admission would refuse rather than send the work anywhere else.
+    expect(cloud.admission).toEqual([
       expect.objectContaining({
         workload: MlWorkload.Enrichment,
         admitted: false,
-        refusal: MlAdmissionRefusal.EndpointUnresolved,
+        refusal: MlAdmissionRefusal.CloudUnavailable,
       }),
     ]);
   });

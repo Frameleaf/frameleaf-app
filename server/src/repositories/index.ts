@@ -34,11 +34,16 @@ import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repos
 import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
+import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
+import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
@@ -67,7 +72,6 @@ import { PreservationFileRepository } from 'src/repositories/preservation-files.
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
-import { RunPodRepository } from 'src/repositories/runpod.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -144,6 +148,11 @@ export const repositories = [
   MediaHealthRepository,
   MediaOperationRepository,
   RenderWorkerRepository,
+  FrameleafCloudRepository,
+  FrameleafCloudMlRepository,
+  FrameleafConsentRepository,
+  HardwareProbeRepository,
+  InstanceIdentityRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
@@ -163,7 +172,6 @@ export const repositories = [
   PreservationFileRepository,
   PreservationRepository,
   ProcessRepository,
-  RunPodRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,

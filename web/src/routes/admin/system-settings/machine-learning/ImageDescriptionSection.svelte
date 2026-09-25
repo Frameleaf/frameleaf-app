@@ -10,12 +10,10 @@
   import {
     getImageDescriptionRequeueEstimate,
     MachineLearningHardwareAcceleration,
-    Mode as RunPodMode,
     type AdminConfigImageDescriptionDto,
     type ImageDescriptionRequeueEstimateDto,
     type AdminConfigNsfwDetectionDto,
     type AdminConfigMachineLearningDto,
-    type AdminConfigRunPodServerlessDto,
   } from '@immich/sdk';
   import { Button, modalManager, toastManager } from '@immich/ui';
   import { mdiFlaskOutline, mdiRefresh } from '@mdi/js';
@@ -27,7 +25,6 @@
     CUSTOM_MODEL,
     DESCRIPTION_MODEL_PROFILES,
     FALLBACK_MODEL_PROFILES,
-    computeRunpodMode,
     findDescriptionProfile,
     formatDuration,
     formatTimestamp,
@@ -42,7 +39,6 @@
     imageDescription: AdminConfigImageDescriptionDto;
     savedImageDescription: AdminConfigImageDescriptionDto;
     nsfwDetection: AdminConfigNsfwDetectionDto;
-    runpodServerless: AdminConfigRunPodServerlessDto;
     detectedAcceleration: MachineLearningHardwareAcceleration | undefined;
     isMachineLearningConfigEdited: boolean;
     disabled: boolean;
@@ -53,7 +49,6 @@
     imageDescription,
     savedImageDescription,
     nsfwDetection,
-    runpodServerless,
     detectedAcceleration,
     isMachineLearningConfigEdited,
     disabled,
@@ -98,12 +93,12 @@
       value: p.value,
       text: `${p.label} — ${p.vramHint}`,
     })),
-    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_runpod_custom_model_option') },
+    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_custom_model_option') },
   ]);
 
   const fallbackModelOptions = $derived([
     ...FALLBACK_MODEL_PROFILES.map((p) => ({ value: p.value, text: p.label })),
-    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_runpod_custom_model_option') },
+    { value: CUSTOM_MODEL, text: $t('admin.machine_learning_custom_model_option') },
   ]);
 
   // Hardware acceleration ─────────────────────────────────────────────────
@@ -149,30 +144,6 @@
     imageDescription.device = preset.imageDescriptionDevice;
     nsfwDetection.modelName = preset.nsfwDetectionModelName;
     nsfwDetection.device = preset.nsfwDetectionDevice;
-  };
-
-  // Recommended GPU pools hint ────────────────────────────────────────────
-
-  const runpodMode = $derived<RunPodMode>(
-    computeRunpodMode(workingConfig.runpod?.mode, workingConfig.runpod?.enabled ?? false),
-  );
-  const recommendedPoolsForCurrentModel = $derived(findDescriptionProfile(imageDescription.modelName)?.gpuPoolIds);
-
-  const currentPoolsMatchRecommended = $derived.by(() => {
-    const recommended = recommendedPoolsForCurrentModel;
-    if (!recommended) {
-      return false;
-    }
-    const current = runpodServerless?.gpuTypeIds ?? [];
-    return current.length === recommended.length && current.every((id: string, idx: number) => id === recommended[idx]);
-  });
-
-  const applyRecommendedPools = () => {
-    const recommended = recommendedPoolsForCurrentModel;
-    if (!recommended || !runpodServerless) {
-      return;
-    }
-    runpodServerless.gpuTypeIds = [...recommended];
   };
 
   // Sample-first preview and plans (FL-59) ────────────────────────────────
@@ -304,25 +275,6 @@
         disabled={disabled || !workingConfig.enabled || !imageDescription.enabled}
         isEdited={imageDescription.modelName !== savedImageDescription.modelName}
       />
-    {/if}
-
-    {#if runpodMode === RunPodMode.Serverless && recommendedPoolsForCurrentModel && !currentPoolsMatchRecommended}
-      <div class="-mt-2 mb-4 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-200">
-        <p class="mb-1">
-          {$t('admin.machine_learning_image_description_recommended_gpu_pools')}
-          <code class="rounded-sm bg-blue-100 px-1 dark:bg-blue-900">
-            {recommendedPoolsForCurrentModel.join(', ')}
-          </code>
-        </p>
-        <button
-          type="button"
-          class="text-xs font-medium underline hover:no-underline disabled:opacity-50"
-          onclick={applyRecommendedPools}
-          {disabled}
-        >
-          {$t('admin.machine_learning_image_description_recommended_gpu_apply')}
-        </button>
-      </div>
     {/if}
 
     <SettingSelect

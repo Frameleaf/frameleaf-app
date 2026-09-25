@@ -11,6 +11,7 @@
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
+  import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import { UTILITY_GROUPS, utilityTool, utilityToolsFor, type UtilityId } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -64,8 +65,9 @@
     };
   });
 
-  // The template lists Utilities as an ordinary area directory: grouped rows, no icons, no scope tag
-  // (every tool works on the signed-in account's own library).
+  // The template lists Utilities as an ordinary area directory: grouped rows, each with its tool's
+  // icon (UT-12; CommandCenter.jsx:2739, utilities-data.mjs:15-87), no scope tag (every tool works
+  // on the signed-in account's own library).
   const rows = $derived(
     UTILITY_GROUPS.flatMap((group) =>
       matches
@@ -75,6 +77,7 @@
           title: $t(tool.titleKey),
           description: $t(tool.descriptionKey),
           group: $t(`library_care_group_${group}`),
+          icon: tool.icon,
           onSelect: () => void select(tool.id),
         })),
     ),
@@ -146,7 +149,13 @@
           initialStatus={data.status}
           roots={data.roots}
           users={data.users}
+          initialOwner={data.owner}
         />
+      {/if}
+      <!-- UT-11: every tool but Duplicate review shows the shared history (UtilitiesManager.jsx:946);
+           Missing and Damaged media show Library Care's own, with its scans and searches. -->
+      {#if !['duplicates', 'missing-media', 'corrupt-media'].includes(data.tool)}
+        <UtilityHistory />
       {/if}
     </div>
   {/key}

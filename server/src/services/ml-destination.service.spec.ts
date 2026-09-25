@@ -1,5 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
@@ -14,11 +14,13 @@ import {
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
-  MlWorkerRole,
   MlWorkload,
   RenderWorkerStatus,
+  SystemMetadataKey,
 } from 'src/enum.js';
+import { FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { ML_URL_REMOVED_SUMMARY, MlDestinationService } from 'src/services/ml-destination.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
@@ -30,15 +32,15 @@ describe(MlDestinationService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MlDestinationService));
-    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.runPod]);
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.frameleafCloud]);
     mocks.mlDestination.getRoutes.mockResolvedValue([
-      { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
+      { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
     ]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
     // Like the database, an update leaves a column alone when the patch leaves it undefined.
     mocks.mlDestination.update.mockImplementation((id, patch) =>
       Promise.resolve({
-        ...(id === mlDestinationStub.runPod.id ? mlDestinationStub.runPod : mlDestinationStub.local),
+        ...(id === mlDestinationStub.frameleafCloud.id ? mlDestinationStub.frameleafCloud : mlDestinationStub.local),
         ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
       } as never),
     );
@@ -99,7 +101,7 @@ describe(MlDestinationService.name, () => {
         Promise.resolve(
           workload === MlWorkload.PetRecognition
             ? undefined
-            : { workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
+            : { workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
         ),
       );
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
@@ -121,7 +123,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.PetRecognition, mlDestinationStub.local.id);
     });
 
-    it('never creates a RunPod destination or routes restoration and Studio work on its own', async () => {
+    it('never creates a cloud destination or routes restoration and Studio work on its own', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
       mocks.mlDestination.getRoute.mockResolvedValue(undefined);
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
@@ -131,7 +133,6 @@ describe(MlDestinationService.name, () => {
           ...defaults,
           machineLearning: {
             ...defaults.machineLearning,
-            runpod: { ...defaults.machineLearning.runpod, enabled: true, mode: 'serverless' as const },
             availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
           },
         },
@@ -163,6 +164,7 @@ describe(MlDestinationService.name, () => {
       mocks.mlDestination.getRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: second.id,
+        modelId: null,
         updatedAt: new Date(),
       });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
@@ -187,6 +189,7 @@ describe(MlDestinationService.name, () => {
       mocks.mlDestination.getRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: removed.id,
+        modelId: null,
         updatedAt: new Date(),
       });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
@@ -201,6 +204,7 @@ describe(MlDestinationService.name, () => {
       mocks.mlDestination.getRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: adminOff.id,
+        modelId: null,
         updatedAt: new Date(),
       });
 
@@ -213,6 +217,7 @@ describe(MlDestinationService.name, () => {
       mocks.mlDestination.getRoute.mockResolvedValue({
         workload: MlWorkload.Face,
         destinationId: 'ml-destination-lan',
+        modelId: null,
         updatedAt: new Date(),
       });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
@@ -232,16 +237,23 @@ describe(MlDestinationService.name, () => {
   });
 
   describe('create', () => {
-    it('refuses a RunPod destination with its own URL or token', async () => {
+    it('never creates Frameleaf Cloud here: only its own endpoint does (FL-159)', async () => {
       await expect(
-        sut.create({ kind: MlDestinationKind.RunPod, name: 'RunPod', url: 'https://x', workloads: [], enabled: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+        sut.create({
+          kind: MlDestinationKind.FrameleafCloud,
+          name: 'Frameleaf Cloud',
+          workloads: [MlWorkload.Enrichment],
+          enabled: true,
+        }),
+      ).rejects.toThrow(/its own settings section/);
+      expect(mocks.mlDestination.create).not.toHaveBeenCalled();
     });
 
-    it('refuses a second RunPod destination', async () => {
+    it('refuses a URL or token on Frameleaf Cloud (FL-159)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
       await expect(
-        sut.create({ kind: MlDestinationKind.RunPod, name: 'RunPod 2', workloads: [], enabled: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+        sut.update(mlDestinationStub.frameleafCloud.id, { url: 'https://elsewhere.example', authToken: 'x' }),
+      ).rejects.toThrow(/takes no URL or credential/);
     });
 
     it('requires a URL for a LAN destination', async () => {
@@ -272,18 +284,112 @@ describe(MlDestinationService.name, () => {
   });
 
   describe('consent', () => {
-    it('records consent for a cloud destination with the acting administrator', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
+    const linkCloud = () => {
+      mocks.config.getEnv.mockReturnValue({
+        ...mocks.config.getEnv(),
+        frameleafCloud: { url: 'https://cloud.test', identityDir: '/tmp/identity' },
+      });
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafCloudLink
+            ? { status: 'linked', cloudUrl: 'https://cloud.test', instanceId: 'instance-1', dataRegion: 'eu' }
+            : null) as never,
+        ),
+      );
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.instanceIdentity.loadOrCreate.mockResolvedValue({
+        instanceId: 'instance-1',
+        kid: 'kid-1',
+        publicJwk: { kty: 'OKP', crv: 'Ed25519', x: 'x' },
+        keyFile: '/tmp/identity/instance-key.pem',
+        createdAt: '2026-09-25T00:00:00.000Z',
+      });
+      mocks.frameleafCloud.discovery.mockResolvedValue({
+        version: 1,
+        validFor: 86_400,
+        issuer: 'https://id.cloud.test',
+        api: 'https://api.cloud.test',
+        ml: { eu: 'https://ml.eu.cloud.test' },
+      });
+      mocks.frameleafCloud.accessToken.mockResolvedValue('instance-token');
+      mocks.frameleafCloudMl.getConsent.mockResolvedValue({
+        requiredVersion: '2026-09-25',
+        recordedVersion: null,
+        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+        summary: '',
+        documentUrl: null,
+      });
+      mocks.frameleafCloudMl.recordConsent.mockResolvedValue({
+        recordedVersion: '2026-09-25',
+        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
+      });
+      mocks.frameleafConsent.record.mockResolvedValue({} as never);
+    };
 
-      const result = await sut.grantConsent(authStub.admin, mlDestinationStub.runPod.id, {
+    it('records versioned Frameleaf Cloud consent with Frameleaf Cloud, the fork table and the destination (FL-159)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+
+      const result = await sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
         acknowledgeMediaLeavesNetwork: true,
+        version: '2026-09-25',
+        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
       });
 
-      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.runPod.id, {
+      const gateway = { url: 'https://ml.eu.cloud.test', bearer: 'instance-token' };
+      expect(mocks.frameleafCloud.accessToken).toHaveBeenCalledWith(
+        expect.objectContaining({ issuer: 'https://id.cloud.test' }),
+        'instance-1',
+        'https://ml.eu.cloud.test',
+        expect.any(Function),
+      );
+      expect(mocks.frameleafCloudMl.recordConsent).toHaveBeenCalledWith(gateway, {
+        version: '2026-09-25',
+        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+      });
+      expect(mocks.frameleafConsent.record).toHaveBeenCalledWith({
+        destinationId: mlDestinationStub.frameleafCloud.id,
+        version: '2026-09-25',
+        features: { identityNames: false, medicalSignals: true, ocrAddon: false },
+        acceptedBy: authStub.admin.user.id,
+        cloudRecordedVersion: '2026-09-25',
+      });
+      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.frameleafCloud.id, {
         consentAcknowledgedAt: expect.any(Date),
         consentAcknowledgedBy: authStub.admin.user.id,
+        consentVersion: '2026-09-25',
       });
       expect(result.consent.acknowledgedBy).toBe(authStub.admin.user.id);
+    });
+
+    it('refuses Frameleaf Cloud consent to an outdated version and records nothing (FL-159)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-01-01',
+        }),
+      ).rejects.toThrow(/now asks for consent version 2026-09-25/);
+      expect(mocks.frameleafCloudMl.recordConsent).not.toHaveBeenCalled();
+      expect(mocks.frameleafConsent.record).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses Frameleaf Cloud consent without a version, or while the server is not linked (FL-159)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, { acknowledgeMediaLeavesNetwork: true }),
+      ).rejects.toThrow(/names the version/);
+      await expect(
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
+          acknowledgeMediaLeavesNetwork: true,
+          version: '2026-09-25',
+        }),
+      ).rejects.toThrow(/not configured/);
+      expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
     it('refuses consent on a destination that keeps media on the network', async () => {
@@ -294,30 +400,68 @@ describe(MlDestinationService.name, () => {
     });
 
     it('refuses a consent body that is not the literal acknowledgement', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
       await expect(
-        sut.grantConsent(authStub.admin, mlDestinationStub.runPod.id, {
+        sut.grantConsent(authStub.admin, mlDestinationStub.frameleafCloud.id, {
           acknowledgeMediaLeavesNetwork: false,
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 
-    it('revokes consent by clearing both fields', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
-      await sut.revokeConsent(mlDestinationStub.runPodConsented.id);
-      expect(mocks.mlDestination.update).toHaveBeenCalledWith(mlDestinationStub.runPodConsented.id, {
-        consentAcknowledgedAt: null,
-        consentAcknowledgedBy: null,
+    it('withdraws Frameleaf Cloud consent here in one step, then with the cloud (FL-159)', async () => {
+      linkCloud();
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id);
+      // The consent records and the destination are cleared together by the repository, first.
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.frameleafConsent.revoke.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.frameleafCloudMl.revokeConsent.mock.invocationCallOrder[0],
+      );
+      expect(mocks.frameleafCloudMl.revokeConsent).toHaveBeenCalledWith({
+        url: 'https://ml.eu.cloud.test',
+        bearer: 'instance-token',
       });
+      expect(mocks.mlDestination.update).not.toHaveBeenCalled();
+    });
+
+    it('keeps the withdrawal when Frameleaf Cloud does not answer, and logs it (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafCloudMl.revokeConsent.mockRejectedValue(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'offline'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).resolves.toBeDefined();
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+    });
+
+    it('keeps the withdrawal when reaching Frameleaf Cloud fails in any other way (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafCloud.discovery.mockRejectedValue(new TypeError('socket hang up'));
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).resolves.toBeDefined();
+      expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
+    });
+
+    it('refuses to withdraw consent during a handoff with 409, before contacting Frameleaf Cloud (FL-159)', async () => {
+      linkCloud();
+      mocks.frameleafConsent.revoke.mockRejectedValue(
+        new ConflictException('Consent cannot be withdrawn while the server is being handed over'),
+      );
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
     });
   });
 
   describe('setRoute', () => {
     it('refuses routing to a cloud destination without consent', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
       await expect(
-        sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.runPod.id }),
+        sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.frameleafCloud.id }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
@@ -330,15 +474,34 @@ describe(MlDestinationService.name, () => {
     });
 
     it('routes to a consented cloud destination and removes a route with null', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
-      await sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.runPodConsented.id });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await sut.setRoute(MlWorkload.Enrichment, {
+        destinationId: mlDestinationStub.frameleafCloudConsented.id,
+        modelId: 'describe-large',
+      });
       expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
         MlWorkload.Enrichment,
-        mlDestinationStub.runPodConsented.id,
+        mlDestinationStub.frameleafCloudConsented.id,
+        'describe-large',
       );
 
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: null });
       expect(mocks.mlDestination.clearRoute).toHaveBeenCalledWith(MlWorkload.Enrichment);
+    });
+
+    it('refuses a model outside the Frameleaf Cloud catalogue, and a model on a local destination (FL-159)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      await expect(
+        sut.setRoute(MlWorkload.Enrichment, {
+          destinationId: mlDestinationStub.frameleafCloudConsented.id,
+          modelId: 'unknown-model',
+        }),
+      ).rejects.toThrow(/not in the Frameleaf Cloud catalogue/);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      await expect(
+        sut.setRoute(MlWorkload.Face, { destinationId: mlDestinationStub.local.id, modelId: 'describe-large' }),
+      ).rejects.toThrow(/Only Frameleaf Cloud/);
+      expect(mocks.mlDestination.setRoute).not.toHaveBeenCalled();
     });
 
     it('lists every workload, unrouted ones with a null destination', async () => {
@@ -352,17 +515,31 @@ describe(MlDestinationService.name, () => {
   });
 
   describe('probe', () => {
-    it('records an unresolved RunPod destination as unhealthy without touching the network', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
+    it('records an unresolved local destination as unhealthy without touching the network', async () => {
+      mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.lan, url: null });
 
-      const result = await sut.probe(mlDestinationStub.runPodConsented.id);
+      const result = await sut.probe(mlDestinationStub.lan.id);
 
       expect(result.status).toBe(MlDestinationHealth.Unhealthy);
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
       expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
-        mlDestinationStub.runPodConsented.id,
+        mlDestinationStub.lan.id,
         expect.objectContaining({ health: MlDestinationHealth.Unhealthy, workloads: null }),
+      );
+    });
+
+    it('checks Frameleaf Cloud through its delegated check and keeps the cloud facts (FL-159)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
+      mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.frameleafCloud);
+
+      const result = await sut.probe(mlDestinationStub.frameleafCloudConsented.id);
+
+      expect(result.status).toBe(MlDestinationHealth.Healthy);
+      expect(mocks.machineLearning.probe).toHaveBeenCalledWith(FRAMELEAF_CLOUD_ENDPOINT);
+      expect(mocks.machineLearning.getRestorationModels).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        mlDestinationStub.frameleafCloudConsented.id,
+        expect.objectContaining({ cloud: mlProbeStub.frameleafCloud.cloud }),
       );
     });
 
@@ -455,14 +632,10 @@ describe(MlDestinationService.name, () => {
     });
 
     it('refuses instead of answering with another destination', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({
-        url: 'https://endpoint.api.runpod.ai/',
-        authToken: 'rp',
-      });
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
 
       const error = await sut
-        .admit(mlDestinationStub.runPod.id, { workload: MlWorkload.Enrichment })
+        .admit(mlDestinationStub.frameleafCloud.id, { workload: MlWorkload.Enrichment })
         .catch((error_) => error_);
 
       expect(error).toBeInstanceOf(MlDestinationRefusedError);
@@ -489,55 +662,6 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.create).not.toHaveBeenCalled();
     });
 
-    it('never offers the managed RunPod pod for restoration', async () => {
-      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
-      await expect(
-        sut.create({
-          kind: MlDestinationKind.RunPod,
-          name: 'RunPod',
-          workloads: [MlWorkload.RestorationCreative],
-          enabled: true,
-        }),
-      ).rejects.toThrow(/library analysis only/);
-    });
-
-    it('needs the persistent worker URL for a RunPod video worker', async () => {
-      await expect(
-        sut.create({
-          kind: MlDestinationKind.RunPodVideo,
-          name: 'RunPod video worker',
-          workloads: [MlWorkload.RestorationCreative],
-          enabled: true,
-        }),
-      ).rejects.toThrow(/URL of the persistent worker/);
-    });
-
-    it('creates a RunPod video worker that needs consent and keeps its own token hidden', async () => {
-      mocks.mlDestination.create.mockResolvedValue({ ...mlDestinationStub.runPodVideo, id: 'created' });
-
-      const result = await sut.create({
-        kind: MlDestinationKind.RunPodVideo,
-        name: 'RunPod video worker',
-        url: 'https://video-worker.proxy.runpod.net',
-        authToken: 'video-token',
-        workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
-        enabled: true,
-        sharesLibraryHardware: false,
-      });
-
-      expect(mocks.mlDestination.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: MlDestinationKind.RunPodVideo,
-          authToken: 'video-token',
-          sharesLibraryHardware: false,
-        }),
-      );
-      expect(result.role).toBe(MlWorkerRole.Restoration);
-      expect(result.consent.required).toBe(true);
-      expect(result.authTokenConfigured).toBe(true);
-      expect(JSON.stringify(result)).not.toContain('video-token');
-    });
-
     it('marks only a restoration worker as sharing hardware with library analysis', async () => {
       await expect(
         sut.create({
@@ -551,17 +675,11 @@ describe(MlDestinationService.name, () => {
       ).rejects.toThrow(/Only a restoration worker/);
     });
 
-    it('never marks a RunPod video worker as sharing a GPU on this network', async () => {
-      await expect(
-        sut.create({
-          kind: MlDestinationKind.RunPodVideo,
-          name: 'RunPod video worker',
-          url: 'https://video-worker.proxy.runpod.net',
-          workloads: [MlWorkload.RestorationFaithful],
-          enabled: true,
-          sharesLibraryHardware: true,
-        }),
-      ).rejects.toThrow(/cloud worker cannot share/);
+    it('never marks Frameleaf Cloud as sharing a GPU on this network', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloud);
+      await expect(sut.update(mlDestinationStub.frameleafCloud.id, { sharesLibraryHardware: true })).rejects.toThrow(
+        /cloud worker cannot share/,
+      );
     });
 
     it('still lets an administrator rename or disable a row saved before the rule', async () => {
@@ -598,16 +716,59 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
         MlWorkload.RestorationFaithful,
         mlDestinationStub.lan.id,
+        null,
       );
     });
   });
 
   describe('getCapabilities', () => {
+    beforeEach(() => {
+      // Checks made just now: a check older than the freshness window is stale evidence (FL-42).
+      vi.useFakeTimers({ now: new Date('2026-09-22T12:05:00.000Z'), toFake: ['Date'] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('never counts a stale check as evidence and reports per-destination detail (FL-42)', async () => {
+      const lanChecked = {
+        ...mlDestinationStub.lan,
+        lastProbeHardware: {
+          preferredAcceleration: 'cuda',
+          providers: [],
+          cudaDeviceCount: 1,
+          gpus: [{ name: 'RTX', memoryTotalBytes: 12e9 }],
+        },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...lanChecked, lastProbeAt: new Date('2026-09-22T11:00:00.000Z') },
+      ]);
+
+      let result = await sut.getCapabilities();
+      let faithful = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;
+      expect(faithful.available).toBe(false);
+      expect(faithful.destinations[0]).toMatchObject({ stale: true, available: false });
+
+      mocks.mlDestination.getAll.mockResolvedValue([lanChecked]);
+      result = await sut.getCapabilities();
+      faithful = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;
+      expect(faithful.available).toBe(true);
+      expect(faithful.destinations[0]).toMatchObject({
+        stale: false,
+        leavesNetwork: false,
+        acceleration: 'gpu',
+        gpuMemoryBytes: 12e9,
+        servedWorkloads: [MlWorkload.RestorationFaithful],
+        checkedAt: '2026-09-22T12:00:00.000Z',
+      });
+    });
+
     it('marks a workload available only when a destination is enabled, consented, allowed, healthy and serving it', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([
         mlDestinationStub.local,
         { ...mlDestinationStub.lan, consentAcknowledgedAt: null },
-        mlDestinationStub.runPodConsented,
+        mlDestinationStub.frameleafCloud,
       ]);
 
       const result = await sut.getCapabilities();
@@ -616,8 +777,8 @@ describe(MlDestinationService.name, () => {
       expect(face.available).toBe(true);
       expect(face.routedDestinationId).toBe(mlDestinationStub.local.id);
       expect(face.destinations.find((d) => d.id === mlDestinationStub.local.id)?.available).toBe(true);
-      // RunPod allows nothing for face and has never been probed healthy.
-      expect(face.destinations.find((d) => d.id === mlDestinationStub.runPodConsented.id)?.available).toBe(false);
+      // Frameleaf Cloud allows nothing for face and has never been checked healthy.
+      expect(face.destinations.find((d) => d.id === mlDestinationStub.frameleafCloud.id)?.available).toBe(false);
 
       const restoration = result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)!;
       // The LAN worker allows restoration and its last probe reported it.
@@ -724,13 +885,14 @@ describe(MlDestinationService.name, () => {
         renderWorker: false,
         restorationWorker: false,
         transcriptionWorker: false,
+        render: [],
       });
     });
 
     it('does not count an unconsented cloud destination even when it is healthy and serves the workload', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([
         {
-          ...mlDestinationStub.runPodVideo,
+          ...mlDestinationStub.frameleafCloud,
           lastProbeHealth: MlDestinationHealth.Healthy,
           lastProbeWorkloads: [MlWorkload.RestorationFaithful],
         },
@@ -809,13 +971,12 @@ describe(MlDestinationService.name, () => {
       });
     });
 
-    it('does not ask a RunPod destination that has no running worker', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
+    it('points to the catalogue for Frameleaf Cloud models instead of asking a worker (FL-159)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
 
-      const result = await sut.getRestorationModels(mlDestinationStub.runPodConsented.id);
+      const result = await sut.getRestorationModels(mlDestinationStub.frameleafCloudConsented.id);
 
-      expect(result).toMatchObject({ reachable: false, error: 'No running pod or ready serverless worker' });
+      expect(result).toMatchObject({ reachable: false, error: expect.stringContaining('catalogue') });
       expect(mocks.machineLearning.getRestorationModels).not.toHaveBeenCalled();
     });
 
@@ -827,26 +988,26 @@ describe(MlDestinationService.name, () => {
   });
 
   describe('list', () => {
-    it('maps rows to DTOs without exposing tokens and with the RunPod URL from the published endpoint', async () => {
-      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.lan, mlDestinationStub.runPodConsented]);
+    it('maps rows to DTOs without exposing tokens, and Frameleaf Cloud without any URL (FL-159)', async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.lan, mlDestinationStub.frameleafCloudConsented]);
       mocks.mlDestination.getSpend.mockResolvedValue(4.25);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({
-        url: 'https://endpoint.api.runpod.ai/',
-        authToken: 'rp',
-      });
 
-      const [lan, runPod] = await sut.list();
+      const [lan, cloud] = await sut.list();
 
       expect(lan.authTokenConfigured).toBe(true);
+      expect(lan.cloud).toBeNull();
       expect(JSON.stringify(lan)).not.toContain('lan-token');
-      expect(runPod.url).toBe('https://endpoint.api.runpod.ai/');
-      expect(runPod.consent).toEqual({
+      expect(cloud.url).toBeNull();
+      expect(cloud.authTokenConfigured).toBe(false);
+      expect(cloud.consent).toEqual({
         required: true,
         acknowledgedAt: expect.any(String),
         acknowledgedBy: 'admin-id',
+        version: '2026-09-25',
+        requiredVersion: '2026-09-25',
       });
-      expect(runPod.costControls).toMatchObject({ budgetLimitUsd: 25, spentUsd: 4.25, budgetWindowDays: 30 });
-      expect(JSON.stringify(runPod)).not.toContain('"rp"');
+      expect(cloud.cloud).toMatchObject({ region: 'eu', entitled: true, balanceUsd: 40, heldUsd: 5, refusal: null });
+      expect(cloud.costControls).toMatchObject({ budgetLimitUsd: 25, spentUsd: 4.25, budgetWindowDays: 30 });
     });
   });
 });

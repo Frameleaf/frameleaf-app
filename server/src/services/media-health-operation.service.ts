@@ -166,7 +166,12 @@ export class MediaHealthOperationService {
     const { id } = operation;
     let result: MediaHealthScanResult = parseScanResult(operation.result);
     if (result.total === null) {
-      result = { ...result, total: await this.mediaHealth.countScanAssets(snapshot.userId) };
+      result = {
+        ...result,
+        total: snapshot.changedSince
+          ? await this.mediaHealth.countScanAssets(snapshot.userId, snapshot.changedSince)
+          : await this.mediaHealth.countScanAssets(snapshot.userId),
+      };
     }
 
     if (!(await this.start(id, claimToken, result.checked, result.total))) {

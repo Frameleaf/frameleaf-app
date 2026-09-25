@@ -106,6 +106,9 @@ export type Events = {
 
   JobCreate: [{ dto: JobCreateDto }];
 
+  /** FL-43: one of this account's jobs changed (`on_media_operation_update`); only its id is known. */
+  MediaOperationUpdate: [{ id: string }];
+
   ReleaseEvent: [ReleaseEventV1];
 
   WebsocketConnect: [];

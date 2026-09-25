@@ -5,7 +5,6 @@ import { buildDiagnostics, diagnosticsFileName } from './diagnostics';
 const config = {
   oauth: { clientSecret: 'oauth-secret', clientSecretConfigured: true, issuerUrl: 'https://id.example' },
   notifications: { smtp: { transport: { password: 'smtp-secret', passwordConfigured: true, host: 'mail' } } },
-  machineLearning: { runpod: { apiKey: 'runpod-key', hfToken: 'hf-token' } },
   logging: { enabled: true, level: 'log' },
 } as unknown as AdminConfigDto;
 
@@ -33,7 +32,7 @@ describe('buildDiagnostics (FL-71)', () => {
 
   it('never carries a credential value', () => {
     const text = JSON.stringify(diagnostics);
-    for (const secret of ['oauth-secret', 'smtp-secret', 'runpod-key', 'hf-token']) {
+    for (const secret of ['oauth-secret', 'smtp-secret']) {
       expect(text).not.toContain(secret);
     }
     expect(diagnostics.settings.oauth.clientSecretConfigured).toBe(true);

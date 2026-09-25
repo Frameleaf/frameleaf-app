@@ -24,7 +24,7 @@ const pet = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
-type Destination = { kind: 'local' | 'lan' | 'runpod'; name: string } | null;
+type Destination = { kind: 'local' | 'lan' | 'frameleaf-cloud'; name: string } | null;
 type Recognition = {
   available: boolean;
   destination: Destination;
@@ -136,7 +136,7 @@ test.describe('pet recognition', () => {
   });
 
   test('says when recognition runs on Frameleaf Cloud', async ({ context, page }) => {
-    await setup(context, available({ kind: 'runpod', name: 'Frameleaf Cloud' }));
+    await setup(context, available({ kind: 'frameleaf-cloud', name: 'Frameleaf Cloud' }));
     await page.goto('/pets');
 
     const section = recognitionSection(page);

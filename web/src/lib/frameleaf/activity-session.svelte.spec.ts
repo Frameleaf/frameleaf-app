@@ -7,6 +7,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { ActivitySession } from '$lib/frameleaf/activity-session.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -176,6 +177,75 @@ describe('ActivitySession', () => {
     stop();
     dispatchEvent(new Event('online'));
     expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again when the server’s socket reconnects, recovering the exact jobs (FL-43)', async () => {
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.waitFor(() => expect(session.operations).toEqual([operation()]));
+
+    // While the socket was down the job moved on; the reconnect reads where it got to.
+    const moved = operation({ status: MediaOperationStatus.Validating, progress: 98, processedUnits: '980' });
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [moved], total: 1 });
+    eventManager.emit('WebsocketConnect');
+
+    await vi.waitFor(() => expect(session.operations).toEqual([moved]));
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+
+    stop();
+    eventManager.emit('WebsocketConnect');
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the list again when the server says a job changed, once for a burst (FL-43)', async () => {
+    vi.useFakeTimers();
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [], total: 0 });
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(1);
+
+    const queued = operation({ status: MediaOperationStatus.Queued, progress: 0, processedUnits: '0' });
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [queued], total: 1 });
+    eventManager.emit('MediaOperationUpdate', { id: queued.id });
+    eventManager.emit('MediaOperationUpdate', { id: queued.id });
+    eventManager.emit('MediaOperationUpdate', { id: queued.id });
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+    expect(session.operations).toEqual([queued]);
+
+    stop();
+    eventManager.emit('MediaOperationUpdate', { id: queued.id });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers every unfinished job after a reload, exactly as the server kept it (FL-43)', async () => {
+    // The server lists unfinished jobs first, so an old running job is on the first page.
+    const old = operation({
+      id: '0195e2a0-0000-7000-8000-000000000010',
+      kind: MediaOperationKind.QuickEdit,
+      settings: { edit: 'photo_version' },
+      status: MediaOperationStatus.Rendering,
+      progress: 60,
+      processedUnits: '60',
+      totalUnits: '100',
+      createdAt: '2026-09-01T09:00:00.000Z',
+    });
+    const finished = Array.from({ length: 3 }, (_, index) =>
+      operation({ id: `0195e2a0-0000-7000-8000-00000000002${index}`, status: MediaOperationStatus.Completed }),
+    );
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [old, ...finished], total: 150 });
+
+    // A reload is a new session: nothing survives in the tab, everything comes from the server.
+    const reloaded = new ActivitySession();
+    await reloaded.refresh();
+
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledWith({ take: 100 });
+    expect(reloaded.operations[0]).toEqual(old);
+    expect(reloaded.runningCount).toBe(1);
   });
 
   it('puts a resumed job back as the server answered (FL-104)', async () => {

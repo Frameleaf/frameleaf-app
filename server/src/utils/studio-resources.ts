@@ -9,7 +9,7 @@
  *
  * - {@link studioResourceRegistry} is the inventory. One row per resource class a graph can
  *   reference, with the owner, the access check that applies, whether the bytes may leave the
- *   machine (local, LAN worker, RunPod) and how long they are retained. The checked-in
+ *   machine (local, LAN worker, Frameleaf Cloud) and how long they are retained. The checked-in
  *   `studio/resource-inventory.json` is generated from it by {@link buildStudioResourceInventory}
  *   and a spec asserts they match.
  * - {@link extractStudioResourceReferences} walks a graph and returns every reference it finds,
@@ -112,11 +112,11 @@ export enum StudioAccessCheck {
   RevisionGrant = 'revision-grant',
 }
 
-/** Where a Studio job may run. Mirrors the prototype's destinations; RunPod is the only one that leaves. */
+/** Where a Studio job may run. Frameleaf Cloud is the only one that leaves the network (FL-159). */
 export enum StudioDestination {
   Local = 'local',
   Lan = 'lan',
-  RunPod = 'runpod',
+  FrameleafCloud = 'frameleaf-cloud',
 }
 
 export const studioDestinations: readonly StudioDestination[] = Object.values(StudioDestination);
@@ -233,19 +233,19 @@ export type StudioResourceClass = {
 const personalEgress: StudioEgressPolicy = {
   [StudioDestination.Local]: StudioEgress.Allowed,
   [StudioDestination.Lan]: StudioEgress.Allowed,
-  [StudioDestination.RunPod]: StudioEgress.ExplicitConsent,
+  [StudioDestination.FrameleafCloud]: StudioEgress.ExplicitConsent,
 };
 
 const deploymentEgress: StudioEgressPolicy = {
   [StudioDestination.Local]: StudioEgress.Allowed,
   [StudioDestination.Lan]: StudioEgress.Allowed,
-  [StudioDestination.RunPod]: StudioEgress.Allowed,
+  [StudioDestination.FrameleafCloud]: StudioEgress.Allowed,
 };
 
 const destinationSideEgress: StudioEgressPolicy = {
   [StudioDestination.Local]: StudioEgress.DestinationSide,
   [StudioDestination.Lan]: StudioEgress.DestinationSide,
-  [StudioDestination.RunPod]: StudioEgress.DestinationSide,
+  [StudioDestination.FrameleafCloud]: StudioEgress.DestinationSide,
 };
 
 const define = (definition: StudioResourceClass): [StudioResourceKind, StudioResourceClass] => [
@@ -519,7 +519,7 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     egress: {
       [StudioDestination.Local]: StudioEgress.Allowed,
       [StudioDestination.Lan]: StudioEgress.Allowed,
-      [StudioDestination.RunPod]: StudioEgress.ExplicitConsent,
+      [StudioDestination.FrameleafCloud]: StudioEgress.ExplicitConsent,
     },
     retention: StudioRetention.Ephemeral,
     fileBacked: false,

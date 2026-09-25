@@ -14,7 +14,9 @@ import { getKyselyDB } from 'test/utils.js';
  * Locked media only when asked from an unlocked session, never more than one package holds, and an
  * ordinary session's reads leave Locked items out of every list and count (owner decision,
  * September 22, 2026) — including items locked in the library after they were packaged, and
- * restoration items whose matched original is Locked there.
+ * restoration items whose matched original is Locked there. A search scope matching recognized text
+ * finds only the owner's own items, and a Locked item's text only for an export that includes Locked
+ * items; a retry of failed restoration items keeps every choice the owner made.
  */
 
 let defaultDatabase: Kysely<DB>;
@@ -37,6 +39,9 @@ const lock = (assetId: string) =>
     .insertInto('asset_lock')
     .values({ assetId, reason: AssetLockReason.Marked, lockedBy: null })
     .execute();
+
+const recognize = (assetId: string, text: string) =>
+  defaultDatabase.insertInto('ocr_search').values({ assetId, text }).execute();
 
 const packageInput = (ownerId: string) => ({
   ownerId,
@@ -144,6 +149,44 @@ describe(PreservationRepository.name, () => {
 
       expect(created).toBeNull();
       expect(await sut.listPackages(owner.id)).toEqual([]);
+    });
+  });
+
+  describe('a search scope over recognized text (FL-74)', () => {
+    it('matches only the owner’s own items, and Locked ones only for an export that includes them', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: owner.id, inTimeline: true });
+      const { asset: visible } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: unrelated } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: partners } = await ctx.newAsset({ ownerId: partner.id });
+      await lock(locked.id);
+      await recognize(visible.id, 'Invoice 2041 Harbour Street');
+      await recognize(locked.id, 'Invoice 2041 Harbour Street');
+      await recognize(unrelated.id, 'Birthday card');
+      await recognize(partners.id, 'Invoice 2041 Harbour Street');
+      const selection = { filter: { ocr: { matches: 'Harbour Street' } } };
+
+      // The service tells an ordinary session only `items`; `lockedItems` is for an unlocked one.
+      expect(await sut.previewSelection(owner.id, selection)).toMatchObject({ items: 1, lockedItems: 1 });
+
+      const ordinary = await sut.createExport(packageInput(owner.id), (id) => `/exports/${id}`, selection, false, 100);
+      expect(await itemAssetIds(ordinary!.package.id)).toEqual({ [visible.id]: false });
+
+      const withLocked = await sut.createExport(
+        { ...packageInput(owner.id), includeLocked: true },
+        (id) => `/exports/${id}`,
+        selection,
+        true,
+        100,
+      );
+      expect(await itemAssetIds(withLocked!.package.id)).toEqual({ [visible.id]: false, [locked.id]: true });
+
+      // The partner's matching photo is theirs to preserve, not the owner's.
+      const theirs = await sut.createExport(packageInput(partner.id), (id) => `/exports/${id}`, selection, false, 100);
+      expect(await itemAssetIds(theirs!.package.id)).toEqual({ [partners.id]: false });
     });
   });
 
@@ -271,6 +314,80 @@ describe(PreservationRepository.name, () => {
       expect(locked.toSorted()).toEqual([idOf(ids[1]), idOf(ids[2])].toSorted());
     });
   });
+  describe('retrying a restoration (FL-74)', () => {
+    it('gives failed items their attempts back and keeps every choice the owner made', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { asset: matched } = await ctx.newAsset({ ownerId: owner.id });
+      const restore = await sut.createRestore({
+        ownerId: owner.id,
+        packageId: null,
+        name: 'Italy 2024',
+        status: 'restoring',
+        options: { conflictDefault: 'keep', restoreEditRecipes: true },
+      });
+      const ids = [newUuid(), newUuid(), newUuid()];
+      await sut.addRestoreItems(
+        restore.id,
+        ids.map((sourceAssetId) => ({
+          sourceAssetId,
+          locked: false,
+          entry: { sourceAssetId, originalFileName: 'a.jpg' },
+        })),
+      );
+      const rows = await defaultDatabase
+        .selectFrom('preservation_restore_item')
+        .select(['id', 'sourceAssetId'])
+        .where('restoreId', '=', restore.id)
+        .execute();
+      const idOf = (sourceAssetId: string) => rows.find((row) => row.sourceAssetId === sourceAssetId)!.id;
+      const [failed, applied, notMatched] = ids.map((id) => idOf(id));
+
+      // Choices made during the review, then an interrupted run: one item failed twice, one was
+      // restored, and one failed before it was ever matched against the library.
+      await sut.setDecisions(restore.id, [
+        { id: failed, decisions: { description: 'replace', date: 'keep' } },
+        { id: applied, decisions: { location: 'replace' } },
+      ]);
+      await sut.updateRestoreItem(failed, { state: 'failed', match: 'existing', assetId: matched.id, attempt: true });
+      await sut.updateRestoreItem(failed, { attempt: true, error: 'The server restarted' });
+      await sut.updateRestoreItem(applied, {
+        state: 'restored',
+        match: 'existing',
+        appliedAt: new Date(),
+        attempt: true,
+      });
+      await sut.updateRestoreItem(notMatched, { state: 'failed', attempt: true });
+
+      expect(await sut.resetFailedRestoreItems(restore.id)).toBe(1);
+
+      const read = async (id: string) =>
+        defaultDatabase
+          .selectFrom('preservation_restore_item')
+          .select(['state', 'attempts', 'decisions', 'appliedAt'])
+          .where('id', '=', id)
+          .executeTakeFirstOrThrow();
+      expect(await read(failed)).toMatchObject({
+        state: 'failed',
+        attempts: 0,
+        decisions: { description: 'replace', date: 'keep' },
+      });
+      // An item already restored is not touched again, choices included.
+      expect(await read(applied)).toMatchObject({
+        state: 'restored',
+        attempts: 1,
+        decisions: { location: 'replace' },
+        appliedAt: expect.any(Date),
+      });
+      // One that never reached the library goes back through the review, not the retry.
+      expect(await read(notMatched)).toMatchObject({ state: 'failed', attempts: 1 });
+      expect((await sut.getRestore(restore.id, owner.id))?.options).toEqual({
+        conflictDefault: 'keep',
+        restoreEditRecipes: true,
+      });
+    });
+  });
+
   describe('jsonb columns', () => {
     const typeOf = async (table: string, column: string, id: string) => {
       const { rows } = await sql<{ type: string }>`

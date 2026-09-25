@@ -695,16 +695,20 @@ export class ImageEnrichmentService extends BaseService {
 
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
   async handleQueueImageDescription({ force }: JobOf<JobName.ImageDescriptionQueueAll>): Promise<JobStatus> {
-    const { machineLearning } = await this.getConfig({ withCache: false });
+    const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
     if (!isImageDescriptionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
 
+    // Library care → "Reprocess only affected outputs" (FL-69, settings-catalog.mjs:966-971): a full
+    // rerun still visits every photo, but each keeps a current description and only one that is
+    // missing, failed or out of date (its original, confirmed names or prompt changed) is redone.
+    const onlyAffected = !!force && libraryCare.incrementalEnrichment;
     let jobs: JobItem[] = [];
     const assets = this.assetJobRepository.streamForImageDescriptionJob(force);
 
     for await (const asset of assets) {
-      jobs.push({ name: JobName.ImageDescription, data: { id: asset.id } });
+      jobs.push({ name: JobName.ImageDescription, data: { id: asset.id, ...(onlyAffected && { onlyAffected }) } });
 
       if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
         await this.jobRepository.queueAll(jobs);
@@ -841,8 +845,23 @@ export class ImageEnrichmentService extends BaseService {
   }
 
   @OnJob({ name: JobName.ImageDescription, queue: QueueName.ImageDescription })
-  async handleImageDescription({ id }: JobOf<JobName.ImageDescription>): Promise<JobStatus> {
+  async handleImageDescription({ id, onlyAffected }: JobOf<JobName.ImageDescription>): Promise<JobStatus> {
+    if (onlyAffected && !(await this.isDescriptionAffected(id))) {
+      return JobStatus.Skipped;
+    }
     return (await this.describeAsset(id)).status;
+  }
+
+  /**
+   * Whether a description has to be redone (FL-69): there is no successful one, or the one there is
+   * no longer describes what it claims to (`getDescriptionStaleReason`).
+   */
+  async isDescriptionAffected(id: string): Promise<boolean> {
+    const metadata = await this.getEnrichmentMetadata(id);
+    if (metadata.description?.status !== 'success') {
+      return true;
+    }
+    return (await this.getDescriptionStaleReason(id, metadata)) !== null;
   }
 
   /**
@@ -1168,6 +1187,7 @@ export class ImageEnrichmentService extends BaseService {
 
     const changed = await this.applyVisibleMetadata({
       id,
+      keepManual: config.libraryCare.manualMetadata,
       ownerId: asset.ownerId,
       existingDescription: asset.description ?? '',
       result,
@@ -1748,6 +1768,7 @@ export class ImageEnrichmentService extends BaseService {
 
   private async applyVisibleMetadata({
     id,
+    keepManual = true,
     ownerId,
     existingDescription,
     result,
@@ -1757,6 +1778,13 @@ export class ImageEnrichmentService extends BaseService {
     previousTagValues,
   }: {
     id: string;
+    /**
+     * Library care → "Preserve manual metadata on rerun" (FL-69, settings-catalog.mjs:972-977). On,
+     * the rerun replaces only the generated block its provenance identifies and keeps what a person
+     * wrote; off, the generated description replaces the whole visible description. Tags a person
+     * added are never touched either way: only the generated ones are recorded, so only they go.
+     */
+    keepManual?: boolean;
     ownerId: string;
     existingDescription: string;
     result: ImageDescriptionResult;
@@ -1777,10 +1805,9 @@ export class ImageEnrichmentService extends BaseService {
       metadata.description.appliedDescriptionHash !== descriptionHash
     ) {
       const block = getGeneratedDescriptionBlock(result.description);
-      const baseDescription = withoutGeneratedDescriptionBlocks(
-        existingDescription,
-        previousDescription ? [previousDescription] : [],
-      );
+      const baseDescription = keepManual
+        ? withoutGeneratedDescriptionBlocks(existingDescription, previousDescription ? [previousDescription] : [])
+        : '';
 
       if (!sidecarOnly && block && !baseDescription.includes(block)) {
         const description = baseDescription ? `${baseDescription}\n\n${block}` : block;

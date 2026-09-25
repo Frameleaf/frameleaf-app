@@ -131,11 +131,8 @@ export const mediaOperationDestinationOf = (kind: MlDestinationKind): MediaOpera
     case MlDestinationKind.Lan: {
       return MediaOperationDestination.Lan;
     }
-    // Both RunPod kinds are the configured RunPod workload as far as a job record is concerned;
-    // `destinationDetail` names which worker it was.
-    case MlDestinationKind.RunPod:
-    case MlDestinationKind.RunPodVideo: {
-      return MediaOperationDestination.RunPod;
+    case MlDestinationKind.FrameleafCloud: {
+      return MediaOperationDestination.FrameleafCloud;
     }
   }
 };

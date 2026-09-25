@@ -9,9 +9,10 @@ import {
 import { constants } from 'node:fs';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   CORRUPT_DELETE_STATUSES,
@@ -23,6 +24,7 @@ import {
   MediaHealthCandidateResponse,
   MediaHealthChooseCandidatesDto,
   MediaHealthDeleteCorruptDto,
+  MediaHealthItemResponse,
   MediaHealthListQueryDto,
   MediaHealthListResponseDto,
   MediaHealthLocateDto,
@@ -39,6 +41,8 @@ import {
 import {
   AssetVisibility,
   ChecksumAlgorithm,
+  DatabaseLock,
+  ImmichWorker,
   JobName,
   JobStatus,
   MediaHealthCategory,
@@ -54,7 +58,9 @@ import {
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -71,10 +77,12 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { BulkMediaHealthEntry, BulkOperationItem, bulkErrorMessage } from 'src/utils/bulk-operation.js';
+import { getConfig } from 'src/utils/config.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -101,6 +109,7 @@ import {
 import { getErrorMessage } from 'src/utils/media-health.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { handlePromiseError } from 'src/utils/misc.js';
 
 const MEDIA_HEALTH_PAGE_SIZE = 100;
 const MANAGED_LOOKUP_MAX_ENTRIES = 10_000;
@@ -110,8 +119,17 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
  * crawler never adopts a copy that is not committed yet.
  */
 const RECOVERY_FOLDER = '.library-care';
+/** The cron that starts every account's scheduled incremental health scan (Library care settings). */
+export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 
 type DurableScan = { missingRunId: string; corruptRunId: string; operationId: string };
+
+/**
+ * How often a scheduled scan is a full one (FL-69). An incremental scan only rechecks assets whose
+ * record changed, so an original removed or damaged on disk later, with no change to its record,
+ * would never be found; at least this often every asset's file is checked again.
+ */
+export const LIBRARY_CARE_FULL_SCAN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Run states that mean "a job is still working on this". */
 const OPEN_RUN_STATES: ReadonlySet<string> = new Set(['running', 'paused', 'retrying']);
@@ -140,6 +158,56 @@ export type MediaHealthScanPage = {
   missing: number;
   corrupt: number;
   lastId: string | null;
+};
+
+/**
+ * The status a dismissed finding goes back to (FL-69, UT-2): the one the dismissal recorded, when it
+ * still needs a decision. A finding dismissed while queued for the trash is confirmed damage again.
+ */
+const reopenedStatus = (value: unknown): MediaHealthStatus | undefined => {
+  if (value === MediaHealthStatus.TrashQueued || value === MediaHealthStatus.DeleteQueued) {
+    return MediaHealthStatus.CorruptConfirmed;
+  }
+  return NEEDS_ATTENTION_MEDIA_HEALTH_STATUSES.includes(value as MediaHealthStatus)
+    ? (value as MediaHealthStatus)
+    : undefined;
+};
+
+/** The digest an original's own checksum records, when it is a file checksum. */
+const expectedDigest = (asset: Pick<MediaHealthAsset, 'checksum' | 'checksumAlgorithm'>) =>
+  asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
+    ? { sha1: asset.checksum }
+    : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
+      ? { sha256: asset.checksum }
+      : undefined;
+
+const hex = (digest: Buffer | null | undefined) => (digest ? Buffer.from(digest).toString('hex') : null);
+
+/**
+ * The checksums recorded for an original (FL-69), which any copy must match exactly: the asset's
+ * own file checksum, and the fork's recorded digests of the file where there are any. A path
+ * checksum (external libraries before FL-69) says nothing about the file and is left out.
+ */
+export const expectedChecksums = (
+  asset: Pick<MediaHealthAsset, 'checksum' | 'checksumAlgorithm'>,
+  sidecar?: { sha1: Buffer | null; sha256: Buffer | null },
+): Array<{ algorithm: 'sha1' | 'sha256'; value: string }> => {
+  const byAlgorithm = new Map<'sha1' | 'sha256', string>();
+  if (asset.checksumAlgorithm === ChecksumAlgorithm.sha1File && hex(asset.checksum)) {
+    byAlgorithm.set('sha1', hex(asset.checksum)!);
+  }
+  if (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File && hex(asset.checksum)) {
+    byAlgorithm.set('sha256', hex(asset.checksum)!);
+  }
+  for (const algorithm of ['sha1', 'sha256'] as const) {
+    const value = hex(sidecar?.[algorithm]);
+    if (value && !byAlgorithm.has(algorithm)) {
+      byAlgorithm.set(algorithm, value);
+    }
+  }
+  return (['sha1', 'sha256'] as const)
+    .filter((algorithm) => byAlgorithm.has(algorithm))
+    .map((algorithm) => ({ algorithm, value: byAlgorithm.get(algorithm)! }));
 };
 
 const outcome = (
@@ -185,8 +253,129 @@ export class MediaHealthService {
     private configRepository: ConfigRepository,
     private mediaOperationRepository: MediaOperationRepository,
     private mediaOperationService: MediaOperationService,
+    private cronRepository: CronRepository,
+    private databaseRepository: DatabaseRepository,
+    private systemMetadataRepository: SystemMetadataRepository,
   ) {
     this.logger.setContext(MediaHealthService.name);
+  }
+
+  private scheduleLock = false;
+
+  /** The Library care settings (FL-69, settings-catalog.mjs:905-977) as saved now. */
+  async careSettings({ withCache = true }: { withCache?: boolean } = {}) {
+    const config = await getConfig(
+      {
+        configRepo: this.configRepository,
+        metadataRepo: this.systemMetadataRepository,
+        logger: this.logger,
+        forkSchemaRepo: this.forkSchemaRepository,
+      },
+      { withCache },
+    );
+    return config.libraryCare;
+  }
+
+  /**
+   * "Schedule incremental health scans" (Library care → Media health & integrity). One server holds
+   * the schedule, as the integrity checks do; each tick starts every account's durable scan.
+   */
+  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  async onConfigInit({ newConfig: { libraryCare } }: ArgOf<'ConfigInit'>) {
+    this.scheduleLock = await this.databaseRepository.tryLock(DatabaseLock.LibraryCareSchedule);
+    if (!this.scheduleLock) {
+      return;
+    }
+    this.cronRepository.create({
+      name: LIBRARY_CARE_HEALTH_SCAN_CRON,
+      expression: libraryCare.healthScanCronExpression,
+      onTick: () => handlePromiseError(this.startScheduledScans(), this.logger),
+      start: libraryCare.healthScan,
+    });
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', server: true })
+  onConfigUpdate({ newConfig: { libraryCare } }: ArgOf<'ConfigUpdate'>) {
+    if (!this.scheduleLock) {
+      return;
+    }
+    this.cronRepository.update({
+      name: LIBRARY_CARE_HEALTH_SCAN_CRON,
+      expression: libraryCare.healthScanCronExpression,
+      start: libraryCare.healthScan,
+    });
+  }
+
+  /**
+   * Start every account's scheduled health scan (FL-69). Incremental: an account whose last scan
+   * completed is scanned for what changed since that scan began; one never scanned, or whose last
+   * full scan is older than `LIBRARY_CARE_FULL_SCAN_INTERVAL_MS`, is scanned in full, so files
+   * removed or damaged without any change to their records are found too. Each is the same durable, checkpointed job as "Scan again", so an interrupted scan carries
+   * on from its checkpoint, and an account with a scan already open keeps it instead of getting a
+   * second one (a scan somebody paused stays paused). Returns how many accounts have a scan.
+   */
+  async startScheduledScans(): Promise<number> {
+    const { healthScan } = await this.careSettings({ withCache: false });
+    if (!healthScan) {
+      return 0;
+    }
+    let scheduled = 0;
+    for (const user of await this.userRepository.getList()) {
+      try {
+        const changedSince = await this.incrementalScanStart(user.id);
+        await this.mediaHealthRepository.withLibraryCareLock(user.id, () =>
+          this.admitDurableScan(user.id, { changedSince, scheduled: true }),
+        );
+        scheduled++;
+      } catch (error) {
+        this.logger.warn(`Scheduled Library Care scan for ${user.id} was not started: ${getErrorMessage(error)}`);
+      }
+    }
+    return scheduled;
+  }
+
+  /**
+   * Where the account's next scheduled scan starts from: the start of its last completed scan, or
+   * undefined for a full scan (never scanned, or no full scan completed within the interval).
+   */
+  private async incrementalScanStart(ownerId: string): Promise<string | undefined> {
+    const { lastScanAt, lastFullScanAt } = await this.lastCompletedScans(ownerId);
+    if (!lastScanAt || !lastFullScanAt) {
+      return undefined;
+    }
+    return Date.now() - new Date(lastFullScanAt).getTime() >= LIBRARY_CARE_FULL_SCAN_INTERVAL_MS
+      ? undefined
+      : lastScanAt;
+  }
+
+  /** When the account's last completed scan, and its last completed full scan, were started. */
+  private async lastCompletedScans(ownerId: string): Promise<{ lastScanAt?: string; lastFullScanAt?: string }> {
+    const { items } = await this.mediaOperationRepository.list({
+      ownerId,
+      kind: MediaOperationKind.MediaHealth,
+      statuses: [MediaOperationStatus.Completed],
+      includeDismissed: true,
+      take: 20,
+      skip: 0,
+    });
+    let lastScanAt: string | undefined;
+    for (const operation of items) {
+      try {
+        const snapshot = parseMediaHealthSnapshot(operation.snapshot);
+        if (snapshot.mode !== 'scan') {
+          continue;
+        }
+        const startedAt = asDateTimeString(operation.createdAt as unknown as Date);
+        lastScanAt ??= startedAt;
+        if (!snapshot.changedSince) {
+          return { lastScanAt, lastFullScanAt: startedAt };
+        }
+      } catch {
+        // an unreadable snapshot is not a scan this can count from
+      }
+    }
+    // No full scan among the recent ones: the next one is full.
+    return { lastScanAt };
   }
 
   async list(auth: AuthDto, dto: MediaHealthListQueryDto): Promise<MediaHealthListResponseDto> {
@@ -209,16 +398,18 @@ export class MediaHealthService {
       this.mediaHealthRepository.count(listOptions),
       this.mediaHealthRepository.getLatestRun(dto.category, ownerId ?? auth.user.id),
     ]);
-    const [assets, candidates] = await Promise.all([
+    const [assets, candidates, sidecars] = await Promise.all([
       this.mediaHealthRepository.getAssets(
         findings.map(({ assetId }) => assetId),
         ownerId,
         privacy,
       ),
       this.mediaHealthRepository.getCandidatesByHealthIds(findings.map(({ id }) => id)),
+      this.mediaHealthRepository.getAssetChecksums(findings.map(({ assetId }) => assetId)),
     ]);
 
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+    const sidecarByAsset = new Map(sidecars.map((sidecar) => [sidecar.assetId, sidecar]));
     const candidatesByHealthId = this.groupCandidates(candidates);
     const rootsByOwner = await this.ownerRoots(assets.map(({ ownerId }) => ownerId));
     const searchRoots = await this.searchRoots();
@@ -238,6 +429,7 @@ export class MediaHealthService {
       const timeBucket = asset.localDateTime.toISOString().slice(0, 10);
       const bucket = buckets.get(timeBucket) ?? { timeBucket, count: 0, items: [] };
       const chosenCandidateId = (finding.resolution as Record<string, unknown> | null)?.chosenCandidateId;
+      const evidence = this.findingEvidenceFor(finding.evidence, asset.isExternal ? null : candidateRoots, auth);
       bucket.items.push({
         id: finding.id,
         assetId: finding.assetId,
@@ -246,7 +438,7 @@ export class MediaHealthService {
         severity: finding.severity,
         originalPath,
         originalFileName: finding.originalFileName,
-        evidence: this.findingEvidenceFor(finding.evidence, asset.isExternal ? null : candidateRoots, auth),
+        evidence,
         resolution: finding.resolution,
         checkedAt: asDateTimeString(finding.checkedAt),
         dismissedAt: finding.dismissedAt ? asDateTimeString(finding.dismissedAt) : null,
@@ -261,6 +453,8 @@ export class MediaHealthService {
             auth,
           ),
         ),
+        expectedChecksums: expectedChecksums(asset, sidecarByAsset.get(asset.id)),
+        provenance: this.provenanceFor(evidence, finding, searchRoots),
       });
       bucket.count = bucket.items.length;
       buckets.set(timeBucket, bucket);
@@ -281,7 +475,7 @@ export class MediaHealthService {
     const { ownerId } = this.scopeFor(auth, dto);
     const runOwner = ownerId ?? auth.user.id;
     await this.releaseStaleTrashQueue();
-    const [byStatus, duplicates, importReview, enrichmentPending, missingRun, corruptRun, jobs, bulk] =
+    const [byStatus, duplicates, importReview, enrichmentPending, missingRun, corruptRun, jobs, bulk, care] =
       await Promise.all([
         this.mediaHealthRepository.countByStatus({ ownerId, privacy }),
         this.mediaHealthRepository.countDuplicateGroups({ ownerId, privacy }),
@@ -304,6 +498,7 @@ export class MediaHealthService {
           take: 30,
           skip: 0,
         }),
+        this.careSettings(),
       ]);
 
     const countOf = (category: MediaHealthCategory, statuses: MediaHealthStatus[]) =>
@@ -339,6 +534,13 @@ export class MediaHealthService {
         duplicates,
         importReview,
         enrichmentPending,
+      },
+      care: {
+        healthScan: care.healthScan,
+        checksumScan: care.checksumScan,
+        integrityAudit: care.integrityAudit,
+        rawRecovery: care.rawRecovery,
+        duplicateReview: care.duplicateReview,
       },
       operation: latest ? this.mapOperationState(latest) : null,
       runs: {
@@ -597,13 +799,21 @@ export class MediaHealthService {
    */
   async locateMissing(auth: AuthDto, dto: MediaHealthLocateDto): Promise<MediaHealthScanResponseDto> {
     const findings = await this.findingsFor(auth, dto.ids);
-    const searchable = findings.filter(
+    const eligible = findings.filter(
       (finding) =>
         finding.category === MediaHealthCategory.Missing ||
         (finding.category === MediaHealthCategory.Corrupt && finding.status === MediaHealthStatus.CorruptConfirmed),
     );
-    if (searchable.length === 0) {
+    if (eligible.length === 0) {
       throw new BadRequestException('Choose missing originals or confirmed damage to search for');
+    }
+    // Library care → "Suggest recoverable RAW sources": off, RAW originals are not searched for.
+    const { rawRecovery } = await this.careSettings();
+    const searchable = rawRecovery
+      ? eligible
+      : eligible.filter((finding) => !mimeTypes.isRaw(finding.originalFileName));
+    if (searchable.length === 0) {
+      throw new BadRequestException('Searching for RAW sources is turned off in Library care settings');
     }
 
     const rootIds = dto.rootIds ? [...new Set(dto.rootIds)] : null;
@@ -653,6 +863,66 @@ export class MediaHealthService {
       findings.map(({ id }) => id),
       auth.user.isAdmin ? undefined : auth.user.id,
     );
+  }
+
+  /**
+   * Undo (FL-69, UT-2; UtilitiesManager.jsx:295-320): put findings back in review.
+   *
+   * A dismissal is undone to the status the finding had, which the dismissal recorded. Damage moved
+   * to the trash is reopened as confirmed damage only once its item is back out of the trash (the
+   * page restores it first) and no trash job still holds it. Nothing else is reopened: a relink or a
+   * recovery changed the original, and undoing that is a new, reviewed repair, not a status change.
+   */
+  async reopen(auth: AuthDto, dto: MediaHealthBulkActionDto): Promise<MediaHealthBulkResponseDto> {
+    const findings = await this.findingsFor(auth, dto.ids);
+    const findingById = new Map(findings.map((finding) => [finding.id, finding]));
+    const [held, assets] = await Promise.all([
+      this.mediaHealthRepository.getActiveTrashFindingIds(),
+      this.mediaHealthRepository.getAssets(
+        findings.map(({ assetId }) => assetId),
+        auth.user.isAdmin ? undefined : auth.user.id,
+        this.privacyFor(auth),
+      ),
+    ]);
+    const heldIds = new Set(held);
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+
+    const results: MediaHealthBulkResponseDto['results'] = [];
+    for (const id of new Set(dto.ids)) {
+      const finding = findingById.get(id);
+      if (!finding) {
+        results.push({ id, success: false, error: 'Finding is not available' });
+        continue;
+      }
+
+      let to: MediaHealthStatus | undefined;
+      let error = 'Only a dismissed finding, or damage restored from the trash, can be reopened';
+      if (finding.status === MediaHealthStatus.Dismissed) {
+        to = reopenedStatus((finding.resolution as Record<string, unknown> | null)?.dismissedFrom);
+        error = 'This finding was dismissed before it could be undone; scan again to review it';
+      } else if (
+        finding.category === MediaHealthCategory.Corrupt &&
+        (finding.status === MediaHealthStatus.Trashed || finding.status === MediaHealthStatus.TrashQueued)
+      ) {
+        const asset = assetById.get(finding.assetId);
+        if (asset && !asset.deletedAt && !heldIds.has(finding.id)) {
+          to = MediaHealthStatus.CorruptConfirmed;
+        }
+        error = 'Restore the item from the trash first';
+      }
+
+      if (!to) {
+        results.push({ id, success: false, status: finding.status, error });
+        continue;
+      }
+      const reopened = await this.mediaHealthRepository.reopenFinding(finding.id, finding.status, to);
+      results.push(
+        reopened
+          ? { id, success: true, status: to }
+          : { id, success: false, status: finding.status, error: 'The finding changed; refresh and try again' },
+      );
+    }
+    return { results };
   }
 
   /**
@@ -1319,11 +1589,14 @@ export class MediaHealthService {
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
   private startDurableScan(auth: AuthDto): Promise<DurableScan> {
-    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () => this.admitDurableScan(auth));
+    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () => this.admitDurableScan(auth.user.id));
   }
 
-  private async admitDurableScan(auth: AuthDto): Promise<DurableScan> {
-    const active = await this.activeJob(auth.user.id);
+  private async admitDurableScan(
+    ownerId: string,
+    options: { changedSince?: string; scheduled?: boolean } = {},
+  ): Promise<DurableScan> {
+    const active = await this.activeJob(ownerId);
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
       if (snapshot.mode === 'scan') {
@@ -1333,17 +1606,19 @@ export class MediaHealthService {
     }
 
     const [missingRun, corruptRun] = await Promise.all([
-      this.mediaHealthRepository.createRun(MediaHealthCategory.Missing, auth.user.id),
-      this.mediaHealthRepository.createRun(MediaHealthCategory.Corrupt, auth.user.id),
+      this.mediaHealthRepository.createRun(MediaHealthCategory.Missing, ownerId),
+      this.mediaHealthRepository.createRun(MediaHealthCategory.Corrupt, ownerId),
     ]);
     const snapshot: MediaHealthOperationSnapshot = {
       mode: 'scan',
-      userId: auth.user.id,
+      userId: ownerId,
       missingRunId: missingRun.id,
       corruptRunId: corruptRun.id,
+      ...(options.changedSince && { changedSince: options.changedSince }),
+      ...(options.scheduled && { scheduled: true }),
     };
     try {
-      const operation = await this.createHealthOperation(auth.user.id, snapshot, null);
+      const operation = await this.createHealthOperation(ownerId, snapshot, null);
       return { missingRunId: missingRun.id, corruptRunId: corruptRun.id, operationId: operation.id };
     } catch (error) {
       const failure = { status: 'failed' as const, error: getErrorMessage(error) };
@@ -1396,9 +1671,11 @@ export class MediaHealthService {
     });
   }
 
-  /** Assets an owner's durable scan covers. */
-  countScanAssets(userId: string): Promise<number> {
-    return this.mediaHealthRepository.countScanAssets(userId);
+  /** Assets an owner's durable scan covers: all of them, or those changed since `changedSince`. */
+  countScanAssets(userId: string, changedSince?: string): Promise<number> {
+    return changedSince
+      ? this.mediaHealthRepository.countScanAssets(userId, new Date(changedSince))
+      : this.mediaHealthRepository.countScanAssets(userId);
   }
 
   /**
@@ -1411,10 +1688,16 @@ export class MediaHealthService {
     afterId: string | null,
     limit: number,
   ): Promise<MediaHealthScanPage> {
-    const assets = await this.mediaHealthRepository.getAssetPage({ ownerId: snapshot.userId, afterId, limit });
+    const assets = await this.mediaHealthRepository.getAssetPage({
+      ownerId: snapshot.userId,
+      afterId,
+      limit,
+      ...(snapshot.changedSince && { changedSince: new Date(snapshot.changedSince) }),
+    });
+    const { checksumScan } = await this.careSettings();
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
     for (const asset of assets) {
-      const found = await this.scanAsset(asset, snapshot.missingRunId, snapshot.corruptRunId);
+      const found = await this.scanAsset(asset, snapshot.missingRunId, snapshot.corruptRunId, { checksumScan });
       page.checked++;
       page.lastId = asset.id;
       if (found === 'missing') {
@@ -1870,12 +2153,13 @@ export class MediaHealthService {
     let corruptFoundAssets = 0;
 
     try {
+      const { checksumScan } = await this.careSettings();
       for await (const asset of this.mediaHealthRepository.streamAssets({
         assetIds: job.assetIds,
         ownerId: job.userId,
       })) {
         checkedAssets++;
-        const found = await this.scanAsset(asset, missingRunId, corruptRunId);
+        const found = await this.scanAsset(asset, missingRunId, corruptRunId, { checksumScan });
         if (found === 'missing') {
           missingFoundAssets++;
         } else if (found === 'corrupt') {
@@ -1933,6 +2217,7 @@ export class MediaHealthService {
     asset: MediaHealthAsset,
     missingRunId: string,
     corruptRunId: string | null,
+    { checksumScan = true }: { checksumScan?: boolean } = {},
   ): Promise<'missing' | 'corrupt' | 'healthy'> {
     const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     if (!sourceExists) {
@@ -1956,7 +2241,9 @@ export class MediaHealthService {
       await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
       return 'healthy';
     }
-    const result = await this.validateReadableAssetIntegrity(asset);
+    // "Verify original checksums" off: the scan still reads and decodes every original, but no longer
+    // proves it is the recorded file. Repairs and the trash always verify, whatever this says.
+    const result = await this.validateReadableAssetIntegrity(asset, { verifyChecksum: checksumScan });
     if (!result) {
       await this.mediaHealthRepository.markResolvedForAssets(
         [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
@@ -2117,17 +2404,15 @@ export class MediaHealthService {
     }
   }
 
-  private async validateReadableAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
+  private async validateReadableAssetIntegrity(
+    asset: MediaHealthAsset,
+    { verifyChecksum = true }: { verifyChecksum?: boolean } = {},
+  ): Promise<CandidateValidation | null> {
     const result = await this.integrityService.validate({
       path: asset.originalPath,
       originalFileName: asset.originalFileName,
       type: asset.type,
-      expected:
-        asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
-          ? { sha1: asset.checksum }
-          : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
-            ? { sha256: asset.checksum }
-            : undefined,
+      expected: verifyChecksum ? expectedDigest(asset) : undefined,
       deep: true,
     });
     if (result.status === 'healthy') {
@@ -2287,6 +2572,9 @@ export class MediaHealthService {
                 path: candidatePath,
                 reason: importedAssetId ? 'candidate_already_imported' : 'checksum_match',
                 algorithms: [algorithm],
+                // The file's own digests, as measured, for the review (FL-69).
+                sha1: digests.sha1.toString('hex'),
+                sha256: digests.sha256.toString('hex'),
                 ...(importedAssetId && { assetId: importedAssetId }),
               },
               resolution: { autoRelinkable: !importedAssetId },
@@ -2466,6 +2754,9 @@ export class MediaHealthService {
             reason: conflict ? 'checksum_evidence_conflict' : 'checksum_match',
             algorithms: [...algorithms],
             searchTruncated: truncated,
+            // A match is the recorded digest itself; kept for the review (FL-69).
+            ...(algorithms.has('sha1') && target.sha1[0] && { sha1: target.sha1[0].toString('hex') }),
+            ...(algorithms.has('sha256') && target.sha256[0] && { sha256: target.sha256[0].toString('hex') }),
           },
           resolution: { autoRelinkable: !conflict && !truncated },
         })),
@@ -2564,6 +2855,43 @@ export class MediaHealthService {
       checksumMatch: algorithms.length > 0 && evidence.reason !== 'checksum_evidence_conflict',
       decodeValid: typeof evidence.decodeValid === 'boolean' ? evidence.decodeValid : null,
       chosen,
+      checksums: (['sha1', 'sha256'] as const)
+        .filter((algorithm) => typeof evidence[algorithm] === 'string')
+        .map((algorithm) => ({ algorithm, value: evidence[algorithm] as string })),
+    };
+  }
+
+  /**
+   * Who relinked or recovered this original, from which location and when (FL-69), read from the
+   * finding's evidence as its reader may see it: for anyone but an administrator the provenance was
+   * already left out there, so this is null.
+   */
+  private provenanceFor(
+    evidence: Record<string, unknown>,
+    finding: MediaHealthFinding,
+    searchRoots: MediaHealthRoot[],
+  ): MediaHealthItemResponse['provenance'] {
+    const source = evidence.provenance;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      return null;
+    }
+    const text = (value: unknown) => (typeof value === 'string' && value !== '' ? value : null);
+    const record = source as Record<string, unknown>;
+    const recoveredBy = text(record.recoveredBy);
+    const relinkedBy = text(record.relinkedBy);
+    if (!recoveredBy && !relinkedBy) {
+      return null;
+    }
+    const rootId = text(record.rootId);
+    return {
+      action: recoveredBy ? 'recovered' : 'relinked',
+      userId: recoveredBy ?? relinkedBy,
+      rootId,
+      rootKind: rootId ? (rootKindOf(rootId) ?? null) : null,
+      rootLabel: text(record.rootLabel) ?? searchRoots.find(({ id }) => id === rootId)?.label ?? null,
+      at: text(record.recoveredAt) ?? (finding.resolvedAt ? asDateTimeString(finding.resolvedAt) : null),
+      previousPath: text(evidence.previousPath),
+      sourcePath: text(evidence.candidatePath),
     };
   }
 

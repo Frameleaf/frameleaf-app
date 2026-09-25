@@ -48,6 +48,7 @@
     StudioCapabilities,
     StudioEngineInstance,
     StudioHostContext,
+    StudioRenderEvidence,
     StudioHostServices,
     StudioProjectHandle,
     StudioWorkspaceMode,
@@ -79,6 +80,7 @@
     handoffAssetIds = [],
     auth,
     capabilities,
+    renderEvidence = [],
     services,
     onBack,
     onOpenActivity,
@@ -114,6 +116,8 @@
     handoffAssetIds?: readonly string[];
     auth: StudioAuthContext;
     capabilities: StudioCapabilities;
+    /** FL-42: what qualified render workers verified, for the engine's export sheet. */
+    renderEvidence?: readonly StudioRenderEvidence[];
     services: StudioHostServices;
     onBack: () => void;
     /**
@@ -201,6 +205,7 @@
     auth,
     theme: readStudioThemeTokens(appTheme, root ?? null),
     capabilities,
+    renderEvidence,
     preview,
     online,
     mode,

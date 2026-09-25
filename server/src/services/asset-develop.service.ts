@@ -42,6 +42,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -60,6 +61,8 @@ import {
   planDevelopDetail,
   planDevelopGeometry,
 } from 'src/utils/develop-recipe.js';
+import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
+import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -118,9 +121,16 @@ export class AssetDevelopService {
     private photoToolsRepository: PhotoToolsRepository,
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private mediaOperationRepository: MediaOperationRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
+    this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
   }
+
+  /** FL-43: every render of a version is a job in Activity, run under its row's claim. */
+  private editOperations: EditOperationTracker;
+  /** The runs in progress by revision, so a stage's progress and a cancel reach the job's row. */
+  private runs = new Map<string, EditOperationRun>();
 
   async get(auth: AuthDto, assetId: string): Promise<AssetDevelopResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
@@ -140,14 +150,14 @@ export class AssetDevelopService {
       status: AssetDevelopRevisionStatus.Saved,
     });
     if (dto.render) {
-      return this.queueRender(revision);
+      return this.queueRender(revision, asset.originalFileName);
     }
     return this.toRevisionDto(revision);
   }
 
   async render(auth: AuthDto, assetId: string, revisionId: string): Promise<AssetDevelopRevisionResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
-    await this.requireEditableStill(assetId);
+    const asset = await this.requireEditableStill(assetId);
     const revision = await this.requireRevision(assetId, revisionId);
     if (
       revision.status === AssetDevelopRevisionStatus.Queued ||
@@ -155,7 +165,7 @@ export class AssetDevelopService {
     ) {
       return this.toRevisionDto(revision);
     }
-    return this.queueRender(revision);
+    return this.queueRender(revision, asset.originalFileName);
   }
 
   async cancel(auth: AuthDto, assetId: string, revisionId: string): Promise<AssetDevelopRevisionResponseDto> {
@@ -169,10 +179,13 @@ export class AssetDevelopService {
         cancelRequested: true,
         progress: 0,
       });
+      // FL-43: its job in Activity is cancelled with it.
+      await this.editOperations.cancelRevision(revision.ownerId, revision.id);
       return this.toRevisionDto(updated ?? revision);
     }
     if (revision.status === AssetDevelopRevisionStatus.Rendering) {
       await this.assetDevelopRepository.requestCancel(revision.id);
+      await this.editOperations.cancelRevision(revision.ownerId, revision.id);
       return this.toRevisionDto({ ...revision, cancelRequested: true });
     }
     return this.toRevisionDto(revision);
@@ -252,21 +265,51 @@ export class AssetDevelopService {
    * person to retry it.
    */
   @OnJob({ name: JobName.AssetDevelopRender, queue: QueueName.Editor })
-  async handleRender({ id }: JobOf<JobName.AssetDevelopRender>): Promise<JobStatus> {
+  async handleRender({ id, operationId }: JobOf<JobName.AssetDevelopRender>): Promise<JobStatus> {
+    // FL-43: a render queued with its Activity job runs under that job's claim. One cancelled in
+    // Activity before it started never starts, and the version reads cancelled.
+    return this.editOperations.execute(
+      operationId,
+      async (run) => {
+        if (run) {
+          this.runs.set(id, run);
+        }
+        try {
+          return await this.renderRevision(id, run);
+        } finally {
+          this.runs.delete(id);
+        }
+      },
+      {
+        onCancelled: async () => {
+          await this.assetDevelopRepository.update(id, {
+            status: AssetDevelopRevisionStatus.Cancelled,
+            cancelRequested: true,
+            progress: 0,
+          });
+        },
+      },
+    );
+  }
+
+  private async renderRevision(id: string, run?: EditOperationRun): Promise<JobStatus> {
     const existing = await this.assetDevelopRepository.get(id);
     if (!existing) {
       this.logger.warn(`Develop render skipped: revision ${id} no longer exists`);
+      await run?.fail('This version no longer exists', 'revision_missing', { retry: false });
       return JobStatus.Skipped;
     }
     if (existing.cancelRequested) {
       if (existing.status !== AssetDevelopRevisionStatus.Cancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
       }
+      await run?.cancelled();
       return JobStatus.Skipped;
     }
     if (!this.isClaimable(existing)) {
       // Finished, failed, or a live render already holds it: a stale or duplicate delivery must
       // never replace valid files or race the render in progress.
+      await this.settleUnclaimable(existing, run);
       return JobStatus.Skipped;
     }
 
@@ -276,6 +319,7 @@ export class AssetDevelopService {
         status: AssetDevelopRevisionStatus.Failed,
         error: 'The original image is no longer available',
       });
+      await run?.fail('The original image is no longer available', 'source_missing', { retry: false });
       return JobStatus.Failed;
     }
 
@@ -285,6 +329,8 @@ export class AssetDevelopService {
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
+      // Another delivery took it between the check above and here; this job waits its turn.
+      await run?.release(DEVELOP_RENDER_LEASE_MS);
       return JobStatus.Skipped;
     }
 
@@ -299,6 +345,11 @@ export class AssetDevelopService {
       } else {
         await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
       }
+      // FL-43: the version becomes the working one only under its job's claim. A run that lost its
+      // claim, or was cancelled at the last moment, leaves the previous working version current.
+      if (run && !(await run.validate())) {
+        return JobStatus.Skipped;
+      }
       // Rendering a version makes it the working version; Revert walks back through history.
       await this.assetDevelopRepository.setCurrent(revision.assetId, id);
       return JobStatus.Success;
@@ -306,10 +357,14 @@ export class AssetDevelopService {
       await this.discard(external ? [tmp.preview] : [tmp.master, tmp.preview]);
       if (error instanceof DevelopRenderCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
+        await run?.cancelled();
         return JobStatus.Skipped;
       }
       const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
       const permanent = error instanceof DevelopSourceChanged;
+      if (run) {
+        return this.failTracked(run, revision, message, permanent);
+      }
       if (!permanent && revision.attempts <= MEDIA_OPERATION_AUTO_RETRIES) {
         this.logger.warn(`Develop render of revision ${id} failed, retrying once: ${message}`);
         await this.assetDevelopRepository.update(id, {
@@ -335,14 +390,68 @@ export class AssetDevelopService {
   }
 
   /**
+   * A render under an Activity job failed (FL-43). The job decides the one automatic retry every
+   * job gets: while it has it, the version waits queued and the job is put back on the queue for
+   * it; after that, or for a source that changed, the version and the job both read failed.
+   */
+  private async failTracked(
+    run: EditOperationRun,
+    revision: AssetDevelopRevision,
+    message: string,
+    permanent: boolean,
+  ): Promise<JobStatus> {
+    const id = revision.id;
+    const outcome = await run.fail(message, permanent ? 'source_changed' : 'edit_render_failed', {
+      retry: !permanent,
+    });
+    if (outcome === 'retrying') {
+      this.logger.warn(`Develop render of revision ${id} failed, retrying once: ${message}`);
+      await this.assetDevelopRepository.update(id, {
+        status: AssetDevelopRevisionStatus.Queued,
+        progress: 0,
+        error: message,
+      });
+      return JobStatus.Failed;
+    }
+    this.logger.error(`Develop render failed for revision ${id}: ${message}`);
+    await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+    if (revision.kind === AssetDevelopRevisionKind.External && permanent && revision.masterPath) {
+      await this.assetDevelopRepository.update(id, { masterPath: null });
+      await this.discard([revision.masterPath]);
+    }
+    return JobStatus.Failed;
+  }
+
+  /**
+   * A tracked render found its version not waiting (FL-43): already rendered is nothing left to do;
+   * held by a render still inside its lease waits for it; anything else is a version that is no
+   * longer queued, which retrying the job would not change.
+   */
+  private async settleUnclaimable(revision: AssetDevelopRevision, run?: EditOperationRun) {
+    if (!run) {
+      return;
+    }
+    if (revision.status === AssetDevelopRevisionStatus.Rendered) {
+      await run.complete(null);
+    } else if (revision.status === AssetDevelopRevisionStatus.Rendering) {
+      await run.release(DEVELOP_RENDER_LEASE_MS);
+    } else {
+      await run.fail('This version is no longer waiting to be rendered', 'revision_not_queued', { retry: false });
+    }
+  }
+
+  /**
    * Puts renders the queue lost back on it: a restart or a flushed queue leaves rows queued, or
    * rendering with a lapsed lease, that no job will ever pick up. The render claim itself
-   * refuses a live one, so requeueing is safe to repeat.
+   * refuses a live one, so requeueing is safe to repeat. A render with an Activity job (FL-43) is
+   * left to that job's recovery, which dispatches it again with its row.
    */
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
   async onBootstrap() {
     const unfinished = await this.assetDevelopRepository.listUnfinished();
-    const lost = unfinished.filter((revision) => this.isClaimable(revision));
+    const claimable = unfinished.filter((revision) => this.isClaimable(revision));
+    const tracked = await this.mediaOperationRepository.getTrackedRevisionIds(claimable.map(({ id }) => id));
+    const lost = claimable.filter(({ id }) => !tracked.has(id));
     if (lost.length === 0) {
       return;
     }
@@ -471,7 +580,7 @@ export class AssetDevelopService {
       });
       kept = undefined;
       this.logger.log(`Developed file ${fileName} brought back as version ${revision.revision} of asset ${assetId}`);
-      return await this.queueRender(revision);
+      return await this.queueRender(revision, asset.originalFileName);
     } finally {
       // Whatever was not recorded is removed: the staged upload, or a kept copy with no row.
       await this.discard([file.path, ...(kept ? [kept] : [])]);
@@ -488,7 +597,7 @@ export class AssetDevelopService {
     }
   }
 
-  private async queueRender(revision: AssetDevelopRevision): Promise<AssetDevelopRevisionResponseDto> {
+  private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {
     // A person asking for a render starts afresh: it gets its own automatic retry.
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
@@ -497,7 +606,15 @@ export class AssetDevelopService {
       cancelRequested: false,
       attempts: 0,
     });
-    await this.jobRepository.queue({ name: JobName.AssetDevelopRender, data: { id: revision.id } });
+    // FL-43: the render is a job in Activity, named by the photo, pointing at this version.
+    await this.editOperations.queue({
+      ownerId: revision.ownerId,
+      edit: EditOperationEdit.PhotoVersion,
+      assetId: revision.assetId,
+      label,
+      revisionId: revision.id,
+      job: { name: JobName.AssetDevelopRender, data: { id: revision.id } },
+    });
     return this.toRevisionDto(queued ?? revision);
   }
 
@@ -741,6 +858,12 @@ export class AssetDevelopService {
   }
 
   private async progress(id: string, progress: number) {
+    // FL-43: the stage reaches the version's Activity job too, and a cancel asked for there stops
+    // the render at this stage exactly as one asked for from the editor does.
+    const run = this.runs.get(id);
+    if (run && !(await run.progress(progress)) && (await run.cancelRequested())) {
+      throw new DevelopRenderCancelled();
+    }
     if (await this.assetDevelopRepository.isCancelRequested(id)) {
       throw new DevelopRenderCancelled();
     }

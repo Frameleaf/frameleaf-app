@@ -48,16 +48,13 @@ export const mlEndpointState = (
     : 'unchecked';
 };
 
-/** "Cloud destination": RunPod when library analysis is routed to a cloud destination. */
+/** "Cloud destination": Frameleaf Cloud when a library workload is routed to it (FL-159). */
 export const cloudDestinationState = (
   destinations: MlDestinationResponseDto[],
   routes: MlWorkloadRouteDto[],
-): 'runpod' | 'local' =>
-  libraryDestinations(destinations, routes).some(
-    (destination) =>
-      destination.kind === MlDestinationKind.Runpod || destination.kind === MlDestinationKind.RunpodVideo,
-  )
-    ? 'runpod'
+): 'frameleaf' | 'local' =>
+  libraryDestinations(destinations, routes).some((destination) => destination.kind === MlDestinationKind.FrameleafCloud)
+    ? 'frameleaf'
     : 'local';
 
 /** "GPU Studio": qualified when every render kind has a qualified GPU worker. */

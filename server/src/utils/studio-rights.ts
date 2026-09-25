@@ -36,7 +36,7 @@ export const studioRightsId = (catalog: StudioRightsCatalog, name: string) => `$
 
 /** Local and LAN workers run on the deployment's own machines; the cloud destination is hosted use. */
 export const studioRightsUseFor = (destination: StudioDestination): StudioRightsUse =>
-  destination === StudioDestination.RunPod ? StudioRightsUse.HostedUse : StudioRightsUse.LocalRuntime;
+  destination === StudioDestination.FrameleafCloud ? StudioRightsUse.HostedUse : StudioRightsUse.LocalRuntime;
 
 const useLabel: Record<StudioRightsUse, string> = {
   [StudioRightsUse.Redistribution]: 'redistribution',

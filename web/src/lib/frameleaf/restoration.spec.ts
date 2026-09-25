@@ -115,10 +115,10 @@ describe('restoration presentation rules (FL-115)', () => {
   });
 
   it('orders destinations admissible first, local before cloud, and never hides a refused one', () => {
-    const runPod = destination({
-      id: 'runpod',
-      kind: MlDestinationKind.Runpod,
-      name: 'RunPod',
+    const cloud = destination({
+      id: 'cloud',
+      kind: MlDestinationKind.FrameleafCloud,
+      name: 'Frameleaf Cloud',
       available: false,
       leavesNetwork: true,
       consentRequired: true,
@@ -127,23 +127,23 @@ describe('restoration presentation rules (FL-115)', () => {
     });
     const lan = destination({ id: 'lan', kind: MlDestinationKind.Lan, name: 'Workshop GPU' });
     const localDown = destination({ id: 'local', available: false, refusal: MlAdmissionRefusal.DestinationUnhealthy });
-    const ordered = orderedDestinations([runPod, localDown, lan]);
-    expect(ordered.map((item) => item.id)).toEqual(['lan', 'local', 'runpod']);
+    const ordered = orderedDestinations([cloud, localDown, lan]);
+    expect(ordered.map((item) => item.id)).toEqual(['lan', 'local', 'cloud']);
   });
 
   it('defaults to a destination that keeps media on the network, keeping a still-admissible previous choice', () => {
-    const runPod = destination({
-      id: 'runpod',
-      kind: MlDestinationKind.Runpod,
+    const cloud = destination({
+      id: 'cloud',
+      kind: MlDestinationKind.FrameleafCloud,
       leavesNetwork: true,
       consentRequired: true,
     });
     const lan = destination({ id: 'lan', kind: MlDestinationKind.Lan });
-    expect(defaultDestinationId([runPod, lan], null)).toBe('lan');
-    expect(defaultDestinationId([runPod, lan], 'runpod')).toBe('runpod');
-    expect(defaultDestinationId([runPod, lan], 'gone')).toBe('lan');
+    expect(defaultDestinationId([cloud, lan], null)).toBe('lan');
+    expect(defaultDestinationId([cloud, lan], 'cloud')).toBe('cloud');
+    expect(defaultDestinationId([cloud, lan], 'gone')).toBe('lan');
     // Only a cloud destination available: nothing is chosen for the person.
-    expect(defaultDestinationId([runPod], null)).toBeNull();
+    expect(defaultDestinationId([cloud], null)).toBeNull();
     expect(defaultDestinationId([destination({ available: false })], null)).toBeNull();
   });
 
