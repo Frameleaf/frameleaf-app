@@ -17,6 +17,9 @@ const LivePhotoCandidatesResponseSchema = z
   .object({
     candidates: z.array(LivePhotoCandidateSchema),
     total: z.int().describe('Total number of candidate pairs found'),
+    suggestionsEnabled: z
+      .boolean()
+      .describe('Library care suggests Live Photo pairs; when false no pairs are looked for'),
   })
   .meta({ id: 'LivePhotoCandidatesResponseDto' });
 

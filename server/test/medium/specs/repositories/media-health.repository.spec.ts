@@ -762,6 +762,37 @@ describe(MediaHealthRepository.name, () => {
       [row] = await sut.getByIds([finding.id]);
       expect(row.status).toBe(MediaHealthStatus.Relinked);
     });
+
+    it('records the status a dismissal replaced and reopens to it only while still dismissed (FL-69, UT-2)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const run = await sut.createRun(MediaHealthCategory.Missing);
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, run.id),
+        resolution: { autoRelinkable: false },
+      });
+      assert.isDefined(finding);
+
+      await sut.markDismissed([finding.id]);
+      await sut.markDismissed([finding.id]);
+      let [row] = await sut.getByIds([finding.id]);
+      expect(row.resolution).toEqual({ autoRelinkable: false, dismissedFrom: MediaHealthStatus.Missing });
+
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Trashed, MediaHealthStatus.Missing)).resolves.toBe(
+        false,
+      );
+      await expect(sut.reopenFinding(finding.id, MediaHealthStatus.Dismissed, MediaHealthStatus.Missing)).resolves.toBe(
+        true,
+      );
+      [row] = await sut.getByIds([finding.id]);
+      expect(row).toMatchObject({
+        status: MediaHealthStatus.Missing,
+        dismissedAt: null,
+        resolution: { autoRelinkable: false },
+      });
+      expect(row.resolution).not.toHaveProperty('dismissedFrom');
+    });
   });
 
   describe('replaceCandidates', () => {

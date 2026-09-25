@@ -16,6 +16,50 @@ describe(IntegrityService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('Library care → Audit database and file references (FL-69)', () => {
+    const config = (integrityAudit: boolean) =>
+      ({
+        integrityChecks: {
+          untrackedFiles: { enabled: true, cronExpression: '0 03 * * *' },
+          missingFiles: { enabled: true, cronExpression: '0 03 * * *' },
+          checksumFiles: { enabled: true, cronExpression: '0 03 * * *' },
+        },
+        libraryCare: { integrityAudit },
+      }) as never;
+
+    beforeEach(() => {
+      mocks.database.tryLock.mockResolvedValue(true);
+      mocks.cron.create.mockReturnValue();
+      mocks.cron.update.mockReturnValue();
+    });
+
+    it('stops the scheduled reference checks while the audit is off, keeping the checksum check', async () => {
+      await sut.onConfigInit({ newConfig: config(false) });
+
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'integrityUntrackedFiles', start: false }),
+      );
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
+      );
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'integrityChecksumFiles', start: true }),
+      );
+    });
+
+    it('runs each reference check on its own switch while the audit is on', async () => {
+      await sut.onConfigInit({ newConfig: config(true) });
+      sut.onConfigUpdate({ newConfig: config(false) } as never);
+
+      expect(mocks.cron.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'integrityMissingFiles', start: true }),
+      );
+      expect(mocks.cron.update).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'integrityMissingFiles', start: false }),
+      );
+    });
+  });
+
   describe('handleChecksumFiles', () => {
     const contents = Buffer.from('the-file-bytes');
     const sha256 = createHash('sha256').update(contents).digest();

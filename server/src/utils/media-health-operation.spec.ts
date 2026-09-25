@@ -19,6 +19,17 @@ describe('media-health-operation (FL-69)', () => {
       ).toEqual({ mode: 'locate', userId: 'u', runId: 'r', findingIds: ['a', 'b'], rootIds: null, anyOwner: false });
     });
 
+    it('reads a scheduled incremental scan, ignoring a date it cannot read (Library care)', () => {
+      const base = { mode: 'scan', userId: 'u', missingRunId: 'm', corruptRunId: 'c' } as const;
+      expect(parseMediaHealthSnapshot({ ...base, changedSince: '2026-09-20T02:00:00.000Z', scheduled: true })).toEqual({
+        ...base,
+        changedSince: '2026-09-20T02:00:00.000Z',
+        scheduled: true,
+      });
+      expect(parseMediaHealthSnapshot({ ...base, changedSince: 'yesterday', scheduled: 'yes' })).toEqual(base);
+      expect(mediaHealthOperationLabel({ ...base, scheduled: true })).toBe('Scheduled library health scan');
+    });
+
     it('refuses anything it cannot run safely', () => {
       expect(() => parseMediaHealthSnapshot(null)).toThrow();
       expect(() => parseMediaHealthSnapshot({ mode: 'scan', userId: 'u' })).toThrow('runs');

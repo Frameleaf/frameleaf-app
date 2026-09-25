@@ -419,6 +419,17 @@ const updatedConfig = Object.freeze<SystemConfig>({
       faces: { enabled: false },
     },
   },
+  libraryCare: {
+    healthScan: true,
+    healthScanCronExpression: '0 02 * * *',
+    checksumScan: true,
+    integrityAudit: true,
+    livePhotoRepair: true,
+    rawRecovery: true,
+    duplicateReview: true,
+    incrementalEnrichment: true,
+    manualMetadata: true,
+  },
 });
 
 describe(SystemConfigService.name, () => {

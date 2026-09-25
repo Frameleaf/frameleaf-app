@@ -67,12 +67,21 @@ import { batched, handlePromiseError } from 'src/utils/misc.js';
 export class IntegrityService extends BaseService {
   private integrityLock = false;
 
+  /**
+   * Library care → "Audit database and file references" (FL-69, settings-catalog.mjs:926-931): the
+   * scheduled missing-file and untracked-file checks are that audit. Each keeps its own switch and
+   * schedule; turning the audit off stops both schedules without losing them. Asking for a check
+   * from the job manager still runs it.
+   */
+  private static referenceAudit(enabled: boolean, config: ArgOf<'ConfigInit'>['newConfig']) {
+    return enabled && config.libraryCare.integrityAudit;
+  }
+
   @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
-  async onConfigInit({
-    newConfig: {
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    const {
       integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
-    },
-  }: ArgOf<'ConfigInit'>) {
+    } = newConfig;
     this.integrityLock = await this.databaseRepository.tryLock(DatabaseLock.IntegrityCheck);
     if (!this.integrityLock) {
       return;
@@ -86,7 +95,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityUntrackedFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: untrackedFiles.enabled,
+      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
     });
 
     this.cronRepository.create({
@@ -97,7 +106,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityMissingFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: missingFiles.enabled,
+      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
     });
 
     this.cronRepository.create({
@@ -110,25 +119,24 @@ export class IntegrityService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
-  onConfigUpdate({
-    newConfig: {
-      integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
-    },
-  }: ArgOf<'ConfigUpdate'>) {
+  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
     if (!this.integrityLock) {
       return;
     }
+    const {
+      integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
+    } = newConfig;
 
     this.cronRepository.update({
       name: 'integrityUntrackedFiles',
       expression: untrackedFiles.cronExpression,
-      start: untrackedFiles.enabled,
+      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
     });
 
     this.cronRepository.update({
       name: 'integrityMissingFiles',
       expression: missingFiles.cronExpression,
-      start: missingFiles.enabled,
+      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
     });
 
     this.cronRepository.update({
