@@ -194,6 +194,32 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       expect(screen.getByPlaceholderText('FL-XXXX-XXXX-XXXX')).toBeInTheDocument();
     });
 
+    it('shows an individual licence as licensed, with its hint and removal in place', async () => {
+      authManager.setUser({
+        id: 'admin-1',
+        name: 'Admin',
+        email: 'a@example.test',
+        isAdmin: true,
+        license: { kind: 'individual', keyHint: '8ELH', activatedAt: '2026-09-25T09:00:00.000Z' },
+      } as never);
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      sdkMock.deleteUserLicense.mockResolvedValue();
+      sdkMock.getMyUser.mockResolvedValue({ id: 'admin-1', isAdmin: true, license: null } as never);
+      render(LicenseSection);
+
+      expect(await screen.findByText('Individual licence')).toBeInTheDocument();
+      expect(screen.getByText('Licensed')).toBeInTheDocument();
+      expect(screen.getByText('•••• 8ELH')).toBeInTheDocument();
+      expect(screen.queryByText('Enter a licence key')).toBeNull();
+
+      await fireEvent.click(screen.getByRole('button', { name: /Remove licence key/ }));
+      const dialog = await screen.findByRole('dialog');
+      await fireEvent.click(within(dialog).getByRole('button', { name: /Remove key/ }));
+      await waitFor(() => expect(sdkMock.deleteUserLicense).toHaveBeenCalled());
+      expect(sdkMock.removeLicenseKey).not.toHaveBeenCalled();
+      expect(await screen.findByText('Enter a licence key')).toBeInTheDocument();
+    });
+
     it('installs a licence file and shows this server’s instance ID', async () => {
       sdkMock.getLicenseStatus.mockResolvedValue(license());
       sdkMock.installLicenseCertificate.mockResolvedValue(license({ plan: planSlot }));
