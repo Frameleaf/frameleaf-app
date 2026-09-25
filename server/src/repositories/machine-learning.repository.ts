@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
+import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
   RESTORATION_MAX_OUTPUT_EDGE,
@@ -281,11 +282,52 @@ export type MlEndpointProbe = {
 
 type CapabilitiesResponse = { workloads?: unknown };
 
+const renderNodeSchema = z.object({
+  node: z.string().max(40),
+  vendor: z.string().max(40).nullable(),
+  accessible: z.boolean(),
+  memoryTotalBytes: z.number().int().min(0).nullable(),
+});
+
+/** FL-159: what the container reached for AI work (`machine-learning/immich_ml/hardware_report.py`). */
+const mlContainerSchema = z.object({
+  image: z.string().max(40),
+  backend: z.string().max(40),
+  gpus: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        vendor: z.string().max(40).nullable(),
+        memoryTotalBytes: z.number().int().min(0).nullable(),
+      }),
+    )
+    .max(16),
+  driver: z.string().max(300).nullable(),
+  nvidiaError: z.string().max(300).nullable().default(null),
+  devices: z.object({
+    renderNodes: z.array(renderNodeSchema).max(16),
+    kfd: z.boolean(),
+    kfdAccessible: z.boolean(),
+    nvidia: z.boolean(),
+    nvidiaRequested: z.boolean(),
+  }),
+});
+
 const diagnosticHardwareSchema = MachineLearningHardwareResponseDto.schema.extend({
   providers: z.array(z.string().max(100)).max(32),
   openvinoDeviceIds: z.array(z.string().max(100)).max(32),
   cudaDeviceCount: z.int().min(0).max(1024),
 });
+
+/**
+ * FL-159: the container report of `GET /hardware`, or null for a worker that does not send one (an
+ * older image) or sends one this server cannot read.
+ */
+export const parseMlContainerReport = (body: unknown): MlContainerReport | null => {
+  const container = (body as { container?: unknown } | null)?.container;
+  const parsed = mlContainerSchema.safeParse(container);
+  return parsed.success ? parsed.data : null;
+};
 
 const RESTORATION_WORKLOAD_SET: ReadonlySet<MlWorkload> = new Set([
   MlWorkload.RestorationFaithful,
@@ -971,6 +1013,32 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     return defaultMachineLearningHardware;
+  }
+  /**
+   * FL-159: the container report of a worker's `GET /hardware`, for Hardware & GPU. Null when the
+   * worker does not answer or sends no report.
+   */
+  async getContainerHardware(endpoint: MlEndpoint): Promise<MlContainerReport | null> {
+    if (endpoint.cloud) {
+      return null;
+    }
+    try {
+      const response = await fetch(new URL('hardware', endpoint.url), {
+        headers: this.authHeaders(endpoint),
+        signal: AbortSignal.timeout(Math.min(10_000, Math.max(250, this.timeout()))),
+        redirect: 'error',
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        return null;
+      }
+      return parseMlContainerReport(await this.readDiagnosticJson(response));
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Machine learning hardware request to "${endpoint.url}" failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
   }
 
   private async getFormData(payload: ModelPayload, config: MachineLearningRequest): Promise<FormData> {

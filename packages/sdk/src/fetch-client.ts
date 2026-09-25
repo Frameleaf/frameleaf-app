@@ -148,6 +148,8 @@ export type MlDestinationResponseDto = {
     workloads: MlWorkload[];
 };
 export type CloudMlWalletDto = {
+    /** Automatic top-up with the payment method saved on the account */
+    autoTopUp: boolean;
     /** Balance minus holds, USD */
     availableUsd: number;
     /** AI Wallet balance, USD */
@@ -219,16 +221,30 @@ export type CloudMlSettlementDto = {
     costUsd: number;
     /** Credits the charge used, when reported */
     credits: number | null;
+    /** The estimate shown before the job, USD */
+    estimateUsd: number | null;
     finishedAt: string;
+    /** Metered GPU time, seconds, when reported */
+    gpuSeconds: number | null;
     /** The server job that sent the work, when recorded */
     jobName: string | null;
+    /** The catalogue model the job used, when reported */
+    modelId: string | null;
     /** The request finished successfully */
     succeeded: boolean;
+    /** Workers the job ran on (each paid a start fee), when reported */
+    workers: number | null;
     workload: MlWorkload;
 };
 export type CloudMlSettlementsResponseDto = {
     /** Settled charges, newest first (at most 50) */
     items: CloudMlSettlementDto[];
+};
+export type CloudMlWalletUpdateDto = {
+    /** Top up automatically when available credit runs low */
+    autoTopUp?: boolean;
+    /** Daily spending cap, USD */
+    dailyCapUsd?: number;
 };
 export type AdminConfigAnalyticsDto = {
     /** Collect local analytics history every night */
@@ -294,32 +310,39 @@ export type AdminConfigFFmpegDto = {
     /** Two pass */
     twoPass: boolean;
 };
-export type AdminConfigFrameleafCloudDescriptionsDto = {
-    /** Run background description batches automatically (needs a daily budget) */
-    autoBatch: boolean;
-    /** Daily spending limit for background batches, USD */
+export type AdminConfigFrameleafCloudAutoDescribeDto = {
+    /** Daily budget for automatic descriptions, USD; counts toward the AI Wallet daily cap */
     dailyBudgetUsd: number;
-    /** Catalogue model id used for descriptions; empty = none chosen */
-    defaultModel: string;
-    /** Allow image descriptions on Frameleaf Cloud */
+    /** Describe new photos automatically on Frameleaf Cloud */
     enabled: boolean;
 };
 export type AdminConfigFrameleafCloudFacesDto = {
-    /** Faces never run on Frameleaf Cloud in this version */
+    /** Faces never run on Frameleaf Cloud */
     enabled: false;
 };
-export type AdminConfigFrameleafCloudRestorationDto = {
-    /** Catalogue model id preselected for restoration */
-    defaultModel: string;
-    /** Allow restoration and upscaling on Frameleaf Cloud */
-    enabled: boolean;
+export type AdminConfigFrameleafCloudModelsDto = {
+    descriptions: string;
+    interpolation: string;
+    restoration: string;
+    studio: string;
+    upscale: string;
+};
+export type AdminConfigFrameleafCloudRoutingDto = {
+    descriptions: CloudRouteMode;
+    interpolation: CloudRouteMode;
+    restoration: CloudRouteMode;
+    studio: CloudRouteMode;
+    upscale: CloudRouteMode;
 };
 export type AdminConfigFrameleafCloudMlDto = {
-    descriptions: AdminConfigFrameleafCloudDescriptionsDto;
-    /** Allow Frameleaf Cloud processing at all (the destination still needs consent) */
+    autoDescribe: AdminConfigFrameleafCloudAutoDescribeDto;
+    /** Use Frameleaf Cloud for chosen jobs (each job still needs consent and confirmation) */
     enabled: boolean;
     faces: AdminConfigFrameleafCloudFacesDto;
-    restoration: AdminConfigFrameleafCloudRestorationDto;
+    models: AdminConfigFrameleafCloudModelsDto;
+    routing: AdminConfigFrameleafCloudRoutingDto;
+    /** The destination a job preselects when its kind of work may run in both places */
+    startWith: StartWith;
 };
 export type AdminConfigFrameleafCloudDto = {
     cloudMl: AdminConfigFrameleafCloudMlDto;
@@ -919,6 +942,53 @@ export type BackupRestoreVerificationRecordDto = {
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
+};
+export type HardwareBenchmarkDto = {
+    /** Median time of a search embedding */
+    embeddingMs: number | null;
+    /** Measured ÷ estimated time for AI work here (applied to the local estimates) */
+    mlFactor: number | null;
+    ranAt: string;
+    /** Measured ÷ estimated time for video encoding here */
+    serverFactor: number | null;
+    /** 1080p test transcode, × real time */
+    transcodeSpeed: number | null;
+};
+export type HardwareContainerTestDto = {
+    /** What failed, as the container reported it */
+    error: string | null;
+    /** The test ran on the GPU */
+    gpu: boolean;
+    /** transcode: the server container; embedding: the ML container */
+    kind: Kind;
+    /** The test finished without falling back */
+    ok: boolean;
+    /** transcode: 1080p real-time multiple; embedding: milliseconds; null when it did not run */
+    value: number | null;
+};
+export type HardwareContainerCheckDto = {
+    backend: HardwareBackend;
+    /** Driver and runtime, or what the driver reported instead */
+    driver: string | null;
+    model: string | null;
+    /** The container answered the check */
+    reachable: boolean;
+    test: (HardwareContainerTestDto) | null;
+    vendor: string | null;
+    vramGb: number | null;
+};
+export type HardwareCheckResponseDto = {
+    /** The last benchmark on this hardware, if any */
+    benchmark: (HardwareBenchmarkDto) | null;
+    checkedAt: string;
+    /** Set-up problems the check found, by problem id */
+    issues: string[];
+    /** The ML container: search, faces, descriptions and restoration */
+    ml: HardwareContainerCheckDto;
+    /** The ML image flavour (cpu, cuda, rocm, openvino), when reported */
+    mlImage: string | null;
+    /** The server container: video playback and Studio export */
+    server: HardwareContainerCheckDto;
 };
 export type IntegrityReportResponseDto = {
     items: {
@@ -5358,7 +5428,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind;
+    kind: Kind2;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -5371,7 +5441,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind2;
+    kind: Kind3;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -5381,7 +5451,7 @@ export type PetStoryDto = {
     /** Confirmed photos of the pet that month, before the diversity pass */
     assetCount: number;
     /** Discriminator for a pet story */
-    kind: Kind3;
+    kind: Kind4;
     /** The owner's local month, 'yyyy-MM' */
     month: string;
     /** The pet name */
@@ -5399,7 +5469,7 @@ export type BirthdayMemoryDto = {
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
     /** Discriminator for a birthday */
-    kind: Kind4;
+    kind: Kind5;
     /** Their name when the memory was made */
     name: string;
     /** Whether the birthday is a person's or a pet's */
@@ -5413,7 +5483,7 @@ export type PersonRecapDto = {
     /** Number of their photos and videos that year */
     assetCount: number;
     /** Discriminator for a person or pet recap */
-    kind: Kind5;
+    kind: Kind6;
     /** Their name when the memory was made */
     name: string;
     /** Whether the recap is about a person or a pet */
@@ -9959,6 +10029,21 @@ export function getCloudMlWallet(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Change the AI Wallet daily cap or automatic top-up
+ */
+export function updateCloudMlWallet({ cloudMlWalletUpdateDto }: {
+    cloudMlWalletUpdateDto: CloudMlWalletUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudMlWalletDto;
+    }>("/admin/cloud/ml/wallet", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: cloudMlWalletUpdateDto
+    })));
+}
+/**
  * Get the admin configuration
  */
 export function getAdminConfig(opts?: Oazapfts.RequestOpts) {
@@ -10156,6 +10241,41 @@ export function downloadDatabaseBackup({ filename }: {
         data: Blob;
     }>(`/admin/database-backups/${encodeURIComponent(filename)}`, {
         ...opts
+    }));
+}
+/**
+ * Get the Hardware & GPU check
+ */
+export function getHardwareCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HardwareCheckResponseDto;
+    }>("/admin/hardware", {
+        ...opts
+    }));
+}
+/**
+ * Run a short benchmark
+ */
+export function runHardwareBenchmark(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HardwareCheckResponseDto;
+    }>("/admin/hardware/benchmark", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check the GPU again
+ */
+export function runHardwareCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HardwareCheckResponseDto;
+    }>("/admin/hardware/check", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -18759,6 +18879,15 @@ export enum TranscodePolicy {
     Required = "required",
     Disabled = "disabled"
 }
+export enum CloudRouteMode {
+    Local = "local",
+    Both = "both",
+    Cloud = "cloud"
+}
+export enum StartWith {
+    Local = "local",
+    Cloud = "cloud"
+}
 export enum Colorspace {
     Srgb = "srgb",
     P3 = "p3"
@@ -18813,6 +18942,19 @@ export enum SystemConfigHistoryKind {
     Settings = "settings",
     Credential = "credential",
     Review = "review"
+}
+export enum HardwareBackend {
+    Cuda = "CUDA",
+    RoCm = "ROCm",
+    OpenVino = "OpenVINO",
+    Nvenc = "NVENC",
+    VaApi = "VA-API",
+    Qsv = "QSV",
+    Cpu = "CPU"
+}
+export enum Kind {
+    Transcode = "transcode",
+    Embedding = "embedding"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
@@ -19840,23 +19982,23 @@ export enum MemoryType {
     Birthday = "birthday",
     PersonRecap = "person_recap"
 }
-export enum Kind {
+export enum Kind2 {
     EventStory = "event_story"
 }
-export enum Kind2 {
+export enum Kind3 {
     YearInReview = "year_in_review"
 }
-export enum Kind3 {
+export enum Kind4 {
     PetStory = "pet_story"
 }
-export enum Kind4 {
+export enum Kind5 {
     Birthday = "birthday"
 }
 export enum Subject {
     Person = "person",
     Pet = "pet"
 }
-export enum Kind5 {
+export enum Kind6 {
     PersonRecap = "person_recap"
 }
 export enum MemoryShowLessKind {

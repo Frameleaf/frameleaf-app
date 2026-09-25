@@ -118,7 +118,7 @@ const CloudMlSettlementSchema = z
     credits: z.number().meta({ format: 'double' }).nullable().describe('Credits the charge used, when reported'),
     finishedAt: z.string(),
     modelId: z.string().nullable().describe('The catalogue model the job used, when reported'),
-    gpuSeconds: z.number().nullable().describe('Metered GPU time, seconds, when reported'),
+    gpuSeconds: z.number().meta({ format: 'double' }).nullable().describe('Metered GPU time, seconds, when reported'),
     workers: z.number().int().nullable().describe('Workers the job ran on (each paid a start fee), when reported'),
     estimateUsd: z.number().meta({ format: 'double' }).nullable().describe('The estimate shown before the job, USD'),
   })

@@ -16,6 +16,7 @@ import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
+import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
@@ -108,6 +109,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 
 export const services = [
   CloudMlService,
+  HardwareCheckService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,
