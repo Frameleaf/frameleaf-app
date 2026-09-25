@@ -51,7 +51,7 @@ GAPS = [
  ('preservation', 'Verified originals/sidecars/recipes manifests and restoration reconciliation'),
  ('documents', 'OCR-grounded fields, cropped evidence and corrections'),
  ('photo-tools', 'Selective masks, presets and external RAW rendition workflows'),
- ('ai-video', 'Explicit local/RunPod destination, preview comparison, jobs and qualified restoration'),
+ ('ai-video', 'Explicit local/Frameleaf Cloud destination, preview comparison, jobs and qualified restoration'),
  ('native-studio', 'Project/revision/source review exists in preview; the canonical command and payload contract is published for native clients (mobile/lib/frameleaf/studio_commands.g.dart), while native graph editing, effects/animation/audio and qualified render/export remain unavailable'),
  ('administration', 'All server settings, ML/GPU endpoints, queues, users, libraries, migration and fork handoff controls'),
 ]
