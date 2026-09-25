@@ -579,11 +579,12 @@ export const positionById = (id: string | null | undefined): ModelPosition | nul
 };
 
 /**
- * Models that stay on this server only (FL-146 owner decision, 2026-09-25): the nllb-clip search
- * models (base and large, every variant; CC-BY-NC-4.0) and MusicGen-small. They are never offered on
- * Frameleaf Cloud, whatever a catalogue says; the server refuses a cloud job for them too.
+ * Models that stay on this server only (FL-146 owner decisions, 2026-09-25): the nllb-clip search
+ * models (base and large, every variant; CC-BY-NC-4.0), MusicGen-small (CC-BY-NC-4.0) and
+ * Qwen2.5-VL-3B-Instruct (Qwen Research License, including its OpenVINO conversion). They are never
+ * offered on Frameleaf Cloud, whatever a catalogue says; the server refuses a cloud job for them too.
  */
-const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small/i;
+const LOCAL_ONLY_MODEL = /nllb-clip|musicgen-small|qwen2\.5-vl-3b/i;
 export const isLocalOnlyModel = (id: string | null | undefined) => !!id && LOCAL_ONLY_MODEL.test(id);
 
 /** Positions Frameleaf Cloud may host: offered on the cloud, licensed for hosted use, not local only. */
@@ -847,12 +848,22 @@ export const positionState = (
   };
 };
 
+/**
+ * The model a kind of work uses on Frameleaf Cloud when nothing is chosen (FL-146): a commercially
+ * licensed catalogue pick. Descriptions use Qwen3.5 9B (Apache-2.0): rich descriptions with strong
+ * text reading, and the pricing research's worked example (about $0.85 per 1,000 photos).
+ */
+export const CLOUD_DEFAULT_MODELS: Readonly<Partial<Record<LadderWorkload, string>>> = Object.freeze({
+  descriptions: 'qwen3.5-9b@1',
+});
+
 export const ladderStates = (workload: LadderWorkload, options: Parameters<typeof positionState>[1] = {}) =>
   ladderFor(workload).map((item) => positionState(item, options));
 
 /**
  * The position to use: the saved choice when it can be chosen, otherwise the heaviest position that
- * runs at a usable speed here, otherwise the lightest cloud one. Only a known model that no longer
+ * runs at a usable speed here, otherwise the cloud default (`CLOUD_DEFAULT_MODELS`) or the lightest
+ * cloud one. Only a known model that no longer
  * fits counts as a fallback; retired ids just reset.
  */
 export const resolvePosition = (
@@ -868,7 +879,13 @@ export const resolvePosition = (
   const enabled = states.filter((entry) => !entry.disabled);
   const local = enabled.filter((entry) => entry.runsOn === 'local');
   const usable = local.filter((entry) => entry.speedClass !== 'slow' && entry.band !== 'cpu');
-  const pick = usable.at(-1) ?? local[0] ?? enabled.find((entry) => entry.runsOn === 'cloud') ?? null;
+  const cloud = enabled.filter((entry) => entry.runsOn === 'cloud');
+  const pick =
+    usable.at(-1) ??
+    local[0] ??
+    cloud.find((entry) => entry.item.id === CLOUD_DEFAULT_MODELS[workload]) ??
+    cloud[0] ??
+    null;
   return pick ? { ...pick, fallback: !!saved && savedId !== pick.item.id } : null;
 };
 
