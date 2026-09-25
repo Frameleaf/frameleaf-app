@@ -3,6 +3,7 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, RenderWorkerStatus } from 'src/enum.js';
+import { withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import {
@@ -13,6 +14,9 @@ import {
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+
+/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
+export const RENDER_WORKER_HANDOFF_REFUSAL = 'Render workers are unavailable during database handoff';
 
 export type RenderWorker = Selectable<RenderWorkerTable>;
 export type RenderWorkerSession = Selectable<RenderWorkerSessionTable>;
@@ -66,16 +70,19 @@ export type AuthenticatedRenderWorker = { worker: RenderWorker; session: RenderW
 export class RenderWorkerRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+    return withPublicForkWrites(this.db, query, RENDER_WORKER_HANDOFF_REFUSAL);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Workers                                                             */
   /* ------------------------------------------------------------------ */
 
   async createWorker(worker: RenderWorkerCreate): Promise<RenderWorker> {
-    return (await this.db
-      .insertInto('render_worker')
-      .values(worker)
-      .returningAll()
-      .executeTakeFirstOrThrow()) as unknown as RenderWorker;
+    return (await this.write((db) =>
+      db.insertInto('render_worker').values(worker).returningAll().executeTakeFirstOrThrow(),
+    )) as unknown as RenderWorker;
   }
 
   async getWorker(id: string): Promise<RenderWorker | undefined> {
@@ -105,34 +112,40 @@ export class RenderWorkerRepository {
   }
 
   async updateWorker(id: string, patch: RenderWorkerUpdate): Promise<RenderWorker | undefined> {
-    return (await this.db
-      .updateTable('render_worker')
-      .set(patch)
-      .where('id', '=', id)
-      .where('status', '=', RenderWorkerStatus.Active)
-      .returningAll()
-      .executeTakeFirst()) as unknown as RenderWorker | undefined;
+    return (await this.write((db) =>
+      db
+        .updateTable('render_worker')
+        .set(patch)
+        .where('id', '=', id)
+        .where('status', '=', RenderWorkerStatus.Active)
+        .returningAll()
+        .executeTakeFirst(),
+    )) as unknown as RenderWorker | undefined;
   }
 
   /** Record a successful admission and the newest report it was based on; later replays fail against it. */
   async markAdmitted(id: string, conformanceReportedAt: Date): Promise<void> {
-    await this.db
-      .updateTable('render_worker')
-      .set({
-        lastAdmittedAt: sql<Date>`now()`,
-        lastSeenAt: sql<Date>`now()`,
-        lastConformanceReportedAt: conformanceReportedAt,
-      })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('render_worker')
+        .set({
+          lastAdmittedAt: sql<Date>`now()`,
+          lastSeenAt: sql<Date>`now()`,
+          lastConformanceReportedAt: conformanceReportedAt,
+        })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   async markSeen(id: string): Promise<void> {
-    await this.db
-      .updateTable('render_worker')
-      .set({ lastSeenAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('render_worker')
+        .set({ lastSeenAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   /**
@@ -140,13 +153,15 @@ export class RenderWorkerRepository {
    * `claimedBy` on past operations and the audit trail still resolve to a name.
    */
   async revokeWorker(id: string): Promise<RenderWorker | undefined> {
-    const worker = (await this.db
-      .updateTable('render_worker')
-      .set({ status: RenderWorkerStatus.Revoked, revokedAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .where('status', '=', RenderWorkerStatus.Active)
-      .returningAll()
-      .executeTakeFirst()) as unknown as RenderWorker | undefined;
+    const worker = (await this.write((db) =>
+      db
+        .updateTable('render_worker')
+        .set({ status: RenderWorkerStatus.Revoked, revokedAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .where('status', '=', RenderWorkerStatus.Active)
+        .returningAll()
+        .executeTakeFirst(),
+    )) as unknown as RenderWorker | undefined;
 
     if (worker) {
       await this.revokeSessions(id);
@@ -160,11 +175,9 @@ export class RenderWorkerRepository {
   /* ------------------------------------------------------------------ */
 
   async createSession(session: RenderWorkerSessionCreate): Promise<RenderWorkerSession> {
-    return (await this.db
-      .insertInto('render_worker_session')
-      .values(session)
-      .returningAll()
-      .executeTakeFirstOrThrow()) as unknown as RenderWorkerSession;
+    return (await this.write((db) =>
+      db.insertInto('render_worker_session').values(session).returningAll().executeTakeFirstOrThrow(),
+    )) as unknown as RenderWorkerSession;
   }
 
   /**
@@ -253,20 +266,24 @@ export class RenderWorkerRepository {
   }
 
   async touchSession(id: string): Promise<void> {
-    await this.db
-      .updateTable('render_worker_session')
-      .set({ lastUsedAt: sql<Date>`now()` })
-      .where('id', '=', id)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('render_worker_session')
+        .set({ lastUsedAt: sql<Date>`now()` })
+        .where('id', '=', id)
+        .execute(),
+    );
   }
 
   async revokeSessions(workerId: string): Promise<number> {
-    const result = await this.db
-      .updateTable('render_worker_session')
-      .set({ revokedAt: sql<Date>`now()` })
-      .where('workerId', '=', workerId)
-      .where('revokedAt', 'is', null)
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('render_worker_session')
+        .set({ revokedAt: sql<Date>`now()` })
+        .where('workerId', '=', workerId)
+        .where('revokedAt', 'is', null)
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows);
   }
@@ -297,12 +314,14 @@ export class RenderWorkerRepository {
     userId: string | null,
     limit: RenderWorkerLimitUpsert,
   ): Promise<RenderWorkerLimit> {
-    return (await this.db
-      .insertInto('render_worker_limit')
-      .values({ subject, userId, ...limit })
-      .onConflict((oc) => oc.column('subject').doUpdateSet({ ...limit, userId }))
-      .returningAll()
-      .executeTakeFirstOrThrow()) as unknown as RenderWorkerLimit;
+    return (await this.write((db) =>
+      db
+        .insertInto('render_worker_limit')
+        .values({ subject, userId, ...limit })
+        .onConflict((oc) => oc.column('subject').doUpdateSet({ ...limit, userId }))
+        .returningAll()
+        .executeTakeFirstOrThrow(),
+    )) as unknown as RenderWorkerLimit;
   }
 
   async deleteLimit(subject: string): Promise<boolean> {
@@ -311,7 +330,9 @@ export class RenderWorkerRepository {
       return false;
     }
 
-    const result = await this.db.deleteFrom('render_worker_limit').where('subject', '=', subject).executeTakeFirst();
+    const result = await this.write((db) =>
+      db.deleteFrom('render_worker_limit').where('subject', '=', subject).executeTakeFirst(),
+    );
     return Number(result.numDeletedRows) === 1;
   }
 
@@ -320,7 +341,7 @@ export class RenderWorkerRepository {
   /* ------------------------------------------------------------------ */
 
   async recordAudit(entry: RenderWorkerAuditCreate): Promise<void> {
-    await this.db.insertInto('render_worker_audit').values(entry).execute();
+    await this.write((db) => db.insertInto('render_worker_audit').values(entry).execute());
   }
 
   listAudit(options: { workerId?: string; take: number }): Promise<RenderWorkerAudit[]> {
@@ -410,44 +431,48 @@ export class RenderWorkerRepository {
   }): Promise<{ operation: MediaOperationRow; claimToken: string } | undefined> {
     const claimToken = randomUUID();
 
-    const row = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Preparing,
-        claimToken,
-        claimedBy: options.workerId,
-        claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
-        heartbeatAt: sql<Date>`now()`,
-        startedAt: sql<Date>`coalesce("startedAt", now())`,
-        attemptStartedAt: sql<Date>`now()`,
-        outputBytes: '0',
-        attempt: sql<number>`"attempt" + 1`,
-        lastAdmissionRefusalReason: null,
-        lastAdmissionRefusedAt: null,
-        retryAt: null,
-      })
-      .where('id', '=', options.id)
-      .where('status', '=', MediaOperationStatus.Queued)
-      .where('cancelRequestedAt', 'is', null)
-      .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
-      .returningAll()
-      .executeTakeFirst();
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Preparing,
+          claimToken,
+          claimedBy: options.workerId,
+          claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
+          heartbeatAt: sql<Date>`now()`,
+          startedAt: sql<Date>`coalesce("startedAt", now())`,
+          attemptStartedAt: sql<Date>`now()`,
+          outputBytes: '0',
+          attempt: sql<number>`"attempt" + 1`,
+          lastAdmissionRefusalReason: null,
+          lastAdmissionRefusedAt: null,
+          retryAt: null,
+        })
+        .where('id', '=', options.id)
+        .where('status', '=', MediaOperationStatus.Queued)
+        .where('cancelRequestedAt', 'is', null)
+        .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+        .returningAll()
+        .executeTakeFirst(),
+    );
 
     return row ? { operation: row as unknown as MediaOperationRow, claimToken } : undefined;
   }
 
   /** Write the reason a queued job was passed over, so its owner sees why it is still queued. */
   async recordRefusal(id: string, reason: string): Promise<void> {
-    await this.db
-      .updateTable('media_operation')
-      .set({
-        lastAdmissionRefusalReason: reason,
-        lastAdmissionRefusedAt: sql<Date>`now()`,
-        admissionRefusals: sql<number>`"admissionRefusals" + 1`,
-      })
-      .where('id', '=', id)
-      .where('status', '=', MediaOperationStatus.Queued)
-      .execute();
+    await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          lastAdmissionRefusalReason: reason,
+          lastAdmissionRefusedAt: sql<Date>`now()`,
+          admissionRefusals: sql<number>`"admissionRefusals" + 1`,
+        })
+        .where('id', '=', id)
+        .where('status', '=', MediaOperationStatus.Queued)
+        .execute(),
+    );
   }
 
   /**
@@ -486,13 +511,15 @@ export class RenderWorkerRepository {
 
   /** Accumulate output bytes reported under the claim. Guarded like every other worker write. */
   async recordOutputBytes(id: string, claimToken: string, outputBytes: number): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({ outputBytes: String(outputBytes) })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .executeTakeFirst();
+    const result = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({ outputBytes: String(outputBytes) })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .executeTakeFirst(),
+    );
 
     return Number(result.numUpdatedRows) === 1;
   }
