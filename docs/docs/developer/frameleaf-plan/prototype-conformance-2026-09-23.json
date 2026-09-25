@@ -19,10 +19,10 @@
     "webActions": 153,
     "routes": 83,
     "byStatus": {
-      "match": 63,
-      "partial": 102,
+      "match": 61,
+      "partial": 101,
       "missing": 5,
-      "fixed": 39,
+      "fixed": 42,
       "in-flight": 12,
       "studio-parked": 3,
       "retained-live-route": 10,
@@ -1440,10 +1440,10 @@
       "requirementId": "action:timeline-bulk:upload-from-library-progress-errors-duplicates",
       "title": "Upload from library, progress, errors, duplicates",
       "prototype": ["design/frameleaf/template/src/UploadPanel.jsx"],
-      "production": ["web/src/lib/components/frameleaf/UploadPanel.svelte"],
-      "status": "partial",
-      "gaps": ["U-1", "S-20"],
-      "followUp": "Dismiss errors scope (S-20 fixed)"
+      "production": ["web/src/lib/components/frameleaf/UploadPanel.svelte", "web/src/lib/stores/upload.ts"],
+      "status": "fixed",
+      "gaps": ["U-1", "U-2", "U-3", "U-4", "U-5", "S-20"],
+      "followUp": "Dismiss errors scope, pill, row status and region fixed on codex/FL-45-download-panel (S-20 fixed earlier)"
     },
     {
       "requirementId": "action:viewer:add-to-album",
@@ -1502,20 +1502,28 @@
     {
       "requirementId": "action:viewer:download-current-edited-media",
       "title": "Download current/edited media",
-      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "match",
-      "gaps": [],
-      "followUp": null
+      "prototype": ["design/frameleaf/template/src/UploadPanel.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/DownloadPanel.svelte",
+        "web/src/lib/managers/download-manager.svelte.ts",
+        "web/src/lib/services/asset.service.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["D-1", "D-2", "D-3"],
+      "followUp": "Single downloads go through the download panel with progress, Cancel and Retry (codex/FL-45-download-panel)"
     },
     {
       "requirementId": "action:viewer:download-original-separately",
       "title": "Download original separately",
-      "prototype": ["design/frameleaf/template/src/MediaViewer.jsx", "design/frameleaf/template/src/media-viewer.mjs"],
-      "production": ["web/src/lib/components/asset-viewer/AssetViewer.svelte", "web/src/lib/frameleaf/viewer-menu.ts"],
-      "status": "match",
-      "gaps": [],
-      "followUp": null
+      "prototype": ["design/frameleaf/template/src/UploadPanel.jsx", "design/frameleaf/template/src/system-data.mjs"],
+      "production": [
+        "web/src/lib/components/frameleaf/DownloadPanel.svelte",
+        "web/src/lib/managers/download-manager.svelte.ts",
+        "web/src/lib/services/asset.service.ts"
+      ],
+      "status": "fixed",
+      "gaps": ["D-1", "D-2", "D-3"],
+      "followUp": "Original and edited files are separate download panel rows (codex/FL-45-download-panel)"
     },
     {
       "requirementId": "action:viewer:favorite-unfavorite",
